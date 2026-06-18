@@ -488,6 +488,134 @@ def test_feature_flagged_stream_and_persist_runs_orchestrator_session(
     assert graph.last_config["configurable"]["thread_id"] == orchestrator_session.checkpointer_key
 
 
+def test_feature_flagged_stream_persists_clean_final_state_when_stream_leaks_task_id(
+    routed_service,
+):
+    service, _graph = routed_service(
+        [
+            {
+                "__events__": [
+                    _stream_event(
+                        "on_tool_start",
+                        run_id="risk-1",
+                        name="run_batch_pricing",
+                        input={"portfolio_id": 1},
+                    ),
+                    _stream_event(
+                        "on_chat_model_stream",
+                        chunk_text=(
+                            "Batch pricing run is queued "
+                            "(risk_run_id=10, task_id=12)."
+                        ),
+                    ),
+                    _stream_event(
+                        "on_tool_end",
+                        run_id="risk-1",
+                        output={"risk_run_id": 10, "status": "completed"},
+                    ),
+                ],
+                "messages": [
+                    _ai("Risk analysis completed cleanly for the Default portfolio."),
+                ],
+                "todos": [
+                    {"content": "Run risk analysis", "status": "completed"},
+                ],
+            }
+        ]
+    )
+    with database.SessionLocal() as session:
+        thread = service.create_thread(
+            session,
+            title="stream routed leak",
+            character="trader",
+        )
+        thread_id = thread.id
+        session.commit()
+
+    async def run():
+        return [
+            chunk
+            async for chunk in service.stream_and_persist(
+                thread_id=thread_id,
+                content="run risk",
+                requested_character="auto",
+                page_context=None,
+            )
+        ]
+
+    joined = "".join(asyncio.run(run()))
+
+    with database.SessionLocal() as session:
+        assistant = (
+            session.query(AgentMessage)
+            .filter(AgentMessage.thread_id == thread_id, AgentMessage.role == "assistant")
+            .one()
+        )
+
+    assert "event: done" in joined
+    assert assistant.content == "Risk analysis completed cleanly for the Default portfolio."
+    assert "not suitable to show" not in assistant.content
+    assert [ev["name"] for ev in assistant.meta["process_events"]] == [
+        "run_batch_pricing",
+    ]
+    assert assistant.meta["todos"] == [
+        {"content": "Run risk analysis", "status": "completed"},
+    ]
+
+
+def test_feature_flagged_stream_keeps_fallback_when_stream_and_state_leak_internals(
+    routed_service,
+):
+    service, _graph = routed_service(
+        [
+            {
+                "__events__": [
+                    _stream_event(
+                        "on_chat_model_stream",
+                        chunk_text="Batch pricing queued with task_id=12.",
+                    ),
+                ],
+                "messages": [
+                    _ai("The context pack is missing for task 12."),
+                ],
+            }
+        ]
+    )
+    with database.SessionLocal() as session:
+        thread = service.create_thread(
+            session,
+            title="stream routed double leak",
+            character="trader",
+        )
+        thread_id = thread.id
+        session.commit()
+
+    async def run():
+        return [
+            chunk
+            async for chunk in service.stream_and_persist(
+                thread_id=thread_id,
+                content="run risk",
+                requested_character="auto",
+                page_context=None,
+            )
+        ]
+
+    joined = "".join(asyncio.run(run()))
+
+    with database.SessionLocal() as session:
+        assistant = (
+            session.query(AgentMessage)
+            .filter(AgentMessage.thread_id == thread_id, AgentMessage.role == "assistant")
+            .one()
+        )
+
+    assert "event: done" in joined
+    assert "not suitable to show" in assistant.content
+    assert "task_id=12" not in assistant.content
+    assert "context pack" not in assistant.content.lower()
+
+
 def test_feature_flagged_stream_threads_confirmed_cost_preview(
     routed_service,
 ):

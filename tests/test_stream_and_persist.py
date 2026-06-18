@@ -563,7 +563,8 @@ def test_stream_and_persist_records_start_async_agent_task_id(
             )
             .one()
         )
-    assert msg.content == "Started async task #12."
+    assert "not suitable to show" in msg.content
+    assert "task #12" not in msg.content
     pe = msg.meta["process_events"]
     assert len(pe) == 1
     assert pe[0]["name"] == "start_async_agent"

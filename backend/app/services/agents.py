@@ -128,6 +128,33 @@ def _contains_internal_routing_language(content: str) -> bool:
     )
 
 
+def _select_public_stream_response(
+    *,
+    stream_text: str | None,
+    state_final_text: str | None = None,
+    fallback_text: str = "(no response)",
+) -> str:
+    primary = (stream_text or "").strip()
+    state_final = (state_final_text or "").strip()
+    fallback = (fallback_text or "").strip()
+
+    if primary:
+        if not _contains_internal_routing_language(primary):
+            return primary
+        if state_final and not _contains_internal_routing_language(state_final):
+            return state_final
+        return _INTERNAL_ROUTING_FALLBACK
+
+    if state_final:
+        if not _contains_internal_routing_language(state_final):
+            return state_final
+        return _INTERNAL_ROUTING_FALLBACK
+
+    if fallback and _contains_internal_routing_language(fallback):
+        return _INTERNAL_ROUTING_FALLBACK
+    return fallback or "(no response)"
+
+
 def _capture_reply_options_from_tool_end(
     collector: StreamCollector,
     *,
@@ -1900,6 +1927,7 @@ class AgentService:
                 thread_id=thread_id,
             ),
         )
+        state_final_text = ""
         try:
             state = await self._read_stream_state(agent, config)
             values = getattr(state, "values", None) or {}
@@ -1909,10 +1937,10 @@ class AgentService:
             self._extract_personas_from_state(state, collector)
             state_todos = _normalize_todos(values.get("todos"))
             collector.set_todos(state_todos)
+            state_final_text = _extract_final_ai_text(values)
             if not collector.final_text and collector.error is None:
-                fallback_text = _extract_final_ai_text(values)
-                if fallback_text:
-                    collector.on_token(fallback_text)
+                if state_final_text:
+                    collector.on_token(state_final_text)
             assets = _merge_assets(
                 assets,
                 _agent_file_assets_from_state(
@@ -1938,6 +1966,7 @@ class AgentService:
                 accounting_date,
                 context_usage,
                 yolo_mode,
+                state_final_text,
                 prepared.envelope_final,
             )
         except Exception:
@@ -1957,6 +1986,7 @@ class AgentService:
         accounting_date: date | str | None = None,
         context_usage: AgentContextUsage | dict[str, Any] | None = None,
         yolo_mode: bool = False,
+        state_final_text: str | None = None,
         envelope_final: str | None = None,
     ) -> int | None:
         resolved = self.normalize_model_selection(model_selection)
@@ -1991,8 +2021,10 @@ class AgentService:
                     persona=last_persona,
                     source_meta=source_meta,
                 )
-                content = self._public_response_text(
-                    collector.final_text or "Awaiting confirmation for the next step."
+                content = _select_public_stream_response(
+                    stream_text=collector.final_text,
+                    state_final_text=state_final_text,
+                    fallback_text="Awaiting confirmation for the next step.",
                 )
                 agent_phase = "awaiting_confirmation"
                 interrupt_ids = [getattr(intr, "id", "") for intr in collector.interrupts]
@@ -2008,6 +2040,11 @@ class AgentService:
                     for part in (collector.final_text, transport_recovery_text)
                     if part
                 )
+                state_recovered_text = "\n\n".join(
+                    part
+                    for part in (state_final_text, transport_recovery_text)
+                    if part
+                )
                 content = (
                     recovered_text
                     or collector.error
@@ -2021,7 +2058,10 @@ class AgentService:
                 content = (
                     content
                     if collector.error
-                    else self._public_response_text(content)
+                    else _select_public_stream_response(
+                        stream_text=content,
+                        state_final_text=state_recovered_text,
+                    )
                 )
                 interrupt_ids = []
 
@@ -2810,6 +2850,7 @@ class AgentService:
                 thread_id=thread_id,
             ),
         )
+        state_final_text = ""
         try:
             state = (
                 await self._read_stream_state(agent, config)
@@ -2822,10 +2863,10 @@ class AgentService:
                     collector.interrupts.extend(getattr(task, "interrupts", []) or [])
             self._extract_personas_from_state(state, collector)
             collector.set_todos(_normalize_todos(values.get("todos")))
+            state_final_text = _extract_final_ai_text(values)
             if not collector.final_text and collector.error is None:
-                fallback_text = _extract_final_ai_text(values)
-                if fallback_text:
-                    collector.on_token(fallback_text)
+                if state_final_text:
+                    collector.on_token(state_final_text)
             assets = _merge_assets(
                 assets,
                 _agent_file_assets_from_state(
@@ -2848,6 +2889,7 @@ class AgentService:
                 accounting_date,
                 context_usage,
                 yolo_mode,
+                state_final_text,
             )
         except Exception:
             logger.exception("Persist failed for thread %s", thread_id)
@@ -3118,6 +3160,7 @@ class AgentService:
         accounting_date: date | str | None = None,
         context_usage: AgentContextUsage | dict[str, Any] | None = None,
         yolo_mode: bool = False,
+        state_final_text: str | None = None,
     ) -> int | None:
         resolved = self.normalize_model_selection(model_selection)
         effective_accounting_date = _effective_accounting_date(accounting_date)
@@ -3138,8 +3181,11 @@ class AgentService:
                     thread_id=thread_id,
                     role="assistant",
                     character=last_persona,
-                    content=collector.final_text
-                    or "Awaiting confirmation for the next step.",
+                    content=_select_public_stream_response(
+                        stream_text=collector.final_text,
+                        state_final_text=state_final_text,
+                        fallback_text="Awaiting confirmation for the next step.",
+                    ),
                     meta={
                         "agent_graph": "deepagents",
                         "agent_phase": "awaiting_confirmation",
@@ -3186,6 +3232,11 @@ class AgentService:
                     for part in (collector.final_text, transport_recovery_text)
                     if part
                 )
+                state_recovered_text = "\n\n".join(
+                    part
+                    for part in (state_final_text, transport_recovery_text)
+                    if part
+                )
                 content = (
                     recovered_text
                     or collector.error
@@ -3200,7 +3251,14 @@ class AgentService:
                     thread_id=thread_id,
                     role="assistant",
                     character=last_persona,
-                    content=content,
+                    content=(
+                        content
+                        if collector.error
+                        else _select_public_stream_response(
+                            stream_text=content,
+                            state_final_text=state_recovered_text,
+                        )
+                    ),
                     meta={
                         "agent_graph": "deepagents",
                         "agent_phase": agent_phase,
