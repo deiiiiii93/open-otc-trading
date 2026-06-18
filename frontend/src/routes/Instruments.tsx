@@ -6,6 +6,8 @@ import { Tabs, TabsList, TabsTrigger } from '../components/Tabs';
 import { Button } from '../components/Button';
 import { Empty } from '../components/Empty';
 import { Select } from '../components/Select';
+import { InstrumentCreateDialog } from '../components/InstrumentCreateDialog';
+import type { InstrumentCreateFormData } from '../components/InstrumentCreateDialog';
 import { InstrumentsAllowedHedges } from './InstrumentsAllowedHedges';
 import type {
   HedgeMapGroup,
@@ -92,6 +94,7 @@ type Props = {
   onSync: () => Promise<void>;
   onLoad: () => Promise<void>;
   onSaveInstrument: (id: number, fields: Partial<Instrument>) => Promise<void>;
+  onCreateInstrument: (fields: InstrumentCreateFormData) => Promise<void>;
   activeTab: Tab;
   onTabChange: (tab: Tab) => void;
   /** Map from instrument_id to role flags. */
@@ -612,6 +615,7 @@ export function Instruments({
   onSync,
   onLoad,
   onSaveInstrument,
+  onCreateInstrument,
   activeTab,
   onTabChange,
   rolesByInstrumentId,
@@ -671,6 +675,7 @@ export function Instruments({
   const [assumptionDefaultsFilters, setAssumptionDefaultsFilters] =
     useState<DefaultsFilters>(EMPTY_DEFAULTS_FILTERS);
   const [assumptionSetSearch, setAssumptionSetSearch] = useState('');
+  const [createInstrumentOpen, setCreateInstrumentOpen] = useState(false);
   const selectedHedgeGroup =
     hedgeGroups.find((g) => g.underlying_id === selectedHedgeUnderlyingId) ?? null;
   const staleHedgeCount = selectedHedgeGroup?.entries.filter((e) => e.reconcile_status === 'stale').length ?? 0;
@@ -711,6 +716,15 @@ export function Instruments({
       <Button onClick={onLoad} disabled={loadInProgress} title="Load contracts from AKShare">
         <Download size={15} aria-hidden="true" />
         {loadInProgress ? 'Loading…' : 'Load Contracts'}
+      </Button>
+      <Button
+        variant="ghost"
+        onClick={() => setCreateInstrumentOpen(true)}
+        aria-label="New instrument"
+        title="Add an instrument manually"
+      >
+        <Plus size={15} aria-hidden="true" />
+        New
       </Button>
       {loadTaskChip && (
         <span className="wl-instruments__load-chip" aria-live="polite">
@@ -1122,6 +1136,14 @@ export function Instruments({
           onUpsert={onAssumptionUpsert}
         />
       )}
+      <InstrumentCreateDialog
+        open={createInstrumentOpen}
+        onCancel={() => setCreateInstrumentOpen(false)}
+        onCreate={async (data) => {
+          await onCreateInstrument(data);
+          setCreateInstrumentOpen(false);
+        }}
+      />
     </PageScaffold>
   );
 }

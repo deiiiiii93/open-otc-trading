@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, listFxRates, createFxRate, fetchFxRateAkshare, deleteFxRate } from '../api/client';
+import { api, listFxRates, createFxRate, fetchFxRateAkshare, deleteFxRate, createInstrument } from '../api/client';
 import type { FxRate, MarketDataProfile, PageContextReporter, UnderlyingPricingDefault } from '../types';
 import { Instruments } from './Instruments';
 import type { Instrument, InstrumentRoles, Tab } from './Instruments';
@@ -596,6 +596,14 @@ export function InstrumentsLive({ onPageContextChange: _onPageContextChange }: P
     }
   };
 
+  const onCreateInstrument = async (fields: Parameters<typeof createInstrument>[0]) => {
+    const created = await createInstrument(fields);
+    if (!cancelledRef.current) {
+      setRows((current) => [...current, created].sort((a, b) => a.symbol.localeCompare(b.symbol)));
+      setFeedback({ tone: 'success', message: `Created ${created.symbol}.` });
+    }
+  };
+
   return (
     <Instruments
       rows={rows}
@@ -614,6 +622,7 @@ export function InstrumentsLive({ onPageContextChange: _onPageContextChange }: P
       onSync={onSync}
       onLoad={onLoad}
       onSaveInstrument={onSaveInstrument}
+      onCreateInstrument={onCreateInstrument}
       activeTab={activeTab}
       onTabChange={setActiveTab}
       rolesByInstrumentId={rolesByInstrumentId}

@@ -4,6 +4,7 @@ import type {
   EngineConfigVariant,
   EngineConfigVariantInput,
   FxRate,
+  Instrument,
   PricingParameterProfile,
   ScenarioGridRequest,
   ScenarioLibrary,
@@ -103,6 +104,18 @@ export const createPricingParameterProfile = (body: PricingParameterProfileCreat
   api<PricingParameterProfile>('/api/pricing-parameter-profiles', {
     method: 'POST',
     body: JSON.stringify(body),
+  });
+
+export type InstrumentCreateInput = Omit<
+  Instrument,
+  'id' | 'created_at' | 'updated_at' | 'source' | 'loaded_at' | 'contract_code'
+>;
+
+export const createInstrument = (body: InstrumentCreateInput) =>
+  api<Instrument>('/api/instruments', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
   });
 
 export const listEngineConfigs = () => api<EngineConfigVariant[]>('/api/engine-configs');

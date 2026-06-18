@@ -57,6 +57,7 @@ const defaultProps = {
   onSync: vi.fn(async () => {}),
   onLoad: vi.fn(async () => {}),
   onSaveInstrument: vi.fn(async () => {}),
+  onCreateInstrument: vi.fn(async () => {}),
   activeTab: 'registry' as const,
   onTabChange: vi.fn(),
   rolesByInstrumentId: {},
@@ -284,5 +285,30 @@ describe('Instruments', () => {
     const roles = { 1: { underlying: false, hedge: true } };
     render(<Instruments {...defaultProps} rolesByInstrumentId={roles} />);
     expect(screen.getByText('hedge')).toBeInTheDocument();
+  });
+
+  it('new instrument button opens the create dialog', async () => {
+    const user = userEvent.setup();
+    render(<Instruments {...defaultProps} />);
+    await user.click(screen.getByRole('button', { name: /new instrument/i }));
+    expect(screen.getByRole('heading', { name: /new instrument/i })).toBeInTheDocument();
+  });
+
+  it('create dialog submits new instrument data', async () => {
+    const user = userEvent.setup();
+    const onCreateInstrument = vi.fn<(fields: Record<string, unknown>) => Promise<void>>(async () => {});
+    render(<Instruments {...defaultProps} onCreateInstrument={onCreateInstrument} />);
+
+    await user.click(screen.getByRole('button', { name: /new instrument/i }));
+    await user.type(screen.getByLabelText(/^Symbol \*/i), '000300.SH');
+
+    await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+    await waitFor(() => {
+      expect(onCreateInstrument).toHaveBeenCalled();
+      const payload = onCreateInstrument.mock.calls[0][0];
+      expect(payload.symbol).toBe('000300.SH');
+      expect(payload.kind).toBe('index');
+    });
   });
 });

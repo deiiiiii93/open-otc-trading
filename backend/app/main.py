@@ -74,6 +74,7 @@ from .schemas import (
     FxRateCreate,
     FxRateOut,
     FxRateAkshareRequest,
+    InstrumentCreate,
     InstrumentOut,
     InstrumentSyncResultOut,
     InstrumentUpdate,
@@ -2262,6 +2263,62 @@ def create_app(
             raise HTTPException(status_code=404, detail="Instrument not found")
         return row
 
+    @app.post("/api/instruments", response_model=InstrumentOut, status_code=201)
+    def create_instrument_endpoint(
+        payload: InstrumentCreate,
+        session: Session = Depends(get_db),
+    ):
+        if session.query(Instrument).filter_by(symbol=payload.symbol).first() is not None:
+            raise HTTPException(status_code=409, detail=f"Instrument {payload.symbol} already exists")
+        if payload.parent_id is not None and session.get(Instrument, payload.parent_id) is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"parent_id {payload.parent_id} does not reference an existing instrument",
+            )
+        try:
+            validate_instrument_terms(
+                kind=payload.kind,
+                strike=payload.strike,
+                option_type=payload.option_type,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        row = Instrument(
+            symbol=payload.symbol,
+            kind=payload.kind,
+            display_name=payload.display_name,
+            exchange=payload.exchange,
+            currency=payload.currency,
+            status=payload.status,
+            source="manual",
+            akshare_symbol=payload.akshare_symbol,
+            akshare_asset_class=payload.akshare_asset_class,
+            series_root=payload.series_root,
+            expiry=payload.expiry,
+            multiplier=payload.multiplier,
+            strike=payload.strike,
+            option_type=payload.option_type,
+            parent_id=payload.parent_id,
+            notes=payload.notes,
+            rate=payload.rate,
+            dividend_yield=payload.dividend_yield,
+            volatility=payload.volatility,
+        )
+        session.add(row)
+        session.flush()
+        record_audit(
+            session,
+            event_type="instrument.created",
+            actor="desk_user",
+            subject_type="instrument",
+            subject_id=row.id,
+            payload=payload.model_dump(mode='json'),
+        )
+        session.commit()
+        session.refresh(row)
+        return row
+
     @app.patch("/api/instruments/{instrument_id}", response_model=InstrumentOut)
     def patch_instrument_endpoint(
         instrument_id: int,
@@ -2302,7 +2359,7 @@ def create_app(
             actor="desk_user",
             subject_type="instrument",
             subject_id=row.id,
-            payload=fields,
+            payload=payload.model_dump(exclude_unset=True, mode='json'),
         )
         session.commit()
         session.refresh(row)

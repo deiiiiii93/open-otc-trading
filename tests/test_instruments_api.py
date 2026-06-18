@@ -3,6 +3,7 @@
 Covers:
   GET  /api/instruments               — list + filters
   GET  /api/instruments/{id}          — get / 404
+  POST /api/instruments               — manual creation; duplicate / validation
   PATCH /api/instruments/{id}         — partial update; PATCH-not-PUT contract
   POST  /api/instruments/sync-from-positions
   POST  /api/instruments/{id}/fetch-spot
@@ -182,6 +183,93 @@ class TestGetInstrument:
         client = _make_client(tmp_path)
         resp = client.get("/api/instruments/99999")
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# POST /api/instruments — manual creation
+# ---------------------------------------------------------------------------
+
+class TestCreateInstrument:
+    def test_creates_minimal_instrument(self, tmp_path: Path):
+        client = _make_client(tmp_path)
+        resp = client.post("/api/instruments", json={"symbol": "000300.SH", "kind": "index"})
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["symbol"] == "000300.SH"
+        assert data["kind"] == "index"
+        assert data["currency"] == "CNY"
+        assert data["status"] == "draft"
+        assert data["source"] == "manual"
+
+    def test_creates_instrument_with_terms(self, tmp_path: Path):
+        client = _make_client(tmp_path)
+        resp = client.post(
+            "/api/instruments",
+            json={
+                "symbol": "IC2609.CFFEX",
+                "kind": "futures",
+                "display_name": "CSI 500 Future Sep 2026",
+                "currency": "CNY",
+                "status": "active",
+                "series_root": "IC",
+                "expiry": "2026-09-18",
+                "multiplier": 1,
+                "notes": "manual entry",
+            },
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["display_name"] == "CSI 500 Future Sep 2026"
+        assert data["status"] == "active"
+        assert data["series_root"] == "IC"
+        assert data["multiplier"] == pytest.approx(1)
+
+    def test_409_when_symbol_already_exists(self, tmp_path: Path):
+        client = _make_client(tmp_path)
+        _add_instrument(tmp_path, symbol="000300.SH", kind="index")
+        resp = client.post("/api/instruments", json={"symbol": "000300.SH", "kind": "index"})
+        assert resp.status_code == 409
+
+    def test_400_when_listed_option_missing_strike(self, tmp_path: Path):
+        client = _make_client(tmp_path)
+        resp = client.post(
+            "/api/instruments",
+            json={"symbol": "50ETF-C-2606-3000", "kind": "listed_option", "option_type": "C"},
+        )
+        assert resp.status_code == 400
+        assert "strike" in resp.json()["detail"].lower()
+
+    def test_400_when_parent_id_invalid(self, tmp_path: Path):
+        client = _make_client(tmp_path)
+        resp = client.post(
+            "/api/instruments",
+            json={"symbol": "IC2609.CFFEX", "kind": "futures", "parent_id": 99999},
+        )
+        assert resp.status_code == 400
+
+    def test_creates_with_valid_parent_id(self, tmp_path: Path):
+        client = _make_client(tmp_path)
+        parent_id = _add_instrument(tmp_path, symbol="000905.SH", kind="index")
+        resp = client.post(
+            "/api/instruments",
+            json={"symbol": "IC2609.CFFEX", "kind": "futures", "parent_id": parent_id},
+        )
+        assert resp.status_code == 201
+        assert resp.json()["parent_id"] == parent_id
+
+    def test_emits_audit_event(self, tmp_path: Path):
+        from app.models import AuditEvent
+
+        client = _make_client(tmp_path)
+        resp = client.post("/api/instruments", json={"symbol": "000300.SH", "kind": "index"})
+        assert resp.status_code == 201
+        iid = resp.json()["id"]
+        with database.SessionLocal() as s:
+            events = s.query(AuditEvent).filter(
+                AuditEvent.event_type == "instrument.created"
+            ).all()
+        assert len(events) == 1
+        assert int(events[0].subject_id) == iid
 
 
 # ---------------------------------------------------------------------------

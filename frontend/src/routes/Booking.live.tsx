@@ -53,7 +53,7 @@ const ENGINE_OPTIONS_BY_PRODUCT: Record<string, string[]> = {
 };
 
 const DEFAULT_TERMS: Record<string, Record<string, unknown>> = {
-  EuropeanVanillaOption: { strike: 100, option_type: 'CALL', components: [] },
+  EuropeanVanillaOption: { strike: 100, option_type: 'CALL' },
   AmericanOption: { strike: 100, option_type: 'CALL' },
   CashOrNothingDigitalOption: { strike: 100, option_type: 'CALL', payout: 1 },
   BarrierOption: { strike: 100, option_type: 'CALL', barrier: 90, barrier_type: 'DOWN_OUT' },
@@ -606,6 +606,14 @@ function activeUnderlyingSymbols(rows: Instrument[]): string[] {
     .map((underlying) => underlying.symbol);
 }
 
+const PRODUCTS_WITH_INITIAL_PRICE = new Set([
+  'SnowballOption',
+  'KnockOutResetSnowballOption',
+  'PhoenixOption',
+  'AsianOption',
+  'RangeAccrualOption',
+]);
+
 function buildProductRoot({
   productType,
   productFamily,
@@ -624,13 +632,18 @@ function buildProductRoot({
       component !== null && typeof component === 'object' && !Array.isArray(component)
     ))
     : [];
+  const cleanedTerms = { ...terms };
+  delete cleanedTerms.components;
+  if (!PRODUCTS_WITH_INITIAL_PRICE.has(productType)) {
+    delete cleanedTerms.initial_price;
+  }
   return {
     asset_class: 'equity',
     product_family: productFamily,
     quantark_class: productType,
     underlying,
     currency,
-    terms,
+    terms: cleanedTerms,
     components,
   };
 }

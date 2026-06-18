@@ -1006,6 +1006,29 @@ class InstrumentUpdate(BaseModel):
     volatility: float | None = None
 
 
+class InstrumentCreate(BaseModel):
+    """Manual instrument creation — source defaults to 'manual'."""
+
+    symbol: str
+    kind: str
+    display_name: str | None = None
+    exchange: str | None = None
+    currency: str = "CNY"
+    status: str = "draft"
+    akshare_symbol: str | None = None
+    akshare_asset_class: str | None = None
+    series_root: str | None = None
+    expiry: date | None = None
+    multiplier: float | None = None
+    strike: float | None = None
+    option_type: str | None = None
+    parent_id: int | None = None
+    notes: str | None = None
+    rate: float | None = None
+    dividend_yield: float | None = None
+    volatility: float | None = None
+
+
 class InstrumentSyncResultOut(BaseModel):
     created: int
     existing: int
