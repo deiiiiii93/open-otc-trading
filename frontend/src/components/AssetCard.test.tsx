@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AssetCard } from './AssetCard';
 import type { AgentAsset } from '../types';
@@ -111,5 +111,60 @@ describe('AssetCard', () => {
     expect(createObjectURL).toHaveBeenCalled();
     expect(click).toHaveBeenCalled();
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:report');
+  });
+
+  it('opens a preview modal for JSON assets instead of a new tab', async () => {
+    const jsonAsset: AgentAsset = {
+      id: 'json-1',
+      kind: 'json',
+      title: 'pricing_request.json',
+      data: { trade_id: 'T1', price: 99.5 },
+    };
+    const open = vi.spyOn(window, 'open');
+
+    render(<AssetCard asset={jsonAsset} />);
+    await userEvent.click(screen.getByRole('button', { name: /open/i }));
+
+    expect(open).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/"trade_id"/)).toBeInTheDocument();
+      expect(screen.getByText(/"T1"/)).toBeInTheDocument();
+    });
+  });
+
+  it('opens a preview modal for markdown assets fetched from URL', async () => {
+    const markdownAsset: AgentAsset = {
+      id: 'md-1',
+      kind: 'markdown',
+      title: 'default_portfolio.md',
+      url: '/api/artifacts/default_portfolio.md',
+    };
+    const open = vi.spyOn(window, 'open');
+    vi.spyOn(window, 'fetch').mockResolvedValue(
+      new Response('# Summary\n\n- item one', { status: 200 }),
+    );
+
+    render(<AssetCard asset={markdownAsset} />);
+    await userEvent.click(screen.getByRole('button', { name: /open/i }));
+
+    expect(open).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /summary/i })).toBeInTheDocument();
+      expect(screen.getByText('item one')).toBeInTheDocument();
+    });
+  });
+
+  it('shows an Open button for JSON assets with inline data and no URL', () => {
+    const jsonAsset: AgentAsset = {
+      id: 'json-2',
+      kind: 'json',
+      title: 'Current page context',
+      data: { page: 'dashboard' },
+    };
+
+    render(<AssetCard asset={jsonAsset} />);
+    expect(screen.getByRole('button', { name: /open/i })).toBeInTheDocument();
   });
 });

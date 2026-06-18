@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { AgentAsset } from '../types';
 import { ChartAsset } from './ChartAsset';
+import { AssetPreviewModal } from './AssetPreviewModal';
 import './AssetCard.css';
 
 const kindLabel: Record<AgentAsset['kind'], string> = {
@@ -21,8 +22,13 @@ type Props = {
 
 export function AssetCard({ asset, subtitle, actions }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const isChart = asset.kind === 'chart';
   const isHtml = asset.kind === 'html';
+  const isMarkdown = asset.kind === 'markdown';
+  const isJson = asset.kind === 'json';
+  const canPreviewInline = isMarkdown || isJson;
+  const canOpen = asset.url || (canPreviewInline && hasPreviewContent(asset));
   const tableData = asset.kind === 'table' ? normalizeTableAsset(asset.data) : null;
   const canPreview = isChart || isHtml;
 
@@ -34,8 +40,12 @@ export function AssetCard({ asset, subtitle, actions }: Props) {
         {subtitle && <div className="wl-asset__sub">{subtitle}</div>}
       </div>
       <div className="wl-asset__actions">
-        {asset.url && (
-          <button className="wl-asset__action" type="button" onClick={() => openAsset(asset)}>
+        {canOpen && (
+          <button
+            className="wl-asset__action"
+            type="button"
+            onClick={() => (canPreviewInline ? setPreviewOpen(true) : openAsset(asset))}
+          >
             Open
           </button>
         )}
@@ -88,8 +98,13 @@ export function AssetCard({ asset, subtitle, actions }: Props) {
           </table>
         </div>
       )}
+      <AssetPreviewModal asset={asset} open={previewOpen} onOpenChange={setPreviewOpen} />
     </div>
   );
+}
+
+function hasPreviewContent(asset: AgentAsset): boolean {
+  return asset.data !== undefined || Boolean(asset.url);
 }
 
 function openAsset(asset: AgentAsset): void {
