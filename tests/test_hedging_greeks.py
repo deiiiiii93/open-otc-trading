@@ -1,8 +1,10 @@
 # tests/test_hedging_greeks.py
 from datetime import datetime, timedelta
 
-from app.models import (Portfolio, PricingParameterProfile, PricingParameterRow,
-                        RiskRun)
+import pytest
+
+from app.models import (Instrument, Portfolio, Position, PricingParameterProfile,
+                        PricingParameterRow, RiskRun)
 from app.services import hedging_greeks
 
 
@@ -45,6 +47,69 @@ def test_aggregate_sums_cash_greeks_by_underlying(session):
     by = {u["underlying"]: u for u in out["underlyings"]}
     assert by["000905.SH"]["targets"] == {"delta": 1240000.0, "gamma": 88000.0, "vega": 6500.0}
     assert by["000905.SH"]["spot"] == 5600.0
+
+
+def test_aggregate_rolls_hedge_positions_into_hedged_underlying(session):
+    pf = Portfolio(name="pf_hedged", base_currency="CNY")
+    under = Instrument(symbol="000300.SH", kind="index", status="active")
+    future = Instrument(
+        symbol="IF2612.CFFEX",
+        kind="futures",
+        series_root="IF",
+        exchange="CFFEX",
+        contract_code="IF2612",
+        multiplier=300.0,
+        parent=under,
+        status="active",
+    )
+    session.add_all([pf, under, future])
+    session.flush()
+    option = Position(
+        portfolio_id=pf.id,
+        underlying_id=under.id,
+        underlying=under.symbol,
+        product_type="EuropeanVanillaOption",
+        quantity=-400.0,
+        entry_price=0.0,
+        status="open",
+        position_kind="otc",
+    )
+    hedge = Position(
+        portfolio_id=pf.id,
+        underlying_id=future.id,
+        underlying=future.symbol,
+        product_type="Futures",
+        quantity=1.0,
+        entry_price=0.0,
+        status="open",
+        position_kind="listed",
+        source_trade_id="HEDGE:5:1",
+        source_payload={
+            "hedge": {
+                "is_hedge": True,
+                "hedged_underlying": "000300.SH",
+                "instrument_id": future.id,
+            }
+        },
+    )
+    session.add_all([option, hedge])
+    session.flush()
+    _run(session, pf.id, [
+        {"position_id": option.id, "underlying": "000300.SH", "delta_cash": -981461.4786,
+         "gamma_cash": -86423.6602, "vega": -3921.0296, "spot": 4931.386,
+         "greeks_ok": True},
+        {"position_id": hedge.id, "underlying": "IF2612.CFFEX", "delta_cash": 1422900.0,
+         "gamma_cash": 0.0, "vega": 0.0, "spot": 4743.0, "greeks_ok": True},
+    ])
+
+    out = hedging_greeks.aggregate_by_underlying(session, portfolio_id=pf.id)
+
+    assert [u["underlying"] for u in out["underlyings"]] == ["000300.SH"]
+    target = out["underlyings"][0]
+    assert target["targets"]["delta"] == pytest.approx(441438.5214)
+    assert target["targets"]["gamma"] == pytest.approx(-86423.6602)
+    assert target["targets"]["vega"] == pytest.approx(-3921.0296)
+    assert target["spot"] == 4931.386
 
 
 def test_aggregate_reports_missing_run(session):

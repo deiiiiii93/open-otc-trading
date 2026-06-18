@@ -25,6 +25,24 @@ def _seed(session):
     )
     session.add(inst)
     session.flush()
+    session.add(Position(
+        portfolio_id=pf.id,
+        underlying_id=inst.id,
+        underlying=inst.symbol,
+        product_type="Futures",
+        quantity=1.0,
+        entry_price=0.0,
+        status="open",
+        position_kind="listed",
+        source_trade_id="HEDGE:42:1",
+        source_payload={
+            "hedge": {
+                "is_hedge": True,
+                "hedged_underlying": u.symbol,
+                "instrument_id": inst.id,
+            }
+        },
+    ))
     record_quote(session, instrument_id=inst.id, price=5600.0,
                  as_of=datetime.utcnow(), source="hedge_load")
     session.commit()
@@ -36,6 +54,7 @@ def test_underlyings_endpoint_lists_in_scope(client, session):
     resp = client.get("/api/hedging/underlyings")
     assert resp.status_code == 200
     body = resp.json()
+    assert [row["symbol"] for row in body] == ["000905.SH"]
     assert body[0]["symbol"] == "000905.SH"
     assert body[0]["families"][0]["family"] == "index_future"
 

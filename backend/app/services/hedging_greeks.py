@@ -6,7 +6,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from ..models import PricingParameterRow, RiskRun
+from ..models import Instrument, Position, PricingParameterRow, RiskRun
 from .domains import risk as risk_svc
 from .pricing_profiles import resolve_underlying_market_params
 
@@ -26,16 +26,19 @@ def aggregate_by_underlying(session: Session, *, portfolio_id: int) -> dict[str,
         return {"status": "no_risk_run", "portfolio_id": portfolio_id,
                 "message": "No completed risk run for this portfolio. Run risk first."}
     rows = (run.metrics or {}).get("positions", [])
+    rollup_targets = _hedge_rollup_targets(session, rows)
     acc: dict[str, dict[str, Any]] = {}
     for row in rows:
         if not row.get("greeks_ok"):
             continue
-        u = row.get("underlying") or "UNKNOWN"
+        raw_underlying = row.get("underlying") or "UNKNOWN"
+        u = rollup_targets.get(_row_position_id(row)) or raw_underlying
+        remapped = u != raw_underlying
         bucket = acc.setdefault(u, {"delta": 0.0, "gamma": 0.0, "vega": 0.0, "spot": None})
         bucket["delta"] += float(row.get("delta_cash", 0.0) or 0.0)
         bucket["gamma"] += float(row.get("gamma_cash", 0.0) or 0.0)
         bucket["vega"] += float(row.get("vega", 0.0) or 0.0)
-        if bucket["spot"] is None and row.get("spot"):
+        if bucket["spot"] is None and row.get("spot") and not remapped:
             bucket["spot"] = float(row["spot"])
 
     profile_id = run.pricing_parameter_profile_id
@@ -64,6 +67,88 @@ def aggregate_by_underlying(session: Session, *, portfolio_id: int) -> dict[str,
             "pricing_parameter_profile_id": profile_id,
             "created_at": run.created_at.isoformat(), "stale": stale,
             "underlyings": underlyings}
+
+
+def _row_position_id(row: dict[str, Any]) -> int | None:
+    try:
+        value = row.get("position_id")
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_hedge_position(position: Position) -> bool:
+    payload = position.source_payload if isinstance(position.source_payload, dict) else {}
+    hedge = payload.get("hedge") if isinstance(payload, dict) else None
+    if isinstance(hedge, dict) and hedge.get("is_hedge"):
+        return True
+    return str(position.source_trade_id or "").startswith("HEDGE:")
+
+
+def _hedged_underlying_from_payload(position: Position) -> str | None:
+    payload = position.source_payload if isinstance(position.source_payload, dict) else {}
+    hedge = payload.get("hedge") if isinstance(payload, dict) else None
+    if not isinstance(hedge, dict):
+        return None
+    value = str(hedge.get("hedged_underlying") or "").strip()
+    return value or None
+
+
+def _hedge_rollup_targets(
+    session: Session,
+    risk_rows: list[dict[str, Any]],
+) -> dict[int, str]:
+    """Map hedge position ids to the original underlying they hedge."""
+    position_ids = {
+        position_id
+        for row in risk_rows
+        if (position_id := _row_position_id(row)) is not None
+    }
+    if not position_ids:
+        return {}
+
+    positions = (
+        session.query(Position)
+        .filter(Position.id.in_(position_ids))
+        .all()
+    )
+    hedge_positions = [position for position in positions if _is_hedge_position(position)]
+    if not hedge_positions:
+        return {}
+
+    instrument_ids = {
+        position.underlying_id
+        for position in hedge_positions
+        if position.underlying_id is not None
+    }
+    instruments = {
+        row.id: row
+        for row in session.query(Instrument)
+        .filter(Instrument.id.in_(instrument_ids))
+        .all()
+    } if instrument_ids else {}
+    parent_ids = {
+        instrument.parent_id
+        for instrument in instruments.values()
+        if instrument.parent_id is not None
+    }
+    parent_symbols = {
+        row.id: row.symbol
+        for row in session.query(Instrument.id, Instrument.symbol)
+        .filter(Instrument.id.in_(parent_ids))
+        .all()
+    } if parent_ids else {}
+
+    targets: dict[int, str] = {}
+    for position in hedge_positions:
+        target = _hedged_underlying_from_payload(position)
+        if target is None and position.underlying_id is not None:
+            instrument = instruments.get(position.underlying_id)
+            if instrument is not None and instrument.parent_id is not None:
+                target = parent_symbols.get(instrument.parent_id)
+        if target:
+            targets[position.id] = target
+    return targets
 
 
 def _resolve_market(

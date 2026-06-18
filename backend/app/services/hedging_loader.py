@@ -260,7 +260,11 @@ def list_in_scope_underlyings(session: Session) -> list[Underlying]:
     open_ids = {
         row[0]
         for row in session.query(Position.underlying_id)
-        .filter(Position.status == "open", Position.underlying_id.isnot(None))
+        .filter(
+            Position.status == "open",
+            Position.position_kind == "otc",
+            Position.underlying_id.isnot(None),
+        )
         .distinct()
     }
     mapped_ids = {
