@@ -1,5 +1,6 @@
 import React from 'react';
 import { Tile, type TileVariant } from './Tile';
+import { useAutoFitGroup } from '../hooks/useAutoFitText';
 import './MetricRow.css';
 
 export type Metric = {
@@ -16,10 +17,12 @@ type Props = {
 };
 
 export function MetricRow({ metrics, columns, className = '' }: Props) {
+  // Hooks must run unconditionally; the empty-row early return happens after.
+  const fitRef = useAutoFitGroup<HTMLDivElement>(metrics.map((m) => String(m.value)).join('|'));
   if (metrics.length === 0) return null;
   const style = columns ? ({ '--metric-cols': String(columns) } as React.CSSProperties) : undefined;
   return (
-    <div className={`wl-metric-row ${className}`.trim()} style={style}>
+    <div ref={fitRef} className={`wl-metric-row ${className}`.trim()} style={style}>
       {metrics.map((m, i) => (
         <Tile key={`${m.label}-${i}`} label={m.label} value={m.value} variant={m.variant} delta={m.delta} />
       ))}

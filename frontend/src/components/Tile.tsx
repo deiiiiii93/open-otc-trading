@@ -15,7 +15,7 @@ export function Tile({ label, value, delta, variant = 'default', className = '' 
   return (
     <div className={`wl-tile wl-tile--${variant} ${className}`.trim()}>
       <div className="wl-tile__label">{label}</div>
-      <div className="wl-tile__value">{value}</div>
+      <div className="wl-tile__value" data-autofit>{value}</div>
       {delta && <div className="wl-tile__delta">{delta}</div>}
     </div>
   );

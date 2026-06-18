@@ -30,6 +30,16 @@ if (typeof globalThis.localStorage?.clear !== 'function') {
   });
 }
 
+// jsdom has no ResizeObserver; provide a no-op so components that observe
+// element resize (e.g. Tile's auto-fit value) render without throwing.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
+
 afterEach(() => {
   cleanup();
   document.documentElement.removeAttribute('data-theme');

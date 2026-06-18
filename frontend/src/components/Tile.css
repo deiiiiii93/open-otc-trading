@@ -15,10 +15,14 @@
 }
 .wl-tile__value {
   font-family: var(--font-numeric);
-  font-size: var(--type-num-l-size);
+  /* --autofit-size is published by useAutoFitGroup on a coordinating container
+     (e.g. MetricRow) so a row of tiles shrinks together; falls back to base. */
+  font-size: var(--autofit-size, var(--type-num-l-size));
   font-weight: var(--type-num-l-weight);
   color: var(--ink);
   letter-spacing: -0.01em;
+  min-width: 0;
+  white-space: nowrap;
 }
 .wl-tile--pos .wl-tile__value { color: var(--pos); }
 .wl-tile--neg .wl-tile__value { color: var(--neg); }
