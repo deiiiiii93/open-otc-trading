@@ -405,7 +405,7 @@ def _read_quote_spot(
     if hit is None:
         return None
     price, as_of = hit
-    return price, (valuation_date - as_of).days
+    return price, (valuation_date.date() - as_of.date()).days
 
 
 def _persist_fallback_quotes(

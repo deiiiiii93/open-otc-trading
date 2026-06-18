@@ -45,7 +45,7 @@ def _resolve_spot(
     quote = latest_quote(session, position.underlying_id, as_of=as_of)
     if quote is None:
         return _missing()
-    age_days = (as_of - quote.as_of).total_seconds() / 86400.0
+    age_days = (as_of.date() - quote.as_of.date()).days
     return {
         "value": quote.price,
         "source": "market_quote",

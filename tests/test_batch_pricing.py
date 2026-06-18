@@ -220,10 +220,11 @@ def test_profile_bound_run_prices_as_of_profile_valuation_date(tmp_path, monkeyp
                 volatility=0.33,
             )
         )
-        # Historical quote at the profile date plus a LATER quote: as-of
-        # resolution must pick the historical one, not the latest.
+        # Historical quote on the profile date plus a LATER quote: date-only
+        # resolution must pick the same-day quote, not the later calendar date.
         record_quote(session, instrument_id=instrument.id, price=111.0,
-                     as_of=profile_date, source="xlsx_import", price_type="mid")
+                     as_of=datetime(2026, 4, 30, 15, 30), source="xlsx_import",
+                     price_type="mid")
         record_quote(session, instrument_id=instrument.id, price=150.0,
                      as_of=datetime(2026, 6, 1), source="xlsx_import", price_type="mid")
         run, task = queue_batch_pricing(
@@ -254,8 +255,9 @@ def test_profile_bound_run_prices_as_of_profile_valuation_date(tmp_path, monkeyp
         assert result.ok is True
         # Market context priced as-of the profile date...
         assert result.market_inputs["valuation_date"].startswith("2026-04-30")
-        # ...so the quote store resolved the historical quote, not the later one.
+        # ...so the quote store resolved the same-day quote, not the later one.
         assert result.market_inputs["spot"] == pytest.approx(111.0)
+        assert result.market_inputs["quote_age_days"] == 0
         assert result.market_inputs["volatility"] == pytest.approx(0.33)
 
 

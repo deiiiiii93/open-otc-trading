@@ -46,6 +46,19 @@ def test_record_and_latest_quote(instrument):
         assert q2.price == 6400.0
 
 
+def test_latest_quote_compares_calendar_date_only(instrument):
+    from app import database
+    from app.services.quotes import latest_quote, record_quote
+
+    with database.SessionLocal() as session:
+        record_quote(session, instrument_id=instrument, price=6412.55,
+                     as_of=datetime(2026, 6, 4, 15, 30), source="akshare")
+        session.commit()
+
+        q = latest_quote(session, instrument, as_of=datetime(2026, 6, 4))
+        assert q.price == 6412.55
+
+
 def test_latest_quote_tie_break_is_last_id(instrument):
     """Same as_of (e.g. conflicting xlsx rows): max id wins — last file row."""
     from app import database

@@ -6,7 +6,7 @@ Source is diagnostics, never priority — unification happens at write time.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Iterable
 
 from sqlalchemy.orm import Session
@@ -42,12 +42,13 @@ def record_quote(
 def latest_quote(
     session: Session, instrument_id: int, *, as_of: datetime
 ) -> MarketQuote | None:
-    """Deterministic: max(as_of <= valuation), tie-break max(id)."""
+    """Deterministic: max(quote date <= valuation date), tie-break max(id)."""
+    date_cutoff = datetime.combine(as_of.date() + timedelta(days=1), datetime.min.time())
     return (
         session.query(MarketQuote)
         .filter(
             MarketQuote.instrument_id == instrument_id,
-            MarketQuote.as_of <= as_of,
+            MarketQuote.as_of < date_cutoff,
         )
         .order_by(MarketQuote.as_of.desc(), MarketQuote.id.desc())
         .first()

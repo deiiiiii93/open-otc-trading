@@ -263,7 +263,15 @@ def test_calculate_portfolio_risk_uses_futures_market_price_and_multiplier(monke
     monkeypatch.setattr("app.services.quantark.price_product", fake_price)
     monkeypatch.setattr(
         "app.services.risk_engine.compute_position_greeks",
-        lambda position, market: {"ok": False, "error": "skip"},
+        lambda position, market: {
+            "ok": True,
+            "delta": 1.0,
+            "gamma": 0.0,
+            "vega": 0.0,
+            "theta": 0.0,
+            "rho": 0.0,
+            "rho_q": 0.0,
+        },
     )
 
     risk = calculate_portfolio_risk(
@@ -274,7 +282,10 @@ def test_calculate_portfolio_risk_uses_futures_market_price_and_multiplier(monke
     row = risk["positions"][0]
     assert row["price"] == 4913.8
     assert row["market_value"] == pytest.approx(4913.8 * 4.0 * 300.0)
+    assert row["delta"] == pytest.approx(4.0)
+    assert row["delta_cash"] == pytest.approx(4913.8 * 4.0 * 300.0)
     assert risk["totals"]["market_value"] == pytest.approx(4913.8 * 4.0 * 300.0)
+    assert risk["totals"]["delta_cash"] == pytest.approx(4913.8 * 4.0 * 300.0)
 
 
 def test_calculate_portfolio_risk_uses_exact_greeks_for_quad_engines(monkeypatch):

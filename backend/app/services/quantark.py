@@ -895,6 +895,7 @@ def _empty_risk_totals() -> dict[str, float]:
 def _cash_greek_contributions(
     greek_values: dict[str, float],
     market: PricingEnvironmentSnapshot,
+    contract_multiplier: float = 1.0,
 ) -> dict[str, float]:
     """Return spot-normalized delta/gamma exposures for cross-underlying aggregation."""
     spot = float(market.spot)
@@ -902,9 +903,10 @@ def _cash_greek_contributions(
         return {key: 0.0 for key in CASH_GREEK_KEYS}
     delta = float(greek_values.get("delta", 0.0))
     gamma = float(greek_values.get("gamma", 0.0))
+    multiplier = float(contract_multiplier or 1.0)
     return {
-        "delta_cash": delta * spot,
-        "gamma_cash": gamma * spot * spot / 100.0,
+        "delta_cash": delta * spot * multiplier,
+        "gamma_cash": gamma * spot * spot * multiplier / 100.0,
     }
 
 
@@ -1069,6 +1071,7 @@ def _calculate_position_risk(
             for greek, contribution in _cash_greek_contributions(
                 greek_values,
                 position_market,
+                multiplier,
             ).items():
                 if isfinite(contribution) and abs(contribution) <= greek_bound:
                     greek_values[greek] = contribution
@@ -1240,7 +1243,7 @@ def market_snapshot_for_position(
     store, so spot resolves as
 
         latest_quote(session, position.underlying_id) when a session and an
-        underlying_id are present and the quote's as_of <= valuation_date
+        underlying_id are present and the quote's as_of date <= valuation_date date
         -> fallback.spot
 
     Rate / dividend_yield / volatility / asset_name keep the ``fallback`` values
@@ -1270,7 +1273,7 @@ def _quote_spot_for_position(
 ) -> float | None:
     """Consult the quote store for this position's spot (transitional T6).
 
-    Returns the latest recorded close price (as_of <= valuation_date) for the
+    Returns the latest recorded close price (as_of date <= valuation_date date) for the
     position's ``underlying_id``, or ``None`` when there is no session, no
     underlying_id, or no eligible quote. When a quote wins and ``diagnostics``
     is supplied, stamps ``market_input_source`` and ``quote_age_days``.
@@ -1287,7 +1290,7 @@ def _quote_spot_for_position(
         return None
     if diagnostics is not None:
         diagnostics["market_input_source"] = "market_quote"
-        diagnostics["quote_age_days"] = (valuation_date - quote.as_of).days
+        diagnostics["quote_age_days"] = (valuation_date.date() - quote.as_of.date()).days
     return float(quote.price)
 
 
