@@ -46,8 +46,10 @@ function renderPricingParameters(overrides: Partial<ComponentProps<typeof Pricin
       loading={false}
       error={null}
       importing={false}
+      creating={false}
       feedback={null}
       onSelectProfile={() => {}}
+      onCreateManual={() => {}}
       onImport={() => {}}
       {...overrides}
     />,
@@ -174,4 +176,30 @@ test('import modal submits name, valuation date, sheet, and file', async () => {
     valuationDate: '2026-04-30',
     file,
   }));
+});
+
+test('manual modal submits a single pricing parameter row', async () => {
+  const user = userEvent.setup();
+  const onCreateManual = vi.fn();
+  renderPricingParameters({ onCreateManual });
+
+  await user.click(screen.getByRole('button', { name: /^new$/i }));
+  await user.type(screen.getByLabelText('Manual profile name'), 'Manual close');
+  await user.type(screen.getByLabelText('Valuation date'), '2026-06-18');
+  await user.type(screen.getByLabelText('Trade ID'), 'T-001');
+  await user.type(screen.getByLabelText('Symbol'), '000905.SH');
+  await user.type(screen.getByLabelText('Rate'), '0.023');
+  await user.type(screen.getByLabelText('Dividend yield'), '0.011');
+  await user.type(screen.getByLabelText('Volatility'), '0.21');
+  await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+  expect(onCreateManual).toHaveBeenCalledWith({
+    name: 'Manual close',
+    valuationDate: '2026-06-18',
+    sourceTradeId: 'T-001',
+    symbol: '000905.SH',
+    rate: '0.023',
+    dividendYield: '0.011',
+    volatility: '0.21',
+  });
 });

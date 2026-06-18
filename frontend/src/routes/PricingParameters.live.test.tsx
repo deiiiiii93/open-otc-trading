@@ -89,6 +89,7 @@ describe('PricingParametersLive', () => {
     expect(screen.getByText('000852.SH')).toBeInTheDocument();
     expect(screen.getByText('1 applied · 1 dormant (T-DORM) · 2 quotes emitted')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /2026-04-30 close/i })).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('button', { name: /^new$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /import xlsx/i })).toBeInTheDocument();
     // No spot column anywhere.
     const headers = screen.getAllByRole('columnheader').map((cell) => cell.textContent);
@@ -133,6 +134,77 @@ describe('PricingParametersLive', () => {
     expect(body.get('name')).toBe('2026-04-30 Close');
     expect(body.get('valuation_date')).toBe('2026-04-30');
     expect(await screen.findByRole('status')).toHaveTextContent('Imported 2 rows.');
+  });
+
+  it('submits manual pricing parameters as json and selects the new profile', async () => {
+    const manualProfile = {
+      ...profile,
+      id: 88,
+      name: 'Manual close',
+      source_type: 'agent',
+      summary: { row_count: 1, created_by: 'desk_user' },
+      rows: [
+        {
+          ...profile.rows[0],
+          id: 880,
+          profile_id: 88,
+          source_trade_id: 'T-MANUAL',
+          symbol: '000905.SH',
+          rate: 0.023,
+          dividend_yield: 0.011,
+          volatility: 0.21,
+        },
+      ],
+    };
+    let createBody: Record<string, unknown> | undefined;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === '/api/pricing-parameter-profiles' && (!init || init.method === 'GET' || init.method === undefined)) {
+        return response([manualProfile]);
+      }
+      if (url === '/api/pricing-parameter-profiles' && init?.method === 'POST') {
+        createBody = JSON.parse(String(init.body));
+        return response(manualProfile, 201);
+      }
+      return response({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<PricingParametersLive />);
+
+    await waitFor(() => expect(screen.getByText('PRICING PARAMS')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: /^new$/i }));
+    await userEvent.type(screen.getByLabelText('Manual profile name'), 'Manual close');
+    await userEvent.type(screen.getByLabelText('Valuation date'), '2026-06-18');
+    await userEvent.type(screen.getByLabelText('Trade ID'), 'T-MANUAL');
+    await userEvent.type(screen.getByLabelText('Symbol'), '000905.SH');
+    await userEvent.type(screen.getByLabelText('Rate'), '0.023');
+    await userEvent.type(screen.getByLabelText('Dividend yield'), '0.011');
+    await userEvent.type(screen.getByLabelText('Volatility'), '0.21');
+    await userEvent.click(screen.getByRole('button', { name: /^create$/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/pricing-parameter-profiles',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+    expect(createBody).toEqual({
+      name: 'Manual close',
+      valuation_date: '2026-06-18',
+      rows: [
+        {
+          source_trade_id: 'T-MANUAL',
+          symbol: '000905.SH',
+          rate: 0.023,
+          dividend_yield: 0.011,
+          volatility: 0.21,
+        },
+      ],
+    });
+    expect(await screen.findByRole('status')).toHaveTextContent('Created 1 row profile.');
+    expect(
+      within(screen.getByLabelText('Pricing parameter profiles')).getByRole('button', { name: /manual close/i }),
+    ).toHaveAttribute('aria-current', 'true');
   });
 
   it('announces import failures as alerts', async () => {

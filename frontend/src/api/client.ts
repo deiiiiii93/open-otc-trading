@@ -4,6 +4,7 @@ import type {
   EngineConfigVariant,
   EngineConfigVariantInput,
   FxRate,
+  PricingParameterProfile,
   ScenarioGridRequest,
   ScenarioLibrary,
   ScenarioSetDetail,
@@ -83,6 +84,26 @@ export const fetchFxRateAkshare = (base: string, quote: string) =>
   });
 export const deleteFxRate = (id: number) =>
   api<{ ok: boolean }>(`/api/market-data/fx-rates/${id}`, { method: 'DELETE' });
+
+export type PricingParameterRowCreateInput = {
+  source_trade_id?: string | null;
+  symbol: string;
+  rate?: number | null;
+  dividend_yield?: number | null;
+  volatility?: number | null;
+};
+
+export type PricingParameterProfileCreateInput = {
+  name?: string | null;
+  valuation_date?: string | null;
+  rows: PricingParameterRowCreateInput[];
+};
+
+export const createPricingParameterProfile = (body: PricingParameterProfileCreateInput) =>
+  api<PricingParameterProfile>('/api/pricing-parameter-profiles', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
 
 export const listEngineConfigs = () => api<EngineConfigVariant[]>('/api/engine-configs');
 export const createEngineConfig = (body: EngineConfigVariantInput) =>

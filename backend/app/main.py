@@ -103,6 +103,7 @@ from .schemas import (
     PortfolioUpdate,
     BuildDefaultProfileRequest,
     LatestAkshareClose,
+    PricingParameterProfileCreate,
     PricingParameterProfileOut,
     PricingEnvironmentSnapshot,
     ResolvedPricingParamsOut,
@@ -167,6 +168,8 @@ from .services.agents import (
 )
 from .services.audit import record_audit
 from .services.domains import positions as positions_svc
+from .services.domains import pricing_profiles as pricing_profiles_domain
+from .services.domains._errors import DomainWriteError
 from .services.domains.booking import (
     BookingRequest,
     ProductBookingSpec,
@@ -2101,6 +2104,29 @@ def create_app(
             )
             .all()
         )
+
+    @app.post(
+        "/api/pricing-parameter-profiles",
+        response_model=PricingParameterProfileOut,
+        status_code=201,
+    )
+    def create_pricing_parameter_profile(
+        payload: PricingParameterProfileCreate,
+        session: Session = Depends(get_db),
+    ):
+        try:
+            return pricing_profiles_domain.create_profile(
+                name=payload.name,
+                valuation_date=payload.valuation_date,
+                rows=[row.model_dump() for row in payload.rows],
+                actor="desk_user",
+                session=session,
+            )
+        except DomainWriteError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": exc.error, "detail": exc.detail},
+            ) from exc
 
     @app.get(
         "/api/pricing-parameter-profiles/{profile_id}",

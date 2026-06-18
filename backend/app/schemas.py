@@ -750,6 +750,20 @@ class PricingParameterProfileOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PricingParameterRowCreate(BaseModel):
+    source_trade_id: str | None = None
+    symbol: str
+    rate: float | None = None
+    dividend_yield: float | None = None
+    volatility: float | None = None
+
+
+class PricingParameterProfileCreate(BaseModel):
+    name: str | None = None
+    valuation_date: datetime | None = None
+    rows: list[PricingParameterRowCreate] = Field(default_factory=list)
+
+
 class EngineConfigVariantIn(BaseModel):
     name: str
     description: str | None = None

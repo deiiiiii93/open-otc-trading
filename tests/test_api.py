@@ -1987,6 +1987,32 @@ def test_pricing_parameter_profile_import_list_detail_and_pricing(tmp_path: Path
     assert detail.status_code == 200
     assert "spot" not in detail.json()["rows"][0]
 
+    manual_response = client.post(
+        "/api/pricing-parameter-profiles",
+        json={
+            "name": "Manual close",
+            "valuation_date": "2026-06-18T00:00:00",
+            "rows": [
+                {
+                    "source_trade_id": "T-VANILLA",
+                    "symbol": "000905.SH",
+                    "rate": 0.023,
+                    "dividend_yield": 0.011,
+                    "volatility": 0.21,
+                }
+            ],
+        },
+    )
+    assert manual_response.status_code == 201
+    manual_profile = manual_response.json()
+    assert manual_profile["name"] == "Manual close"
+    assert manual_profile["source_type"] == "agent"
+    assert manual_profile["summary"]["row_count"] == 1
+    assert manual_profile["summary"]["created_by"] == "desk_user"
+    assert manual_profile["rows"][0]["source_trade_id"] == "T-VANILLA"
+    assert manual_profile["rows"][0]["rate"] == 0.023
+    assert "spot" not in manual_profile["rows"][0]
+
     priced = client.post(
         f"/api/portfolios/{portfolio['id']}/positions/price",
         json={

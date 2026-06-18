@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { Download, Upload } from 'lucide-react';
+import { Download, Plus, Upload } from 'lucide-react';
 import { Button } from '../components/Button';
 import { DatePicker } from '../components/DatePicker';
 import { Empty } from '../components/Empty';
@@ -19,6 +19,16 @@ type ImportPayload = {
   sheetName: string;
 };
 
+export type ManualPricingParameterPayload = {
+  name: string;
+  valuationDate: string;
+  sourceTradeId: string;
+  symbol: string;
+  rate: string;
+  dividendYield: string;
+  volatility: string;
+};
+
 export type PricingParameterFeedback = {
   tone: 'success' | 'error';
   message: string;
@@ -30,8 +40,10 @@ type Props = {
   loading: boolean;
   error: string | null;
   importing: boolean;
+  creating: boolean;
   feedback: PricingParameterFeedback | null;
   onSelectProfile: (id: number) => void;
+  onCreateManual: (payload: ManualPricingParameterPayload) => void;
   onImport: (payload: ImportPayload) => void;
   onPageContextChange?: PageContextReporter;
 };
@@ -42,16 +54,26 @@ export function PricingParameters({
   loading,
   error,
   importing,
+  creating,
   feedback,
   onSelectProfile,
+  onCreateManual,
   onImport,
   onPageContextChange,
 }: Props) {
-  const [modalOpen, setModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [manualModalOpen, setManualModalOpen] = useState(false);
   const [name, setName] = useState('');
   const [valuationDate, setValuationDate] = useState('');
   const [sheetName, setSheetName] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [manualName, setManualName] = useState('');
+  const [manualValuationDate, setManualValuationDate] = useState('');
+  const [manualSourceTradeId, setManualSourceTradeId] = useState('');
+  const [manualSymbol, setManualSymbol] = useState('');
+  const [manualRate, setManualRate] = useState('');
+  const [manualDividendYield, setManualDividendYield] = useState('');
+  const [manualVolatility, setManualVolatility] = useState('');
   const [filterMode, setFilterMode] = useState<'all' | 'live'>('all');
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -111,7 +133,27 @@ export function PricingParameters({
         : ['global', loading ? 'loading' : 'empty'],
     };
 
-    if (!modalOpen) return base;
+    if (manualModalOpen) {
+      return {
+        ...base,
+        title: 'New Pricing Params dialog',
+        snapshot: {
+          parent_context: base,
+          draft: {
+            name: manualName,
+            valuation_date: manualValuationDate,
+            source_trade_id: manualSourceTradeId,
+            symbol: manualSymbol,
+            rate: manualRate,
+            dividend_yield: manualDividendYield,
+            volatility: manualVolatility,
+          },
+        },
+        chips: ['dialog', 'New Pricing Params'],
+      };
+    }
+
+    if (!importModalOpen) return base;
     return {
       ...base,
       title: 'Import Pricing Params dialog',
@@ -131,8 +173,16 @@ export function PricingParameters({
     dormantTradeIds,
     file?.name,
     filterMode,
+    importModalOpen,
     loading,
-    modalOpen,
+    manualDividendYield,
+    manualModalOpen,
+    manualName,
+    manualRate,
+    manualSourceTradeId,
+    manualSymbol,
+    manualValuationDate,
+    manualVolatility,
     name,
     selected,
     sheetName,
@@ -144,7 +194,7 @@ export function PricingParameters({
     event.preventDefault();
     if (!file) return;
     onImport({ file, name, valuationDate, sheetName });
-    setModalOpen(false);
+    setImportModalOpen(false);
     setFile(null);
     setName('');
     setValuationDate('');
@@ -154,6 +204,36 @@ export function PricingParameters({
 
   const onFile = (event: ChangeEvent<HTMLInputElement>) => {
     setFile(event.currentTarget.files?.[0] ?? null);
+  };
+
+  const hasManualValue = [manualRate, manualDividendYield, manualVolatility]
+    .some((value) => value.trim() !== '');
+  const canSubmitManual = manualSymbol.trim() !== '' && hasManualValue && !creating;
+
+  const resetManualForm = () => {
+    setManualName('');
+    setManualValuationDate('');
+    setManualSourceTradeId('');
+    setManualSymbol('');
+    setManualRate('');
+    setManualDividendYield('');
+    setManualVolatility('');
+  };
+
+  const submitManual = (event: FormEvent) => {
+    event.preventDefault();
+    if (!canSubmitManual) return;
+    onCreateManual({
+      name: manualName,
+      valuationDate: manualValuationDate,
+      sourceTradeId: manualSourceTradeId,
+      symbol: manualSymbol,
+      rate: manualRate,
+      dividendYield: manualDividendYield,
+      volatility: manualVolatility,
+    });
+    setManualModalOpen(false);
+    resetManualForm();
   };
 
   const { rail, detail } = useProfileLibrary({
@@ -167,6 +247,10 @@ export function PricingParameters({
 
   const actions = (
     <div className="wl-pricing-params__actions">
+      <Button type="button" variant="primary" onClick={() => setManualModalOpen(true)} disabled={creating}>
+        <Plus size={16} aria-hidden="true" />
+        <span>New</span>
+      </Button>
       <a
         className="wl-button wl-button--default"
         href="/api/pricing-parameter-profiles/import-template"
@@ -175,7 +259,7 @@ export function PricingParameters({
         <Download size={16} aria-hidden="true" />
         <span>Download Template</span>
       </a>
-      <Button type="button" onClick={() => setModalOpen(true)} disabled={importing}>
+      <Button type="button" onClick={() => setImportModalOpen(true)} disabled={importing}>
         <Upload size={16} aria-hidden="true" />
         <span>Import XLSX</span>
       </Button>
@@ -206,8 +290,53 @@ export function PricingParameters({
           : detail}
       </MasterDetailPage>
       <Modal
-        open={modalOpen}
-        onOpenChange={setModalOpen}
+        open={manualModalOpen}
+        onOpenChange={setManualModalOpen}
+        title="New Pricing Params"
+        layoutKey="new-pricing-parameters"
+        defaultHeight={600}
+        minHeight={520}
+      >
+        <form className="wl-pricing-params__form" onSubmit={submitManual}>
+          <label>
+            Profile name
+            <input aria-label="Manual profile name" value={manualName} onChange={(event) => setManualName(event.target.value)} />
+          </label>
+          <DatePicker
+            label="Valuation date"
+            value={manualValuationDate}
+            onChange={(v) => setManualValuationDate(v)}
+          />
+          <label>
+            Trade ID
+            <input aria-label="Trade ID" value={manualSourceTradeId} onChange={(event) => setManualSourceTradeId(event.target.value)} />
+          </label>
+          <label>
+            Symbol
+            <input aria-label="Symbol" value={manualSymbol} onChange={(event) => setManualSymbol(event.target.value)} required />
+          </label>
+          <div className="wl-pricing-params__row-grid">
+            <label>
+              Rate
+              <input aria-label="Rate" type="number" step="any" value={manualRate} onChange={(event) => setManualRate(event.target.value)} />
+            </label>
+            <label>
+              Div yield
+              <input aria-label="Dividend yield" type="number" step="any" value={manualDividendYield} onChange={(event) => setManualDividendYield(event.target.value)} />
+            </label>
+            <label>
+              Vol
+              <input aria-label="Volatility" type="number" step="any" value={manualVolatility} onChange={(event) => setManualVolatility(event.target.value)} />
+            </label>
+          </div>
+          <div className="wl-pricing-params__form-actions">
+            <Button type="submit" variant="primary" disabled={!canSubmitManual}>Create</Button>
+          </div>
+        </form>
+      </Modal>
+      <Modal
+        open={importModalOpen}
+        onOpenChange={setImportModalOpen}
         title="Import Pricing Params"
         layoutKey="import-pricing-parameters"
       >

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, uploadForm } from '../api/client';
+import { api, createPricingParameterProfile, uploadForm } from '../api/client';
 import type { PageContextReporter, PricingParameterProfile } from '../types';
-import { PricingParameters, type PricingParameterFeedback } from './PricingParameters';
+import { PricingParameters, type ManualPricingParameterPayload, type PricingParameterFeedback } from './PricingParameters';
 
 type ImportPayload = {
   file: File;
@@ -21,10 +21,21 @@ function errorMessage(err: unknown): string {
     const detail = parsed?.detail;
     if (typeof detail === 'string') return detail;
     if (typeof detail?.detail === 'string') return detail.detail;
+    if (typeof detail?.error === 'string') return detail.error;
   } catch {
     // Use the raw message when the backend did not return JSON.
   }
   return message;
+}
+
+function optionalNumber(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Invalid number: ${value}`);
+  }
+  return parsed;
 }
 
 export function PricingParametersLive({ onPageContextChange }: Props) {
@@ -32,6 +43,7 @@ export function PricingParametersLive({ onPageContextChange }: Props) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<PricingParameterFeedback | null>(null);
   const profileLoadGeneration = useRef(0);
@@ -97,6 +109,33 @@ export function PricingParametersLive({ onPageContextChange }: Props) {
     }
   };
 
+  const onCreateManual = async (payload: ManualPricingParameterPayload) => {
+    setCreating(true);
+    setFeedback(null);
+    try {
+      const profile = await createPricingParameterProfile({
+        name: payload.name.trim() || null,
+        valuation_date: payload.valuationDate.trim() || null,
+        rows: [
+          {
+            source_trade_id: payload.sourceTradeId.trim() || null,
+            symbol: payload.symbol.trim(),
+            rate: optionalNumber(payload.rate),
+            dividend_yield: optionalNumber(payload.dividendYield),
+            volatility: optionalNumber(payload.volatility),
+          },
+        ],
+      });
+      setFeedback({ tone: 'success', message: `Created ${profile.summary?.row_count ?? profile.rows.length} row profile.` });
+      setSelectedId(profile.id);
+      await loadProfiles(profile.id);
+    } catch (err) {
+      setFeedback({ tone: 'error', message: `Could not create: ${errorMessage(err)}` });
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
     <PricingParameters
       profiles={profiles}
@@ -104,8 +143,10 @@ export function PricingParametersLive({ onPageContextChange }: Props) {
       loading={loading}
       error={error}
       importing={importing}
+      creating={creating}
       feedback={feedback}
       onSelectProfile={setSelectedId}
+      onCreateManual={onCreateManual}
       onImport={onImport}
       onPageContextChange={onPageContextChange}
     />

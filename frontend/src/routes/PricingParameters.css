@@ -524,6 +524,12 @@
   border-radius: 0;
 }
 
+.wl-pricing-params__row-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--gap-2);
+}
+
 .wl-pricing-params__form-actions {
   display: flex;
   justify-content: flex-end;
