@@ -164,7 +164,11 @@
 .wl-agent-desk__messages {
   border: 1px solid var(--ink);
   background: var(--paper);
-  min-height: 100%;
+  /* Fill the bounded slot exactly (not min-height, which would grow with
+     content) so the inner MessageList scroller — the sticky-scroll target —
+     becomes the element that actually scrolls. */
+  height: 100%;
+  min-height: 0;
   padding: var(--panel-padding);
   display: flex;
   flex-direction: column;

@@ -1,6 +1,10 @@
 .wl-conversation {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  /* Bound the single row to the container height so inner overflow:auto can
+     engage. Without an explicit track the implicit `auto` row grows to fit
+     content, overflowing `height` and pushing the whole page to scroll. */
+  grid-template-rows: minmax(0, 1fr);
   gap: var(--gap-3);
   align-items: stretch;
   height: 70vh;
@@ -11,10 +15,12 @@
 .wl-conversation--rail.wl-conversation--context {
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(260px, 320px);
 }
-.wl-conversation__rail { min-width: 0; overflow-y: auto; }
-.wl-conversation__chat { display: flex; flex-direction: column; min-width: 0; gap: var(--gap-2); }
+/* min-height:0 lets each column shrink below its content so its own
+   overflow-y:auto clips instead of pushing the grid (and page) taller. */
+.wl-conversation__rail { min-width: 0; min-height: 0; overflow-y: auto; }
+.wl-conversation__chat { display: flex; flex-direction: column; min-width: 0; min-height: 0; gap: var(--gap-2); }
 .wl-conversation__messages { flex: 1; min-height: 0; overflow-y: auto; }
-.wl-conversation__context { min-width: 0; overflow-y: auto; }
+.wl-conversation__context { min-width: 0; min-height: 0; overflow-y: auto; }
 @media (max-width: 900px) {
   .wl-conversation,
   .wl-conversation--rail,
