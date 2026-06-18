@@ -1,0 +1,21 @@
+.wl-panel { border: 1px solid var(--ink); background: var(--paper); display: flex; flex-direction: column; }
+.wl-panel__head {
+  background: var(--ink);
+  color: var(--paper);
+  padding: 6px var(--gap-3);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.wl-panel__title {
+  font-size: var(--type-h3-size);
+  font-weight: var(--type-h3-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.wl-panel__meta {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  opacity: 0.85;
+}
+.wl-panel__body { padding: var(--panel-padding); }

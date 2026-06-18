@@ -1,0 +1,169 @@
+.wl-workbench__results { display: flex; flex-direction: column; gap: var(--gap-3); min-width: 0; }
+
+/* ── Shared Workbench config-panel chrome ──
+   ScenarioTest and Backtest are the Workbench category: a config rail on the left,
+   results on the right. These primitives give both the same panel/section/run-list
+   look so the category reads as one family (was copy-pasted under two prefixes). */
+.wl-workbench__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-4);
+  min-width: 0;
+}
+
+.wl-workbench__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  min-width: 0;
+}
+
+.wl-workbench__section-title {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+  margin: 0;
+}
+
+.wl-workbench__section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--gap-3);
+}
+
+.wl-workbench__run-search {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+  min-width: 0;
+}
+
+.wl-workbench__run-search span {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}
+
+.wl-workbench__run-search input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  color: var(--ink);
+  padding: var(--input-padding-y) var(--input-padding-x);
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  border-radius: 0;
+}
+
+.wl-workbench__run-search input::placeholder {
+  color: var(--ink-2);
+}
+
+.wl-workbench__run-search input:focus {
+  outline: none;
+  border: 2px solid var(--ink);
+  padding: calc(var(--input-padding-y) - 1px) calc(var(--input-padding-x) - 1px);
+}
+
+/* ── Shared run-history list ── */
+.wl-workbench__run-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+
+.wl-workbench__run-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  cursor: pointer;
+  min-width: 0;
+}
+
+.wl-workbench__run-row:hover {
+  background: color-mix(in oklab, var(--paper) 54%, var(--paper-2));
+}
+
+.wl-workbench__run-row:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.wl-workbench__run-row--selected {
+  border-color: color-mix(in oklab, var(--info) 64%, var(--hairline-2));
+  background: color-mix(in oklab, var(--info) 7%, var(--paper));
+  box-shadow: inset var(--gap-1) 0 0 var(--info);
+}
+
+.wl-workbench__run-id {
+  font-weight: 600;
+  font-family: var(--font-numeric);
+  white-space: nowrap;
+}
+
+.wl-workbench__run-status {
+  justify-self: start;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--hairline);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: var(--gap-1) var(--gap-2);
+  border-radius: 0;
+}
+
+.wl-workbench__run-status--completed {
+  color: var(--pos);
+  background: color-mix(in oklab, var(--pos) 10%, var(--paper));
+  border-color: color-mix(in oklab, var(--pos) 45%, var(--hairline));
+}
+
+.wl-workbench__run-status--running,
+.wl-workbench__run-status--queued {
+  color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 10%, var(--paper));
+  border-color: color-mix(in oklab, var(--warn) 45%, var(--hairline));
+}
+
+.wl-workbench__run-status--failed,
+.wl-workbench__run-status--empty {
+  color: var(--neg);
+  background: color-mix(in oklab, var(--neg) 9%, var(--paper));
+  border-color: color-mix(in oklab, var(--neg) 45%, var(--hairline));
+}
+
+.wl-workbench__run-date {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+
+@media (max-width: 640px) {
+  .wl-workbench__run-row {
+    grid-template-columns: 1fr;
+  }
+}

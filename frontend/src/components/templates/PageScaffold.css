@@ -1,0 +1,7 @@
+.wl-scaffold { display: flex; flex-direction: column; }
+.wl-scaffold__feedback {
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  margin-bottom: var(--gap-2);
+}
+.wl-scaffold__body { display: flex; flex-direction: column; gap: var(--gap-3); }

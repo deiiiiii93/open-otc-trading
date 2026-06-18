@@ -1,0 +1,19 @@
+/* HeaderControls — wl-header-controls
+   One row of filter pickers + action buttons at a single control height. The
+   height tracks a button's natural height (padding + line-box), so inline Selects
+   and Buttons always align. Wraps on narrow viewports. Token-only. */
+.wl-header-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  flex-wrap: wrap;
+}
+.wl-header-controls--end { justify-content: flex-end; }
+.wl-header-controls--start { justify-content: flex-start; }
+
+/* Direct children only, so nested controls (e.g. a button inside a dropdown) are
+   not resized. Inline Selects and Buttons are the row's interactive units. */
+.wl-header-controls > .wl-button,
+.wl-header-controls > .wl-select--inline {
+  height: var(--control-height-action);
+}

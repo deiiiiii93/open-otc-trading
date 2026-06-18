@@ -1,0 +1,9 @@
+.wl-skeleton {
+  background: linear-gradient(90deg, var(--paper-3) 0%, var(--paper-2) 50%, var(--paper-3) 100%);
+  background-size: 200% 100%;
+  animation: wl-shimmer var(--motion-shimmer) linear infinite;
+  width: 100%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wl-skeleton { animation: none; background: var(--paper-2); }
+}

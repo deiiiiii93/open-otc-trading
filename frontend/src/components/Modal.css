@@ -1,0 +1,64 @@
+.wl-modal__overlay {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in oklab, var(--ink) 42%, transparent);
+  animation: wl-fade-in var(--motion-fade) linear;
+}
+.wl-modal__content {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(560px, 90vw);
+  max-height: 80vh;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  box-shadow: 0 12px 32px color-mix(in oklab, var(--ink) 18%, transparent);
+  display: flex;
+  flex-direction: column;
+  animation: wl-fade-in var(--motion-slide) var(--motion-curve);
+}
+.wl-modal__content.wl-window-frame--active {
+  overflow: hidden;
+}
+.wl-modal__head {
+  background: var(--ink);
+  color: var(--paper);
+  padding: var(--gap-2) var(--gap-3);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  user-select: none;
+  touch-action: none;
+}
+.wl-modal__head--draggable {
+  cursor: move;
+}
+.wl-modal__title {
+  font-size: var(--type-h3-size);
+  font-weight: var(--type-h3-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+.wl-modal__close {
+  font-family: var(--font-numeric);
+  background: none;
+  border: 0;
+  color: var(--paper);
+  font-size: 18px;
+  cursor: pointer;
+}
+.wl-modal__description {
+  flex: 0 0 auto;
+  padding: var(--gap-3);
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+  border-bottom: 1px solid var(--paper-3);
+}
+.wl-modal__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--panel-padding);
+  overflow-y: auto;
+}

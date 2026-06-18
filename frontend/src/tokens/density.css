@@ -1,0 +1,44 @@
+:root {
+  --row-height: 36px;
+  --control-height: 36px;
+  /* A button's natural height (padding + line-box). The shared height for a row
+     of header/filter controls so pickers and buttons always agree. Tracks
+     --button-padding-y, so it shrinks under compact automatically. */
+  --control-height-action: calc(var(--button-padding-y) * 2 + 1.5em + 2px);
+  /* Width of the left accent bar on a selectable rail row (RailItem) and the
+     active Instruments tab — one shared value so every rail aligns. */
+  --rail-accent-width: 3px;
+  --panel-padding: 12px;
+  --panel-padding-tight: 8px;
+  --tile-padding: 12px 14px;
+  --button-padding-y: 9px;
+  --button-padding-x: 18px;
+  --input-padding-y: 8px;
+  --input-padding-x: 11px;
+  --gap-1: 4px;
+  --gap-2: 8px;
+  --gap-3: 12px;
+  --gap-4: 16px;
+  --gap-5: 24px;
+  --gap-6: 32px;
+  --rail-width: 220px;
+}
+
+[data-density="compact"] {
+  --row-height: 26px;
+  --control-height: 28px;
+  --panel-padding: 8px;
+  --panel-padding-tight: 6px;
+  --tile-padding: 8px 10px;
+  --button-padding-y: 6px;
+  --button-padding-x: 12px;
+  --input-padding-y: 5px;
+  --input-padding-x: 8px;
+  --gap-1: 2px;
+  --gap-2: 4px;
+  --gap-3: 8px;
+  --gap-4: 12px;
+  --gap-5: 16px;
+  --gap-6: 24px;
+  --rail-width: 200px;
+}

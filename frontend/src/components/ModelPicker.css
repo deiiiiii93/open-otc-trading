@@ -1,0 +1,170 @@
+.wl-model-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  --model-picker-action-size: calc(var(--button-padding-y) * 2 + var(--type-body-size) * 1.5 + 2px);
+}
+.wl-model-picker__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-2);
+  max-width: min(260px, 52vw);
+  height: var(--model-picker-action-size);
+  min-height: var(--model-picker-action-size);
+  padding: var(--button-padding-y) var(--button-padding-x);
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.wl-model-picker__trigger-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wl-model-picker__trigger:focus-visible,
+.wl-model-picker__refresh:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.wl-model-picker__trigger:hover,
+.wl-model-picker__refresh:hover:not(:disabled) {
+  background: var(--paper-2);
+}
+.wl-model-picker__trigger[disabled] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.wl-model-picker__refresh {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  font-weight: 600;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+.wl-model-picker__refresh:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+.wl-model-picker__panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  width: clamp(360px, 42vw, 520px);
+  max-width: calc(100vw - 48px);
+  max-height: min(420px, calc(100vh - 128px));
+  overflow-y: auto;
+  z-index: 1000;
+  box-sizing: border-box;
+  background: var(--paper); border: 1px solid var(--ink); border-radius: 4px;
+  padding: 6px 0; box-shadow: 0 6px 20px color-mix(in oklab, var(--ink) 18%, transparent);
+}
+.wl-model-picker--compact .wl-model-picker__panel {
+  bottom: calc(100% + 6px);
+  right: 0;
+  left: auto;
+  width: min(340px, calc(100vw - 32px));
+  max-width: min(340px, calc(100vw - 32px));
+  max-height: min(240px, calc(100vh - 180px));
+  padding: 4px 0;
+}
+.wl-model-picker__panel-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--hairline);
+}
+.wl-model-picker__panel-head > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wl-model-picker__panel-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.wl-model-picker__panel-meta,
+.wl-model-picker__panel-error {
+  font-size: 10px;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wl-model-picker__panel-error {
+  color: var(--neg);
+}
+.wl-model-picker__group-label {
+  display: block; padding: 4px 12px;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.06em;
+  color: var(--ink-2); text-transform: uppercase;
+}
+.wl-model-picker__group--unhealthy { opacity: 0.55; }
+.wl-model-picker__row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 12px; cursor: pointer;
+  font-size: 12px;
+  min-width: 0;
+}
+.wl-model-picker--compact .wl-model-picker__row {
+  padding: 7px 10px;
+  min-height: 32px;
+}
+.wl-model-picker__row:hover,
+.wl-model-picker__row.is-focused { background: var(--paper-2); }
+.wl-model-picker__row[aria-disabled="true"] { cursor: not-allowed; }
+.wl-model-picker__row[aria-disabled="true"]:hover { background: transparent; }
+.wl-model-picker__row.is-active { background: var(--paper-3); }
+.wl-model-picker__dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  flex-shrink: 0;
+}
+.wl-model-picker__row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wl-model-picker__tag {
+  flex: 0 0 auto;
+  font-size: 9px; padding: 1px 5px; background: var(--paper-3); border-radius: 9px;
+  color: var(--ink-2);
+}
+.wl-model-picker--compact .wl-model-picker__tag {
+  display: none;
+}
+
+.wl-model-picker--compact .wl-model-picker__panel-head {
+  padding: 7px 10px;
+}

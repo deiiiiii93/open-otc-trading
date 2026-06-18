@@ -1,0 +1,53 @@
+/* RailItem — wl-rail__item
+   A selectable row in a RailList. The left accent bar reserves space always; it
+   shows the `accent` token color when set (category stripe), and the active bar
+   otherwise. Adjacent items are hairline-separated. Token-only. */
+.wl-rail__item {
+  display: flex;
+  gap: var(--gap-2);
+  width: 100%;
+  text-align: left;
+  padding: var(--gap-3);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  cursor: pointer;
+  border: none;
+  border-left: var(--rail-accent-width) solid var(--rail-item-accent, transparent);
+  border-radius: 0;
+  transition: background var(--motion-fade) linear;
+}
+/* Row axis: 'stack' = multi-line cards (Hedging, PricingParams);
+   'row' = single line, label grows, trailing meta pushes right. */
+.wl-rail__item--stack { flex-direction: column; gap: var(--gap-1); }
+.wl-rail__item--row { flex-direction: row; align-items: center; }
+
+.wl-rail__item + .wl-rail__item {
+  border-top: 1px solid var(--hairline);
+}
+.wl-rail__item:hover {
+  background: var(--paper-3);
+}
+.wl-rail__item:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.wl-rail__item.is-active {
+  background: var(--paper-3);
+  border-left-color: var(--rail-item-accent, var(--ink));
+}
+
+/* Shared rail-row typography — every rail's primary label and secondary/stat line
+   read the same: a semibold UI title over a small numeric muted meta line. */
+.wl-rail__title {
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  font-weight: var(--type-h3-weight);
+  color: var(--ink);
+}
+.wl-rail__meta {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}

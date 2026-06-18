@@ -1,0 +1,16 @@
+.wl-chart-asset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+.wl-chart-asset__title {
+  font-family: var(--font-numeric);
+  font-size: var(--type-caps-size);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-2);
+}
+.wl-chart-asset__canvas {
+  width: 100%;
+  height: 200px;
+}

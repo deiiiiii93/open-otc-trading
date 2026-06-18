@@ -1,0 +1,390 @@
+/* Allowed Hedges tab — Instruments page */
+
+.wl-ah {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+
+/* ── Feedback banner ── */
+.wl-ah__feedback {
+  border: 1px solid var(--hairline);
+  border-left: 4px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  padding: var(--gap-2) var(--gap-3);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  line-height: 1.4;
+}
+
+.wl-ah__feedback.is-success {
+  border-left-color: var(--pos);
+  color: var(--pos);
+}
+
+.wl-ah__feedback.is-error {
+  border-left-color: var(--neg);
+  color: var(--neg);
+}
+
+/* ── Two-column layout: underlying rail + tables ── */
+.wl-ah__layout {
+  display: flex;
+  gap: var(--gap-3);
+  align-items: flex-start;
+}
+
+/* ── Left rail ── */
+.wl-ah__rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  width: 220px;
+  min-width: 220px;
+  flex-shrink: 0;
+}
+
+.wl-ah__rail-empty {
+  margin: 0;
+  padding: var(--gap-4) var(--gap-3);
+  border: 1px dashed var(--hairline-2);
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  text-align: center;
+}
+
+.wl-ah__rail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: var(--gap-2);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: 0;
+  text-align: left;
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.wl-ah__rail-item:hover {
+  background: var(--paper-2);
+  border-color: var(--hairline-2);
+}
+
+.wl-ah__rail-item--warn {
+  border-color: color-mix(in srgb, var(--warn) 60%, var(--hairline));
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+
+.wl-ah__rail-item--warn .wl-ah__rail-meta {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.wl-ah__rail-item.is-active {
+  background: color-mix(in srgb, var(--pos) 8%, var(--paper));
+  border-color: var(--pos);
+  box-shadow: inset 3px 0 0 var(--pos);
+}
+
+.wl-ah__rail-symbol {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-ah__rail-meta {
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: 11px;
+}
+
+/* ── Right pane ── */
+.wl-ah__right {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-4);
+}
+
+.wl-ah__map-section,
+.wl-ah__candidates-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+
+.wl-ah__map-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  min-height: 28px;
+}
+
+.wl-ah__section-title {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  font: 600 var(--type-caps-size) var(--font-numeric);
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.wl-ah__entry-count {
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--paper-2);
+  color: var(--ink-2);
+  padding: 1px 7px;
+  font: 500 11px var(--font-numeric);
+  letter-spacing: 0;
+}
+
+/* ── Tables (map + candidates) ── */
+.wl-ah__table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+}
+
+.wl-ah__table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font: 500 var(--type-small-size) var(--font-numeric);
+}
+
+.wl-ah__table th,
+.wl-ah__table td {
+  padding: 8px var(--gap-3);
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.wl-ah__table th {
+  background: var(--ink);
+  color: var(--paper);
+  font: var(--type-caps-weight) var(--type-caps-size) var(--font-ui);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.wl-ah__table tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Contract cell: code over exchange */
+.wl-ah__code {
+  display: block;
+  font-weight: 700;
+}
+
+.wl-ah__table small {
+  display: block;
+  color: var(--ink-2);
+  font-size: 11px;
+}
+
+/* ── Quote cell + age badge ── */
+.wl-ah__quote {
+  white-space: nowrap;
+}
+
+.wl-ah__quote-empty {
+  color: var(--ink-2);
+}
+
+.wl-ah__age-badge {
+  display: inline-flex;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 1px 6px;
+  font: 500 10px var(--font-numeric);
+}
+
+.wl-ah__age-badge.is-ok {
+  color: var(--pos);
+  border-color: color-mix(in srgb, var(--pos) 40%, transparent);
+  background: color-mix(in srgb, var(--pos) 8%, transparent);
+}
+
+.wl-ah__age-badge.is-stale {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+}
+
+.wl-ah__age-badge.is-warn {
+  color: var(--neg);
+  border-color: color-mix(in srgb, var(--neg) 40%, transparent);
+  background: color-mix(in srgb, var(--neg) 8%, transparent);
+}
+
+/* ── Reconcile status badge (active | stale) ── */
+.wl-ah__reconcile {
+  display: inline-flex;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.wl-ah__reconcile.is-active {
+  color: var(--pos);
+  border-color: color-mix(in srgb, var(--pos) 50%, transparent);
+}
+
+.wl-ah__reconcile.is-stale {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+}
+
+/* ── Candidate instrument status badge (mirrors Registry) ── */
+.wl-ah__status {
+  display: inline-flex;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.wl-ah__status.is-active {
+  color: var(--pos);
+  border-color: color-mix(in srgb, var(--pos) 50%, transparent);
+}
+
+.wl-ah__status.is-draft {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+}
+
+.wl-ah__status.is-inactive,
+.wl-ah__status.is-expired {
+  color: var(--ink-2);
+}
+
+.wl-ah__already-marked {
+  color: var(--ink-2);
+  font: 500 11px var(--font-ui);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* ── Candidate filters toolbar ── */
+.wl-ah__candidate-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  flex-wrap: wrap;
+}
+
+.wl-ah__filter-label {
+  display: grid;
+  grid-template-columns: max-content minmax(90px, 150px);
+  align-items: stretch;
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.wl-ah__filter-label span {
+  display: flex;
+  align-items: center;
+  font-family: var(--font-ui);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+  border-right: 1px solid var(--hairline);
+  background: var(--paper-2);
+  padding: var(--input-padding-y) var(--gap-2);
+  white-space: nowrap;
+}
+
+.wl-ah__filter-label select {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  padding: var(--input-padding-y) var(--input-padding-x);
+  border-radius: 0;
+}
+
+.wl-ah__strike-input {
+  width: 110px;
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  padding: var(--input-padding-y) var(--input-padding-x);
+  border-radius: 0;
+}
+
+.wl-ah__strike-input::placeholder {
+  color: var(--ink-2);
+}
+
+.wl-ah__search-wrap {
+  flex: 1 1 200px;
+  min-width: min(200px, 100%);
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  border: 1px solid var(--hairline-2);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  padding: var(--input-padding-y) var(--gap-2);
+}
+
+.wl-ah__search-wrap input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+}
+
+.wl-ah__search-wrap input::placeholder {
+  color: var(--ink-2);
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .wl-ah__layout {
+    flex-direction: column;
+  }
+
+  .wl-ah__rail {
+    width: 100%;
+    min-width: 0;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .wl-ah__rail-item {
+    width: auto;
+    flex: 1 1 160px;
+  }
+}

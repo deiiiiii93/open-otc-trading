@@ -1,0 +1,6 @@
+.wl-pchips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-1);
+  margin-top: var(--gap-1);
+}

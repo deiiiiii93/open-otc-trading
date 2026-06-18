@@ -1,0 +1,566 @@
+.wl-try-solve__actions {
+  --try-solve-action-height: calc(var(--button-padding-y) * 2 + 1.5em + 2px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: var(--gap-2);
+  flex-wrap: wrap;
+}
+
+.wl-try-solve__actions .wl-button,
+.wl-try-solve__solve .wl-button {
+  min-height: var(--try-solve-action-height);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-2);
+  white-space: nowrap;
+}
+
+.wl-try-solve__file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.wl-try-solve__message {
+  margin-bottom: var(--gap-3);
+  border: 1px solid var(--pos);
+  color: var(--pos);
+  padding: var(--gap-2) var(--gap-3);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+}
+
+.wl-try-solve__message--error {
+  border-color: var(--neg);
+  color: var(--neg);
+}
+
+.wl-try-solve__workspace {
+  display: grid;
+  grid-template-columns: minmax(300px, var(--try-solve-editor-panel, 47%)) var(--gap-3) minmax(300px, 1fr);
+  align-items: start;
+  min-width: 0;
+}
+
+.wl-try-solve__panel-resizer {
+  align-self: stretch;
+  width: var(--gap-3);
+  min-height: 100%;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  position: relative;
+}
+
+.wl-try-solve__panel-resizer::before {
+  content: '';
+  position: absolute;
+  inset: 0 calc(50% - 1px);
+  background: var(--hairline);
+}
+
+.wl-try-solve__panel-resizer:hover::before,
+.wl-try-solve__panel-resizer:focus-visible::before {
+  background: var(--ink);
+}
+
+.wl-try-solve__panel-resizer:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 0;
+}
+
+/* ─── Queue ────────────────────────────────────────── */
+
+.wl-try-solve__queue {
+  display: flex;
+  flex-direction: column;
+}
+
+.wl-try-solve__queue-search {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  border-bottom: 1px solid var(--paper-3);
+  background: var(--paper);
+  color: var(--ink-2);
+}
+
+.wl-try-solve__queue-search input {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--hairline-2);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  padding: var(--input-padding-y) var(--input-padding-x);
+}
+
+.wl-try-solve__queue-search input::placeholder {
+  color: var(--ink-2);
+}
+
+.wl-try-solve__queue-search input:focus {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.wl-try-solve__row {
+  width: 100%;
+  border-bottom: 1px solid var(--paper-3);
+  background: var(--paper);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+}
+
+.wl-try-solve__row-select {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  padding: var(--gap-3);
+  display: grid;
+  gap: var(--gap-2);
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+
+.wl-try-solve__row:hover {
+  background: var(--paper-2);
+}
+
+.wl-try-solve__row-delete {
+  width: 36px;
+  border: 0;
+  border-left: 1px solid var(--paper-3);
+  background: transparent;
+  color: var(--ink-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.wl-try-solve__row-delete:hover:not(:disabled) {
+  background: var(--paper-3);
+  color: var(--neg);
+}
+
+.wl-try-solve__row-delete:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.wl-try-solve__row--active {
+  background: var(--paper-2);
+  box-shadow: inset 3px 0 0 var(--ink);
+}
+
+.wl-try-solve__row-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--gap-2);
+  min-width: 0;
+}
+
+.wl-try-solve__row-id {
+  font-family: var(--font-numeric);
+  font-size: var(--type-body-size);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.wl-try-solve__row-product {
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-try-solve__row-meta {
+  color: var(--ink-2);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+}
+
+/* ─── Product Editor Form ─────────────────────────── */
+
+.wl-try-solve__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+
+.wl-try-solve__field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--paper-3);
+  border: 1px solid var(--paper-3);
+}
+
+.wl-try-solve__field-group:last-child {
+  margin-bottom: 0;
+}
+
+.wl-try-solve__field-group-title {
+  padding: var(--gap-1) var(--gap-2);
+  background: var(--paper-2);
+  border-bottom: 1px solid var(--paper-3);
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.wl-try-solve__field-group > .wl-select,
+.wl-try-solve__field-group > .wl-datepicker {
+  background: var(--paper);
+}
+
+.wl-try-solve__field {
+  --try-solve-field-height: calc(var(--input-padding-y) * 2 + 1.5em + 2px);
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(100px, 0.4fr) minmax(0, 1fr);
+  gap: 0;
+  align-items: stretch;
+  background: var(--paper);
+}
+
+.wl-try-solve__field-label,
+.wl-try-solve__field > span,
+.wl-try-solve__field.wl-select .wl-field__label,
+.wl-try-solve__field.wl-datepicker .wl-field__label {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: var(--try-solve-field-height);
+  padding: var(--gap-2);
+  border-right: 1px solid var(--paper-3);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wl-try-solve__field-label {
+  gap: 3px;
+}
+
+.wl-try-solve__field-label em {
+  color: var(--neg);
+  font-style: normal;
+}
+
+.wl-try-solve__field-control {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+}
+
+.wl-try-solve__field-control .wl-select,
+.wl-try-solve__field-control .wl-datepicker {
+  width: 100%;
+  min-width: 0;
+}
+
+.wl-try-solve__field input,
+.wl-try-solve__field select {
+  min-width: 0;
+  width: 100%;
+  min-height: var(--try-solve-field-height);
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-numeric);
+  font-size: var(--type-body-size);
+  padding: var(--input-padding-y) var(--input-padding-x);
+  border-radius: 0;
+}
+
+.wl-try-solve__field.wl-select .wl-select__trigger,
+.wl-try-solve__field.wl-datepicker .wl-datepicker__trigger-wrap,
+.wl-try-solve__field.wl-datepicker .wl-datepicker__input,
+.wl-try-solve__field.wl-datepicker .wl-datepicker__cal-btn {
+  min-height: var(--try-solve-field-height);
+}
+
+.wl-try-solve__field-note {
+  border: 1px solid var(--hairline);
+  border-top: 0;
+  padding: 3px var(--input-padding-x) var(--gap-1);
+  color: var(--ink-2);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  line-height: 1.3;
+}
+
+.wl-try-solve__field input[type="date"]:invalid {
+  background: var(--paper-2);
+}
+
+.wl-try-solve__field-input-with-unit {
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  align-items: stretch;
+}
+
+.wl-try-solve__field-input-with-unit input {
+  width: 100%;
+  border-right: 1px solid var(--paper-3);
+}
+
+.wl-try-solve__field-input-with-unit span {
+  padding: var(--input-padding-y) var(--input-padding-x);
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink-2);
+  background: var(--paper-2);
+  font-family: var(--font-numeric);
+  font-size: var(--type-body-size);
+}
+
+.wl-try-solve__field:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: -1px;
+  z-index: 1;
+}
+
+/* ─── Solve Panel ─────────────────────────────────── */
+
+.wl-try-solve__solve {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+
+.wl-try-solve__solve-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.wl-try-solve__solve-section-title {
+  padding: var(--gap-1) var(--gap-2);
+  background: var(--paper-2);
+  border: 1px solid var(--paper-3);
+  border-bottom: 0;
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.wl-try-solve__solve-section > .wl-try-solve__field {
+  border-left: 1px solid var(--paper-3);
+  border-right: 1px solid var(--paper-3);
+}
+
+.wl-try-solve__solve-section > .wl-try-solve__field:last-child {
+  border-bottom: 1px solid var(--paper-3);
+}
+
+.wl-try-solve__quote-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--paper-3);
+}
+
+.wl-try-solve__quote-grid .wl-try-solve__field {
+  border: 0;
+}
+
+.wl-try-solve__quote-grid .wl-try-solve__field:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.wl-try-solve__market-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  border: 1px solid var(--paper-3);
+}
+
+.wl-try-solve__market-grid .wl-try-solve__field {
+  border: 0;
+}
+
+.wl-try-solve__market-grid .wl-try-solve__field:first-child {
+  grid-column: 1 / -1;
+}
+
+.wl-try-solve__solve-grid,
+.wl-try-solve__result {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--paper-3);
+}
+
+.wl-try-solve__solve-grid .wl-try-solve__metric,
+.wl-try-solve__result .wl-try-solve__metric {
+  border: 0;
+}
+
+.wl-try-solve__metric {
+  min-width: 0;
+  background: var(--paper);
+  padding: var(--gap-2);
+  border: 1px solid var(--ink);
+}
+
+.wl-try-solve__metric span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.wl-try-solve__metric strong {
+  display: block;
+  color: var(--ink);
+  font-family: var(--font-numeric);
+  font-size: var(--type-body-size);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.wl-try-solve__status-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--paper-3);
+}
+
+.wl-try-solve__step {
+  min-width: 0;
+  padding: var(--gap-2);
+  border-right: 1px solid var(--paper-3);
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+  font-family: var(--font-ui);
+  text-transform: uppercase;
+}
+
+.wl-try-solve__step:last-child {
+  border-right: 0;
+}
+
+.wl-try-solve__step--done {
+  color: var(--pos);
+}
+
+.wl-try-solve__step--pending {
+  color: var(--warn);
+}
+
+.wl-try-solve__diagnostics {
+  border: 1px solid var(--paper-3);
+  padding: var(--gap-2);
+  color: var(--ink);
+  font-size: var(--type-small-size);
+}
+
+.wl-try-solve__diagnostics-title {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  margin-bottom: var(--gap-2);
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+}
+
+.wl-try-solve__diagnostics ul {
+  margin: 0;
+  padding-left: var(--gap-4);
+}
+
+.wl-try-solve__diagnostics p {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.wl-try-solve__solve-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--gap-2);
+  flex-wrap: wrap;
+}
+
+
+/* ─── Responsive ──────────────────────────────────── */
+
+@media (max-width: 1180px) {
+  .wl-try-solve__workspace {
+    grid-template-columns: 1fr;
+    gap: var(--gap-3);
+  }
+
+  .wl-try-solve__panel-resizer {
+    display: none;
+  }
+
+  .wl-try-solve__workspace > .wl-panel:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 780px) {
+  .wl-try-solve__workspace,
+  .wl-try-solve__quote-grid,
+  .wl-try-solve__market-grid,
+  .wl-try-solve__solve-grid,
+  .wl-try-solve__result,
+  .wl-try-solve__status-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .wl-try-solve__field {
+    grid-template-columns: 1fr;
+  }
+
+  .wl-try-solve__field-label,
+  .wl-try-solve__field.wl-select .wl-field__label,
+  .wl-try-solve__field.wl-datepicker .wl-field__label {
+    border-right: 0;
+    border-bottom: 1px solid var(--paper-3);
+  }
+
+  .wl-try-solve__market-grid .wl-try-solve__field:first-child {
+    grid-column: auto;
+  }
+}

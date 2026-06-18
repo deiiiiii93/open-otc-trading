@@ -1,0 +1,50 @@
+.wl-report-card {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: var(--gap-3);
+  padding: var(--gap-2) 0;
+}
+.wl-report-card__date {
+  font-family: var(--font-numeric);
+  text-align: right;
+  color: var(--ink-2);
+  padding-top: 2px;
+}
+.wl-report-card__date-day {
+  font-size: var(--type-num-m-size);
+  font-weight: 700;
+  color: var(--ink);
+}
+.wl-report-card__date-time {
+  font-size: var(--type-small-size);
+  margin-top: 2px;
+}
+.wl-report-card__body {
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  padding: var(--gap-2) var(--gap-3);
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+  font-family: var(--font-ui);
+  color: var(--ink);
+}
+.wl-report-card__body:hover { background: var(--paper-2); }
+.wl-report-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--gap-2);
+}
+.wl-report-card__title {
+  font-size: var(--type-body-size);
+  font-weight: 600;
+}
+.wl-report-card__meta {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+.wl-report-card__id { font-weight: 700; }

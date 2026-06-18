@@ -1,0 +1,31 @@
+@import '@fontsource/inter-tight/400.css';
+@import '@fontsource/inter-tight/500.css';
+@import '@fontsource/inter-tight/600.css';
+@import '@fontsource/inter-tight/700.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+@import '@fontsource/jetbrains-mono/700.css';
+
+:root {
+  --font-ui: "Inter Tight", "Inter", system-ui, -apple-system, sans-serif;
+  --font-numeric: "JetBrains Mono", ui-monospace, monospace;
+
+  --type-h1-size: 28px;
+  --type-h1-weight: 700;
+  --type-h2-size: 18px;
+  --type-h2-weight: 650;
+  --type-h3-size: 14px;
+  --type-h3-weight: 600;
+  --type-body-size: 14px;
+  --type-body-weight: 400;
+  --type-small-size: 12px;
+  --type-small-weight: 500;
+  --type-caps-size: 10px;
+  --type-caps-weight: 600;
+  --type-num-l-size: 20px;
+  --type-num-l-weight: 700;
+  --type-num-m-size: 14px;
+  --type-num-m-weight: 500;
+  --type-num-s-size: 11px;
+  --type-num-s-weight: 500;
+}

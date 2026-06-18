@@ -1,0 +1,70 @@
+.wl-window-resize {
+  position: absolute;
+  z-index: 2;
+  touch-action: none;
+}
+
+.wl-window-resize--n,
+.wl-window-resize--s {
+  left: 10px;
+  right: 10px;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.wl-window-resize--n { top: -4px; }
+.wl-window-resize--s { bottom: -4px; }
+
+.wl-window-resize--e,
+.wl-window-resize--w {
+  top: 10px;
+  bottom: 10px;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.wl-window-resize--e { right: -4px; }
+.wl-window-resize--w { left: -4px; }
+
+.wl-window-resize--ne,
+.wl-window-resize--se,
+.wl-window-resize--sw,
+.wl-window-resize--nw {
+  width: 16px;
+  height: 16px;
+}
+
+.wl-window-resize--ne {
+  top: -4px;
+  right: -4px;
+  cursor: nesw-resize;
+}
+
+.wl-window-resize--se {
+  right: -4px;
+  bottom: -4px;
+  cursor: nwse-resize;
+}
+
+.wl-window-resize--sw {
+  left: -4px;
+  bottom: -4px;
+  cursor: nesw-resize;
+}
+
+.wl-window-resize--nw {
+  top: -4px;
+  left: -4px;
+  cursor: nwse-resize;
+}
+
+.wl-window-resize--se::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid color-mix(in oklab, var(--ink) 64%, transparent);
+  border-bottom: 2px solid color-mix(in oklab, var(--ink) 64%, transparent);
+}

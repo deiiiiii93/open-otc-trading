@@ -1,0 +1,11 @@
+.wl-metric-row {
+  display: grid;
+  grid-template-columns: repeat(var(--metric-cols, 4), minmax(0, 1fr));
+  gap: var(--gap-3);
+}
+@media (max-width: 900px) {
+  .wl-metric-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .wl-metric-row { grid-template-columns: 1fr; }
+}

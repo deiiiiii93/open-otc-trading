@@ -1,0 +1,8 @@
+.wl-timeline {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--paper-3);
+  padding-left: var(--gap-3);
+  margin-left: 56px;
+}
+.wl-timeline > * { margin-left: -56px; }

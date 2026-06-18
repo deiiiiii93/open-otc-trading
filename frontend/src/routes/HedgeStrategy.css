@@ -1,0 +1,299 @@
+/* Hedge Strategy panel — mirrors the Allowed-Instruments tab's token-based look. */
+
+.hedge-strategy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  min-width: 0;
+}
+
+/* ── top bar: portfolio / strategy selects + risk-run banner ── */
+
+.hedge-strategy__bar {
+  --hedge-strategy-action-height: calc(var(--button-padding-y) * 2 + 1.5em + 2px);
+  display: grid;
+  grid-template-columns: minmax(120px, 0.7fr) minmax(260px, 1.4fr) minmax(150px, 0.9fr) minmax(240px, auto);
+  gap: var(--gap-2);
+  align-items: stretch;
+  border-bottom: 1px solid var(--hairline);
+  padding-bottom: var(--gap-3);
+}
+
+.hedge-strategy__select {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: stretch;
+  min-width: 0;
+  height: var(--hedge-strategy-action-height);
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+}
+
+.hedge-strategy__select--profile {
+  min-width: 0;
+  max-width: none;
+}
+
+.hedge-strategy__label {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.hedge-strategy__select .hedge-strategy__label {
+  border-right: 1px solid var(--hairline);
+  background: var(--paper-2);
+  padding: 0 var(--gap-2);
+}
+
+.hedge-strategy__input {
+  min-width: 0;
+  padding: var(--input-padding-y) var(--input-padding-x);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 0;
+  cursor: pointer;
+}
+.hedge-strategy__select .hedge-strategy__input {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.hedge-strategy__input:focus-visible,
+.hedge-strategy__select:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.hedge-strategy__run {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-2);
+  justify-content: flex-end;
+  min-width: 0;
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+.hedge-strategy__run .wl-button {
+  height: var(--hedge-strategy-action-height);
+  white-space: nowrap;
+}
+
+.hedge-strategy__run-date {
+  font-family: var(--font-numeric);
+  color: var(--ink);
+}
+
+/* ── KPI strip: exposure → residual tiles (grid owned by MetricRow) ── */
+
+/* Greek glyphs are pre-cased; uppercase transform would corrupt ν → Ν. */
+.hedge-strategy__kpis .wl-tile__label { text-transform: none; }
+.hedge-strategy__kpis .wl-tile {
+  border-color: var(--hairline-2);
+  background: linear-gradient(180deg, var(--paper), var(--paper-2));
+}
+
+/* ── bands ── */
+
+.hedge-strategy__bands {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  flex-wrap: wrap;
+}
+
+.hedge-strategy__band {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-1);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+  padding: 3px 8px;
+}
+
+.hedge-strategy__band .hedge-strategy__input { width: 96px; font-family: var(--font-numeric); }
+
+.hedge-strategy__bands--editing {
+  background: var(--paper-2);
+  border: 1px solid var(--hairline);
+  padding: var(--gap-2) var(--gap-3);
+}
+
+/* ── legs table — matches .hedging-table ── */
+
+.hedge-strategy__legs {
+  width: 100%;
+  border-collapse: collapse;
+  font: 500 var(--type-small-size) var(--font-numeric);
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+}
+
+.hedge-strategy__legs th,
+.hedge-strategy__legs td {
+  padding: var(--gap-2) var(--gap-3);
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.hedge-strategy__legs th {
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font: var(--type-caps-weight) var(--type-caps-size) var(--font-ui);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hedge-strategy__legs th.num,
+.hedge-strategy__legs td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.hedge-strategy__legs tr:last-child td { border-bottom: 0; }
+
+.hedge-strategy__legs .hedge-strategy__input { width: 100%; }
+
+/* ── booking result banner ── */
+
+.hedge-strategy__banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gap-2);
+  border: 1px solid var(--hairline);
+  padding: var(--gap-2) var(--gap-3);
+  font-size: var(--type-small-size);
+}
+
+.hedge-strategy__banner--ok { border-left: 4px solid var(--pos); color: var(--ink); }
+.hedge-strategy__banner--err { border-left: 4px solid var(--neg); color: var(--neg); }
+
+.hedge-strategy__banner-body { flex: 1; display: grid; gap: var(--gap-1); }
+.hedge-strategy__banner-body p { margin: 0; }
+.hedge-strategy__banner--ok b { color: var(--pos); }
+
+.hedge-strategy__banner-legs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-numeric);
+}
+
+.hedge-strategy__banner-detail { font-family: var(--font-numeric); }
+
+/* ── messages + actions ── */
+
+.hedge-strategy__infeasible { color: var(--neg); font-size: var(--type-small-size); }
+.hedge-strategy__infeasible,
+.hedge-strategy__diagnostics,
+.hedge-strategy__warnings,
+.hedge-strategy__note,
+.hedge-strategy__warn {
+  margin: 0;
+}
+
+.hedge-strategy__diagnostics,
+.hedge-strategy__warnings {
+  display: grid;
+  gap: var(--gap-2);
+  font-size: var(--type-small-size);
+}
+
+.hedge-strategy__diagnostics { color: var(--ink); }
+.hedge-strategy__warnings { color: var(--warn); }
+
+.hedge-strategy__diagnostics p,
+.hedge-strategy__warnings p {
+  margin: 0;
+}
+
+.hedge-strategy__diagnostic-actions {
+  display: flex;
+  gap: var(--gap-2);
+  flex-wrap: wrap;
+}
+
+.hedge-strategy__note {
+  border: 1px solid var(--hairline);
+  border-left: 4px solid var(--info);
+  background: var(--paper);
+  padding: var(--gap-2) var(--gap-3);
+  font-size: var(--type-small-size);
+  color: var(--ink);
+  margin: 0;
+}
+
+.hedge-strategy__warn {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  color: var(--warn);
+  font-size: var(--type-small-size);
+}
+
+/* ── legs panel ── */
+
+.hedge-strategy__panel .wl-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  padding: 0;
+  background: var(--paper);
+}
+.hedge-strategy__panel .hedge-strategy__bands,
+.hedge-strategy__panel .hedge-strategy__panel-foot {
+  padding: var(--gap-3);
+}
+.hedge-strategy__panel .hedge-strategy__legs + .hedge-strategy__panel-foot {
+  padding-top: 0;
+}
+
+.hedge-strategy__panel-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  flex-wrap: wrap;
+}
+
+.hedge-strategy__legs { border: 0; } /* Panel already draws the frame */
+
+.hedge-strategy__bookbar { display: flex; justify-content: flex-end; }
+
+@media (max-width: 1100px) {
+  .hedge-strategy__bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .hedge-strategy__run {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  .hedge-strategy__bar {
+    grid-template-columns: 1fr;
+  }
+  .hedge-strategy__select {
+    grid-template-columns: minmax(88px, max-content) minmax(0, 1fr);
+  }
+  .hedge-strategy__run,
+  .hedge-strategy__bookbar {
+    justify-content: stretch;
+  }
+  .hedge-strategy__run .wl-button,
+  .hedge-strategy__bookbar .wl-button,
+  .hedge-strategy__panel-foot .wl-button,
+  .hedge-strategy__panel-foot .hedge-strategy__input {
+    width: 100%;
+  }
+}

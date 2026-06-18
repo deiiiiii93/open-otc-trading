@@ -1,0 +1,76 @@
+.wl-scenario-grid { display: flex; flex-direction: column; gap: var(--gap-3); }
+
+.wl-scenario-grid__field { display: flex; flex-direction: column; gap: var(--gap-1); }
+.wl-scenario-grid__field span,
+.wl-scenario-grid__axes-head span {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-2);
+}
+
+/* Theme the raw form controls with design tokens — without this they fall back
+   to the user-agent white background, which collides with dark mode. */
+.wl-scenario-grid input,
+.wl-scenario-grid select {
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  padding: var(--input-padding-y) var(--input-padding-x);
+  border-radius: 0;
+}
+.wl-scenario-grid input::placeholder { color: var(--ink-2); }
+.wl-scenario-grid input:focus,
+.wl-scenario-grid select:focus {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+.wl-scenario-grid input:disabled,
+.wl-scenario-grid select:disabled {
+  background: var(--paper-2);
+  color: var(--ink-2);
+  cursor: not-allowed;
+}
+
+.wl-scenario-grid__axes { display: flex; flex-direction: column; gap: var(--gap-2); }
+.wl-scenario-grid__axes-head { display: flex; justify-content: space-between; align-items: center; }
+
+/* Wrap rather than overflow so the axis controls never trigger a horizontal
+   scrollbar in the dialog. */
+.wl-scenario-grid__axis { display: flex; flex-wrap: wrap; gap: var(--gap-2); align-items: center; }
+.wl-scenario-grid__axis select { flex: 0 0 auto; }
+.wl-scenario-grid__axis input { flex: 1 1 72px; min-width: 0; }
+
+.wl-scenario-grid__axis-count {
+  flex: 0 0 auto;
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+  font-variant-numeric: tabular-nums;
+}
+
+.wl-scenario-grid__remove {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 var(--gap-1);
+}
+.wl-scenario-grid__remove:hover:not(:disabled) { color: var(--ink); }
+.wl-scenario-grid__remove:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.wl-scenario-grid__count {
+  margin: 0;
+  color: var(--ink);
+  font-weight: var(--type-caps-weight);
+  font-variant-numeric: tabular-nums;
+}
+.wl-scenario-grid__count--over { color: var(--neg); }
+
+.wl-scenario-grid__error { color: var(--neg); font-size: var(--type-small-size); margin: 0; }
+.wl-scenario-grid__actions { display: flex; justify-content: flex-end; gap: var(--gap-2); }

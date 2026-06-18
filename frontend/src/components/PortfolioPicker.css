@@ -1,0 +1,54 @@
+.wl-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in oklab, var(--ink) 42%, transparent);
+  z-index: 100;
+}
+
+.wl-modal__body {
+  width: min(480px, calc(100vw - 32px));
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: var(--paper-2);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px color-mix(in oklab, var(--ink) 18%, transparent);
+}
+
+.wl-modal__body input[type='text'],
+.wl-modal__body > input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.wl-modal__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.wl-modal__list label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 6px;
+}
+
+.wl-modal__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

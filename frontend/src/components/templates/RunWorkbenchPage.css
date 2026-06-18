@@ -1,0 +1,41 @@
+/* RunWorkbenchPage
+   Shared three-zone layout: run config in the page header, run history in the
+   left rail, run detail in the right workspace. The run-list and panel chrome
+   is inherited from WorkbenchPage.css. */
+
+.wl-run-workbench .wl-pageheader {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--gap-3);
+  border: 1px solid var(--hairline-2);
+  border-top: var(--rail-accent-width) solid var(--ink);
+  background: color-mix(in oklab, var(--paper) 82%, var(--paper-2));
+  padding: var(--gap-3);
+  margin-bottom: var(--gap-3);
+}
+
+.wl-run-workbench .wl-pageheader__main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gap-3);
+}
+
+.wl-run-workbench .wl-pageheader__action {
+  width: 100%;
+  justify-content: stretch;
+  padding-top: var(--gap-3);
+  border-top: 1px solid var(--hairline);
+}
+
+.wl-run-workbench .wl-header-controls {
+  width: 100%;
+  justify-content: stretch;
+  align-items: stretch;
+}
+
+@media (max-width: 640px) {
+  .wl-run-workbench .wl-pageheader__main {
+    flex-direction: column;
+  }
+}

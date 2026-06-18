@@ -1,0 +1,44 @@
+.wl-tageditor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+  align-items: center;
+  padding: var(--gap-2);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: 0;
+}
+
+.wl-tageditor__chip {
+  display: inline-flex;
+  gap: var(--gap-1);
+  align-items: center;
+  padding: 3px 8px;
+  background: var(--paper-2);
+  border: 1px solid var(--hairline);
+  border-radius: 0;
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+  font-weight: 500;
+}
+
+.wl-tageditor__chip button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--ink-2);
+  padding: 0 2px;
+}
+.wl-tageditor__chip button:hover { color: var(--ink); }
+
+.wl-tageditor__input {
+  flex: 1;
+  min-width: 100px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+}
+.wl-tageditor__input::placeholder { color: var(--ink-2); }

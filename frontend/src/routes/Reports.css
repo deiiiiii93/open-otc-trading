@@ -1,0 +1,2 @@
+.wl-reports { padding-top: var(--gap-2); }
+.wl-reports__loading { display: flex; flex-direction: column; gap: var(--gap-3); }

@@ -1,0 +1,316 @@
+/* ── Feedback banner ── */
+.wl-instruments__feedback {
+  border: 1px solid var(--hairline);
+  border-left: 4px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  padding: var(--gap-2) var(--gap-3);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  line-height: 1.4;
+}
+
+.wl-instruments__feedback.is-success {
+  border-left-color: var(--pos);
+  color: var(--pos);
+}
+
+.wl-instruments__feedback.is-error {
+  border-left-color: var(--neg);
+  color: var(--neg);
+}
+
+/* ── Tab bar (horizontal; shared Tabs primitive) ──
+   Instruments switches between full-width tables, so its tabs run horizontally
+   across the top (via the shared <Tabs>) rather than eating a left rail. Only the
+   per-tab count badge is page-specific. */
+.wl-instruments__tab-count {
+  margin-left: var(--gap-2);
+  color: var(--ink-2);
+  font-family: var(--font-numeric);
+  font-size: var(--type-caps-size);
+  font-weight: 500;
+}
+
+.wl-instruments__load-chip {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  border: 1px solid var(--hairline);
+  background: var(--paper-2);
+  padding: 3px var(--gap-2);
+}
+
+.wl-instruments__filter {
+  height: var(--control-height-action);
+  display: grid;
+  grid-template-columns: max-content minmax(100px, 140px);
+  align-items: stretch;
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.wl-instruments__filter--narrow {
+  grid-template-columns: max-content minmax(62px, 82px);
+}
+
+.wl-instruments__filter--wide {
+  grid-template-columns: max-content minmax(180px, 300px);
+}
+
+.wl-instruments__filter span {
+  display: flex;
+  align-items: center;
+  font-family: var(--font-ui);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+  border-right: 1px solid var(--hairline);
+  background: var(--paper-2);
+  padding: var(--input-padding-y) var(--gap-2);
+  white-space: nowrap;
+}
+
+.wl-instruments__filter select {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  padding: var(--input-padding-y) var(--input-padding-x);
+  border-radius: 0;
+}
+
+.wl-instruments__inline-input {
+  width: 112px;
+  min-height: 34px;
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  padding: var(--input-padding-y) var(--input-padding-x);
+  border-radius: 0;
+}
+
+.wl-instruments__inline-input::placeholder {
+  color: var(--ink-2);
+}
+
+.wl-instruments__subtabs {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+}
+
+.wl-instruments__subtab {
+  min-height: 34px;
+  border: 0;
+  border-right: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  font: var(--type-caps-weight) var(--type-caps-size) var(--font-ui);
+  text-transform: uppercase;
+  letter-spacing: 0;
+  padding: 0 var(--gap-2);
+}
+
+.wl-instruments__subtab:last-child {
+  border-right: 0;
+}
+
+.wl-instruments__subtab:hover {
+  color: var(--ink);
+  background: var(--paper-2);
+}
+
+.wl-instruments__subtab.is-active {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* ── Table ── */
+.wl-instruments__table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+}
+
+.wl-instruments__table {
+  width: 100%;
+  min-width: 1100px;
+  border-collapse: collapse;
+  font: 500 var(--type-small-size) var(--font-numeric);
+}
+
+.wl-instruments__table th,
+.wl-instruments__table td {
+  padding: 9px var(--gap-3);
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+  vertical-align: top;
+}
+
+.wl-instruments__table th {
+  background: var(--ink);
+  color: var(--paper);
+  font: var(--type-caps-weight) var(--type-caps-size) var(--font-ui);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.wl-instruments__table tr:last-child td {
+  border-bottom: 0;
+}
+
+.wl-instruments__table tr.is-active td {
+  background: color-mix(in srgb, var(--pos) 4%, var(--paper));
+}
+
+.wl-instruments__table tr.wl-instruments__row--draft td {
+  background: color-mix(in srgb, var(--warn) 4%, var(--paper));
+}
+
+.wl-instruments__table tr.is-inactive td,
+.wl-instruments__table tr.is-expired td {
+  background: var(--paper);
+  opacity: 0.7;
+}
+
+/* Input cells */
+.wl-instruments__table input,
+.wl-instruments__table select,
+.wl-instruments__table textarea {
+  width: 100%;
+  min-height: 28px;
+  box-sizing: border-box;
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  color: var(--ink);
+  font: 500 var(--type-small-size) var(--font-numeric);
+  padding: 4px 6px;
+  border-radius: 0;
+}
+
+.wl-instruments__stack {
+  display: grid;
+  gap: 5px;
+  min-width: 120px;
+}
+
+/* Symbol cell */
+.wl-instruments__symbol {
+  display: block;
+  font-weight: 700;
+}
+
+.wl-instruments__name {
+  display: block;
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+  line-height: 1.2;
+}
+
+.wl-instruments__table small {
+  display: inline;
+  color: var(--ink-2);
+}
+
+/* Status badge */
+.wl-instruments__status {
+  display: inline-flex;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.wl-instruments__status.is-active {
+  color: var(--pos);
+  border-color: color-mix(in srgb, var(--pos) 50%, transparent);
+}
+
+.wl-instruments__status.is-draft {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+}
+
+.wl-instruments__status.is-inactive,
+.wl-instruments__status.is-expired {
+  color: var(--ink-2);
+}
+
+/* Roles */
+.wl-instruments__roles {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.wl-instruments__role-badge {
+  display: inline-flex;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.wl-instruments__role-badge.is-underlying {
+  color: var(--pos);
+  border-color: color-mix(in srgb, var(--pos) 40%, transparent);
+  background: color-mix(in srgb, var(--pos) 8%, transparent);
+}
+
+.wl-instruments__role-badge.is-hedge {
+  color: var(--ink-2);
+  border-color: var(--hairline);
+}
+
+/* AKShare warning */
+.wl-instruments__warn-badge {
+  display: inline-flex;
+  margin-left: 4px;
+  color: var(--warn);
+  font-size: 11px;
+}
+
+/* Actions */
+.wl-instruments__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-1);
+}
+
+.wl-instruments__row-error {
+  margin-top: 5px;
+  color: var(--neg);
+  font-size: 12px;
+  font-family: var(--font-numeric);
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .wl-instruments__filter,
+  .wl-instruments__inline-input,
+  .wl-instruments__subtabs {
+    flex: 0 0 auto;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .wl-instruments__subtab {
+    flex: 1 1 0;
+  }
+}

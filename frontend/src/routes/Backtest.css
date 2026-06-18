@@ -1,0 +1,498 @@
+/* Backtest page styles */
+
+/* Run config in the page header — compact command-bar controls. */
+.wl-backtest__run-config {
+  display: grid;
+  grid-template-columns:
+    minmax(220px, 1.35fr)
+    minmax(136px, 0.65fr)
+    minmax(136px, 0.65fr)
+    minmax(260px, 1.25fr)
+    minmax(156px, 0.75fr)
+    max-content;
+  align-items: stretch;
+}
+
+.wl-backtest__run-config > * {
+  min-width: 0;
+}
+
+.wl-backtest__run-config > .wl-select--inline,
+.wl-backtest__run-config > .wl-button {
+  height: var(--control-height-action);
+}
+
+.wl-backtest__run-config-date {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0;
+  align-items: stretch;
+  min-width: 0;
+  height: var(--control-height-action);
+  overflow: hidden;
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  box-sizing: border-box;
+}
+
+.wl-backtest__run-config-date .wl-field__label {
+  display: flex;
+  align-items: center;
+  border-right: 1px solid var(--hairline);
+  background: var(--paper-2);
+  padding: var(--button-padding-y) var(--gap-2);
+  white-space: nowrap;
+  margin: 0;
+}
+
+.wl-backtest__run-config-date .wl-datepicker__trigger-wrap {
+  height: 100%;
+  min-width: 0;
+}
+
+.wl-backtest__run-config-date .wl-datepicker__input {
+  border: 0;
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.wl-backtest__run-config-date .wl-datepicker__input:focus {
+  border: 0;
+  padding: var(--input-padding-y) var(--input-padding-x);
+}
+
+.wl-backtest__run-config-date .wl-datepicker__cal-btn {
+  border: 0;
+  border-left: 1px solid var(--hairline);
+  height: 100%;
+  width: var(--control-height-action);
+}
+
+.wl-backtest__run-config-date:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.wl-backtest__run-config-action {
+  white-space: nowrap;
+}
+
+@media (max-width: 1180px) {
+  .wl-backtest__run-config {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .wl-backtest__run-config-portfolio,
+  .wl-backtest__run-config-engine {
+    grid-column: span 3;
+  }
+
+  .wl-backtest__run-config-date,
+  .wl-backtest__run-config-vol,
+  .wl-backtest__run-config-action {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 720px) {
+  .wl-backtest__run-config {
+    grid-template-columns: 1fr;
+  }
+
+  .wl-backtest__run-config-portfolio,
+  .wl-backtest__run-config-engine,
+  .wl-backtest__run-config-date,
+  .wl-backtest__run-config-vol,
+  .wl-backtest__run-config-action {
+    grid-column: auto;
+  }
+}
+
+.wl-backtest__feedback {
+  padding: var(--gap-2) var(--gap-3);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  box-shadow: inset var(--gap-1) 0 0 var(--pos);
+  margin: 0 0 var(--gap-3);
+  font-size: var(--type-small-size);
+  color: var(--ink);
+}
+
+.wl-backtest__error {
+  padding: var(--gap-2) var(--gap-3);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  box-shadow: inset var(--gap-1) 0 0 var(--neg);
+  margin: 0 0 var(--gap-3);
+  font-size: var(--type-small-size);
+  color: var(--neg);
+}
+
+
+/* Workbench panel/section/section-title chrome is shared — see WorkbenchPage.css
+   (.wl-workbench__panel / __section / __section-title / __section-head). */
+
+/* Configurator form */
+
+.wl-backtest__config-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  padding: var(--gap-3);
+}
+
+.wl-backtest__field-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.45fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--gap-2);
+}
+
+.wl-backtest__field-label {
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.wl-backtest__field-control {
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  color: var(--ink);
+  padding: var(--input-padding-y) var(--input-padding-x);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  width: 100%;
+  box-sizing: border-box;
+  outline: none;
+}
+.wl-backtest__field-control:focus {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.wl-backtest__field-hint {
+  grid-column: 2;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+}
+
+/* Run-history list (list/row/id/status/date) is shared — see WorkbenchPage.css
+   (.wl-workbench__run-*). Only the backtest-specific engine cell lives here. */
+.wl-backtest__run-engine {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+/* Report detail panel */
+
+.wl-backtest__report {
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  padding: var(--gap-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+
+.wl-backtest__report-title {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-size: var(--type-h3-size);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+
+/* KPI cards */
+
+.wl-backtest__kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--gap-2);
+}
+
+.wl-backtest__kpi {
+  border: 1px solid var(--hairline-2);
+  background: var(--paper-2);
+  padding: var(--gap-2) var(--gap-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+}
+
+.wl-backtest__kpi-label {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}
+
+.wl-backtest__kpi-value {
+  font-family: var(--font-numeric);
+  font-size: var(--type-num-l-size);
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wl-backtest__kpi-value--pos {
+  color: var(--pos);
+}
+
+.wl-backtest__kpi-value--neg {
+  color: var(--neg);
+}
+
+/* PnL chart */
+
+.wl-backtest__chart-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+
+.wl-backtest__chart-title {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+  margin: 0;
+}
+
+.wl-backtest__chart-wrap {
+  width: 100%;
+  height: 220px;
+  min-width: 0;
+  min-height: 220px;
+}
+
+/* By-underlying accordion */
+
+.wl-backtest__underlying-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+
+.wl-backtest__underlying-title {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+  margin: 0;
+}
+
+.wl-backtest__underlying-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+}
+
+.wl-backtest__underlying-item {
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+}
+
+.wl-backtest__underlying-item summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content max-content max-content;
+  align-items: center;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--type-small-size);
+  color: var(--ink);
+}
+
+.wl-backtest__underlying-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.wl-backtest__underlying-item summary:hover {
+  background: color-mix(in oklab, var(--paper) 54%, var(--paper-2));
+}
+
+.wl-backtest__underlying-name {
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-backtest__underlying-stat {
+  font-family: var(--font-numeric);
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+
+.wl-backtest__underlying-stat--pos {
+  color: var(--pos);
+}
+
+.wl-backtest__underlying-stat--neg {
+  color: var(--neg);
+}
+
+.wl-backtest__underlying-body {
+  padding: var(--gap-2) var(--gap-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  border-top: 1px solid var(--hairline);
+}
+
+.wl-backtest__underlying-note {
+  margin: 0;
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+
+.wl-backtest__lifecycle-title {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  margin: 0;
+}
+
+.wl-backtest__lifecycle-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+}
+.wl-backtest__lifecycle-table th,
+.wl-backtest__lifecycle-table td {
+  padding: var(--gap-1) var(--gap-2);
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+}
+.wl-backtest__lifecycle-table th {
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.wl-backtest__lifecycle-table tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Dashboard artifacts */
+
+.wl-backtest__dashboard-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+
+.wl-backtest__dashboard-card {
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  padding: var(--gap-2);
+}
+
+.wl-backtest__dashboard-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  color: var(--ink-2);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.wl-backtest__dashboard-head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+}
+
+.wl-backtest__dashboard-frame {
+  width: 100%;
+  height: min(70vh, 40rem);
+  min-height: 22.5rem;
+  border: 1px solid var(--hairline);
+  background: var(--paper-2);
+}
+
+.wl-backtest__dashboard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+}
+
+.wl-backtest__dashboard-link {
+  width: fit-content;
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  color: var(--ink);
+  padding: var(--gap-1) var(--gap-2);
+  font-size: var(--type-small-size);
+  text-decoration: none;
+  display: inline-block;
+}
+.wl-backtest__dashboard-link:hover {
+  border-color: var(--ink);
+  background: var(--paper-2);
+}
+.wl-backtest__dashboard-link:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.wl-backtest__dashboard-link--compact {
+  padding: var(--gap-1) var(--gap-2);
+}
+
+/* Inline status messages */
+
+.wl-backtest__status-running {
+  padding: var(--gap-2) var(--gap-3);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  box-shadow: inset var(--gap-1) 0 0 var(--warn);
+  font-size: var(--type-small-size);
+  color: var(--warn);
+}
+
+.wl-backtest__status-failed {
+  padding: var(--gap-2) var(--gap-3);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  box-shadow: inset var(--gap-1) 0 0 var(--neg);
+  font-size: var(--type-small-size);
+  color: var(--neg);
+}
+
+@media (max-width: 640px) {
+  .wl-backtest__field-row {
+    grid-template-columns: 1fr;
+  }
+}

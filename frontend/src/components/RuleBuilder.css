@@ -1,0 +1,52 @@
+.wl-rulebuilder {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+
+.wl-rulebuilder__row {
+  display: flex;
+  gap: var(--gap-2);
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.wl-rulebuilder__field {
+  flex: 1 1 165px;
+  min-width: 165px;
+}
+
+.wl-rulebuilder__op {
+  flex: 0 0 100px;
+}
+
+.wl-rulebuilder__value {
+  flex: 2 1 180px;
+  min-width: 180px;
+}
+
+.wl-rulebuilder__remove {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(var(--input-padding-y) * 2 + 1.5 * var(--type-num-m-size) + 2px);
+}
+
+.wl-rulebuilder__row select,
+.wl-rulebuilder__row input {
+  min-height: calc(var(--input-padding-y) * 2 + 1.5 * var(--type-num-m-size) + 2px);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  padding: var(--input-padding-y) var(--input-padding-x);
+  border: 1px solid var(--hairline-2);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.wl-rulebuilder__row select:focus-visible,
+.wl-rulebuilder__row input:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}

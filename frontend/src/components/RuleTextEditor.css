@@ -1,0 +1,17 @@
+.wl-ruletext__area {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: monospace;
+  font-size: 12px;
+  padding: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.wl-ruletext__err {
+  color: var(--neg);
+  font-size: 11px;
+  padding-top: 4px;
+}

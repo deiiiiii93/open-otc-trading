@@ -1,0 +1,2 @@
+.wl-reject-modal { display: flex; flex-direction: column; gap: var(--gap-3); }
+.wl-reject-modal__actions { display: flex; justify-content: flex-end; gap: var(--gap-2); }

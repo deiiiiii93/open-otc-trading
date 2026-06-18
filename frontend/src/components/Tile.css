@@ -1,0 +1,29 @@
+.wl-tile {
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  padding: var(--tile-padding);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wl-tile__label {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}
+.wl-tile__value {
+  font-family: var(--font-numeric);
+  font-size: var(--type-num-l-size);
+  font-weight: var(--type-num-l-weight);
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.wl-tile--pos .wl-tile__value { color: var(--pos); }
+.wl-tile--neg .wl-tile__value { color: var(--neg); }
+.wl-tile__delta {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}

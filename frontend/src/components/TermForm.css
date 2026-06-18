@@ -1,0 +1,15 @@
+.wl-term-form { border: 1px solid var(--hairline-2); border-radius: 12px; padding: 14px 16px; margin-top: 10px; max-width: 560px; }
+.wl-term-form__head { display: flex; flex-direction: column; margin-bottom: 2px; }
+.wl-term-form__title { font-weight: 600; margin: 0; }
+.wl-term-form__sub { font-size: 12px; opacity: 0.75; margin: 2px 0 0; }
+.wl-term-form__progress { display: inline-block; font-size: 11px; opacity: 0.8; border: 1px solid var(--hairline-2); border-radius: 999px; padding: 2px 9px; margin: 8px 0; }
+.wl-term-form__row { padding: 9px 0; border-top: 1px solid var(--hairline); }
+.wl-term-form__label { display: block; font-weight: 600; margin-bottom: 5px; font-size: 13px; }
+.wl-term-form__help { font-weight: 400; opacity: 0.65; }
+.wl-term-form__controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.wl-term-form__chip { font-size: 12px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--hairline-2); background: transparent; cursor: pointer; }
+.wl-term-form__chip.is-default { border-style: dashed; }
+.wl-term-form__chip.is-selected { background: var(--info); border-color: var(--info); color: var(--paper); }
+.wl-term-form__input { font-size: 12px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--hairline-2); background: transparent; color: inherit; }
+.wl-term-form__error { color: var(--neg); font-size: 11px; margin: 4px 0 0; }
+.wl-term-form__submit { margin-top: 10px; background: var(--info); color: var(--paper); border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }

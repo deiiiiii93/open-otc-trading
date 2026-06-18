@@ -1,0 +1,29 @@
+.wl-rfq-inbox { display: flex; flex-direction: column; gap: 0; }
+.wl-rfq-inbox__row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--gap-2);
+  align-items: center;
+  padding: var(--gap-2) var(--gap-3);
+  border: 0;
+  border-bottom: 1px solid var(--paper-3);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  color: var(--ink);
+}
+.wl-rfq-inbox__row:hover { background: var(--paper-2); }
+.wl-rfq-inbox__row--selected { background: var(--paper-3); }
+.wl-rfq-inbox__id {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+.wl-rfq-inbox__client {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

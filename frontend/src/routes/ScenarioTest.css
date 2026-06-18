@@ -1,0 +1,399 @@
+/* ScenarioTest page styles */
+
+.wl-scenario-test__tab-count {
+  margin-left: var(--gap-2);
+  color: var(--ink-2);
+  font-family: var(--font-numeric);
+  font-size: var(--type-caps-size);
+  font-weight: 500;
+}
+
+.wl-scenario-test__feedback {
+  padding: var(--gap-2) var(--gap-3);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  box-shadow: inset var(--gap-1) 0 0 var(--pos);
+  margin: 0 0 var(--gap-3);
+  font-size: var(--type-small-size);
+  color: var(--ink);
+}
+
+.wl-scenario-test__error {
+  padding: var(--gap-2) var(--gap-3);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  box-shadow: inset var(--gap-1) 0 0 var(--neg);
+  margin: 0 0 var(--gap-3);
+  font-size: var(--type-small-size);
+  color: var(--neg);
+}
+
+
+/* Workbench panel/section/section-title chrome is shared — see WorkbenchPage.css
+   (.wl-workbench__panel / __section / __section-title / __section-head). */
+
+/* Scenario picker list */
+
+.wl-scenario-test__scenario-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+
+.wl-scenario-test__scenario-item {
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+}
+.wl-scenario-test__scenario-item:has(input:checked) {
+  border-color: color-mix(in oklab, var(--info) 64%, var(--hairline-2));
+  background: color-mix(in oklab, var(--info) 7%, var(--paper));
+  box-shadow: inset var(--gap-1) 0 0 var(--info);
+}
+
+.wl-scenario-test__scenario-label {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  cursor: pointer;
+}
+
+.wl-scenario-test__scenario-label:hover {
+  background: color-mix(in oklab, var(--paper) 54%, var(--paper-2));
+}
+.wl-scenario-test__scenario-label input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--info);
+  cursor: pointer;
+}
+
+.wl-scenario-test__scenario-label input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.wl-scenario-test__scenario-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+  min-width: 0;
+}
+
+.wl-scenario-test__scenario-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.wl-scenario-test__scenario-desc {
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+
+.wl-scenario-test__scenario-count {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+/* Run history list */
+
+/* Run-history list (list/row/id/status/date) is shared — see WorkbenchPage.css
+   (.wl-workbench__run-*). Only the scenario-specific cells live here. */
+
+.wl-scenario-test__run-worst {
+  font-size: var(--type-small-size);
+  color: var(--neg);
+  white-space: nowrap;
+}
+
+/* Run detail panel */
+
+.wl-scenario-test__run-detail {
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  padding: var(--gap-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+
+.wl-scenario-test__detail-title {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-size: var(--type-h3-size);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+
+.wl-scenario-test__detail-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.45fr) minmax(0, 1fr);
+  gap: var(--gap-2);
+  align-items: baseline;
+  padding: var(--gap-1) 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.wl-scenario-test__detail-row:last-of-type { border-bottom: 0; }
+
+.wl-scenario-test__detail-label {
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+
+.wl-scenario-test__detail-value {
+  font-weight: 600;
+  font-family: var(--font-numeric);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.wl-scenario-test__detail-note {
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  margin: 0;
+}
+
+.wl-scenario-test__notes {
+  font-size: var(--type-small-size);
+  padding-left: var(--gap-2);
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.wl-scenario-test__scenarios-section,
+.wl-scenario-test__artifacts,
+.wl-scenario-test__pricing-warnings {
+  display: grid;
+  gap: var(--gap-2);
+  margin-top: var(--gap-2);
+}
+
+.wl-scenario-test__scenarios-title,
+.wl-scenario-test__artifacts-title,
+.wl-scenario-test__pricing-warnings-title {
+  margin: 0;
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}
+
+.wl-scenario-test__scenarios-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+}
+.wl-scenario-test__scenarios-table th,
+.wl-scenario-test__scenarios-table td {
+  padding: var(--gap-2);
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+}
+.wl-scenario-test__scenarios-table th {
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.wl-scenario-test__scenarios-table tr:last-child td { border-bottom: 0; }
+
+.wl-scenario-test__pricing-warnings {
+  border: 1px solid var(--hairline);
+  box-shadow: inset var(--gap-1) 0 0 var(--warn);
+  padding: var(--gap-2) var(--gap-3);
+  color: var(--warn);
+}
+.wl-scenario-test__pricing-warnings-list {
+  margin: 0;
+  padding-left: var(--gap-4);
+  font-size: var(--type-small-size);
+}
+
+.wl-scenario-test__artifact-link {
+  width: fit-content;
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  color: var(--ink);
+  padding: var(--gap-1) var(--gap-2);
+  font-size: var(--type-small-size);
+  text-decoration: none;
+}
+.wl-scenario-test__artifact-link:hover {
+  border-color: var(--ink);
+  background: var(--paper-2);
+}
+
+.wl-scenario-test__artifact-link:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.wl-scenario-test__artifact-link--compact {
+  padding: var(--gap-1) var(--gap-2);
+}
+
+/* Status messages */
+
+.wl-scenario-test__status-running {
+  padding: var(--gap-2) var(--gap-3);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  box-shadow: inset var(--gap-1) 0 0 var(--warn);
+  font-size: var(--type-small-size);
+  color: var(--warn);
+}
+
+.wl-scenario-test__status-failed {
+  padding: var(--gap-2) var(--gap-3);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  box-shadow: inset var(--gap-1) 0 0 var(--neg);
+  font-size: var(--type-small-size);
+  color: var(--neg);
+}
+
+/* HTML report preview */
+
+.wl-scenario-test__report-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+
+.wl-scenario-test__report-card {
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  padding: var(--gap-2);
+}
+
+.wl-scenario-test__report-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  color: var(--ink-2);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.wl-scenario-test__report-head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+}
+
+.wl-scenario-test__report-frame {
+  width: 100%;
+  height: min(70vh, 40rem);
+  min-height: 22.5rem;
+  border: 1px solid var(--hairline);
+  background: var(--paper-2);
+}
+
+.wl-scenario-test__report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+}
+
+@media (max-width: 640px) {
+  .wl-scenario-test__scenario-label,
+  .wl-scenario-test__detail-row {
+    grid-template-columns: 1fr;
+  }
+  .wl-scenario-test__scenario-label input[type='checkbox'] {
+    grid-row: 1;
+  }
+}
+
+/* .wl-workbench__section-head is shared — see WorkbenchPage.css. */
+
+.wl-scenario-test__scenario-name-btn {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 0;
+  font-family: var(--font-ui);
+  font-size: inherit;
+  font-weight: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: var(--gap-1);
+}
+
+.wl-scenario-test__scenario-name-btn:hover {
+  color: var(--info);
+}
+
+.wl-scenario-test__scenario-name-btn:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* Custom rows carry inline Edit/Delete actions: keep the label + actions on
+   one line (mirroring the predefined rows' inline trailing meta) instead of
+   letting the actions wrap to a second line. */
+.wl-scenario-test__scenario-item--custom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+}
+
+.wl-scenario-test__scenario-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-1);
+  padding-right: var(--gap-2);
+}
+
+/* Compact the row-level ghost buttons so a custom row stays close to the
+   height of a predefined row rather than ballooning to full button height. */
+.wl-scenario-test__scenario-row-actions .wl-button {
+  padding: var(--gap-1) var(--gap-2);
+  font-size: var(--type-small-size);
+}
+
+@media (max-width: 640px) {
+  .wl-scenario-test__scenario-item--custom {
+    grid-template-columns: 1fr;
+  }
+  .wl-scenario-test__scenario-row-actions {
+    padding: 0 var(--gap-3) var(--gap-2);
+    justify-content: flex-end;
+  }
+}
+
+.wl-scenario-test__set-members {
+  list-style: none;
+  margin: var(--gap-1) 0 0;
+  padding: 0 0 0 var(--gap-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+}
+.wl-scenario-test__set-member {
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+  font-variant-numeric: tabular-nums;
+}

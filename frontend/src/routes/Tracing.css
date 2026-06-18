@@ -1,0 +1,285 @@
+.wl-tracing__workspace {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(360px, 1.2fr);
+  gap: var(--gap-4);
+  min-width: 0;
+  min-height: 0;
+}
+
+.wl-tracing__tree,
+.wl-tracing__detail {
+  overflow-y: auto;
+  min-height: 0;
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+  padding: var(--panel-padding-tight);
+}
+/* The trace list is a RailList (border + paper-2 + scroll); only the header
+   inset needs setting since rows carry their own padding. */
+.wl-tracing__head {
+  padding: var(--gap-2) var(--gap-3);
+  border-bottom: 1px solid var(--hairline);
+}
+
+@media (max-width: 900px) {
+  .wl-tracing__workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+.wl-tracing__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wl-tracing__eyebrow {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+}
+
+.wl-tracing__filter-chip {
+  font-size: var(--type-small-size);
+  padding: 0 var(--gap-2);
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-1);
+}
+
+.wl-tracing__clear-thread {
+  border: none;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  font-size: var(--type-body-size);
+  line-height: 1;
+  padding: 0;
+  display: inline-flex;
+}
+
+.wl-tracing__clear-thread:hover {
+  color: var(--neg);
+}
+
+.wl-tracing__thread-input {
+  width: 120px;
+  font-size: var(--type-small-size);
+  padding: var(--gap-1) var(--gap-2);
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-numeric);
+  text-align: right;
+}
+
+.wl-tracing__thread-input::placeholder {
+  color: var(--ink-3);
+}
+
+/* __span is the detail span-tree row (NOT a rail RailItem) — keeps its own chrome. */
+.wl-tracing__span {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  width: 100%;
+  text-align: left;
+  padding: var(--gap-2);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+
+.wl-tracing__span:hover {
+  background: var(--paper-2);
+}
+
+.wl-tracing__span.is-active {
+  background: var(--paper-3);
+}
+
+/* The trace card is a RailItem; only let its status/name/meta wrap on narrow rails. */
+.wl-tracing__trace-card {
+  flex-wrap: wrap;
+}
+
+.wl-tracing__status {
+  display: inline-flex;
+  color: var(--ink-2);
+}
+
+/* trace-name uses the shared .wl-rail__title; __span-name is the detail tree (not a rail). */
+.wl-tracing__span-name {
+  font-weight: var(--type-h3-weight);
+  font-size: var(--type-body-size);
+}
+
+.wl-tracing__meta {
+  margin-left: auto;
+}
+
+.wl-tracing__span {
+  padding-left: calc(var(--gap-2) + var(--wl-span-depth, 0) * var(--gap-4));
+}
+
+.wl-tracing__span-type {
+  font-size: var(--type-small-size);
+  padding: 0 var(--gap-2);
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--paper-2);
+  color: var(--ink-2);
+}
+
+.wl-tracing__detail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  margin-bottom: var(--gap-2);
+  flex-wrap: wrap;
+}
+
+.wl-tracing__detail-name {
+  font-weight: var(--type-h2-weight);
+  font-size: var(--type-body-size);
+  word-break: break-all;
+}
+
+.wl-tracing__detail-status {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0 var(--gap-2);
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+}
+
+.wl-tracing__detail-status--success {
+  color: var(--pos);
+  border-color: var(--pos);
+}
+
+.wl-tracing__detail-status--error {
+  color: var(--neg);
+  border-color: var(--neg);
+}
+
+.wl-tracing__detail-status--running {
+  color: var(--ink-2);
+  border-color: var(--ink-3);
+}
+
+.wl-tracing__detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2) var(--gap-4);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  margin-bottom: var(--gap-4);
+  padding-bottom: var(--gap-3);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.wl-tracing__detail-meta code {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  background: var(--paper-2);
+  padding: 0 var(--gap-1);
+  border-radius: 2px;
+}
+
+.wl-tracing__detail-meta b {
+  color: var(--ink);
+  font-weight: var(--type-h3-weight);
+}
+
+.wl-tracing__payload {
+  margin-bottom: var(--gap-2);
+}
+
+.wl-tracing__payload-head {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-1);
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  padding: var(--gap-1) 0;
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  width: auto;
+}
+
+.wl-tracing__payload-head:hover {
+  color: var(--ink-1);
+}
+
+.wl-tracing__payload-badge {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--acc);
+  margin-left: var(--gap-1);
+}
+
+.wl-tracing__payload-body {
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: var(--type-small-size);
+  font-family: var(--font-numeric);
+  line-height: 1.5;
+  background: var(--paper-2);
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+  padding: var(--gap-3);
+  margin: var(--gap-1) 0 0;
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.wl-tracing__error {
+  margin-bottom: var(--gap-3);
+  border: 1px solid var(--neg);
+  border-radius: 2px;
+  background: var(--paper-2);
+  padding: var(--gap-2) var(--gap-3);
+}
+
+.wl-tracing__error-label {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--neg);
+  margin-bottom: var(--gap-1);
+}
+
+.wl-tracing__error-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: var(--type-small-size);
+  font-family: var(--font-numeric);
+  color: var(--neg);
+  margin: 0;
+}
+
+.wl-json-key { color: var(--acc); }
+.wl-json-string { color: var(--pos); }
+.wl-json-number { color: var(--warn); }
+.wl-json-bool { color: var(--warn); }
+.wl-json-null { color: var(--ink-3); font-style: italic; }
+.wl-json-punct { color: var(--ink-2); }
+.wl-json-indent { padding-left: 1.5em; display: block; }

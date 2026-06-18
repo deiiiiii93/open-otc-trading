@@ -1,0 +1,75 @@
+.wl-composer {
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  padding: var(--gap-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  min-width: 0;
+  overflow: visible;
+}
+.wl-composer__label {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-2);
+}
+.wl-composer__textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  color: var(--ink);
+  padding: var(--input-padding-y) var(--input-padding-x);
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  resize: vertical;
+  min-height: 72px;
+  border-radius: 0;
+}
+.wl-composer__textarea:focus {
+  outline: none;
+  border: 2px solid var(--ink);
+  padding: calc(var(--input-padding-y) - 1px) calc(var(--input-padding-x) - 1px);
+}
+.wl-composer__actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--gap-1);
+  flex-wrap: wrap;
+  min-width: 0;
+  position: relative;
+}
+.wl-composer__yolo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: calc(var(--button-padding-y) * 2 + var(--type-body-size) * 1.5 + 2px);
+  border: 1px solid var(--hairline-2);
+  padding: 0 var(--gap-2);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  color: var(--ink-2);
+  background: var(--paper);
+  cursor: pointer;
+}
+.wl-composer__yolo:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.wl-composer__yolo.is-active {
+  border-color: var(--warn);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--warn) 14%, var(--paper));
+}
+.wl-composer__yolo input {
+  margin: 0;
+  accent-color: var(--warn);
+}
+.wl-composer__yolo:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.6;
+}

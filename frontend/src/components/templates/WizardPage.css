@@ -1,0 +1,6 @@
+.wl-wizard__body { min-width: 0; }
+.wl-wizard__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--gap-2);
+}

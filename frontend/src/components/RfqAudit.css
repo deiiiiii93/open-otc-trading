@@ -1,0 +1,27 @@
+.wl-rfq-audit { display: flex; flex-direction: column; gap: var(--gap-3); padding: var(--gap-2); }
+.wl-rfq-audit__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--gap-2); }
+.wl-rfq-audit__row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--gap-2);
+  align-items: center;
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink);
+}
+.wl-rfq-audit__bullet {
+  width: 6px;
+  height: 6px;
+  background: var(--ink);
+  border-radius: 0;
+  display: inline-block;
+}
+.wl-rfq-audit__label { font-weight: 600; }
+.wl-rfq-audit__detail { color: var(--ink-2); }
+.wl-rfq-audit__note {
+  margin: 0;
+  font-size: var(--type-caps-size);
+  color: var(--ink-2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}

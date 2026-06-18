@@ -1,0 +1,1288 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+export type Route =
+  | 'chat'
+  | 'rfq'
+  | 'try-solve'
+  | 'positions'
+  | 'booking'
+  | 'pricing-parameters'
+  | 'engine-configs'
+  | 'portfolios'
+  | 'risk'
+  | 'greeks-landscape'
+  | 'scenario-test'
+  | 'backtest'
+  | 'tasks'
+  | 'reports'
+  | 'client'
+  | 'client-rfq'
+  | 'hedging'
+  | 'instruments'
+  | 'skills'
+  | 'tracing';
+
+export type Thread = {
+  id: number;
+  title: string;
+  character: string;
+  created_at?: string;
+  updated_at?: string;
+  messages: ChatMessage[];
+};
+
+export type TracingConfig = {
+  mode: 'local' | 'langsmith' | 'both' | 'off';
+  langsmith_url: string | null;
+};
+
+export type TraceSummary = {
+  id: string;
+  trace_id: string;
+  name: string;
+  run_type: string;
+  status: 'running' | 'success' | 'error';
+  start_time: string;
+  end_time: string | null;
+  total_tokens: number | null;
+  thread_id: number | null;
+  task_id: number | null;
+  workflow_id: number | null;
+};
+
+export type TraceRunNode = TraceSummary & {
+  parent_run_id: string | null;
+  dotted_order: string;
+  error: string | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  inputs_preview: string | null;
+  inputs_truncated: boolean;
+  outputs_preview: string | null;
+  outputs_truncated: boolean;
+};
+
+export type TraceRunDetail = TraceSummary & {
+  parent_run_id: string | null;
+  dotted_order: string;
+  error: string | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  inputs: string | null;
+  outputs: string | null;
+  extra: string | null;
+};
+
+export type AsyncAgentTask = {
+  task_id: number;
+  description: string;
+  status: string;
+  awaiting_approval: boolean;
+  started_at?: string | null;
+  finished_at?: string | null;
+  last_message_preview?: string | null;
+};
+
+export type ReplyOptionMeta = {
+  label: string;
+  description?: string;
+  value?: string;
+};
+
+export type ChoiceMeta = {
+  label: string;
+  value: string | number;
+};
+
+export type TermFormField = {
+  key: string;
+  label: string;
+  help?: string;
+  type: 'percent' | 'number' | 'date' | 'enum' | 'text';
+  choices?: ChoiceMeta[];
+  default?: ChoiceMeta;
+  required?: boolean;
+};
+
+export type TermFormMeta = {
+  title: string;
+  subtitle?: string;
+  fields: TermFormField[];
+  submit_label?: string;
+};
+
+export type AgentTodoItem = {
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed';
+};
+
+export type ChatMessage = {
+  id: number;
+  role: string;
+  character?: string | null;
+  content: string;
+  meta?: {
+    assets?: AgentAsset[];
+    pending_actions?: AgentActionProposal[];
+    confirmed_action?: AgentActionProposal & { result?: Record<string, any> };
+    context_used?: PageContext | null;
+    context_usage?: AgentContextUsage | null;
+    routed_character?: string;
+    process_events?: ToolEvent[] | string[];
+    todos?: AgentTodoItem[];
+    agent_phase?: 'completed' | 'completed_with_tool_errors' | 'drained' | 'error' | 'awaiting_confirmation';
+    model_selection?: AgentModelSelection;
+    model_selection_fallback?: boolean;
+    yolo_mode?: boolean;
+    reply_options?: ReplyOptionMeta[];
+    term_form?: TermFormMeta;
+    envelope_initial?: Envelope;
+    envelope_final?: Envelope;
+    envelope_transitioned?: boolean;
+    cost_preview?: {
+      tool_name: string;
+      estimated_seconds: number;
+    } | null;
+    [key: string]: any;
+  };
+};
+
+export type AgentContextUsage = {
+  bytes: number;
+  estimated_tokens: number;
+  chip_count: number;
+  snapshot_key_count: number;
+  entity_id_count: number;
+  warning_level: 'none' | 'large' | 'huge';
+  computed_at: string;
+};
+
+export type AgentModelSelection = {
+  channel: string;
+  provider: string;
+  model: string;
+};
+
+export type AgentModelOption = AgentModelSelection & {
+  label: string;
+  description?: string | null;
+  is_default?: boolean;
+  tags?: string[];
+};
+
+export type AgentChannel = {
+  name: string;
+  label: string;
+  type: 'zenmux' | 'openai_compatible';
+  healthy: boolean;
+  models: AgentModelOption[];
+};
+
+export type AgentModelConfig = {
+  enabled: boolean;
+  active: AgentModelSelection;
+  channels: AgentChannel[];
+};
+
+export type AgentAsset = {
+  id: string;
+  kind: 'file' | 'image' | 'table' | 'chart' | 'json' | 'markdown' | 'html';
+  title: string;
+  mime_type?: string | null;
+  url?: string | null;
+  path?: string | null;
+  data?: any;
+  metadata?: Record<string, any>;
+};
+
+export type AgentActionProposal = {
+  id: string;
+  tool_name: string;
+  /** Legacy field still present on rows from before the refactor. */
+  type?: string;
+  label: string;
+  summary: string;
+  payload?: Record<string, any>;
+  requires_confirmation?: boolean;
+  status?: 'pending' | 'confirmed' | 'dismissed' | 'failed';
+  persona?: 'trader' | 'risk_manager' | 'high_board';
+  risk_level?: 'read' | 'write' | 'irreversible';
+  /** Set when the proposal came from an async-agent bubble-up. */
+  async_task_id?: number | null;
+  /** Set after a confirmed action queues a persisted background task. */
+  task_id?: number | null;
+  task_kind?: string | null;
+  task_status?: string | null;
+  task_progress_current?: number | null;
+  task_progress_total?: number | null;
+  task_message?: string | null;
+};
+
+export type AsyncAgentStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'completed_with_errors'
+  | 'failed'
+  | 'cancelled';
+
+export type AsyncAgentTaskOut = {
+  task_id: number;
+  description: string;
+  status: AsyncAgentStatus;
+  awaiting_approval: boolean;
+  started_at: string | null;
+  finished_at: string | null;
+  last_message_preview: string | null;
+};
+
+export type ToolEvent = {
+  id: string;
+  name: string;
+  status: 'running' | 'done' | 'error';
+  args?: Record<string, unknown> | { _truncated: true; preview: string; size: number };
+  output?: unknown;
+  duration_ms?: number;
+  error?: string;
+};
+
+const PERSONA_DISPLAY_NAMES: Record<string, string> = {
+  trader: 'Trader',
+  risk_manager: 'Risk Manager',
+  high_board: 'High Board',
+  auto: 'Auto',
+  async_agent: 'Background',
+};
+
+export const proposalToolName = (proposal: AgentActionProposal): string =>
+  proposal.tool_name ?? proposal.type ?? 'unknown_tool';
+
+export const personaDisplayLabel = (persona?: string | null): string =>
+  persona ? PERSONA_DISPLAY_NAMES[persona] ?? toTitleCase(persona) : '';
+
+function toTitleCase(value: string): string {
+  return value
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+export type LoadedCompleteness = "complete" | "paginated" | "partial" | "empty";
+export type ConfirmationMode = "implicit" | "explicit" | "destructive";
+export type Envelope =
+  | "pet_page"
+  | "pet_diagnostic"
+  | "desk_workflow"
+  | "desk_async";
+
+export type LoadedContext = {
+  completeness: LoadedCompleteness;
+  visible_count?: number;
+  total_count?: number;
+  query_ref?: string;
+};
+
+export type PageAction = {
+  name: string;
+  required_ids: string[];
+  confirmation: ConfirmationMode;
+  backend_endpoint: string;
+};
+
+export type PageContext = {
+  route: Route;
+  title: string;
+  entity_ids: Record<string, number | string | null | undefined>;
+  snapshot: Record<string, any>;
+  // Phase 2 additions:
+  loaded_context?: LoadedContext;
+  actions?: PageAction[];
+  // Legacy (still emitted by all pages; backend defaults both to empty/null in Phase 3):
+  path?: string;
+  /** @deprecated Replaced by `loaded_context` + `actions`; remove in Phase 3. */
+  chips: string[];
+};
+
+export type PageContextReporter = (context: PageContext) => void;
+
+export type RFQQuoteVersion = {
+  id: number;
+  rfq_id: number;
+  version: number;
+  quote_mode: string;
+  status: string;
+  request_payload: Record<string, any>;
+  quote_payload: Record<string, any>;
+  error?: string | null;
+  created_by: string;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  released_at?: string | null;
+  valid_until?: string | null;
+  created_at: string;
+};
+
+export type RFQ = {
+  id: number;
+  client_name: string;
+  channel: string;
+  status: string;
+  request_payload: Record<string, unknown>;
+  quote_payload: Record<string, any>;
+  approved_response?: string | null;
+  quote_versions?: RFQQuoteVersion[];
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type AuditEvent = {
+  id: number;
+  event_type: string;
+  actor: string;
+  subject_type: string;
+  subject_id: string;
+  payload: Record<string, any>;
+  created_at: string;
+};
+
+export type RfqUnknownFieldSpec = {
+  field_path: string;
+  label: string;
+  lower_bound: number;
+  upper_bound: number;
+  initial_guess: number;
+};
+
+export type RfqTemplate = {
+  key: string;
+  label: string;
+  product_type: string;
+  engine_spec: Record<string, any>;
+  unknown_fields: string[];
+  unknown_field_specs?: RfqUnknownFieldSpec[];
+  product_kwargs: Record<string, any>;
+};
+
+export type RfqCatalog = {
+  product_types: Array<{ name: string; template_key?: string | null; quote_modes: string[] }>;
+  engine_options: string[];
+  unknown_fields: Record<string, string[]>;
+  templates: RfqTemplate[];
+  advanced: Record<string, any>;
+};
+
+export type TrySolveFieldType = 'text' | 'number' | 'date' | 'boolean' | 'select';
+
+export type TrySolveSolverState = 'solver_ready' | 'schema_captured';
+
+export type TrySolveStatus =
+  | 'draft'
+  | 'missing_terms'
+  | 'missing_market'
+  | 'mapping_pending'
+  | 'invalid_target'
+  | 'unsupported_market'
+  | 'unsupported_quote_field'
+  | 'quantark_build_failed'
+  | 'solve_failed'
+  | 'solver_ready'
+  | 'schema_captured'
+  | 'solved'
+  | string;
+
+export type TrySolveField = {
+  key: string;
+  label: string;
+  field_type: TrySolveFieldType;
+  excel_aliases?: string[];
+  required?: boolean;
+  default?: any;
+  options?: string[];
+  canonical_path?: string | null;
+};
+
+export type TrySolveQuoteField = {
+  key: string;
+  label: string;
+  excel_header: string;
+  canonical_path: string;
+  lower_bound: number;
+  upper_bound: number;
+  initial_guess?: number | null;
+  solver_ready: boolean;
+};
+
+export type TrySolveProduct = {
+  product_key: string;
+  label: string;
+  excel_sheet: string;
+  initial_solver_state: TrySolveSolverState;
+  fields: TrySolveField[];
+  quote_fields: TrySolveQuoteField[];
+  quantark_product_type?: string | null;
+  default_engine_name?: string | null;
+  notes?: string;
+};
+
+export type TrySolveCatalog = {
+  products: TrySolveProduct[];
+  status_options: TrySolveStatus[];
+};
+
+export type EngineConfigVariant = {
+  id: number;
+  name: string;
+  description?: string | null;
+  status: string;
+  is_default: boolean;
+  rules: Record<string, any>;
+  business_days_in_year?: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EngineConfigVariantInput = {
+  name: string;
+  description?: string | null;
+  status?: string;
+  is_default?: boolean;
+  rules: Record<string, any>;
+  business_days_in_year?: number | null;
+};
+
+export type TrySolveMarket = {
+  pricing_parameter_profile_id?: number | null;
+  market_data_profile_id?: number | null;
+  valuation_date?: string | null;
+  spot?: number | null;
+  volatility?: number | null;
+  rate?: number | null;
+  dividend_yield?: number | null;
+  day_count_convention?: string | null;
+  bus_days_in_year?: number | null;
+  calendar?: string | null;
+};
+
+export type TrySolveQuoteRequest = {
+  quote_field_key: string;
+  target_label: 'price' | 'premium' | 'premium %' | 'reoffer';
+  target_value: number;
+  lower_bound?: number | null;
+  upper_bound?: number | null;
+  initial_guess?: number | null;
+};
+
+export type TrySolveRowIn = {
+  row_id: string;
+  source: 'manual' | 'excel';
+  product_key: string;
+  source_sheet?: string | null;
+  source_row?: number | null;
+  fields: Record<string, any>;
+  raw_values: Record<string, any>;
+  market: TrySolveMarket;
+  quote_request: TrySolveQuoteRequest;
+};
+
+export type TrySolveRowOut = TrySolveRowIn & {
+  product_label: string;
+  status: TrySolveStatus;
+  diagnostics: string[];
+  quantark_product_type?: string | null;
+  engine_name?: string | null;
+  solved_value?: number | null;
+  model_price?: number | null;
+  residual?: number | null;
+  executable_terms?: Record<string, any> | null;
+};
+
+export type TrySolveBatchOut = {
+  batch_id: string;
+  rows: TrySolveRowOut[];
+  summary: Record<string, any>;
+};
+
+export type TrySolveValidateRequest = {
+  row: TrySolveRowIn;
+};
+
+export type TrySolveSolveRequest = {
+  row: TrySolveRowIn;
+};
+
+export type TrySolveBatchSolveRequest = {
+  rows: TrySolveRowIn[];
+};
+
+export type TrySolveExportRequest = {
+  rows: TrySolveRowOut[];
+  scope: 'all' | 'selected' | 'solved' | 'errors';
+  selected_row_ids: string[];
+};
+
+export type TrySolveExportOut = {
+  filename: string;
+  url: string;
+  row_count: number;
+  scope: string;
+};
+
+export type ProductRoot = {
+  id: number;
+  asset_class: string;
+  product_family: string;
+  quantark_class?: string | null;
+  underlying: string;
+  currency: string;
+  terms?: Record<string, unknown>;
+  raw_terms?: Record<string, unknown>;
+  components?: Record<string, unknown>[];
+};
+
+export type Position = {
+  id: number;
+  portfolio_id: number;
+  product_id?: number | null;
+  product?: ProductRoot | null;
+  underlying: string;
+  product_type: string;
+  product_kwargs: Record<string, any>;
+  engine_name: string;
+  engine_kwargs: Record<string, any>;
+  quantity: number;
+  entry_price: number;
+  currency: string;
+  status: string;
+  position_kind: 'otc' | 'listed';
+  source_trade_id?: string | null;
+  source_row?: number | null;
+  mapping_status: string;
+  mapping_error?: string | null;
+  source_payload?: Record<string, any> | null;
+  rfq_id?: number | null;
+  rfq_quote_version_id?: number | null;
+  trade_effective_date?: string | null;
+};
+
+export type PositionLifecycleEvent = {
+  id: number;
+  position_id: number;
+  event_type: string;
+  event_data: Record<string, unknown>;
+  old_status: string | null;
+  new_status: string | null;
+  actor: string;
+  created_at: string;
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
+  cancellation_reason?: string | null;
+};
+
+export type Portfolio = {
+  id: number;
+  name: string;
+  kind: PortfolioKind;
+  base_currency: string;
+  created_at?: string;
+  updated_at?: string;
+  positions: Position[];
+};
+
+export type PositionImportBatch = {
+  id: number;
+  portfolio_id: number;
+  imported_count: number;
+  supported_count: number;
+  unsupported_count: number;
+  error_count: number;
+  status: string;
+};
+
+export type MarketInput = {
+  id: number;
+  portfolio_id: number;
+  position_id?: number | null;
+  source_trade_id: string;
+  symbol: string;
+  valuation_date: string;
+  spot?: number | null;
+  rate?: number | null;
+  dividend_yield?: number | null;
+  volatility?: number | null;
+  source_row?: number | null;
+  source_payload?: Record<string, any> | null;
+};
+
+export type PricingParameterRow = {
+  id: number;
+  profile_id: number;
+  source_trade_id: string;
+  symbol: string;
+  instrument_id?: number | null;
+  rate?: number | null;
+  dividend_yield?: number | null;
+  volatility?: number | null;
+  source_row?: number | null;
+  source_payload?: Record<string, any> | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PricingParameterProfile = {
+  id: number;
+  name: string;
+  valuation_date: string;
+  source_type: 'xlsx' | 'market_data_spot' | 'default_underlying' | string;
+  source_path?: string | null;
+  status: string;
+  summary: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+  rows: PricingParameterRow[];
+};
+
+/** One resolved field from GET .../positions/{id}/pricing-params. The extra
+ * provenance keys vary by `source`; all are optional. */
+export type ResolvedParam = {
+  value: number | null;
+  source: 'market_quote' | 'pricing_parameter_profile' | 'assumption_set' | 'missing';
+  as_of?: string;
+  age_days?: number;
+  quote_source?: string;
+  profile_id?: number;
+  source_trade_id?: string;
+  assumption_set_id?: number;
+  assumption_row_id?: number;
+};
+
+export type ResolvedPricingParams = {
+  spot: ResolvedParam;
+  rate: ResolvedParam;
+  dividend_yield: ResolvedParam;
+  volatility: ResolvedParam;
+};
+
+export type MarketDataProfile = {
+  id: number;
+  underlying_id?: number | null;
+  name: string;
+  source: string;
+  symbol: string;
+  asset_class: string;
+  start_date: string;
+  end_date: string;
+  adjust?: string | null;
+  valuation_date: string;
+  data: Record<string, any>;
+  source_metadata?: Record<string, any> | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PositionValuationRun = {
+  id: number;
+  status: string;
+  pricing_parameter_profile_id?: number | null;
+  valuation_date: string;
+  overrides: Record<string, any>;
+  summary: Record<string, any>;
+  resolved_position_ids?: number[] | null;
+  results: PositionValuationResult[];
+};
+
+export type PositionValuationResult = {
+  id: number;
+  position_id: number;
+  source_trade_id?: string | null;
+  ok: boolean;
+  price?: number | null;
+  market_value?: number | null;
+  pnl?: number | null;
+  market_inputs?: Record<string, any>;
+  result_payload?: Record<string, any>;
+  error?: string | null;
+};
+
+export type ReportJob = {
+  id: number;
+  report_type: string;          // 'portfolio' | 'risk' | 'rfq'
+  status: string;
+  request_payload: Record<string, any>;
+  result_payload: Record<string, any>;
+  artifact_paths: Record<string, any>;
+  task_id?: number | null;
+  created_at: string;           // ISO timestamp
+};
+
+export type TaskErrorPosition = {
+  position_id: number | null;
+  underlying?: string | null;
+  product_type?: string | null;
+  pricing_ok: boolean;
+  pricing_error?: string | null;
+  greeks_ok: boolean;
+  greeks_error?: string | null;
+};
+
+export type TaskResultPayload = {
+  errors?: {
+    kind?: string;
+    failed_count?: number;
+    positions?: TaskErrorPosition[];
+  };
+  [key: string]: unknown;
+};
+
+export type TaskRun = {
+  id: number;
+  kind: 'risk_run' | 'report_job' | string;
+  status: 'queued' | 'running' | 'completed' | 'completed_with_errors' | 'failed' | string;
+  portfolio_id?: number | null;
+  risk_run_id?: number | null;
+  greeks_landscape_run_id?: number | null;
+  report_job_id?: number | null;
+  progress_current: number;
+  progress_total: number;
+  message?: string | null;
+  error?: string | null;
+  result_payload?: TaskResultPayload | null;
+  created_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+};
+
+export type PortfolioKind = 'container' | 'view';
+
+export type FilterRule =
+  | { op: 'and'; children: FilterRule[] }
+  | { op: 'or';  children: FilterRule[] }
+  | { op: 'not'; child: FilterRule }
+  | { op: 'eq' | 'ne' | 'lt' | 'lte' | 'gt' | 'gte';
+      field: string; value: string | number }
+  | { op: 'in' | 'not_in'; field: string; value: (string | number)[] }
+  | { op: 'between'; field: string; value: [number | string, number | string] };
+
+export type PortfolioSummary = {
+  id: number;
+  name: string;
+  kind: PortfolioKind;
+  base_currency: string;
+  description: string | null;
+  tags: string[];
+  filter_rule: FilterRule | null;
+  manual_include_ids: number[];
+  manual_exclude_ids: number[];
+  source_portfolio_ids: number[];
+  resolved_position_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PortfolioDetail = PortfolioSummary & {
+  positions: Position[];
+};
+
+export type PortfolioPreviewBody = {
+  kind: PortfolioKind;
+  filter_rule?: FilterRule | null;
+  manual_include_ids?: number[];
+  manual_exclude_ids?: number[];
+  source_portfolio_ids?: number[];
+};
+
+export type PortfolioMembership = {
+  portfolio_id: number;
+  position_ids: number[];
+};
+
+export type LatestAkshareClose = {
+  spot: number | null;
+  fetched_at: string | null;
+  fallback: boolean;
+  market_data_profile_id: number | null;
+};
+
+export type UnderlyingPricingDefault = {
+  underlying: string;
+  rate: number | null;
+  dividend_yield: number | null;
+  volatility: number | null;
+  notes: string | null;
+  is_complete: boolean;
+  /** True when the underlying is in the open-position scope the build gate validates. */
+  has_open_position: boolean;
+  latest_akshare_close: LatestAkshareClose | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Instrument row returned by GET /api/instruments (unified registry, replaces /api/underlyings). */
+export type Instrument = {
+  id: number;
+  symbol: string;
+  display_name: string | null;
+  kind: string;
+  exchange: string | null;
+  currency: string;
+  status: string;
+  source: string;
+  akshare_symbol: string | null;
+  akshare_asset_class: string | null;
+  contract_code: string | null;
+  series_root: string | null;
+  expiry: string | null;
+  multiplier: number | null;
+  strike: number | null;
+  option_type: string | null;
+  parent_id: number | null;
+  loaded_at: string | null;
+  rate: number | null;
+  dividend_yield: number | null;
+  volatility: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Underlying = {
+  id: number;
+  symbol: string;
+  display_name: string | null;
+  asset_class: string;
+  market: string | null;
+  exchange: string | null;
+  currency: string;
+  akshare_symbol: string | null;
+  akshare_asset_class: string | null;
+  status: 'draft' | 'active' | 'inactive' | string;
+  source: string;
+  rate: number | null;
+  dividend_yield: number | null;
+  volatility: number | null;
+  notes: string | null;
+  is_complete: boolean;
+  latest_akshare_close: LatestAkshareClose | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type UnderlyingUpdate = Partial<Pick<
+  Underlying,
+  | 'display_name'
+  | 'asset_class'
+  | 'market'
+  | 'exchange'
+  | 'currency'
+  | 'akshare_symbol'
+  | 'akshare_asset_class'
+  | 'status'
+  | 'source'
+  | 'rate'
+  | 'dividend_yield'
+  | 'volatility'
+  | 'notes'
+>>;
+
+export interface FxRate {
+  id: number;
+  base_currency: string;
+  quote_currency: string;
+  rate: number;
+  as_of_date: string;
+  source: string;
+  pricing_parameter_profile_id?: number | null;
+}
+
+export type HedgeFamilyCount = { family: string; total: number; allowed: number };
+
+export type HedgeUnderlying = {
+  underlying_id: number;
+  symbol: string;
+  display_name: string | null;
+  asset_class: string;
+  unresolvable: boolean;
+  last_loaded_at: string | null;
+  stale_count: number;
+  families: HedgeFamilyCount[];
+};
+
+export type HedgeInstrument = {
+  id: number;
+  underlying_id: number;
+  family: string;
+  series_root: string;
+  exchange: string;
+  contract_code: string;
+  instrument_type: string;
+  option_type: string | null;
+  strike: number | null;
+  expiry: string | null;
+  multiplier: number | null;
+  last_price: number | null;
+  status: string;
+  allowed: boolean;
+};
+
+export type HedgeStrategyName =
+  | 'delta_neutral' | 'delta_neutral_enhanced' | 'delta_gamma_neutral' | 'full_neutral'
+
+export interface HedgeLeg {
+  key: string
+  instrument_id: number
+  contract_code: string
+  exchange: string
+  instrument_type: string
+  option_type: string | null
+  strike: number | null
+  expiry?: string | null
+  multiplier: number
+  family: string
+  role: string
+  delta: number
+  gamma: number
+  vega: number
+  quantity: number
+  priced_ok: boolean
+  price_error: string | null
+}
+
+export type HedgeGreeks = { delta: number; gamma: number; vega: number }
+
+/** Response of POST /api/hedging/book — position_ids align positionally with
+ *  the request's non-zero-quantity legs (backend skips qty 0 in order). */
+export interface HedgeBookResponse {
+  status: 'booked'
+  portfolio_id: number
+  underlying: string
+  risk_run_id: number
+  position_ids: number[]
+}
+
+/** Frontend-shaped outcome of the last Book attempt, for the banner. */
+export type HedgeBookingResult =
+  | {
+      kind: 'success'
+      portfolioName: string
+      riskRunDate: string | null
+      legs: { contractCode: string; quantity: number; role: string; positionId: number }[]
+    }
+  | { kind: 'error'; message: string }
+
+export interface HedgeDiagnosticTerm {
+  contract_code: string
+  quantity: number
+  per_lot: number
+  contribution: number
+}
+
+export interface HedgeDiagnostic {
+  kind: 'hard_band_residual'
+  greek: keyof HedgeGreeks
+  target: number
+  band: number
+  residual: number
+  shortfall: number
+  suggested_band: number
+  terms: HedgeDiagnosticTerm[]
+}
+
+export interface HedgeableUnderlying {
+  underlying: string
+  targets: HedgeGreeks
+  spot: number | null
+}
+
+export interface HedgeableSummary {
+  status: 'ok' | 'no_risk_run'
+  portfolio_id: number
+  risk_run_id?: number
+  created_at?: string
+  stale?: boolean
+  message?: string
+  underlyings?: HedgeableUnderlying[]
+}
+
+/** Allowed instrument usable as a hedge leg (id === instrument_id the solver needs). */
+export interface HedgeCandidate {
+  instrument_id: number
+  contract_code: string
+  instrument_type: string
+  family: string
+}
+
+export interface HedgeProposal {
+  status: 'feasible' | 'infeasible' | 'no_risk_run' | 'no_exposure' | 'no_spot'
+  portfolio_id: number
+  underlying: string
+  strategy: string
+  risk_run_id?: number
+  spot?: number
+  targets?: { delta: number; gamma: number; vega: number }
+  bands?: { delta: number; gamma: number; vega: number }
+  legs?: HedgeLeg[]
+  residual?: { delta: number; gamma: number; vega: number }
+  in_band?: Record<string, boolean>
+  binding?: { greek: string; shortfall: number }[]
+  diagnostics?: HedgeDiagnostic[]
+  warnings?: { contract_code: string; error: string }[]
+  message?: string
+}
+
+// --- Skills management -------------------------------------------------
+
+export type SkillTier = 'workflows' | 'references' | 'meta';
+
+export type SkillLintIssue = {
+  code: string;
+  message: string;
+  detail: string;
+  severity: 'warning' | 'error';
+};
+
+export type SkillPersona = 'trader' | 'risk_manager' | 'high_board';
+
+export type SkillRoutingEntry = { request: string; persona: SkillPersona };
+
+export type SkillFrontmatter = {
+  name: string;
+  description: string;
+  domain: string;
+  workflow_type: 'diagnostic' | 'action' | 'read' | 'compound';
+  allowed_envelopes: string[];
+  may_escalate_to: string[];
+  required_context: string[];
+  optional_context: string[];
+  write_actions: boolean;
+  confirmation_required: boolean;
+  success_criteria: string[];
+  routing?: SkillRoutingEntry[];
+};
+
+export type SkillFileSummary = {
+  tier: SkillTier;
+  path: string;
+  name: string;
+  domain: string | null;
+  frontmatter: Record<string, unknown> | null;
+  frontmatter_error: string | null;
+  lint: SkillLintIssue[];
+  body_tokens: number | null;
+};
+
+export type SkillCatalog = {
+  domains: string[];
+  workflows: SkillFileSummary[];
+  references: SkillFileSummary[];
+  meta: SkillFileSummary[];
+};
+
+export type SkillFile = SkillFileSummary & {
+  content: string;
+  body: string | null;
+};
+
+export type SkillValidateResult = {
+  issues: SkillLintIssue[];
+  body_tokens: number | null;
+  blocking: boolean;
+};
+
+export type SkillSaveResult = {
+  saved: boolean;
+  reloaded: boolean;
+  reload_error: string | null;
+  lint: SkillLintIssue[];
+};
+
+export type SkillDeleteResult = {
+  deleted: boolean;
+  reloaded: boolean;
+  reload_error: string | null;
+  warnings: string[];
+};
+
+export type SkillReloadResult = { reloaded: boolean; error: string | null };
+
+// --- Scenario Test -------------------------------------------------
+
+export type ScenarioStress = {
+  param: 'spot' | 'vol' | 'rate' | 'dividend';
+  stress_type: 'ABSOLUTE' | 'PERCENTAGE' | 'VALUE';
+  value: number;
+  level: 'portfolio' | 'underlying' | 'position';
+  target?: string | number | null;
+};
+
+export type ScenarioSpec = {
+  name: string;
+  description?: string;
+  stresses: ScenarioStress[];
+};
+
+export type ScenarioTestRunRequest = {
+  portfolio_id: number;
+  pricing_parameter_profile_id?: number | null;
+  engine_config_id?: number | null;
+  position_ids?: number[] | null;
+  predefined?: string[];
+  custom?: ScenarioSpec[] | null;
+  scenario_set?: string | null;
+  scenario_sets?: string[];
+  config?: Record<string, unknown> | null;
+};
+
+export type ScenarioTestRun = {
+  id: number;
+  portfolio_id: number;
+  pricing_parameter_profile_id: number | null;
+  engine_config_id?: number | null;
+  status: string;
+  results: Record<string, unknown> | null;
+  excluded_positions: Array<{ position_id: number; reason: string }> | null;
+  artifacts: {
+    report_html_path?: string | null;
+    export_paths?: string[];
+    notes?: string[];
+  } | null;
+  created_at: string;
+  config?: Record<string, unknown> | null;
+  scenario_spec?: Record<string, unknown> | null;
+  resolved_position_ids?: number[] | null;
+};
+
+export type PredefinedScenario = {
+  key: string;
+  name: string;
+  description: string;
+  num_stresses: number;
+  stresses: ScenarioStress[];
+  metadata?: Record<string, unknown>;
+};
+
+export type ScenarioLibrary = {
+  predefined: PredefinedScenario[];
+  saved_sets: string[];
+};
+
+export type ScenarioSetDetail = {
+  name: string;
+  description: string;
+  stresses: ScenarioStress[];
+  // Number of scenarios in the underlying saved set. Flat-model items have 1;
+  // sets with >1 (agent/API-created) are run in full but not editable in the UI.
+  num_scenarios?: number;
+};
+
+export type GridAxisSpec = {
+  param: 'spot' | 'vol' | 'rate' | 'dividend';
+  start: number;
+  stop: number;
+  step: number;
+  stress_type: 'ABSOLUTE' | 'PERCENTAGE' | 'VALUE';
+  level: 'portfolio' | 'underlying';
+  target?: string | number | null;
+};
+
+export type ScenarioGridRequest = {
+  name: string;
+  combine_mode: 'cross_product';
+  axes: GridAxisSpec[];
+};
+
+export type ScenarioSetSummary = {
+  name: string;
+  num_scenarios: number;
+  combine_mode: string | null;
+  axes_summary: string;
+  has_grid: boolean;
+  axes: GridAxisSpec[];
+};
+
+// --- Backtest -------------------------------------------------
+
+export type BacktestSpec = {
+  start: string;
+  end: string;
+  engine_family?: 'autocallable' | 'other' | string;
+  engine: 'quad' | 'pde' | 'mc' | string;
+  autocallable_engine?: 'quad' | 'pde' | 'mc' | 'analytical' | string;
+  other_engine?: 'quad' | 'pde' | 'mc' | 'analytical' | string;
+  fallback_engine?: 'quad' | 'pde' | 'mc' | string;
+  vol_source: 'realized' | 'flat' | string;
+  vol_window?: number | null;
+  rate?: number | null;
+  flat_vol?: number | null;
+};
+
+export type BacktestRunRequest = {
+  portfolio_id: number;
+  pricing_parameter_profile_id?: number | null;
+  engine_config_id?: number | null;
+  position_ids?: number[] | null;
+  spec: BacktestSpec;
+  config?: Record<string, unknown> | null;
+};
+
+export type BacktestPnlPoint = {
+  date: string;
+  total_pnl: number;
+  hedge_pnl: number;
+  product_pnl: number;
+};
+
+export type BacktestLifecycleEvent = {
+  type: string;
+  date: string;
+  cashflow: number;
+};
+
+export type BacktestPortfolioSummary = {
+  total_pnl: number;
+  hedge_pnl: number;
+  product_pnl: number;
+  num_trades: number;
+  sharpe?: number | null;
+  max_drawdown?: number | null;
+  var_95?: number | null;
+  cvar_95?: number | null;
+  pnl_series: BacktestPnlPoint[];
+};
+
+export type BacktestUnderlying = {
+  underlying: string;
+  hedge_instrument?: string | { kind?: string; multiplier?: number; [key: string]: unknown } | null;
+  num_products: number;
+  total_pnl: number;
+  hedge_pnl: number;
+  num_trades: number;
+  lifecycle_events?: BacktestLifecycleEvent[];
+  event_summary?: Record<string, unknown>;
+  pnl_series?: BacktestPnlPoint[];
+  greeks_series?: Record<string, unknown>[];
+};
+
+export type BacktestResults = {
+  window?: { start: string; end: string };
+  engine?: string;
+  portfolio?: BacktestPortfolioSummary;
+  by_underlying?: BacktestUnderlying[];
+  excluded_positions?: Array<{ position_id: number; reason: string }>;
+  notes?: string[];
+  error?: string;
+};
+
+export type BacktestRun = {
+  id: number;
+  portfolio_id: number;
+  engine_config_id?: number | null;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'empty' | string;
+  spec: BacktestSpec;
+  config?: Record<string, unknown> | null;
+  results?: BacktestResults | null;
+  excluded_positions?: Array<{ position_id: number; reason: string }> | null;
+  artifacts?: {
+    dashboards?: Record<string, string>;
+    [key: string]: unknown;
+  } | null;
+  created_at: string;
+};

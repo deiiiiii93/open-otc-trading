@@ -1,0 +1,26 @@
+.wl-stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.wl-stepper__step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-1);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+.wl-stepper__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--hairline-2);
+  background: var(--paper-2);
+}
+.wl-stepper__step--done .wl-stepper__dot { background: var(--pos); border-color: var(--pos); }
+.wl-stepper__step--active { color: var(--ink); }
+.wl-stepper__step--active .wl-stepper__dot { background: var(--info); border-color: var(--info); }

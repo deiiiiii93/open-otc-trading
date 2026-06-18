@@ -1,0 +1,4 @@
+.wl-resolved { width: 100%; font-size: 13px; }
+.wl-resolved th, .wl-resolved td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--hairline); }
+.wl-resolved th { font-weight: 600; color: var(--ink-2); }
+.wl-resolved-empty { padding: 24px; text-align: center; color: var(--ink-2); }

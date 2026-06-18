@@ -1,0 +1,25 @@
+.wl-pageheader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--gap-4);
+  margin-bottom: var(--gap-4);
+}
+.wl-pageheader__main { flex: 1; min-width: 0; }
+.wl-pageheader__title {
+  margin: 0;
+  font-size: var(--type-h1-size);
+  font-weight: var(--type-h1-weight);
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  line-height: 1.1;
+}
+.wl-pageheader__action {
+  display: flex;
+  gap: var(--gap-2);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+}

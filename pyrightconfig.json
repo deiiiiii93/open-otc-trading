@@ -1,0 +1,5 @@
+{
+  "extraPaths": ["backend"],
+  "include": ["backend", "tests"],
+  "exclude": ["**/__pycache__", "**/.venv", "**/node_modules", "frontend/dist"]
+}

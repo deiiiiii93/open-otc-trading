@@ -1,0 +1,44 @@
+.wl-greeks { border: 1px solid var(--ink); background: var(--paper); display: flex; flex-direction: column; }
+.wl-greeks__head {
+  background: var(--ink);
+  color: var(--paper);
+  padding: 6px var(--gap-3);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.wl-greeks__title {
+  font-size: var(--type-h3-size);
+  font-weight: var(--type-h3-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.wl-greeks__promote {
+  background: none;
+  border: 0;
+  color: var(--paper);
+  font-family: var(--font-numeric);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.wl-greeks__promote:hover { color: var(--paper-2); }
+.wl-greeks__body { padding: var(--panel-padding); display: flex; flex-direction: column; gap: var(--gap-3); }
+.wl-greeks__tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--gap-2);
+}
+.wl-greeks__skeletons { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap-2); }
+@media (max-width: 760px) {
+  .wl-greeks__tiles,
+  .wl-greeks__skeletons {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 480px) {
+  .wl-greeks__tiles,
+  .wl-greeks__skeletons {
+    grid-template-columns: 1fr;
+  }
+}

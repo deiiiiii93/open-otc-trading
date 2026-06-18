@@ -1,0 +1,206 @@
+.wl-agent-desk__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+  min-width: 0;
+}
+.wl-agent-desk__threads {
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.wl-agent-desk__threads-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  padding: var(--gap-3);
+  border-bottom: 1px solid var(--hairline-2);
+}
+.wl-agent-desk__eyebrow {
+  color: var(--ink);
+  font-size: var(--type-body-size);
+  font-weight: 700;
+}
+.wl-agent-desk__threads-count {
+  color: var(--ink-2);
+  font-family: var(--font-numeric);
+  font-size: var(--type-caps-size);
+  margin-top: 2px;
+}
+.wl-agent-desk__thread-search {
+  align-items: center;
+  background: var(--paper);
+  border-bottom: 1px solid var(--hairline-2);
+  color: var(--ink-2);
+  display: flex;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+}
+.wl-agent-desk__thread-search:focus-within {
+  color: var(--ink);
+}
+.wl-agent-desk__thread-search input {
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  min-width: 0;
+  outline: 0;
+  width: 100%;
+}
+.wl-agent-desk__thread-search input::placeholder {
+  color: var(--ink-2);
+}
+.wl-agent-desk__thread-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--gap-2);
+}
+.wl-agent-desk__thread-empty {
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+  padding: var(--gap-3);
+}
+.wl-agent-desk__thread-card {
+  border: 1px solid transparent;
+  background: var(--paper);
+  display: grid;
+  gap: var(--gap-2);
+  padding: var(--gap-2);
+}
+.wl-agent-desk__thread-card.is-active {
+  border-color: var(--ink);
+  background: var(--paper-2);
+}
+.wl-agent-desk__thread-main {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+.wl-agent-desk__thread-main:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
+}
+.wl-agent-desk__thread-title {
+  display: block;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wl-agent-desk__thread-meta {
+  color: var(--ink-2);
+  display: block;
+  font-family: var(--font-numeric);
+  font-size: var(--type-caps-size);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wl-agent-desk__thread-tools {
+  display: grid;
+  grid-template-columns: repeat(4, 28px);
+  gap: 4px;
+}
+.wl-agent-desk__icon-btn {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--hairline-2);
+  color: var(--ink-2);
+  cursor: pointer;
+  display: inline-flex;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  width: 28px;
+}
+.wl-agent-desk__icon-btn:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.wl-agent-desk__icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.wl-agent-desk__icon-btn:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 1px;
+}
+.wl-agent-desk__icon-btn--danger {
+  color: var(--neg);
+}
+.wl-agent-desk__rename-form {
+  display: grid;
+  gap: var(--gap-2);
+}
+.wl-agent-desk__rename-input {
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  min-width: 0;
+  padding: var(--input-padding-y) var(--input-padding-x);
+}
+.wl-agent-desk__messages {
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  min-height: 100%;
+  padding: var(--panel-padding);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+.wl-agent-desk__view-mode {
+  display: inline-flex;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  padding: 2px;
+  margin: 0;
+  gap: 0;
+  border-radius: 999px;
+}
+.wl-agent-desk__view-mode-btn {
+  border: 0;
+  background: transparent;
+  padding: 4px 10px;
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  text-transform: none;
+  letter-spacing: normal;
+  text-wrap: nowrap;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.wl-agent-desk__view-mode-btn.is-active {
+  background: var(--ink);
+  color: var(--paper);
+}
+.wl-agent-desk__view-mode-btn:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 1px;
+}
+@media (max-width: 900px) {
+  .wl-agent-desk__threads {
+    max-height: 280px;
+  }
+}

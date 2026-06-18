@@ -1,0 +1,210 @@
+.wl-engine-configs__feedback,
+.wl-engine-configs__error {
+  margin-bottom: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  border: 1px solid var(--hairline);
+  border-radius: 0;
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.wl-engine-configs__error {
+  border-color: var(--neg);
+  color: var(--neg);
+}
+
+.wl-engine-configs__list,
+.wl-engine-configs__editor,
+.wl-engine-configs__section,
+.wl-engine-configs__rule {
+  border: 1px solid var(--hairline);
+  border-radius: 0;
+  background: var(--paper-2);
+}
+
+/* Rail rows are RailItems (RailList owns the container, RailItem the row chrome).
+   The variant name grows so the "Default" pill sits at the trailing edge. */
+.wl-engine-configs__row {
+  justify-content: space-between;
+}
+
+.wl-engine-configs__field input:focus,
+.wl-engine-configs__field select:focus,
+.wl-engine-configs__field textarea:focus,
+.wl-engine-configs__check input:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.wl-engine-configs__row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-engine-configs__pill {
+  flex: 0 0 auto;
+  border: 1px solid var(--info);
+  border-radius: 999px;
+  padding: 0 var(--gap-2);
+  color: var(--info);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.wl-engine-configs__editor {
+  display: grid;
+  gap: var(--gap-4);
+  padding: var(--panel-padding);
+  background: var(--paper);
+}
+
+.wl-engine-configs__section {
+  display: grid;
+  gap: var(--gap-3);
+  padding: var(--panel-padding);
+}
+
+.wl-engine-configs__section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--gap-3);
+  flex-wrap: wrap;
+}
+
+.wl-engine-configs__section-head h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--type-h3-size);
+  font-weight: var(--type-h3-weight);
+}
+
+.wl-engine-configs__section-head p {
+  margin: var(--gap-1) 0 0;
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+}
+
+.wl-engine-configs__grid,
+.wl-engine-configs__family-grid,
+.wl-engine-configs__rule-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap-3);
+}
+
+.wl-engine-configs__field,
+.wl-engine-configs__check {
+  display: grid;
+  gap: var(--gap-1);
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.wl-engine-configs__field--wide {
+  grid-column: 1 / -1;
+}
+
+.wl-engine-configs__field input,
+.wl-engine-configs__field select,
+.wl-engine-configs__field textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--hairline-2);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  padding: var(--input-padding-y) var(--input-padding-x);
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  font-weight: var(--type-body-weight);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.wl-engine-configs__field input::placeholder,
+.wl-engine-configs__field textarea::placeholder {
+  color: var(--ink-2);
+}
+
+.wl-engine-configs__field input:disabled,
+.wl-engine-configs__field select:disabled,
+.wl-engine-configs__field textarea:disabled {
+  background: var(--paper-2);
+  color: var(--ink-2);
+  cursor: not-allowed;
+}
+
+.wl-engine-configs__field textarea {
+  min-height: 84px;
+  resize: vertical;
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  font-variant-numeric: tabular-nums;
+}
+
+.wl-engine-configs__check {
+  display: flex;
+  align-items: center;
+  grid-column: 1 / -1;
+  color: var(--ink);
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: var(--type-body-size);
+  font-weight: var(--type-body-weight);
+}
+
+.wl-engine-configs__check input {
+  width: 1em;
+  height: 1em;
+  accent-color: var(--ink);
+}
+
+.wl-engine-configs__rules {
+  display: grid;
+  gap: var(--gap-3);
+}
+
+.wl-engine-configs__rule {
+  padding: var(--panel-padding);
+  background: var(--paper);
+}
+
+.wl-engine-configs__rule-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-3);
+  margin-bottom: var(--gap-3);
+}
+
+.wl-engine-configs__rule-head strong {
+  color: var(--ink);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.wl-engine-configs__buttons {
+  display: flex;
+  gap: var(--gap-2);
+  flex-wrap: wrap;
+}
+
+@media (max-width: 760px) {
+  .wl-engine-configs__grid,
+  .wl-engine-configs__family-grid,
+  .wl-engine-configs__rule-grid {
+    grid-template-columns: 1fr;
+  }
+}

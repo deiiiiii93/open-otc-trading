@@ -1,0 +1,35 @@
+.wl-table { border: 1px solid var(--ink); background: var(--paper); display: flex; flex-direction: column; }
+.wl-table__row {
+  display: grid;
+  gap: var(--gap-3);
+  padding: 0 var(--gap-3);
+  align-items: center;
+  height: var(--row-height);
+  border-bottom: 1px solid var(--paper-3);
+}
+.wl-table__row:last-child { border-bottom: 0; }
+.wl-table__row[data-clickable="true"] { cursor: pointer; }
+.wl-table__row[data-clickable="true"]:hover { background: var(--paper-2); }
+.wl-table__row--selected { background: var(--paper-3); }
+.wl-table__row--head {
+  background: var(--ink);
+  color: var(--paper);
+  border-bottom: 1px solid var(--ink);
+}
+.wl-table__row--head .wl-table__cell {
+  font-family: var(--font-ui);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.wl-table__cell {
+  font-family: var(--font-numeric);
+  font-size: var(--type-num-m-size);
+  font-weight: var(--type-num-m-weight);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wl-table__cell--num { text-align: right; font-variant-numeric: tabular-nums; }
+.wl-table__row--head .wl-table__cell--num { text-align: right; }

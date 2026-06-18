@@ -1,0 +1,78 @@
+.wl-scenario { border: 1px solid var(--ink); background: var(--paper); display: flex; flex-direction: column; }
+.wl-scenario__head {
+  background: var(--ink);
+  color: var(--paper);
+  padding: 6px var(--gap-3);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.wl-scenario__title {
+  font-size: var(--type-h3-size);
+  font-weight: var(--type-h3-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.wl-scenario__promote {
+  background: none;
+  border: 0;
+  color: var(--paper);
+  font-family: var(--font-numeric);
+  font-size: 16px;
+  cursor: not-allowed;
+  padding: 0 4px;
+  opacity: 0.45;
+}
+.wl-scenario__body { position: relative; padding: var(--panel-padding); }
+.wl-scenario__matrix {
+  display: grid;
+  grid-template-columns: 80px repeat(6, 1fr);
+  gap: 1px;
+  background: var(--paper-3);
+  filter: blur(0.5px);
+  opacity: 0.55;
+}
+.wl-scenario__cell {
+  background: var(--paper);
+  padding: var(--gap-2);
+  font-family: var(--font-numeric);
+  font-size: var(--type-num-m-size);
+  text-align: right;
+  color: var(--ink-2);
+}
+.wl-scenario__cell--header {
+  font-family: var(--font-ui);
+  font-size: var(--type-caps-size);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+  font-weight: var(--type-caps-weight);
+}
+.wl-scenario__cell--corner { background: var(--paper-2); }
+.wl-scenario__cell--empty { color: var(--hairline-2); }
+.wl-scenario__overlay {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--paper) 80%, transparent);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-2);
+  pointer-events: none;
+}
+.wl-scenario__overlay-text {
+  font-family: var(--font-ui);
+  font-size: var(--type-h3-size);
+  font-weight: var(--type-h3-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  padding: var(--gap-2) var(--gap-3);
+  background: var(--paper);
+}
+.wl-scenario__overlay-detail {
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}

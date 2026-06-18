@@ -1,0 +1,176 @@
+.wl-tasks__error {
+  border: 1px solid var(--neg);
+  color: var(--neg);
+  padding: var(--gap-2) var(--gap-3);
+  margin-bottom: var(--gap-3);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+}
+
+.wl-tasks__table {
+  margin-top: var(--gap-3);
+  overflow-x: auto;
+}
+
+.wl-tasks__table .wl-table__row {
+  min-height: 58px;
+  height: auto;
+  padding-top: var(--gap-2);
+  padding-bottom: var(--gap-2);
+}
+
+.wl-tasks__table .wl-table__row--head {
+  min-height: var(--row-height);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.wl-tasks__table .wl-table__cell {
+  min-width: 0;
+}
+
+.wl-tasks__task {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.wl-tasks__primary {
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wl-tasks__secondary,
+.wl-tasks__links {
+  font-family: var(--font-numeric);
+  color: var(--ink-2);
+  font-size: var(--type-num-s-size);
+  font-weight: var(--type-num-s-weight);
+}
+
+.wl-tasks__status-cell {
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gap-1);
+}
+
+.wl-tasks__error-button {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--neg);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  text-decoration: underline;
+}
+
+.wl-tasks__error-button:hover {
+  opacity: 0.8;
+}
+
+.wl-tasks__link-button {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font-family: var(--font-numeric);
+  font-size: var(--type-num-s-size);
+  text-decoration: underline;
+}
+
+.wl-tasks__link-button:hover {
+  opacity: 0.8;
+}
+
+.wl-tasks__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-1) var(--gap-2);
+  align-items: center;
+}
+
+.wl-tasks__links span {
+  border: 1px solid var(--hairline-2);
+  color: var(--ink-2);
+  padding: 1px 5px;
+}
+
+.wl-tasks__status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: normal;
+  word-break: break-word;
+  padding: 0 var(--gap-2);
+  border: 1px solid var(--hairline-2);
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  line-height: 1.15;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+.wl-tasks__status--queued,
+.wl-tasks__status--running {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.wl-tasks__status--completed {
+  border-color: var(--pos);
+  color: var(--pos);
+}
+
+.wl-tasks__status--completed_with_errors,
+.wl-tasks__status--failed {
+  border-color: var(--neg);
+  color: var(--neg);
+}
+
+.wl-tasks__progress-cell {
+  min-width: 0;
+}
+
+.wl-tasks__progress-line {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  color: var(--ink-2);
+  font-family: var(--font-numeric);
+  font-size: var(--type-num-s-size);
+  margin-bottom: var(--gap-1);
+}
+
+.wl-tasks__progress {
+  height: 5px;
+  background: var(--paper-3);
+}
+
+.wl-tasks__progress span {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+}
+
+.wl-tasks__table .wl-table__row {
+  min-width: 1020px;
+}

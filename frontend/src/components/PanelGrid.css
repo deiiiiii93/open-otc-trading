@@ -1,0 +1,9 @@
+.wl-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--panel-cols, 1), minmax(0, 1fr));
+  gap: var(--gap-3);
+  align-items: flex-start;
+}
+@media (max-width: 900px) {
+  .wl-panel-grid { grid-template-columns: 1fr; }
+}

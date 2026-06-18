@@ -1,0 +1,129 @@
+.wl-rfq-quote-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+
+.wl-rfq-quote-form__errors {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+  border-left: 3px solid var(--neg);
+  padding: var(--gap-2) var(--gap-3);
+  background: var(--paper-2);
+}
+
+.wl-rfq-quote-form__error-item {
+  margin: 0;
+  font-size: var(--type-small-size);
+  color: var(--neg);
+  line-height: 1.5;
+}
+
+.wl-rfq-quote-form__headline {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  background: var(--paper-2);
+  border: 1px solid var(--hairline-2);
+}
+
+.wl-rfq-quote-form__headline .wl-rfq-quote-form__underlying {
+  font-family: var(--font-numeric);
+  font-weight: 600;
+  font-size: var(--type-body-size);
+  color: var(--ink);
+}
+
+.wl-rfq-quote-form__headline .wl-rfq-quote-form__mode {
+  margin-left: auto;
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}
+
+.wl-rfq-quote-form__counterparty {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--gap-2) var(--gap-3);
+  padding: var(--gap-3);
+  border: 1px solid var(--hairline-2);
+}
+
+@media (max-width: 600px) {
+  .wl-rfq-quote-form__counterparty {
+    grid-template-columns: 1fr;
+  }
+}
+
+.wl-rfq-quote-form__section {
+  border: 1px solid var(--hairline-2);
+  padding: var(--gap-3);
+  margin: 0;
+}
+
+.wl-rfq-quote-form__section--readonly {
+  border-color: var(--hairline);
+}
+
+.wl-rfq-quote-form__legend {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+  padding: 0 var(--gap-1);
+}
+
+.wl-rfq-quote-form__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gap-2) var(--gap-3);
+}
+
+@media (max-width: 600px) {
+  .wl-rfq-quote-form__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.wl-rfq-quote-form__results {
+  display: flex;
+  gap: var(--gap-4);
+  padding: var(--gap-3);
+  border: 1px solid var(--hairline-2);
+  background: var(--paper-2);
+}
+
+.wl-rfq-quote-form__metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+}
+
+.wl-rfq-quote-form__metric span {
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wl-rfq-quote-form__metric strong {
+  font-family: var(--font-numeric);
+  font-size: var(--type-h3-size);
+  color: var(--ink);
+}
+
+.wl-rfq-quote-form__required-mark {
+  color: var(--neg);
+  margin-left: 2px;
+}
+
+.wl-rfq-quote-form__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+}

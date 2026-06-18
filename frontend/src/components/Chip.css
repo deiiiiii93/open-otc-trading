@@ -1,0 +1,22 @@
+.wl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-1);
+  padding: 3px 8px;
+  background: var(--paper-2);
+  border: 1px solid var(--hairline);
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+  font-weight: 500;
+}
+.wl-chip--clickable { cursor: pointer; }
+.wl-chip--clickable:hover { border-color: var(--ink); }
+.wl-chip__remove {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  padding: 0 2px;
+  line-height: 1;
+  cursor: pointer;
+}
+.wl-chip__remove:hover { color: var(--ink); }

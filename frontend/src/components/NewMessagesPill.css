@@ -1,0 +1,25 @@
+.wl-new-messages-pill {
+  position: absolute;
+  bottom: var(--gap-3);
+  left: 50%;
+  z-index: 5;
+  transform: translateX(-50%);
+  border: 0;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 6px 12px;
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px color-mix(in oklab, var(--ink) 18%, transparent);
+}
+
+.wl-new-messages-pill:hover {
+  background: var(--ink-2);
+}
+
+.wl-new-messages-pill:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
+}

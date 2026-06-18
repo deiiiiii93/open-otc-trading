@@ -1,0 +1,51 @@
+.wl-task-error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+
+.wl-task-error__trace {
+  margin: 0;
+  padding: var(--gap-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--paper-3);
+  color: var(--neg);
+  font-family: var(--font-numeric);
+  font-size: var(--type-num-s-size);
+}
+
+.wl-task-error__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+
+.wl-task-error__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+}
+
+.wl-task-error__label {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.wl-task-error__reason {
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  color: var(--neg);
+  overflow-wrap: anywhere;
+}
+
+.wl-task-error__empty {
+  margin: 0;
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+}

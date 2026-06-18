@@ -1,0 +1,96 @@
+.wl-picker { display: flex; flex-direction: column; gap: var(--gap-3); min-height: 0; }
+.wl-picker__search {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  padding: var(--input-padding-y) var(--input-padding-x);
+  border-radius: 0;
+}
+.wl-picker__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  overflow-y: auto;
+  flex: 1;
+  border: 1px solid var(--hairline);
+  max-height: 360px;
+}
+.wl-picker__row { border-bottom: 1px solid var(--hairline); }
+.wl-picker__row:last-child { border-bottom: 0; }
+.wl-picker__row label {
+  display: grid;
+  grid-template-columns: 24px 56px minmax(140px, 1.2fr) minmax(120px, 1fr) minmax(160px, 1.2fr);
+  gap: var(--gap-2);
+  align-items: center;
+  padding: 6px var(--gap-2);
+  cursor: pointer;
+}
+.wl-picker--source .wl-picker__row label {
+  grid-template-columns: 24px minmax(96px, max-content) minmax(0, 1fr) max-content;
+}
+.wl-picker__row label:hover { background: var(--paper-2); }
+.wl-picker__row input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+.wl-picker__id,
+.wl-picker__trade,
+.wl-picker__underlying {
+  min-width: 0;
+  font-family: var(--font-numeric);
+  font-size: var(--type-num-m-size);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wl-picker__trade {
+  color: var(--ink-2);
+}
+.wl-picker__product {
+  min-width: 0;
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wl-picker--source .wl-picker__id {
+  font-family: var(--font-ui);
+  overflow: visible;
+}
+.wl-picker--source .wl-picker__underlying {
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+}
+.wl-picker--source .wl-picker__product {
+  font-size: var(--type-body-size);
+  text-align: right;
+}
+.wl-picker__empty {
+  padding: var(--gap-3);
+  color: var(--ink-2);
+  font-style: italic;
+  text-align: center;
+}
+.wl-picker__actions { display: flex; gap: var(--gap-2); justify-content: flex-end; }
+
+@media (max-width: 640px) {
+  .wl-picker__row label,
+  .wl-picker--source .wl-picker__row label {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+  .wl-picker__id,
+  .wl-picker__trade,
+  .wl-picker__product {
+    grid-column: 2;
+  }
+  .wl-picker--source .wl-picker__product {
+    text-align: left;
+  }
+}

@@ -1,0 +1,5 @@
+.wl-scenario-detail__desc { color: var(--ink-2); margin: 0 0 var(--gap-3); }
+.wl-scenario-detail__table { width: 100%; border-collapse: collapse; font-size: var(--type-small-size); }
+.wl-scenario-detail__table th,
+.wl-scenario-detail__table td { text-align: left; padding: var(--gap-1) var(--gap-2); border-bottom: 1px solid var(--hairline); }
+.wl-scenario-detail__table th { color: var(--ink-2); font-weight: 600; }

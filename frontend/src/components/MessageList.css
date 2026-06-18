@@ -1,0 +1,14 @@
+.wl-message-list {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.wl-message-list__scroll {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: var(--gap-3);
+  gap: 0;
+}

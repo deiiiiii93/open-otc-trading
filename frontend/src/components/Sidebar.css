@@ -1,0 +1,126 @@
+.wl-sidebar {
+  background: var(--paper-2);
+  border-right: 1px solid var(--ink);
+  width: 100%;
+  padding: var(--gap-4) var(--gap-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+  flex-shrink: 0;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.wl-sidebar--collapsed {
+  padding-inline: 8px;
+  align-items: center;
+}
+.wl-sidebar__brand {
+  min-width: 0;
+}
+.wl-sidebar__brand-toggle {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: var(--gap-2);
+  text-align: left;
+  cursor: pointer;
+}
+.wl-sidebar--collapsed .wl-sidebar__brand-toggle {
+  grid-template-columns: 36px;
+}
+.wl-sidebar__brand-toggle:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+.wl-sidebar__brand-mark {
+  width: 36px;
+  height: 36px;
+  background: var(--ink);
+  color: var(--paper);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-numeric);
+  font-weight: 700;
+  font-size: 12px;
+}
+.wl-sidebar__brand-text {
+  min-width: 0;
+}
+.wl-sidebar__brand-text strong {
+  display: block;
+  font-size: var(--type-body-size);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wl-sidebar__brand-text span {
+  display: block;
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wl-sidebar__toggle-icon {
+  color: var(--ink-2);
+  opacity: 0;
+  display: grid;
+  place-items: center;
+  transition: opacity var(--motion-fade) linear, color var(--motion-fade) linear;
+}
+.wl-sidebar__brand-toggle:hover .wl-sidebar__toggle-icon,
+.wl-sidebar__brand-toggle:focus-visible .wl-sidebar__toggle-icon,
+.wl-sidebar--collapsed .wl-sidebar__toggle-icon {
+  opacity: 1;
+}
+.wl-sidebar__brand-toggle:hover .wl-sidebar__toggle-icon {
+  color: var(--ink);
+}
+.wl-sidebar--collapsed .wl-sidebar__toggle-icon {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+.wl-sidebar__nav { display: flex; flex-direction: column; gap: 2px; }
+.wl-sidebar__nav-item {
+  text-align: left;
+  padding: var(--gap-2) var(--gap-3);
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  color: var(--ink-2);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: color var(--motion-fade) linear;
+}
+.wl-sidebar__nav-item:hover { color: var(--ink); }
+.wl-sidebar__nav-item--active {
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 600;
+}
+
+@media (max-width: 720px) {
+  .wl-sidebar {
+    padding-inline: 8px;
+    align-items: center;
+  }
+
+  .wl-sidebar__brand-toggle {
+    grid-template-columns: 36px;
+  }
+
+  .wl-sidebar__brand-text,
+  .wl-sidebar__toggle-icon,
+  .wl-sidebar__nav {
+    display: none;
+  }
+}

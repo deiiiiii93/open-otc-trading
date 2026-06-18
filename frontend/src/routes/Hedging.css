@@ -1,0 +1,386 @@
+/* Hedging route */
+
+/* ── top bar ── */
+
+.hedging-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  padding: var(--gap-2) 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.hedging-progress {
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+
+/* ── underlying card content (rail rows are RailItems; container/active/hover
+   owned by RailList/RailItem) ── */
+
+.hedging-underlying-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  min-width: 0;
+}
+
+.hedging-underlying-card__symbol {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hedging-underlying-card__asset {
+  flex-shrink: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 0;
+  padding: 1px 5px;
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.hedging-underlying-card__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hedging-underlying-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-1);
+}
+
+.hedging-underlying-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  border: 1px solid var(--hairline);
+  border-radius: 0;
+  padding: 2px 5px;
+  background: color-mix(in srgb, var(--paper-2) 78%, var(--paper));
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.hedging-underlying-tag span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hedging-underlying-tag strong {
+  color: var(--ink);
+  font-family: var(--font-numeric);
+  font-size: 10px;
+}
+
+.hedging-underlying-tag--stale {
+  border-color: color-mix(in srgb, var(--warn) 50%, var(--hairline));
+  color: var(--warn);
+}
+
+.hedging-underlying-tag--warn {
+  border-color: color-mix(in srgb, var(--warn) 60%, var(--hairline));
+  background: color-mix(in srgb, var(--warn) 10%, var(--paper));
+  color: var(--warn);
+  font-weight: 700;
+}
+
+/* ── attention banner ── */
+
+.hedging-attn {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  border: 1px solid var(--hairline);
+  border-left: 4px solid var(--warn);
+  background: var(--paper);
+  padding: var(--gap-2) var(--gap-3);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  color: var(--ink);
+}
+
+/* ── family tabs ── */
+
+.hedging-tabs {
+  display: flex;
+  gap: var(--gap-1);
+  flex-wrap: wrap;
+}
+
+.hedging-tabs button {
+  padding: 4px var(--gap-2);
+  border: 1px solid var(--hairline-2);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.hedging-tabs button:hover {
+  border-color: var(--hairline);
+  color: var(--ink);
+}
+
+.hedging-tabs button.active {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+/* ── instruments table ── */
+
+.hedging-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 500 var(--type-small-size) var(--font-numeric);
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+}
+
+.hedging-table th,
+.hedging-table td {
+  padding: 8px var(--gap-3);
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.hedging-table th {
+  background: var(--ink);
+  color: var(--paper);
+  font: var(--type-caps-weight) var(--type-caps-size) var(--font-ui);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hedging-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.hedging-table tr.expired td {
+  text-decoration: line-through;
+  color: var(--ink-2);
+  opacity: 0.6;
+}
+
+/* ── actions bar ── */
+
+.hedging-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  padding: var(--gap-1) 0;
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+
+.hedging-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--gap-2);
+  padding: var(--gap-1) 0;
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+
+.hedging-pageinfo {
+  white-space: nowrap;
+}
+
+.hedging-pagesize {
+  min-height: 28px;
+  padding: 3px var(--gap-2);
+  border: 1px solid var(--hairline);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  cursor: pointer;
+}
+
+/* ── empty / loading state ── */
+
+.hedging-empty {
+  padding: var(--gap-3);
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  text-align: center;
+}
+
+/* ── top-bar summary ── */
+
+.hedging-summary {
+  margin-left: auto;
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  text-align: right;
+}
+
+.hedging-summary-warn {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.hedging-progress-bar {
+  display: inline-block;
+  padding: 2px var(--gap-2);
+  background: color-mix(in srgb, var(--pos) 10%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--pos) 30%, transparent);
+  border-radius: 3px;
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  color: var(--ink);
+}
+
+/* ── filter bar ── */
+
+.hedging-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  flex-wrap: wrap;
+  padding: var(--gap-1) 0;
+}
+
+.hedging-filter-search {
+  flex: 1 1 140px;
+  min-width: 100px;
+  padding: 4px var(--gap-2);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 2px;
+}
+
+.hedging-filter-cp {
+  padding: 4px var(--gap-1);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.hedging-filter-strike {
+  width: 90px;
+  padding: 4px var(--gap-2);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 2px;
+}
+
+.hedging-filter-allowed {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ── page-level tab bar (Allowed Instruments / Hedge Strategy) ── */
+
+.hedging-page-tabs {
+  display: flex;
+  gap: var(--gap-1);
+  border-bottom: 2px solid var(--hairline);
+  margin-bottom: var(--gap-1);
+}
+
+.hedging-page-tabs button {
+  padding: 6px var(--gap-3);
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  cursor: pointer;
+  border-radius: 2px 2px 0 0;
+  margin-bottom: -2px;
+}
+
+.hedging-page-tabs button:hover {
+  color: var(--ink);
+  background: var(--paper-2);
+}
+
+.hedging-page-tabs button.active {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: var(--hairline);
+  border-bottom-color: var(--paper);
+  font-weight: 600;
+}
+
+/* ── strategy tab setup prompts ── */
+
+
+/* ── status badges ── */
+
+.badge-stale,
+.badge-ok,
+.badge-exp {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-family: var(--font-ui);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.badge-stale {
+  background: color-mix(in srgb, var(--warn) 12%, var(--paper));
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+}
+
+.badge-ok {
+  background: color-mix(in srgb, var(--pos) 10%, var(--paper));
+  color: var(--pos);
+  border-color: color-mix(in srgb, var(--pos) 40%, transparent);
+}
+
+.badge-exp {
+  background: color-mix(in srgb, var(--neg) 8%, var(--paper));
+  color: var(--neg);
+  border-color: color-mix(in srgb, var(--neg) 35%, transparent);
+}
+

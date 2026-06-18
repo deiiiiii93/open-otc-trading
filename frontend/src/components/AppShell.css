@@ -1,0 +1,81 @@
+.wl-shell {
+  --wl-sidebar-width: 240px;
+  display: grid;
+  grid-template-columns: var(--wl-sidebar-width) minmax(0, 1fr);
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.wl-shell--sidebar-collapsed {
+  --wl-sidebar-width: 52px;
+}
+.wl-shell__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.wl-shell__toolbar {
+  border-bottom: 1px solid var(--hairline);
+  padding: var(--gap-2) var(--gap-4);
+  display: flex;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.wl-shell__toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+}
+
+.wl-shell__toolbar-group--left {
+  margin-right: auto;
+}
+
+.wl-shell__toolbar-group--right {
+  margin-left: auto;
+}
+.wl-shell__toolbar-badge {
+  border-color: var(--hairline);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+/* Keep every toolbar control at the one shared control height. */
+.wl-shell__toolbar .wl-button,
+.wl-shell__toolbar .wl-datepicker__trigger-wrap {
+  height: var(--control-height-action);
+}
+.wl-shell__toolbar .wl-datepicker__input,
+.wl-shell__toolbar .wl-datepicker__cal-btn {
+  height: 100%;
+}
+.wl-shell__toolbar .wl-datepicker__cal-btn {
+  width: var(--control-height-action);
+}
+
+.wl-shell__content {
+  padding: var(--gap-4);
+  flex: 1;
+  overflow-y: auto;
+}
+
+@media (max-width: 720px) {
+  .wl-shell {
+    --wl-sidebar-width: 52px;
+  }
+
+  .wl-shell__toolbar {
+    padding: var(--gap-2);
+  }
+
+  .wl-shell__toolbar-group {
+    min-width: 0;
+  }
+
+  .wl-shell__content {
+    padding: var(--gap-3);
+  }
+}

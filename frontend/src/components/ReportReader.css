@@ -1,0 +1,55 @@
+.wl-reader { display: flex; flex-direction: column; gap: var(--gap-3); }
+.wl-reader__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: var(--gap-2);
+  border-bottom: 1px solid var(--paper-3);
+}
+.wl-reader__status {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+.wl-reader__section { display: flex; flex-direction: column; gap: var(--gap-2); }
+.wl-reader__section-title {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+  margin: 0;
+}
+.wl-reader__artifacts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--gap-1); }
+.wl-reader__artifact {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: var(--gap-2);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink);
+}
+.wl-reader__artifact-kind {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}
+.wl-reader__artifact-path {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+.wl-reader__artifact-path:hover { color: var(--info); }
+.wl-reader__result {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  background: var(--paper-2);
+  border: 1px solid var(--paper-3);
+  padding: var(--gap-2) var(--gap-3);
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre;
+  color: var(--ink);
+}

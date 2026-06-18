@@ -1,0 +1,16 @@
+/* RailList — wl-rail
+   The one bordered container for a left-rail selection list. Rows are RailItems;
+   header content (search, filter pills, eyebrow) is any non-item child and sits
+   inside the border above the rows. Token-only. */
+.wl-rail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--hairline);
+  background: var(--paper-2);
+  overflow: hidden;
+}
+.wl-rail--scroll {
+  overflow-y: auto;
+  min-height: 0;
+}

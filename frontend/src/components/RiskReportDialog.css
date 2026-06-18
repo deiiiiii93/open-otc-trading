@@ -1,0 +1,25 @@
+.wl-risk-report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  min-width: 560px;
+  max-width: 860px;
+  /* The attribution grid has a ~664px content floor; the modal can be resized
+     narrower, so scroll instead of clipping. */
+  overflow-x: auto;
+}
+
+.wl-risk-report__meta {
+  display: flex;
+  gap: var(--gap-3);
+  flex-wrap: wrap;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+}
+
+.wl-risk-report__error {
+  margin: 0;
+  color: var(--neg);
+}

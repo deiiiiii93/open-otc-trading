@@ -1,0 +1,108 @@
+.wl-asset {
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  padding: var(--gap-2) var(--gap-3);
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: var(--gap-3);
+  align-items: flex-start;
+}
+.wl-asset__icon {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-numeric);
+  font-size: var(--type-caps-size);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.wl-asset__meta { flex: 1; min-width: 0; }
+.wl-asset__title {
+  font-size: var(--type-body-size);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wl-asset__sub {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  margin-top: 2px;
+}
+.wl-asset__actions {
+  display: flex;
+  gap: var(--gap-1);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.wl-asset__action {
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  line-height: 1;
+  text-decoration: none;
+  padding: 5px 7px;
+  cursor: pointer;
+}
+.wl-asset__expand {
+  background: none;
+  border: 0;
+  color: var(--ink-2);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  cursor: pointer;
+  padding: 0 4px;
+}
+.wl-asset__chart {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin-top: var(--gap-2);
+  padding-top: var(--gap-2);
+  border-top: 1px solid var(--hairline);
+}
+.wl-asset__html {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin-top: var(--gap-2);
+  padding-top: var(--gap-2);
+  border-top: 1px solid var(--hairline);
+}
+.wl-asset__html-frame {
+  width: 100%;
+  min-height: 320px;
+  border: 1px solid var(--hairline);
+  background: white;
+}
+.wl-asset__table-wrap {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin-top: var(--gap-2);
+  padding-top: var(--gap-2);
+  border-top: 1px solid var(--hairline);
+  overflow-x: auto;
+}
+.wl-asset__table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+}
+.wl-asset__table th,
+.wl-asset__table td {
+  border: 1px solid var(--hairline);
+  padding: 4px 6px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.wl-asset__table th {
+  color: var(--ink-2);
+  background: var(--paper-2);
+}

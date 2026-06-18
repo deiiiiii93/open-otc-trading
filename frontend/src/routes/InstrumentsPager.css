@@ -1,0 +1,33 @@
+/* Shared pager row — Instruments page tables */
+
+.wl-ipager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--gap-2);
+  flex-wrap: wrap;
+}
+
+.wl-ipager__info {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.wl-ipager__size {
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 4px var(--gap-2);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .wl-ipager {
+    justify-content: flex-start;
+  }
+}
