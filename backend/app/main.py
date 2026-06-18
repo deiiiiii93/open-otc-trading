@@ -843,6 +843,9 @@ def create_app(
 
         # Persist the user turn synchronously so it exists even if streaming
         # fails or the client disconnects mid-response.
+        active_agent_service.auto_name_thread_from_first_message(
+            session, thread, payload.content
+        )
         user_msg = AgentMessage(
             thread_id=thread.id,
             role="user",

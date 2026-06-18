@@ -194,6 +194,102 @@ def test_health_and_chat_thread(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert assistant_message["meta"]["agent_phase"] == "completed"
 
 
+def test_default_thread_auto_renames_from_first_streamed_user_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from app.models import Workflow
+
+    monkeypatch.setattr(app_main_module.agent_service, "deep_agent", None)
+    client = make_client(tmp_path)
+    monkeypatch.setattr(
+        app_main_module.agent_service,
+        "summarize_thread_title",
+        lambda content: "Default Portfolio Risk Report Request",
+        raising=False,
+    )
+
+    created = client.post(
+        "/api/chat/threads",
+        json={"title": "New research thread", "character": "trader"},
+    )
+    assert created.status_code == 200
+    thread_id = created.json()["id"]
+
+    streamed = client.post(
+        f"/api/chat/threads/{thread_id}/messages/stream",
+        json={
+            "content": "  Generate a formal risk report for the Default portfolio  ",
+            "character": "auto",
+        },
+    )
+    assert streamed.status_code == 200
+
+    listed = client.get("/api/chat/threads")
+    assert listed.status_code == 200
+    thread = next(t for t in listed.json() if t["id"] == thread_id)
+    assert thread["title"] == "Default Portfolio Risk Report Request"
+
+    with database.SessionLocal() as session:
+        workflows = {
+            row.intent: row.title
+            for row in session.query(Workflow).filter(Workflow.thread_id == thread_id)
+        }
+        assert workflows["ad_hoc"] == thread["title"]
+        assert workflows["workspace_meta"] == f"{thread['title']} / workspace"
+        auto_rename = (
+            session.query(AuditEvent)
+            .filter(
+                AuditEvent.event_type == "thread.auto_renamed",
+                AuditEvent.subject_id == thread_id,
+            )
+            .one()
+        )
+        assert auto_rename.payload == {
+            "old_title": "New research thread",
+            "new_title": thread["title"],
+            "source": "first_user_message",
+        }
+
+
+def test_thread_auto_rename_does_not_override_custom_or_existing_titles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(app_main_module.agent_service, "deep_agent", None)
+    client = make_client(tmp_path)
+
+    custom = client.post(
+        "/api/chat/threads",
+        json={"title": "Morning desk", "character": "trader"},
+    )
+    assert custom.status_code == 200
+    custom_thread_id = custom.json()["id"]
+    first_default = client.post(
+        "/api/chat/threads",
+        json={"title": "New research thread", "character": "trader"},
+    )
+    assert first_default.status_code == 200
+    default_thread_id = first_default.json()["id"]
+
+    assert client.post(
+        f"/api/chat/threads/{custom_thread_id}/messages/stream",
+        json={"content": "Summarize risk limits", "character": "auto"},
+    ).status_code == 200
+    assert client.post(
+        f"/api/chat/threads/{default_thread_id}/messages/stream",
+        json={"content": "Price the March autocallable", "character": "auto"},
+    ).status_code == 200
+    assert client.post(
+        f"/api/chat/threads/{default_thread_id}/messages/stream",
+        json={"content": "Now generate a report", "character": "auto"},
+    ).status_code == 200
+
+    listed = client.get("/api/chat/threads")
+    assert listed.status_code == 200
+    by_id = {thread["id"]: thread for thread in listed.json()}
+    assert by_id[custom_thread_id]["title"] == "Morning desk"
+    assert by_id[default_thread_id]["title"] == "Price the March autocallable"
+
+
 def test_thread_management_rename_export_fork_delete(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

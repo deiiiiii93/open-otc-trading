@@ -164,6 +164,63 @@ describe('AgentDeskLive SSE parsing', () => {
     expect(body.yolo_mode).toBe(true);
   });
 
+  it('shows an auto-renamed thread title after the post-stream refresh', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch);
+    let threadsRequestCount = 0;
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = requestUrl(input);
+      if (url.endsWith('/api/agent/models')) return response(modelCatalog);
+      if (url.endsWith('/api/chat/threads') && (!init?.method || init.method === 'GET')) {
+        threadsRequestCount += 1;
+        return response([
+          {
+            ...baseThread,
+            title: threadsRequestCount === 1
+              ? 'New research thread'
+              : 'Default Risk Limits Summary Request',
+            messages: threadsRequestCount === 1
+              ? []
+              : [
+                { id: 10, role: 'user', content: 'Summarize risk limits for Default', meta: {} },
+                {
+                  id: 11,
+                  role: 'assistant',
+                  character: 'trader',
+                  content: 'Done',
+                  meta: {},
+                },
+              ],
+          },
+        ]);
+      }
+      if (url.includes('/messages/stream')) {
+        return new Response(makeSseStream([
+          'event: token\ndata: {"text":"Done"}\n\n',
+          'event: done\ndata: {"message_id":11}\n\n',
+        ]), {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        });
+      }
+      return response({});
+    });
+
+    render(<AgentDeskLive />);
+    await waitFor(() => screen.getByText('New research thread'));
+    await userEvent.type(
+      screen.getByLabelText(/ask anything/i),
+      'Summarize risk limits for Default',
+    );
+    await userEvent.click(screen.getByRole('button', { name: /send/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', {
+        name: /Default Risk Limits Summary Request.*2 messages/,
+      })).toBeInTheDocument();
+    });
+  });
+
   it('resets the streaming bubble on envelope_transitioned so the first-pass refusal does not leak', async () => {
     const fetchMock = vi.mocked(globalThis.fetch);
     let threadsRequestCount = 0;

@@ -15,7 +15,7 @@ from datetime import date, datetime
 from pathlib import PurePosixPath
 from typing import Any
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.errors import GraphDrained
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -31,6 +31,7 @@ from ..models import (
     Portfolio,
     Position,
     TaskRun,
+    Workflow,
 )
 from ..schemas import AgentAssetOut, AgentContextUsage, AgentPageContext
 from .audit import record_audit
@@ -455,6 +456,46 @@ _DISABLED_RESPONSE = (
     "Check config/agent_channels.yaml and ensure the corresponding "
     "API key environment variable is set."
 )
+_PLACEHOLDER_THREAD_TITLES = {"New research thread", "Untitled thread"}
+_THREAD_TITLE_MAX_CHARS = 80
+_THREAD_TITLE_SOURCE_MAX_CHARS = 2000
+_THREAD_TITLE_PROMPT = (
+    "Write a concise title summarizing the user's intent in 5 to 8 words. "
+    "Return only the title. Do not use quotes, bullets, labels, or punctuation."
+)
+
+
+def _fallback_thread_title(content: str) -> str:
+    return " ".join(content.split())[:_THREAD_TITLE_MAX_CHARS].strip()
+
+
+def _message_text(message: Any) -> str:
+    content = getattr(message, "content", message)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if isinstance(text, str):
+                    parts.append(text)
+        return " ".join(parts)
+    return str(content)
+
+
+def _clean_thread_title_summary(text: str) -> str:
+    first_line = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    if first_line.lower().startswith("title:"):
+        first_line = first_line.split(":", 1)[1].strip()
+    cleaned = first_line.strip(" \t\r\n\"'`*_")
+    cleaned = re.sub(r"[.!?。！？]+$", "", cleaned)
+    words = cleaned.split()
+    if len(words) > 8:
+        cleaned = " ".join(words[:8])
+    return cleaned[:_THREAD_TITLE_MAX_CHARS].strip()
 
 
 def _orchestrator_user_prompt(
@@ -1418,6 +1459,113 @@ class AgentService:
         )
         return thread
 
+    def auto_name_thread_from_first_message(
+        self,
+        session: Session,
+        thread: AgentThread,
+        content: str,
+    ) -> bool:
+        current_title = (thread.title or "").strip()
+        if current_title not in _PLACEHOLDER_THREAD_TITLES:
+            return False
+        existing_messages = (
+            session.query(func.count(AgentMessage.id))
+            .filter(AgentMessage.thread_id == thread.id)
+            .scalar()
+            or 0
+        )
+        if existing_messages != 0:
+            return False
+        new_title = self.summarize_thread_title(content)
+        if not new_title:
+            return False
+
+        thread.title = new_title
+        self._sync_default_workflow_titles_for_auto_name(
+            session,
+            thread_id=thread.id,
+            old_title=current_title,
+            new_title=new_title,
+        )
+        record_audit(
+            session,
+            event_type="thread.auto_renamed",
+            actor="system",
+            subject_type="thread",
+            subject_id=thread.id,
+            payload={
+                "old_title": current_title,
+                "new_title": new_title,
+                "source": "first_user_message",
+            },
+        )
+        return True
+
+    @staticmethod
+    def _sync_default_workflow_titles_for_auto_name(
+        session: Session,
+        *,
+        thread_id: int,
+        old_title: str,
+        new_title: str,
+    ) -> None:
+        workflows = (
+            session.query(Workflow)
+            .filter(
+                Workflow.thread_id == thread_id,
+                Workflow.intent.in_(("ad_hoc", "workspace_meta")),
+            )
+            .all()
+        )
+        for workflow in workflows:
+            if workflow.intent == "ad_hoc" and workflow.title == old_title:
+                workflow.title = new_title
+            elif (
+                workflow.intent == "workspace_meta"
+                and workflow.title == f"{old_title} / workspace"
+            ):
+                workflow.title = f"{new_title} / workspace"
+
+    def summarize_thread_title(self, content: str) -> str:
+        fallback = _fallback_thread_title(content)
+        selection = self._thread_title_model_selection()
+        if selection is None:
+            return fallback
+        try:
+            model = build_agent_model(self.registry, selection)
+            if model is None:
+                return fallback
+            response = model.invoke(
+                [
+                    SystemMessage(content=_THREAD_TITLE_PROMPT),
+                    HumanMessage(
+                        content=(
+                            "User message:\n"
+                            f"{content.strip()[:_THREAD_TITLE_SOURCE_MAX_CHARS]}"
+                        )
+                    ),
+                ]
+            )
+        except Exception:
+            logger.exception("Thread title summarization failed; using fallback title")
+            return fallback
+        return _clean_thread_title_summary(_message_text(response)) or fallback
+
+    def _thread_title_model_selection(self) -> dict[str, str] | None:
+        for channel in self.registry.channels:
+            if not channel.healthy:
+                continue
+            for model in channel.models:
+                if "fast" in model.tags:
+                    return {
+                        "channel": channel.name,
+                        "provider": model.provider,
+                        "model": model.id,
+                    }
+        return self.registry.default_selection() if any(
+            channel.healthy for channel in self.registry.channels
+        ) else None
+
     def respond(
         self,
         session: Session,
@@ -1433,6 +1581,7 @@ class AgentService:
         resolved = self.normalize_model_selection(model_selection)
         effective_accounting_date = _effective_accounting_date(accounting_date)
         ensure_thread_workflow_state(session, thread.id)
+        self.auto_name_thread_from_first_message(session, thread, content)
         user_msg = AgentMessage(
             thread_id=thread.id,
             role="user",

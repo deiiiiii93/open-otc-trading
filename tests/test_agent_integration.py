@@ -14,12 +14,18 @@ import json
 from pathlib import Path
 
 import pytest
+from langchain_core.messages import AIMessage
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
 from app import database
 from app.config import Settings
 from app.services import agents as agents_module
+from app.services.deep_agent.channel_registry import (
+    ChannelDescriptor,
+    ChannelRegistry,
+    ModelDescriptor,
+)
 
 from _scripted_graph import _ScriptedGraph, _ai, _interrupt, _task_call
 
@@ -50,11 +56,19 @@ def agent_with_script(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     def install(script: list):
         graph = _ScriptedGraph(script)
 
+        class _TitleModel:
+            def invoke(self, messages):
+                assert "5 to 8 words" in messages[0].content
+                assert "Quote AAPL vanilla option" in messages[1].content
+                return AIMessage(content='"AAPL Vanilla Option Quote Request"')
+
         monkeypatch.setattr(agents_module, "build_orchestrator", lambda **kwargs: graph)
         monkeypatch.setattr(
             agents_module,
             "build_agent_model",
-            lambda s: object(),  # truthy non-None → deep_agent branch taken
+            lambda *args, **kwargs: (
+                _TitleModel() if len(args) > 1 else object()
+            ),  # truthy non-None → deep_agent branch taken
         )
         monkeypatch.setattr(
             agents_module,
@@ -63,6 +77,29 @@ def agent_with_script(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         )
 
         service = agents_module.AgentService(settings=settings)
+        service.registry = ChannelRegistry(
+            channels=(
+                ChannelDescriptor(
+                    name="title-test",
+                    label="Title Test",
+                    type="openai_compatible",
+                    api_key=None,
+                    base_url="https://title.test",
+                    anthropic_base_url=None,
+                    healthy=True,
+                    models=(
+                        ModelDescriptor(
+                            id="small-title-model",
+                            provider="openai",
+                            label="Small Title Model",
+                            tags=("fast",),
+                        ),
+                    ),
+                ),
+            ),
+            default=("title-test", "openai", "small-title-model"),
+        )
+        service.default_model_selection = service.registry.default_selection()
         return service, graph
 
     yield install
@@ -94,6 +131,40 @@ def test_orchestrator_dispatches_to_trader_and_completes(agent_with_script):
     assert message.meta["pending_actions"] == []
     assert "trader" in message.meta.get("personas_invoked", [])
     assert "12.34" in message.content
+    assert _graph.last_config["recursion_limit"] == 77
+
+
+def test_respond_auto_renames_default_thread_from_first_user_message(agent_with_script):
+    from app.models import AgentThread, Workflow
+
+    service, _graph = agent_with_script([
+        {
+            "messages": [
+                _ai("I called trader.", tool_calls=[_task_call("trader")]),
+                _ai("Done."),
+            ],
+        },
+    ])
+
+    with database.SessionLocal() as session:
+        thread = service.create_thread(
+            session, title="New research thread", character="trader"
+        )
+        thread_id = thread.id
+        service.respond(session, thread, content="  Quote AAPL vanilla option  ")
+        session.commit()
+
+    with database.SessionLocal() as session:
+        thread = session.get(AgentThread, thread_id)
+        assert thread.title == "AAPL Vanilla Option Quote Request"
+        workflows = {
+            row.intent: row.title
+            for row in session.query(Workflow).filter(Workflow.thread_id == thread_id)
+        }
+        assert workflows["ad_hoc"] == "AAPL Vanilla Option Quote Request"
+        assert workflows["workspace_meta"] == (
+            "AAPL Vanilla Option Quote Request / workspace"
+        )
     assert _graph.last_config["recursion_limit"] == 77
 
 
