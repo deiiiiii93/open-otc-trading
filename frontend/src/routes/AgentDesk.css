@@ -177,7 +177,7 @@
   padding: 2px;
   margin: 0;
   gap: 0;
-  border-radius: 999px;
+  border-radius: 0;
 }
 .wl-agent-desk__view-mode-btn {
   border: 0;
