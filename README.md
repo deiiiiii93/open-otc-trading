@@ -60,17 +60,21 @@ cd open-otc-trading
 
 python -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+python -m pip install -e ".[dev]"
+cp .env.example .env
+cp config/agent_channels.example.yml config/agent_channels.yaml
+mkdir -p data artifacts
+.venv/bin/python -m alembic upgrade head
 
 # Run tests
-python -m pytest
+.venv/bin/python -m pytest
 
 # Start dev server (port 8000)
 uvicorn app.main:app --app-dir backend --reload --reload-dir backend --reload-dir config --port 8000
 ```
 
 > **Note:** If developing against a local QuantArk checkout, install it first:
-> `pip install -e /path/to/quant-ark`
+> `python -m pip install -e /path/to/quant-ark`
 
 ### Frontend
 
@@ -94,18 +98,22 @@ open-otc --help
 
 ```bash
 cp .env.example .env
+cp config/agent_channels.example.yml config/agent_channels.yaml
+mkdir -p data artifacts
+.venv/bin/python -m alembic upgrade head
 ```
 
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `OPEN_OTC_DATABASE_URL` | SQLite connection string | Yes (has default) |
-| `QUANTARK_PATH` | Path to QuantArk library | Yes |
 | `ZENMUX_API_KEY` | ZenMux unified LLM gateway key | No |
 | `DEEPSEEK_API_KEY` | DeepSeek API key | No |
 | `LANGSMITH_API_KEY` | LangSmith observability | No |
 | `OPEN_OTC_TRACING` | Tracing mode: `local` \| `langsmith` \| `both` \| `off` | No |
 
-The platform works without LLM API keys — agents fall back to deterministic persona responses and QuantArk-backed tool outputs.
+The platform works without LLM API keys — agents fall back to deterministic persona responses and QuantArk-backed tool outputs. The local `config/agent_channels.yaml` file is gitignored; keep provider keys in `.env` and adjust channel/model entries there when needed.
+
+By default the app uses SQLite at `data/open_otc.sqlite3` via `OPEN_OTC_DATABASE_URL`. Run `.venv/bin/python -m alembic upgrade head` after changing the database URL or pulling schema migrations. Fresh app startup also creates missing local tables, but Alembic is the explicit setup and upgrade path for development databases.
 
 See `.env.example` for the full variable list and `config/agent_channels.example.yml` for LLM model/channel configuration.
 
@@ -143,7 +151,7 @@ open-otc-trading/
 
 ```bash
 # Backend
-python -m pytest
+.venv/bin/python -m pytest
 
 # Frontend
 cd frontend && npm test

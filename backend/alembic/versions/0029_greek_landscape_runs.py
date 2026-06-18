@@ -25,6 +25,13 @@ def _columns(table: str) -> set[str]:
     return {c["name"] for c in inspector.get_columns(table)}
 
 
+def _indexes(table: str) -> set[str]:
+    inspector = inspect(op.get_bind())
+    if table not in set(inspector.get_table_names()):
+        return set()
+    return {i["name"] for i in inspector.get_indexes(table)}
+
+
 def upgrade() -> None:
     if not _has_table("greek_landscape_runs"):
         op.create_table(
@@ -40,11 +47,12 @@ def upgrade() -> None:
             sa.Column("resolved_position_ids", sa.JSON(), nullable=True),
             sa.Column("created_at", sa.DateTime(), nullable=False),
         )
-    if "ix_greek_landscape_runs_portfolio_id" not in _columns("greek_landscape_runs"):
+    greek_landscape_indexes = _indexes("greek_landscape_runs")
+    if "ix_greek_landscape_runs_portfolio_id" not in greek_landscape_indexes:
         op.create_index("ix_greek_landscape_runs_portfolio_id", "greek_landscape_runs", ["portfolio_id"])
-    if "ix_greek_landscape_runs_pricing_parameter_profile_id" not in _columns("greek_landscape_runs"):
+    if "ix_greek_landscape_runs_pricing_parameter_profile_id" not in greek_landscape_indexes:
         op.create_index("ix_greek_landscape_runs_pricing_parameter_profile_id", "greek_landscape_runs", ["pricing_parameter_profile_id"])
-    if "ix_greek_landscape_runs_engine_config_id" not in _columns("greek_landscape_runs"):
+    if "ix_greek_landscape_runs_engine_config_id" not in greek_landscape_indexes:
         op.create_index("ix_greek_landscape_runs_engine_config_id", "greek_landscape_runs", ["engine_config_id"])
     if "greeks_landscape_run_id" not in _columns("task_runs"):
         with op.batch_alter_table("task_runs") as batch:
@@ -59,7 +67,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    if "ix_task_runs_greeks_landscape_run_id" in _columns("task_runs"):
+    if "ix_task_runs_greeks_landscape_run_id" in _indexes("task_runs"):
         op.drop_index("ix_task_runs_greeks_landscape_run_id", table_name="task_runs")
     if "greeks_landscape_run_id" in _columns("task_runs"):
         with op.batch_alter_table("task_runs") as batch:
