@@ -571,6 +571,27 @@ def test_prebuilt_wraps_complete_vanilla_termsheet_without_synthesis():
     assert result.product_spec.quantark_class == "EuropeanVanillaOption"
 
 
+@pytest.mark.parametrize("maturity", [1.0, ""])
+def test_prebuilt_rejects_mixed_vanilla_maturity_representations(maturity):
+    terms = {
+        "strike": 100.0,
+        "option_type": "CALL",
+        "exercise_date": "2026-12-31",
+        "settlement_date": "2027-01-04",
+        "maturity": maturity,
+    }
+
+    result = build_product("EuropeanVanillaOption", terms, prebuilt=True)
+
+    assert result.ok is False
+    assert result.product_spec is None
+    assert result.validation is not None
+    assert result.validation["error"] == (
+        "maturity must not be supplied when exercise_date is supplied; "
+        "use either explicit dates or tenor maturity, not both"
+    )
+
+
 def test_prebuilt_false_still_runs_raw_synthesis_for_scalars():
     # Regression: without prebuilt, the raw builder is used (maturity_years -> maturity).
     result = build_product(

@@ -123,6 +123,27 @@ def _common_option(terms: dict, out: _Out) -> dict:
     return pk
 
 
+def _mixed_maturity_representation_error(terms: dict[str, Any]) -> str | None:
+    """QuantArk accepts either tenor-style maturity or explicit date maturity.
+
+    Passing both through the prebuilt path creates an ambiguous termsheet and can
+    fail later with opaque type errors. Treat key presence as intentional here:
+    callers should omit stale fields rather than send empty placeholders.
+    """
+    date_keys = [
+        key
+        for key in ("exercise_date", "maturity_date", "expiry_date", "expiry")
+        if terms.get(key) not in (None, "")
+    ]
+    tenor_keys = [key for key in ("maturity", "maturity_years") if key in terms]
+    if date_keys and tenor_keys:
+        return (
+            f"{tenor_keys[0]} must not be supplied when {date_keys[0]} is supplied; "
+            "use either explicit dates or tenor maturity, not both"
+        )
+    return None
+
+
 # ----- per-family builders ---------------------------------------------------
 
 def _build_snowball(terms: dict, *, quantark_class: str) -> _Out:
@@ -692,6 +713,14 @@ def build_product(
             # adapter) asserts `terms` is a complete QuantArk termsheet. Validate-and-
             # wrap verbatim — never re-synthesize (it would drop explicit dates and
             # per-date schedules the workbook supplied). `solve_target` does not apply.
+            representation_error = _mixed_maturity_representation_error(terms)
+            if representation_error:
+                return BuildResult(
+                    ok=False, quantark_class=family, engine_name=engine_name,
+                    missing=[], warnings=[],
+                    validation={"ok": False, "error": representation_error},
+                    product_spec=None,
+                )
             product_kwargs = dict(terms)
         warnings: list[str] = []
     else:

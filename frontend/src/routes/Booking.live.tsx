@@ -53,12 +53,12 @@ const ENGINE_OPTIONS_BY_PRODUCT: Record<string, string[]> = {
 };
 
 const DEFAULT_TERMS: Record<string, Record<string, unknown>> = {
-  EuropeanVanillaOption: { strike: 100, option_type: 'CALL', maturity: 1, components: [] },
-  AmericanOption: { strike: 100, option_type: 'CALL', maturity: 1 },
-  CashOrNothingDigitalOption: { strike: 100, option_type: 'CALL', payout: 1, maturity: 1 },
-  BarrierOption: { strike: 100, option_type: 'CALL', barrier: 90, barrier_type: 'DOWN_OUT', maturity: 1 },
-  SingleSharkfinOption: { strike: 100, option_type: 'CALL', participation_rate: 1, barrier: 103, maturity: 1 },
-  DoubleSharkfinOption: { strike: 100, option_type: 'CALL', participation_rate: 1, upper_barrier: 103, lower_barrier: 97, maturity: 1 },
+  EuropeanVanillaOption: { strike: 100, option_type: 'CALL', components: [] },
+  AmericanOption: { strike: 100, option_type: 'CALL' },
+  CashOrNothingDigitalOption: { strike: 100, option_type: 'CALL', payout: 1 },
+  BarrierOption: { strike: 100, option_type: 'CALL', barrier: 90, barrier_type: 'DOWN_OUT' },
+  SingleSharkfinOption: { strike: 100, option_type: 'CALL', participation_rate: 1, barrier: 103 },
+  DoubleSharkfinOption: { strike: 100, option_type: 'CALL', participation_rate: 1, upper_barrier: 103, lower_barrier: 97 },
   SnowballOption: {
     initial_price: 100,
     contract_multiplier: 1,
@@ -92,7 +92,7 @@ const DEFAULT_TERMS: Record<string, Record<string, unknown>> = {
     },
     coupon_config: { coupon_barrier: 80, coupon_rate: 0.12 },
   },
-  AsianOption: { strike: 100, option_type: 'CALL', maturity: 1 },
+  AsianOption: { strike: 100, option_type: 'CALL' },
   Stock: { deltaone_type: 'STOCK', contract_multiplier: 1 },
   Fund: { deltaone_type: 'FUND', contract_multiplier: 1 },
   ETF: { deltaone_type: 'ETF', contract_multiplier: 1 },

@@ -296,6 +296,58 @@ describe('BookingLive', () => {
     await waitFor(() => expect(screen.getByLabelText('Strike')).toHaveValue(3888.12));
   });
 
+  it('omits stale maturity when booking European vanilla with explicit dates', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
+      if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile]);
+      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      if (url === '/api/portfolios/1/positions' && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body));
+        expect(body.product_type).toBe('EuropeanVanillaOption');
+        expect(body.product.terms).toEqual(expect.objectContaining({
+          strike: 3888.12,
+          option_type: 'CALL',
+          exercise_date: '2026-09-18',
+          settlement_date: '2026-09-18',
+        }));
+        expect(body.product.terms).not.toHaveProperty('maturity');
+        return response({
+          ...portfolio,
+          positions: [{
+            id: 43,
+            portfolio_id: 1,
+            product_id: 89,
+            source_trade_id: 'BOOK-EV',
+            underlying: body.underlying,
+            product_type: body.product_type,
+            product_kwargs: body.product_kwargs,
+            engine_name: body.engine_name,
+            engine_kwargs: {},
+            quantity: body.quantity,
+            entry_price: body.entry_price,
+            status: body.status,
+            mapping_status: 'manual',
+          }],
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<BookingLive />);
+
+    await waitFor(() => expect(screen.getByText('BOOKING')).toBeInTheDocument());
+    await userEvent.selectOptions(screen.getByLabelText('Product Type'), 'EuropeanVanillaOption');
+    await waitFor(() => expect(screen.getByLabelText('Strike')).toHaveValue(3888.12));
+    fireEvent.change(screen.getByLabelText('Exercise Date'), { target: { value: '2026-09-18' } });
+    fireEvent.change(screen.getByLabelText('Settlement Date'), { target: { value: '2026-09-18' } });
+
+    await userEvent.click(screen.getByRole('button', { name: /book position/i }));
+
+    await waitFor(() => expect(screen.getByText('Booked BOOK-EV')).toBeInTheDocument());
+  });
+
   it('defaults strike from latest market data spot for every strike-bearing product', async () => {
     const strikeProducts = [
       'EuropeanVanillaOption',

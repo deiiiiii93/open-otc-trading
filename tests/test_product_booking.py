@@ -241,6 +241,29 @@ def test_gate_rejects_invalid_scalar_with_precise_error():
     assert "Incomplete" not in message  # NOT the snowball missing-keys branch
 
 
+def test_booking_gate_rejects_mixed_vanilla_maturity_representations():
+    spec = _complete_vanilla_spec()
+    spec = ProductBookingSpec(
+        **{
+            **spec.__dict__,
+            "terms": {
+                **spec.terms,
+                "maturity": "",
+            },
+        }
+    )
+
+    with pytest.raises(ValueError) as exc:
+        normalize_booking_product_spec(spec)
+
+    message = str(exc.value)
+    assert message == (
+        "Invalid EuropeanVanillaOption booking terms: "
+        "maturity must not be supplied when exercise_date is supplied; "
+        "use either explicit dates or tenor maturity, not both"
+    )
+
+
 def test_booking_rejects_schedule_less_snowball_with_clear_malformed_error():
     """A nested-but-schedule-less snowball booked directly must surface
     build_product's precise malformed message — not the opaque quad
