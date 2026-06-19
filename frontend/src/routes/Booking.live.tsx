@@ -9,6 +9,8 @@ import { ProductTermsForm } from '../components/ProductTermsForm';
 import { Select } from '../components/Select';
 import { Skeleton } from '../components/Skeleton';
 import { BookingVisualCompanion } from '../components/BookingVisualCompanion';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/Tabs';
+import { BookingPricingCompanion } from '../components/BookingPricingCompanion';
 import { inferProductFamily } from '../components/PositionEditForm';
 import { declareActions } from '../lib/pageActions';
 import { usePageContextReporter } from '../hooks/usePageContextReporter';
@@ -585,15 +587,34 @@ export function BookingLive({ onPageContextChange }: Props) {
           </form>
         </div>
         <div className="wl-booking__right">
-          <BookingVisualCompanion
-            productType={form.productType}
-            productFamily={productFamily}
-            terms={productTerms}
-            quantity={form.quantity}
-            entryPrice={form.entryPrice}
-            underlying={form.underlying}
-            currency={form.currency}
-          />
+          <Tabs defaultValue="payoff">
+            <TabsList>
+              <TabsTrigger value="payoff">Payoff</TabsTrigger>
+              <TabsTrigger value="pricing">Pricing</TabsTrigger>
+            </TabsList>
+            <TabsContent value="payoff">
+              <BookingVisualCompanion
+                productType={form.productType}
+                productFamily={productFamily}
+                terms={productTerms}
+                quantity={form.quantity}
+                entryPrice={form.entryPrice}
+                underlying={form.underlying}
+                currency={form.currency}
+              />
+            </TabsContent>
+            <TabsContent value="pricing">
+              <BookingPricingCompanion
+                productType={form.productType}
+                productFamily={productFamily}
+                terms={productTerms}
+                engineName={form.engineName}
+                underlying={form.underlying}
+                currency={form.currency}
+                latestSpot={latestSpot}
+              />
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
     </WizardPage>
