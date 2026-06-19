@@ -73,6 +73,31 @@ def test_price_product_calls_quantark(monkeypatch):
     assert result is fake_result
 
 
+def test_price_product_preview_delegates_to_quantark(monkeypatch):
+    fake_result = MagicMock(ok=True, data={"price": 4.5, "greeks": None}, error=None)
+    captured: dict[str, Any] = {}
+
+    def fake_pwg(**kwargs):
+        captured["kwargs"] = kwargs
+        return fake_result
+
+    monkeypatch.setattr(
+        "app.services.domains.pricing._quantark_price_product_with_greeks",
+        fake_pwg,
+    )
+    market = PricingEnvironmentSnapshot()
+    result = pricing_svc.price_product_preview(
+        product_type="EuropeanVanillaOption",
+        product_kwargs={"strike": 100},
+        market=market,
+        engine_name="BlackScholesEngine",
+        compute_greeks=True,
+    )
+    assert result is fake_result
+    assert captured["kwargs"]["product_type"] == "EuropeanVanillaOption"
+    assert captured["kwargs"]["compute_greeks"] is True
+
+
 def test_price_positions_calls_pricer(monkeypatch):
     fake_run = MagicMock(
         id=42,

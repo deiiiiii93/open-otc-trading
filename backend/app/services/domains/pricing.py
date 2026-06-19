@@ -15,7 +15,11 @@ from app import database
 from app.models import Product, PositionValuationRun
 from app.schemas import PricingEnvironmentSnapshot
 from app.services.position_pricer import MarketOverrides, price_portfolio_positions
-from app.services.quantark import QuantArkResult, price_product as _quantark_price_product
+from app.services.quantark import (
+    QuantArkResult,
+    price_product as _quantark_price_product,
+    price_product_with_greeks as _quantark_price_product_with_greeks,
+)
 from app.services.domains import positions as positions_svc
 from app.services.domains.products import ProductSpec, compatibility_terms
 
@@ -59,6 +63,26 @@ def price_product(
         product_kwargs=product_kwargs,
         market=market,
         engine_name=engine_name,
+    )
+
+
+def price_product_preview(
+    *,
+    product_type: str,
+    product_kwargs: dict[str, Any],
+    market: PricingEnvironmentSnapshot,
+    engine_name: str = "BlackScholesEngine",
+    engine_kwargs: dict[str, Any] | None = None,
+    compute_greeks: bool = True,
+) -> QuantArkResult:
+    """Price an ad-hoc product spec and Greeks. Pure compute, no persistence."""
+    return _quantark_price_product_with_greeks(
+        product_type=product_type,
+        product_kwargs=product_kwargs,
+        market=market,
+        engine_name=engine_name,
+        engine_kwargs=engine_kwargs,
+        compute_greeks=compute_greeks,
     )
 
 
@@ -122,6 +146,7 @@ def price_positions(
 __all__ = [
     "estimate_price_seconds",
     "price_product",
+    "price_product_preview",
     "price_product_reference",
     "price_positions",
 ]
