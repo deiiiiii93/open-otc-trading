@@ -1,6 +1,6 @@
 import React, { useCallback, useId, useMemo, useRef, useState } from 'react';
 import * as Popover from '@radix-ui/react-popover';
-import { CalendarDays, ChevronUp, ChevronDown } from 'lucide-react';
+import { CalendarDays, ChevronUp, ChevronDown, ChevronsUp, ChevronsDown } from 'lucide-react';
 import './DatePicker.css';
 
 /* ─── Types ──────────────────────────────────────────────────────── */
@@ -166,6 +166,14 @@ export function DatePicker({
     }
   }, [viewMonth]);
 
+  const goToPrevYear = useCallback(() => {
+    setViewYear((y) => y - 1);
+  }, []);
+
+  const goToNextYear = useCallback(() => {
+    setViewYear((y) => y + 1);
+  }, []);
+
   const goToNextMonth = useCallback(() => {
     if (viewMonth === 11) {
       setViewYear((y) => y + 1);
@@ -281,6 +289,15 @@ export function DatePicker({
                 <button
                   type="button"
                   className="wl-datepicker__nav-btn"
+                  onClick={goToPrevYear}
+                  aria-label="Previous year"
+                  title="Previous year"
+                >
+                  <ChevronsUp size={16} />
+                </button>
+                <button
+                  type="button"
+                  className="wl-datepicker__nav-btn"
                   onClick={goToPrevMonth}
                   aria-label="Previous month"
                 >
@@ -293,6 +310,15 @@ export function DatePicker({
                   aria-label="Next month"
                 >
                   <ChevronDown size={16} />
+                </button>
+                <button
+                  type="button"
+                  className="wl-datepicker__nav-btn"
+                  onClick={goToNextYear}
+                  aria-label="Next year"
+                  title="Next year"
+                >
+                  <ChevronsDown size={16} />
                 </button>
               </div>
             </div>

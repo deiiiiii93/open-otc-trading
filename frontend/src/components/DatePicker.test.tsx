@@ -79,6 +79,16 @@ describe('DatePicker', () => {
     expect(screen.getByText('Jun 2026')).toBeInTheDocument();
   });
 
+  it('navigates years with shortcut buttons', async () => {
+    render(<DatePicker value="2026-06-12" />);
+    await userEvent.click(screen.getByLabelText('Open calendar'));
+    expect(screen.getByText('Jun 2026')).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText('Next year'));
+    expect(screen.getByText('Jun 2027')).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText('Previous year'));
+    expect(screen.getByText('Jun 2026')).toBeInTheDocument();
+  });
+
   it('applies error state', () => {
     render(<DatePicker label="End Date" error="Required" />);
     expect(screen.getByText('Required')).toBeInTheDocument();
