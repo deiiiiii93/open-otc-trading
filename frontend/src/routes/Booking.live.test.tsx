@@ -431,8 +431,8 @@ describe('BookingLive', () => {
       if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
       if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile]);
       if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
-      if (url.startsWith('/api/underlying-pricing-defaults/')) {
-        return response({ underlying: '000300.SH', rate: 0.025, dividend_yield: 0.01, volatility: 0.2 });
+      if (url === '/api/underlying-pricing-defaults' && !init?.method) {
+        return response([{ underlying: '000300.SH', rate: 0.025, dividend_yield: 0.01, volatility: 0.2 }]);
       }
       if (url === '/api/pricing/preview' && init?.method === 'POST') {
         return response({ ok: true, price: 7.7, engine: 'SnowballQuadEngine',

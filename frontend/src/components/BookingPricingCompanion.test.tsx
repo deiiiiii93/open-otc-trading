@@ -29,8 +29,8 @@ describe('BookingPricingCompanion', () => {
 
   it('pre-fills rate/vol/q from underlying defaults and spot from latestSpot', async () => {
     globalThis.fetch = vi.fn(async (input) => {
-      if (url(input).startsWith('/api/underlying-pricing-defaults/')) {
-        return response({ underlying: '000300.SH', rate: 0.025, dividend_yield: 0.01, volatility: 0.2 });
+      if (url(input) === '/api/underlying-pricing-defaults') {
+        return response([{ underlying: '000300.SH', rate: 0.025, dividend_yield: 0.01, volatility: 0.2 }]);
       }
       throw new Error(`unexpected ${url(input)}`);
     }) as unknown as typeof fetch;
@@ -48,8 +48,8 @@ describe('BookingPricingCompanion', () => {
   it('prices on demand and renders PV + greek tiles', async () => {
     globalThis.fetch = vi.fn(async (input, init) => {
       const u = url(input);
-      if (u.startsWith('/api/underlying-pricing-defaults/')) {
-        return response({ underlying: '000300.SH', rate: 0.025, dividend_yield: 0.01, volatility: 0.2 });
+      if (u === '/api/underlying-pricing-defaults') {
+        return response([{ underlying: '000300.SH', rate: 0.025, dividend_yield: 0.01, volatility: 0.2 }]);
       }
       if (u === '/api/pricing/preview' && init?.method === 'POST') {
         return response({
@@ -76,8 +76,8 @@ describe('BookingPricingCompanion', () => {
   it('shows the error when pricing fails', async () => {
     globalThis.fetch = vi.fn(async (input, init) => {
       const u = url(input);
-      if (u.startsWith('/api/underlying-pricing-defaults/')) {
-        return response({ underlying: '000300.SH', rate: 0.025, dividend_yield: 0.01, volatility: 0.2 });
+      if (u === '/api/underlying-pricing-defaults') {
+        return response([{ underlying: '000300.SH', rate: 0.025, dividend_yield: 0.01, volatility: 0.2 }]);
       }
       if (u === '/api/pricing/preview' && init?.method === 'POST') {
         return response({ ok: false, price: 0, engine: 'BlackScholesEngine',
@@ -99,8 +99,8 @@ describe('BookingPricingCompanion', () => {
   it('shows greeks unavailable note when greeks are null', async () => {
     globalThis.fetch = vi.fn(async (input, init) => {
       const u = url(input);
-      if (u.startsWith('/api/underlying-pricing-defaults/')) {
-        return response({ underlying: '000300.SH', rate: 0.025, dividend_yield: 0.01, volatility: 0.2 });
+      if (u === '/api/underlying-pricing-defaults') {
+        return response([{ underlying: '000300.SH', rate: 0.025, dividend_yield: 0.01, volatility: 0.2 }]);
       }
       if (u === '/api/pricing/preview' && init?.method === 'POST') {
         return response({

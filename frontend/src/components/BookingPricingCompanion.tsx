@@ -24,7 +24,8 @@ type MarketInputs = {
   valuationDate: string;
 };
 
-type UnderlyingDefaults = {
+type UnderlyingPricingDefaultRow = {
+  underlying: string;
   rate?: number | null;
   dividend_yield?: number | null;
   volatility?: number | null;
@@ -57,9 +58,11 @@ export function BookingPricingCompanion({
   useEffect(() => {
     let alive = true;
     setInputs((cur) => ({ ...cur, spot: str(latestSpot, cur.spot) }));
-    api<UnderlyingDefaults>(`/api/underlying-pricing-defaults/${encodeURIComponent(underlying)}`)
-      .then((d) => {
+    api<UnderlyingPricingDefaultRow[]>('/api/underlying-pricing-defaults')
+      .then((rows) => {
         if (!alive) return;
+        const d = rows.find((r) => r.underlying === underlying);
+        if (!d) return;
         setInputs((cur) => ({
           ...cur,
           rate: str(d.rate, cur.rate),
