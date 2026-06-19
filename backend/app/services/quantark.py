@@ -881,6 +881,87 @@ def price_product(
         )
 
 
+def price_product_with_greeks(
+    product_type: str,
+    product_kwargs: dict[str, Any],
+    market: PricingEnvironmentSnapshot,
+    engine_name: str = "BlackScholesEngine",
+    engine_kwargs: dict[str, Any] | None = None,
+    compute_greeks: bool = True,
+) -> QuantArkResult:
+    """Price one ad-hoc product spec and (optionally) its Greeks in a single
+    build. Reuses the same termsheet path as :func:`price_product`. Read-only:
+    persists nothing. If pricing succeeds but the Greek calculation fails, the
+    price is still returned with ``greeks=None`` and ``greeks_error`` set."""
+    engine_kwargs = engine_kwargs or {}
+    ensure_quantark_path()
+    try:
+        from quantark.rfq.builders import (
+            build_engine_from_termsheet,
+            build_pricing_env_from_market_kwargs,
+            build_product_from_termsheet,
+        )
+
+        termsheet, otc_attrs = _build_termsheet(
+            product_type=product_type,
+            product_kwargs=product_kwargs,
+            market=market,
+            engine_name=engine_name,
+            engine_kwargs=engine_kwargs,
+        )
+        product = build_product_from_termsheet(termsheet)
+        for key, value in otc_attrs.items():
+            setattr(product, key, value)
+        pricing_env = build_pricing_env_from_market_kwargs(termsheet.market_kwargs)
+        engine = build_engine_from_termsheet(termsheet)
+        price = float(engine.price(product, pricing_env))
+    except Exception as exc:
+        return QuantArkResult(
+            ok=False,
+            data={
+                "price": 0.0,
+                "engine": engine_name,
+                "product_type": product_type,
+                "greeks": None,
+                "greeks_error": None,
+            },
+            error=str(exc),
+        )
+
+    greeks: dict[str, float] | None = None
+    greeks_error: str | None = None
+    if compute_greeks:
+        try:
+            from quantark.asset.equity.riskmeasures.greeks_calculator import (
+                GreeksCalculator,
+            )
+
+            calc = GreeksCalculator()
+            result = calc.calculate(product, pricing_env, engine, method="auto")
+            greeks = {
+                "delta": float(result.get("delta", 0.0)),
+                "gamma": float(result.get("gamma", 0.0)),
+                "vega": float(result.get("vega", 0.0)),
+                "theta": float(result.get("theta", 0.0)),
+                "rho": float(result.get("rho", 0.0)),
+                "rho_q": float(result.get("dividend_rho", 0.0)),
+            }
+        except Exception as exc:  # price already computed; degrade gracefully
+            greeks = None
+            greeks_error = str(exc)
+
+    return QuantArkResult(
+        ok=True,
+        data={
+            "price": price,
+            "engine": engine_name,
+            "product_type": product_type,
+            "greeks": greeks,
+            "greeks_error": greeks_error,
+        },
+    )
+
+
 def _empty_risk_totals() -> dict[str, float]:
     return {
         "market_value": 0.0,
