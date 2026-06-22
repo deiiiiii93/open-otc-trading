@@ -296,27 +296,17 @@ const REGISTRY_KIND_OPTIONS = ['futures', 'index', 'etf', 'stock', 'listed_optio
 
 function RegistryTab({
   rows,
+  pagedRows,
   loading,
-  kindFilter,
-  statusFilter,
-  search,
   onSaveInstrument,
   rolesByInstrumentId,
-}: Pick<
-  Props,
-  | 'rows'
-  | 'loading'
-  | 'kindFilter'
-  | 'statusFilter'
-  | 'search'
-  | 'onSaveInstrument'
-  | 'rolesByInstrumentId'
->) {
+}: Pick<Props, 'rows' | 'loading' | 'onSaveInstrument' | 'rolesByInstrumentId'> & {
+  pagedRows: Instrument[];
+}) {
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const pagination = usePagination(rows, `${kindFilter}|${statusFilter}|${search}`);
 
   const startEdit = (row: Instrument) => {
     setEditing(row.id);
@@ -368,7 +358,7 @@ function RegistryTab({
               </tr>
             </thead>
             <tbody>
-              {pagination.pagedRows.map((row) => {
+              {pagedRows.map((row) => {
                 const isEditing = editing === row.id;
                 const draftRow = isEditing && draft ? draft : null;
                 const isDraft = row.status === 'draft';
@@ -578,7 +568,6 @@ function RegistryTab({
           </table>
         </div>
       )}
-      <InstrumentsPager pagination={pagination} label="instruments" />
     </div>
   );
 }
@@ -676,6 +665,7 @@ export function Instruments({
     useState<DefaultsFilters>(EMPTY_DEFAULTS_FILTERS);
   const [assumptionSetSearch, setAssumptionSetSearch] = useState('');
   const [createInstrumentOpen, setCreateInstrumentOpen] = useState(false);
+  const registryPagination = usePagination(rows, `${kindFilter}|${statusFilter}|${search}`);
   const selectedHedgeGroup =
     hedgeGroups.find((g) => g.underlying_id === selectedHedgeUnderlyingId) ?? null;
   const staleHedgeCount = selectedHedgeGroup?.entries.filter((e) => e.reconcile_status === 'stale').length ?? 0;
@@ -762,6 +752,7 @@ export function Instruments({
         placeholder="Search symbol, exchange…"
         aria-label="Search instruments"
       />
+      <InstrumentsPager pagination={registryPagination} label="instruments" />
     </>
   );
 
@@ -1065,10 +1056,8 @@ export function Instruments({
       {activeTab === 'registry' ? (
         <RegistryTab
           rows={rows}
+          pagedRows={registryPagination.pagedRows}
           loading={loading}
-          kindFilter={kindFilter}
-          statusFilter={statusFilter}
-          search={search}
           onSaveInstrument={onSaveInstrument}
           rolesByInstrumentId={rolesByInstrumentId}
         />
