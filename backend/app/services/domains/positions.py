@@ -698,6 +698,19 @@ def generate_asian_fixing_schedule(
         )
         target_id = position.id
 
+        # Idempotent regeneration: cancel any existing active fixing events so a
+        # retried/double POST does not duplicate the schedule.
+        existing = (
+            sess.query(PositionLifecycleEvent)
+            .filter_by(position_id=target_id, event_type="fixing")
+            .filter(PositionLifecycleEvent.cancelled_at.is_(None))
+            .all()
+        )
+        for stale in existing:
+            stale.cancelled_at = datetime.utcnow()
+            stale.cancelled_by = actor
+            stale.cancellation_reason = "regenerated"
+
         created = 0
         for rec in records:
             create_lifecycle_event(

@@ -74,6 +74,30 @@ def test_generate_asian_fixing_schedule_creates_events(session):
     assert seqs == [1, 2, 3, 4]
 
 
+def test_generate_asian_fixing_schedule_is_idempotent(session):
+    pos = _asian_position(
+        session,
+        product_kwargs={
+            "averaging_frequency": "QUARTERLY",
+            "maturity_years": 1.0,
+            "trade_start_date": "2024-01-02",
+        },
+    )
+    positions_svc.generate_asian_fixing_schedule(position_id=pos.id, session=session)
+    positions_svc.generate_asian_fixing_schedule(position_id=pos.id, session=session)
+
+    from app.models import PositionLifecycleEvent
+
+    active = (
+        session.query(PositionLifecycleEvent)
+        .filter_by(position_id=pos.id, event_type="fixing")
+        .filter(PositionLifecycleEvent.cancelled_at.is_(None))
+        .all()
+    )
+    # second run must not duplicate: still exactly 4 active fixing events
+    assert len(active) == 4
+
+
 def test_generate_asian_fixing_schedule_endpoint(client, session):
     pos = _asian_position(
         session,
