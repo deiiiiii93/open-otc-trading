@@ -1,0 +1,111 @@
+.wl-range-slider {
+  --range-slider-track-height: 6px;
+  --range-slider-thumb-size: 16px;
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  min-width: 0;
+}
+
+.wl-range-slider__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  min-width: 0;
+}
+
+.wl-range-slider__label {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}
+
+.wl-range-slider__values {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-1);
+  font-family: var(--font-numeric);
+  font-size: var(--type-body-size);
+  color: var(--ink);
+}
+
+.wl-range-slider__value + .wl-range-slider__value::before {
+  content: '–';
+  margin-right: var(--gap-1);
+  color: var(--ink-2);
+}
+
+.wl-range-slider__track-wrap {
+  padding: calc(var(--range-slider-thumb-size) / 2 - var(--range-slider-track-height) / 2) 0;
+}
+
+.wl-range-slider__track {
+  position: relative;
+  height: var(--range-slider-track-height);
+  cursor: pointer;
+}
+
+.wl-range-slider__track-bg,
+.wl-range-slider__fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+}
+
+.wl-range-slider__track-bg {
+  left: 0;
+  right: 0;
+  background: var(--paper-3);
+}
+
+.wl-range-slider__fill {
+  background: var(--info);
+}
+
+.wl-range-slider__thumb {
+  position: absolute;
+  top: 50%;
+  width: var(--range-slider-thumb-size);
+  height: var(--range-slider-thumb-size);
+  margin-top: calc(var(--range-slider-thumb-size) / -2);
+  margin-left: calc(var(--range-slider-thumb-size) / -2);
+  border-radius: 50%;
+  border: 2px solid var(--paper);
+  background: var(--ink);
+  cursor: grab;
+  outline: none;
+  transition: transform 0.08s ease-out, box-shadow 0.08s ease-out;
+}
+
+.wl-range-slider__thumb:hover {
+  transform: scale(1.1);
+}
+
+.wl-range-slider__thumb:focus-visible {
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--info);
+}
+
+.wl-range-slider__thumb:active {
+  cursor: grabbing;
+  transform: scale(1.15);
+}
+
+.wl-range-slider[aria-disabled="true"] {
+  opacity: 0.5;
+}
+
+.wl-range-slider[aria-disabled="true"] .wl-range-slider__track,
+.wl-range-slider[aria-disabled="true"] .wl-range-slider__thumb {
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wl-range-slider__thumb {
+    transition: none;
+  }
+}

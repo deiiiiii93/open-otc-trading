@@ -521,6 +521,128 @@
   flex-wrap: wrap;
 }
 
+/* ─── Wizard Solve Panel ──────────────────────────── */
+
+.wl-try-solve__solve--wizard {
+  gap: var(--gap-4);
+}
+
+.wl-try-solve__wizard-stepper {
+  padding-bottom: var(--gap-2);
+  border-bottom: 1px solid var(--paper-3);
+  flex-wrap: wrap;
+}
+
+.wl-try-solve__wizard-step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+
+.wl-try-solve__wizard-step--todo {
+  opacity: 0.65;
+}
+
+.wl-try-solve__wizard-step-header {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+}
+
+.wl-try-solve__wizard-step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--paper-3);
+  color: var(--ink-2);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  font-weight: 700;
+}
+
+.wl-try-solve__wizard-step--active .wl-try-solve__wizard-step-number {
+  background: var(--info);
+  color: var(--paper);
+}
+
+.wl-try-solve__wizard-step--done .wl-try-solve__wizard-step-number {
+  background: var(--pos);
+  color: var(--paper);
+}
+
+.wl-try-solve__wizard-step-title {
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  font-weight: var(--type-body-weight);
+  color: var(--ink);
+}
+
+.wl-try-solve__wizard-step--todo .wl-try-solve__wizard-step-title {
+  color: var(--ink-2);
+}
+
+.wl-try-solve__wizard-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  padding-left: calc(22px + var(--gap-2));
+}
+
+.wl-try-solve__wizard-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--paper-3);
+}
+
+.wl-try-solve__wizard-fields .wl-try-solve__field {
+  border: 0;
+}
+
+.wl-try-solve__wizard-fields .wl-try-solve__field--wide {
+  grid-column: 1 / -1;
+}
+
+.wl-try-solve__market-grid--wizard {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.wl-try-solve__market-grid--wizard .wl-try-solve__field:first-child {
+  grid-column: 1 / -1;
+}
+
+.wl-try-solve__range-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  padding: var(--gap-3);
+  border: 1px solid var(--paper-3);
+  background: var(--paper);
+}
+
+.wl-try-solve__range-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--paper-3);
+  border: 1px solid var(--paper-3);
+}
+
+.wl-try-solve__range-inputs .wl-try-solve__field {
+  border: 0;
+}
+
+.wl-try-solve__range-inputs .wl-try-solve__field--wide {
+  grid-column: 1 / -1;
+}
+
+.wl-try-solve__result--wizard {
+  margin-top: var(--gap-2);
+}
+
 
 /* ─── Responsive ──────────────────────────────────── */
 
@@ -543,6 +665,9 @@
   .wl-try-solve__workspace,
   .wl-try-solve__quote-grid,
   .wl-try-solve__market-grid,
+  .wl-try-solve__market-grid--wizard,
+  .wl-try-solve__wizard-fields,
+  .wl-try-solve__range-inputs,
   .wl-try-solve__solve-grid,
   .wl-try-solve__result,
   .wl-try-solve__status-strip {
@@ -560,7 +685,10 @@
     border-bottom: 1px solid var(--paper-3);
   }
 
-  .wl-try-solve__market-grid .wl-try-solve__field:first-child {
+  .wl-try-solve__market-grid .wl-try-solve__field:first-child,
+  .wl-try-solve__market-grid--wizard .wl-try-solve__field:first-child,
+  .wl-try-solve__wizard-fields .wl-try-solve__field--wide,
+  .wl-try-solve__range-inputs .wl-try-solve__field--wide {
     grid-column: auto;
   }
 }

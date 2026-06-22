@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Download, FileSpreadsheet, Play, Plus, Rows3, Search, Trash2 } from 'lucide-react';
 import { MasterDetailPage } from '../components/templates';
 import { Panel } from '../components/Panel';
@@ -8,6 +8,8 @@ import { DatePicker } from '../components/DatePicker';
 import { NumberInput } from '../components/NumberInput';
 import { Select } from '../components/Select';
 import { Badge, type BadgeVariant } from '../components/Badge';
+import { RangeSlider } from '../components/RangeSlider';
+import { Stepper } from '../components/Stepper';
 import { usePageContextReporter } from '../hooks/usePageContextReporter';
 import { declareActions } from '../lib/pageActions';
 import type {
@@ -996,33 +998,101 @@ function SolvePanel({
   const hasMarketDataForUnderlying = !rowUnderlying || filteredMarketDataProfiles.some((profile) => (
     normalizeSymbol(profile.symbol) === rowUnderlying
   ));
-  return (
-    <div className="wl-try-solve__solve">
-      <div className="wl-try-solve__solve-section">
-        <div className="wl-try-solve__solve-section-title">Quote Field</div>
-        <Select
-          label="Quote Field"
-          searchable
-          className="wl-try-solve__field wl-try-solve__field--wide"
-          value={selectedQuoteField?.key ?? ''}
-          onChange={(v) => {
-            const nextQuoteField = product.quote_fields.find((quote) => quote.key === v);
-            onQuoteRequestChange?.(row.row_id, {
-              quote_field_key: v,
-              lower_bound: nextQuoteField?.lower_bound ?? null,
-              upper_bound: nextQuoteField?.upper_bound ?? null,
-            });
-          }}
-          options={product.quote_fields.map((quote) => ({
-            value: quote.key,
-            label: quote.label,
-          }))}
-        />
-      </div>
 
-      <div className="wl-try-solve__solve-section">
-        <div className="wl-try-solve__solve-section-title">Profile</div>
-        <div className="wl-try-solve__quote-grid">
+  const lowerBound = row.quote_request.lower_bound ?? selectedQuoteField?.lower_bound ?? 0;
+  const upperBound = row.quote_request.upper_bound ?? selectedQuoteField?.upper_bound ?? 1;
+  const initialGuess = row.quote_request.initial_guess ?? selectedQuoteField?.initial_guess ?? lowerBound;
+  const boundMin = selectedQuoteField?.lower_bound ?? -10;
+  const boundMax = selectedQuoteField?.upper_bound ?? 10;
+
+  const stepQuoteDone = !!selectedQuoteField && row.quote_request.quote_field_key != null;
+  const stepMarketDone = row.market.valuation_date != null && row.market.spot != null;
+  const stepRangeDone = row.quote_request.lower_bound != null && row.quote_request.upper_bound != null;
+
+  const steps = [
+    { label: 'Quote Field', status: stepQuoteDone ? 'done' as const : 'active' as const },
+    { label: 'Market Data', status: !stepQuoteDone ? 'todo' as const : stepMarketDone ? 'done' as const : 'active' as const },
+    { label: 'Range', status: !stepQuoteDone || !stepMarketDone ? 'todo' as const : stepRangeDone ? 'done' as const : 'active' as const },
+    { label: 'Solve', status: !stepQuoteDone || !stepMarketDone || !stepRangeDone ? 'todo' as const : 'active' as const },
+  ];
+
+  const handleBoundsChange = (values: number[]) => {
+    const [nextLower, nextUpper] = values;
+    const patch: Partial<TrySolveQuoteRequest> = {};
+    if (nextLower !== lowerBound) patch.lower_bound = nextLower;
+    if (nextUpper !== upperBound) patch.upper_bound = nextUpper;
+    if (initialGuess < nextLower || initialGuess > nextUpper) {
+      patch.initial_guess = (nextLower + nextUpper) / 2;
+    }
+    if (Object.keys(patch).length > 0) {
+      onQuoteRequestChange?.(row.row_id, patch);
+    }
+  };
+
+  const handleGuessChange = (values: number[]) => {
+    const nextGuess = Math.min(upperBound, Math.max(lowerBound, values[0] ?? initialGuess));
+    if (nextGuess !== initialGuess) {
+      onQuoteRequestChange?.(row.row_id, { initial_guess: nextGuess });
+    }
+  };
+
+  return (
+    <div className="wl-try-solve__solve wl-try-solve__solve--wizard">
+      <Stepper className="wl-try-solve__wizard-stepper" steps={steps} />
+
+      <WizardStep number={1} title="What to quote" status={stepQuoteDone ? 'done' : 'active'}>
+        <div className="wl-try-solve__wizard-fields">
+          <Select
+            label="Quote Field"
+            searchable
+            className="wl-try-solve__field wl-try-solve__field--wide"
+            value={selectedQuoteField?.key ?? ''}
+            onChange={(v) => {
+              const nextQuoteField = product.quote_fields.find((quote) => quote.key === v);
+              onQuoteRequestChange?.(row.row_id, {
+                quote_field_key: v,
+                lower_bound: nextQuoteField?.lower_bound ?? null,
+                upper_bound: nextQuoteField?.upper_bound ?? null,
+                initial_guess: nextQuoteField?.initial_guess ?? null,
+              });
+            }}
+            options={product.quote_fields.map((quote) => ({
+              value: quote.key,
+              label: quote.label,
+            }))}
+          />
+          <Select
+            label="Target Label"
+            searchable
+            className="wl-try-solve__field"
+            value={row.quote_request.target_label}
+            onChange={(v) => onQuoteRequestChange?.(row.row_id, {
+              target_label: v as TrySolveQuoteRequest['target_label'],
+            })}
+            options={[
+              { value: 'price', label: 'price' },
+              { value: 'premium', label: 'premium' },
+              { value: 'premium %', label: 'premium %' },
+              { value: 'reoffer', label: 'reoffer' },
+            ]}
+          />
+          <label className="wl-try-solve__field">
+            <span className="wl-try-solve__field-label">Target Value</span>
+            <div className="wl-try-solve__field-input-with-unit">
+              <NumberInput
+                type="number"
+                value={row.quote_request.target_value}
+                onChange={(event) => onQuoteRequestChange?.(row.row_id, { target_value: parseNumberInput(event.currentTarget.value) ?? 0 })}
+                aria-label="Target Value"
+              />
+              {isPremiumPercentTarget ? <span aria-hidden="true">%</span> : null}
+            </div>
+          </label>
+        </div>
+      </WizardStep>
+
+      <WizardStep number={2} title="Market Data" status={stepMarketDone ? 'done' : stepQuoteDone ? 'active' : 'todo'}>
+        <div className="wl-try-solve__wizard-fields">
           <Select
             label="Pricing Parameter Profile"
             searchable
@@ -1059,11 +1129,7 @@ function SolvePanel({
             ]}
           />
         </div>
-      </div>
-
-      <div className="wl-try-solve__solve-section">
-        <div className="wl-try-solve__solve-section-title">Market Data</div>
-        <div className="wl-try-solve__market-grid">
+        <div className="wl-try-solve__market-grid wl-try-solve__market-grid--wizard">
           <div className="wl-try-solve__field">
             <DatePicker
               label="Valuation Date"
@@ -1108,70 +1174,65 @@ function SolvePanel({
             />
           </label>
         </div>
-      </div>
+      </WizardStep>
 
-      <div className="wl-try-solve__solve-section">
-        <div className="wl-try-solve__solve-section-title">Quote Parameters</div>
-        <div className="wl-try-solve__quote-grid">
-          <Select
-            label="Target Label"
-            searchable
-            className="wl-try-solve__field"
-            value={row.quote_request.target_label}
-            onChange={(v) => onQuoteRequestChange?.(row.row_id, {
-              target_label: v as TrySolveQuoteRequest['target_label'],
-            })}
-            options={[
-              { value: 'price', label: 'price' },
-              { value: 'premium', label: 'premium' },
-              { value: 'premium %', label: 'premium %' },
-              { value: 'reoffer', label: 'reoffer' },
-            ]}
-          />
-          <label className="wl-try-solve__field">
-            <span className="wl-try-solve__field-label">Target Value</span>
-            <div className="wl-try-solve__field-input-with-unit">
+      <WizardStep number={3} title="Search Range" status={stepRangeDone ? 'done' : stepQuoteDone && stepMarketDone ? 'active' : 'todo'}>
+        <div className="wl-try-solve__range-controls">
+          <div className="wl-try-solve__range-inputs">
+            <label className="wl-try-solve__field">
+              <span className="wl-try-solve__field-label">Quote Lower Bound</span>
               <NumberInput
                 type="number"
-                value={row.quote_request.target_value}
-                onChange={(event) => onQuoteRequestChange?.(row.row_id, { target_value: parseNumberInput(event.currentTarget.value) ?? 0 })}
-                aria-label="Target Value"
+                value={row.quote_request.lower_bound ?? ''}
+                onChange={(event) => onQuoteRequestChange?.(row.row_id, { lower_bound: parseNumberInput(event.currentTarget.value) })}
+                aria-label="Quote Lower Bound"
               />
-              {isPremiumPercentTarget ? <span aria-hidden="true">%</span> : null}
-            </div>
-          </label>
-          <label className="wl-try-solve__field">
-            <span className="wl-try-solve__field-label">Quote Lower Bound</span>
-            <NumberInput
-              type="number"
-              value={row.quote_request.lower_bound ?? ''}
-              onChange={(event) => onQuoteRequestChange?.(row.row_id, { lower_bound: parseNumberInput(event.currentTarget.value) })}
-              aria-label="Quote Lower Bound"
-            />
-          </label>
-          <label className="wl-try-solve__field">
-            <span className="wl-try-solve__field-label">Quote Upper Bound</span>
-            <NumberInput
-              type="number"
-              value={row.quote_request.upper_bound ?? ''}
-              onChange={(event) => onQuoteRequestChange?.(row.row_id, { upper_bound: parseNumberInput(event.currentTarget.value) })}
-              aria-label="Quote Upper Bound"
-            />
-          </label>
-          <label className="wl-try-solve__field">
-            <span className="wl-try-solve__field-label">Quote Initial Guess</span>
-            <NumberInput
-              type="number"
-              value={row.quote_request.initial_guess ?? ''}
-              onChange={(event) => onQuoteRequestChange?.(row.row_id, { initial_guess: parseNumberInput(event.currentTarget.value) })}
-              aria-label="Quote Initial Guess"
-            />
-          </label>
+            </label>
+            <label className="wl-try-solve__field">
+              <span className="wl-try-solve__field-label">Quote Upper Bound</span>
+              <NumberInput
+                type="number"
+                value={row.quote_request.upper_bound ?? ''}
+                onChange={(event) => onQuoteRequestChange?.(row.row_id, { upper_bound: parseNumberInput(event.currentTarget.value) })}
+                aria-label="Quote Upper Bound"
+              />
+            </label>
+          </div>
+          <RangeSlider
+            mode="range"
+            min={boundMin}
+            max={boundMax}
+            step={computeSliderStep(boundMin, boundMax)}
+            values={[lowerBound, upperBound]}
+            onChange={handleBoundsChange}
+            label="Bounds"
+            formatValue={(v) => formatValue(v)}
+          />
+          <div className="wl-try-solve__range-inputs">
+            <label className="wl-try-solve__field wl-try-solve__field--wide">
+              <span className="wl-try-solve__field-label">Quote Initial Guess</span>
+              <NumberInput
+                type="number"
+                value={row.quote_request.initial_guess ?? ''}
+                onChange={(event) => onQuoteRequestChange?.(row.row_id, { initial_guess: parseNumberInput(event.currentTarget.value) })}
+                aria-label="Quote Initial Guess"
+              />
+            </label>
+          </div>
+          <RangeSlider
+            mode="single"
+            min={lowerBound}
+            max={upperBound}
+            step={computeSliderStep(lowerBound, upperBound)}
+            values={[initialGuess]}
+            onChange={handleGuessChange}
+            label="Initial Guess"
+            formatValue={(v) => formatValue(v)}
+          />
         </div>
-      </div>
+      </WizardStep>
 
-      <div className="wl-try-solve__solve-section">
-        <div className="wl-try-solve__solve-section-title">Status</div>
+      <WizardStep number={4} title="Run Solver" status={stepQuoteDone && stepMarketDone && stepRangeDone ? 'active' : 'todo'}>
         <div className="wl-try-solve__solve-grid" aria-label="Solve status">
           <Metric label="Product Status" value={formatStatus(row.status)} />
           <Metric label="Solver State" value={readiness} />
@@ -1188,54 +1249,82 @@ function SolvePanel({
             {row.status === 'solved' ? 'Solved' : 'Awaiting solve'}
           </span>
         </div>
-      </div>
 
-      {row.solved_value != null || row.model_price != null ? (
-        <div className="wl-try-solve__solve-section">
-          <div className="wl-try-solve__solve-section-title">Results</div>
-          <div className="wl-try-solve__result">
+        {row.solved_value != null || row.model_price != null ? (
+          <div className="wl-try-solve__result wl-try-solve__result--wizard">
             {row.solved_value != null && <Metric label="Solved Value" value={formatValue(row.solved_value)} />}
             {row.model_price != null && <Metric label="Model Price" value={formatValue(row.model_price)} />}
             {row.residual != null && <Metric label="Residual" value={formatValue(row.residual)} />}
           </div>
-        </div>
-      ) : null}
+        ) : null}
 
-      <div className="wl-try-solve__diagnostics">
-        <div className="wl-try-solve__diagnostics-title">
-          <Rows3 size={14} aria-hidden="true" />
-          Diagnostics
+        <div className="wl-try-solve__diagnostics">
+          <div className="wl-try-solve__diagnostics-title">
+            <Rows3 size={14} aria-hidden="true" />
+            Diagnostics
+          </div>
+          {row.diagnostics.length ? (
+            <ul>
+              {row.diagnostics.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          ) : (
+            <p>No missing terms detected.</p>
+          )}
         </div>
-        {row.diagnostics.length ? (
-          <ul>
-            {row.diagnostics.map((item) => <li key={item}>{item}</li>)}
-          </ul>
-        ) : (
-          <p>No missing terms detected.</p>
-        )}
+
+        <div className="wl-try-solve__solve-actions">
+          <Button
+            type="button"
+            variant="primary"
+            disabled={!canSolveSelected}
+            onClick={() => void onSolveSelected?.(row.row_id)}
+          >
+            <Play size={15} aria-hidden="true" />
+            {solving ? 'Solving...' : 'Solve Selected'}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={solving || rowIds.length === 0}
+            onClick={() => void onSolveAll?.(rowIds)}
+          >
+            Solve All
+          </Button>
+        </div>
+      </WizardStep>
+    </div>
+  );
+}
+
+function WizardStep({
+  number,
+  title,
+  status,
+  children,
+}: {
+  number: number;
+  title: string;
+  status: 'todo' | 'active' | 'done';
+  children: ReactNode;
+}) {
+  return (
+    <div className={`wl-try-solve__wizard-step wl-try-solve__wizard-step--${status}`}>
+      <div className="wl-try-solve__wizard-step-header">
+        <span className="wl-try-solve__wizard-step-number" aria-hidden="true">{number}</span>
+        <span className="wl-try-solve__wizard-step-title">{title}</span>
       </div>
-
-      <div className="wl-try-solve__solve-actions">
-        <Button
-          type="button"
-          variant="primary"
-          disabled={!canSolveSelected}
-          onClick={() => void onSolveSelected?.(row.row_id)}
-        >
-          <Play size={15} aria-hidden="true" />
-          {solving ? 'Solving...' : 'Solve Selected'}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={solving || rowIds.length === 0}
-          onClick={() => void onSolveAll?.(rowIds)}
-        >
-          Solve All
-        </Button>
+      <div className="wl-try-solve__wizard-step-body">
+        {children}
       </div>
     </div>
   );
+}
+
+function computeSliderStep(min: number, max: number): number {
+  const span = Math.abs(max - min);
+  if (span <= 0) return 0.01;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(span)) - 2);
+  return Math.max(0.0001, magnitude);
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
