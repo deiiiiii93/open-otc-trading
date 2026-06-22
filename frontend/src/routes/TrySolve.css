@@ -523,14 +523,28 @@
 
 /* ─── Wizard Solve Panel ──────────────────────────── */
 
+.wl-try-solve__quote-panel {
+  min-width: 0;
+}
+
+.wl-try-solve__quote-panel .wl-panel__body {
+  min-width: 0;
+  overflow: hidden;
+}
+
 .wl-try-solve__solve--wizard {
-  gap: var(--gap-4);
+  gap: var(--gap-3);
 }
 
 .wl-try-solve__wizard-stepper {
   padding-bottom: var(--gap-2);
   border-bottom: 1px solid var(--paper-3);
   flex-wrap: wrap;
+  row-gap: var(--gap-2);
+}
+
+.wl-try-solve__wizard-stepper .wl-stepper__step {
+  min-width: max-content;
 }
 
 .wl-try-solve__wizard-step {
@@ -547,9 +561,11 @@
   display: flex;
   align-items: center;
   gap: var(--gap-2);
+  min-width: 0;
 }
 
 .wl-try-solve__wizard-step-number {
+  flex: 0 0 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -574,10 +590,12 @@
 }
 
 .wl-try-solve__wizard-step-title {
+  min-width: 0;
   font-family: var(--font-ui);
   font-size: var(--type-body-size);
   font-weight: var(--type-body-weight);
   color: var(--ink);
+  line-height: 1.2;
 }
 
 .wl-try-solve__wizard-step--todo .wl-try-solve__wizard-step-title {
@@ -589,13 +607,15 @@
   flex-direction: column;
   gap: var(--gap-2);
   padding-left: calc(22px + var(--gap-2));
+  min-width: 0;
 }
 
 .wl-try-solve__wizard-fields {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 1px;
   border: 1px solid var(--paper-3);
+  background: var(--paper-3);
 }
 
 .wl-try-solve__wizard-fields .wl-try-solve__field {
@@ -607,7 +627,8 @@
 }
 
 .wl-try-solve__market-grid--wizard {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  background: var(--paper-3);
 }
 
 .wl-try-solve__market-grid--wizard .wl-try-solve__field:first-child {
@@ -625,7 +646,7 @@
 
 .wl-try-solve__range-inputs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 1px;
   background: var(--paper-3);
   border: 1px solid var(--paper-3);
@@ -641,6 +662,72 @@
 
 .wl-try-solve__result--wizard {
   margin-top: var(--gap-2);
+}
+
+.wl-try-solve__solve--wizard .wl-try-solve__field {
+  grid-template-columns: 1fr;
+}
+
+.wl-try-solve__solve--wizard .wl-try-solve__field-label,
+.wl-try-solve__solve--wizard .wl-try-solve__field > span,
+.wl-try-solve__solve--wizard .wl-try-solve__field.wl-select .wl-field__label,
+.wl-try-solve__solve--wizard .wl-try-solve__field.wl-datepicker .wl-field__label,
+.wl-try-solve__solve--wizard .wl-try-solve__field .wl-datepicker .wl-field__label {
+  min-height: auto;
+  padding: var(--gap-1) var(--gap-2);
+  border-right: 0;
+  border-bottom: 1px solid var(--paper-3);
+  line-height: 1.2;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.wl-try-solve__solve--wizard .wl-try-solve__field.wl-datepicker,
+.wl-try-solve__solve--wizard .wl-try-solve__field .wl-datepicker {
+  gap: 0;
+  min-width: 0;
+}
+
+.wl-try-solve__solve--wizard .wl-try-solve__field.wl-select {
+  gap: 0;
+}
+
+.wl-try-solve__solve--wizard .wl-select__trigger,
+.wl-try-solve__solve--wizard .wl-datepicker__input {
+  background: var(--paper);
+}
+
+.wl-try-solve__solve--wizard .wl-datepicker__trigger-wrap {
+  min-width: 0;
+}
+
+.wl-try-solve__solve--wizard .wl-datepicker__cal-btn {
+  flex: 0 0 var(--try-solve-field-height);
+}
+
+.wl-try-solve__solve--wizard .wl-range-slider__header {
+  align-items: flex-start;
+}
+
+.wl-try-solve__solve--wizard .wl-range-slider__label {
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.wl-try-solve__solve--wizard .wl-range-slider__values {
+  flex-shrink: 0;
+}
+
+.wl-try-solve__solve--wizard .wl-try-solve__status-strip {
+  background: var(--paper-3);
+  gap: 1px;
+}
+
+.wl-try-solve__solve--wizard .wl-try-solve__step {
+  border-right: 0;
+  background: var(--paper);
+  line-height: 1.2;
 }
 
 

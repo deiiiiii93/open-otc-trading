@@ -714,7 +714,11 @@ export function TrySolve({
           onPointerDown={handleWorkspaceResizePointerDown}
         />
 
-        <Panel title="Quote & Solve" meta={selectedRow?.status ? formatStatus(selectedRow.status) : ''}>
+        <Panel
+          title="Quote & Solve"
+          meta={selectedRow?.status ? formatStatus(selectedRow.status) : ''}
+          className="wl-try-solve__quote-panel"
+        >
           {selectedRow && selectedProduct ? (
             <SolvePanel
               row={selectedRow}
