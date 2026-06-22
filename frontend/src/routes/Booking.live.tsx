@@ -85,7 +85,7 @@ const DEFAULT_TERMS: Record<string, Record<string, unknown>> = {
     strike: 100,
     _otc_ki_observation_convention: 'DAILY',
     barrier_config: {
-      ki_barrier: 75,
+      ki_barrier: 70,
       ko_barrier: 103,
       ko_observation_schedule: { records: [] },
       ki_observation_schedule: { records: [] },
@@ -114,6 +114,7 @@ type BookingFormState = {
   terms: Record<string, unknown>;
   kiBarrierPercent: string;
   koBarrierPercent: string;
+  cpnBarrierPercent: string;
 };
 
 type Props = {
@@ -144,6 +145,7 @@ export function BookingLive({ onPageContextChange }: Props) {
     terms: DEFAULT_TERMS.SnowballOption,
     kiBarrierPercent: '75',
     koBarrierPercent: '103',
+    cpnBarrierPercent: '',
   }));
 
   useEffect(() => {
@@ -208,6 +210,7 @@ export function BookingLive({ onPageContextChange }: Props) {
         nextTerms,
         current.kiBarrierPercent,
         current.koBarrierPercent,
+        current.cpnBarrierPercent,
       );
       const nextPercents = computeBarrierPercentState(current.productType, patchedTerms);
       const nextNotional = syncNotionalFromTerms(patchedTerms);
@@ -276,6 +279,7 @@ export function BookingLive({ onPageContextChange }: Props) {
           nextTerms,
           current.kiBarrierPercent,
           current.koBarrierPercent,
+          current.cpnBarrierPercent,
         );
         const nextNotional = syncNotionalFromTerms(patchedTerms);
         return {
@@ -290,7 +294,18 @@ export function BookingLive({ onPageContextChange }: Props) {
   const updateProductType = (productType: string) => {
     const defaults = DEFAULT_TERMS[productType] ?? {};
     const spot = latestSpotForUnderlying(marketDataProfiles, form.underlying);
-    const nextTerms = applySpotDefaults(productType, defaults, spot, null);
+    const spotTerms = applySpotDefaults(productType, defaults, spot, null);
+    // Spot replaces initial_price (100 → real spot); re-scale the barriers using
+    // the default percentages so KI/KO/CPN keep showing 70/103/80 rather than
+    // collapsing to a fraction of the much larger spot.
+    const defaultPercents = computeBarrierPercentState(productType, defaults);
+    const nextTerms = applyBarrierPercentAdjustment(
+      productType,
+      spotTerms,
+      defaultPercents.kiBarrierPercent,
+      defaultPercents.koBarrierPercent,
+      defaultPercents.cpnBarrierPercent,
+    );
     const nextNotional = syncNotionalFromTerms(nextTerms);
     setForm((current) => ({
       ...current,
@@ -309,6 +324,7 @@ export function BookingLive({ onPageContextChange }: Props) {
         terms,
         current.kiBarrierPercent,
         current.koBarrierPercent,
+        current.cpnBarrierPercent,
       );
       const nextNotional = syncNotionalFromTerms(patchedTerms);
       return {
@@ -320,15 +336,20 @@ export function BookingLive({ onPageContextChange }: Props) {
     });
   };
 
-  const updateBarrierPercent = (field: 'ki' | 'ko', value: string) => {
+  const updateBarrierPercent = (field: 'ki' | 'ko' | 'cpn', value: string) => {
     setForm((current) => {
       const terms = applyPercentToBarrierTerms(current.productType, current.terms, field, value);
       const percentState = computeBarrierPercentState(current.productType, terms);
+      const stateKey = field === 'ki'
+        ? 'kiBarrierPercent'
+        : field === 'ko'
+          ? 'koBarrierPercent'
+          : 'cpnBarrierPercent';
       return {
         ...current,
         terms,
         ...percentState,
-        [field === 'ki' ? 'kiBarrierPercent' : 'koBarrierPercent']: value,
+        [stateKey]: value,
       };
     });
   };
@@ -346,6 +367,7 @@ export function BookingLive({ onPageContextChange }: Props) {
   };
 
   const showBarrierPercentFields = barrierProductTypes.has(form.productType);
+  const showCouponBarrierField = showBarrierPercentFields && getCouponConfig(form.terms) != null;
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -570,6 +592,17 @@ export function BookingLive({ onPageContextChange }: Props) {
                         onChange={(event) => updateBarrierPercent('ko', event.target.value)}
                       />
                     </label>
+                    {showCouponBarrierField ? (
+                      <label className="wl-positions__term-field">
+                        <span>CPN Barrier %</span>
+                        <input
+                          type="number"
+                          step="any"
+                          value={form.cpnBarrierPercent}
+                          onChange={(event) => updateBarrierPercent('cpn', event.target.value)}
+                        />
+                      </label>
+                    ) : null}
                   </>
                 ) : null}
               </div>
@@ -684,18 +717,18 @@ function shouldUseSpotDefaults(productType: string, terms: Record<string, unknow
 function computeBarrierPercentState(
   productType: string,
   terms: Record<string, unknown>,
-): Pick<BookingFormState, 'kiBarrierPercent' | 'koBarrierPercent'> {
-  if (!barrierProductTypes.has(productType)) {
-    return { kiBarrierPercent: '', koBarrierPercent: '' };
-  }
-  const config = getBarrierConfig(terms);
-  if (!config) {
-    return { kiBarrierPercent: '', koBarrierPercent: '' };
-  }
+): Pick<BookingFormState, 'kiBarrierPercent' | 'koBarrierPercent' | 'cpnBarrierPercent'> {
+  const empty = { kiBarrierPercent: '', koBarrierPercent: '', cpnBarrierPercent: '' };
+  if (!barrierProductTypes.has(productType)) return empty;
   const initialPrice = parseNumeric(terms.initial_price);
+  const config = getBarrierConfig(terms);
+  const couponConfig = getCouponConfig(terms);
   return {
-    kiBarrierPercent: percentFromBarrier(initialPrice, parseNumeric(config.ki_barrier)),
-    koBarrierPercent: percentFromBarrier(initialPrice, parseNumeric(config.ko_barrier)),
+    kiBarrierPercent: config ? percentFromBarrier(initialPrice, parseNumeric(config.ki_barrier)) : '',
+    koBarrierPercent: config ? percentFromBarrier(initialPrice, parseNumeric(config.ko_barrier)) : '',
+    cpnBarrierPercent: couponConfig
+      ? percentFromBarrier(initialPrice, parseNumeric(couponConfig.coupon_barrier))
+      : '',
   };
 }
 
@@ -704,49 +737,61 @@ function applyBarrierPercentAdjustment(
   terms: Record<string, unknown>,
   kiBarrierPercent: string,
   koBarrierPercent: string,
+  cpnBarrierPercent: string,
 ): Record<string, unknown> {
   if (!barrierProductTypes.has(productType)) return terms;
   const initialPrice = parseNumeric(terms.initial_price);
   if (!isFiniteNumber(initialPrice) || initialPrice === 0) return terms;
 
-  const config = getBarrierConfig(terms);
-  if (!config) return terms;
+  let nextTerms = terms;
 
-  const nextConfig = { ...config };
-  let changed = false;
-  const nextKiBarrier = applyBarrierPercent(initialPrice, parseNumeric(kiBarrierPercent));
-  if (isFiniteNumber(nextKiBarrier)) {
-    if (nextConfig.ki_barrier !== nextKiBarrier) {
+  const config = getBarrierConfig(terms);
+  if (config) {
+    const nextConfig = { ...config };
+    let changed = false;
+    const nextKiBarrier = applyBarrierPercent(initialPrice, parseNumeric(kiBarrierPercent));
+    if (isFiniteNumber(nextKiBarrier) && nextConfig.ki_barrier !== nextKiBarrier) {
       nextConfig.ki_barrier = nextKiBarrier;
       changed = true;
     }
-  }
-  const nextKoBarrier = applyBarrierPercent(initialPrice, parseNumeric(koBarrierPercent));
-  if (isFiniteNumber(nextKoBarrier)) {
-    if (nextConfig.ko_barrier !== nextKoBarrier) {
+    const nextKoBarrier = applyBarrierPercent(initialPrice, parseNumeric(koBarrierPercent));
+    if (isFiniteNumber(nextKoBarrier) && nextConfig.ko_barrier !== nextKoBarrier) {
       nextConfig.ko_barrier = nextKoBarrier;
       changed = true;
     }
+    if (changed) nextTerms = { ...nextTerms, barrier_config: nextConfig };
   }
-  return changed ? { ...terms, barrier_config: nextConfig } : terms;
+
+  const couponConfig = getCouponConfig(terms);
+  if (couponConfig) {
+    const nextCouponBarrier = applyBarrierPercent(initialPrice, parseNumeric(cpnBarrierPercent));
+    if (isFiniteNumber(nextCouponBarrier) && couponConfig.coupon_barrier !== nextCouponBarrier) {
+      nextTerms = { ...nextTerms, coupon_config: { ...couponConfig, coupon_barrier: nextCouponBarrier } };
+    }
+  }
+
+  return nextTerms;
 }
 
 function applyPercentToBarrierTerms(
   productType: string,
   terms: Record<string, unknown>,
-  field: 'ki' | 'ko',
+  field: 'ki' | 'ko' | 'cpn',
   value: string,
 ): Record<string, unknown> {
   if (!barrierProductTypes.has(productType)) return terms;
-  const config = getBarrierConfig(terms);
-  if (!config) return terms;
   const parsedPercent = parseNumeric(value);
-  if (!isFiniteNumber(parsedPercent)) {
-    return terms;
-  }
+  if (!isFiniteNumber(parsedPercent)) return terms;
   const initialPrice = parseNumeric(terms.initial_price);
   if (!isFiniteNumber(initialPrice) || initialPrice === 0) return terms;
   const target = initialPrice * parsedPercent / 100;
+  if (field === 'cpn') {
+    const couponConfig = getCouponConfig(terms);
+    if (!couponConfig) return terms;
+    return { ...terms, coupon_config: { ...couponConfig, coupon_barrier: target } };
+  }
+  const config = getBarrierConfig(terms);
+  if (!config) return terms;
   const nextConfig = {
     ...config,
     ...(field === 'ki' ? { ki_barrier: target } : { ko_barrier: target }),
@@ -755,7 +800,14 @@ function applyPercentToBarrierTerms(
 }
 
 function getBarrierConfig(terms: Record<string, unknown>): Record<string, unknown> | null {
-  const config = terms.barrier_config;
+  return getObjectConfig(terms.barrier_config);
+}
+
+function getCouponConfig(terms: Record<string, unknown>): Record<string, unknown> | null {
+  return getObjectConfig(terms.coupon_config);
+}
+
+function getObjectConfig(config: unknown): Record<string, unknown> | null {
   if (config == null || typeof config !== 'object' || Array.isArray(config)) return null;
   return config as Record<string, unknown>;
 }

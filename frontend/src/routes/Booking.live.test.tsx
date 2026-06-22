@@ -278,6 +278,73 @@ describe('BookingLive', () => {
     await waitFor(() => expect(screen.getByText('Booked BOOK-1')).toBeInTheDocument());
   });
 
+  it('exposes a synced CPN barrier% for Phoenix with 70/103/80 defaults', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
+      if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile]);
+      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      if (url === '/api/portfolios/1/positions' && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body));
+        const couponConfig = (body.product_kwargs.coupon_config as Record<string, unknown>) || {};
+        // 85% of the spot-driven initial price (3888.12).
+        expect(couponConfig.coupon_barrier).toBeCloseTo(3304.902, 6);
+        return response({
+          ...portfolio,
+          positions: [{
+            id: 44,
+            portfolio_id: 1,
+            product_id: 90,
+            source_trade_id: 'BOOK-PHX',
+            underlying: body.underlying,
+            product_type: body.product_type,
+            product_kwargs: body.product_kwargs,
+            engine_name: body.engine_name,
+            engine_kwargs: {},
+            quantity: body.quantity,
+            entry_price: body.entry_price,
+            status: body.status,
+            mapping_status: 'manual',
+          }],
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<BookingLive />);
+
+    await waitFor(() => expect(screen.getByText('BOOKING')).toBeInTheDocument());
+    await userEvent.selectOptions(screen.getByLabelText('Product Type'), 'PhoenixOption');
+
+    await waitFor(() => expect(screen.getByLabelText('KI Barrier %')).toHaveValue(70));
+    expect(screen.getByLabelText('KO Barrier %')).toHaveValue(103);
+    expect(screen.getByLabelText('CPN Barrier %')).toHaveValue(80);
+
+    await userEvent.clear(screen.getByLabelText('CPN Barrier %'));
+    await userEvent.type(screen.getByLabelText('CPN Barrier %'), '85');
+
+    await userEvent.click(screen.getByRole('button', { name: /book position/i }));
+
+    await waitFor(() => expect(screen.getByText('Booked BOOK-PHX')).toBeInTheDocument());
+  });
+
+  it('hides the CPN barrier% field for Snowball (no coupon config)', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
+      if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile]);
+      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<BookingLive />);
+
+    await waitFor(() => expect(screen.getByLabelText('KI Barrier %')).toBeInTheDocument());
+    expect(screen.queryByLabelText('CPN Barrier %')).not.toBeInTheDocument();
+  });
+
   it('defaults European vanilla strike from latest market data spot', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
