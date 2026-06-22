@@ -782,6 +782,7 @@ def _replace_asian_schedule(
                 position_id=position_id,
                 observation_date=obs_date,
                 sequence=index,
+                weight=_float_or_none(record.get("weight")),
             )
         )
 

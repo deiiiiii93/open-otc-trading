@@ -1076,6 +1076,7 @@ class AsianAveragingDate(Base):
     )
     observation_date: Mapped[date] = mapped_column(Date, primary_key=True)
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    weight: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class SnowballTerm(Base):
