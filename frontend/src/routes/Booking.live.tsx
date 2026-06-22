@@ -640,11 +640,12 @@ export function BookingLive({ onPageContextChange }: Props) {
               <BookingPricingCompanion
                 productType={form.productType}
                 productFamily={productFamily}
-                terms={productTerms}
+                terms={pricingKwargs(form.productType, productTerms)}
                 engineName={form.engineName}
                 underlying={form.underlying}
                 currency={form.currency}
                 latestSpot={latestSpot}
+                quantity={form.quantity}
               />
             </TabsContent>
           </Tabs>
@@ -667,6 +668,23 @@ const PRODUCTS_WITH_INITIAL_PRICE = new Set([
   'AsianOption',
   'RangeAccrualOption',
 ]);
+
+// Spot defaults inject `initial_price` into the form terms for every strike-bearing
+// product (see applySpotDefaults), but only autocallable-family constructors accept
+// it — QuantArk's registry rejects it as an unknown kwarg for the rest (e.g.
+// EuropeanVanillaOption). The booking-submit path strips it via buildProductRoot;
+// the pricing preview path must apply the same strip before sending product_kwargs.
+function pricingKwargs(
+  productType: string,
+  terms: Record<string, unknown>,
+): Record<string, unknown> {
+  if (PRODUCTS_WITH_INITIAL_PRICE.has(productType) || !('initial_price' in terms)) {
+    return terms;
+  }
+  const next = { ...terms };
+  delete next.initial_price;
+  return next;
+}
 
 function buildProductRoot({
   productType,

@@ -6,6 +6,7 @@
   justify-content: flex-end;
   gap: var(--gap-2);
   flex-wrap: wrap;
+  padding: var(--gap-1) 0;
 }
 
 .wl-ipager__info {
