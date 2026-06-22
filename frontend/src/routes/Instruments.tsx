@@ -5,6 +5,7 @@ import { PageToolbar, PageToolbarSpacer, PageToolbarSearch } from '../components
 import { Tabs, TabsList, TabsTrigger } from '../components/Tabs';
 import { Button } from '../components/Button';
 import { Empty } from '../components/Empty';
+import { NumberInput } from '../components/NumberInput';
 import { Select } from '../components/Select';
 import { InstrumentCreateDialog } from '../components/InstrumentCreateDialog';
 import type { InstrumentCreateFormData } from '../components/InstrumentCreateDialog';
@@ -796,7 +797,7 @@ export function Instruments({
           { value: 'P', label: 'P' },
         ]}
       />
-      <input
+      <NumberInput
         className="wl-instruments__inline-input"
         type="number"
         value={hedgeCandidateFilters.strikeMin}
@@ -804,7 +805,7 @@ export function Instruments({
         placeholder="Strike min"
         aria-label="Strike min"
       />
-      <input
+      <NumberInput
         className="wl-instruments__inline-input"
         type="number"
         value={hedgeCandidateFilters.strikeMax}

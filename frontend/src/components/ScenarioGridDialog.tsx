@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from './Button';
 import { Modal } from './Modal';
+import { NumberInput } from './NumberInput';
 import { Select } from './Select';
 import type { GridAxisSpec, ScenarioGridRequest, ScenarioSetSummary } from '../types';
 import './ScenarioGridDialog.css';
@@ -150,11 +151,11 @@ export function ScenarioGridDialog({ open, initial, existingNames, onGenerate, o
               <Select label={`param ${i}`} value={ax.param}
                 onChange={(v) => updateAxis(i, { param: v as GridAxisSpec['param'] })}
                 options={PARAMS.map((p) => ({ value: p, label: p }))} />
-              <input aria-label={`start ${i}`} type="number" step="any" placeholder="start"
+              <NumberInput aria-label={`start ${i}`} type="number" step="any" placeholder="start"
                 value={ax.start} onChange={(e) => updateAxis(i, { start: e.target.value })} />
-              <input aria-label={`stop ${i}`} type="number" step="any" placeholder="stop"
+              <NumberInput aria-label={`stop ${i}`} type="number" step="any" placeholder="stop"
                 value={ax.stop} onChange={(e) => updateAxis(i, { stop: e.target.value })} />
-              <input aria-label={`step ${i}`} type="number" step="any" placeholder="step"
+              <NumberInput aria-label={`step ${i}`} type="number" step="any" placeholder="step"
                 value={ax.step} onChange={(e) => updateAxis(i, { step: e.target.value })} />
               <Select label={`type ${i}`} value={ax.stress_type}
                 onChange={(v) => updateAxis(i, { stress_type: v as GridAxisSpec['stress_type'] })}

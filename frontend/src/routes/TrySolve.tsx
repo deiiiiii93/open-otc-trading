@@ -5,6 +5,7 @@ import { Panel } from '../components/Panel';
 import { Empty } from '../components/Empty';
 import { Button } from '../components/Button';
 import { DatePicker } from '../components/DatePicker';
+import { NumberInput } from '../components/NumberInput';
 import { Select } from '../components/Select';
 import { Badge, type BadgeVariant } from '../components/Badge';
 import { usePageContextReporter } from '../hooks/usePageContextReporter';
@@ -616,7 +617,7 @@ export function TrySolve({
     <Panel title="Request Queue" meta={loading ? 'loading' : `${rows.length} rows`} className="wl-try-solve__queue-panel">
           <label className="wl-try-solve__queue-search">
             <Search size={14} aria-hidden="true" />
-            <input
+            <NumberInput
               type="search"
               value={queueSearch}
               onChange={(event) => setQueueSearch(event.currentTarget.value)}
@@ -946,7 +947,7 @@ function FieldControl({
     );
   }
   return (
-    <input
+    <NumberInput
       aria-label={fieldItem.label}
       type={fieldItem.field_type === 'number' ? 'number' : 'text'}
       value={value == null ? '' : String(value)}
@@ -1072,7 +1073,7 @@ function SolvePanel({
           </div>
           <label className="wl-try-solve__field">
             <span className="wl-try-solve__field-label">Spot</span>
-            <input
+            <NumberInput
               type="number"
               value={row.market.spot ?? ''}
               onChange={(event) => onMarketChange?.(row.row_id, { spot: parseNumberInput(event.currentTarget.value) })}
@@ -1081,7 +1082,7 @@ function SolvePanel({
           </label>
           <label className="wl-try-solve__field">
             <span className="wl-try-solve__field-label">Volatility</span>
-            <input
+            <NumberInput
               type="number"
               value={row.market.volatility ?? ''}
               onChange={(event) => onMarketChange?.(row.row_id, { volatility: parseNumberInput(event.currentTarget.value) })}
@@ -1090,7 +1091,7 @@ function SolvePanel({
           </label>
           <label className="wl-try-solve__field">
             <span className="wl-try-solve__field-label">Rate</span>
-            <input
+            <NumberInput
               type="number"
               value={row.market.rate ?? ''}
               onChange={(event) => onMarketChange?.(row.row_id, { rate: parseNumberInput(event.currentTarget.value) })}
@@ -1099,7 +1100,7 @@ function SolvePanel({
           </label>
           <label className="wl-try-solve__field">
             <span className="wl-try-solve__field-label">Dividend Yield</span>
-            <input
+            <NumberInput
               type="number"
               value={row.market.dividend_yield ?? ''}
               onChange={(event) => onMarketChange?.(row.row_id, { dividend_yield: parseNumberInput(event.currentTarget.value) })}
@@ -1130,7 +1131,7 @@ function SolvePanel({
           <label className="wl-try-solve__field">
             <span className="wl-try-solve__field-label">Target Value</span>
             <div className="wl-try-solve__field-input-with-unit">
-              <input
+              <NumberInput
                 type="number"
                 value={row.quote_request.target_value}
                 onChange={(event) => onQuoteRequestChange?.(row.row_id, { target_value: parseNumberInput(event.currentTarget.value) ?? 0 })}
@@ -1141,7 +1142,7 @@ function SolvePanel({
           </label>
           <label className="wl-try-solve__field">
             <span className="wl-try-solve__field-label">Quote Lower Bound</span>
-            <input
+            <NumberInput
               type="number"
               value={row.quote_request.lower_bound ?? ''}
               onChange={(event) => onQuoteRequestChange?.(row.row_id, { lower_bound: parseNumberInput(event.currentTarget.value) })}
@@ -1150,7 +1151,7 @@ function SolvePanel({
           </label>
           <label className="wl-try-solve__field">
             <span className="wl-try-solve__field-label">Quote Upper Bound</span>
-            <input
+            <NumberInput
               type="number"
               value={row.quote_request.upper_bound ?? ''}
               onChange={(event) => onQuoteRequestChange?.(row.row_id, { upper_bound: parseNumberInput(event.currentTarget.value) })}
@@ -1159,7 +1160,7 @@ function SolvePanel({
           </label>
           <label className="wl-try-solve__field">
             <span className="wl-try-solve__field-label">Quote Initial Guess</span>
-            <input
+            <NumberInput
               type="number"
               value={row.quote_request.initial_guess ?? ''}
               onChange={(event) => onQuoteRequestChange?.(row.row_id, { initial_guess: parseNumberInput(event.currentTarget.value) })}

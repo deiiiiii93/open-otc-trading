@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Calculator } from 'lucide-react';
 import { api } from '../api/client';
 import { Button } from './Button';
+import { NumberInput } from './NumberInput';
 import { Tile } from './Tile';
 import type { PricingPreviewOut } from '../types';
 import './BookingPricingCompanion.css';
@@ -163,7 +164,7 @@ export function BookingPricingCompanion({
         {fields.map((f) => (
           <label key={f.key} className="wl-pricing-companion__field">
             <span>{f.label}</span>
-            <input
+            <NumberInput
               type={f.type}
               step="any"
               aria-label={f.label}

@@ -18,6 +18,7 @@ import { Button } from '../components/Button';
 import { DatePicker } from '../components/DatePicker';
 import { Empty } from '../components/Empty';
 import { Modal } from '../components/Modal';
+import { NumberInput } from '../components/NumberInput';
 import { Select } from '../components/Select';
 import type { FxRate, MarketDataProfile } from '../types';
 import { quoteAgeBucket } from './instrumentsShared';
@@ -375,7 +376,7 @@ function QuotesSection({
           />
           <label>
             Price
-            <input
+            <NumberInput
               type="number"
               step="any"
               value={manualPrice}
@@ -807,7 +808,7 @@ function FxRatesSection({
         >
           <label>
             Base currency
-            <input
+            <NumberInput
               value={createBase}
               onChange={(e) => setCreateBase(e.target.value)}
               aria-label="Base currency"

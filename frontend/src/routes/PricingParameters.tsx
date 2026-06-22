@@ -4,6 +4,7 @@ import { Button } from '../components/Button';
 import { DatePicker } from '../components/DatePicker';
 import { Empty } from '../components/Empty';
 import { Modal } from '../components/Modal';
+import { NumberInput } from '../components/NumberInput';
 import { MasterDetailPage } from '../components/templates';
 import { usePageContextReporter } from '../hooks/usePageContextReporter';
 import type { PageContext, PageContextReporter, PricingParameterProfile } from '../types';
@@ -318,15 +319,15 @@ export function PricingParameters({
           <div className="wl-pricing-params__row-grid">
             <label>
               Rate
-              <input aria-label="Rate" type="number" step="any" value={manualRate} onChange={(event) => setManualRate(event.target.value)} />
+              <NumberInput aria-label="Rate" type="number" step="any" value={manualRate} onChange={(event) => setManualRate(event.target.value)} />
             </label>
             <label>
               Div yield
-              <input aria-label="Dividend yield" type="number" step="any" value={manualDividendYield} onChange={(event) => setManualDividendYield(event.target.value)} />
+              <NumberInput aria-label="Dividend yield" type="number" step="any" value={manualDividendYield} onChange={(event) => setManualDividendYield(event.target.value)} />
             </label>
             <label>
               Vol
-              <input aria-label="Volatility" type="number" step="any" value={manualVolatility} onChange={(event) => setManualVolatility(event.target.value)} />
+              <NumberInput aria-label="Volatility" type="number" step="any" value={manualVolatility} onChange={(event) => setManualVolatility(event.target.value)} />
             </label>
           </div>
           <div className="wl-pricing-params__form-actions">

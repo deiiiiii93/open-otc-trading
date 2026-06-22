@@ -2,6 +2,7 @@ import './HedgeStrategy.css'
 import { useEffect, useState } from 'react'
 import { Button } from '../components/Button'
 import { Badge } from '../components/Badge'
+import { NumberInput } from '../components/NumberInput'
 import { Select } from '../components/Select'
 import { type TileVariant } from '../components/Tile'
 import { MetricRow, type Metric } from '../components/MetricRow'
@@ -144,7 +145,7 @@ function BandEditor(props: { bands: HedgeGreeks; onSave: (b: HedgeGreeks) => voi
       {GREEKS.map((g) => (
         <label key={g} className="hedge-strategy__band">
           {GREEK_SYMBOLS[g]} ±
-          <input
+          <NumberInput
             className="hedge-strategy__input" type="number" value={draft[g]} aria-label={`${g} band`}
             onChange={(e) => setDraft({ ...draft, [g]: Number(e.target.value) })}
           />

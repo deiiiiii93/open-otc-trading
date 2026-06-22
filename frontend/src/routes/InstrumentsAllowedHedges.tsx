@@ -3,6 +3,7 @@ import { useId } from 'react';
 import { Search, X } from 'lucide-react';
 import { Button } from '../components/Button';
 import { Empty } from '../components/Empty';
+import { NumberInput } from '../components/NumberInput';
 import { Select } from '../components/Select';
 import { quoteAgeBucket as _quoteAgeBucket } from './instrumentsShared';
 import { InstrumentsPager, usePagination } from './InstrumentsPager';
@@ -351,7 +352,7 @@ function CandidatesTable({
             ]}
           />
 
-          <input
+          <NumberInput
             className="wl-ah__strike-input"
             type="number"
             value={filters.strikeMin}
@@ -359,7 +360,7 @@ function CandidatesTable({
             placeholder="Strike min"
             aria-label="Strike min"
           />
-          <input
+          <NumberInput
             className="wl-ah__strike-input"
             type="number"
             value={filters.strikeMax}

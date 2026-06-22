@@ -4,6 +4,7 @@ import { LaptopMinimal, Moon, Rows2, Sun } from 'lucide-react';
 import './tokens/index.css';
 import { AppShell } from './components/AppShell';
 import { Button } from './components/Button';
+import { ThousandSeparatorProvider, useThousandSeparator } from './components/ThousandSeparatorContext';
 import { DatePicker } from './components/DatePicker';
 import { CommandPalette, type CommandItem } from './components/CommandPalette';
 import { FloatingAgent } from './components/FloatingAgent';
@@ -76,6 +77,7 @@ function App() {
   const { route, navigate } = useRoute();
   const { theme, setTheme } = useTheme();
   const { density, toggle: toggleDensity } = useDensity();
+  const { thousandSeparator, toggleThousandSeparator } = useThousandSeparator();
   const palette = useCommandPalette();
   const agentChat = useAgentChatController();
   const [agentOpen, setAgentOpen] = useState(false);
@@ -246,6 +248,16 @@ function App() {
               >
                 <Rows2 size={16} aria-hidden="true" />
               </Button>
+              <Button
+                variant="ghost"
+                className="wl-shell__toolbar-badge"
+                onClick={toggleThousandSeparator}
+                aria-pressed={thousandSeparator}
+                title={`Thousand separator: ${thousandSeparator ? 'on' : 'off'}`}
+                aria-label={`Thousand separator: ${thousandSeparator ? 'on' : 'off'}`}
+              >
+                1,000
+              </Button>
               <Button variant="ghost" onClick={palette.open}>⌘K</Button>
             </div>
           </>
@@ -327,7 +339,7 @@ function App() {
 }
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode><App /></StrictMode>
+  <StrictMode><ThousandSeparatorProvider><App /></ThousandSeparatorProvider></StrictMode>
 );
 
 function hasPendingActions(thread: { messages: Array<{ meta?: Record<string, unknown> }> } | null): boolean {

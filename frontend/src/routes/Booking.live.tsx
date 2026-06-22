@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { Button } from '../components/Button';
 import { Empty } from '../components/Empty';
 import { MetricRow } from '../components/MetricRow';
+import { NumberInput } from '../components/NumberInput';
 import { WizardPage } from '../components/templates';
 import { ProductTermsForm } from '../components/ProductTermsForm';
 import { Select } from '../components/Select';
@@ -531,15 +532,15 @@ export function BookingLive({ onPageContextChange }: Props) {
                 />
                 <label className="wl-positions__term-field">
                   <span>Quantity</span>
-                  <input type="number" step="any" value={form.quantity} onChange={(event) => update('quantity', event.target.value)} />
+                  <NumberInput type="number" step="any" value={form.quantity} onChange={(event) => update('quantity', event.target.value)} />
                 </label>
                 <label className="wl-positions__term-field">
                   <span>Entry Price</span>
-                  <input type="number" step="any" value={form.entryPrice} onChange={(event) => update('entryPrice', event.target.value)} />
+                  <NumberInput type="number" step="any" value={form.entryPrice} onChange={(event) => update('entryPrice', event.target.value)} />
                 </label>
                 <label className="wl-positions__term-field">
                   <span>Notional</span>
-                  <input type="number" step="any" value={form.notional} onChange={(event) => updateNotional(event.target.value)} />
+                  <NumberInput type="number" step="any" value={form.notional} onChange={(event) => updateNotional(event.target.value)} />
                 </label>
                 <Select
                   label="Status"
@@ -578,7 +579,7 @@ export function BookingLive({ onPageContextChange }: Props) {
                   <>
                     <label className="wl-positions__term-field">
                       <span>KI Barrier %</span>
-                      <input
+                      <NumberInput
                         type="number"
                         step="any"
                         value={form.kiBarrierPercent}
@@ -587,7 +588,7 @@ export function BookingLive({ onPageContextChange }: Props) {
                     </label>
                     <label className="wl-positions__term-field">
                       <span>KO Barrier %</span>
-                      <input
+                      <NumberInput
                         type="number"
                         step="any"
                         value={form.koBarrierPercent}
@@ -597,7 +598,7 @@ export function BookingLive({ onPageContextChange }: Props) {
                     {showCouponBarrierField ? (
                       <label className="wl-positions__term-field">
                         <span>CPN Barrier %</span>
-                        <input
+                        <NumberInput
                           type="number"
                           step="any"
                           value={form.cpnBarrierPercent}

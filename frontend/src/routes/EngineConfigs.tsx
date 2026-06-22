@@ -4,6 +4,7 @@ import { RailList } from '../components/RailList';
 import { RailItem } from '../components/RailItem';
 import { Empty } from '../components/Empty';
 import { Button } from '../components/Button';
+import { NumberInput } from '../components/NumberInput';
 import { Select } from '../components/Select';
 import {
   createEngineConfig,
@@ -335,7 +336,7 @@ export function EngineConfigsLive() {
               </label>
               <label className="wl-engine-configs__field">
                 <span>Business Days In Year</span>
-                <input
+                <NumberInput
                   type="number"
                   value={businessDaysInYear ?? ''}
                   placeholder="244"

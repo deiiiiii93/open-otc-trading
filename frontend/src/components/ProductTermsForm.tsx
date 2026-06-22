@@ -3,6 +3,7 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { Button } from './Button';
 import { DatePicker } from './DatePicker';
 import { Modal } from './Modal';
+import { NumberInput } from './NumberInput';
 import { Select } from './Select';
 import '../routes/Positions.css';
 
@@ -512,7 +513,7 @@ export function ProductTermsForm({ productType, productKwargs, onChange }: Props
     return (
       <label key={field.key} className="wl-positions__term-field">
         <span>{field.label}</span>
-        <input
+        <NumberInput
           type={field.type === 'number' ? 'number' : 'text'}
           step={field.type === 'number' ? 'any' : undefined}
           value={stringValue}
@@ -663,7 +664,7 @@ export function ProductTermsForm({ productType, productKwargs, onChange }: Props
           return (
             <label key={key} className="wl-positions__term-field">
               <span>{label}</span>
-              <input
+              <NumberInput
                 type={inputTypeForKey(key, entryValue) === 'number' ? 'number' : 'text'}
                 step={inputTypeForKey(key, entryValue) === 'number' ? 'any' : undefined}
                 value={entryValue == null ? '' : String(entryValue)}
@@ -721,7 +722,7 @@ export function ProductTermsForm({ productType, productKwargs, onChange }: Props
                           onChange={(v) => updateCell(rowIndex, column, v)}
                         />
                       ) : (
-                        <input
+                        <NumberInput
                           aria-label={`${toTitleLabel(fieldKey)} ${rowIndex + 1} ${toTitleLabel(column)}`}
                           type={inputTypeForKey(column, record[column]) === 'number' ? 'number' : 'text'}
                           step={inputTypeForKey(column, record[column]) === 'number' ? 'any' : undefined}
@@ -825,7 +826,7 @@ export function ProductTermsForm({ productType, productKwargs, onChange }: Props
                 </div>
                 <label className="wl-positions__term-field" htmlFor="wl-schedule-creator-lockup">
                   <span>Lockup Periods</span>
-                  <input
+                  <NumberInput
                     id="wl-schedule-creator-lockup"
                     type="number"
                     min={0}
@@ -846,7 +847,7 @@ export function ProductTermsForm({ productType, productKwargs, onChange }: Props
                 </div>
                 <label className="wl-positions__term-field" htmlFor="wl-schedule-creator-total-dates">
                   <span>Total Dates</span>
-                  <input
+                  <NumberInput
                     id="wl-schedule-creator-total-dates"
                     type="number"
                     min={1}
@@ -858,7 +859,7 @@ export function ProductTermsForm({ productType, productKwargs, onChange }: Props
                 </label>
                 <label className="wl-positions__term-field" htmlFor="wl-schedule-creator-ko-return-rate">
                   <span>KO Return Rate</span>
-                  <input
+                  <NumberInput
                     id="wl-schedule-creator-ko-return-rate"
                     type="number"
                     step="any"
@@ -880,7 +881,7 @@ export function ProductTermsForm({ productType, productKwargs, onChange }: Props
                 <div className="wl-positions__term-field">
                   <span>Rate Annualized</span>
                   <div className="wl-positions__term-boolean-control">
-                    <input
+                          <NumberInput
                       type="checkbox"
                       aria-label="Rate Annualized"
                       checked={scheduleCreator.isRateAnnualized}
@@ -916,7 +917,7 @@ export function ProductTermsForm({ productType, productKwargs, onChange }: Props
                       if (typeof cellValue === 'boolean' || column.startsWith('is_') || column.startsWith('has_')) {
                         return (
                           <td key={column}>
-                            <input
+                    <NumberInput
                               type="checkbox"
                               aria-label={`${title} ${rowIndex + 1} ${toTitleLabel(column)}`}
                               checked={Boolean(cellValue)}
@@ -937,7 +938,7 @@ export function ProductTermsForm({ productType, productKwargs, onChange }: Props
                       }
                       return (
                         <td key={column}>
-                          <input
+                          <NumberInput
                             aria-label={`${title} ${rowIndex + 1} ${toTitleLabel(column)}`}
                             type={inputTypeForKey(column, cellValue) === 'number' ? 'number' : 'text'}
                             step={inputTypeForKey(column, cellValue) === 'number' ? 'any' : undefined}
@@ -1062,7 +1063,7 @@ export function ProductTermsForm({ productType, productKwargs, onChange }: Props
                   return (
                     <label key={key} className="wl-positions__term-field">
                       <span>{toTitleLabel(key)}</span>
-                      <input
+                      <NumberInput
                         type={inputTypeForKey(key, value) === 'number' ? 'number' : 'text'}
                         step={inputTypeForKey(key, value) === 'number' ? 'any' : undefined}
                         value={value == null ? '' : String(value)}

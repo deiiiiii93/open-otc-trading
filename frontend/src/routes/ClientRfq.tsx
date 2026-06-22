@@ -5,6 +5,7 @@ import { Panel } from '../components/Panel';
 import { Empty } from '../components/Empty';
 import { Button } from '../components/Button';
 import { Badge } from '../components/Badge';
+import { NumberInput } from '../components/NumberInput';
 import { Select } from '../components/Select';
 import { Tabs, TabsList, TabsTrigger } from '../components/Tabs';
 import { ProductTermsForm } from '../components/ProductTermsForm';
@@ -379,7 +380,7 @@ export function ClientRfq({
                 />
                 <label className="wl-client-rfq__field">
                   <span>Notional</span>
-                  <input
+                  <NumberInput
                     type="number"
                     min="0"
                     step="any"
@@ -450,7 +451,7 @@ export function ClientRfq({
                     />
                     <label className="wl-client-rfq__field">
                       <span>Lower Bound</span>
-                      <input
+                      <NumberInput
                         type="number"
                         step="any"
                         value={form.lowerBound ?? ''}
@@ -461,7 +462,7 @@ export function ClientRfq({
                     </label>
                     <label className="wl-client-rfq__field">
                       <span>Upper Bound</span>
-                      <input
+                      <NumberInput
                         type="number"
                         step="any"
                         value={form.upperBound ?? ''}
@@ -472,7 +473,7 @@ export function ClientRfq({
                     </label>
                     <label className="wl-client-rfq__field">
                       <span>Initial Guess</span>
-                      <input
+                      <NumberInput
                         type="number"
                         step="any"
                         value={form.initialGuess ?? ''}
@@ -483,7 +484,7 @@ export function ClientRfq({
                     </label>
                     <label className="wl-client-rfq__field">
                       <span>Target Value</span>
-                      <input
+                      <NumberInput
                         type="number"
                         step="any"
                         value={form.targetValue ?? ''}

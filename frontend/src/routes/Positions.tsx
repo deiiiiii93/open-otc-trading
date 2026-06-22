@@ -8,6 +8,7 @@ import { Button } from '../components/Button';
 import { Badge, type BadgeVariant } from '../components/Badge';
 import { Empty } from '../components/Empty';
 import { Modal } from '../components/Modal';
+import { NumberInput } from '../components/NumberInput';
 import { PositionEditForm } from '../components/PositionEditForm';
 import { PositionLifecycleTimeline } from '../components/PositionLifecycleTimeline';
 import { Select } from '../components/Select';
@@ -436,7 +437,7 @@ export function Positions({
       render: (r) => {
         if (editingCell?.rowId === r.id && editingCell.key === 'quantity') {
           return (
-            <input
+            <NumberInput
               type="number"
               step="any"
               value={editValue}
@@ -466,7 +467,7 @@ export function Positions({
       render: (r) => {
         if (editingCell?.rowId === r.id && editingCell.key === 'entry_price') {
           return (
-            <input
+            <NumberInput
               type="number"
               step="any"
               value={editValue}
@@ -1408,7 +1409,7 @@ function PricingNumberField({
   return (
     <label className="wl-positions__term-field" htmlFor={id}>
       <span>{label}</span>
-      <input
+      <NumberInput
         id={id}
         aria-label={ariaLabel}
         type="number"

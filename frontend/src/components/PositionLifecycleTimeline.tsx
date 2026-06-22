@@ -4,6 +4,7 @@ import type { PositionLifecycleEvent } from '../types';
 import type { PositionRow } from '../routes/Positions';
 import { Button } from './Button';
 import { DatePicker } from './DatePicker';
+import { NumberInput } from './NumberInput';
 
 const PRODUCT_EVENTS: Record<string, string[]> = {
   SnowballOption: ['close', 'knock_in', 'knock_out', 'coupon_observation', 'coupon_paid', 'maturity', 'custom'],
@@ -195,7 +196,7 @@ export function PositionLifecycleTimeline({ row, events, onAddEvent, onCancelEve
                 ) : (
                   <label key={field.key} className="wl-positions__term-field">
                     <span>{field.label}</span>
-                    <input
+                    <NumberInput
                       type={field.type === 'number' ? 'number' : 'text'}
                       step={field.type === 'number' ? 'any' : undefined}
                       value={eventData[field.key] ?? ''}

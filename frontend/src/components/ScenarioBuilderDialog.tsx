@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from './Button';
 import { Modal } from './Modal';
+import { NumberInput } from './NumberInput';
 import { Select } from './Select';
 import type { ScenarioStress, ScenarioSetDetail } from '../types';
 import './ScenarioBuilderDialog.css';
@@ -118,7 +119,7 @@ export function ScenarioBuilderDialog({ open, initial, existingNames, onSave, on
               <Select label={`type ${i}`} value={leg.stress_type}
                 onChange={(v) => updateLeg(i, { stress_type: v as ScenarioStress['stress_type'] })}
                 options={STRESS_TYPES.map((t) => ({ value: t, label: t.toLowerCase() }))} />
-              <input aria-label={`value ${i}`} type="number" step="any" value={Number.isNaN(leg.value) ? '' : leg.value}
+              <NumberInput aria-label={`value ${i}`} type="number" step="any" value={Number.isNaN(leg.value) ? '' : leg.value}
                 onChange={(e) => updateLeg(i, { value: e.target.value === '' ? NaN : Number(e.target.value) })} />
               {leg.stress_type === 'PERCENTAGE' && (
                 <span className="wl-scenario-builder__unit" aria-hidden="true">%</span>

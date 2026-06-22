@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import type { PositionRow } from '../routes/Positions';
 import { Button } from './Button';
+import { NumberInput } from './NumberInput';
 import { Select } from './Select';
 import { ProductTermsForm } from './ProductTermsForm';
 
@@ -150,11 +151,11 @@ export function PositionEditForm({ row, onSave, saving }: Props) {
         </div>
         <label className="wl-positions__term-field">
           <span>Quantity</span>
-          <input type="number" step="any" value={form.quantity} onChange={(e) => update('quantity', e.target.value)} />
+          <NumberInput type="number" step="any" value={form.quantity} onChange={(e) => update('quantity', e.target.value)} />
         </label>
         <label className="wl-positions__term-field">
           <span>Entry Price</span>
-          <input type="number" step="any" value={form.entry_price} onChange={(e) => update('entry_price', e.target.value)} />
+          <NumberInput type="number" step="any" value={form.entry_price} onChange={(e) => update('entry_price', e.target.value)} />
         </label>
         <label className="wl-positions__term-field">
           <span>Currency</span>

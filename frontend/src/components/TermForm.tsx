@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import type { ChoiceMeta, TermFormField, TermFormMeta } from '../types';
 import { composeTermFormSubmission, validateTermFormValue } from './termFormModel';
 import { DatePicker } from './DatePicker';
+import { NumberInput } from './NumberInput';
 import './TermForm.css';
 
 type Props = {
@@ -89,7 +90,7 @@ export function TermForm({ form, onSubmit }: Props) {
                 />
               )}
               {field.type !== 'enum' && field.type !== 'date' && (
-                <input
+                <NumberInput
                   id={inputId}
                   className="wl-term-form__input"
                   type={field.type === 'number' || field.type === 'percent' ? 'number' : 'text'}

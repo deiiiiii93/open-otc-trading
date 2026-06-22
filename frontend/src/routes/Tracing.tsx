@@ -5,6 +5,7 @@ import { MasterDetailPage } from '../components/templates';
 import { RailList } from '../components/RailList';
 import { RailItem } from '../components/RailItem';
 import { Empty } from '../components/Empty';
+import { NumberInput } from '../components/NumberInput';
 import './Tracing.css';
 
 type Props = {
@@ -147,7 +148,7 @@ export function Tracing({
               )}
             </span>
           ) : onThreadChange && (
-            <input
+            <NumberInput
               className="wl-tracing__thread-input"
               type="number"
               placeholder="Thread ID…"

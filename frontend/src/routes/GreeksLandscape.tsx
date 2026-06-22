@@ -15,6 +15,7 @@ import { RunWorkbenchPage } from '../components/templates';
 import { Button } from '../components/Button';
 import { Empty } from '../components/Empty';
 import { HeaderControls } from '../components/HeaderControls';
+import { NumberInput } from '../components/NumberInput';
 import { Select } from '../components/Select';
 import { usePageContextReporter } from '../hooks/usePageContextReporter';
 import { declareActions } from '../lib/pageActions';
@@ -271,13 +272,13 @@ export function GreeksLandscapeView(props: ViewProps) {
         <fieldset className="wl-landscape__spot-grid">
           <legend>Spot grid</legend>
           <label className="wl-landscape__grid-field wl-landscape__grid-field--min"><span>Min %</span>
-            <input aria-label="Minimum spot change" type="number" value={grid.spot_min_pct} onChange={(e) => setGrid({ ...grid, spot_min_pct: e.target.value })} />
+            <NumberInput aria-label="Minimum spot change" type="number" value={grid.spot_min_pct} onChange={(e) => setGrid({ ...grid, spot_min_pct: e.target.value })} />
           </label>
           <label className="wl-landscape__grid-field wl-landscape__grid-field--max"><span>Max %</span>
-            <input aria-label="Maximum spot change" type="number" value={grid.spot_max_pct} onChange={(e) => setGrid({ ...grid, spot_max_pct: e.target.value })} />
+            <NumberInput aria-label="Maximum spot change" type="number" value={grid.spot_max_pct} onChange={(e) => setGrid({ ...grid, spot_max_pct: e.target.value })} />
           </label>
           <label className="wl-landscape__grid-field wl-landscape__grid-field--nodes"><span>Nodes</span>
-            <input aria-label="Spot nodes" type="number" min={3} max={501} value={grid.spot_nodes} onChange={(e) => setGrid({ ...grid, spot_nodes: e.target.value })} />
+            <NumberInput aria-label="Spot nodes" type="number" min={3} max={501} value={grid.spot_nodes} onChange={(e) => setGrid({ ...grid, spot_nodes: e.target.value })} />
           </label>
         </fieldset>
         <Select
