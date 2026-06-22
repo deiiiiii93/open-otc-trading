@@ -22,6 +22,7 @@ const baseProps = {
   underlying: '000300.SH',
   currency: 'CNY',
   latestSpot: 3888.12,
+  quantity: '1',
 };
 
 describe('BookingPricingCompanion', () => {
@@ -71,6 +72,35 @@ describe('BookingPricingCompanion', () => {
       expect(screen.getByText('Delta')).toBeInTheDocument();
       expect(screen.getByText('0.5000')).toBeInTheDocument();
     });
+  });
+
+  it('scales PV and every greek by a signed quantity (sell negates)', async () => {
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const u = url(input);
+      if (u === '/api/underlying-pricing-defaults') {
+        return response([{ underlying: '000300.SH', rate: 0.025, dividend_yield: 0.01, volatility: 0.2 }]);
+      }
+      if (u === '/api/pricing/preview' && init?.method === 'POST') {
+        return response({
+          ok: true, price: 12.34, engine: 'BlackScholesEngine', product_type: 'EuropeanVanillaOption',
+          greeks: { delta: 0.5, gamma: 0.01, vega: 0.2, theta: -0.03, rho: 0.1, rho_q: -0.05 },
+          greeks_error: null, error: null,
+        });
+      }
+      throw new Error(`unexpected ${u}`);
+    }) as unknown as typeof fetch;
+
+    // Short 3 units: position = per-unit × -3.
+    render(<BookingPricingCompanion {...baseProps} quantity="-3" />);
+    await screen.findByLabelText('Spot');
+    await userEvent.click(screen.getByRole('button', { name: /price/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('-37.0200')).toBeInTheDocument(); // PV 12.34 × -3
+      expect(screen.getByText('-1.5000')).toBeInTheDocument();  // delta 0.5 × -3
+      expect(screen.getByText('0.0900')).toBeInTheDocument();   // theta -0.03 × -3 (sign flips)
+    });
+    expect(screen.queryByText('12.3400')).not.toBeInTheDocument(); // never the per-unit value
   });
 
   it('shows the error when pricing fails', async () => {

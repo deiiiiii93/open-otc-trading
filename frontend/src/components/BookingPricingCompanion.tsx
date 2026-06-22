@@ -14,7 +14,34 @@ type Props = {
   underlying: string;
   currency: string;
   latestSpot: number | null;
+  quantity: string;
 };
+
+// The preview endpoint prices ONE LONG UNIT of the position (QuantArk has no concept
+// of buy/sell); direction and size live in the signed booking quantity. Scale the
+// per-unit PV and every greek by it: Price of Position = quantity × price of one unit
+// (a sell, quantity < 0, flips the sign of PV and all greeks alike). A blank/non-numeric
+// quantity field falls back to factor 1 so we show the honest per-unit value rather than 0/NaN.
+function scaleByQuantity(result: PricingPreviewOut, quantity: string): PricingPreviewOut {
+  const parsed = Number(quantity);
+  const factor = quantity.trim() !== '' && Number.isFinite(parsed) ? parsed : 1;
+  if (factor === 1) return result;
+  const g = result.greeks;
+  return {
+    ...result,
+    price: result.price * factor,
+    greeks: g
+      ? {
+        delta: g.delta * factor,
+        gamma: g.gamma * factor,
+        vega: g.vega * factor,
+        theta: g.theta * factor,
+        rho: g.rho * factor,
+        rho_q: g.rho_q * factor,
+      }
+      : g,
+  };
+}
 
 type MarketInputs = {
   spot: string;
@@ -40,7 +67,7 @@ function str(value: number | null | undefined, fallback: string): string {
 }
 
 export function BookingPricingCompanion({
-  productType, terms, engineName, underlying, currency, latestSpot,
+  productType, terms, engineName, underlying, currency, latestSpot, quantity,
 }: Props) {
   const [inputs, setInputs] = useState<MarketInputs>({
     spot: str(latestSpot, '100'),
@@ -123,7 +150,8 @@ export function BookingPricingCompanion({
     { key: 'valuationDate', label: 'Valuation Date', type: 'date' },
   ];
 
-  const greeks = result?.greeks ?? null;
+  const scaled = result ? scaleByQuantity(result, quantity) : null;
+  const greeks = scaled?.greeks ?? null;
 
   return (
     <section className="wl-pricing-companion">
@@ -152,11 +180,11 @@ export function BookingPricingCompanion({
 
       {error && <div className="wl-pricing-companion__error" role="alert">{error}</div>}
 
-      {result && (
+      {scaled && (
         <div className="wl-pricing-companion__results">
-          <div className="wl-pricing-companion__engine">Engine · {result.engine}</div>
+          <div className="wl-pricing-companion__engine">Engine · {scaled.engine}</div>
           <div className="wl-pricing-companion__tiles">
-            <Tile label="Price (PV)" value={result.price.toFixed(4)} variant={result.price >= 0 ? 'pos' : 'neg'} />
+            <Tile label="Price (PV)" value={scaled.price.toFixed(4)} variant={scaled.price >= 0 ? 'pos' : 'neg'} />
             {greeks ? (
               <>
                 <Tile label="Delta" value={greeks.delta.toFixed(4)} variant={greeks.delta >= 0 ? 'pos' : 'neg'} />
@@ -170,7 +198,7 @@ export function BookingPricingCompanion({
           </div>
           {!greeks && (
             <div className="wl-pricing-companion__note">
-              Greeks unavailable{result.greeks_error ? ` · ${result.greeks_error}` : ''}.
+              Greeks unavailable{scaled.greeks_error ? ` · ${scaled.greeks_error}` : ''}.
             </div>
           )}
         </div>

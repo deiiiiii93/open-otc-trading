@@ -645,6 +645,7 @@ export function BookingLive({ onPageContextChange }: Props) {
                 underlying={form.underlying}
                 currency={form.currency}
                 latestSpot={latestSpot}
+                quantity={form.quantity}
               />
             </TabsContent>
           </Tabs>

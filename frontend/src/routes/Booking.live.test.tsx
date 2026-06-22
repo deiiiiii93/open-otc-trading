@@ -548,4 +548,39 @@ describe('BookingLive', () => {
     expect(previewBody!.product_kwargs).not.toHaveProperty('initial_price');
     expect(previewBody!.product_kwargs).toMatchObject({ strike: expect.any(Number), option_type: 'CALL' });
   });
+
+  it('scales preview PV and greeks by the signed quantity', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
+      if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile]);
+      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      if (url === '/api/underlying-pricing-defaults' && !init?.method) {
+        return response([{ underlying: '000300.SH', rate: 0.025, dividend_yield: 0.01, volatility: 0.2 }]);
+      }
+      if (url === '/api/pricing/preview' && init?.method === 'POST') {
+        // QuantArk prices one long unit of the position; direction/size is the OTC layer's job.
+        return response({ ok: true, price: 5.5, engine: 'BlackScholesEngine',
+          product_type: 'EuropeanVanillaOption',
+          greeks: { delta: 0.5, gamma: 0.1, vega: 0.2, theta: -0.3, rho: 0.4, rho_q: -0.05 },
+          greeks_error: null, error: null });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<BookingLive />);
+
+    await userEvent.selectOptions(await screen.findByLabelText('Product Type'), 'EuropeanVanillaOption');
+    // A sell of two units: position PV and every greek must be the per-unit value × (-2).
+    fireEvent.change(await screen.findByLabelText('Quantity'), { target: { value: '-2' } });
+    await userEvent.click(await screen.findByRole('tab', { name: /pricing/i }));
+    await userEvent.click(await screen.findByRole('button', { name: /^price$/i }));
+
+    // Price (PV): 5.5 × -2 = -11; Delta: 0.5 × -2 = -1.
+    expect(await screen.findByText('-11.0000')).toBeInTheDocument();
+    expect(screen.getByText('-1.0000')).toBeInTheDocument();
+    // The unscaled per-unit value must NOT be shown.
+    expect(screen.queryByText('5.5000')).not.toBeInTheDocument();
+  });
 });
