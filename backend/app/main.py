@@ -107,6 +107,9 @@ from .schemas import (
     PricingParameterProfileCreate,
     PricingParameterProfileOut,
     PricingEnvironmentSnapshot,
+    PricingPreviewRequest,
+    PricingPreviewOut,
+    PricingGreeks,
     ResolvedPricingParamsOut,
     UnderlyingPricingDefaultOut,
     UnderlyingPricingDefaultUpdate,
@@ -171,6 +174,7 @@ from .services.audit import record_audit
 from .services.domains import positions as positions_svc
 from .services.domains import pricing_profiles as pricing_profiles_domain
 from .services.domains._errors import DomainWriteError
+from .services.domains.pricing import price_product_preview
 from .services.domains.booking import (
     BookingRequest,
     ProductBookingSpec,
@@ -2879,6 +2883,29 @@ def create_app(
             .one()
         )
         return _valuation_run_out(persisted_run)
+
+    @app.post("/api/pricing/preview", response_model=PricingPreviewOut)
+    def pricing_preview_endpoint(payload: PricingPreviewRequest):
+        result = price_product_preview(
+            product_type=payload.product_type,
+            product_kwargs=payload.product_kwargs,
+            market=payload.market,
+            engine_name=payload.engine_name,
+            engine_kwargs=payload.engine_kwargs or None,
+            compute_greeks=payload.compute_greeks,
+        )
+        data = result.data or {}
+        raw_greeks = data.get("greeks")
+        greeks = PricingGreeks(**raw_greeks) if raw_greeks else None
+        return PricingPreviewOut(
+            ok=bool(result.ok),
+            price=float(data.get("price", 0.0)),
+            engine=str(data.get("engine", payload.engine_name)),
+            product_type=str(data.get("product_type", payload.product_type)),
+            greeks=greeks,
+            greeks_error=data.get("greeks_error"),
+            error=result.error,
+        )
 
     @app.get(
         "/api/portfolios/{portfolio_id}/runs",

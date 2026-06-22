@@ -244,6 +244,34 @@ class PricingEnvironmentSnapshot(BaseModel):
     bus_days_in_year: int = 252
 
 
+class PricingPreviewRequest(BaseModel):
+    product_type: str
+    product_kwargs: dict[str, Any] = Field(default_factory=dict)
+    engine_name: str = "BlackScholesEngine"
+    engine_kwargs: dict[str, Any] = Field(default_factory=dict)
+    market: PricingEnvironmentSnapshot = Field(default_factory=PricingEnvironmentSnapshot)
+    compute_greeks: bool = True
+
+
+class PricingGreeks(BaseModel):
+    delta: float
+    gamma: float
+    vega: float
+    theta: float
+    rho: float
+    rho_q: float
+
+
+class PricingPreviewOut(BaseModel):
+    ok: bool
+    price: float
+    engine: str
+    product_type: str
+    greeks: PricingGreeks | None = None
+    greeks_error: str | None = None
+    error: str | None = None
+
+
 class RFQUnknownSpecIn(BaseModel):
     field_path: str = "strike"
     lower_bound: float = 50.0

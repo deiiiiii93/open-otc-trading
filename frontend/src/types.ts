@@ -1286,3 +1286,19 @@ export type BacktestRun = {
   } | null;
   created_at: string;
 };
+
+// --- Pricing preview API -------------------------------------------------
+
+export type PricingGreeks = { delta: number; gamma: number; vega: number; theta: number; rho: number; rho_q: number };
+export type PricingPreviewRequest = {
+  product_type: string;
+  product_kwargs: Record<string, unknown>;
+  engine_name: string;
+  engine_kwargs?: Record<string, unknown>;
+  market: { spot: number; rate: number; volatility: number; dividend_yield: number; valuation_date?: string; currency?: string };
+  compute_greeks: boolean;
+};
+export type PricingPreviewOut = {
+  ok: boolean; price: number; engine: string; product_type: string;
+  greeks?: PricingGreeks | null; greeks_error?: string | null; error?: string | null;
+};

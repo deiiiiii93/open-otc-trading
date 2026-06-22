@@ -491,4 +491,28 @@ describe('BookingLive', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/portfolios/1/positions', expect.any(Object)));
   });
+
+  it('exposes a Pricing tab in the right rail', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
+      if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile]);
+      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      if (url === '/api/underlying-pricing-defaults' && !init?.method) {
+        return response([{ underlying: '000300.SH', rate: 0.025, dividend_yield: 0.01, volatility: 0.2 }]);
+      }
+      if (url === '/api/pricing/preview' && init?.method === 'POST') {
+        return response({ ok: true, price: 7.7, engine: 'SnowballQuadEngine',
+          product_type: 'SnowballOption', greeks: null, greeks_error: null, error: null });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<BookingLive />);
+
+    const pricingTab = await screen.findByRole('tab', { name: /pricing/i });
+    await userEvent.click(pricingTab);
+    expect(await screen.findByLabelText('Spot')).toBeInTheDocument();
+  });
 });
