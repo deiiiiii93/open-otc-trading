@@ -515,4 +515,37 @@ describe('BookingLive', () => {
     await userEvent.click(pricingTab);
     expect(await screen.findByLabelText('Spot')).toBeInTheDocument();
   });
+
+  it('strips initial_price from preview kwargs for products that do not support it', async () => {
+    let previewBody: { product_type?: string; product_kwargs?: Record<string, unknown> } | null = null;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
+      if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile]);
+      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      if (url === '/api/underlying-pricing-defaults' && !init?.method) {
+        return response([{ underlying: '000300.SH', rate: 0.025, dividend_yield: 0.01, volatility: 0.2 }]);
+      }
+      if (url === '/api/pricing/preview' && init?.method === 'POST') {
+        previewBody = JSON.parse(String(init.body));
+        return response({ ok: true, price: 5.5, engine: 'BlackScholesEngine',
+          product_type: 'EuropeanVanillaOption', greeks: null, greeks_error: null, error: null });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<BookingLive />);
+
+    // Switch to a non-autocallable product; spot defaults inject initial_price into the
+    // form terms, but EuropeanVanillaOption's QuantArk constructor rejects that kwarg.
+    await userEvent.selectOptions(await screen.findByLabelText('Product Type'), 'EuropeanVanillaOption');
+    await userEvent.click(await screen.findByRole('tab', { name: /pricing/i }));
+    await userEvent.click(await screen.findByRole('button', { name: /^price$/i }));
+
+    await waitFor(() => expect(previewBody).not.toBeNull());
+    expect(previewBody!.product_type).toBe('EuropeanVanillaOption');
+    expect(previewBody!.product_kwargs).not.toHaveProperty('initial_price');
+    expect(previewBody!.product_kwargs).toMatchObject({ strike: expect.any(Number), option_type: 'CALL' });
+  });
 });
