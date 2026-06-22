@@ -231,7 +231,7 @@ export const DEFAULT_TRY_SOLVE_CATALOG: TrySolveCatalog = {
       initial_solver_state: 'solver_ready',
       quantark_product_type: 'AsianOption',
       default_engine_name: 'AsianOptionAnalyticalEngine',
-      fields: [field('counterparty', 'Counterparty'), field('side', 'Side', 'select', { required: true, default: 'buy', options: ['buy', 'sell'] }), field('underlying', 'Underlying', 'text', { required: true }), field('notional', 'Notional', 'number', { required: true, default: 1 }), field('initial_price', 'Initial Price', 'number'), field('start_date', 'Start Date', 'date', { required: true }), field('option_type', 'Option Type', 'select', { default: 'call', options: ['call', 'put'] }), field('strike', 'Strike', 'number', { default: 1 }), field('tenor_months', 'Tenor Months', 'number')],
+      fields: [field('counterparty', 'Counterparty'), field('side', 'Side', 'select', { required: true, default: 'buy', options: ['buy', 'sell'] }), field('underlying', 'Underlying', 'text', { required: true }), field('notional', 'Notional', 'number', { required: true, default: 1 }), field('initial_price', 'Initial Price', 'number'), field('start_date', 'Start Date', 'date', { required: true }), field('option_type', 'Option Type', 'select', { default: 'call', options: ['call', 'put'] }), field('strike', 'Strike', 'number', { default: 1 }), field('averaging_frequency', 'Observation Frequency', 'select', { default: 'MONTHLY', options: ['DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL'] }), field('tenor_months', 'Tenor Months', 'number')],
       quote_fields: [quoteField('premium_rate', 'Premium Rate', 'premium_rate', false, -1, 1, 0), quoteField('strike', 'Strike', 'strike', true, 0.01, 10, 1)],
     },
     {
@@ -754,7 +754,7 @@ const GROUP_LABELS: Record<FieldGroupKey, string> = {
 function getFieldGroup(key: string): FieldGroupKey {
   if (key === 'counterparty' || key === 'side') return 'counterparty';
   if (key === 'underlying' || key === 'notional' || key === 'initial_price' || key === 'quantity') return 'underlying';
-  if (key === 'start_date' || key === 'end_date' || key === 'tenor_months' || key === 'tenor_days' || key === 'observation_frequency' || key === 'lockup_months') return 'dates';
+  if (key === 'start_date' || key === 'end_date' || key === 'tenor_months' || key === 'tenor_days' || key === 'observation_frequency' || key === 'averaging_frequency' || key === 'lockup_months') return 'dates';
   if (key === 'ko_barrier' || key === 'ki_barrier' || key === 'barrier' || key === 'upper_barrier' || key === 'lower_barrier') return 'barriers';
   if (key === 'strike' || key === 'option_type' || key === 'coupon_yield' || key === 'payout' || key === 'participation_rate' || key === 'rebate') return 'payoff';
   return 'other';

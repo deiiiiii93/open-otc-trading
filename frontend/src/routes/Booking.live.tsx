@@ -95,7 +95,7 @@ const DEFAULT_TERMS: Record<string, Record<string, unknown>> = {
     },
     coupon_config: { coupon_barrier: 80, coupon_rate: 0.12 },
   },
-  AsianOption: { strike: 100, option_type: 'CALL', contract_multiplier: 1 },
+  AsianOption: { strike: 100, option_type: 'CALL', averaging_frequency: 'MONTHLY', contract_multiplier: 1 },
   Stock: { deltaone_type: 'STOCK', contract_multiplier: 1 },
   Fund: { deltaone_type: 'FUND', contract_multiplier: 1 },
   ETF: { deltaone_type: 'ETF', contract_multiplier: 1 },

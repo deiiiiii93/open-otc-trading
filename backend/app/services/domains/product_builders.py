@@ -465,6 +465,18 @@ def _build_spot(terms: dict, *, quantark_class: str) -> _Out:
     return out
 
 
+# Approximate observations-per-year for each averaging frequency. DAILY uses the
+# conventional trading-day count; the analytical engine re-spaces observations
+# uniformly, so this count controls averaging granularity (and hence the price).
+_AVERAGING_PERIODS_PER_YEAR = {
+    "DAILY": 252,
+    "WEEKLY": 52,
+    "MONTHLY": 12,
+    "QUARTERLY": 4,
+    "SEMI_ANNUAL": 2,
+}
+
+
 def _build_asian(terms: dict, *, quantark_class: str) -> _Out:
     # AsianOption averages over `num_observations` evenly spaced points; the
     # count is derived from maturity + frequency (no explicit dates needed).
@@ -472,7 +484,8 @@ def _build_asian(terms: dict, *, quantark_class: str) -> _Out:
     maturity = _num(terms.get("maturity_years"))
     freq = str(terms.get("averaging_frequency", "MONTHLY")).upper()
     if maturity is not None:
-        periods = round(maturity * 252) if freq == "DAILY" else round(maturity * 12)
+        per_year = _AVERAGING_PERIODS_PER_YEAR.get(freq, 12)
+        periods = round(maturity * per_year)
         out.product_kwargs["num_observations"] = max(1, periods)
     out.product_kwargs["initial_price"] = (
         _num(terms.get("initial_price")) or out.product_kwargs.get("strike") or 100.0

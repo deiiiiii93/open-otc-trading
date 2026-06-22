@@ -266,6 +266,25 @@ def test_asian_missing_maturity_reported():
     assert "maturity_years" in result.missing
 
 
+@pytest.mark.parametrize(
+    "frequency,expected",
+    [
+        ("DAILY", 504),       # 252 * 2y
+        ("WEEKLY", 104),      # 52 * 2y
+        ("MONTHLY", 24),      # 12 * 2y
+        ("QUARTERLY", 8),     # 4 * 2y
+        ("SEMI_ANNUAL", 4),   # 2 * 2y
+    ],
+)
+def test_asian_frequency_maps_to_observation_count(frequency, expected):
+    terms = {
+        "initial_price": 100.0, "strike": 100.0, "option_type": "CALL",
+        "maturity_years": 2.0, "averaging_frequency": frequency,
+    }
+    result = build_product("AsianOption", terms)
+    assert result.product_kwargs["num_observations"] == expected
+
+
 def test_single_sharkfin_builds():
     terms = {"initial_price": 100.0, "strike": 100.0, "barrier": 120.0, "option_type": "CALL",
              "maturity_years": 1.0, "participation_rate": 1.0}

@@ -16,6 +16,12 @@ export type FieldSpec = {
   options?: string[];
 };
 
+// Asian averaging frequencies. Distinct from the snowball KO-schedule set:
+// the AsianOption builder maps each to an evenly-spaced observation count, so
+// daily/weekly are meaningful here. Key is `averaging_frequency` (the term the
+// backend _build_asian / FamilyContract read — NOT snowball's observation_frequency).
+const ASIAN_OBSERVATION_FREQUENCIES = ['DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL'];
+
 const PRODUCT_TERM_FIELDS: Record<string, FieldSpec[]> = {
   EuropeanVanillaOption: [
     { key: 'strike', label: 'Strike', type: 'number' },
@@ -97,6 +103,7 @@ const PRODUCT_TERM_FIELDS: Record<string, FieldSpec[]> = {
   AsianOption: [
     { key: 'strike', label: 'Strike', type: 'number' },
     { key: 'option_type', label: 'Option Type', type: 'select', options: ['CALL', 'PUT'] },
+    { key: 'averaging_frequency', label: 'Observation Frequency', type: 'select', options: ASIAN_OBSERVATION_FREQUENCIES },
     { key: 'exercise_date', label: 'Exercise Date', type: 'date' },
     { key: 'settlement_date', label: 'Settlement Date', type: 'date' },
     { key: 'contract_multiplier', label: 'Contract Multiplier', type: 'number' },
