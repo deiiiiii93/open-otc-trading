@@ -301,3 +301,31 @@ analytical method is considered done:
   log-moment generalization is exact, so proposed: low-risk, MC-checked only).
 - Whether to expose `averaging weights` as a first-class booking term now or keep them
   product/position-level until the D-UI follow-up.
+
+---
+
+## 10. Implementation status (2026-06-22, branch feat/asian-cd, NOT merged)
+
+Implemented across two worktrees (quant-ark `qa-asian-cd`, open-otc-trading `oot-asian-cd`),
+each change TDD'd and gated by `zenmux-codex-review-loop` (GPT-5.5 xhigh, ≤3 loops) as the
+independent reviewer.
+
+**Done**
+- **QuantArk C+D** (7 commits): weight model + weighted resolve/average; weighted MC reference;
+  weighted Turnbull-Wakeman + geometric-discrete (validated vs MC); Levy/Curran/HHM/Kemna-Vorst/
+  floating-strike reject non-uniform weights; configurable trading-days. Math gate: 3 loops
+  (3 real fixes + 1 false positive + 2 validation fixes). 92 Asian tests green.
+- **OTC C+D integration** (task 9, contained part): `schedules.asian_observation_records`
+  (SSE-calendar, dedupes rolled collisions); `asian_averaging_dates.weight` (model + migration
+  0031 + persistence round-trip). OTC gate clean.
+- **Sub-project A**: `_build_asian` full DAILY/WEEKLY/MONTHLY/QUARTERLY/SEMI_ANNUAL→count map;
+  Observation Frequency picker on Booking + Client RFQ + Try-to-Solve (key `averaging_frequency`).
+  Gate clean first pass; tsc + vitest green.
+- **Sub-project B**: `fixing` lifecycle event + `generate_asian_fixing_schedule` service +
+  `POST .../asian-fixing-schedule` endpoint; idempotent + per-position row lock. Gate: 3 loops clean.
+
+**Deferred** (own spec): the §5.5 termsheet pricing-wiring — making stored position-level
+weighted/dated observations reach *position pricing*. `build_product_from_termsheet` ignores
+observation data (position Asian pricing still uses default num_observations=12), `build_product_for_position`
+lacks a session, and in-progress fixings need observed_price (not stored). High hot-path/equivalence
+risk; warrants its own brainstorm/spec/review cycle.
