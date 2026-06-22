@@ -143,6 +143,17 @@ def asian_observation_records(
     else:
         raise ValueError(f"unsupported averaging frequency: {frequency!r}")
 
+    # Business-day rolling (esp. weekly across long SSE closures) can land two
+    # anchors on the same reopened day. Observation dates must stay unique because
+    # asian_averaging_dates is keyed by (position_id, observation_date).
+    seen: set = set()
+    deduped: list[date] = []
+    for d in dates:
+        if d not in seen:
+            seen.add(d)
+            deduped.append(d)
+    dates = deduped
+
     if weights is not None and len(weights) != len(dates):
         raise ValueError(
             f"weights length {len(weights)} does not match observation count {len(dates)}"

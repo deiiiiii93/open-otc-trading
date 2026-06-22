@@ -49,6 +49,19 @@ def test_explicit_weights_carried_through():
     assert [r["weight"] for r in recs] == [1.0, 2.0, 3.0, 4.0]
 
 
+def test_weekly_schedule_has_no_duplicate_dates_across_holidays():
+    # Spring Festival 2024 (~Feb 10-17): weekly anchors can roll onto the same
+    # reopened business day; observation dates must stay strictly unique because
+    # asian_averaging_dates is keyed by (position_id, observation_date).
+    recs = asian_observation_records(
+        start=date(2024, 2, 5), maturity_years=0.5, frequency="WEEKLY"
+    )
+    dates = [r["observation_date"] for r in recs]
+    assert len(dates) == len(set(dates))  # no duplicates
+    assert dates == sorted(dates)
+    assert [r["sequence"] for r in recs] == list(range(1, len(recs) + 1))
+
+
 def test_weights_length_mismatch_rejected():
     with pytest.raises(ValueError, match="weights"):
         asian_observation_records(
