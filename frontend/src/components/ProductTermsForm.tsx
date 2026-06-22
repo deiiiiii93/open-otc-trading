@@ -21,12 +21,14 @@ const PRODUCT_TERM_FIELDS: Record<string, FieldSpec[]> = {
     { key: 'option_type', label: 'Option Type', type: 'select', options: ['CALL', 'PUT'] },
     { key: 'exercise_date', label: 'Exercise Date', type: 'date' },
     { key: 'settlement_date', label: 'Settlement Date', type: 'date' },
+    { key: 'contract_multiplier', label: 'Contract Multiplier', type: 'number' },
   ],
   AmericanOption: [
     { key: 'strike', label: 'Strike', type: 'number' },
     { key: 'option_type', label: 'Option Type', type: 'select', options: ['CALL', 'PUT'] },
     { key: 'exercise_date', label: 'Exercise Date', type: 'date' },
     { key: 'settlement_date', label: 'Settlement Date', type: 'date' },
+    { key: 'contract_multiplier', label: 'Contract Multiplier', type: 'number' },
   ],
   CashOrNothingDigitalOption: [
     { key: 'strike', label: 'Strike', type: 'number' },
@@ -34,6 +36,7 @@ const PRODUCT_TERM_FIELDS: Record<string, FieldSpec[]> = {
     { key: 'option_type', label: 'Option Type', type: 'select', options: ['CALL', 'PUT'] },
     { key: 'exercise_date', label: 'Exercise Date', type: 'date' },
     { key: 'settlement_date', label: 'Settlement Date', type: 'date' },
+    { key: 'contract_multiplier', label: 'Contract Multiplier', type: 'number' },
   ],
   BarrierOption: [
     { key: 'strike', label: 'Strike', type: 'number' },
@@ -44,6 +47,7 @@ const PRODUCT_TERM_FIELDS: Record<string, FieldSpec[]> = {
     { key: 'participation_rate', label: 'Participation Rate', type: 'number' },
     { key: 'exercise_date', label: 'Exercise Date', type: 'date' },
     { key: 'settlement_date', label: 'Settlement Date', type: 'date' },
+    { key: 'contract_multiplier', label: 'Contract Multiplier', type: 'number' },
   ],
   SnowballOption: [
     { key: 'initial_price', label: 'Initial Price', type: 'number' },
@@ -77,6 +81,7 @@ const PRODUCT_TERM_FIELDS: Record<string, FieldSpec[]> = {
     { key: 'no_hit_rebate', label: 'No Hit Rebate', type: 'number' },
     { key: 'exercise_date', label: 'Exercise Date', type: 'date' },
     { key: 'settlement_date', label: 'Settlement Date', type: 'date' },
+    { key: 'contract_multiplier', label: 'Contract Multiplier', type: 'number' },
   ],
   DoubleSharkfinOption: [
     { key: 'strike', label: 'Strike', type: 'number' },
@@ -86,12 +91,14 @@ const PRODUCT_TERM_FIELDS: Record<string, FieldSpec[]> = {
     { key: 'no_hit_rebate', label: 'No Hit Rebate', type: 'number' },
     { key: 'exercise_date', label: 'Exercise Date', type: 'date' },
     { key: 'settlement_date', label: 'Settlement Date', type: 'date' },
+    { key: 'contract_multiplier', label: 'Contract Multiplier', type: 'number' },
   ],
   AsianOption: [
     { key: 'strike', label: 'Strike', type: 'number' },
     { key: 'option_type', label: 'Option Type', type: 'select', options: ['CALL', 'PUT'] },
     { key: 'exercise_date', label: 'Exercise Date', type: 'date' },
     { key: 'settlement_date', label: 'Settlement Date', type: 'date' },
+    { key: 'contract_multiplier', label: 'Contract Multiplier', type: 'number' },
   ],
   OneTouchOption: [
     { key: 'barrier', label: 'Barrier', type: 'number' },

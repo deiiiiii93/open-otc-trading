@@ -363,6 +363,31 @@ describe('BookingLive', () => {
     await waitFor(() => expect(screen.getByLabelText('Strike')).toHaveValue(3888.12));
   });
 
+  it('exposes a Contract Multiplier term field (default 1) for non-autocallable options', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
+      if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile]);
+      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<BookingLive />);
+
+    await waitFor(() => expect(screen.getByText('BOOKING')).toBeInTheDocument());
+    // contract_multiplier is the third leg of the Notional = Quantity × ContractMultiplier ×
+    // InitialPrice triangle; it must be present and editable for every option family, not just
+    // the autocallables. Each of these QuantArk constructors accepts contract_multiplier.
+    for (const productType of [
+      'EuropeanVanillaOption', 'AmericanOption', 'CashOrNothingDigitalOption',
+      'BarrierOption', 'SingleSharkfinOption', 'DoubleSharkfinOption', 'AsianOption',
+    ]) {
+      await userEvent.selectOptions(screen.getByLabelText('Product Type'), productType);
+      expect(await screen.findByLabelText('Contract Multiplier')).toHaveValue(1);
+    }
+  });
+
   it('omits stale maturity when booking European vanilla with explicit dates', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
