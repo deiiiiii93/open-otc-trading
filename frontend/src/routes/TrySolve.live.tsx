@@ -511,7 +511,7 @@ function autoInitialGuessQuoteRequest(
 ): TrySolveQuoteRequest {
   const nextQuoteRequest = { ...currentQuoteRequest, ...patch };
   const boundsChanged = hasOwn(patch, 'lower_bound') || hasOwn(patch, 'upper_bound') || hasOwn(patch, 'quote_field_key');
-  if (!boundsChanged || (isManualInitialGuess && !forceAutoInitialGuess)) return nextQuoteRequest;
+  if (!boundsChanged || hasOwn(patch, 'initial_guess') || (isManualInitialGuess && !forceAutoInitialGuess)) return nextQuoteRequest;
   return {
     ...nextQuoteRequest,
     initial_guess: midpoint(nextQuoteRequest.lower_bound, nextQuoteRequest.upper_bound),

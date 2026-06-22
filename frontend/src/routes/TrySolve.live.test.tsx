@@ -275,6 +275,32 @@ describe('TrySolveLive', () => {
     expect(within(queue).getByRole('button', { name: /im-2 vanilla solve failed/i })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('preserves semantic quote-field initial guess instead of forcing midpoint', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/rfq/try-solve/catalog') return response(catalog);
+      if (url === '/api/pricing-parameter-profiles') return response(pricingProfiles);
+      if (url === '/api/market-data/profiles') return response(marketDataProfiles);
+      if (url === '/api/rfq/try-solve/import' && init?.method === 'POST') {
+        return response({ batch_id: 'batch-1', rows: importedRows, summary: { total_rows: 2, solved: 0 } });
+      }
+      return response({});
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    render(<TrySolveLive />);
+
+    await screen.findByRole('heading', { name: 'TRY TO SOLVE' });
+    await userEvent.upload(screen.getByLabelText(/import excel row file/i), new File(['xlsx'], 'try-solve.xlsx'));
+    await userEvent.click(await screen.findByRole('button', { name: /im-2 vanilla/i }));
+    fireEvent.change(screen.getByLabelText('Spot'), { target: { value: '1.01' } });
+    fireEvent.change(screen.getByLabelText('Quote Field'), { target: { value: 'premium_rate' } });
+    fireEvent.change(screen.getByLabelText('Quote Field'), { target: { value: 'strike' } });
+
+    expect(screen.getByLabelText('Quote Lower Bound')).toHaveValue(0.101);
+    expect(screen.getByLabelText('Quote Upper Bound')).toHaveValue(2.02);
+    expect(screen.getByLabelText('Quote Initial Guess')).toHaveValue(1.01);
+  });
+
   it('adds a manual request row from the product library', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

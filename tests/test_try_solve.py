@@ -77,6 +77,19 @@ def test_try_solve_catalog_exposes_end_date_after_start_date():
     assert "到期日" in autocall.fields["end_date"].excel_aliases
 
 
+def test_try_solve_catalog_uses_practical_coupon_quote_bounds():
+    products = registry_by_key()
+
+    annualized_coupon = products["autocall"].quote_fields["annualized_coupon"]
+    coupon_yield = products["phoenix"].quote_fields["coupon_yield"]
+    range_accrual_rate = products["range_accrual"].quote_fields["range_accrual_rate"]
+
+    for quote_field in (annualized_coupon, coupon_yield, range_accrual_rate):
+        assert quote_field.lower_bound == 0.001
+        assert quote_field.upper_bound == 0.5
+        assert quote_field.initial_guess == 0.1
+
+
 def test_maturity_years_uses_end_date_when_tenor_months_absent():
     row = TrySolveRowIn(
         row_id="manual-1",

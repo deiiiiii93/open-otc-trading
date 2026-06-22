@@ -80,7 +80,7 @@ export const DEFAULT_TRY_SOLVE_CATALOG: TrySolveCatalog = {
         field('tenor_months', 'Tenor Months', 'number'),
       ],
       quote_fields: [
-        quoteField('annualized_coupon', 'Annualized Coupon', 'barrier_config.ko_rate', true, -1, 2, 0.1),
+        quoteField('annualized_coupon', 'Annualized Coupon', 'barrier_config.ko_rate', true, 0.001, 0.5, 0.1),
         quoteField('ko_barrier', 'Knock-Out Barrier', 'barrier_config.ko_barrier', false, 0.01, 10, 1.03),
       ],
     },
@@ -106,8 +106,8 @@ export const DEFAULT_TRY_SOLVE_CATALOG: TrySolveCatalog = {
         field('tenor_months', 'Tenor Months', 'number'),
       ],
       quote_fields: [
-        quoteField('annualized_coupon', 'Annualized Coupon', 'barrier_config.ko_rate', true, -1, 2, 0.1),
-        quoteField('coupon_yield', 'Coupon Yield', 'coupon_config.coupon_rate', true, -1, 2, 0.1),
+        quoteField('annualized_coupon', 'Annualized Coupon', 'barrier_config.ko_rate', true, 0.001, 0.5, 0.1),
+        quoteField('coupon_yield', 'Coupon Yield', 'coupon_config.coupon_rate', true, 0.001, 0.5, 0.1),
         quoteField('ko_barrier', 'Knock-Out Barrier', 'barrier_config.ko_barrier', true, 0.01, 10, 1.03),
       ],
     },
@@ -272,7 +272,7 @@ export const DEFAULT_TRY_SOLVE_CATALOG: TrySolveCatalog = {
       quantark_product_type: 'RangeAccrualOption',
       default_engine_name: 'RangeAccrualAnalyticalEngine',
       fields: [field('counterparty', 'Counterparty'), field('side', 'Side', 'select', { required: true, default: 'buy', options: ['buy', 'sell'] }), field('underlying', 'Underlying', 'text', { required: true }), field('notional', 'Notional', 'number', { required: true, default: 1 }), field('initial_price', 'Initial Price', 'number'), field('start_date', 'Start Date', 'date', { required: true }), field('upper_barrier', 'Upper Barrier', 'number', { default: 1.2 }), field('lower_barrier', 'Lower Barrier', 'number', { default: 0.8 }), field('coupon_yield', 'Coupon Yield', 'number', { default: 0.1 }), field('tenor_months', 'Tenor Months', 'number')],
-      quote_fields: [quoteField('range_accrual_rate', 'Range Accrual Rate', 'range_config.accrual_rate', true, 0, 2, 0.1), quoteField('upper_barrier', 'Upper Barrier', 'range_config.upper_barrier', true, 0.01, 10, 1.2), quoteField('lower_barrier', 'Lower Barrier', 'range_config.lower_barrier', true, 0.01, 10, 0.8)],
+      quote_fields: [quoteField('range_accrual_rate', 'Range Accrual Rate', 'range_config.accrual_rate', true, 0.001, 0.5, 0.1), quoteField('upper_barrier', 'Upper Barrier', 'range_config.upper_barrier', true, 0.01, 10, 1.2), quoteField('lower_barrier', 'Lower Barrier', 'range_config.lower_barrier', true, 0.01, 10, 0.8)],
     },
     {
       product_key: 'one_touch',
@@ -312,7 +312,7 @@ export const DEFAULT_TRY_SOLVE_CATALOG: TrySolveCatalog = {
       quantark_product_type: 'KnockOutResetSnowballOption',
       default_engine_name: 'KOResetSnowballQuadEngine',
       fields: [field('counterparty', 'Counterparty'), field('side', 'Side', 'select', { required: true, default: 'buy', options: ['buy', 'sell'] }), field('underlying', 'Underlying', 'text', { required: true }), field('notional', 'Notional', 'number', { required: true, default: 1 }), field('initial_price', 'Initial Price', 'number'), field('start_date', 'Start Date', 'date', { required: true }), field('observation_frequency', 'Observation Frequency', 'select', { default: 'MONTHLY', options: ['MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL'] }), field('lockup_months', 'Lockup Months', 'number', { default: 0 }), field('ko_barrier', 'Knock-Out Barrier', 'number', { default: 1.03 }), field('ki_barrier', 'Knock-In Barrier', 'number', { default: 0.75 }), field('tenor_months', 'Tenor Months', 'number')],
-      quote_fields: [quoteField('annualized_coupon', 'Annualized Coupon', 'barrier_config.ko_rate', true, -1, 2, 0.1), quoteField('ko_barrier', 'Knock-Out Barrier', 'barrier_config.ko_barrier', true, 0.01, 10, 1.03)],
+      quote_fields: [quoteField('annualized_coupon', 'Annualized Coupon', 'barrier_config.ko_rate', true, 0.001, 0.5, 0.1), quoteField('ko_barrier', 'Knock-Out Barrier', 'barrier_config.ko_barrier', true, 0.01, 10, 1.03)],
     },
   ],
   status_options: [
@@ -358,8 +358,8 @@ export const DEFAULT_TRY_SOLVE_ROWS: TrySolveRowOut[] = [
       quote_field_key: 'annualized_coupon',
       target_label: 'price',
       target_value: 0,
-      lower_bound: -1,
-      upper_bound: 2,
+      lower_bound: 0.001,
+      upper_bound: 0.5,
       initial_guess: 0.1,
     },
   },
@@ -696,6 +696,7 @@ export function TrySolve({
             <ProductEditor
               row={selectedRow}
               product={selectedProduct}
+              selectedQuoteField={selectedQuoteField}
               underlyings={underlyings}
               onFieldChange={onFieldChange}
             />
@@ -783,16 +784,19 @@ function groupFields(fields: TrySolveField[]): FieldGroup[] {
 function ProductEditor({
   row,
   product,
+  selectedQuoteField,
   underlyings,
   onFieldChange,
 }: {
   row: TrySolveRowOut;
   product: TrySolveProduct;
+  selectedQuoteField: TrySolveQuoteField | null;
   underlyings: Underlying[];
   onFieldChange?: (rowId: string, fieldKey: string, value: unknown) => void;
 }) {
   const fields = ensureEndDateField(product.fields);
   const groups = groupFields(fields);
+  const quotedFieldKey = quotedTermsFieldKey(selectedQuoteField, fields);
   return (
     <form className="wl-try-solve__form" aria-label={`${product.label} field editor`}>
       {groups.map((group) => (
@@ -800,6 +804,7 @@ function ProductEditor({
           <div className="wl-try-solve__field-group-title">{group.label}</div>
           {group.fields.map((fieldItem) => {
             const isLabelledField = fieldItem.key === 'underlying' || fieldItem.field_type === 'select' || fieldItem.field_type === 'boolean' || fieldItem.field_type === 'date';
+            const isQuotedField = fieldItem.key === quotedFieldKey;
             if (isLabelledField) {
               return (
                 <FieldControl
@@ -807,14 +812,20 @@ function ProductEditor({
                   field={fieldItem}
                   value={fieldValue(row, fieldItem)}
                   underlyings={underlyings}
+                  quoted={isQuotedField}
                   onChange={(value) => onFieldChange?.(row.row_id, fieldItem.key, value)}
                 />
               );
             }
             return (
-              <label key={fieldItem.key} className="wl-try-solve__field">
+              <label
+                key={fieldItem.key}
+                className={fieldClassName(isQuotedField)}
+                data-quote-field={isQuotedField ? 'true' : undefined}
+              >
                 <span className="wl-try-solve__field-label">
                   {fieldItem.label}
+                  {isQuotedField ? <strong>Quoted</strong> : null}
                   {fieldItem.required ? <em aria-label="required">*</em> : null}
                 </span>
                 <div className="wl-try-solve__field-control">
@@ -833,6 +844,39 @@ function ProductEditor({
       ))}
     </form>
   );
+}
+
+function quotedTermsFieldKey(
+  quoteField: TrySolveQuoteField | null,
+  fields: TrySolveField[],
+): string | null {
+  if (!quoteField) return null;
+  const fieldKeys = new Set(fields.map((fieldItem) => fieldItem.key));
+  const canonicalParts = quoteField.canonical_path.split('.');
+  const candidates = [
+    quoteField.key,
+    quoteField.canonical_path,
+    canonicalParts[canonicalParts.length - 1],
+    quoteFieldToTermKey(quoteField.key),
+    quoteFieldToTermKey(quoteField.canonical_path),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  return candidates.find((candidate) => fieldKeys.has(candidate)) ?? null;
+}
+
+function quoteFieldToTermKey(value: string): string | null {
+  if (value === 'annualized_coupon' || value.endsWith('.ko_rate')) return 'coupon_yield';
+  if (value === 'range_accrual_rate' || value.endsWith('.accrual_rate')) return 'coupon_yield';
+  if (value.endsWith('.ko_barrier')) return 'ko_barrier';
+  if (value.endsWith('.upper_barrier')) return 'upper_barrier';
+  if (value.endsWith('.lower_barrier')) return 'lower_barrier';
+  return null;
+}
+
+function fieldClassName(quoted: boolean): string {
+  return [
+    'wl-try-solve__field',
+    quoted ? 'wl-try-solve__field--quoted' : '',
+  ].filter(Boolean).join(' ');
 }
 
 function ensureEndDateField(fields: TrySolveField[]): TrySolveField[] {
@@ -873,11 +917,13 @@ function FieldControl({
   field: fieldItem,
   value,
   underlyings,
+  quoted = false,
   onChange,
 }: {
   field: TrySolveField;
   value: unknown;
   underlyings: Underlying[];
+  quoted?: boolean;
   onChange: (value: unknown) => void;
 }) {
   if (fieldItem.key === 'underlying') {
@@ -904,7 +950,7 @@ function FieldControl({
       <Select
         label={fieldItem.label}
         searchable
-        className="wl-try-solve__field"
+        className={fieldClassName(quoted)}
         value={stringValue}
         onChange={(v) => onChange(v)}
         disabled={activeUnderlyings.length === 0}
@@ -918,7 +964,7 @@ function FieldControl({
       <Select
         label={fieldItem.label}
         searchable
-        className="wl-try-solve__field"
+        className={fieldClassName(quoted)}
         value={String(value)}
         onChange={(v) => onChange(v)}
         options={(fieldItem.options?.length ? fieldItem.options : [String(value)]).map((option) => ({
@@ -932,7 +978,7 @@ function FieldControl({
     return (
       <Select
         label={fieldItem.label}
-        className="wl-try-solve__field"
+        className={fieldClassName(quoted)}
         value={String(Boolean(value))}
         onChange={(v) => onChange(v === 'true')}
         options={[
@@ -946,7 +992,7 @@ function FieldControl({
     return (
       <DatePicker
         label={fieldItem.label}
-        className="wl-try-solve__field"
+        className={fieldClassName(quoted)}
         value={value == null ? '' : String(value)}
         onChange={(v) => onChange(v)}
       />
@@ -1053,11 +1099,12 @@ function SolvePanel({
             value={selectedQuoteField?.key ?? ''}
             onChange={(v) => {
               const nextQuoteField = product.quote_fields.find((quote) => quote.key === v);
+              const rangeDefaults = quoteRangeDefaults(row, nextQuoteField);
               onQuoteRequestChange?.(row.row_id, {
                 quote_field_key: v,
-                lower_bound: nextQuoteField?.lower_bound ?? null,
-                upper_bound: nextQuoteField?.upper_bound ?? null,
-                initial_guess: nextQuoteField?.initial_guess ?? null,
+                lower_bound: rangeDefaults?.lower_bound ?? null,
+                upper_bound: rangeDefaults?.upper_bound ?? null,
+                initial_guess: rangeDefaults?.initial_guess ?? null,
               });
             }}
             options={product.quote_fields.map((quote) => ({
@@ -1381,6 +1428,63 @@ function quoteField(
     initial_guess: initialGuess,
     solver_ready: solverReady,
   };
+}
+
+function quoteRangeDefaults(
+  row: TrySolveRowOut,
+  quoteField: TrySolveQuoteField | undefined,
+): Pick<TrySolveQuoteRequest, 'lower_bound' | 'upper_bound' | 'initial_guess'> | null {
+  if (!quoteField) return null;
+  if (isReferencePriceQuoteField(quoteField)) {
+    const referencePrice = quoteReferencePrice(row);
+    if (referencePrice != null) {
+      return {
+        lower_bound: cleanRangeNumber(referencePrice * 0.1),
+        upper_bound: cleanRangeNumber(referencePrice * 2),
+        initial_guess: cleanRangeNumber(referencePrice),
+      };
+    }
+  }
+  if (isCouponRateQuoteField(quoteField)) {
+    return {
+      lower_bound: 0.001,
+      upper_bound: 0.5,
+      initial_guess: 0.1,
+    };
+  }
+  return {
+    lower_bound: quoteField.lower_bound,
+    upper_bound: quoteField.upper_bound,
+    initial_guess: quoteField.initial_guess ?? null,
+  };
+}
+
+function isReferencePriceQuoteField(quoteField: TrySolveQuoteField): boolean {
+  const key = quoteField.key.toLowerCase();
+  const path = quoteField.canonical_path.toLowerCase();
+  return key === 'strike' || path === 'strike';
+}
+
+function quoteReferencePrice(row: TrySolveRowOut): number | null {
+  const spot = numberValue(row.market.spot);
+  if (spot != null && spot > 0) return spot;
+  const initialPrice = numberValue(row.fields.initial_price);
+  return initialPrice != null && initialPrice > 0 ? initialPrice : null;
+}
+
+function isCouponRateQuoteField(quoteField: TrySolveQuoteField): boolean {
+  const key = quoteField.key.toLowerCase();
+  const path = quoteField.canonical_path.toLowerCase();
+  return key === 'annualized_coupon'
+    || key === 'coupon_yield'
+    || key === 'range_accrual_rate'
+    || path === 'barrier_config.ko_rate'
+    || path === 'coupon_config.coupon_rate'
+    || path === 'range_config.accrual_rate';
+}
+
+function cleanRangeNumber(value: number): number {
+  return Number(value.toPrecision(12));
 }
 
 function boundsLabel(row: TrySolveRowOut, quoteField: TrySolveQuoteField | null): string {

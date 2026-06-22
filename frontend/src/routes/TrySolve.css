@@ -270,6 +270,17 @@
   gap: 3px;
 }
 
+.wl-try-solve__field-label strong {
+  margin-left: auto;
+  border: 1px solid var(--hairline);
+  padding: 1px var(--gap-1);
+  color: var(--ink-2);
+  background: var(--paper-3);
+  font-size: calc(var(--type-caps-size) - 1px);
+  font-weight: var(--type-caps-weight);
+  line-height: 1.1;
+}
+
 .wl-try-solve__field-label em {
   color: var(--neg);
   font-style: normal;
@@ -349,6 +360,28 @@
   outline: 2px solid var(--ink);
   outline-offset: -1px;
   z-index: 1;
+}
+
+.wl-try-solve__field--quoted {
+  background: var(--paper-2);
+}
+
+.wl-try-solve__field--quoted .wl-try-solve__field-label,
+.wl-try-solve__field--quoted > span,
+.wl-try-solve__field--quoted.wl-select .wl-field__label,
+.wl-try-solve__field--quoted.wl-datepicker .wl-field__label {
+  background: var(--paper-3);
+  color: var(--ink-2);
+}
+
+.wl-try-solve__field--quoted .wl-try-solve__field-control,
+.wl-try-solve__field--quoted input,
+.wl-try-solve__field--quoted select,
+.wl-try-solve__field--quoted .wl-select__trigger,
+.wl-try-solve__field--quoted .wl-datepicker__input,
+.wl-try-solve__field--quoted .wl-datepicker__cal-btn {
+  background: var(--paper-2);
+  color: var(--ink-2);
 }
 
 /* ─── Solve Panel ─────────────────────────────────── */

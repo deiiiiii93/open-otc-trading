@@ -74,6 +74,32 @@ describe('TrySolve', () => {
     expect(screen.getByLabelText('Quote Field')).toHaveDisplayValue('Strike');
   });
 
+  it('marks the terms field selected as the quote field', async () => {
+    render(<TrySolve />);
+
+    await userEvent.click(screen.getByRole('button', { name: /xl-18 vanilla/i }));
+
+    expect(screen.getByLabelText('Strike').closest('.wl-try-solve__field')).toHaveAttribute('data-quote-field', 'true');
+    expect(screen.getByLabelText('Option Type').closest('.wl-try-solve__field')).not.toHaveAttribute('data-quote-field');
+  });
+
+  it('updates the marked terms field when the quote field changes', () => {
+    const onQuoteRequestChange = vi.fn();
+    const rows: TrySolveRowOut[] = [
+      {
+        ...DEFAULT_TRY_SOLVE_ROWS[0],
+        quote_request: {
+          ...DEFAULT_TRY_SOLVE_ROWS[0].quote_request,
+          quote_field_key: 'ko_barrier',
+        },
+      },
+    ];
+    render(<TrySolve rows={rows} onQuoteRequestChange={onQuoteRequestChange} />);
+
+    expect(screen.getByLabelText('Knock-Out Barrier').closest('.wl-try-solve__field')).toHaveAttribute('data-quote-field', 'true');
+    expect(screen.getByLabelText('Knock-In Barrier').closest('.wl-try-solve__field')).not.toHaveAttribute('data-quote-field');
+  });
+
   it('renders schema-captured and solver-pending status honestly', async () => {
     const onPageContextChange = vi.fn();
     render(<TrySolve onPageContextChange={onPageContextChange} />);
@@ -136,6 +162,52 @@ describe('TrySolve', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /^solve all$/i }));
     expect(onSolveAll).toHaveBeenCalledWith(['XL-12', 'XL-18', 'XL-31']);
+  });
+
+  it('defaults annualized coupon search range to practical decimal-rate bounds', () => {
+    const onQuoteRequestChange = vi.fn();
+    const rows: TrySolveRowOut[] = [
+      {
+        ...DEFAULT_TRY_SOLVE_ROWS[0],
+        quote_request: {
+          ...DEFAULT_TRY_SOLVE_ROWS[0].quote_request,
+          quote_field_key: 'ko_barrier',
+        },
+      },
+    ];
+    render(<TrySolve rows={rows} onQuoteRequestChange={onQuoteRequestChange} />);
+
+    fireEvent.change(screen.getByLabelText('Quote Field'), { target: { value: 'annualized_coupon' } });
+
+    expect(onQuoteRequestChange).toHaveBeenCalledWith('XL-12', {
+      quote_field_key: 'annualized_coupon',
+      lower_bound: 0.001,
+      upper_bound: 0.5,
+      initial_guess: 0.1,
+    });
+  });
+
+  it('defaults strike search range from the row spot when strike is quoted', async () => {
+    const onQuoteRequestChange = vi.fn();
+    const rows: TrySolveRowOut[] = [
+      {
+        ...DEFAULT_TRY_SOLVE_ROWS[1],
+        quote_request: {
+          ...DEFAULT_TRY_SOLVE_ROWS[1].quote_request,
+          quote_field_key: 'premium_rate',
+        },
+      },
+    ];
+    render(<TrySolve rows={rows} selectedRowId="XL-18" onQuoteRequestChange={onQuoteRequestChange} />);
+
+    fireEvent.change(screen.getByLabelText('Quote Field'), { target: { value: 'strike' } });
+
+    expect(onQuoteRequestChange).toHaveBeenCalledWith('XL-18', {
+      quote_field_key: 'strike',
+      lower_bound: 0.101,
+      upper_bound: 2.02,
+      initial_guess: 1.01,
+    });
   });
 
   it('displays target value with percent sign when target label is premium %', () => {

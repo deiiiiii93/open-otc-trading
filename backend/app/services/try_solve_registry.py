@@ -149,8 +149,8 @@ QUOTE_FIELDS = {
         "Annualized Coupon",
         "年化返息",
         "barrier_config.ko_rate",
-        -1.0,
-        2.0,
+        0.001,
+        0.5,
         0.1,
     ),
     "absolute_coupon": TrySolveQuoteField(
@@ -158,8 +158,8 @@ QUOTE_FIELDS = {
         "Absolute Coupon",
         "绝对返息",
         "absolute_coupon",
-        -1.0,
-        2.0,
+        0.001,
+        0.5,
         0.1,
     ),
     "exercise_yield": TrySolveQuoteField(
@@ -176,8 +176,8 @@ QUOTE_FIELDS = {
         "Coupon Yield",
         "派息收益率",
         "coupon_config.coupon_rate",
-        -1.0,
-        2.0,
+        0.001,
+        0.5,
         0.1,
     ),
     "ko_barrier": TrySolveQuoteField(
@@ -224,8 +224,8 @@ QUOTE_FIELDS = {
         "Range Accrual Rate",
         "派息收益率",
         "range_config.accrual_rate",
-        0.0,
-        2.0,
+        0.001,
+        0.5,
         0.1,
     ),
 }
