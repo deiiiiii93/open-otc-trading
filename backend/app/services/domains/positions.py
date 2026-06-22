@@ -698,6 +698,13 @@ def generate_asian_fixing_schedule(
         )
         target_id = position.id
 
+        # Serialize concurrent generators for this position: take a row lock
+        # before the read-cancel-create sequence so two simultaneous POSTs cannot
+        # both see "no active events" and each insert a full schedule. Enforced on
+        # Postgres; on SQLite, writes already serialize at commit for this
+        # single-desk deployment.
+        sess.query(Position).filter(Position.id == target_id).with_for_update().all()
+
         # Idempotent regeneration: cancel any existing active fixing events so a
         # retried/double POST does not duplicate the schedule.
         existing = (
