@@ -43,6 +43,7 @@ LIFECYCLE_EVENT_TARGETS: dict[str, str | None] = {
     "autocall": "closed",
     "coupon_lock": None,
     "memory_coupon": None,
+    "fixing": None,
     "custom": None,
 }
 
@@ -84,6 +85,7 @@ PRODUCT_LIFECYCLE_EVENTS: dict[str, set[str]] = {
         "maturity",
         "custom",
     },
+    "AsianOption": {"close", "settle", "fixing", "custom"},
 }
 
 
@@ -636,6 +638,80 @@ def create_lifecycle_event(
         sess.refresh(event)
         sess.refresh(position)
         return PositionLifecycleUpdate(position=position, event=event)
+
+
+def _as_date(value: Any) -> date | None:
+    """Coerce a date or ISO date string to a date (None if unparseable)."""
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            return date.fromisoformat(value.strip()[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def generate_asian_fixing_schedule(
+    *,
+    position_id: int | None = None,
+    source_trade_id: str | None = None,
+    portfolio_id: int | None = None,
+    actor: str = "agent",
+    session: Session | None = None,
+) -> int:
+    """Generate informational ``fixing`` lifecycle events for an Asian option.
+
+    Derives the SSE-business-day averaging schedule from the position's
+    ``averaging_frequency`` + maturity + trade start date and records one
+    ``fixing`` event per observation (each carrying observation_date + sequence).
+    Returns the number of events created. Callers regenerating a schedule should
+    cancel prior ``fixing`` events first.
+    """
+    from app.services.domains import schedules
+
+    with _session_scope(session) as sess:
+        _, position = _resolve_lifecycle_position(
+            sess,
+            position_id=position_id,
+            source_trade_id=source_trade_id,
+            portfolio_id=portfolio_id,
+        )
+        if (position.product_type or "") != "AsianOption":
+            raise ValueError(
+                "generate_asian_fixing_schedule requires an AsianOption position"
+            )
+        kwargs = position.product_kwargs or {}
+        frequency = str(kwargs.get("averaging_frequency") or "MONTHLY")
+        maturity = kwargs.get("maturity_years") or kwargs.get("maturity")
+        start = _as_date(
+            kwargs.get("trade_start_date")
+            or kwargs.get("start_date")
+            or kwargs.get("initial_date")
+        )
+        if maturity is None or start is None:
+            raise ValueError(
+                "Asian fixing schedule needs maturity_years and a trade start date"
+            )
+        records = schedules.asian_observation_records(
+            start=start, maturity_years=float(maturity), frequency=frequency
+        )
+        target_id = position.id
+
+        created = 0
+        for rec in records:
+            create_lifecycle_event(
+                position_id=target_id,
+                event_type="fixing",
+                event_data={
+                    "observation_date": rec["observation_date"].isoformat(),
+                    "sequence": rec["sequence"],
+                },
+                actor=actor,
+                session=sess,
+            )
+            created += 1
+        return created
 
 
 def cancel_lifecycle_event(

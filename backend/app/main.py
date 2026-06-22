@@ -3133,6 +3133,28 @@ def create_app(
         return update.event
 
     @app.post(
+        "/api/portfolios/{portfolio_id}/positions/{position_id}/asian-fixing-schedule",
+    )
+    def generate_asian_fixing_schedule(
+        portfolio_id: int,
+        position_id: int,
+        session: Session = Depends(get_db),
+    ):
+        """Generate `fixing` lifecycle events from the Asian averaging schedule."""
+        try:
+            count = positions_svc.generate_asian_fixing_schedule(
+                portfolio_id=portfolio_id,
+                position_id=position_id,
+                actor="desk_user",
+                session=session,
+            )
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"position_id": position_id, "events_created": count}
+
+    @app.post(
         "/api/portfolios/{portfolio_id}/positions/{position_id}"
         "/lifecycle-events/{event_id}/cancel",
         response_model=PositionLifecycleEventOut,
