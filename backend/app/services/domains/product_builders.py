@@ -490,6 +490,30 @@ def _build_asian(terms: dict, *, quantark_class: str) -> _Out:
     out.product_kwargs["initial_price"] = (
         _num(terms.get("initial_price")) or out.product_kwargs.get("strike") or 100.0
     )
+    # Materialize a calendar-accurate, optionally-weighted dated schedule so the
+    # booked observations (not just a count) reach pricing. num_observations is
+    # kept as a fallback; the pricing path prefers records when present.
+    start = _start_date(terms)
+    weights = terms.get("averaging_weights")
+    if maturity is not None and start is not None:
+        try:
+            records = schedules.asian_observation_records(
+                start=start,
+                maturity_years=maturity,
+                frequency=freq,
+                weights=list(weights) if weights else None,
+            )
+        except ValueError as exc:
+            out.missing.append(f"observation schedule ({exc})")
+            records = []
+        if records:
+            out.product_kwargs["observation_records"] = [
+                {
+                    "observation_date": r["observation_date"].isoformat(),
+                    "weight": r["weight"],
+                }
+                for r in records
+            ]
     return out
 
 
