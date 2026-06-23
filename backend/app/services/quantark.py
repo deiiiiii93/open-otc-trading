@@ -320,17 +320,17 @@ def _asian_observation_records_for_pricing(
     for record in records:
         if not isinstance(record, dict):
             continue
-        # Already-resolved (QuantArk-ready) records carry observation_time and no
-        # observation_date — pass them through untouched rather than discard them.
-        if record.get("observation_time") is not None and record.get(
-            "observation_date"
-        ) is None:
-            resolved.append(record)
-            continue
-        observation_date = _parse_datetime(record.get("observation_date"))
-        if not isinstance(observation_date, datetime):
-            continue
-        t = _observation_time(context, observation_date)
+        # Determine the year-fraction: prefer an explicit observation_time (a
+        # record already in QuantArk shape), else resolve it from the booked
+        # observation_date. Either way the same past/future rule then applies, so
+        # already-resolved records get the same sanitization (never a past record
+        # without a price, never a future record carrying one).
+        t = record.get("observation_time")
+        if t is None:
+            observation_date = _parse_datetime(record.get("observation_date"))
+            if not isinstance(observation_date, datetime):
+                continue
+            t = _observation_time(context, observation_date)
         weight = record.get("weight")
         if t <= 0:  # past relative to valuation
             observed = record.get("observed_price")
@@ -769,8 +769,9 @@ def _build_termsheet(
         product_kwargs, market.valuation_date
     )
     filtered_product_kwargs = _add_observation_times(filtered_product_kwargs, market)
-    if isinstance(filtered_product_kwargs, dict) and filtered_product_kwargs.get(
-        "observation_records"
+    if (
+        isinstance(filtered_product_kwargs, dict)
+        and "observation_records" in filtered_product_kwargs
     ):
         asian_records = _asian_observation_records_for_pricing(
             filtered_product_kwargs["observation_records"], market

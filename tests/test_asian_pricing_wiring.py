@@ -49,17 +49,22 @@ def test_past_future_split_and_uncaptured_drop():
     assert all(r["observed_price"] is None for r in fut)
 
 
-def test_already_resolved_observation_time_records_pass_through():
+def test_already_resolved_observation_time_records_are_sanitized_not_discarded():
     # Callers (e.g. pricing-preview) may supply QuantArk-ready records keyed by
-    # observation_time. These must NOT be discarded by the booked-form converter.
+    # observation_time. They must NOT be discarded, and they get the SAME
+    # past/future sanitization as booked-form records.
     records = [
-        {"observation_time": -0.25, "observed_price": 105.0, "weight": 0.5},
-        {"observation_time": 0.5, "observed_price": None, "weight": 0.5},
+        {"observation_time": -0.25, "observed_price": 105.0, "weight": 0.25},  # past, priced -> kept
+        {"observation_time": -0.10, "weight": 0.25},                            # past, no price -> dropped
+        {"observation_time": 0.5, "observed_price": 999.0, "weight": 0.25},     # future w/ stale price -> nulled
+        {"observation_time": 0.9, "weight": 0.25},                              # future -> kept
     ]
     out = _asian_observation_records_for_pricing(records, _market("2025-01-01"))
-    assert len(out) == 2
-    assert out[0]["observation_time"] == -0.25 and out[0]["observed_price"] == 105.0
-    assert out[1]["observation_time"] == 0.5
+    assert len(out) == 3  # the uncaptured past record dropped
+    past = [r for r in out if r["observation_time"] <= 0]
+    fut = [r for r in out if r["observation_time"] > 0]
+    assert len(past) == 1 and past[0]["observed_price"] == 105.0
+    assert all(r["observed_price"] is None for r in fut)
 
 
 def test_empty_or_non_list_returns_empty():
@@ -116,6 +121,27 @@ def test_records_drive_weighted_and_realized_resolve_observations():
     assert future_weights == pytest.approx([0.25, 0.25])
     # total == 3 (not the num_observations default) proves records drive averaging.
     assert total == 3
+
+
+def test_empty_records_list_falls_back_to_num_observations():
+    # observation_records: [] must not reach QuantArk as an empty field; it falls
+    # back to the num_observations path.
+    snap = _market("2025-01-01")
+    product = build_product_for_position(
+        _asian_position(
+            {
+                "strike": 100.0,
+                "initial_price": 100.0,
+                "maturity": 1.0,
+                "option_type": "CALL",
+                "observation_records": [],
+                "num_observations": 4,
+            }
+        ),
+        snap,
+    )
+    assert product.observation_records is None
+    assert product.num_observations == 4
 
 
 def test_no_records_falls_back_to_num_observations():
