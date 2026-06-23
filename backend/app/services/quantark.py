@@ -294,6 +294,56 @@ def _add_observation_times(
     return value
 
 
+def _asian_observation_records_for_pricing(
+    records: Any, market: PricingEnvironmentSnapshot
+) -> list[dict]:
+    """Map stored Asian observation records to QuantArk-ready records.
+
+    Input records are ``{observation_date, weight, observed_price?}`` (the
+    booked schedule persisted in ``product_kwargs``). Output records carry a
+    calendar-resolved ``observation_time`` (year fraction from the valuation
+    date) split relative to that date:
+
+    - ``observation_time <= 0`` (past): keep the stored ``observed_price``; if it
+      is missing (uncaptured fixing) DROP the record rather than emit a past
+      observation with no price (QuantArk raises ``ValidationError`` for that).
+    - ``observation_time > 0`` (future): force ``observed_price = None`` — a
+      real-world fixing that is still future relative to a historical valuation
+      must not be treated as realized.
+
+    Returns ``[]`` when ``records`` is falsy or not a list.
+    """
+    if not records or not isinstance(records, list):
+        return []
+    context = _observation_context(market)
+    resolved: list[dict] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        observation_date = _parse_datetime(record.get("observation_date"))
+        if not isinstance(observation_date, datetime):
+            continue
+        t = _observation_time(context, observation_date)
+        weight = record.get("weight")
+        if t <= 0:  # past relative to valuation
+            observed = record.get("observed_price")
+            if observed is None:
+                # Uncaptured past fixing: drop it rather than crash QuantArk.
+                continue
+            resolved.append(
+                {
+                    "observation_time": t,
+                    "observed_price": float(observed),
+                    "weight": weight,
+                }
+            )
+        else:  # future relative to valuation
+            resolved.append(
+                {"observation_time": t, "observed_price": None, "weight": weight}
+            )
+    return resolved
+
+
 def _filter_business_day_records(
     records: list[Any], schedule: dict[str, Any], context: SimpleNamespace
 ) -> list[Any]:
@@ -712,6 +762,27 @@ def _build_termsheet(
         product_kwargs, market.valuation_date
     )
     filtered_product_kwargs = _add_observation_times(filtered_product_kwargs, market)
+    if isinstance(filtered_product_kwargs, dict) and filtered_product_kwargs.get(
+        "observation_records"
+    ):
+        asian_records = _asian_observation_records_for_pricing(
+            filtered_product_kwargs["observation_records"], market
+        )
+        if asian_records:
+            filtered_product_kwargs = {
+                **filtered_product_kwargs,
+                "observation_records": asian_records,
+            }
+            # Records take precedence in QuantArk; drop the count to avoid ambiguity.
+            filtered_product_kwargs.pop("num_observations", None)
+        else:
+            # All records dropped (e.g. all-uncaptured-past): fall back to the
+            # num_observations behavior so pricing still produces a value.
+            filtered_product_kwargs = {
+                k: v
+                for k, v in filtered_product_kwargs.items()
+                if k != "observation_records"
+            }
     normalized_product_kwargs = normalize_quantark_kwargs(filtered_product_kwargs)
     otc_attrs: dict[str, Any] = {}
     if isinstance(normalized_product_kwargs, dict):
