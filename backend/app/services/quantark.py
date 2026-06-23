@@ -325,6 +325,9 @@ def _asian_observation_records_for_pricing(
     dropped_uncaptured = 0
     for record in records:
         if not isinstance(record, dict):
+            # A malformed booked record is a truncation too — flag it so the caller
+            # falls back rather than pricing the surviving subset as authoritative.
+            dropped_uncaptured += 1
             continue
         # Determine the year-fraction: prefer an explicit observation_time (a
         # record already in QuantArk shape), else resolve it from the booked
@@ -335,6 +338,7 @@ def _asian_observation_records_for_pricing(
         if t is None:
             observation_date = _parse_datetime(record.get("observation_date"))
             if not isinstance(observation_date, datetime):
+                dropped_uncaptured += 1
                 continue
             t = _observation_time(context, observation_date)
         weight = record.get("weight")

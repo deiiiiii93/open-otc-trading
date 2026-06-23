@@ -734,6 +734,31 @@ def generate_asian_fixing_schedule(
         return created
 
 
+def _fixing_close(session: Session, instrument_id: int, on: date) -> float | None:
+    """The official close print for ``on`` (None if absent).
+
+    A fixing must be the close ON its observation date — never an intraday/open
+    quote and never a stale earlier-dated print. Returns the latest ``close``
+    quote whose ``as_of`` falls within that calendar day.
+    """
+    from app.models import MarketQuote
+
+    day_start = datetime.combine(on, datetime.min.time())
+    day_end = datetime.combine(on, datetime.max.time())
+    quote = (
+        session.query(MarketQuote)
+        .filter(
+            MarketQuote.instrument_id == instrument_id,
+            MarketQuote.price_type == "close",
+            MarketQuote.as_of >= day_start,
+            MarketQuote.as_of <= day_end,
+        )
+        .order_by(MarketQuote.as_of.desc(), MarketQuote.id.desc())
+        .first()
+    )
+    return float(quote.price) if quote is not None else None
+
+
 def capture_due_asian_fixings(
     session: Session,
     position_id: int,
@@ -753,10 +778,15 @@ def capture_due_asian_fixings(
     """
     from sqlalchemy.orm.attributes import flag_modified
 
-    from app.services.quotes import latest_quote
-
     as_of = as_of or datetime.utcnow().date()
-    position = session.get(Position, position_id)
+    # Lock the position row so two concurrent captures can't both read an
+    # uncaptured fixing and clobber each other's immutable snapshot.
+    position = (
+        session.query(Position)
+        .filter(Position.id == position_id)
+        .with_for_update()
+        .one_or_none()
+    )
     if position is None:
         if portfolio_id is not None:
             raise LookupError("Position not found")
@@ -778,15 +808,9 @@ def capture_due_asian_fixings(
             if record.get("observed_price") is None:
                 obs = _as_date(record.get("observation_date"))
                 if obs is not None and obs <= as_of:
-                    cutoff = datetime.combine(obs, datetime.max.time())
-                    quote = latest_quote(
-                        session, position.underlying_id, as_of=cutoff
-                    )
-                    # Only snapshot a print on the fixing date itself. A stale
-                    # earlier quote must not be captured — the snapshot is
-                    # immutable, so we wait for the correct-date close instead.
-                    if quote is not None and quote.as_of.date() == obs:
-                        record["observed_price"] = float(quote.price)
+                    price = _fixing_close(session, position.underlying_id, obs)
+                    if price is not None:
+                        record["observed_price"] = price
                         captured += 1
         new_records.append(record)
 

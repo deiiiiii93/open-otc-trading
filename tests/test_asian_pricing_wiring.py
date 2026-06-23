@@ -70,6 +70,19 @@ def test_already_resolved_observation_time_records_are_sanitized_not_discarded()
     assert all(r["observed_price"] is None for r in fut)
 
 
+def test_malformed_records_count_as_truncation():
+    # A non-dict entry and an unparseable date are skipped, but must be reported as
+    # drops so the caller falls back instead of pricing a truncated survivor list.
+    records = [
+        {"observation_date": "2025-04-01", "weight": 0.5},  # valid future
+        "garbage",                                          # non-dict
+        {"observation_date": "not-a-date", "weight": 0.5},  # unparseable
+    ]
+    out, dropped = _asian_observation_records_for_pricing(records, _market("2025-01-01"))
+    assert len(out) == 1
+    assert dropped == 2
+
+
 def test_empty_or_non_list_returns_empty():
     assert _asian_observation_records_for_pricing(None, _market()) == ([], 0)
     assert _asian_observation_records_for_pricing([], _market()) == ([], 0)

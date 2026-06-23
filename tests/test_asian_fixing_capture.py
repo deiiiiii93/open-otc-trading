@@ -18,13 +18,13 @@ def _instrument(session, symbol="000300.SH"):
     return inst
 
 
-def _quote(session, instrument_id, on, price):
+def _quote(session, instrument_id, on, price, price_type="close"):
     session.add(
         MarketQuote(
             instrument_id=instrument_id,
             as_of=datetime.combine(on, datetime.min.time()),
             price=price,
-            price_type="close",
+            price_type=price_type,
         )
     )
     session.flush()
@@ -76,6 +76,21 @@ def test_capture_is_immutable_and_idempotent(session):
     _quote(session, inst.id, date(2024, 6, 3), 200.0)
     assert capture_due_asian_fixings(session, pos.id, as_of=date(2025, 1, 1)) == 0
     assert pos.product_kwargs["observation_records"][0]["observed_price"] == 100.0
+
+
+def test_only_close_quote_is_captured(session):
+    # A non-close (intraday/open) print on the fixing date must NOT be snapshotted;
+    # only the official close counts.
+    inst = _instrument(session)
+    _quote(session, inst.id, date(2024, 6, 3), 150.0, price_type="open")
+    pos = _asian(session, inst, [{"observation_date": "2024-06-03", "weight": None}])
+    assert capture_due_asian_fixings(session, pos.id, as_of=date(2025, 1, 1)) == 0
+    assert pos.product_kwargs["observation_records"][0].get("observed_price") is None
+
+    # Once a close exists, it is captured.
+    _quote(session, inst.id, date(2024, 6, 3), 130.0, price_type="close")
+    assert capture_due_asian_fixings(session, pos.id, as_of=date(2025, 1, 1)) == 1
+    assert pos.product_kwargs["observation_records"][0]["observed_price"] == 130.0
 
 
 def test_stale_older_quote_is_not_captured(session):
