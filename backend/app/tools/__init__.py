@@ -39,7 +39,9 @@ from .portfolios import (
 from .positions import (
     book_position_tool,
     cancel_lifecycle_event_tool,
+    capture_asian_fixings_tool,
     close_position_tool,
+    generate_asian_fixing_schedule_tool,
     get_asian_schedule_tool,
     get_barrier_terms_tool,
     get_latest_position_valuations_tool,
@@ -179,6 +181,8 @@ QUANT_AGENT_TOOLS = [
     settle_position_tool,
     mark_knockout_tool,
     cancel_lifecycle_event_tool,
+    generate_asian_fixing_schedule_tool,
+    capture_asian_fixings_tool,
     run_batch_pricing_tool,
     # Scenario test tools (read + write / HITL-gated):
     list_scenario_library_tool,

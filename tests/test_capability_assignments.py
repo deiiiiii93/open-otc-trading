@@ -20,7 +20,8 @@ def test_quant_agent_tools_count_unchanged():
     #   get_scenario_test_run, save_scenario_set, generate_scenario_set).
     # +3 backtest tools (run_backtest, get_backtest_run, list_backtest_runs).
     # +3 Greeks Landscape tools (run + read by id/latest).
-    assert len(QUANT_AGENT_TOOLS) == 90
+    # +2 Asian fixing tools (generate_asian_fixing_schedule, capture_asian_fixings).
+    assert len(QUANT_AGENT_TOOLS) == 92
 
 
 def test_every_tool_has_capability_group():

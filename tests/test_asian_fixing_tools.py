@@ -64,3 +64,30 @@ def test_capture_self_scopes_and_commits_when_session_is_none(session):
     pos = session.get(Position, pos_id)
     rec = pos.product_kwargs["observation_records"][0]
     assert rec["observed_price"] == 123.0
+
+
+def test_generate_tool_creates_one_event_per_average_date(session):
+    from app.tools import generate_asian_fixing_schedule_tool
+
+    pos_id, _ = _asian_position(session)
+    out = generate_asian_fixing_schedule_tool.invoke({"position_id": pos_id})
+    assert out["position_id"] == pos_id
+    assert out["events_created"] >= 1
+
+
+def test_capture_tool_snapshots_due_close_and_is_idempotent(session):
+    from app.tools import capture_asian_fixings_tool
+
+    pos_id, _ = _asian_position(session)
+    out = capture_asian_fixings_tool.invoke({"position_id": pos_id})
+    assert out == {"position_id": pos_id, "captured": 1}
+    # Second call captures nothing (immutable, idempotent).
+    again = capture_asian_fixings_tool.invoke({"position_id": pos_id})
+    assert again["captured"] == 0
+
+
+def test_both_tools_registered_in_allowlist():
+    from app.services.agents import DEEP_AGENT_TOOL_NAMES
+
+    assert "generate_asian_fixing_schedule" in DEEP_AGENT_TOOL_NAMES
+    assert "capture_asian_fixings" in DEEP_AGENT_TOOL_NAMES

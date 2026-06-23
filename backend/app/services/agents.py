@@ -373,6 +373,8 @@ DEEP_AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         "settle_position",
         "mark_knockout",
         "cancel_lifecycle_event",
+        "generate_asian_fixing_schedule",
+        "capture_asian_fixings",
         "run_batch_pricing",
         # Scenario test tools: list/run/read/save/generate
         "list_scenario_library",
