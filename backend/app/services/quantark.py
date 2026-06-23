@@ -797,11 +797,17 @@ def _build_termsheet(
             # the truncated subset would silently renormalize weights over the
             # survivors, so fall back to the full num_observations approximation
             # until the due fixings are captured.
-            filtered_product_kwargs = {
+            booked = filtered_product_kwargs.get("observation_records")
+            fallback = {
                 k: v
                 for k, v in filtered_product_kwargs.items()
                 if k != "observation_records"
             }
+            # Preserve the booked schedule LENGTH so a records-only product (no
+            # num_observations) does not silently fall back to QuantArk's default.
+            if "num_observations" not in fallback and isinstance(booked, list) and booked:
+                fallback["num_observations"] = len(booked)
+            filtered_product_kwargs = fallback
     normalized_product_kwargs = normalize_quantark_kwargs(filtered_product_kwargs)
     otc_attrs: dict[str, Any] = {}
     if isinstance(normalized_product_kwargs, dict):

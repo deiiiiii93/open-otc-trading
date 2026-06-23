@@ -174,6 +174,31 @@ def test_partial_uncaptured_past_falls_back_to_num_observations():
     assert product.num_observations == 3
 
 
+def test_records_only_partial_uncaptured_preserves_booked_count():
+    # Records-only kwargs (no num_observations). On partial-uncaptured fallback,
+    # the booked schedule LENGTH must be preserved, not QuantArk's default 12.
+    snap = _market("2025-01-01")
+    records = [
+        {"observation_date": "2024-06-01", "weight": None, "observed_price": 110.0},
+        {"observation_date": "2024-09-01", "weight": None},  # UNCAPTURED past
+        {"observation_date": "2025-06-01", "weight": None},  # future
+    ]
+    product = build_product_for_position(
+        _asian_position(
+            {
+                "strike": 100.0,
+                "initial_price": 100.0,
+                "maturity": 1.0,
+                "option_type": "CALL",
+                "observation_records": records,  # no num_observations supplied
+            }
+        ),
+        snap,
+    )
+    assert product.observation_records is None
+    assert product.num_observations == 3  # booked length, not the default 12
+
+
 def test_no_records_falls_back_to_num_observations():
     snap = _market("2025-01-01")
     product = build_product_for_position(
