@@ -320,6 +320,13 @@ def _asian_observation_records_for_pricing(
     for record in records:
         if not isinstance(record, dict):
             continue
+        # Already-resolved (QuantArk-ready) records carry observation_time and no
+        # observation_date — pass them through untouched rather than discard them.
+        if record.get("observation_time") is not None and record.get(
+            "observation_date"
+        ) is None:
+            resolved.append(record)
+            continue
         observation_date = _parse_datetime(record.get("observation_date"))
         if not isinstance(observation_date, datetime):
             continue

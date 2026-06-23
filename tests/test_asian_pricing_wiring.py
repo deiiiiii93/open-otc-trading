@@ -49,6 +49,19 @@ def test_past_future_split_and_uncaptured_drop():
     assert all(r["observed_price"] is None for r in fut)
 
 
+def test_already_resolved_observation_time_records_pass_through():
+    # Callers (e.g. pricing-preview) may supply QuantArk-ready records keyed by
+    # observation_time. These must NOT be discarded by the booked-form converter.
+    records = [
+        {"observation_time": -0.25, "observed_price": 105.0, "weight": 0.5},
+        {"observation_time": 0.5, "observed_price": None, "weight": 0.5},
+    ]
+    out = _asian_observation_records_for_pricing(records, _market("2025-01-01"))
+    assert len(out) == 2
+    assert out[0]["observation_time"] == -0.25 and out[0]["observed_price"] == 105.0
+    assert out[1]["observation_time"] == 0.5
+
+
 def test_empty_or_non_list_returns_empty():
     assert _asian_observation_records_for_pricing(None, _market()) == []
     assert _asian_observation_records_for_pricing([], _market()) == []
