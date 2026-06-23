@@ -116,3 +116,41 @@ def test_generate_asian_fixing_schedule_endpoint(client, session):
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["events_created"] == 4
+
+
+def test_capture_asian_fixings_endpoint(client, session):
+    from datetime import datetime
+
+    from app.models import Instrument, MarketQuote
+
+    inst = Instrument(symbol="000300.SH")
+    session.add(inst)
+    session.flush()
+    session.add(
+        MarketQuote(
+            instrument_id=inst.id,
+            as_of=datetime(2020, 6, 3),
+            price=88.0,
+            price_type="close",
+        )
+    )
+    session.flush()
+    pos = _asian_position(
+        session,
+        product_kwargs={
+            "observation_records": [
+                {"observation_date": "2020-06-03", "weight": None},
+                {"observation_date": "2099-06-03", "weight": None},
+            ]
+        },
+    )
+    pos.underlying_id = inst.id
+    portfolio_id = pos.portfolio_id
+    pos_id = pos.id
+    session.commit()
+
+    resp = client.post(
+        f"/api/portfolios/{portfolio_id}/positions/{pos_id}/asian-fixings/capture"
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["captured"] == 1

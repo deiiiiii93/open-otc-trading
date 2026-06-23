@@ -3155,6 +3155,18 @@ def create_app(
         return {"position_id": position_id, "events_created": count}
 
     @app.post(
+        "/api/portfolios/{portfolio_id}/positions/{position_id}/asian-fixings/capture",
+    )
+    def capture_asian_fixings(
+        portfolio_id: int,
+        position_id: int,
+        session: Session = Depends(get_db),
+    ):
+        """Capture observed prices for any due (past) Asian fixings."""
+        captured = positions_svc.capture_due_asian_fixings(session, position_id)
+        return {"position_id": position_id, "captured": captured}
+
+    @app.post(
         "/api/portfolios/{portfolio_id}/positions/{position_id}"
         "/lifecycle-events/{event_id}/cancel",
         response_model=PositionLifecycleEventOut,

@@ -93,3 +93,15 @@ def test_missing_quote_leaves_null(session):
     pos = _asian(session, inst, [{"observation_date": "2024-06-03", "weight": None}])
     assert capture_due_asian_fixings(session, pos.id, as_of=date(2025, 1, 1)) == 0
     assert pos.product_kwargs["observation_records"][0].get("observed_price") is None
+
+
+def test_booking_eager_captures_already_past_fixings(session):
+    # Booking a seasoned position must capture its already-past fixings so it does
+    # not carry uncaptured (priceless) past observations into pricing.
+    from app.services.domains.position_terms import upsert_position_term_rows
+
+    inst = _instrument(session)
+    _quote(session, inst.id, date(2020, 6, 3), 88.0)
+    pos = _asian(session, inst, [{"observation_date": "2020-06-03", "weight": None}])
+    upsert_position_term_rows(session, pos)
+    assert pos.product_kwargs["observation_records"][0]["observed_price"] == 88.0
