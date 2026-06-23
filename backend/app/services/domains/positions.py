@@ -772,7 +772,10 @@ def capture_due_asian_fixings(
                     quote = latest_quote(
                         session, position.underlying_id, as_of=cutoff
                     )
-                    if quote is not None:
+                    # Only snapshot a print on the fixing date itself. A stale
+                    # earlier quote must not be captured — the snapshot is
+                    # immutable, so we wait for the correct-date close instead.
+                    if quote is not None and quote.as_of.date() == obs:
                         record["observed_price"] = float(quote.price)
                         captured += 1
         new_records.append(record)

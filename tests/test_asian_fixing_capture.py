@@ -78,6 +78,16 @@ def test_capture_is_immutable_and_idempotent(session):
     assert pos.product_kwargs["observation_records"][0]["observed_price"] == 100.0
 
 
+def test_stale_older_quote_is_not_captured(session):
+    # No print on the fixing date, only an older quote. Capturing the stale price
+    # would be permanent (immutable), so we must wait instead.
+    inst = _instrument(session)
+    _quote(session, inst.id, date(2024, 5, 1), 77.0)  # older than the fixing date
+    pos = _asian(session, inst, [{"observation_date": "2024-06-03", "weight": None}])
+    assert capture_due_asian_fixings(session, pos.id, as_of=date(2025, 1, 1)) == 0
+    assert pos.product_kwargs["observation_records"][0].get("observed_price") is None
+
+
 def test_missing_quote_leaves_null(session):
     inst = _instrument(session)
     pos = _asian(session, inst, [{"observation_date": "2024-06-03", "weight": None}])
