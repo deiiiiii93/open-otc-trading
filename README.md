@@ -1,25 +1,59 @@
 # Open OTC Trading
 
-> AI-powered OTC derivatives research, pricing, and RFQ workflow platform.
+> **One assistant. Your whole desk.** — structured products, priced in real time.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB.svg)](https://react.dev/)
 
+![Open OTC agent desk](docs/screenshots/agent-desk.png)
+
 ---
 
 ## Overview
 
-Open OTC Trading is a single-desk web platform for structured derivatives workflows — from client RFQ intake through pricing, risk management, and reporting. It combines a deterministic quant engine ([QuantArk](https://github.com/deiiiiii93/quant-ark)) with LLM-powered agents for research and workflow automation.
+Open OTC Trading is an AI-native trading desk for structured equity derivatives. Talk to it the way you'd brief a junior trader — *"Quote a 12-month CSI 300 snowball, KO 103, KI 75, 8% coupon"* — and it pulls live spot, builds the product, and prices it with full Greeks. You approve; it books. From there the same assistant aggregates portfolio risk, solves and sizes hedges, runs stress tests and backtests, and writes the reports.
+
+It pairs a **deterministic quant engine** ([QuantArk](https://github.com/deiiiiii93/quant-ark)) — so every price, Greek, and scenario is reproducible and audit-traced — with **LLM-powered agents** that handle the research and workflow around it. The numbers never come from a language model; the conversation does.
+
+### The desk, end to end
+
+The product walkthrough tells it as one continuous flow:
+
+1. **Ask** — A trader describes a structured product (snowball, phoenix, autocall, sharkfin, Asian) in plain language, or a client submits an RFQ through the portal.
+2. **Price** — The agent fetches market data, assembles the term sheet, and returns PV plus full Greeks (Δ, Γ, Vega, Theta) from QuantArk.
+3. **Book** — Nothing is committed silently. The agent surfaces a **human-in-the-loop** confirmation card (`Approve` / `Reject`) before any position or hedge hits the book.
+4. **Risk** — One pass aggregates portfolio Greeks — delta cash, gamma, vega — broken down by underlying.
+5. **Hedge** — A solver proposes Δ-neutral legs (e.g. index futures), sizes them to a residual delta, and books them on approval.
+6. **Operate** — The same assistant drives stress tests, batch pricing jobs, hedging backtests, and report generation across the whole position book.
+
+### A look at the desk
+
+| Build · Price · Book | Portfolio Risk |
+|:---:|:---:|
+| [![Booking and pricing with Greeks](docs/screenshots/booking.png)](docs/screenshots/booking.png) | [![Aggregated portfolio Greeks](docs/screenshots/risk.png)](docs/screenshots/risk.png) |
+| Price a structured product with full Greeks, then confirm before it books. | Aggregated Δ/Γ/Vega/Theta in one pass, sliced by underlying. |
+
+| Hedging | Scenario / Stress Tests |
+|:---:|:---:|
+| [![Delta-neutral hedge solver](docs/screenshots/hedging.png)](docs/screenshots/hedging.png) | [![Scenario stress testing](docs/screenshots/scenario.png)](docs/screenshots/scenario.png) |
+| A solver proposes and sizes Δ-neutral hedge legs. | Shock spot, vol, and rates across the book. |
+
+| Backtesting | Position Book |
+|:---:|:---:|
+| [![Hedging backtest](docs/screenshots/backtest.png)](docs/screenshots/backtest.png) | [![Positions overview](docs/screenshots/positions.png)](docs/screenshots/positions.png) |
+| Replay hedging strategies over history. | Every booked position, live-valued. |
 
 ### Key Features
 
-- **Pricing Engine** — Multi-engine Greeks computation (analytical, Monte Carlo, PDE) via QuantArk
-- **RFQ Workflow** — Client portal for quote requests with internal approval pipeline
-- **AI Agents** — LangGraph-based agents with tool-calling for research, pricing, and report generation
-- **Risk Dashboard** — Portfolio-level Greeks, scenario analysis, and real-time position monitoring
-- **Market Data** — AKShare adapter with caching and fallback for A-share / HK markets
-- **Streaming Chat** — Token-by-token agent responses with structured asset cards and charts
+- **Conversational desk** — Brief an LLM agent in natural language; it calls deterministic tools for pricing, risk, hedging, and booking. Responses stream token-by-token with structured asset cards and charts.
+- **Pricing engine** — Multi-engine Greeks (analytical, Monte Carlo, PDE) via QuantArk, across snowball, phoenix, autocall, sharkfin, Asian, digital, barrier, and vanilla families.
+- **Human-in-the-loop booking** — Positions and hedges require explicit approval; the agent proposes, you commit.
+- **Portfolio risk** — Aggregated Greeks, scenario analysis, and position monitoring in a single run, sliced by underlying.
+- **Hedging** — A MILP solver that proposes and sizes Δ-neutral hedge strategies, with lifecycle backtesting.
+- **RFQ workflow** — Client portal for quote requests with an internal approval pipeline.
+- **Market data** — AKShare adapter with caching and fallback for A-share / HK markets.
+- **Reproducible & audited** — Every pricing run, risk run, and agent trace is persisted; QuantArk keeps the math deterministic.
 
 ---
 
