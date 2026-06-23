@@ -181,6 +181,7 @@ describe('TrySolve', () => {
 
     expect(onQuoteRequestChange).toHaveBeenCalledWith('XL-12', {
       quote_field_key: 'annualized_coupon',
+      quote_value_mode: 'absolute',
       lower_bound: 0.001,
       upper_bound: 0.5,
       initial_guess: 0.1,
@@ -204,9 +205,67 @@ describe('TrySolve', () => {
 
     expect(onQuoteRequestChange).toHaveBeenCalledWith('XL-18', {
       quote_field_key: 'strike',
+      quote_value_mode: 'absolute',
       lower_bound: 0.101,
       upper_bound: 2.02,
       initial_guess: 1.01,
+    });
+  });
+
+  it('expands the bounds slider domain to large spot-derived strike ranges', () => {
+    const rows: TrySolveRowOut[] = [
+      {
+        ...DEFAULT_TRY_SOLVE_ROWS[1],
+        market: {
+          ...DEFAULT_TRY_SOLVE_ROWS[1].market,
+          spot: 4931.386,
+        },
+        quote_request: {
+          ...DEFAULT_TRY_SOLVE_ROWS[1].quote_request,
+          quote_field_key: 'strike',
+          lower_bound: 493.1386,
+          upper_bound: 9862.772,
+          initial_guess: 4931.386,
+        },
+      },
+    ];
+    render(<TrySolve rows={rows} selectedRowId="XL-18" />);
+
+    const lowerThumb = screen.getByRole('slider', { name: 'Lower bound' });
+    const upperThumb = screen.getByRole('slider', { name: 'Upper bound' });
+    expect(lowerThumb).toHaveAttribute('aria-valuemax', '9862.772');
+    expect(upperThumb).toHaveAttribute('aria-valuemax', '9862.772');
+    expect(upperThumb).toHaveAttribute('aria-valuenow', '9862.772');
+  });
+
+  it('converts price-like search ranges when switching to percentage mode', () => {
+    const onQuoteRequestChange = vi.fn();
+    const rows: TrySolveRowOut[] = [
+      {
+        ...DEFAULT_TRY_SOLVE_ROWS[1],
+        fields: {
+          ...DEFAULT_TRY_SOLVE_ROWS[1].fields,
+          initial_price: 5000,
+        },
+        quote_request: {
+          ...DEFAULT_TRY_SOLVE_ROWS[1].quote_request,
+          quote_field_key: 'strike',
+          quote_value_mode: 'absolute',
+          lower_bound: 4050,
+          upper_bound: 6000,
+          initial_guess: 5000,
+        },
+      },
+    ];
+    render(<TrySolve rows={rows} selectedRowId="XL-18" onQuoteRequestChange={onQuoteRequestChange} />);
+
+    fireEvent.change(screen.getByLabelText('Range Mode'), { target: { value: 'percentage' } });
+
+    expect(onQuoteRequestChange).toHaveBeenCalledWith('XL-18', {
+      quote_value_mode: 'percentage',
+      lower_bound: 81,
+      upper_bound: 120,
+      initial_guess: 100,
     });
   });
 

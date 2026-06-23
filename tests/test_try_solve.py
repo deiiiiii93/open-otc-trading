@@ -676,6 +676,81 @@ def test_row_to_rfq_draft_uses_initial_price_for_derived_quantity():
     assert draft.target.value == 0.8
 
 
+def test_row_to_rfq_draft_scales_percentage_price_like_unknown_values():
+    row = TrySolveRowIn(
+        row_id="manual-5",
+        product_key="autocall",
+        fields={
+            "underlying": "000905.SH",
+            "initial_price": 5000,
+            "notional": 1_000_000,
+            "start_date": "2026-05-13",
+            "tenor_months": 12,
+            "ko_barrier": 1.03,
+            "ki_barrier": 0.75,
+        },
+        market=TrySolveMarketIn(
+            spot=5000,
+            volatility=0.2,
+            rate=0.03,
+            dividend_yield=0.0,
+        ),
+        quote_request=TrySolveQuoteRequestIn(
+            quote_field_key="ko_barrier",
+            target_label="price",
+            target_value=500,
+            quote_value_mode="percentage",
+            lower_bound=81,
+            upper_bound=120,
+            initial_guess=100,
+        ),
+    )
+    product = registry_by_key()["autocall"]
+
+    draft = _row_to_rfq_draft(row, product)
+
+    assert abs(draft.unknown.lower_bound - 4050) < 1e-9
+    assert abs(draft.unknown.upper_bound - 6000) < 1e-9
+    assert abs(draft.unknown.initial_guess - 5000) < 1e-9
+
+
+def test_row_to_rfq_draft_keeps_absolute_price_like_unknown_values_unscaled():
+    row = TrySolveRowIn(
+        row_id="manual-6",
+        product_key="autocall",
+        fields={
+            "underlying": "000905.SH",
+            "initial_price": 5000,
+            "notional": 1_000_000,
+            "start_date": "2026-05-13",
+            "tenor_months": 12,
+            "ko_barrier": 1.03,
+            "ki_barrier": 0.75,
+        },
+        market=TrySolveMarketIn(
+            spot=5000,
+            volatility=0.2,
+            rate=0.03,
+            dividend_yield=0.0,
+        ),
+        quote_request=TrySolveQuoteRequestIn(
+            quote_field_key="ko_barrier",
+            target_label="price",
+            target_value=500,
+            lower_bound=0.81,
+            upper_bound=5000,
+            initial_guess=2500.405,
+        ),
+    )
+    product = registry_by_key()["autocall"]
+
+    draft = _row_to_rfq_draft(row, product)
+
+    assert draft.unknown.lower_bound == 0.81
+    assert draft.unknown.upper_bound == 5000
+    assert draft.unknown.initial_guess == 2500.405
+
+
 def test_validate_try_solve_row_blocks_zero_notional():
     row = TrySolveRowIn(
         row_id="manual-1",

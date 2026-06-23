@@ -467,6 +467,7 @@ export type TrySolveQuoteRequest = {
   quote_field_key: string;
   target_label: 'price' | 'premium' | 'premium %' | 'reoffer';
   target_value: number;
+  quote_value_mode?: 'absolute' | 'percentage';
   lower_bound?: number | null;
   upper_bound?: number | null;
   initial_guess?: number | null;

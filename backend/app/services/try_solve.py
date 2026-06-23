@@ -618,6 +618,27 @@ def _row_to_rfq_draft(
             quantity,
         )
 
+    unknown_values = _unknown_candidate_values(
+        quote_field.canonical_path,
+        lower_bound=(
+            row.quote_request.lower_bound
+            if row.quote_request.lower_bound is not None
+            else quote_field.lower_bound
+        ),
+        upper_bound=(
+            row.quote_request.upper_bound
+            if row.quote_request.upper_bound is not None
+            else quote_field.upper_bound
+        ),
+        initial_guess=(
+            row.quote_request.initial_guess
+            if row.quote_request.initial_guess is not None
+            else quote_field.initial_guess
+        ),
+        quote_value_mode=row.quote_request.quote_value_mode,
+        reference=reference,
+    )
+
     return RFQRequestDraft(
         client_name=str(row.fields.get("counterparty") or "Demo Client"),
         underlying=str(row.fields.get("underlying") or row.product_key),
@@ -632,45 +653,9 @@ def _row_to_rfq_draft(
         },
         unknown={
             "field_path": quote_field.canonical_path,
-            "lower_bound": (
-                _unknown_candidate_value(
-                    quote_field.canonical_path,
-                    row.quote_request.lower_bound,
-                    reference,
-                )
-                if row.quote_request.lower_bound is not None
-                else _unknown_candidate_value(
-                    quote_field.canonical_path,
-                    quote_field.lower_bound,
-                    reference,
-                )
-            ),
-            "upper_bound": (
-                _unknown_candidate_value(
-                    quote_field.canonical_path,
-                    row.quote_request.upper_bound,
-                    reference,
-                )
-                if row.quote_request.upper_bound is not None
-                else _unknown_candidate_value(
-                    quote_field.canonical_path,
-                    quote_field.upper_bound,
-                    reference,
-                )
-            ),
-            "initial_guess": (
-                _unknown_candidate_value(
-                    quote_field.canonical_path,
-                    row.quote_request.initial_guess,
-                    reference,
-                )
-                if row.quote_request.initial_guess is not None
-                else _unknown_candidate_value(
-                    quote_field.canonical_path,
-                    quote_field.initial_guess,
-                    reference,
-                )
-            ),
+            "lower_bound": unknown_values["lower_bound"],
+            "upper_bound": unknown_values["upper_bound"],
+            "initial_guess": unknown_values["initial_guess"],
             "display_label": quote_field.label,
         },
         target={
@@ -914,16 +899,33 @@ def _scale_moneyness(value: float, reference: float) -> float:
     return float(value)
 
 
-def _unknown_candidate_value(
+def _unknown_candidate_values(
     field_path: str,
-    value: float | None,
+    *,
+    lower_bound: float | None,
+    upper_bound: float | None,
+    initial_guess: float | None,
+    quote_value_mode: str,
     reference: float,
-) -> float | None:
-    if value is None:
-        return None
-    if _is_price_like_unknown(field_path):
-        return _scale_moneyness(float(value), reference)
-    return float(value)
+) -> dict[str, float | None]:
+    values = {
+        "lower_bound": lower_bound,
+        "upper_bound": upper_bound,
+        "initial_guess": initial_guess,
+    }
+    if (
+        quote_value_mode == "percentage"
+        and _is_price_like_unknown(field_path)
+        and reference > 0
+    ):
+        return {
+            key: None if value is None else float(value) / 100.0 * reference
+            for key, value in values.items()
+        }
+    return {
+        key: None if value is None else float(value)
+        for key, value in values.items()
+    }
 
 
 def _is_price_like_unknown(field_path: str) -> bool:

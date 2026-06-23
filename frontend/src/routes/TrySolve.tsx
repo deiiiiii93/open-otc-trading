@@ -1052,8 +1052,13 @@ function SolvePanel({
   const lowerBound = row.quote_request.lower_bound ?? selectedQuoteField?.lower_bound ?? 0;
   const upperBound = row.quote_request.upper_bound ?? selectedQuoteField?.upper_bound ?? 1;
   const initialGuess = row.quote_request.initial_guess ?? selectedQuoteField?.initial_guess ?? lowerBound;
-  const boundMin = selectedQuoteField?.lower_bound ?? -10;
-  const boundMax = selectedQuoteField?.upper_bound ?? 10;
+  const quoteValueMode = row.quote_request.quote_value_mode ?? 'absolute';
+  const canUsePercentageMode = selectedQuoteField ? isPriceLikeQuoteField(selectedQuoteField) : false;
+  const quoteReference = quoteReferencePrice(row);
+  const catalogBoundMin = selectedQuoteField?.lower_bound ?? -10;
+  const catalogBoundMax = selectedQuoteField?.upper_bound ?? 10;
+  const boundMin = Math.min(catalogBoundMin, lowerBound, upperBound);
+  const boundMax = Math.max(catalogBoundMax, lowerBound, upperBound);
 
   const stepQuoteDone = !!selectedQuoteField && row.quote_request.quote_field_key != null;
   const stepMarketDone = row.market.valuation_date != null && row.market.spot != null;
@@ -1086,6 +1091,26 @@ function SolvePanel({
     }
   };
 
+  const handleQuoteValueModeChange = (nextMode: TrySolveQuoteRequest['quote_value_mode']) => {
+    const currentMode = quoteValueMode;
+    const patch: Partial<TrySolveQuoteRequest> = { quote_value_mode: nextMode };
+    if (
+      canUsePercentageMode
+      && quoteReference != null
+      && quoteReference > 0
+      && nextMode
+      && nextMode !== currentMode
+    ) {
+      const convert = nextMode === 'percentage'
+        ? (value: number) => cleanRangeNumber((value / quoteReference) * 100)
+        : (value: number) => cleanRangeNumber((value / 100) * quoteReference);
+      patch.lower_bound = convert(lowerBound);
+      patch.upper_bound = convert(upperBound);
+      patch.initial_guess = convert(initialGuess);
+    }
+    onQuoteRequestChange?.(row.row_id, patch);
+  };
+
   return (
     <div className="wl-try-solve__solve wl-try-solve__solve--wizard">
       <Stepper className="wl-try-solve__wizard-stepper" steps={steps} />
@@ -1102,6 +1127,7 @@ function SolvePanel({
               const rangeDefaults = quoteRangeDefaults(row, nextQuoteField);
               onQuoteRequestChange?.(row.row_id, {
                 quote_field_key: v,
+                quote_value_mode: 'absolute',
                 lower_bound: rangeDefaults?.lower_bound ?? null,
                 upper_bound: rangeDefaults?.upper_bound ?? null,
                 initial_guess: rangeDefaults?.initial_guess ?? null,
@@ -1230,23 +1256,45 @@ function SolvePanel({
       <WizardStep number={3} title="Search Range" status={stepRangeDone ? 'done' : stepQuoteDone && stepMarketDone ? 'active' : 'todo'}>
         <div className="wl-try-solve__range-controls">
           <div className="wl-try-solve__range-inputs">
+            <Select
+              label="Range Mode"
+              className="wl-try-solve__field wl-try-solve__field--wide"
+              value={quoteValueMode}
+              onChange={(v) => handleQuoteValueModeChange(v as TrySolveQuoteRequest['quote_value_mode'])}
+              options={[
+                { value: 'absolute', label: 'Absolute Value' },
+                {
+                  value: 'percentage',
+                  label: 'Percentage %',
+                  disabled: !canUsePercentageMode || quoteReference == null,
+                },
+              ]}
+            />
+          </div>
+          <div className="wl-try-solve__range-inputs">
             <label className="wl-try-solve__field">
               <span className="wl-try-solve__field-label">Quote Lower Bound</span>
-              <NumberInput
-                type="number"
-                value={row.quote_request.lower_bound ?? ''}
-                onChange={(event) => onQuoteRequestChange?.(row.row_id, { lower_bound: parseNumberInput(event.currentTarget.value) })}
-                aria-label="Quote Lower Bound"
-              />
+              <div className="wl-try-solve__field-input-with-unit">
+                <NumberInput
+                  type="number"
+                  value={row.quote_request.lower_bound ?? ''}
+                  onChange={(event) => onQuoteRequestChange?.(row.row_id, { lower_bound: parseNumberInput(event.currentTarget.value) })}
+                  aria-label="Quote Lower Bound"
+                />
+                {quoteValueMode === 'percentage' ? <span aria-hidden="true">%</span> : null}
+              </div>
             </label>
             <label className="wl-try-solve__field">
               <span className="wl-try-solve__field-label">Quote Upper Bound</span>
-              <NumberInput
-                type="number"
-                value={row.quote_request.upper_bound ?? ''}
-                onChange={(event) => onQuoteRequestChange?.(row.row_id, { upper_bound: parseNumberInput(event.currentTarget.value) })}
-                aria-label="Quote Upper Bound"
-              />
+              <div className="wl-try-solve__field-input-with-unit">
+                <NumberInput
+                  type="number"
+                  value={row.quote_request.upper_bound ?? ''}
+                  onChange={(event) => onQuoteRequestChange?.(row.row_id, { upper_bound: parseNumberInput(event.currentTarget.value) })}
+                  aria-label="Quote Upper Bound"
+                />
+                {quoteValueMode === 'percentage' ? <span aria-hidden="true">%</span> : null}
+              </div>
             </label>
           </div>
           <RangeSlider
@@ -1262,12 +1310,15 @@ function SolvePanel({
           <div className="wl-try-solve__range-inputs">
             <label className="wl-try-solve__field wl-try-solve__field--wide">
               <span className="wl-try-solve__field-label">Quote Initial Guess</span>
-              <NumberInput
-                type="number"
-                value={row.quote_request.initial_guess ?? ''}
-                onChange={(event) => onQuoteRequestChange?.(row.row_id, { initial_guess: parseNumberInput(event.currentTarget.value) })}
-                aria-label="Quote Initial Guess"
-              />
+              <div className="wl-try-solve__field-input-with-unit">
+                <NumberInput
+                  type="number"
+                  value={row.quote_request.initial_guess ?? ''}
+                  onChange={(event) => onQuoteRequestChange?.(row.row_id, { initial_guess: parseNumberInput(event.currentTarget.value) })}
+                  aria-label="Quote Initial Guess"
+                />
+                {quoteValueMode === 'percentage' ? <span aria-hidden="true">%</span> : null}
+              </div>
             </label>
           </div>
           <RangeSlider
@@ -1465,11 +1516,24 @@ function isReferencePriceQuoteField(quoteField: TrySolveQuoteField): boolean {
   return key === 'strike' || path === 'strike';
 }
 
+function isPriceLikeQuoteField(quoteField: TrySolveQuoteField): boolean {
+  const path = quoteField.canonical_path.toLowerCase();
+  return isReferencePriceQuoteField(quoteField)
+    || path === 'barrier'
+    || path === 'upper_barrier'
+    || path === 'lower_barrier'
+    || path === 'barrier_config.ko_barrier'
+    || path === 'barrier_config.ki_barrier'
+    || path === 'coupon_config.coupon_barrier'
+    || path === 'range_config.upper_barrier'
+    || path === 'range_config.lower_barrier';
+}
+
 function quoteReferencePrice(row: TrySolveRowOut): number | null {
-  const spot = numberValue(row.market.spot);
-  if (spot != null && spot > 0) return spot;
   const initialPrice = numberValue(row.fields.initial_price);
-  return initialPrice != null && initialPrice > 0 ? initialPrice : null;
+  if (initialPrice != null && initialPrice > 0) return initialPrice;
+  const spot = numberValue(row.market.spot);
+  return spot != null && spot > 0 ? spot : null;
 }
 
 function isCouponRateQuoteField(quoteField: TrySolveQuoteField): boolean {

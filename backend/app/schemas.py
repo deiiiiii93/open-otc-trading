@@ -384,6 +384,7 @@ class TrySolveQuoteRequestIn(BaseModel):
     quote_field_key: str = "premium_rate"
     target_label: Literal["price", "premium", "premium %", "reoffer"] = "price"
     target_value: float = 0.0
+    quote_value_mode: Literal["absolute", "percentage"] = "absolute"
     lower_bound: float | None = None
     upper_bound: float | None = None
     initial_guess: float | None = None
