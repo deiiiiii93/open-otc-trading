@@ -381,8 +381,8 @@ Run the zenmux-codex-review-loop with `--base main` (≤3 loops); fix every find
 
 - [ ] **Step 3: Fast-forward `main`**
 
-After clean review + green suite, fast-forward only (never force-drop `main` history). `main` is not checked out anywhere (primary HEAD is the concurrent session's branch), so verify ancestry then move the ref:
+After clean review + green suite, fast-forward only (never force-drop `main` history). Use a single atomic, ff-enforcing ref update — a local `git push` rejects a non-fast-forward under the ref lock, closing the check-then-move race entirely:
 ```bash
-git merge-base --is-ancestor main <tip> && git branch -f main <tip>   # ff-only: aborts if <tip> is not a descendant of main
+git push . <tip>:refs/heads/main   # atomic ff-only; fails (non-fast-forward) if main moved past <tip>
 ```
-Then remove the worktree and update memory.
+If it is rejected, another session advanced `main` — re-base the work on the new `main` and re-run; never `git branch -f`. Then remove the worktree and update memory.
