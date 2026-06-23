@@ -296,7 +296,7 @@ def _add_observation_times(
 
 def _asian_observation_records_for_pricing(
     records: Any, market: PricingEnvironmentSnapshot
-) -> list[dict]:
+) -> tuple[list[dict], int]:
     """Map stored Asian observation records to QuantArk-ready records.
 
     Input records are ``{observation_date, weight, observed_price?}`` (the
@@ -311,12 +311,18 @@ def _asian_observation_records_for_pricing(
       real-world fixing that is still future relative to a historical valuation
       must not be treated as realized.
 
-    Returns ``[]`` when ``records`` is falsy or not a list.
+    Returns ``(resolved_records, dropped_uncaptured)`` where ``dropped_uncaptured``
+    counts booked PAST fixings dropped for a missing price. A non-zero count means
+    the resolved set is a truncated subset of the booked schedule — the caller
+    must NOT price it as authoritative (that silently renormalizes weights over
+    the survivors); it should fall back to the full ``num_observations`` instead.
+    Returns ``([], 0)`` when ``records`` is falsy or not a list.
     """
     if not records or not isinstance(records, list):
-        return []
+        return [], 0
     context = _observation_context(market)
     resolved: list[dict] = []
+    dropped_uncaptured = 0
     for record in records:
         if not isinstance(record, dict):
             continue
@@ -335,7 +341,9 @@ def _asian_observation_records_for_pricing(
         if t <= 0:  # past relative to valuation
             observed = record.get("observed_price")
             if observed is None:
-                # Uncaptured past fixing: drop it rather than crash QuantArk.
+                # Uncaptured past fixing: drop it (cannot emit a priceless past
+                # record), and flag the truncation for the caller.
+                dropped_uncaptured += 1
                 continue
             resolved.append(
                 {
@@ -348,7 +356,7 @@ def _asian_observation_records_for_pricing(
             resolved.append(
                 {"observation_time": t, "observed_price": None, "weight": weight}
             )
-    return resolved
+    return resolved, dropped_uncaptured
 
 
 def _filter_business_day_records(
@@ -773,10 +781,11 @@ def _build_termsheet(
         isinstance(filtered_product_kwargs, dict)
         and "observation_records" in filtered_product_kwargs
     ):
-        asian_records = _asian_observation_records_for_pricing(
+        asian_records, dropped_uncaptured = _asian_observation_records_for_pricing(
             filtered_product_kwargs["observation_records"], market
         )
-        if asian_records:
+        if asian_records and not dropped_uncaptured:
+            # Every booked fixing resolved: price the exact dated/weighted schedule.
             filtered_product_kwargs = {
                 **filtered_product_kwargs,
                 "observation_records": asian_records,
@@ -784,8 +793,10 @@ def _build_termsheet(
             # Records take precedence in QuantArk; drop the count to avoid ambiguity.
             filtered_product_kwargs.pop("num_observations", None)
         else:
-            # All records dropped (e.g. all-uncaptured-past): fall back to the
-            # num_observations behavior so pricing still produces a value.
+            # Either no usable records, or a booked PAST fixing is uncaptured. Pricing
+            # the truncated subset would silently renormalize weights over the
+            # survivors, so fall back to the full num_observations approximation
+            # until the due fixings are captured.
             filtered_product_kwargs = {
                 k: v
                 for k, v in filtered_product_kwargs.items()

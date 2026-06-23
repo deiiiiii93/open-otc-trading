@@ -25,7 +25,8 @@ def test_future_records_get_observation_time_and_weight_no_observed_price():
         {"observation_date": "2025-04-01", "weight": 0.25},
         {"observation_date": "2025-07-01", "weight": 0.75},
     ]
-    out = _asian_observation_records_for_pricing(records, _market("2025-01-01"))
+    out, dropped = _asian_observation_records_for_pricing(records, _market("2025-01-01"))
+    assert dropped == 0
     assert len(out) == 2
     assert all(r["observation_time"] > 0 for r in out)
     assert all(r.get("observed_price") is None for r in out)
@@ -39,8 +40,9 @@ def test_past_future_split_and_uncaptured_drop():
         {"observation_date": "2025-06-01", "weight": 0.3, "observed_price": 999.0},   # future-of-valuation, stored price
         {"observation_date": "2025-09-01", "weight": 0.3},                            # future
     ]
-    out = _asian_observation_records_for_pricing(records, _market("2025-01-01"))
-    # uncaptured past dropped -> 3 records
+    out, dropped = _asian_observation_records_for_pricing(records, _market("2025-01-01"))
+    # one uncaptured past dropped (and flagged) -> 3 records, dropped == 1
+    assert dropped == 1
     assert len(out) == 3
     past = [r for r in out if r["observation_time"] <= 0]
     fut = [r for r in out if r["observation_time"] > 0]
@@ -59,7 +61,8 @@ def test_already_resolved_observation_time_records_are_sanitized_not_discarded()
         {"observation_time": 0.5, "observed_price": 999.0, "weight": 0.25},     # future w/ stale price -> nulled
         {"observation_time": 0.9, "weight": 0.25},                              # future -> kept
     ]
-    out = _asian_observation_records_for_pricing(records, _market("2025-01-01"))
+    out, dropped = _asian_observation_records_for_pricing(records, _market("2025-01-01"))
+    assert dropped == 1
     assert len(out) == 3  # the uncaptured past record dropped
     past = [r for r in out if r["observation_time"] <= 0]
     fut = [r for r in out if r["observation_time"] > 0]
@@ -68,9 +71,9 @@ def test_already_resolved_observation_time_records_are_sanitized_not_discarded()
 
 
 def test_empty_or_non_list_returns_empty():
-    assert _asian_observation_records_for_pricing(None, _market()) == []
-    assert _asian_observation_records_for_pricing([], _market()) == []
-    assert _asian_observation_records_for_pricing("nope", _market()) == []
+    assert _asian_observation_records_for_pricing(None, _market()) == ([], 0)
+    assert _asian_observation_records_for_pricing([], _market()) == ([], 0)
+    assert _asian_observation_records_for_pricing("nope", _market()) == ([], 0)
 
 
 # --- End-to-end: records drive position pricing through build_product_for_position ---
@@ -142,6 +145,33 @@ def test_empty_records_list_falls_back_to_num_observations():
     )
     assert product.observation_records is None
     assert product.num_observations == 4
+
+
+def test_partial_uncaptured_past_falls_back_to_num_observations():
+    # A booked past fixing with no captured price must NOT yield a silently
+    # truncated (weight-renormalized) schedule; price falls back to the full count.
+    snap = _market("2025-01-01")
+    records = [
+        {"observation_date": "2024-06-01", "weight": 0.5, "observed_price": 110.0},  # captured past
+        {"observation_date": "2024-09-01", "weight": 0.25},                          # UNCAPTURED past
+        {"observation_date": "2025-06-01", "weight": 0.25},                          # future
+    ]
+    product = build_product_for_position(
+        _asian_position(
+            {
+                "strike": 100.0,
+                "initial_price": 100.0,
+                "maturity": 1.0,
+                "option_type": "CALL",
+                "observation_records": records,
+                "num_observations": 3,
+            }
+        ),
+        snap,
+    )
+    # Falls back: records not used (truncation avoided), original count honored.
+    assert product.observation_records is None
+    assert product.num_observations == 3
 
 
 def test_no_records_falls_back_to_num_observations():
