@@ -760,7 +760,7 @@ def _fixing_close(session: Session, instrument_id: int, on: date) -> float | Non
 
 
 def capture_due_asian_fixings(
-    session: Session,
+    session: Session | None,
     position_id: int,
     *,
     portfolio_id: int | None = None,
@@ -774,52 +774,62 @@ def capture_due_asian_fixings(
     instrument. Already-captured prices are never overwritten, so the same call
     is idempotent and, run across all Asian positions, serves as the backfill.
 
+    Pass ``session=None`` (the stateless agent-tool path) to have this function
+    own its unit of work: it opens a session and commits the snapshot. When a
+    session is injected (HTTP request, booking eager-capture), the caller owns
+    the transaction and this never commits.
+
     Returns the number of fixings newly captured.
     """
     from sqlalchemy.orm.attributes import flag_modified
 
     as_of = as_of or datetime.utcnow().date()
-    # Lock the position row so two concurrent captures can't both read an
-    # uncaptured fixing and clobber each other's immutable snapshot.
-    position = (
-        session.query(Position)
-        .filter(Position.id == position_id)
-        .with_for_update()
-        .one_or_none()
-    )
-    if position is None:
-        if portfolio_id is not None:
-            raise LookupError("Position not found")
-        return 0
-    if portfolio_id is not None and position.portfolio_id != portfolio_id:
-        raise LookupError("Position not found in portfolio")
-    if position.underlying_id is None:
-        return 0
-    kwargs = dict(position.product_kwargs or {})
-    records = kwargs.get("observation_records")
-    if not isinstance(records, list):
-        return 0
+    with _session_scope(session) as sess:
+        # Lock the position row so two concurrent captures can't both read an
+        # uncaptured fixing and clobber each other's immutable snapshot.
+        position = (
+            sess.query(Position)
+            .filter(Position.id == position_id)
+            .with_for_update()
+            .one_or_none()
+        )
+        if position is None:
+            if portfolio_id is not None:
+                raise LookupError("Position not found")
+            return 0
+        if portfolio_id is not None and position.portfolio_id != portfolio_id:
+            raise LookupError("Position not found in portfolio")
+        if position.underlying_id is None:
+            return 0
+        kwargs = dict(position.product_kwargs or {})
+        records = kwargs.get("observation_records")
+        if not isinstance(records, list):
+            return 0
 
-    captured = 0
-    new_records: list[Any] = []
-    for record in records:
-        if isinstance(record, dict):
-            record = dict(record)
-            if record.get("observed_price") is None:
-                obs = _as_date(record.get("observation_date"))
-                if obs is not None and obs <= as_of:
-                    price = _fixing_close(session, position.underlying_id, obs)
-                    if price is not None:
-                        record["observed_price"] = price
-                        captured += 1
-        new_records.append(record)
+        captured = 0
+        new_records: list[Any] = []
+        for record in records:
+            if isinstance(record, dict):
+                record = dict(record)
+                if record.get("observed_price") is None:
+                    obs = _as_date(record.get("observation_date"))
+                    if obs is not None and obs <= as_of:
+                        price = _fixing_close(sess, position.underlying_id, obs)
+                        if price is not None:
+                            record["observed_price"] = price
+                            captured += 1
+            new_records.append(record)
 
-    if captured:
-        kwargs["observation_records"] = new_records
-        position.product_kwargs = kwargs
-        flag_modified(position, "product_kwargs")
-        session.flush()
-    return captured
+        if captured:
+            kwargs["observation_records"] = new_records
+            position.product_kwargs = kwargs
+            flag_modified(position, "product_kwargs")
+            sess.flush()
+        # Self-scoped path owns the transaction → persist. Injected callers keep
+        # transaction ownership and must not be committed here.
+        if session is None:
+            sess.commit()
+        return captured
 
 
 def cancel_lifecycle_event(
