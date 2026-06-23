@@ -2,9 +2,11 @@
 name: asian-fixings
 description: Set up an Asian option's fixing calendar and lock in due fixings. Use when a user wants to generate the averaging-date fixing schedule for an Asian position, or to capture (snapshot) the close price for observation dates that have already passed so pricing uses the realized average.
 domain: positions
-workflow_type: write
+workflow_type: action
 allowed_envelopes:
   - desk_workflow
+may_escalate_to:
+  - desk_async
 required_context:
   - portfolio_id
   - position_id
@@ -42,3 +44,8 @@ routing:
 
 - Both generate and capture are persisted writes; confirm before running on a live position.
 - Never overwrite an already-captured fixing — captured prices are immutable realized observations.
+
+## Examples
+
+- "Set up the fixing calendar for position 42" → `get_asian_schedule(position_id=42)`, then `generate_asian_fixing_schedule(position_id=42, portfolio_id=7)`; report `events_created`.
+- "Lock in today's fixing for the Asian on position 42" → `capture_asian_fixings(position_id=42, portfolio_id=7)`; report `captured` and name any past dates with no close quote yet (still uncaptured).
