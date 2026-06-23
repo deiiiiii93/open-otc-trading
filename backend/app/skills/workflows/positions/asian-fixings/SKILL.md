@@ -25,27 +25,29 @@ routing:
 
 ## When to use
 
-- A user wants to generate the fixing-date calendar for an Asian (averaging) option.
-- A user wants to lock in (capture) the realized close for observation dates that have already passed.
+- Generate the fixing-date calendar for an Asian (averaging) option.
+- Capture the realized close for observation dates that have already passed.
 - An Asian position prices coarsely because its past fixings were never captured.
 
 ## Required inputs
 
-`position_id` and `portfolio_id` from page context or user text. Optional `as_of` limits capture to fixings on or before that date (default today).
+`position_id` and `portfolio_id` from context or user text. Optional `as_of` limits capture to fixings on/before that date (default today).
 
 ## Procedure
 
-1. Call `get_asian_schedule(position_id=<position_id>)` to read the averaging schedule and which observations already have a captured price.
-2. Call `generate_asian_fixing_schedule(position_id=<position_id>, portfolio_id=<portfolio_id>)` to plant one informational `fixing` lifecycle event per averaging date. This is idempotent — re-running cancels prior active fixing events before re-creating them, so it is safe to refresh after a reschedule.
-3. Call `capture_asian_fixings(position_id=<position_id>, portfolio_id=<portfolio_id>)` to snapshot the official close for every observation whose date has passed and is not yet captured. This is idempotent and never overwrites an existing fixing.
-4. Report `events_created` and `captured`. Capture needs a `close` market quote on the underlying for each past date; if some remain uncaptured, tell the user — pricing falls back to a coarse uniform average until they are captured.
+The two writes are independent — run only the one(s) the user asked for.
+
+1. Always first call `get_asian_schedule(position_id=<position_id>)` to read the schedule and which observations are already captured.
+2. Calendar request only: after confirmation, `generate_asian_fixing_schedule(position_id=<position_id>, portfolio_id=<portfolio_id>)` plants one `fixing` event per averaging date (idempotent — cancels prior active fixing events first). Report `events_created`.
+3. Capture request only: after confirmation, `capture_asian_fixings(position_id=<position_id>, portfolio_id=<portfolio_id>, as_of=<as_of>)` snapshots the close for each past, uncaptured date (pass `as_of` only when given; idempotent, never overwrites). Report `captured`.
+4. After capturing, call `get_asian_schedule` again: any observation on/before the cutoff still without a captured price is uncaptured — name those dates. They need a `close` quote on the underlying; until captured, pricing uses a coarse uniform average.
 
 ## Guardrails
 
-- Both generate and capture are persisted writes; confirm before running on a live position.
-- Never overwrite an already-captured fixing — captured prices are immutable realized observations.
+- Generate and capture are persisted writes; confirm before running on a live position.
+- Never overwrite a captured fixing — realized observations are immutable.
 
 ## Examples
 
-- "Set up the fixing calendar for position 42" → `get_asian_schedule(position_id=42)`, then `generate_asian_fixing_schedule(position_id=42, portfolio_id=7)`; report `events_created`.
-- "Lock in today's fixing for the Asian on position 42" → `capture_asian_fixings(position_id=42, portfolio_id=7)`; report `captured` and name any past dates with no close quote yet (still uncaptured).
+- "Set up the fixing calendar for position 42" → `get_asian_schedule(position_id=42)`, then `generate_asian_fixing_schedule(position_id=42, portfolio_id=7)`.
+- "Capture due fixings for position 42 as of 2026-03-31" → `capture_asian_fixings(position_id=42, portfolio_id=7, as_of="2026-03-31")`, then re-read the schedule and name any dates still uncaptured.
