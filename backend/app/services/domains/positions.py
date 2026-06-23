@@ -734,6 +734,57 @@ def generate_asian_fixing_schedule(
         return created
 
 
+def capture_due_asian_fixings(
+    session: Session, position_id: int, *, as_of: date | None = None
+) -> int:
+    """Capture observed prices for past Asian fixings (immutable snapshots).
+
+    For each ``observation_records`` entry whose ``observation_date <= as_of``
+    (default today) and whose ``observed_price`` is still null, write the
+    ``MarketQuote`` close as-of that date for the position's underlying
+    instrument. Already-captured prices are never overwritten, so the same call
+    is idempotent and, run across all Asian positions, serves as the backfill.
+
+    Returns the number of fixings newly captured.
+    """
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from app.services.quotes import latest_quote
+
+    as_of = as_of or datetime.utcnow().date()
+    position = session.get(Position, position_id)
+    if position is None or position.underlying_id is None:
+        return 0
+    kwargs = dict(position.product_kwargs or {})
+    records = kwargs.get("observation_records")
+    if not isinstance(records, list):
+        return 0
+
+    captured = 0
+    new_records: list[Any] = []
+    for record in records:
+        if isinstance(record, dict):
+            record = dict(record)
+            if record.get("observed_price") is None:
+                obs = _as_date(record.get("observation_date"))
+                if obs is not None and obs <= as_of:
+                    cutoff = datetime.combine(obs, datetime.max.time())
+                    quote = latest_quote(
+                        session, position.underlying_id, as_of=cutoff
+                    )
+                    if quote is not None:
+                        record["observed_price"] = float(quote.price)
+                        captured += 1
+        new_records.append(record)
+
+    if captured:
+        kwargs["observation_records"] = new_records
+        position.product_kwargs = kwargs
+        flag_modified(position, "product_kwargs")
+        session.flush()
+    return captured
+
+
 def cancel_lifecycle_event(
     *,
     lifecycle_event_id: int,
