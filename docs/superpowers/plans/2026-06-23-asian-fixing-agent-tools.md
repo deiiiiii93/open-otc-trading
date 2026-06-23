@@ -130,7 +130,7 @@ git commit -m "feat(asian): self-scope capture_due_asian_fixings when session om
 
 **Files:**
 - Modify: `backend/app/tools/positions.py` (new input schemas + two `@tool` fns)
-- Modify: `backend/app/tools/__init__.py` (import + `__all__`)
+- Modify: `backend/app/tools/__init__.py` (import + `QUANT_AGENT_TOOLS` list)
 - Modify: `backend/app/services/agents.py` (`DEEP_AGENT_TOOL_NAMES`)
 - Test: `tests/test_asian_fixing_tools.py`
 
@@ -229,7 +229,7 @@ Add to the `from .positions import (` block:
     capture_asian_fixings_tool,
     generate_asian_fixing_schedule_tool,
 ```
-And add both to the `__all__` list under the persisted-action / HITL-gated section (next to `settle_position_tool`):
+And add both **tool objects** (bare identifiers, not strings — this is the `QUANT_AGENT_TOOLS` list literal at the top of the file, NOT `__all__`) under the persisted-action / HITL-gated section (next to `settle_position_tool`):
 ```python
     generate_asian_fixing_schedule_tool,
     capture_asian_fixings_tool,
@@ -327,9 +327,9 @@ routing:
 
 ## Procedure
 
-1. Call `get_asian_schedule(position_id=<id>)` to read the averaging schedule and which observations already have a captured price.
-2. Call `generate_asian_fixing_schedule(position_id=<id>, portfolio_id=<id>)` to plant one informational `fixing` lifecycle event per averaging date. This is idempotent — re-running cancels prior active fixing events before re-creating them, so it is safe to refresh after a reschedule.
-3. Call `capture_asian_fixings(position_id=<id>, portfolio_id=<id>)` to snapshot the official close for every observation whose date has passed and is not yet captured. This is idempotent and never overwrites an existing fixing.
+1. Call `get_asian_schedule(position_id=<position_id>)` to read the averaging schedule and which observations already have a captured price.
+2. Call `generate_asian_fixing_schedule(position_id=<position_id>, portfolio_id=<portfolio_id>)` to plant one informational `fixing` lifecycle event per averaging date. This is idempotent — re-running cancels prior active fixing events before re-creating them, so it is safe to refresh after a reschedule.
+3. Call `capture_asian_fixings(position_id=<position_id>, portfolio_id=<portfolio_id>)` to snapshot the official close for every observation whose date has passed and is not yet captured. This is idempotent and never overwrites an existing fixing.
 4. Report `events_created` and `captured`. Capture needs a `close` market quote on the underlying for each past date; if some remain uncaptured, tell the user — pricing falls back to a coarse uniform average until they are captured.
 
 ## Guardrails
@@ -381,4 +381,8 @@ Run the zenmux-codex-review-loop with `--base main` (≤3 loops); fix every find
 
 - [ ] **Step 3: Fast-forward `main`**
 
-After clean review + green suite: `git branch -f main <tip>`; remove the worktree; update memory.
+After clean review + green suite, fast-forward only (never force-drop `main` history). `main` is not checked out anywhere (primary HEAD is the concurrent session's branch), so verify ancestry then move the ref:
+```bash
+git merge-base --is-ancestor main <tip> && git branch -f main <tip>   # ff-only: aborts if <tip> is not a descendant of main
+```
+Then remove the worktree and update memory.
