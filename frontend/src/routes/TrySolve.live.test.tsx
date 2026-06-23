@@ -313,8 +313,8 @@ describe('TrySolveLive', () => {
     render(<TrySolveLive />);
 
     await screen.findByRole('heading', { name: 'TRY TO SOLVE' });
-    fireEvent.change(screen.getByLabelText('Product Library Product'), { target: { value: 'vanilla' } });
-    await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
+    fireEvent.change(screen.getByLabelText('Product Type'), { target: { value: 'vanilla' } });
+    await userEvent.click(screen.getByRole('button', { name: /^new$/i }));
 
     const queue = screen.getByRole('list', { name: /request rows/i });
     expect(within(queue).getByRole('button', { name: /man-1 vanilla/i })).toBeInTheDocument();
@@ -335,8 +335,8 @@ describe('TrySolveLive', () => {
     render(<TrySolveLive />);
 
     await screen.findByRole('heading', { name: 'TRY TO SOLVE' });
-    fireEvent.change(screen.getByLabelText('Product Library Product'), { target: { value: 'vanilla' } });
-    await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
+    fireEvent.change(screen.getByLabelText('Product Type'), { target: { value: 'vanilla' } });
+    await userEvent.click(screen.getByRole('button', { name: /^new$/i }));
     expect(screen.getByText('Missing required terms: Underlying.')).toBeInTheDocument();
 
     await userEvent.selectOptions(screen.getByLabelText('Underlying'), '000852.SH');
@@ -345,13 +345,24 @@ describe('TrySolveLive', () => {
     expect(screen.getByText('No missing terms detected.')).toBeInTheDocument();
     expect(screen.getByLabelText('Initial Price')).toHaveValue(99.5);
     expect(screen.getByLabelText('Quote Field')).toHaveValue('strike');
-    expect(screen.getByLabelText('Quote Initial Guess')).toHaveValue(0.5);
+    await waitFor(() => expect(screen.getByLabelText('Quote Lower Bound')).toHaveValue(9.95));
+    expect(screen.getByLabelText('Quote Upper Bound')).toHaveValue(199);
+    expect(screen.getByLabelText('Quote Initial Guess')).toHaveValue(99.5);
+    fireEvent.change(screen.getByLabelText('Spot'), { target: { value: '4931.386' } });
+    expect(screen.getByLabelText('Quote Lower Bound')).toHaveValue(493.1386);
+    expect(screen.getByLabelText('Quote Upper Bound')).toHaveValue('9,862.772');
+    expect(screen.getByLabelText('Quote Initial Guess')).toHaveValue('4,931.386');
     fireEvent.change(screen.getByLabelText('Quote Lower Bound'), { target: { value: '8000' } });
     fireEvent.change(screen.getByLabelText('Quote Upper Bound'), { target: { value: '10000' } });
-    expect(screen.getByLabelText('Quote Initial Guess')).toHaveValue(9000);
+    expect(screen.getByLabelText('Quote Initial Guess')).toHaveValue('9,000');
     fireEvent.change(screen.getByLabelText('Quote Initial Guess'), { target: { value: '8500' } });
     fireEvent.change(screen.getByLabelText('Quote Lower Bound'), { target: { value: '7000' } });
-    expect(screen.getByLabelText('Quote Initial Guess')).toHaveValue(8500);
+    expect(screen.getByLabelText('Quote Initial Guess')).toHaveValue('8,500');
+    fireEvent.change(screen.getByLabelText('Quote Initial Guess'), { target: { value: '12000' } });
+    expect(screen.getByLabelText('Quote Initial Guess')).toHaveValue('10,000');
+    fireEvent.change(screen.getByLabelText('Quote Initial Guess'), { target: { value: '8500' } });
+    fireEvent.change(screen.getByLabelText('Quote Upper Bound'), { target: { value: '5000' } });
+    expect(screen.getByLabelText('Quote Initial Guess')).toHaveValue('5,000');
     expect(screen.getByRole('button', { name: /^solve selected$/i })).toBeEnabled();
     const queue = screen.getByRole('list', { name: /request rows/i });
     expect(within(queue).getByRole('button', { name: /man-1 vanilla solver ready/i })).toHaveAttribute('aria-pressed', 'true');

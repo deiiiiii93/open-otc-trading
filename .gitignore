@@ -30,6 +30,7 @@ coverage/
 .env.*
 !.env.example
 config/agent_channels.yaml
+/marketing/
 
 # stray root sqlite (real DB lives in data/, gitignored)
 open_otc.sqlite

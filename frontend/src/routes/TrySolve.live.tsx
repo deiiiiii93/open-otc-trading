@@ -10,6 +10,7 @@ import type {
   TrySolveExportOut,
   TrySolveExportRequest,
   TrySolveProduct,
+  TrySolveQuoteField,
   TrySolveMarket,
   TrySolveQuoteRequest,
   TrySolveRowIn,
@@ -243,12 +244,13 @@ export function TrySolveLive({ onPageContextChange, navigate = (url) => window.l
         ...row,
         fields: { ...row.fields, [fieldKey]: value },
       }, product);
-      return fieldKey === 'underlying'
+      const rowWithSpotDefaults = fieldKey === 'underlying'
         ? withLatestSpotDefaults(nextRow, product, marketDataProfiles, value, {
           forceInitialPrice: true,
           forceMarketSpot: true,
         })
         : nextRow;
+      return refreshAutoQuoteRange(row, rowWithSpotDefaults, product);
     }));
   };
 
@@ -257,7 +259,11 @@ export function TrySolveLive({ onPageContextChange, navigate = (url) => window.l
     setFeedback(null);
     setRows((currentRows) => currentRows.map((row) => (
       row.row_id === rowId
-        ? { ...row, market: { ...row.market, ...patch } }
+        ? refreshAutoQuoteRange(
+          row,
+          { ...row, market: { ...row.market, ...patch } },
+          findProduct(row.product_key, catalog),
+        )
         : row
     )));
   };
@@ -361,15 +367,17 @@ function createManualRow(
       quote_field_key: quoteField?.key ?? 'premium_rate',
       target_label: 'price',
       target_value: 0,
+      quote_value_mode: 'absolute',
       lower_bound: quoteField?.lower_bound ?? null,
       upper_bound: quoteField?.upper_bound ?? null,
       initial_guess: midpoint(quoteField?.lower_bound, quoteField?.upper_bound) ?? quoteField?.initial_guess ?? null,
     },
   };
-  return withLatestSpotDefaults(row, product, marketDataProfiles, fields.underlying, {
+  const rowWithSpotDefaults = withLatestSpotDefaults(row, product, marketDataProfiles, fields.underlying, {
     forceInitialPrice: false,
     forceMarketSpot: false,
   });
+  return refreshAutoQuoteRange(row, rowWithSpotDefaults, product);
 }
 
 function normalizeRowsForSolve(
@@ -388,8 +396,9 @@ function normalizeRowsForSolve(
       rowWithRequiredTerms.fields.underlying,
       { forceInitialPrice: false, forceMarketSpot: false },
     );
-    if (nextRow !== row) changed = true;
-    return nextRow;
+    const nextRowWithQuoteRange = refreshAutoQuoteRange(rowWithRequiredTerms, nextRow, product);
+    if (nextRowWithQuoteRange !== row) changed = true;
+    return nextRowWithQuoteRange;
   });
   return changed ? nextRows : rows;
 }
@@ -487,14 +496,15 @@ function ensureSolverReadyQuote(row: TrySolveRowOut, product: TrySolveProduct): 
   if (currentQuote?.solver_ready) return row;
   const readyQuote = defaultSolverQuoteField(product);
   if (!readyQuote?.solver_ready) return row;
+  const rangeDefaults = quoteRangeDefaults(row, readyQuote);
   return {
     ...row,
     quote_request: {
       ...row.quote_request,
       quote_field_key: readyQuote.key,
-      lower_bound: readyQuote.lower_bound,
-      upper_bound: readyQuote.upper_bound,
-      initial_guess: readyQuote.initial_guess,
+      lower_bound: rangeDefaults?.lower_bound ?? readyQuote.lower_bound,
+      upper_bound: rangeDefaults?.upper_bound ?? readyQuote.upper_bound,
+      initial_guess: rangeDefaults?.initial_guess ?? readyQuote.initial_guess,
     },
   };
 }
@@ -509,13 +519,14 @@ function autoInitialGuessQuoteRequest(
   isManualInitialGuess: boolean,
   forceAutoInitialGuess: boolean,
 ): TrySolveQuoteRequest {
-  const nextQuoteRequest = { ...currentQuoteRequest, ...patch };
+  const nextQuoteRequest = normalizeQuoteBounds({ ...currentQuoteRequest, ...patch }, patch);
   const boundsChanged = hasOwn(patch, 'lower_bound') || hasOwn(patch, 'upper_bound') || hasOwn(patch, 'quote_field_key');
-  if (!boundsChanged || hasOwn(patch, 'initial_guess') || (isManualInitialGuess && !forceAutoInitialGuess)) return nextQuoteRequest;
-  return {
+  if (hasOwn(patch, 'initial_guess')) return clampInitialGuessQuoteRequest(nextQuoteRequest);
+  if (!boundsChanged || (isManualInitialGuess && !forceAutoInitialGuess)) return clampInitialGuessQuoteRequest(nextQuoteRequest);
+  return clampInitialGuessQuoteRequest({
     ...nextQuoteRequest,
     initial_guess: midpoint(nextQuoteRequest.lower_bound, nextQuoteRequest.upper_bound),
-  };
+  });
 }
 
 function midpoint(lower: unknown, upper: unknown): number | null {
@@ -523,6 +534,173 @@ function midpoint(lower: unknown, upper: unknown): number | null {
     && typeof upper === 'number' && Number.isFinite(upper)
     ? (lower + upper) / 2
     : null;
+}
+
+function normalizeQuoteBounds(
+  quoteRequest: TrySolveQuoteRequest,
+  patch: Partial<TrySolveQuoteRequest>,
+): TrySolveQuoteRequest {
+  const lowerBound = quoteRequest.lower_bound;
+  const upperBound = quoteRequest.upper_bound;
+  if (
+    typeof lowerBound !== 'number'
+    || !Number.isFinite(lowerBound)
+    || typeof upperBound !== 'number'
+    || !Number.isFinite(upperBound)
+    || lowerBound <= upperBound
+  ) {
+    return quoteRequest;
+  }
+  if (hasOwn(patch, 'upper_bound') && !hasOwn(patch, 'lower_bound')) {
+    return { ...quoteRequest, lower_bound: upperBound };
+  }
+  if (hasOwn(patch, 'lower_bound') && !hasOwn(patch, 'upper_bound')) {
+    return { ...quoteRequest, upper_bound: lowerBound };
+  }
+  return { ...quoteRequest, lower_bound: upperBound, upper_bound: lowerBound };
+}
+
+function clampInitialGuessQuoteRequest(quoteRequest: TrySolveQuoteRequest): TrySolveQuoteRequest {
+  const initialGuess = quoteRequest.initial_guess;
+  const lowerBound = quoteRequest.lower_bound;
+  const upperBound = quoteRequest.upper_bound;
+  if (
+    typeof initialGuess !== 'number'
+    || !Number.isFinite(initialGuess)
+    || typeof lowerBound !== 'number'
+    || !Number.isFinite(lowerBound)
+    || typeof upperBound !== 'number'
+    || !Number.isFinite(upperBound)
+  ) {
+    return quoteRequest;
+  }
+  const lower = Math.min(lowerBound, upperBound);
+  const upper = Math.max(lowerBound, upperBound);
+  const clampedGuess = Math.min(upper, Math.max(lower, initialGuess));
+  return clampedGuess === initialGuess
+    ? quoteRequest
+    : { ...quoteRequest, initial_guess: clampedGuess };
+}
+
+function refreshAutoQuoteRange(
+  previousRow: TrySolveRowOut,
+  nextRow: TrySolveRowOut,
+  product: TrySolveProduct | null,
+): TrySolveRowOut {
+  if (!product) return nextRow;
+  const quoteField = product.quote_fields.find((quote) => quote.key === nextRow.quote_request.quote_field_key);
+  if (!quoteField) return nextRow;
+  const nextDefaults = quoteRangeDefaults(nextRow, quoteField);
+  if (!nextDefaults) return nextRow;
+  const previousQuoteField = product.quote_fields.find((quote) => quote.key === previousRow.quote_request.quote_field_key);
+  const previousDefaults = previousQuoteField ? quoteRangeDefaults(previousRow, previousQuoteField) : null;
+  if (!shouldReplaceQuoteRange(previousRow.quote_request, quoteField, previousDefaults)) return nextRow;
+  if (
+    nextRow.quote_request.lower_bound === nextDefaults.lower_bound
+    && nextRow.quote_request.upper_bound === nextDefaults.upper_bound
+    && nextRow.quote_request.initial_guess === nextDefaults.initial_guess
+  ) {
+    return nextRow;
+  }
+  return {
+    ...nextRow,
+    quote_request: {
+      ...nextRow.quote_request,
+      ...nextDefaults,
+    },
+  };
+}
+
+function shouldReplaceQuoteRange(
+  quoteRequest: TrySolveQuoteRequest,
+  quoteField: TrySolveQuoteField,
+  previousDefaults: Pick<TrySolveQuoteRequest, 'lower_bound' | 'upper_bound' | 'initial_guess'> | null,
+): boolean {
+  if (quoteRequest.lower_bound == null || quoteRequest.upper_bound == null) return true;
+  const catalogDefaults = {
+    lower_bound: quoteField.lower_bound,
+    upper_bound: quoteField.upper_bound,
+    initial_guess: quoteField.initial_guess ?? null,
+  };
+  return quoteRangeMatches(quoteRequest, catalogDefaults)
+    || (previousDefaults != null && quoteRangeMatches(quoteRequest, previousDefaults));
+}
+
+function quoteRangeMatches(
+  quoteRequest: TrySolveQuoteRequest,
+  defaults: Pick<TrySolveQuoteRequest, 'lower_bound' | 'upper_bound' | 'initial_guess'>,
+): boolean {
+  const defaultMidpoint = midpoint(defaults.lower_bound, defaults.upper_bound);
+  return quoteRequest.lower_bound === defaults.lower_bound
+    && quoteRequest.upper_bound === defaults.upper_bound
+    && (
+      quoteRequest.initial_guess == null
+      || defaults.initial_guess == null
+      || quoteRequest.initial_guess === defaults.initial_guess
+      || quoteRequest.initial_guess === defaultMidpoint
+    );
+}
+
+function quoteRangeDefaults(
+  row: TrySolveRowOut,
+  quoteField: TrySolveQuoteField,
+): Pick<TrySolveQuoteRequest, 'lower_bound' | 'upper_bound' | 'initial_guess'> | null {
+  if (isReferencePriceQuoteField(quoteField)) {
+    const referencePrice = quoteReferencePrice(row);
+    if (referencePrice != null) {
+      return {
+        lower_bound: cleanRangeNumber(referencePrice * 0.1),
+        upper_bound: cleanRangeNumber(referencePrice * 2),
+        initial_guess: cleanRangeNumber(referencePrice),
+      };
+    }
+  }
+  if (isCouponRateQuoteField(quoteField)) {
+    return {
+      lower_bound: 0.001,
+      upper_bound: 0.5,
+      initial_guess: 0.1,
+    };
+  }
+  return {
+    lower_bound: quoteField.lower_bound,
+    upper_bound: quoteField.upper_bound,
+    initial_guess: quoteField.initial_guess ?? null,
+  };
+}
+
+function isReferencePriceQuoteField(quoteField: TrySolveQuoteField): boolean {
+  const key = quoteField.key.toLowerCase();
+  const path = quoteField.canonical_path.toLowerCase();
+  return key === 'strike' || path === 'strike';
+}
+
+function isCouponRateQuoteField(quoteField: TrySolveQuoteField): boolean {
+  const key = quoteField.key.toLowerCase();
+  const path = quoteField.canonical_path.toLowerCase();
+  return key === 'annualized_coupon'
+    || key === 'coupon_yield'
+    || key === 'range_accrual_rate'
+    || path.endsWith('.ko_rate')
+    || path.endsWith('.coupon_rate')
+    || path === 'range_config.accrual_rate';
+}
+
+function quoteReferencePrice(row: TrySolveRowOut): number | null {
+  const spot = finitePositiveNumber(row.market.spot);
+  if (spot != null) return spot;
+  const initialPrice = finitePositiveNumber(row.fields.initial_price);
+  if (initialPrice != null) return initialPrice;
+  return null;
+}
+
+function finitePositiveNumber(value: unknown): number | null {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+}
+
+function cleanRangeNumber(value: number): number {
+  return Number(value.toPrecision(12));
 }
 
 function updateRowStatusAndDiagnostics(row: TrySolveRowOut, status: string, diagnostics: string[]): TrySolveRowOut {
