@@ -128,6 +128,7 @@ def test_render_empty_rows_is_header_only() -> None:
 # the price-portfolio risk-lens route in favor of run-risk.)
 # Extended at Task 3.4 with the run-backtest routing row (22 rows total).
 # Extended with the run-greeks-landscape routing row (23 rows total).
+# Extended with the asian-fixings routing row (24 rows total).
 OLD_TABLE_ROWS: set[tuple[str, str, str]] = {
     ("Snowball terms or payoff interpretation", "trader", "snowball-term-interpretation"),
     ("Snowball pricing or valuation drivers", "trader", "snowball-pricing"),
@@ -152,6 +153,7 @@ OLD_TABLE_ROWS: set[tuple[str, str, str]] = {
     ("Stress test or scenario analysis of a portfolio", "risk_manager", "run-scenario-test"),
     ("Historical backtest or hedge replay of a portfolio", "risk_manager", "run-backtest"),
     ("Read or run a portfolio Greeks Landscape", "risk_manager", "run-greeks-landscape"),
+    ("Set up or refresh the Asian fixing calendar, or capture a due fixing for an Asian position", "trader", "asian-fixings"),
 }
 
 

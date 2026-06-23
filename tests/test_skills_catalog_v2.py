@@ -74,6 +74,7 @@ def test_all_workflow_domains_have_expected_skills(
             "position-inputs",
             "position-diagnosis",
             "book-position",
+            "asian-fixings",
         },
         "/workflows/products/": {"build-product"},
         "/workflows/try-solve/": {
@@ -146,7 +147,7 @@ def test_legacy_sources_are_empty(skills_backend: FilesystemBackend) -> None:
 def test_trader_total_workflow_catalog(skills_backend: FilesystemBackend) -> None:
     catalog = _persona_catalog(_build_backend(), _source_list(trader_spec(object(), [])))
 
-    assert len(catalog) == 23, f"Expected 23 entries, got {len(catalog)}: {catalog}"  # 22 + pricing-parameter-maintenance
+    assert len(catalog) == 24, f"Expected 24 entries, got {len(catalog)}: {catalog}"  # 22 + pricing-parameter-maintenance + asian-fixings
     assert {
         "position-snapshot",
         "solve-imported-row",
@@ -166,7 +167,7 @@ def test_risk_manager_total_workflow_catalog(
 ) -> None:
     catalog = _persona_catalog(_build_backend(), _source_list(risk_spec(object(), [])))
 
-    assert len(catalog) == 25, f"Expected 25 entries, got {len(catalog)}: {catalog}"
+    assert len(catalog) == 26, f"Expected 26 entries, got {len(catalog)}: {catalog}"  # +asian-fixings (positions domain)
     assert {
         "position-diagnosis",
         "run-risk",

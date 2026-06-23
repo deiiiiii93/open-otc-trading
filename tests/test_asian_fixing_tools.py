@@ -91,3 +91,18 @@ def test_both_tools_registered_in_allowlist():
 
     assert "generate_asian_fixing_schedule" in DEEP_AGENT_TOOL_NAMES
     assert "capture_asian_fixings" in DEEP_AGENT_TOOL_NAMES
+
+
+def test_asian_fixings_skill_is_wellformed():
+    import yaml
+
+    from app.services.deep_agent.skills_paths import WORKFLOWS_DIR
+
+    path = WORKFLOWS_DIR / "positions/asian-fixings/SKILL.md"
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith("---")
+    fm = yaml.safe_load(text.split("---", 2)[1])
+    assert fm["name"] == "asian-fixings"
+    assert fm["domain"] == "positions"
+    assert fm["write_actions"] is True
+    assert len(text) < 4000  # ~500-token body budget

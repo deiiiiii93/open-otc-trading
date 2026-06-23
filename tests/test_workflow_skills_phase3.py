@@ -98,6 +98,7 @@ def test_workflow_sources_are_readable_via_skills_backend() -> None:
         "position-inputs",
         "position-diagnosis",
         "book-position",
+        "asian-fixings",
     }
     assert _names(_list_skills(backend, "/workflows/try-solve/")) == {
         "solve-imported-row",
