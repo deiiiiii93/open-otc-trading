@@ -620,22 +620,8 @@ def _row_to_rfq_draft(
 
     unknown_values = _unknown_candidate_values(
         quote_field.canonical_path,
-        lower_bound=(
-            row.quote_request.lower_bound
-            if row.quote_request.lower_bound is not None
-            else quote_field.lower_bound
-        ),
-        upper_bound=(
-            row.quote_request.upper_bound
-            if row.quote_request.upper_bound is not None
-            else quote_field.upper_bound
-        ),
-        initial_guess=(
-            row.quote_request.initial_guess
-            if row.quote_request.initial_guess is not None
-            else quote_field.initial_guess
-        ),
-        quote_value_mode=row.quote_request.quote_value_mode,
+        quote_request=row.quote_request,
+        quote_field=quote_field,
         reference=reference,
     )
 
@@ -902,30 +888,54 @@ def _scale_moneyness(value: float, reference: float) -> float:
 def _unknown_candidate_values(
     field_path: str,
     *,
-    lower_bound: float | None,
-    upper_bound: float | None,
-    initial_guess: float | None,
-    quote_value_mode: str,
+    quote_request: TrySolveQuoteRequestIn,
+    quote_field: TrySolveQuoteField,
     reference: float,
 ) -> dict[str, float | None]:
-    values = {
-        "lower_bound": lower_bound,
-        "upper_bound": upper_bound,
-        "initial_guess": initial_guess,
+    """Resolve the solver's [lower, upper, guess] in absolute space.
+
+    Source-aware: a *user-supplied* bound/guess (from ``quote_request``) is taken
+    in the units the explicit ``quote_value_mode`` declares — ``percentage`` =>
+    ``value/100 * spot``, otherwise absolute as typed. A *registry default* (from
+    ``quote_field``, omitted by the user) is stored as moneyness and is scaled to
+    the same spot-scaled absolute space the solved term value uses
+    (``_term_price`` -> ``_scale_moneyness``), so a price-like field's default
+    bounds line up with an absolute user guess.
+    """
+    price_like = _is_price_like_unknown(field_path)
+    percentage = (
+        quote_request.quote_value_mode == "percentage" and price_like and reference > 0
+    )
+    user = {
+        "lower_bound": quote_request.lower_bound,
+        "upper_bound": quote_request.upper_bound,
+        "initial_guess": quote_request.initial_guess,
     }
-    if (
-        quote_value_mode == "percentage"
-        and _is_price_like_unknown(field_path)
-        and reference > 0
-    ):
-        return {
-            key: None if value is None else float(value) / 100.0 * reference
-            for key, value in values.items()
-        }
-    return {
-        key: None if value is None else float(value)
-        for key, value in values.items()
+    default = {
+        "lower_bound": quote_field.lower_bound,
+        "upper_bound": quote_field.upper_bound,
+        "initial_guess": quote_field.initial_guess,
     }
+    resolved: dict[str, float | None] = {}
+    for key, user_value in user.items():
+        if user_value is not None:
+            resolved[key] = (
+                float(user_value) / 100.0 * reference
+                if percentage
+                else float(user_value)
+            )
+        else:
+            default_value = default[key]
+            resolved[key] = (
+                None
+                if default_value is None
+                else (
+                    _scale_moneyness(float(default_value), reference)
+                    if price_like
+                    else float(default_value)
+                )
+            )
+    return resolved
 
 
 def _is_price_like_unknown(field_path: str) -> bool:
