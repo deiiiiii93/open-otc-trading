@@ -3163,7 +3163,12 @@ def create_app(
         session: Session = Depends(get_db),
     ):
         """Capture observed prices for any due (past) Asian fixings."""
-        captured = positions_svc.capture_due_asian_fixings(session, position_id)
+        try:
+            captured = positions_svc.capture_due_asian_fixings(
+                session, position_id, portfolio_id=portfolio_id
+            )
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"position_id": position_id, "captured": captured}
 
     @app.post(

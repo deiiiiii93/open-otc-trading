@@ -95,6 +95,17 @@ def test_missing_quote_leaves_null(session):
     assert pos.product_kwargs["observation_records"][0].get("observed_price") is None
 
 
+def test_capture_rejects_portfolio_mismatch(session):
+    import pytest
+
+    inst = _instrument(session)
+    pos = _asian(session, inst, [{"observation_date": "2024-06-03", "weight": None}])
+    with pytest.raises(LookupError):
+        capture_due_asian_fixings(
+            session, pos.id, portfolio_id=pos.portfolio_id + 999
+        )
+
+
 def test_booking_eager_captures_already_past_fixings(session):
     # Booking a seasoned position must capture its already-past fixings so it does
     # not carry uncaptured (priceless) past observations into pricing.

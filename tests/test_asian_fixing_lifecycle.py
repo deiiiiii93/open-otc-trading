@@ -154,3 +154,9 @@ def test_capture_asian_fixings_endpoint(client, session):
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["captured"] == 1
+
+    # A mismatched portfolio id must be rejected, not silently capture.
+    mismatch = client.post(
+        f"/api/portfolios/{portfolio_id + 999}/positions/{pos_id}/asian-fixings/capture"
+    )
+    assert mismatch.status_code == 404, mismatch.text

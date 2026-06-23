@@ -735,7 +735,11 @@ def generate_asian_fixing_schedule(
 
 
 def capture_due_asian_fixings(
-    session: Session, position_id: int, *, as_of: date | None = None
+    session: Session,
+    position_id: int,
+    *,
+    portfolio_id: int | None = None,
+    as_of: date | None = None,
 ) -> int:
     """Capture observed prices for past Asian fixings (immutable snapshots).
 
@@ -753,7 +757,13 @@ def capture_due_asian_fixings(
 
     as_of = as_of or datetime.utcnow().date()
     position = session.get(Position, position_id)
-    if position is None or position.underlying_id is None:
+    if position is None:
+        if portfolio_id is not None:
+            raise LookupError("Position not found")
+        return 0
+    if portfolio_id is not None and position.portfolio_id != portfolio_id:
+        raise LookupError("Position not found in portfolio")
+    if position.underlying_id is None:
         return 0
     kwargs = dict(position.product_kwargs or {})
     records = kwargs.get("observation_records")
