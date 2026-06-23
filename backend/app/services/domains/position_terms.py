@@ -136,6 +136,12 @@ def upsert_position_term_rows(session: Session, position: Position) -> None:
             )
         )
         _replace_asian_schedule(session, position.id, records)
+        # Snapshot any already-past fixings now (a session is in hand) so a
+        # seasoned/backdated booking never carries uncaptured past observations
+        # into pricing.
+        from .positions import capture_due_asian_fixings
+
+        capture_due_asian_fixings(session, position.id)
 
     if product_type in {"snowball", "snowballoption"}:
         session.merge(
@@ -782,6 +788,7 @@ def _replace_asian_schedule(
                 position_id=position_id,
                 observation_date=obs_date,
                 sequence=index,
+                weight=_float_or_none(record.get("weight")),
             )
         )
 

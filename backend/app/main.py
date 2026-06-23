@@ -3133,6 +3133,45 @@ def create_app(
         return update.event
 
     @app.post(
+        "/api/portfolios/{portfolio_id}/positions/{position_id}/asian-fixing-schedule",
+    )
+    def generate_asian_fixing_schedule(
+        portfolio_id: int,
+        position_id: int,
+        session: Session = Depends(get_db),
+    ):
+        """Generate `fixing` lifecycle events from the Asian averaging schedule."""
+        try:
+            count = positions_svc.generate_asian_fixing_schedule(
+                portfolio_id=portfolio_id,
+                position_id=position_id,
+                actor="desk_user",
+                session=session,
+            )
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"position_id": position_id, "events_created": count}
+
+    @app.post(
+        "/api/portfolios/{portfolio_id}/positions/{position_id}/asian-fixings/capture",
+    )
+    def capture_asian_fixings(
+        portfolio_id: int,
+        position_id: int,
+        session: Session = Depends(get_db),
+    ):
+        """Capture observed prices for any due (past) Asian fixings."""
+        try:
+            captured = positions_svc.capture_due_asian_fixings(
+                session, position_id, portfolio_id=portfolio_id
+            )
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"position_id": position_id, "captured": captured}
+
+    @app.post(
         "/api/portfolios/{portfolio_id}/positions/{position_id}"
         "/lifecycle-events/{event_id}/cancel",
         response_model=PositionLifecycleEventOut,

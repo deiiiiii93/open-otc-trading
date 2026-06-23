@@ -104,6 +104,71 @@ def periodic_observation_dates(
     return dates
 
 
+def asian_observation_records(
+    *,
+    start: date,
+    maturity_years: float,
+    frequency: str,
+    weights: list[float] | None = None,
+) -> list[dict]:
+    """Calendar-accurate averaging schedule for an Asian option.
+
+    DAILY/WEEKLY step in calendar days; MONTHLY/QUARTERLY/SEMI_ANNUAL step in
+    months (one period after ``start`` through maturity, excluding the start
+    date). Every date is rolled forward to the next SSE business day. Unlike a
+    flat 252-per-year count, DAILY reflects the actual business-day calendar.
+
+    Returns records ``{observation_date, sequence, weight}`` (1-based sequence;
+    ``weight`` is ``None`` for a uniform schedule). When ``weights`` is given its
+    length must match the generated observation count.
+    """
+    freq = frequency.upper()
+    end = add_months(start, round(maturity_years * 12))
+    if freq == "DAILY":
+        dates = china_sse_business_days(start + timedelta(days=1), end)
+    elif freq == "WEEKLY":
+        dates = []
+        d = start + timedelta(days=7)
+        while d <= end:
+            dates.append(roll_to_business_day(d))
+            d += timedelta(days=7)
+    elif freq in FREQUENCY_MONTHS:
+        step = FREQUENCY_MONTHS[freq]
+        dates = periodic_observation_dates(
+            start=start,
+            maturity_years=maturity_years,
+            lockup_months=step,
+            months_step=step,
+        )
+    else:
+        raise ValueError(f"unsupported averaging frequency: {frequency!r}")
+
+    # Business-day rolling (esp. weekly across long SSE closures) can land two
+    # anchors on the same reopened day. Observation dates must stay unique because
+    # asian_averaging_dates is keyed by (position_id, observation_date).
+    seen: set = set()
+    deduped: list[date] = []
+    for d in dates:
+        if d not in seen:
+            seen.add(d)
+            deduped.append(d)
+    dates = deduped
+
+    if weights is not None and len(weights) != len(dates):
+        raise ValueError(
+            f"weights length {len(weights)} does not match observation count {len(dates)}"
+        )
+
+    return [
+        {
+            "observation_date": d,
+            "sequence": i + 1,
+            "weight": (weights[i] if weights is not None else None),
+        }
+        for i, d in enumerate(dates)
+    ]
+
+
 def monthly_observation_dates(
     *, start: date, maturity_years: float, lockup_months: int, day_of_month: int | None = None
 ) -> list[date]:

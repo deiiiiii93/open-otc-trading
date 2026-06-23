@@ -29,6 +29,7 @@ def test_workflow_sources_are_readable(skills_backend: FilesystemBackend) -> Non
         "position-inputs",
         "position-diagnosis",
         "book-position",
+        "asian-fixings",
     }
     assert _names(_list_skills(skills_backend, "/workflows/risk/")) == {
         "run-risk",

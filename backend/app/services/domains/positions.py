@@ -43,6 +43,7 @@ LIFECYCLE_EVENT_TARGETS: dict[str, str | None] = {
     "autocall": "closed",
     "coupon_lock": None,
     "memory_coupon": None,
+    "fixing": None,
     "custom": None,
 }
 
@@ -84,6 +85,7 @@ PRODUCT_LIFECYCLE_EVENTS: dict[str, set[str]] = {
         "maturity",
         "custom",
     },
+    "AsianOption": {"close", "settle", "fixing", "custom"},
 }
 
 
@@ -636,6 +638,198 @@ def create_lifecycle_event(
         sess.refresh(event)
         sess.refresh(position)
         return PositionLifecycleUpdate(position=position, event=event)
+
+
+def _as_date(value: Any) -> date | None:
+    """Coerce a date or ISO date string to a date (None if unparseable)."""
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            return date.fromisoformat(value.strip()[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def generate_asian_fixing_schedule(
+    *,
+    position_id: int | None = None,
+    source_trade_id: str | None = None,
+    portfolio_id: int | None = None,
+    actor: str = "agent",
+    session: Session | None = None,
+) -> int:
+    """Generate informational ``fixing`` lifecycle events for an Asian option.
+
+    Derives the SSE-business-day averaging schedule from the position's
+    ``averaging_frequency`` + maturity + trade start date and records one
+    ``fixing`` event per observation (each carrying observation_date + sequence).
+    Returns the number of events created. Callers regenerating a schedule should
+    cancel prior ``fixing`` events first.
+    """
+    from app.services.domains import schedules
+
+    with _session_scope(session) as sess:
+        _, position = _resolve_lifecycle_position(
+            sess,
+            position_id=position_id,
+            source_trade_id=source_trade_id,
+            portfolio_id=portfolio_id,
+        )
+        if (position.product_type or "") != "AsianOption":
+            raise ValueError(
+                "generate_asian_fixing_schedule requires an AsianOption position"
+            )
+        kwargs = position.product_kwargs or {}
+        frequency = str(kwargs.get("averaging_frequency") or "MONTHLY")
+        maturity = kwargs.get("maturity_years") or kwargs.get("maturity")
+        start = _as_date(
+            kwargs.get("trade_start_date")
+            or kwargs.get("start_date")
+            or kwargs.get("initial_date")
+        )
+        if maturity is None or start is None:
+            raise ValueError(
+                "Asian fixing schedule needs maturity_years and a trade start date"
+            )
+        records = schedules.asian_observation_records(
+            start=start, maturity_years=float(maturity), frequency=frequency
+        )
+        target_id = position.id
+
+        # Serialize concurrent generators for this position: take a row lock
+        # before the read-cancel-create sequence so two simultaneous POSTs cannot
+        # both see "no active events" and each insert a full schedule. Enforced on
+        # Postgres; on SQLite, writes already serialize at commit for this
+        # single-desk deployment.
+        sess.query(Position).filter(Position.id == target_id).with_for_update().all()
+
+        # Idempotent regeneration: cancel any existing active fixing events so a
+        # retried/double POST does not duplicate the schedule.
+        existing = (
+            sess.query(PositionLifecycleEvent)
+            .filter_by(position_id=target_id, event_type="fixing")
+            .filter(PositionLifecycleEvent.cancelled_at.is_(None))
+            .all()
+        )
+        for stale in existing:
+            stale.cancelled_at = datetime.utcnow()
+            stale.cancelled_by = actor
+            stale.cancellation_reason = "regenerated"
+
+        created = 0
+        for rec in records:
+            create_lifecycle_event(
+                position_id=target_id,
+                event_type="fixing",
+                event_data={
+                    "observation_date": rec["observation_date"].isoformat(),
+                    "sequence": rec["sequence"],
+                },
+                actor=actor,
+                session=sess,
+            )
+            created += 1
+        return created
+
+
+def _fixing_close(session: Session, instrument_id: int, on: date) -> float | None:
+    """The official close print for ``on`` (None if absent).
+
+    A fixing must be the close ON its observation date — never an intraday/open
+    quote and never a stale earlier-dated print. Returns the latest ``close``
+    quote whose ``as_of`` falls within that calendar day.
+    """
+    from app.models import MarketQuote
+
+    day_start = datetime.combine(on, datetime.min.time())
+    day_end = datetime.combine(on, datetime.max.time())
+    quote = (
+        session.query(MarketQuote)
+        .filter(
+            MarketQuote.instrument_id == instrument_id,
+            MarketQuote.price_type == "close",
+            MarketQuote.as_of >= day_start,
+            MarketQuote.as_of <= day_end,
+        )
+        .order_by(MarketQuote.as_of.desc(), MarketQuote.id.desc())
+        .first()
+    )
+    return float(quote.price) if quote is not None else None
+
+
+def capture_due_asian_fixings(
+    session: Session | None,
+    position_id: int,
+    *,
+    portfolio_id: int | None = None,
+    as_of: date | None = None,
+) -> int:
+    """Capture observed prices for past Asian fixings (immutable snapshots).
+
+    For each ``observation_records`` entry whose ``observation_date <= as_of``
+    (default today) and whose ``observed_price`` is still null, write the
+    ``MarketQuote`` close as-of that date for the position's underlying
+    instrument. Already-captured prices are never overwritten, so the same call
+    is idempotent and, run across all Asian positions, serves as the backfill.
+
+    Pass ``session=None`` (the stateless agent-tool path) to have this function
+    own its unit of work: it opens a session and commits the snapshot. When a
+    session is injected (HTTP request, booking eager-capture), the caller owns
+    the transaction and this never commits.
+
+    Returns the number of fixings newly captured.
+    """
+    from sqlalchemy.orm.attributes import flag_modified
+
+    as_of = as_of or datetime.utcnow().date()
+    with _session_scope(session) as sess:
+        # Lock the position row so two concurrent captures can't both read an
+        # uncaptured fixing and clobber each other's immutable snapshot.
+        position = (
+            sess.query(Position)
+            .filter(Position.id == position_id)
+            .with_for_update()
+            .one_or_none()
+        )
+        if position is None:
+            if portfolio_id is not None:
+                raise LookupError("Position not found")
+            return 0
+        if portfolio_id is not None and position.portfolio_id != portfolio_id:
+            raise LookupError("Position not found in portfolio")
+        if position.underlying_id is None:
+            return 0
+        kwargs = dict(position.product_kwargs or {})
+        records = kwargs.get("observation_records")
+        if not isinstance(records, list):
+            return 0
+
+        captured = 0
+        new_records: list[Any] = []
+        for record in records:
+            if isinstance(record, dict):
+                record = dict(record)
+                if record.get("observed_price") is None:
+                    obs = _as_date(record.get("observation_date"))
+                    if obs is not None and obs <= as_of:
+                        price = _fixing_close(sess, position.underlying_id, obs)
+                        if price is not None:
+                            record["observed_price"] = price
+                            captured += 1
+            new_records.append(record)
+
+        if captured:
+            kwargs["observation_records"] = new_records
+            position.product_kwargs = kwargs
+            flag_modified(position, "product_kwargs")
+            sess.flush()
+        # Self-scoped path owns the transaction → persist. Injected callers keep
+        # transaction ownership and must not be committed here.
+        if session is None:
+            sess.commit()
+        return captured
 
 
 def cancel_lifecycle_event(

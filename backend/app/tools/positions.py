@@ -259,6 +259,29 @@ class CancelLifecycleEventInput(BaseModel):
     reason: str | None = Field(default=None, description="Why the event is cancelled.")
 
 
+class GenerateAsianFixingScheduleInput(BaseModel):
+    position_id: int | None = Field(
+        default=None, description="Position.id of the Asian option."
+    )
+    source_trade_id: str | None = Field(
+        default=None, description="Optional source trade id guard."
+    )
+    portfolio_id: int | None = Field(
+        default=None, description="Optional portfolio guard."
+    )
+
+
+class CaptureAsianFixingsInput(BaseModel):
+    position_id: int = Field(description="Position.id of the Asian option.")
+    portfolio_id: int | None = Field(
+        default=None, description="Optional portfolio guard; raises if it mismatches."
+    )
+    as_of: date | str | None = Field(
+        default=None,
+        description="Capture fixings on/before this date (ISO date; default today).",
+    )
+
+
 def _parse_date(value: date | str | None) -> date | None:
     if value is None:
         return None
@@ -851,6 +874,47 @@ def cancel_lifecycle_event_tool(
         actor="agent",
     )
     return _shape_lifecycle_update(update)
+
+
+@capability_gated(group=ToolGroup.DOMAIN_WRITE)
+@tool(
+    "generate_asian_fixing_schedule",
+    args_schema=GenerateAsianFixingScheduleInput,
+)
+def generate_asian_fixing_schedule_tool(
+    position_id: int | None = None,
+    source_trade_id: str | None = None,
+    portfolio_id: int | None = None,
+) -> dict[str, Any]:
+    """Plant informational `fixing` lifecycle events from an Asian option's
+    averaging schedule. Idempotent: re-running cancels prior active fixing
+    events first, so it is safe to refresh after a reschedule."""
+    count = positions_svc.generate_asian_fixing_schedule(
+        position_id=position_id,
+        source_trade_id=source_trade_id,
+        portfolio_id=portfolio_id,
+        actor="agent",
+    )
+    return {"position_id": position_id, "events_created": count}
+
+
+@capability_gated(group=ToolGroup.DOMAIN_WRITE)
+@tool("capture_asian_fixings", args_schema=CaptureAsianFixingsInput)
+def capture_asian_fixings_tool(
+    position_id: int,
+    portfolio_id: int | None = None,
+    as_of: date | str | None = None,
+) -> dict[str, Any]:
+    """Snapshot the close price for every due (past, uncaptured) Asian fixing
+    into the position's observation records. Idempotent; never overwrites an
+    already-captured fixing."""
+    captured = positions_svc.capture_due_asian_fixings(
+        None,
+        position_id,
+        portfolio_id=portfolio_id,
+        as_of=_parse_date(as_of),
+    )
+    return {"position_id": position_id, "captured": captured}
 
 
 @capability_gated(group=ToolGroup.DOMAIN_WRITE)
