@@ -148,7 +148,7 @@ def leaderboard(
         run = (
             session.query(ArenaRun)
             .filter(ArenaRun.status == "completed")
-            .order_by(ArenaRun.created_at.desc())
+            .order_by(ArenaRun.created_at.desc(), ArenaRun.id.desc())
             .first()
         )
         if run is None:
