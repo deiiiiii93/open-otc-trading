@@ -62,6 +62,7 @@ class TaskKind(str, Enum):
     REPORT_JOB = "report_job"
     HEDGE_LOAD = "hedge_instrument_load"
     BACKTEST = "backtest"
+    ARENA_RUN = "arena_run"
 
 
 class TaskStatus(str, Enum):
