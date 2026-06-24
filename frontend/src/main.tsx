@@ -35,6 +35,7 @@ import { SkillsLive } from './routes/Skills.live';
 import { ScenarioTestLive } from './routes/ScenarioTest';
 import { BacktestLive } from './routes/Backtest';
 import { TracingLive } from './routes/Tracing.live';
+import { ArenaLive } from './routes/Arena.live';
 import { fetchTracingConfig } from './api/client';
 import { openTraceTarget } from './lib/tracing';
 import type { TracingConfig } from './types';
@@ -58,6 +59,7 @@ const navItems = [
   { route: 'reports' as const,   label: 'Reports' },
   { route: 'skills' as const,    label: 'Skills' },
   { route: 'tracing' as const,   label: 'Tracing' },
+  { route: 'arena' as const,     label: 'Arena' },
   { route: 'client' as const,    label: 'Client RFQ' },
 ];
 
@@ -311,6 +313,7 @@ function App() {
         {route === 'reports'   && <ReportsLive onPageContextChange={handlePageContextChange} />}
         {route === 'skills'    && <SkillsLive onPageContextChange={handlePageContextChange} />}
         {route === 'tracing'   && <TracingLive threadId={traceThreadId} />}
+        {route === 'arena'     && <ArenaLive />}
         {route === 'client'    && <ClientRfqLive onPageContextChange={handlePageContextChange} />}
       </AppShell>
       <CommandPalette

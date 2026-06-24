@@ -19,7 +19,8 @@ export type Route =
   | 'hedging'
   | 'instruments'
   | 'skills'
-  | 'tracing';
+  | 'tracing'
+  | 'arena';
 
 export type Thread = {
   id: number;

@@ -1,0 +1,246 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Button } from '../components/Button';
+import { Empty } from '../components/Empty';
+import {
+  getArenaLeaderboard,
+  getArenaRun,
+  getMatchTranscript,
+  listArenaModels,
+  listArenaRuns,
+  type ArenaLeaderboardRow,
+  type ArenaMatchSummary,
+  type ArenaModel,
+  type ArenaRunDetail,
+  type ArenaRunSummary,
+} from '../lib/arenaApi';
+import './Arena.css';
+
+function statusClass(status: string): string {
+  if (status === 'completed') return 'wl-arena__status--completed';
+  if (status === 'failed') return 'wl-arena__status--failed';
+  if (status === 'running') return 'wl-arena__status--running';
+  return '';
+}
+
+function fmtScore(v: number | null): string {
+  if (v == null) return '—';
+  return v.toFixed(3);
+}
+
+function fmtDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
+
+function modelDisplayName(modelId: string, models: ArenaModel[]): string {
+  return models.find((m) => m.slug === modelId)?.display_name ?? modelId;
+}
+
+export function ArenaLive() {
+  const [leaderboard, setLeaderboard] = useState<ArenaLeaderboardRow[]>([]);
+  const [runs, setRuns] = useState<ArenaRunSummary[]>([]);
+  const [models, setModels] = useState<ArenaModel[]>([]);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [runDetail, setRunDetail] = useState<ArenaRunDetail | null>(null);
+  const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState<unknown | null>(null);
+  const [transcriptError, setTranscriptError] = useState<string | null>(null);
+  const [loadingTranscript, setLoadingTranscript] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    setError(null);
+    Promise.all([
+      listArenaRuns(),
+      getArenaLeaderboard(),
+      listArenaModels(),
+    ])
+      .then(([runsResp, lbResp, modelsResp]) => {
+        setRuns(runsResp.runs);
+        setLeaderboard(lbResp.rows);
+        setModels(modelsResp.models);
+      })
+      .catch((e: unknown) => setError(String(e)));
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const selectRun = useCallback((runId: string) => {
+    setSelectedRunId(runId);
+    setRunDetail(null);
+    setSelectedMatchId(null);
+    setTranscript(null);
+    setTranscriptError(null);
+    getArenaRun(runId)
+      .then(setRunDetail)
+      .catch((e: unknown) => setError(String(e)));
+  }, []);
+
+  const selectMatch = useCallback((match: ArenaMatchSummary) => {
+    setSelectedMatchId(match.id);
+    setTranscript(null);
+    setTranscriptError(null);
+    setLoadingTranscript(true);
+    getMatchTranscript(match.id)
+      .then((t) => { setTranscript(t); })
+      .catch((e: unknown) => { setTranscriptError(String(e)); })
+      .finally(() => setLoadingTranscript(false));
+  }, []);
+
+  return (
+    <div className="wl-arena__workspace">
+      {error && (
+        <div role="alert" style={{ color: 'var(--neg)', padding: 'var(--gap-2) var(--gap-3)' }}>
+          {error}
+        </div>
+      )}
+
+      {/* Leaderboard */}
+      <div className="wl-arena__panel">
+        <div className="wl-arena__section-head">
+          <span className="wl-arena__eyebrow">Leaderboard</span>
+          <Button variant="ghost" onClick={refresh}>Refresh</Button>
+        </div>
+        {leaderboard.length === 0 ? (
+          <Empty message="No leaderboard data yet — run an arena evaluation to populate scores." />
+        ) : (
+          <table className="wl-arena__table" aria-label="Arena leaderboard">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>Avg Total</th>
+                <th>Avg Objective</th>
+                <th>Matches</th>
+              </tr>
+            </thead>
+            <tbody>
+              {leaderboard.map((row) => (
+                <tr key={row.model_id}>
+                  <td>{modelDisplayName(row.model_id, models)}</td>
+                  <td>{fmtScore(row.avg_total)}</td>
+                  <td>{fmtScore(row.avg_objective)}</td>
+                  <td>{row.matches}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Run picker + detail */}
+      <div className="wl-arena__two-col">
+        <div className="wl-arena__panel">
+          <div className="wl-arena__section-head">
+            <span className="wl-arena__eyebrow">Runs</span>
+          </div>
+          {runs.length === 0 ? (
+            <Empty message="No arena runs yet." />
+          ) : (
+            <div className="wl-arena__run-list">
+              {runs.map((run) => (
+                <button
+                  key={run.id}
+                  type="button"
+                  className={`wl-arena__run-item${run.id === selectedRunId ? ' is-active' : ''}`}
+                  onClick={() => selectRun(run.id)}
+                >
+                  <span className="wl-arena__run-id">{run.id.slice(0, 8)}</span>
+                  <span className={`wl-arena__status ${statusClass(run.status)}`}>
+                    {run.status}
+                  </span>
+                  <span className="wl-arena__run-meta">{fmtDate(run.created_at)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Run detail: match grid */}
+        <div>
+          {runDetail ? (
+            <div className="wl-arena__panel">
+              <div className="wl-arena__section-head">
+                <span className="wl-arena__eyebrow">
+                  Matches — run {selectedRunId?.slice(0, 8)}
+                </span>
+                <span className={`wl-arena__status ${statusClass(runDetail.run.status)}`}>
+                  {runDetail.run.status}
+                </span>
+              </div>
+              {runDetail.matches.length === 0 ? (
+                <Empty message="No matches in this run." />
+              ) : (
+                <div
+                  className="wl-arena__match-grid"
+                  style={{
+                    gridTemplateColumns: `repeat(auto-fill, minmax(200px, 1fr))`,
+                  }}
+                >
+                  {runDetail.matches.map((match) => (
+                    <button
+                      key={match.id}
+                      type="button"
+                      className={`wl-arena__match-cell${match.id === selectedMatchId ? ' is-active' : ''}`}
+                      onClick={() => selectMatch(match)}
+                    >
+                      <span className="wl-arena__match-title">
+                        {modelDisplayName(match.model_id, models)}
+                      </span>
+                      <span className="wl-arena__match-title" style={{ fontWeight: 'normal', color: 'var(--ink-2)' }}>
+                        {match.workflow_id}
+                      </span>
+                      <span className={`wl-arena__status ${statusClass(match.status)}`}>
+                        {match.status}
+                      </span>
+                      <span className="wl-arena__match-score">
+                        Total: {fmtScore(match.total_score)}
+                        {' · '}
+                        Obj: {fmtScore(match.objective_score)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : selectedRunId ? (
+            <div className="wl-arena__panel" style={{ padding: 'var(--gap-3)' }}>
+              <span style={{ color: 'var(--ink-2)', fontSize: 'var(--type-small-size)' }}>
+                Loading run detail…
+              </span>
+            </div>
+          ) : null}
+
+          {/* Transcript drill-down */}
+          {selectedMatchId && (
+            <div className="wl-arena__transcript" style={{ marginTop: 'var(--gap-3)' }}>
+              <div className="wl-arena__transcript-head">
+                <span className="wl-arena__transcript-title">Transcript</span>
+                <Button variant="ghost" onClick={() => { setSelectedMatchId(null); setTranscript(null); }}>
+                  Close
+                </Button>
+              </div>
+              {loadingTranscript && (
+                <span style={{ color: 'var(--ink-2)', fontSize: 'var(--type-small-size)' }}>
+                  Loading transcript…
+                </span>
+              )}
+              {transcriptError && (
+                <div role="alert" style={{ color: 'var(--neg)', fontSize: 'var(--type-small-size)' }}>
+                  {transcriptError}
+                </div>
+              )}
+              {transcript != null && !loadingTranscript && (
+                <pre className="wl-arena__transcript-body">
+                  {JSON.stringify(transcript, null, 2)}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
