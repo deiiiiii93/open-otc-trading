@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from langchain_openai import ChatOpenAI
 
-from backend.app.services.arena.models import ArenaModel
+from app.services.arena.models import ArenaModel
 
 ZENMUX_BASE_URL = "https://zenmux.ai/api/v1"
 

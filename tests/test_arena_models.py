@@ -12,30 +12,30 @@ from dataclasses import dataclass
 
 
 def test_canonical_slug_by_slug():
-    from backend.app.services.arena.models import canonical_model_id
+    from app.services.arena.models import canonical_model_id
     assert canonical_model_id("gpt-5-5") == "gpt-5-5"
 
 
 def test_canonical_slug_by_zenmux_name():
-    from backend.app.services.arena.models import canonical_model_id
+    from app.services.arena.models import canonical_model_id
     assert canonical_model_id("openai/gpt-5.5") == "gpt-5-5"
 
 
 def test_canonical_unknown_raises_key_error():
-    from backend.app.services.arena.models import canonical_model_id
+    from app.services.arena.models import canonical_model_id
     with pytest.raises(KeyError):
         canonical_model_id("completely-unknown-model-xyz")
 
 
 def test_get_model_by_slug():
-    from backend.app.services.arena.models import get_model
+    from app.services.arena.models import get_model
     m = get_model("gpt-5-5")
     assert m.slug == "gpt-5-5"
     assert m.zenmux_name == "openai/gpt-5.5"
 
 
 def test_get_model_by_zenmux_name():
-    from backend.app.services.arena.models import get_model
+    from app.services.arena.models import get_model
     m = get_model("openai/gpt-5.5")
     assert m.slug == "gpt-5-5"
 
@@ -46,7 +46,7 @@ def test_get_model_by_zenmux_name():
 
 
 def test_duplicate_slug_raises():
-    from backend.app.services.arena.models import ArenaModel, _index_models
+    from app.services.arena.models import ArenaModel, _index_models
     models = [
         ArenaModel("dup-slug", "vendor/a", "Model A", {"temperature": 0, "max_tokens": 4096}),
         ArenaModel("dup-slug", "vendor/b", "Model B", {"temperature": 0, "max_tokens": 4096}),
@@ -56,7 +56,7 @@ def test_duplicate_slug_raises():
 
 
 def test_duplicate_zenmux_name_raises():
-    from backend.app.services.arena.models import ArenaModel, _index_models
+    from app.services.arena.models import ArenaModel, _index_models
     models = [
         ArenaModel("slug-a", "vendor/same", "Model A", {"temperature": 0, "max_tokens": 4096}),
         ArenaModel("slug-b", "vendor/same", "Model B", {"temperature": 0, "max_tokens": 4096}),
@@ -71,20 +71,20 @@ def test_duplicate_zenmux_name_raises():
 
 
 def test_validate_model_ids_unknown_raises():
-    from backend.app.services.arena.models import validate_model_ids
+    from app.services.arena.models import validate_model_ids
     with pytest.raises(ValueError, match="nope"):
         validate_model_ids(["nope"])
 
 
 def test_validate_model_ids_canonicalizes():
-    from backend.app.services.arena.models import validate_model_ids
+    from app.services.arena.models import validate_model_ids
     # Both slug and zenmux_name for the same model → both map to the same slug
     result = validate_model_ids(["gpt-5-5", "openai/gpt-5.5"])
     assert result == ["gpt-5-5", "gpt-5-5"]
 
 
 def test_validate_model_ids_valid_list():
-    from backend.app.services.arena.models import validate_model_ids, CANDIDATE_MODELS
+    from app.services.arena.models import validate_model_ids, CANDIDATE_MODELS
     slugs = [m.slug for m in CANDIDATE_MODELS]
     result = validate_model_ids(slugs)
     assert result == slugs
@@ -96,8 +96,8 @@ def test_validate_model_ids_valid_list():
 
 
 def test_build_zenmux_chat_model_and_base_url():
-    from backend.app.services.arena.models import get_model
-    from backend.app.services.arena.channel import build_zenmux_chat
+    from app.services.arena.models import get_model
+    from app.services.arena.channel import build_zenmux_chat
 
     model = get_model("gpt-5-5")
     chat = build_zenmux_chat(model, api_key="test")
@@ -110,8 +110,8 @@ def test_build_zenmux_chat_model_and_base_url():
 
 
 def test_build_zenmux_chat_defaults_from_config():
-    from backend.app.services.arena.models import get_model
-    from backend.app.services.arena.channel import build_zenmux_chat
+    from app.services.arena.models import get_model
+    from app.services.arena.channel import build_zenmux_chat
 
     model = get_model("gpt-5-5")
     chat = build_zenmux_chat(model, api_key="test")
@@ -121,8 +121,8 @@ def test_build_zenmux_chat_defaults_from_config():
 
 
 def test_build_zenmux_chat_override_temperature():
-    from backend.app.services.arena.models import get_model
-    from backend.app.services.arena.channel import build_zenmux_chat
+    from app.services.arena.models import get_model
+    from app.services.arena.channel import build_zenmux_chat
 
     model = get_model("gpt-5-5")
     chat = build_zenmux_chat(model, temperature=0.7, api_key="test")
@@ -131,8 +131,8 @@ def test_build_zenmux_chat_override_temperature():
 
 
 def test_build_zenmux_chat_override_max_tokens():
-    from backend.app.services.arena.models import get_model
-    from backend.app.services.arena.channel import build_zenmux_chat
+    from app.services.arena.models import get_model
+    from app.services.arena.channel import build_zenmux_chat
 
     model = get_model("gpt-5-5")
     chat = build_zenmux_chat(model, max_tokens=1024, api_key="test")
