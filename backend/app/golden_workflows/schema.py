@@ -68,7 +68,7 @@ class _ToolResultPath(BaseModel):
     equals: Any | None = None
     gte: float | None = None
     lte: float | None = None
-    is_not_null: bool | None = None
+    is_not_null: Literal[True] | None = None
 
     @model_validator(mode="after")
     def _exactly_one_comparator(self) -> "_ToolResultPath":
