@@ -151,6 +151,13 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
                 }
                 if "valuation_date" not in extra:
                     extra["valuation_date"] = datetime.now(tz=timezone.utc)
+                elif isinstance(extra["valuation_date"], str):
+                    # Parse ISO date/datetime strings to datetime objects
+                    vd = extra["valuation_date"]
+                    if len(vd) == 10:  # "YYYY-MM-DD"
+                        extra["valuation_date"] = datetime.strptime(vd, "%Y-%m-%d")
+                    else:
+                        extra["valuation_date"] = datetime.fromisoformat(vd)
                 obj = models.PricingParameterProfile(**extra)
 
             elif ns == "positions":
@@ -165,10 +172,17 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
 
             elif ns == "risk_runs":
                 portfolio_id = _parent_id("portfolios", row["portfolio"])
+                # Only pass columns that exist on the RiskRun model; the fixture
+                # may carry descriptive fields like "as_of" that are not real ORM columns.
+                _valid_risk_run_cols = {
+                    "method", "status", "metrics", "scenario_cells",
+                    "resolved_position_ids", "pricing_parameter_profile_id",
+                    "engine_config_id", "market_snapshot_id",
+                }
                 extra = {
                     k: v
                     for k, v in row.items()
-                    if k not in ("alias", "portfolio")
+                    if k not in ("alias", "portfolio") and k in _valid_risk_run_cols
                 }
                 obj = models.RiskRun(portfolio_id=portfolio_id, **extra)
 
