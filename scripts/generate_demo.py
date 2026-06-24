@@ -55,6 +55,10 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.services.demo.composition import CompositionBundle
 
 # ---------------------------------------------------------------------------
 # Make ``from app.*`` importable when running the script directly (not via
@@ -121,10 +125,13 @@ def _resolve_transcript(args: argparse.Namespace):
     return loaded, transcript, source
 
 
-def _render(bundle, out_dir: Path) -> None:
+def _render(bundle: "CompositionBundle", out_dir: Path) -> None:
     """Drive the hyperframes CLI to TTS, render HTML, and encode MP4.
 
     This is the heavy/external stage that runs only when ``DEMO_RENDER=1``.
+    The ``bundle`` parameter is passed for context/future use; the hyperframes
+    CLI reads the already-written ``section_plan.json`` and
+    ``narrator_scripts.json`` files from ``out_dir`` to drive rendering.
     Raises ``RuntimeError`` naming the failing stage so the caller can exit
     with an appropriate code and message.
 
