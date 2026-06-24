@@ -77,6 +77,24 @@ def _dedup_ordered(seq: list[str]) -> list[str]:
     return out
 
 
+def _harvest_task_ids(tool_results: list[dict]) -> list[str]:
+    """Extract task_id from successful tool results.
+
+    Skips results with a truthy 'error' key and only harvests task_id
+    from content that is a dict.
+    """
+    ids = []
+    for r in tool_results:
+        if r.get("error"):
+            continue
+        content = r.get("content")
+        if isinstance(content, dict):
+            tid = content.get("task_id")
+            if tid:
+                ids.append(str(tid))
+    return ids
+
+
 # ---------------------------------------------------------------------------
 # Public extraction functions
 # ---------------------------------------------------------------------------
@@ -117,9 +135,8 @@ def extract_step_from_events(turn_events: dict) -> MatchStep:
     response_text: str = turn_events.get("response_text") or ""
     errors: list = list(turn_events.get("errors") or [])
 
-    # Normalise tool_results and harvest task_ids
+    # Normalise tool_results
     normalised_results: list[dict] = []
-    task_ids: list[str] = []
 
     for r in raw_tool_results:
         raw_content = r.get("content")
@@ -134,11 +151,8 @@ def extract_step_from_events(turn_events: dict) -> MatchStep:
             norm_r["error"] = error
         normalised_results.append(norm_r)
 
-        # Harvest task_id only from successful (non-error) results
-        if not error:
-            tid = norm_content.get("task_id")
-            if tid:
-                task_ids.append(str(tid))
+    # Harvest task_ids from normalised results
+    task_ids = _harvest_task_ids(normalised_results)
 
     skills_routed = _dedup_ordered(skills_raw)
 
@@ -225,13 +239,7 @@ def extract_assertion_context(step_record: dict) -> AssertionContext:
     artifacts = list(step_record.get("artifacts") or [])
     response_text = step_record.get("response_text") or ""
 
-    task_ids: list[str] = []
-    for r in tool_results:
-        content = r.get("content")
-        if isinstance(content, dict):
-            tid = content.get("task_id")
-            if tid:
-                task_ids.append(str(tid))
+    task_ids = _harvest_task_ids(tool_results)
 
     return AssertionContext(
         response_text=response_text,

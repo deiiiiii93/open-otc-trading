@@ -29,7 +29,7 @@ def _make_turn_events(
     tool_name: str = "run_batch_pricing_tool",
     tool_call_id: str = "call_001",
     tool_args: dict | None = None,
-    tool_content: dict | None = None,
+    tool_content: dict | str | None = None,
     skills_routed: list[str] | None = None,
     artifacts: list[dict] | None = None,
     tool_error: str | None = None,
@@ -208,8 +208,8 @@ class TestExtractStepFromEvents:
         events = _make_turn_events(tool_content="plain string response")
         step = extract_step_from_events(events)
         r = step.tool_results[0]
-        # content should be normalized to a dict
-        assert isinstance(r["content"], dict)
+        # content should be normalized to a dict with exact §6.1 structure
+        assert r["content"] == {"raw": "plain string response"}
 
     def test_multiple_task_ids_from_multiple_tools(self):
         """When two tool results each carry task_id, both should be in task_ids."""
