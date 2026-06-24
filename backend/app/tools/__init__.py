@@ -243,4 +243,10 @@ QUANT_AGENT_TOOLS = [
 ]
 
 
-__all__ = ["QUANT_AGENT_TOOLS"]
+def all_agent_tools():
+    """Return the registered agent tool objects (each exposes `.name`)."""
+    from app.tools import QUANT_AGENT_TOOLS
+    return list(QUANT_AGENT_TOOLS)
+
+
+__all__ = ["QUANT_AGENT_TOOLS", "all_agent_tools"]
