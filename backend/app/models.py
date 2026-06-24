@@ -1754,6 +1754,49 @@ class HedgeBand(Base):
     )
 
 
+class ArenaRun(Base):
+    __tablename__ = "arena_run"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    workflow_ids: Mapped[list] = mapped_column(JSON, nullable=False)
+    model_ids: Mapped[list] = mapped_column(JSON, nullable=False)
+    weights: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    matches: Mapped[list["ArenaMatch"]] = relationship(
+        back_populates="run", cascade="all, delete-orphan"
+    )
+
+
+class ArenaMatch(Base):
+    __tablename__ = "arena_match"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("arena_run.id"), nullable=False, index=True)
+    workflow_id: Mapped[str] = mapped_column(String, nullable=False)
+    model_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    objective_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    judged_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    judge_missing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    config: Mapped[dict] = mapped_column(JSON, nullable=False)
+    transcript_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+
+    run: Mapped["ArenaRun"] = relationship(back_populates="matches")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id", "workflow_id", "model_id",
+            name="uq_arena_match_run_workflow_model",
+        ),
+    )
+
+
 @event.listens_for(OrmSession, "before_flush")
 def _scope_legacy_agent_messages(
     session: OrmSession,
