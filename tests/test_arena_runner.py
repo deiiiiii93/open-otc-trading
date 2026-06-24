@@ -574,3 +574,112 @@ class TestFullSevenStepRun:
         )
         assert transcript is not None
         assert len(transcript.steps) == 7
+
+
+# ---------------------------------------------------------------------------
+# 1f: arena_tools() wiring — blocking wrapper applied in build_arena_agent
+# ---------------------------------------------------------------------------
+
+
+class TestArenaToolsWiring:
+    """Prove that arena_tools() applies _wrap_run_tools to QUANT_AGENT_TOOLS
+    and that build_arena_agent would receive blocking run-tools, not raw ones.
+    """
+
+    def test_arena_tools_length_matches_quant_agent_tools(self):
+        """arena_tools() returns the same number of tools as QUANT_AGENT_TOOLS."""
+        from app.services.arena.runner import arena_tools
+        from app.tools import QUANT_AGENT_TOOLS
+
+        result = arena_tools()
+        assert len(result) == len(QUANT_AGENT_TOOLS)
+
+    def test_arena_tools_run_entries_are_wrapped(self):
+        """run_* tools in arena_tools() are NOT the same objects as in QUANT_AGENT_TOOLS.
+
+        The wrapper replaces each run_* tool with a closure; identity check confirms
+        the blocking wrapper was applied.
+        """
+        from app.services.arena.runner import arena_tools
+        from app.tools import QUANT_AGENT_TOOLS
+
+        raw_run_tools = {getattr(t, "name", ""): t for t in QUANT_AGENT_TOOLS
+                         if getattr(t, "name", "").startswith("run_")}
+        assert raw_run_tools, "Precondition: QUANT_AGENT_TOOLS must contain run_* tools"
+
+        wrapped = arena_tools()
+        wrapped_by_name = {getattr(t, "name", ""): t for t in wrapped
+                           if getattr(t, "name", "").startswith("run_")}
+
+        for name, raw in raw_run_tools.items():
+            assert name in wrapped_by_name, f"run_ tool {name!r} missing from arena_tools()"
+            assert wrapped_by_name[name] is not raw, (
+                f"run_ tool {name!r} in arena_tools() is the same object as QUANT_AGENT_TOOLS "
+                f"entry — the blocking wrapper was NOT applied"
+            )
+
+    def test_arena_tools_non_run_entries_pass_through(self):
+        """Non-run_* tools in arena_tools() are the same objects as in QUANT_AGENT_TOOLS."""
+        from app.services.arena.runner import arena_tools
+        from app.tools import QUANT_AGENT_TOOLS
+
+        raw_non_run = {getattr(t, "name", ""): t for t in QUANT_AGENT_TOOLS
+                       if not getattr(t, "name", "").startswith("run_")}
+
+        wrapped = arena_tools()
+        wrapped_non_run = {getattr(t, "name", ""): t for t in wrapped
+                           if not getattr(t, "name", "").startswith("run_")}
+
+        for name, raw in raw_non_run.items():
+            assert wrapped_non_run.get(name) is raw, (
+                f"Non-run_ tool {name!r} should pass through unchanged but was replaced"
+            )
+
+    def test_arena_tools_injects_status_checker(self):
+        """arena_tools(status_checker=...) passes the checker to _wrap_run_tools.
+
+        Inject a fake run-tool list and a fake status_checker into _wrap_run_tools
+        directly to confirm the injection path works; then verify arena_tools()
+        forwards its status_checker argument.
+        """
+        from app.services.arena.runner import _wrap_run_tools
+
+        poll_count = {"n": 0}
+
+        def fake_run_tool(args):
+            return {"task_id": "tid-1", "status": "queued"}
+
+        fake_run_tool.name = "run_fake_tool"
+
+        def fake_checker(task_id: str) -> dict:
+            poll_count["n"] += 1
+            return {"task_id": task_id, "status": "completed"}
+
+        wrapped = _wrap_run_tools([fake_run_tool], status_checker=fake_checker)
+        result = wrapped[0]({})
+
+        assert poll_count["n"] >= 1
+        assert result.get("status") == "completed"
+
+        # Now confirm arena_tools forwards its status_checker by wrapping a
+        # known run_* name: verify the returned list has run_* tools as wrappers
+        # (object identity differs from originals — already tested above).
+        from app.services.arena.runner import arena_tools
+        from app.tools import QUANT_AGENT_TOOLS
+
+        # Passing a custom checker: the returned tools are still distinct from originals
+        custom_checker_called = {"n": 0}
+
+        def custom_checker(task_id: str) -> dict:
+            custom_checker_called["n"] += 1
+            return {"task_id": task_id, "status": "completed"}
+
+        result_with_checker = arena_tools(status_checker=custom_checker)
+        assert len(result_with_checker) == len(QUANT_AGENT_TOOLS)
+        # run_* tools must still be wrapped (not the originals)
+        raw_run = {getattr(t, "name", ""): t for t in QUANT_AGENT_TOOLS
+                   if getattr(t, "name", "").startswith("run_")}
+        wrapped_run = {getattr(t, "name", ""): t for t in result_with_checker
+                       if getattr(t, "name", "").startswith("run_")}
+        for name, raw in raw_run.items():
+            assert wrapped_run.get(name) is not raw

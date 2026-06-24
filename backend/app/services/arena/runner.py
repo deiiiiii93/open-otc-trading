@@ -170,10 +170,27 @@ def _wrap_run_tools(
 # arena agent builder
 # ---------------------------------------------------------------------------
 
+def arena_tools(status_checker: Callable[[str], dict] | None = None) -> list:
+    """The agent tool list with run_* tools wrapped to block until task completion.
+
+    Args:
+        status_checker: Optional callable ``(task_id: str) -> dict`` injected
+            for testing. Defaults to ``_default_status_checker``.
+
+    Returns:
+        A new list with the same length as ``QUANT_AGENT_TOOLS`` where every
+        tool whose name starts with ``run_`` is replaced by a blocking wrapper
+        and all other tools are passed through unchanged.
+    """
+    from app.tools import QUANT_AGENT_TOOLS
+    return _wrap_run_tools(list(QUANT_AGENT_TOOLS), status_checker=status_checker)
+
+
 def build_arena_agent(chat) -> Any:
     """Build a full orchestrator agent from a ChatOpenAI client.
 
-    Wraps ``build_orchestrator`` with arena-appropriate settings.
+    Wraps ``build_orchestrator`` with arena-appropriate settings, applying
+    the blocking run-tool wrapper via ``arena_tools()``.
     Re-raises ImportError with a clear message if deepagents is not installed.
     """
     try:
@@ -184,12 +201,11 @@ def build_arena_agent(chat) -> Any:
             f"Original error: {exc}"
         ) from exc
 
-    from app.tools import QUANT_AGENT_TOOLS
     from langgraph.checkpoint.memory import MemorySaver
 
     return build_orchestrator(
         model=chat,
-        tools=list(QUANT_AGENT_TOOLS),
+        tools=arena_tools(),
         checkpointer=MemorySaver(),
     )
 

@@ -32,6 +32,16 @@ _FK: dict[str, dict[str, str]] = {
 # Insertion order so FK parents exist before children.
 _INSERT_ORDER = ["portfolios", "pricing_profiles", "positions", "risk_runs"]
 
+# Column allowlist for the risk_runs seed namespace.  Only keys in this set
+# (beyond the always-excluded "alias" / "portfolio") are forwarded to the
+# RiskRun ORM constructor; descriptive fixture fields (e.g. "as_of") are
+# silently dropped.
+_RISK_RUN_COLS: frozenset[str] = frozenset({
+    "method", "status", "metrics", "scenario_cells",
+    "resolved_position_ids", "pricing_parameter_profile_id",
+    "engine_config_id", "market_snapshot_id",
+})
+
 
 @dataclass
 class ReplayEntry:
@@ -174,15 +184,10 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
                 portfolio_id = _parent_id("portfolios", row["portfolio"])
                 # Only pass columns that exist on the RiskRun model; the fixture
                 # may carry descriptive fields like "as_of" that are not real ORM columns.
-                _valid_risk_run_cols = {
-                    "method", "status", "metrics", "scenario_cells",
-                    "resolved_position_ids", "pricing_parameter_profile_id",
-                    "engine_config_id", "market_snapshot_id",
-                }
                 extra = {
                     k: v
                     for k, v in row.items()
-                    if k not in ("alias", "portfolio") and k in _valid_risk_run_cols
+                    if k not in ("alias", "portfolio") and k in _RISK_RUN_COLS
                 }
                 obj = models.RiskRun(portfolio_id=portfolio_id, **extra)
 
