@@ -100,6 +100,78 @@ class _EnvironmentSettings(BaseSettings):
         "./data/agent_traces.sqlite3",
         validation_alias="OPEN_OTC_TRACE_DB_PATH",
     )
+    gateway_default_desk_user: str = Field(
+        "desk_user",
+        validation_alias="GATEWAY_DEFAULT_DESK_USER",
+    )
+    gateway_linking_code_ttl_s: int = Field(
+        600,
+        validation_alias="GATEWAY_LINKING_CODE_TTL_S",
+    )
+    gateway_card_action_ttl_s: int = Field(
+        1800,
+        validation_alias="GATEWAY_CARD_ACTION_TTL_S",
+    )
+    gateway_max_inbound_chars: int = Field(
+        4000,
+        validation_alias="GATEWAY_MAX_INBOUND_CHARS",
+    )
+    gateway_max_queued_per_chat: int = Field(
+        8,
+        validation_alias="GATEWAY_MAX_QUEUED_PER_CHAT",
+    )
+    gateway_queue_max_age_s: int = Field(
+        120,
+        validation_alias="GATEWAY_QUEUE_MAX_AGE_S",
+    )
+    gateway_dedupe_ttl_s: int = Field(
+        86400,
+        validation_alias="GATEWAY_DEDUPE_TTL_S",
+    )
+    gateway_dedupe_lease_s: int = Field(
+        120,
+        validation_alias="GATEWAY_DEDUPE_LEASE_S",
+    )
+    gateway_lock_lease_s: int = Field(
+        30,
+        validation_alias="GATEWAY_LOCK_LEASE_S",
+    )
+    gateway_code_issue_per_min: int = Field(
+        10,
+        validation_alias="GATEWAY_CODE_ISSUE_PER_MIN",
+    )
+    gateway_flush_interval_ms: int = Field(
+        700,
+        validation_alias="GATEWAY_FLUSH_INTERVAL_MS",
+    )
+    gateway_flush_chars: int = Field(
+        280,
+        validation_alias="GATEWAY_FLUSH_CHARS",
+    )
+    gateway_web_base_url: str | None = Field(
+        None,
+        validation_alias="GATEWAY_WEB_BASE_URL",
+    )
+    gateway_enabled_connectors: str = Field(
+        "",
+        validation_alias="GATEWAY_ENABLED_CONNECTORS",
+    )
+    feishu_app_id: str | None = Field(
+        None,
+        validation_alias="FEISHU_APP_ID",
+    )
+    feishu_app_secret: str | None = Field(
+        None,
+        validation_alias="FEISHU_APP_SECRET",
+    )
+    feishu_verification_token: str | None = Field(
+        None,
+        validation_alias="FEISHU_VERIFICATION_TOKEN",
+    )
+    feishu_encrypt_key: str | None = Field(
+        None,
+        validation_alias="FEISHU_ENCRYPT_KEY",
+    )
 
 
 def _read_environment_settings() -> _EnvironmentSettings:
@@ -148,6 +220,60 @@ class Settings:
     )
     tracing_mode: str = field(default_factory=lambda: _env_value("tracing_mode"))
     trace_db_path: str = field(default_factory=lambda: _env_value("trace_db_path"))
+    gateway_default_desk_user: str = field(
+        default_factory=lambda: _env_value("gateway_default_desk_user")
+    )
+    gateway_linking_code_ttl_s: int = field(
+        default_factory=lambda: _env_value("gateway_linking_code_ttl_s")
+    )
+    gateway_card_action_ttl_s: int = field(
+        default_factory=lambda: _env_value("gateway_card_action_ttl_s")
+    )
+    gateway_max_inbound_chars: int = field(
+        default_factory=lambda: _env_value("gateway_max_inbound_chars")
+    )
+    gateway_max_queued_per_chat: int = field(
+        default_factory=lambda: _env_value("gateway_max_queued_per_chat")
+    )
+    gateway_queue_max_age_s: int = field(
+        default_factory=lambda: _env_value("gateway_queue_max_age_s")
+    )
+    gateway_dedupe_ttl_s: int = field(
+        default_factory=lambda: _env_value("gateway_dedupe_ttl_s")
+    )
+    gateway_dedupe_lease_s: int = field(
+        default_factory=lambda: _env_value("gateway_dedupe_lease_s")
+    )
+    gateway_lock_lease_s: int = field(
+        default_factory=lambda: _env_value("gateway_lock_lease_s")
+    )
+    gateway_code_issue_per_min: int = field(
+        default_factory=lambda: _env_value("gateway_code_issue_per_min")
+    )
+    gateway_flush_interval_ms: int = field(
+        default_factory=lambda: _env_value("gateway_flush_interval_ms")
+    )
+    gateway_flush_chars: int = field(
+        default_factory=lambda: _env_value("gateway_flush_chars")
+    )
+    gateway_web_base_url: str | None = field(
+        default_factory=lambda: _env_value("gateway_web_base_url")
+    )
+    gateway_enabled_connectors: str = field(
+        default_factory=lambda: _env_value("gateway_enabled_connectors")
+    )
+    feishu_app_id: str | None = field(
+        default_factory=lambda: _env_value("feishu_app_id")
+    )
+    feishu_app_secret: str | None = field(
+        default_factory=lambda: _env_value("feishu_app_secret")
+    )
+    feishu_verification_token: str | None = field(
+        default_factory=lambda: _env_value("feishu_verification_token")
+    )
+    feishu_encrypt_key: str | None = field(
+        default_factory=lambda: _env_value("feishu_encrypt_key")
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "artifact_dir", Path(self.artifact_dir))
