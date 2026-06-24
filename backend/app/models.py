@@ -10,6 +10,7 @@ from sqlalchemy import (
     event,
     Float,
     ForeignKey,
+    func,
     Index,
     Integer,
     JSON,
@@ -1784,3 +1785,163 @@ def _scope_legacy_agent_messages(
             )
         obj.workflow_id = thread.active_workflow_id
         obj.session_id = agent_session.id if agent_session else None
+
+
+# ---------------------------------------------------------------------------
+# IM Gateway tables (Task 1)
+# ---------------------------------------------------------------------------
+
+
+class GatewayBinding(Base):
+    """One binding = one IM account linked to one desk persona.
+
+    A binding is active when status='active'.  The partial unique index
+    ``uq_gateway_binding_active`` enforces at-most-one active binding per
+    (provider, external_account_id, workspace_id) triple; revoked rows are
+    kept for audit.
+    """
+
+    __tablename__ = "gateway_binding"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    external_account_id: Mapped[str] = mapped_column(String, nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
+    desk_user: Mapped[str] = mapped_column(String, nullable=False)
+    persona: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="active", server_default="active")  # active|revoked
+    bound_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    supersedes_binding_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("gateway_binding.id"), nullable=True
+    )
+
+    __table_args__ = (
+        Index(
+            "uq_gateway_binding_active",
+            "provider",
+            "external_account_id",
+            "workspace_id",
+            unique=True,
+            sqlite_where=text("status='active'"),
+            postgresql_where=text("status='active'"),
+        ),
+    )
+
+
+class GatewayLinkingCode(Base):
+    """One-time pairing code issued by the desk to a new IM user.
+
+    The code is unique; redeemed_by_binding_id is set on redemption.
+    """
+
+    __tablename__ = "gateway_linking_code"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    desk_user: Mapped[str] = mapped_column(String, nullable=False)
+    persona: Mapped[str] = mapped_column(String, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    redeemed_by_binding_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("gateway_binding.id"), nullable=True
+    )
+    issued_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class GatewayThreadMap(Base):
+    """Maps an IM chat (binding + chat_id) to an agent thread."""
+
+    __tablename__ = "gateway_thread_map"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    binding_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("gateway_binding.id"), nullable=False
+    )
+    chat_id: Mapped[str] = mapped_column(String, nullable=False)
+    thread_id: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("binding_id", "chat_id", name="uq_gateway_thread_map_binding_chat"),
+    )
+
+
+class GatewayInboundSeen(Base):
+    """Deduplication table for inbound IM events.
+
+    Each unique (connector, workspace_id, provider_event_id) triple is
+    claimed by at most one worker (owner_token).
+    """
+
+    __tablename__ = "gateway_inbound_seen"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    connector: Mapped[str] = mapped_column(String, nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
+    provider_event_id: Mapped[str] = mapped_column(String, nullable=False)
+    state: Mapped[str] = mapped_column(String, nullable=False, default="processing", server_default="processing")  # processing|done|failed
+    owner_token: Mapped[str | None] = mapped_column(String, nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    seen_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint(
+            "connector",
+            "workspace_id",
+            "provider_event_id",
+            name="uq_gateway_inbound_seen",
+        ),
+    )
+
+
+class GatewayCardAction(Base):
+    """Pending interactive-card action that awaits a trader decision.
+
+    The token is globally unique (used in callback URLs).  The four-column
+    constraint prevents duplicate pending actions for the same logical choice.
+    """
+
+    __tablename__ = "gateway_card_action"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    out_connector: Mapped[str] = mapped_column(String, nullable=False)
+    out_workspace_id: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
+    out_chat_id: Mapped[str] = mapped_column(String, nullable=False)
+    out_message_id: Mapped[str] = mapped_column(String, nullable=False)
+    binding_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("gateway_binding.id"), nullable=False
+    )
+    thread_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    message_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    action_id: Mapped[str] = mapped_column(String, nullable=False)
+    decision: Mapped[str] = mapped_column(String, nullable=False)  # confirm|dismiss
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending", server_default="pending")  # pending|resolving|resolved|failed|unknown
+    resolved_by_binding_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "thread_id",
+            "message_id",
+            "action_id",
+            "decision",
+            name="uq_gateway_card_action_action",
+        ),
+    )
+
+
+class GatewayWorkerLock(Base):
+    """Singleton advisory lock for the gateway background worker.
+
+    id is always 1; UPSERT pattern enforces singleton semantics.
+    """
+
+    __tablename__ = "gateway_worker_lock"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1, server_default="1")
+    owner_token: Mapped[str] = mapped_column(String, nullable=False)
+    acquired_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    lease_expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
