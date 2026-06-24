@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -142,13 +143,15 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
                 obj = models.Portfolio(id=row["id"], name=row["name"])
 
             elif ns == "pricing_profiles":
-                from datetime import datetime
-
-                obj = models.PricingParameterProfile(
-                    id=row["id"],
-                    name=row["name"],
-                    valuation_date=row.get("valuation_date", datetime.utcnow()),
-                )
+                # Pass through any extra keys; default valuation_date if absent.
+                extra = {
+                    k: v
+                    for k, v in row.items()
+                    if k != "alias"
+                }
+                if "valuation_date" not in extra:
+                    extra["valuation_date"] = datetime.now(tz=timezone.utc)
+                obj = models.PricingParameterProfile(**extra)
 
             elif ns == "positions":
                 portfolio_id = _parent_id("portfolios", row["portfolio"])
