@@ -278,3 +278,23 @@ def test_leaderboard_tag_filter_no_match(session):
         rows = store.leaderboard(session, tag="nonexistent")
 
     assert rows == []
+
+
+def test_leaderboard_default_uses_latest_completed_run(session):
+    """leaderboard() with no run_id should select the latest completed run."""
+    rid1 = _make_run(session, workflow_ids=["wf-1"])
+    rid2 = _make_run(session, workflow_ids=["wf-2"])  # created after rid1
+    store.set_run_status(session, rid1, "completed")
+    store.set_run_status(session, rid2, "completed")
+
+    # Record the same model in both runs with different scores
+    _make_match(session, rid1, workflow_id="wf-1", model_id="model-x",
+                total_score=50.0, objective_score=40.0, status="scored")
+    _make_match(session, rid2, workflow_id="wf-2", model_id="model-x",
+                total_score=90.0, objective_score=85.0, status="scored")
+
+    # Call leaderboard with no run_id; should return rid2's score (the latest)
+    rows = store.leaderboard(session)
+    assert len(rows) == 1
+    assert rows[0]["model_id"] == "model-x"
+    assert rows[0]["mean_total"] == 90.0
