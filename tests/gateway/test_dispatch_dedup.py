@@ -74,10 +74,13 @@ def _make_inbound(event_id: str = "ev_001") -> InboundMessage:
 
 def _make_dispatcher(sm, settings):
     from app.services.gateway.dispatch import Dispatcher
+    from app.services.gateway.connectors.fake import FakeConnector
 
-    # connector, bridge, renderer — stubbed to None for 12a tests
+    # connector — FakeConnector so handle() can send refusals when 12b routes
+    # into the message path.  bridge/renderer stay None because no bound user
+    # exists in the dedup tests (message path never reaches the turn step).
     return Dispatcher(
-        connector=None,
+        connector=FakeConnector(),
         bridge=None,
         renderer=None,
         sessionmaker=sm,

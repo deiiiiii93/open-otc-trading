@@ -1,6 +1,7 @@
 """Dispatcher — orchestration glue for the IM message gateway.
 
 Task 12a: dedup state machine + session ownership.
+Task 12b: message path — group refuse, identity, enroll, validate, turn.
 
 Transaction boundary contract:
   - After a "new" or "reclaim" claim, ``session.commit()`` is called IMMEDIATELY
@@ -11,11 +12,12 @@ Transaction boundary contract:
   - ``_finish_inbound`` sets the row's state to "done" and the caller commits in
     a SEPARATE terminal transaction after processing is complete.
 
-Tasks 12b (message path), 12c (card-action path), and 12d (backpressure) will
-extend ``handle()`` and add new methods to this class.
+Tasks 12c (card-action path) and 12d (backpressure) will extend ``handle()``
+and add new methods to this class.
 """
 from __future__ import annotations
 
+import asyncio
 import secrets
 from datetime import datetime, timedelta
 from typing import Callable, Literal
@@ -25,7 +27,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import GatewayInboundSeen
-from app.services.gateway.types import InboundMessage
+from app.services.gateway import identity as identity_svc
+from app.services.gateway.types import InboundMessage, OutboundMessage
 
 
 class Dispatcher:
@@ -151,7 +154,7 @@ class Dispatcher:
             session.flush()
 
     # ------------------------------------------------------------------
-    # Entry point — Task 12a stub (12b / 12c extend this)
+    # Entry point (12a + 12b extension)
     # ------------------------------------------------------------------
 
     def handle(self, inbound: InboundMessage) -> None:
@@ -162,8 +165,9 @@ class Dispatcher:
         2. If "skip", rollback/close and return immediately (skip rolls back).
         3. If "new" or "reclaim", COMMIT the lease immediately so that any
            concurrent redelivery observes the fresh claim and skips.
-        4. (Placeholder) Dispatch to kind-specific processing seam.
-        5. Open a second session, call _finish_inbound, commit.
+        4. Dispatch to kind-specific processing seam.
+        5. The kind handler is responsible for calling _finish_inbound + commit
+           in its own terminal transaction.
         """
         with self._sessionmaker() as session:
             result = self._claim_inbound(session, inbound)
@@ -173,11 +177,157 @@ class Dispatcher:
             # Commit the lease before doing any processing.
             session.commit()
 
-        # 12b: message path / 12c: card-action path go here
-        # if inbound.kind == "message":
-        #     self._handle_message(inbound)
-        # elif inbound.kind == "card_action":
-        #     self._handle_card_action(inbound)
+        if inbound.kind == "message":
+            self._handle_message(inbound)
+        else:
+            # 12c: card-action path — leave the seam intact
+            with self._sessionmaker() as session:
+                self._finish_inbound(session, inbound)
+                session.commit()
+
+    # ------------------------------------------------------------------
+    # Message path (Task 12b)
+    # ------------------------------------------------------------------
+
+    def _handle_message(self, inbound: InboundMessage) -> None:
+        """Orchestrate the message path and run async steps synchronously."""
+        asyncio.run(self._handle_message_async(inbound))
+
+    async def _handle_message_async(self, inbound: InboundMessage) -> None:
+        """Async implementation of the message path.
+
+        Execution order (first matching outcome wins):
+        1. Group refuse — only DMs are supported.
+        2. Resolve identity — look up the active binding.
+        3. Enroll — if unbound and text looks like a code, redeem it.
+        4. Unbound refuse — binding still None after enroll attempt.
+        5. Text validation — None, blank, or too-long.
+        6. Turn — submit to agent bridge and render the result.
+
+        Every path (including refusals) finishes with _finish_inbound + commit.
+        """
+        connector = self._connector
+        settings = self._settings
+
+        # ------------------------------------------------------------------
+        # 1. Group refuse
+        # ------------------------------------------------------------------
+        if inbound.chat.chat_type == "group":
+            await connector.send_message(
+                inbound.chat,
+                OutboundMessage(text="The agent is only available in direct messages."),
+                idempotency_key=f"{inbound.provider_event_id}:refuse-group",
+            )
+            with self._sessionmaker() as session:
+                self._finish_inbound(session, inbound)
+                session.commit()
+            return
+
+        # ------------------------------------------------------------------
+        # 2. Resolve identity
+        # ------------------------------------------------------------------
+        with self._sessionmaker() as session:
+            binding = identity_svc.active_binding(
+                session,
+                connector=inbound.connector,
+                external_account_id=inbound.external_account_id,
+                workspace_id=inbound.workspace_id,
+            )
+
+        # ------------------------------------------------------------------
+        # 3. Enroll (only when unbound and text looks like a code)
+        # ------------------------------------------------------------------
+        if binding is None and inbound.text is not None and identity_svc.is_code_shaped(inbound.text.strip()):
+            with self._sessionmaker() as session:
+                new_binding = identity_svc.redeem_code(
+                    session,
+                    connector=inbound.connector,
+                    external_account_id=inbound.external_account_id,
+                    workspace_id=inbound.workspace_id,
+                    code=inbound.text.strip(),
+                    settings=settings,
+                )
+                if new_binding is not None:
+                    session.commit()
+                    # Enrollment succeeded
+                    await connector.send_message(
+                        inbound.chat,
+                        OutboundMessage(
+                            text="Enrolled — you can now message the desk agent."
+                        ),
+                        idempotency_key=f"{inbound.provider_event_id}:enroll-ok",
+                    )
+                    with self._sessionmaker() as session2:
+                        self._finish_inbound(session2, inbound)
+                        session2.commit()
+                    return
+                else:
+                    # Code was invalid or expired
+                    await connector.send_message(
+                        inbound.chat,
+                        OutboundMessage(text="Invalid or expired linking code."),
+                        idempotency_key=f"{inbound.provider_event_id}:enroll-fail",
+                    )
+                    with self._sessionmaker() as session2:
+                        self._finish_inbound(session2, inbound)
+                        session2.commit()
+                    return
+
+        # ------------------------------------------------------------------
+        # 4. Unbound refuse
+        # ------------------------------------------------------------------
+        if binding is None:
+            await connector.send_message(
+                inbound.chat,
+                OutboundMessage(
+                    text="You're not linked yet. Send your linking code to enroll."
+                ),
+                idempotency_key=f"{inbound.provider_event_id}:refuse-unbound",
+            )
+            with self._sessionmaker() as session:
+                self._finish_inbound(session, inbound)
+                session.commit()
+            return
+
+        # ------------------------------------------------------------------
+        # 5. Text validation
+        # ------------------------------------------------------------------
+        _HELP_TEXT = "I can only read text messages."
+
+        if inbound.text is None or inbound.text.strip() == "":
+            await connector.send_message(
+                inbound.chat,
+                OutboundMessage(text=_HELP_TEXT),
+                idempotency_key=f"{inbound.provider_event_id}:help-text",
+            )
+            with self._sessionmaker() as session:
+                self._finish_inbound(session, inbound)
+                session.commit()
+            return
+
+        if len(inbound.text) > settings.gateway_max_inbound_chars:
+            await connector.send_message(
+                inbound.chat,
+                OutboundMessage(text="Message too long."),
+                idempotency_key=f"{inbound.provider_event_id}:refuse-toolong",
+            )
+            with self._sessionmaker() as session:
+                self._finish_inbound(session, inbound)
+                session.commit()
+            return
+
+        # ------------------------------------------------------------------
+        # 6. Turn — bound + valid text
+        # ------------------------------------------------------------------
+        with self._sessionmaker() as session:
+            thread = self._bridge.thread_for(session, binding, inbound.chat)
+            session.commit()
+
+        with self._sessionmaker() as session:
+            events = await self._bridge.submit_turn(
+                session, binding, thread, inbound.text.strip()
+            )
+            await self._renderer.render_turn(session, binding, inbound.chat, events)
 
         with self._sessionmaker() as session:
             self._finish_inbound(session, inbound)
