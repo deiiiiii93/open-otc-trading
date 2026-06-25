@@ -395,7 +395,7 @@ def test_execute_arena_run_task_scores_all_pairs(session, settings):
 
     from app.services.arena.judge import JudgeResult
 
-    def fake_run_match(loaded, model, *, artifact_root):
+    def fake_run_match(loaded, model, *, artifact_root, run_id=None):
         return _fake_transcript(workflow_id="wf-a", model_id=model.slug)
 
     def fake_judge(transcript, loaded, *, post=None):
@@ -447,7 +447,7 @@ def test_execute_arena_run_task_failed_match_doesnt_abort_run(session, settings)
 
     call_count = {"n": 0}
 
-    def failing_run_match(loaded, model, *, artifact_root):
+    def failing_run_match(loaded, model, *, artifact_root, run_id=None):
         call_count["n"] += 1
         if call_count["n"] == 1:
             raise RuntimeError("Simulated match failure")
@@ -509,7 +509,7 @@ def test_execute_arena_run_task_not_implemented_error_is_caught(session, setting
         task_id = task.id
         s.commit()
 
-    def notimpl_run_match(loaded, model, *, artifact_root):
+    def notimpl_run_match(loaded, model, *, artifact_root, run_id=None):
         raise NotImplementedError("Real agent not implemented")
 
     def fake_judge(transcript, loaded, *, post=None):

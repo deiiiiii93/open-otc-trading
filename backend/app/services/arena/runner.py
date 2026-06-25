@@ -1,227 +1,76 @@
 """Arena match runner.
 
-Drives a single arena match: seeds an isolated DB, runs each workflow step
-through an agent (real or injected fake), and returns a MatchTranscript.
+Drives a single arena match against the REAL desk orchestrator:
+  1. seed the workflow's fixtures into the main DB (fresh IDs per match),
+  2. create an arena-tagged AgentThread,
+  3. drive each workflow step through AgentService.stream_and_persist bound to
+     the candidate Zenmux model,
+  4. reconstruct the MatchTranscript from the persisted trace spans.
 
-## Concurrency constraint
-Isolation is implemented via process-global DB reconfiguration (mutating
-database.SessionLocal). Matches CANNOT run concurrently in the same process.
-The effective pool size is 1. A future Task 13 carry-forward: replace with
-per-call session injection so the pool can be widened.
-
-## run-tool blocking
-Tools whose names start with 'run_' are wrapped to poll until the background
-task completes. The wrapper accepts an optional `status_checker` callable for
-unit-test injection; in production a default status-checker that queries the
-TaskRun table via database.SessionLocal is used.
+Matches run sequentially (the async checkpointer SQLite serialises writes).
+The `drive` and `harvest` seams are injectable for unit tests.
 """
 from __future__ import annotations
 
-import os
+import asyncio
 import shutil
-import tempfile
-from contextlib import contextmanager
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-MAX_TURNS_PER_STEP = 12
-POLL_MAX_ATTEMPTS = 120
-POLL_SLEEP_SECONDS = 2.0
+from app import database
+from app.golden_workflows.fixtures import apply_seed
+from app.models import AgentThread
+from app.services.arena.models import arena_model_to_selection
+from app.services.arena.trace_harvest import transcript_from_trace
+
+_PERSONA_TO_CHARACTER = {
+    "trader": "trader",
+    "risk_manager": "risk_manager",
+    "sales": "trader",
+    "quant": "trader",
+}
+
+_ARENA_SERVICE = None
 
 
-# ---------------------------------------------------------------------------
-# DB isolation
-# ---------------------------------------------------------------------------
+def _persona_to_character(persona: str) -> str:
+    return _PERSONA_TO_CHARACTER.get(persona, "trader")
 
-@contextmanager
-def isolated_match_db(bundle):
-    """Reconfigure the global DB to a fresh temp SQLite, seed it, yield, restore.
 
-    Because tools use ``database.SessionLocal`` directly, isolation requires
-    mutating the module-level global. Matches must not overlap in the same
-    process (see module docstring).
+def _get_arena_service():
+    """Lazily build one AgentService for the process (model is rebound per turn)."""
+    global _ARENA_SERVICE
+    if _ARENA_SERVICE is None:
+        from app.services.agents import AgentService
+        _ARENA_SERVICE = AgentService()
+    return _ARENA_SERVICE
 
-    Yields the (updated) ``database.SessionLocal`` factory for convenience.
+
+def _default_drive(thread_id: int, content: str, selection: dict) -> None:
+    """Drive one desk turn to completion via stream_and_persist (HITL auto-cleared).
+
+    The transcript is harvested from the trace afterwards, so the streamed SSE
+    events are consumed and discarded here.
     """
-    from app import database
-    from app.config import Settings
-    from app.golden_workflows.fixtures import apply_seed
+    svc = _get_arena_service()
 
-    prev_settings = database.settings
-    tmp = tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False)
-    tmp_path = tmp.name
-    tmp.close()
-    try:
-        new_settings = Settings(
-            database_url=f"sqlite+pysqlite:///{tmp_path}",
-            artifact_dir=prev_settings.artifact_dir,
-            agent_checkpoint_db_path=":memory:",
-        )
-        database.configure_database(new_settings)
-        database.init_db()
-        with database.SessionLocal() as s:
-            apply_seed(bundle, s)
-        yield database.SessionLocal
-    finally:
-        database.configure_database(prev_settings)
-        try:
-            os.unlink(tmp_path)
-        except OSError:
+    async def _run() -> None:
+        async for _chunk in svc.stream_and_persist(
+            thread_id=thread_id,
+            content=content,
+            model_selection=selection,
+            yolo_mode=True,
+            confirmed_cost_preview=True,
+        ):
             pass
 
-
-# ---------------------------------------------------------------------------
-# run-tool wrapping
-# ---------------------------------------------------------------------------
-
-def _default_status_checker(task_id: str) -> dict:
-    """Poll TaskRun status via the module-global SessionLocal.
-
-    Returns the TaskRun row as a dict with at minimum 'status'.
-    """
-    import time
-    from app import database
-
-    for _ in range(POLL_MAX_ATTEMPTS):
-        with database.SessionLocal() as s:
-            from sqlalchemy import text
-            row = s.execute(
-                text("SELECT status, result_payload FROM task_runs WHERE id = :id"),
-                {"id": task_id},
-            ).mappings().first()
-            if row is None:
-                break
-            status = row["status"]
-            if status in {"completed", "failed", "cancelled"}:
-                result = {}
-                if row["result_payload"]:
-                    import json
-                    try:
-                        result = json.loads(row["result_payload"]) if isinstance(row["result_payload"], str) else row["result_payload"]
-                    except Exception:
-                        result = {}
-                return {"task_id": task_id, "status": status, **result}
-        time.sleep(POLL_SLEEP_SECONDS)
-    # Timed out or not found — return last known state
-    return {"task_id": task_id, "status": "unknown"}
+    asyncio.run(_run())
 
 
-def _wrap_run_tools(
-    tools: list,
-    status_checker: Callable[[str], dict] | None = None,
-) -> list:
-    """Wrap tools whose names start with 'run_' to block until completion.
+def _copy_artifacts(artifacts: list[dict], artifact_root: Path, workflow_id: str) -> list[dict]:
+    """Copy artifact files under artifact_root/workflow_id/ and rewrite paths.
 
-    Non-run_ tools are returned unchanged.
-
-    Args:
-        tools: List of tool callables with a ``.name`` attribute.
-        status_checker: Optional callable ``(task_id: str) -> dict`` that
-            returns a status dict with at least a ``status`` key. Defaults
-            to ``_default_status_checker`` (queries the real TaskRun table).
-
-    Returns:
-        A new list with run_ tools wrapped and others passed through.
-    """
-    if status_checker is None:
-        status_checker = _default_status_checker
-
-    result = []
-    for tool in tools:
-        name = getattr(tool, "name", "")
-        if not name.startswith("run_"):
-            result.append(tool)
-            continue
-
-        # Capture for closure
-        original_tool = tool
-        _checker = status_checker
-
-        def _make_wrapper(orig, checker):
-            def wrapper(*args, **kwargs):
-                # Call original tool
-                output = orig(*args, **kwargs)
-                if not isinstance(output, dict):
-                    return output
-                status = output.get("status", "")
-                task_id = output.get("task_id")
-                # If already terminal or no task_id, return as-is
-                if task_id is None or status in {"completed", "failed", "cancelled"}:
-                    return output
-                # Poll until terminal
-                _terminal = {"completed", "failed", "cancelled"}
-                for _ in range(POLL_MAX_ATTEMPTS):
-                    result = checker(str(task_id))
-                    if result.get("status") in _terminal:
-                        return result
-                # Timed out — return last result
-                return result
-
-            wrapper.name = orig.name
-            return wrapper
-
-        result.append(_make_wrapper(original_tool, _checker))
-
-    return result
-
-
-# ---------------------------------------------------------------------------
-# arena agent builder
-# ---------------------------------------------------------------------------
-
-def arena_tools(status_checker: Callable[[str], dict] | None = None) -> list:
-    """The agent tool list with run_* tools wrapped to block until task completion.
-
-    Args:
-        status_checker: Optional callable ``(task_id: str) -> dict`` injected
-            for testing. Defaults to ``_default_status_checker``.
-
-    Returns:
-        A new list with the same length as ``QUANT_AGENT_TOOLS`` where every
-        tool whose name starts with ``run_`` is replaced by a blocking wrapper
-        and all other tools are passed through unchanged.
-    """
-    from app.tools import QUANT_AGENT_TOOLS
-    return _wrap_run_tools(list(QUANT_AGENT_TOOLS), status_checker=status_checker)
-
-
-def build_arena_agent(chat) -> Any:
-    """Build a full orchestrator agent from a ChatOpenAI client.
-
-    Wraps ``build_orchestrator`` with arena-appropriate settings, applying
-    the blocking run-tool wrapper via ``arena_tools()``.
-    Re-raises ImportError with a clear message if deepagents is not installed.
-    """
-    try:
-        from app.services.deep_agent.orchestrator import build_orchestrator
-    except ImportError as exc:
-        raise ImportError(
-            "build_arena_agent requires deepagents to be installed. "
-            f"Original error: {exc}"
-        ) from exc
-
-    from langgraph.checkpoint.memory import MemorySaver
-
-    return build_orchestrator(
-        model=chat,
-        tools=arena_tools(),
-        checkpointer=MemorySaver(),
-    )
-
-
-# ---------------------------------------------------------------------------
-# Artifact copy helper
-# ---------------------------------------------------------------------------
-
-def _copy_artifacts(
-    artifacts: list[dict],
-    artifact_root: Path,
-    workflow_id: str,
-) -> list[dict]:
-    """Copy artifact files under artifact_root / workflow_id / and rewrite paths.
-
-    Silently skips artifacts whose ``path`` field points to a non-existent file.
+    Silently passes through artifacts whose ``path`` is missing or non-existent.
     """
     dest_dir = artifact_root / workflow_id
     copied = []
@@ -232,157 +81,67 @@ def _copy_artifacts(
             continue
         src = Path(path_str)
         if not src.exists():
-            # Skip silently
             copied.append(art)
             continue
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / src.name
         shutil.copy2(src, dest)
-        new_art = {**art, "path": str(dest)}
-        copied.append(new_art)
+        copied.append({**art, "path": str(dest)})
     return copied
 
-
-# ---------------------------------------------------------------------------
-# Step driver
-# ---------------------------------------------------------------------------
-
-def _drive_step(
-    agent,
-    history: list[str],
-    step_index: int,
-    step,
-) -> dict:
-    """Drive a single workflow step through the agent with turn-budget enforcement.
-
-    The agent is called as ``agent(history, step_index) -> turn_events dict``.
-    If the agent keeps returning tool_calls beyond MAX_TURNS_PER_STEP, we
-    stop and inject a budget_exceeded error.
-
-    Returns a turn_events dict.
-    """
-    turn_count = 0
-    last_events: dict | None = None
-
-    while turn_count < MAX_TURNS_PER_STEP:
-        turn_count += 1
-        events = agent(history, step_index)
-        last_events = events
-        # If no tool calls remain, we're done
-        if not events.get("tool_calls"):
-            return events
-
-    # Budget exceeded — inject error into the last events
-    if last_events is None:
-        last_events = {
-            "index": step_index,
-            "user": step.user,
-            "messages": [],
-            "tool_calls": [],
-            "tool_results": [],
-            "skills_routed": [],
-            "artifacts": [],
-            "response_text": "",
-            "errors": [],
-        }
-    errors = list(last_events.get("errors") or [])
-    errors.append({"type": "budget_exceeded", "max_turns": MAX_TURNS_PER_STEP})
-    return {**last_events, "errors": errors}
-
-
-# ---------------------------------------------------------------------------
-# Main entry point
-# ---------------------------------------------------------------------------
 
 def run_match(
     loaded,
     model,
     *,
     artifact_root: Path,
-    agent=None,
-    chat=None,
+    run_id: int | None = None,
+    drive: Callable[[int, str, dict], None] | None = None,
+    harvest: Callable[..., Any] | None = None,
 ) -> Any:
     """Run a single arena match and return a MatchTranscript.
 
     Args:
-        loaded: LoadedWorkflow (from registry.get_workflow_bundle).
+        loaded: LoadedWorkflow (registry.get_workflow_bundle).
         model: ArenaModel descriptor.
         artifact_root: Root directory for copied artifacts.
-        agent: Optional injected fake agent callable ``(history, step_index) -> dict``.
-            Used in tests. If None, a real agent is built from ``chat``.
-        chat: ChatOpenAI instance. Used only when ``agent`` is None.
-
-    Returns:
-        MatchTranscript with schema_version=1, run_id=None.
+        run_id: ArenaRun id used to tag the created thread (None in unit tests).
+        drive: Injectable turn driver ``(thread_id, content, selection) -> None``.
+            Defaults to the stream_and_persist-based ``_default_drive``.
+        harvest: Injectable transcript harvester ``(thread_id, workflow, model)``.
+            Defaults to ``transcript_from_trace``.
     """
-    from app.golden_workflows.transcript import (
-        MatchTranscript,
-        extract_step_from_events,
-    )
-
-    if agent is None:
-        if chat is None:
-            raise ValueError("Either agent or chat must be provided")
-        agent = _make_langchain_agent_driver(build_arena_agent(chat))
+    drive = drive or _default_drive
+    harvest = harvest or transcript_from_trace
 
     workflow = loaded.workflow
-    bundle = loaded.fixtures
     artifact_root = Path(artifact_root)
+    selection = arena_model_to_selection(model)
 
-    started_at = datetime.now(tz=timezone.utc).isoformat()
-
-    steps = []
-    history: list[str] = []
-
-    with isolated_match_db(bundle):
-        for step_index, wf_step in enumerate(workflow.steps):
-            history.append(wf_step.user)
-            try:
-                events = _drive_step(agent, history, step_index, wf_step)
-            except Exception as exc:
-                events = {
-                    "index": step_index,
-                    "user": wf_step.user,
-                    "messages": [],
-                    "tool_calls": [],
-                    "tool_results": [],
-                    "skills_routed": [],
-                    "artifacts": [],
-                    "response_text": "",
-                    "errors": [{"type": "error", "message": str(exc)}],
-                }
-
-            # Copy artifacts
-            raw_artifacts = list(events.get("artifacts") or [])
-            copied_artifacts = _copy_artifacts(raw_artifacts, artifact_root, workflow.id)
-            events = {**events, "artifacts": copied_artifacts}
-
-            match_step = extract_step_from_events(events)
-            steps.append(match_step)
-
-    finished_at = datetime.now(tz=timezone.utc).isoformat()
-
-    return MatchTranscript(
-        schema_version=1,
-        run_id=None,
-        workflow_id=workflow.id,
-        model_id=model.slug,
-        started_at=started_at,
-        finished_at=finished_at,
-        steps=steps,
-    )
-
-
-def _make_langchain_agent_driver(lc_agent) -> Callable:
-    """Wrap a LangChain/LangGraph agent to match the (history, step_index) -> dict signature.
-
-    NOTE: This is a stub for future use. Real agent driving requires async
-    event streaming. For now, it raises NotImplementedError to surface
-    clearly in tests/debug.
-    """
-    def driver(history: list[str], step_index: int) -> dict:
-        raise NotImplementedError(
-            "Real LangChain agent driving is not yet implemented. "
-            "Inject a fake agent via the `agent=` parameter for testing."
+    # Seed fixtures (fresh IDs) + create the arena-tagged thread.
+    with database.SessionLocal() as session:
+        apply_seed(loaded.fixtures, session)
+        thread = AgentThread(
+            title=f"[arena] {workflow.id} · {model.slug}",
+            character=_persona_to_character(workflow.persona),
+            source="arena",
+            arena_run_id=run_id,
         )
-    return driver
+        session.add(thread)
+        session.commit()
+        thread_id = thread.id
+
+    # Drive every workflow step as a turn on the same thread.
+    for wf_step in workflow.steps:
+        drive(thread_id, wf_step.user, selection)
+
+    transcript = harvest(thread_id, workflow, model)
+
+    # Copy any harvested artifacts under the run's artifact root.
+    copied_steps = []
+    for step in transcript.steps:
+        if step.artifacts:
+            step.artifacts = _copy_artifacts(step.artifacts, artifact_root, workflow.id)
+        copied_steps.append(step)
+    transcript.steps = copied_steps
+    return transcript

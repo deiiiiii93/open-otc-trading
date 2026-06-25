@@ -231,16 +231,25 @@ ARENA_LIVE=1 ZENMUX_API_KEY=<key> python -m pytest tests/test_arena_runner.py -k
 ```
 Without `ARENA_LIVE=1` all live tests are **skipped, not failed**.
 
-**Known constraint — stubbed LangChain driver:** `build_arena_agent()` in
-`runner.py` builds a LangGraph orchestrator, but `_make_langchain_agent_driver`
-raises `NotImplementedError` ("Real LangChain agent driving is not yet
-implemented"). Live runs therefore require an injected `agent=` callable or a
-future implementation of the streaming driver. This is the primary carry-forward
-from Phase 2.
+**Live driver (wired):** `run_match` drives the **real desk orchestrator**. Each
+match seeds the workflow's fixtures into the main DB, creates an arena-tagged
+`AgentThread` (`source="arena"`, `arena_run_id`), and drives each workflow step
+through `AgentService.stream_and_persist` bound to the candidate Zenmux model
+(`yolo_mode=True`, `confirmed_cost_preview=True`). The `MatchTranscript` is then
+reconstructed from the persisted trace spans by
+`trace_harvest.transcript_from_trace`. `skills_routed` is read as **ground
+truth** from `read_file` loads of `/skills/workflows/<domain>/<name>/SKILL.md`.
+The `drive=`/`harvest=` seams stay injectable for unit tests.
 
-**Known constraint — sequential matches:** `isolated_match_db` reconfigures the
-process-global `database.SessionLocal`. Matches cannot run concurrently in the
-same process; the effective pool size is 1.
+**Known constraint — sequential matches:** matches run one at a time because the
+async checkpointer SQLite serialises writes. Each match seeds a fresh fixture set
+(unique IDs), so sequential matches never contaminate one another.
+
+**Known constraint — background tasks:** `run_batch_pricing` and similar queue a
+`TaskRun`; no worker executes them inside the arena process, so steps that depend
+on *completed* background results read prior state. The golden workflows are
+designed around queue-and-report, so their assertions check the queued action and
+`task_id`, not completed results.
 
 ### 5.3 Demo generation (`app.services.demo.composition` + `scripts/generate_demo.py`)
 
@@ -319,8 +328,9 @@ python scripts/generate_demo.py \
 
 | Constraint | Detail |
 |---|---|
-| Sequential arena matches | Global-DB reconfiguration isolation; no concurrent matches in one process |
-| Stubbed live driver | `_make_langchain_agent_driver` raises `NotImplementedError`; inject `agent=` for tests |
+| Sequential arena matches | Shared async-checkpointer SQLite serialises writes; fresh fixtures per match avoid contamination |
+| Live driver wired | `run_match` drives the real orchestrator (`stream_and_persist`) + harvests the transcript from the trace; `drive=`/`harvest=` injectable for tests |
+| Background tasks not executed | Queued `TaskRun`s aren't run by a worker in-process; workflows assert queued action + `task_id`, not completed results |
 | `market_data` namespace | Not yet modeled in fixtures; use application-level pricing profiles instead |
 | `ARENA_LIVE=1` gate | Live arena tests skip without this env var + `ZENMUX_API_KEY` |
 | `DEMO_RENDER=1` gate | Hyperframes render pipeline skipped without this env var |

@@ -194,7 +194,7 @@ def _execute(
                 loaded = _get_bundle(workflow_id)
                 model = get_model(model_id)
 
-                transcript = _run_match_fn(loaded, model, artifact_root=artifact_root)
+                transcript = _run_match_fn(loaded, model, artifact_root=artifact_root, run_id=run_id)
 
                 judge_result = _judge_fn(transcript, loaded, post=post)
 
