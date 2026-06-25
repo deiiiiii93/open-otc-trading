@@ -166,7 +166,9 @@ class TestRequiredFieldsContract:
         assert set(REQUIRED_FIELDS.keys()) == expected_tools
 
     def test_irreversible_set(self):
-        assert IRREVERSIBLE == {"book_position", "book_hedge", "approve_rfq", "release_rfq"}
+        assert IRREVERSIBLE == {
+            "book_position", "book_hedge", "approve_rfq", "reject_rfq", "release_rfq",
+        }
 
     def test_required_fields_are_lists(self):
         for tool, fields in REQUIRED_FIELDS.items():
@@ -674,12 +676,13 @@ class TestBuildApprovalCardApproveRfq:
 
 
 # ---------------------------------------------------------------------------
-# reject_rfq — NOT irreversible
+# reject_rfq — IRREVERSIBLE (rejecting an RFQ can't be undone once the
+# counterparty is notified; aligns with hitl.py's risk classifier)
 # ---------------------------------------------------------------------------
 
 class TestBuildApprovalCardRejectRfq:
-    def test_reject_rfq_not_irreversible(self):
-        assert "reject_rfq" not in IRREVERSIBLE
+    def test_reject_rfq_is_irreversible(self):
+        assert "reject_rfq" in IRREVERSIBLE
 
     def test_reject_rfq_full_payload_approvable(self, db_session, db_settings):
         binding = _make_binding(db_session)
@@ -695,9 +698,27 @@ class TestBuildApprovalCardRejectRfq:
         )
         assert len(card.actions) == 2
 
-    def test_reject_rfq_no_irreversible_warning(self, db_session, db_settings):
+    def test_reject_rfq_has_irreversible_warning(self, db_session, db_settings):
         binding = _make_binding(db_session)
         action = _make_action("reject_rfq", _FULL_REJECT_RFQ_PAYLOAD)
+        card = build_approval_card(
+            db_session,
+            binding=binding,
+            thread_id=1,
+            message_id=10,
+            pending_action=action,
+            out_ref=_make_out_ref(),
+            settings=db_settings,
+        )
+        full_text = card.body + " ".join(
+            (s.title or "") + " " + (s.body or "") for s in card.sections
+        )
+        assert "irreversible" in full_text.lower() or "cannot be undone" in full_text.lower()
+
+    def test_reversible_quote_rfq_still_has_no_warning(self, db_session, db_settings):
+        """Control: a genuinely reversible tool (quote_rfq) must NOT warn."""
+        binding = _make_binding(db_session)
+        action = _make_action("quote_rfq", _FULL_QUOTE_RFQ_PAYLOAD)
         card = build_approval_card(
             db_session,
             binding=binding,

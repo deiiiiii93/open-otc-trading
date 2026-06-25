@@ -82,3 +82,6 @@ coordinator instruction.
     python -m pytest tests/gateway/test_cards.py -q
     => 41 passed in 1.24s   (was 30; +11 new tests)
 Full gateway suite: `python -m pytest tests/gateway/` => 112 passed.
+
+### reject_rfq → IRREVERSIBLE (user decision)
+Added `reject_rfq` to IRREVERSIBLE (rejecting an RFQ can't be undone once the counterparty is notified; aligns with hitl.py's risk classifier). reject_rfq card now shows the "cannot be undone" warning; quote_rfq (reversible) still does not. `python -m pytest tests/gateway/test_cards.py -q` => 42 passed.

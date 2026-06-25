@@ -61,7 +61,13 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
     "__cost_preview__": ["estimated_cost", "scope"],
 }
 
-IRREVERSIBLE: set[str] = {"book_position", "book_hedge", "approve_rfq", "release_rfq"}
+IRREVERSIBLE: set[str] = {
+    "book_position",
+    "book_hedge",
+    "approve_rfq",
+    "reject_rfq",
+    "release_rfq",
+}
 
 # Maximum characters for a single displayed field value before truncation.
 _MAX_FIELD_CHARS = 200
