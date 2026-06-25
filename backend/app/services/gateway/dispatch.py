@@ -17,7 +17,6 @@ and add new methods to this class.
 """
 from __future__ import annotations
 
-import asyncio
 import secrets
 from datetime import datetime, timedelta
 from typing import Callable, Literal
@@ -29,6 +28,8 @@ from sqlalchemy.orm import Session
 from app.models import GatewayInboundSeen
 from app.services.gateway import identity as identity_svc
 from app.services.gateway.types import InboundMessage, OutboundMessage
+
+_HELP_TEXT = "I can only read text messages."
 
 
 class Dispatcher:
@@ -46,8 +47,8 @@ class Dispatcher:
             sessionmaker=database.SessionLocal,
             settings=settings,
         )
-        # Called by the connector's receive loop:
-        dispatcher.handle(inbound_message)
+        # Called by the connector's receive loop (awaited):
+        await dispatcher.handle(inbound_message)
     """
 
     def __init__(
@@ -157,7 +158,7 @@ class Dispatcher:
     # Entry point (12a + 12b extension)
     # ------------------------------------------------------------------
 
-    def handle(self, inbound: InboundMessage) -> None:
+    async def handle(self, inbound: InboundMessage) -> None:
         """Process one inbound IM event end-to-end.
 
         Transaction ordering:
@@ -178,7 +179,7 @@ class Dispatcher:
             session.commit()
 
         if inbound.kind == "message":
-            self._handle_message(inbound)
+            await self._handle_message_async(inbound)
         else:
             # 12c: card-action path — leave the seam intact
             with self._sessionmaker() as session:
@@ -188,10 +189,6 @@ class Dispatcher:
     # ------------------------------------------------------------------
     # Message path (Task 12b)
     # ------------------------------------------------------------------
-
-    def _handle_message(self, inbound: InboundMessage) -> None:
-        """Orchestrate the message path and run async steps synchronously."""
-        asyncio.run(self._handle_message_async(inbound))
 
     async def _handle_message_async(self, inbound: InboundMessage) -> None:
         """Async implementation of the message path.
@@ -292,8 +289,6 @@ class Dispatcher:
         # ------------------------------------------------------------------
         # 5. Text validation
         # ------------------------------------------------------------------
-        _HELP_TEXT = "I can only read text messages."
-
         if inbound.text is None or inbound.text.strip() == "":
             await connector.send_message(
                 inbound.chat,

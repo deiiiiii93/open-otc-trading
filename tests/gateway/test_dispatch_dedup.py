@@ -10,6 +10,7 @@ Covers:
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -207,7 +208,7 @@ def test_handle_stub_exercises_dedup_commit(sm, db_settings):
     disp = _make_dispatcher(sm, db_settings)
     inbound = _make_inbound("ev_handle")
 
-    disp.handle(inbound)
+    asyncio.run(disp.handle(inbound))
 
     # Row should now be in 'done' state
     with sm() as session:

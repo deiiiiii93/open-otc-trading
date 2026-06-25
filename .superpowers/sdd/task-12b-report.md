@@ -59,3 +59,39 @@ The `else` branch in `handle()` (for `card_action`) still calls `_finish_inbound
 
 ## Concerns
 None. All paths exercise dedup finish. Code shaped as a valid linking code in a group chat is refused at step 1 (group refuse) before identity resolution — correctly DM-only.
+
+---
+
+# Task 12b Review Fix Report — async conversion + test hardening
+
+## Status
+DONE
+
+## Changes applied
+
+### `backend/app/services/gateway/dispatch.py`
+- **Finding 1**: Removed `import asyncio` (now unused). Changed `def handle(...)` → `async def handle(...)`. Deleted the `_handle_message(self, inbound)` sync wrapper that called `asyncio.run(...)`. `handle()` now directly `await`s `_handle_message_async(inbound)`.
+- **Finding 4**: Moved `_HELP_TEXT = "I can only read text messages."` from inside `_handle_message_async` to module level (before the class). The local assignment inside the async method was removed.
+
+### `tests/gateway/test_dispatch_dedup.py`
+- **Finding 1b**: Added `import asyncio`. Wrapped the single `disp.handle(inbound)` call in `test_handle_stub_exercises_dedup_commit` with `asyncio.run(...)`.
+
+### `tests/gateway/test_dispatch_message.py`
+- **Finding 1b**: Wrapped all 14 `disp.handle(inbound)` call sites with `asyncio.run(...)`. `import asyncio` was already present and is now actually used.
+- **Finding 2**: Rewrote `test_idempotency_key_stable_group_refusal` from a vacuous dedup-suppression check to a direct key-string assertion: inspects `connector._idem` and asserts exactly one entry whose key equals `f"{inbound.provider_event_id}:refuse-group"`.
+- **Finding 3**: Removed unused `import uuid`.
+
+## Pytest commands and results
+```
+python -m pytest tests/gateway/test_dispatch_dedup.py tests/gateway/test_dispatch_message.py -v
+# 19 passed in 0.85s
+
+python -m pytest tests/gateway/ -v
+# 150 passed, 3 warnings in 6.04s
+```
+
+## Async conversion confirmed
+`handle()` is now a coroutine (`async def`). The `asyncio.run(...)` wrappers in tests prove the coroutine is genuinely awaited — leaving it un-awaited would silently skip all side-effects, causing assertions like `row.state == "done"` to fail.
+
+## De-vacuoused idempotency test
+`test_idempotency_key_stable_group_refusal` now asserts `f"{inbound.provider_event_id}:refuse-group" in connector._idem`, confirming the dispatcher used the predictable, deterministic key construction rather than any random fallback.

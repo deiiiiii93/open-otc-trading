@@ -13,7 +13,6 @@ Covers (in order matching the brief):
 from __future__ import annotations
 
 import asyncio
-import uuid
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -200,7 +199,7 @@ def test_group_chat_refusal_no_bridge(sm, db_settings):
     disp, connector, bridge, renderer = _make_dispatcher(sm, db_settings)
 
     inbound = _make_inbound(chat_type="group", text="ABCDEFGH2345IJKLMNOP234567")
-    disp.handle(inbound)
+    asyncio.run(disp.handle(inbound))
 
     # Refusal was sent
     assert len(connector.outbox) == 1
@@ -223,7 +222,7 @@ def test_unbound_dm_refusal_no_bridge(sm, db_settings):
     disp, connector, bridge, renderer = _make_dispatcher(sm, db_settings)
 
     inbound = _make_inbound(text="hello world")
-    disp.handle(inbound)
+    asyncio.run(disp.handle(inbound))
 
     assert len(connector.outbox) == 1
     msg = connector.outbox[0]["msg"].text.lower()
@@ -245,7 +244,7 @@ def test_empty_text_help_no_bridge(sm, db_settings):
     disp, connector, bridge, renderer = _make_dispatcher(sm, db_settings)
 
     inbound = _make_inbound(text="   ")
-    disp.handle(inbound)
+    asyncio.run(disp.handle(inbound))
 
     assert len(connector.outbox) == 1
     msg_text = connector.outbox[0]["msg"].text.lower()
@@ -267,7 +266,7 @@ def test_none_text_help_no_bridge(sm, db_settings):
     disp, connector, bridge, renderer = _make_dispatcher(sm, db_settings)
 
     inbound = _make_inbound(text=None)
-    disp.handle(inbound)
+    asyncio.run(disp.handle(inbound))
 
     assert len(connector.outbox) == 1
     msg_text = connector.outbox[0]["msg"].text.lower()
@@ -293,7 +292,7 @@ def test_valid_code_in_dm_enrolls_no_bridge(sm, db_settings):
     disp, connector, bridge, renderer = _make_dispatcher(sm, db_settings)
 
     inbound = _make_inbound(text=code)
-    disp.handle(inbound)
+    asyncio.run(disp.handle(inbound))
 
     # Enrolled confirmation was sent
     assert len(connector.outbox) == 1
@@ -328,7 +327,7 @@ def test_invalid_code_refusal_no_bridge(sm, db_settings):
     fake_code = "A" * 26  # 26 uppercase letters — passes is_code_shaped
 
     inbound = _make_inbound(text=fake_code)
-    disp.handle(inbound)
+    asyncio.run(disp.handle(inbound))
 
     assert len(connector.outbox) == 1
     msg_text = connector.outbox[0]["msg"].text.lower()
@@ -349,7 +348,7 @@ def test_bound_text_calls_bridge_and_renderer(sm, db_settings):
     disp, connector, bridge, renderer = _make_dispatcher(sm, db_settings)
 
     inbound = _make_inbound(text="What is my risk?")
-    disp.handle(inbound)
+    asyncio.run(disp.handle(inbound))
 
     assert len(bridge.thread_for_calls) == 1
     assert len(bridge.submit_turn_calls) == 1
@@ -371,7 +370,7 @@ def test_over_length_text_refusal_no_bridge(sm, db_settings):
 
     long_text = "x" * (db_settings.gateway_max_inbound_chars + 1)
     inbound = _make_inbound(text=long_text)
-    disp.handle(inbound)
+    asyncio.run(disp.handle(inbound))
 
     assert len(connector.outbox) == 1
     msg_text = connector.outbox[0]["msg"].text.lower()
@@ -389,7 +388,7 @@ def test_group_refusal_dedup_row_done(sm, db_settings):
     """Group chat refusal → dedup row is terminal 'done'."""
     disp, connector, bridge, renderer = _make_dispatcher(sm, db_settings)
     inbound = _make_inbound(chat_type="group")
-    disp.handle(inbound)
+    asyncio.run(disp.handle(inbound))
     row = _get_dedup_row(sm, inbound)
     assert row is not None
     assert row.state == "done"
@@ -399,7 +398,7 @@ def test_unbound_refusal_dedup_row_done(sm, db_settings):
     """Unbound refusal → dedup row is terminal 'done'."""
     disp, connector, bridge, renderer = _make_dispatcher(sm, db_settings)
     inbound = _make_inbound(text="some random text")
-    disp.handle(inbound)
+    asyncio.run(disp.handle(inbound))
     row = _get_dedup_row(sm, inbound)
     assert row is not None
     assert row.state == "done"
@@ -413,7 +412,7 @@ def test_enrolled_confirmation_dedup_row_done(sm, db_settings):
 
     disp, connector, bridge, renderer = _make_dispatcher(sm, db_settings)
     inbound = _make_inbound(text=code)
-    disp.handle(inbound)
+    asyncio.run(disp.handle(inbound))
 
     row = _get_dedup_row(sm, inbound)
     assert row is not None
@@ -426,7 +425,7 @@ def test_turn_dedup_row_done(sm, db_settings):
 
     disp, connector, bridge, renderer = _make_dispatcher(sm, db_settings)
     inbound = _make_inbound(text="What's my P&L?")
-    disp.handle(inbound)
+    asyncio.run(disp.handle(inbound))
 
     row = _get_dedup_row(sm, inbound)
     assert row is not None
@@ -434,14 +433,22 @@ def test_turn_dedup_row_done(sm, db_settings):
 
 
 def test_idempotency_key_stable_group_refusal(sm, db_settings):
-    """Group refusal idempotency key is stable: redelivery sends same key, no duplicate."""
+    """Group refusal uses a stable, predictable idempotency key derived from the event id.
+
+    After one send the FakeConnector's idempotency store must have exactly one
+    entry whose key is ``<provider_event_id>:refuse-group``.  This proves the
+    dispatcher uses a deterministic key (not a random UUID), which is the
+    property that makes redelivery safe.
+    """
     disp, connector, bridge, renderer = _make_dispatcher(sm, db_settings)
     inbound = _make_inbound(chat_type="group")
 
-    disp.handle(inbound)
-    first_outbox_len = len(connector.outbox)
+    asyncio.run(disp.handle(inbound))
 
-    # Simulate redelivery with same event_id — dedup state machine returns skip
-    # so handle() returns early; outbox stays the same
-    disp.handle(inbound)
-    assert len(connector.outbox) == first_outbox_len  # no additional send
+    # Exactly one key in the idempotency store
+    assert len(connector._idem) == 1
+    expected_key = f"{inbound.provider_event_id}:refuse-group"
+    assert expected_key in connector._idem, (
+        f"Expected idempotency key {expected_key!r} not found in store; "
+        f"actual keys: {list(connector._idem.keys())}"
+    )
