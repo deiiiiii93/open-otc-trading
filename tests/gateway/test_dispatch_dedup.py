@@ -48,17 +48,6 @@ def sm(configured_db):
     return configured_db
 
 
-@pytest.fixture
-def settings_short_lease(db_settings: Settings) -> Settings:
-    """Settings with a very short lease for lease-expiry tests."""
-    return Settings(
-        database_url=db_settings.database_url,
-        artifact_dir=db_settings.artifact_dir,
-        agent_checkpoint_db_path=":memory:",
-        gateway_dedupe_lease_s=30,
-    )
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

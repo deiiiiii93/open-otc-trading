@@ -128,7 +128,7 @@ class Dispatcher:
         # --- Lease expired — take it over ------------------------------------
         existing.owner_token = owner_token
         existing.claimed_at = now
-        existing.attempts = (existing.attempts or 1) + 1
+        existing.attempts = existing.attempts + 1
         # state stays "processing"
         session.flush()
         return "reclaim"
@@ -159,7 +159,7 @@ class Dispatcher:
 
         Transaction ordering:
         1. Open a session, call _claim_inbound.
-        2. If "skip", return immediately (session auto-closed by context manager).
+        2. If "skip", rollback/close and return immediately (skip rolls back).
         3. If "new" or "reclaim", COMMIT the lease immediately so that any
            concurrent redelivery observes the fresh claim and skips.
         4. (Placeholder) Dispatch to kind-specific processing seam.
@@ -168,6 +168,7 @@ class Dispatcher:
         with self._sessionmaker() as session:
             result = self._claim_inbound(session, inbound)
             if result == "skip":
+                session.rollback()
                 return
             # Commit the lease before doing any processing.
             session.commit()
