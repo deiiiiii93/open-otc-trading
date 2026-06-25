@@ -433,6 +433,11 @@ class Dispatcher:
                 session, binding, thread, inbound.text.strip()
             )
             await self._renderer.render_turn(session, binding, inbound.chat, events)
+            # Commit any card-action tokens minted during render_turn (e.g.
+            # GatewayCardAction rows from build_approval_card / mint_card_action).
+            # Without this commit the rows are rolled back when the with-block exits,
+            # making the HITL approval path completely inoperable.
+            session.commit()
 
         with self._sessionmaker() as session:
             self._finish_inbound(session, inbound)
