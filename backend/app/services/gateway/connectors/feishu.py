@@ -381,6 +381,12 @@ class FeishuConnector:
                 # If start() returned normally, connection closed cleanly
                 self._connected = False
                 backoff = 1.0  # reset on clean disconnect
+                if not self._running:
+                    break
+                # Settle before reconnecting: a rapid clean-close cycle
+                # (server accepts then immediately closes) must not busy-spin.
+                _log.debug("Feishu WS clean close; reconnecting in %.1fs", backoff)
+                await self._sleep(backoff)
             except Exception:
                 self._connected = False
                 if not self._running:

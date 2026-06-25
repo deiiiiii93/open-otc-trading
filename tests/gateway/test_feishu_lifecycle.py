@@ -525,3 +525,88 @@ async def test_connector_capabilities_edit_card():
 async def test_connector_capabilities_max_chars():
     connector = FeishuConnector(_make_config())
     assert connector.capabilities.max_message_chars == 10000
+
+
+# ---------------------------------------------------------------------------
+# Fix 2: clean-close path must sleep before reconnecting (no busy-spin)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_clean_close_calls_sleep_before_reconnect():
+    """When client.start() returns normally (clean WS close), the connector
+    must call sleep before looping back — preventing a busy-spin on a server
+    that accepts and immediately closes the connection.
+
+    Pre-fix: sleep is only called on the except branch; clean close loops
+    immediately → sleep_calls is empty.
+    Post-fix: sleep is called on the clean-return path → sleep_calls has >= 1 entry.
+    """
+    sleep_calls: list[float] = []
+    # Use an event to signal the test once sleep has been called once
+    sleep_called = asyncio.Event()
+
+    async def fake_sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+        sleep_called.set()
+        # After recording the first sleep, block until the connector is stopped
+        # so the loop doesn't spin further. We wait on an event that we'll set
+        # from outside after we cancel.
+        await asyncio.sleep(999)  # will be cancelled when task is cancelled
+
+    clients_built: list = []
+
+    class ImmediateReturnClient:
+        """Simulates a clean close: start() returns immediately every time."""
+
+        def __init__(self, handler: Callable) -> None:
+            self._handler = handler
+            self.started = False
+            self.stopped = False
+
+        async def start(self) -> None:
+            self.started = True
+            # Return immediately — simulates server accepting then closing cleanly
+
+        async def stop(self) -> None:
+            self.stopped = True
+
+    def immediate_factory(handler: Callable) -> ImmediateReturnClient:
+        c = ImmediateReturnClient(handler)
+        clients_built.append(c)
+        return c
+
+    connector = FeishuConnector(
+        _make_config(),
+        ws_client_factory=immediate_factory,
+        sleep=fake_sleep,
+    )
+
+    async def on_inbound(msg: InboundMessage) -> None:
+        pass
+
+    task = asyncio.create_task(connector.start(on_inbound))
+
+    # Wait until sleep is called (proves the clean-close path calls sleep)
+    # or time out after 2 seconds if sleep is never called (pre-fix behavior)
+    try:
+        await asyncio.wait_for(sleep_called.wait(), timeout=2.0)
+    except asyncio.TimeoutError:
+        pass  # Expected on pre-fix code; assertion below will catch it
+
+    # Stop the connector and clean up
+    connector._running = False
+    task.cancel()
+    try:
+        await task
+    except (asyncio.CancelledError, Exception):
+        pass
+
+    assert len(sleep_calls) >= 1, (
+        "Expected sleep to be called on the clean-close path to prevent busy-spin; "
+        f"sleep_calls={sleep_calls!r}"
+    )
+    # The first sleep should use the initial backoff value (1.0)
+    assert sleep_calls[0] == 1.0, (
+        f"Expected initial clean-close settle sleep of 1.0s, got {sleep_calls[0]}"
+    )

@@ -3223,6 +3223,7 @@ class AgentService:
             model_selection=resolved,
             yolo_mode=yolo_mode,
             include_interactive_affordances=False,
+            actor=actor,
         )
         if fallback_used and isinstance(new_msg.meta, dict):
             new_msg.meta = {**new_msg.meta, "model_selection_fallback": True}
@@ -4005,6 +4006,7 @@ class AgentService:
         model_selection: dict[str, str] | None = None,
         yolo_mode: bool = False,
         include_interactive_affordances: bool = True,
+        actor: str = "desk_user",
     ) -> AgentMessage:
         resolved = self.normalize_model_selection(model_selection)
         effective_accounting_date = _effective_accounting_date(accounting_date)
@@ -4102,7 +4104,7 @@ class AgentService:
         record_audit(
             session,
             event_type="chat.message",
-            actor="desk_user",
+            actor=actor,
             subject_type="thread",
             subject_id=thread.id,
             payload={"personas_invoked": personas},
