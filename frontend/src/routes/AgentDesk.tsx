@@ -231,18 +231,20 @@ function ThreadRail({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showArena, setShowArena] = useState(false);
 
   const filteredThreads = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return threads;
     return threads.filter((thread) => {
+      if (!showArena && thread.source === 'arena') return false;
+      if (!query) return true;
       const haystack = [
         thread.title,
         ...thread.messages.map((message) => message.content),
       ].join(' ').toLowerCase();
       return haystack.includes(query);
     });
-  }, [threads, searchQuery]);
+  }, [threads, searchQuery, showArena]);
 
   const startRename = (thread: Thread) => {
     setEditingId(thread.id);
@@ -286,6 +288,15 @@ function ThreadRail({
           onChange={(event) => setSearchQuery(event.target.value)}
           aria-label="Search threads by name or content"
         />
+      </label>
+
+      <label className="wl-agent-desk__arena-toggle">
+        <input
+          type="checkbox"
+          checked={showArena}
+          onChange={(event) => setShowArena(event.target.checked)}
+        />
+        Show arena threads
       </label>
 
       <div className="wl-agent-desk__thread-list">

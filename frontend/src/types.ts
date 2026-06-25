@@ -26,6 +26,7 @@ export type Thread = {
   id: number;
   title: string;
   character: string;
+  source?: string;
   created_at?: string;
   updated_at?: string;
   messages: ChatMessage[];

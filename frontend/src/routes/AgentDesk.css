@@ -59,6 +59,17 @@
 .wl-agent-desk__thread-search input::placeholder {
   color: var(--ink-2);
 }
+.wl-agent-desk__arena-toggle {
+  align-items: center;
+  border-bottom: 1px solid var(--hairline-2);
+  color: var(--ink-2);
+  cursor: pointer;
+  display: flex;
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+}
 .wl-agent-desk__thread-list {
   display: flex;
   flex-direction: column;
