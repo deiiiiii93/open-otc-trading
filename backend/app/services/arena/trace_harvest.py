@@ -61,12 +61,38 @@ def _parse_tool_output(outputs_raw: Any) -> tuple[dict, str | None, str | None]:
     return content, m.group("name"), m.group("tcid")
 
 
+def _message_content_text(gen: dict) -> str:
+    """Extract assistant text from a generation's AIMessage payload.
+
+    LangChain stores the message under ``generation.message.kwargs.content``,
+    which is either a plain string or a list of ``{type: "text", text: ...}``
+    content blocks (anthropic/openai v1 shape).
+    """
+    msg = gen.get("message") if isinstance(gen, dict) else None
+    kwargs = msg.get("kwargs") if isinstance(msg, dict) else None
+    content = kwargs.get("content") if isinstance(kwargs, dict) else None
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            b.get("text", "")
+            for b in content
+            if isinstance(b, dict) and b.get("type") == "text"
+        )
+    return ""
+
+
 def _llm_text(outputs_raw: Any) -> str:
     parsed = _loads(outputs_raw) or {}
     try:
-        return parsed["generations"][0][0]["text"] or ""
+        gen = parsed["generations"][0][0]
     except (KeyError, IndexError, TypeError):
         return ""
+    if not isinstance(gen, dict):
+        return ""
+    # Prefer the flat ``text`` field; fall back to the AIMessage content blocks,
+    # which is where ChatOpenAI/Anthropic v1 keep the text when ``text`` is empty.
+    return gen.get("text") or _message_content_text(gen)
 
 
 def _spans_to_turn_events(index: int, user: str, spans: list[dict]) -> dict:
