@@ -111,6 +111,12 @@ async def _empty_async_gen() -> AsyncIterator:
     yield
 
 
+class _StubAgentMessage:
+    """Minimal agent-message-like stub for resume return values."""
+    content: str = "ok"
+    meta: dict = {}
+
+
 @dataclass
 class _RecorderBridge:
     """Records calls; supports an optional per-call gate event for turn 1."""
@@ -121,6 +127,8 @@ class _RecorderBridge:
     gate: asyncio.Event | None = None
     # Records (event_id, "start") and ("finish") for ordering checks.
     order_log: list = field(default_factory=list)
+    # Records resume() calls: (session, binding, thread_id, message_id, action_id, decision)
+    resume_calls: list = field(default_factory=list)
 
     def thread_for(self, session, binding, chat):
         self.thread_for_calls.append((binding, chat))
@@ -133,6 +141,10 @@ class _RecorderBridge:
             await self.gate.wait()
         self.order_log.append(("finish", text))
         return _empty_async_gen()
+
+    def resume(self, session, binding, thread_id, message_id, action_id, decision):
+        self.resume_calls.append((session, binding, thread_id, message_id, action_id, decision))
+        return _StubAgentMessage()
 
 
 @dataclass
@@ -270,8 +282,12 @@ def test_serial_ordering_same_chat(sm, db_settings):
     ], f"Unexpected order log: {bridge.order_log}"
 
     # Both dedup rows should be done.
-    assert _get_dedup_row(sm, msg1).state == "done"
-    assert _get_dedup_row(sm, msg2).state == "done"
+    row1 = _get_dedup_row(sm, msg1)
+    assert row1 is not None
+    assert row1.state == "done"
+    row2 = _get_dedup_row(sm, msg2)
+    assert row2 is not None
+    assert row2.state == "done"
 
 
 # ---------------------------------------------------------------------------
@@ -446,12 +462,22 @@ def test_age_cap_drops_stale_turn(sm, db_settings):
 
 
 def test_card_action_not_blocked_by_lane(sm, db_settings):
-    """A card-action for the same chat completes immediately even while a turn
-    is blocking the message lane.
+    """A card-action for the same chat completes while the turn lane is still held.
+
+    Proof structure:
+    1. Start a turn whose submit_turn blocks on ``gate`` (an asyncio.Event).
+       The turn holds the lane lock for chat_dm_1.
+    2. While the turn is still blocked (gate NOT set), dispatch a card-action
+       for the SAME chat as a concurrent task.
+    3. Assert that the card-action task COMPLETES within 1 second even though
+       ``gate`` has NOT been set and ``turn_task`` is NOT done.
+       If the card-action were routed through the lane it would deadlock
+       (waiting for the lock the turn holds) and asyncio.wait_for would timeout.
+    4. Release the gate, await the turn, assert both are done.
     """
     _seed_binding(sm, db_settings)
 
-    # Seed a card-action row using mint_card_action so all required fields are set.
+    # Look up the binding id for minting a card-action token.
     with sm() as session:
         binding = identity.active_binding(
             session,
@@ -461,8 +487,7 @@ def test_card_action_not_blocked_by_lane(sm, db_settings):
         )
         binding_id = binding.id
 
-    from app.services.gateway.types import MessageRef as _MessageRef
-    out_ref = _MessageRef(
+    out_ref = MessageRef(
         connector="fake",
         workspace_id="wk_test",
         chat_id="chat_dm_1",
@@ -483,18 +508,17 @@ def test_card_action_not_blocked_by_lane(sm, db_settings):
         session.commit()
 
     gate = asyncio.Event()
+    # _RecorderBridge.gate gates submit_turn; _RecorderBridge.resume records resume calls.
     bridge = _RecorderBridge(gate=gate)
-
-    # Minimal renderer that won't blow up on card-action calls.
     renderer = _RecorderRenderer()
 
     disp, connector, bridge, renderer = _make_dispatcher(
         sm, db_settings, bridge=bridge, renderer=renderer
     )
 
-    msg_turn = _make_message_inbound(text="blocking-turn")
+    turn_inbound = _make_message_inbound(text="blocking-turn")
 
-    # Build a card-action inbound event.
+    # Build the card-action inbound event for the SAME chat (chat_dm_1).
     card_ev = _next_ev()
     source_ref = MessageRef(
         connector="fake",
@@ -522,48 +546,52 @@ def test_card_action_not_blocked_by_lane(sm, db_settings):
         raw={},
     )
 
-    # Swap in a bridge that doesn't block for the card-action (resume call).
-    # The gate is only on submit_turn; resume is a plain sync call.
-    bridge.resume_calls = []
-
-    def fake_resume(*args, **kwargs):
-        bridge.resume_calls.append(args)
-        return "agent_msg"
-
-    bridge.resume = fake_resume
-
-    card_finished_at: list[float] = []
-    turn_finished_at: list[float] = []
-
     async def run():
-        import time
-
-        turn_task = asyncio.create_task(disp.handle(msg_turn))
-        # Let turn acquire the lock and block inside submit_turn.
+        # Step 1: launch the turn; yield until it is inside submit_turn blocking on gate.
+        turn_task = asyncio.create_task(disp.handle(turn_inbound))
         await asyncio.sleep(0)
         await asyncio.sleep(0)
 
-        # Now dispatch the card-action — it should complete immediately.
-        t0 = time.monotonic()
-        await disp.handle(card_inbound)
-        card_finished_at.append(time.monotonic() - t0)
+        # Confirm the turn is running and blocked (it has logged "start" but gate not set).
+        assert any(e[0] == "start" for e in bridge.order_log), (
+            "Turn should have started and be blocked on the gate by now"
+        )
+        assert not turn_task.done(), "Turn task should still be blocked on gate"
 
-        # The gate is still held; release to let turn finish.
+        # Step 2: dispatch the card-action for the SAME chat as a concurrent task.
+        card_task = asyncio.create_task(disp.handle(card_inbound))
+
+        # Step 3: the card-action must complete within 1 second without releasing the gate.
+        # If card-action were lane-routed it would block behind the held lock and timeout.
+        await asyncio.wait_for(card_task, timeout=1.0)
+
+        # Assert the turn is STILL blocked (gate not yet set).
+        assert not turn_task.done(), (
+            "Turn task must still be blocked — gate has not been released"
+        )
+
+        # Step 4: release the gate and let the turn finish.
         gate.set()
         await turn_task
-        turn_finished_at.append(time.monotonic() - t0)
 
     asyncio.run(run())
 
-    # Card-action completed (it didn't raise, and bridge.resume was called).
-    # The card-action path uses verify_and_claim which may return ClaimError
-    # since our token might not match all fields perfectly.  The important check
-    # is that handle() returned without being blocked by the message lane.
-    # (If it had been blocked, it would have waited for gate.set() which only
-    # happened after the card returned.)
-    assert len(card_finished_at) == 1
-    # Card finished before the turn (gate was still held when card completed).
-    assert card_finished_at[0] < turn_finished_at[0], (
-        f"Card should have finished before turn was released; "
-        f"card={card_finished_at[0]:.4f}s, turn={turn_finished_at[0]:.4f}s"
+    # Both tasks completed successfully.
+    assert not any(e[0] == "start" and e[1] == "blocking-turn" and
+                   ("finish", "blocking-turn") not in bridge.order_log
+                   for e in bridge.order_log), \
+        "Turn should have completed after gate release"
+    assert ("finish", "blocking-turn") in bridge.order_log
+
+    # The bridge.resume was called for the card-action (real verify_and_claim→resume path).
+    assert len(bridge.resume_calls) >= 1, (
+        "bridge.resume should have been called for the winning card-action claim"
     )
+
+    # Both dedup rows should be terminal.
+    turn_row = _get_dedup_row(sm, turn_inbound)
+    assert turn_row is not None
+    assert turn_row.state == "done"
+    card_row = _get_dedup_row(sm, card_inbound)
+    assert card_row is not None
+    assert card_row.state == "done"
