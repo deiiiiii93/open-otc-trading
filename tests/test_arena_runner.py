@@ -162,3 +162,46 @@ def test_purge_removes_named_portfolio_and_dependents_only(session):
     assert session.query(Position).filter(Position.portfolio_id == ctrl_id).count() == 0
     assert session.query(RiskRun).filter(RiskRun.portfolio_id == ctrl_id).count() == 0
     assert session.query(Portfolio).filter(Portfolio.name == "Keep Me").count() == 1
+
+
+def test_purge_deletes_task_rows_before_referenced_runs(session):
+    """A task_run referencing a purged risk_run must not cause an FK violation:
+    deletes run in reverse FK-dependency order (children first)."""
+    from app.services.arena.runner import _purge_seeded_portfolios
+    from app.golden_workflows.fixtures import apply_seed
+    from app.models import Portfolio, RiskRun, TaskRun
+
+    bundle = _Bundle({"portfolios": [{"alias": "control", "name": "Control Desk Portfolio"}]})
+    apply_seed(bundle, session)
+    ctrl_id = session.query(Portfolio.id).filter(Portfolio.name == "Control Desk Portfolio").scalar()
+    rr = RiskRun(portfolio_id=ctrl_id)
+    session.add(rr)
+    session.commit()
+    # a queued task that references both the portfolio and the risk run
+    session.add(TaskRun(kind="batch_pricing", portfolio_id=ctrl_id, risk_run_id=rr.id))
+    session.commit()
+
+    _purge_seeded_portfolios(session, bundle)  # must not raise IntegrityError
+
+    assert session.query(RiskRun).filter(RiskRun.portfolio_id == ctrl_id).count() == 0
+    assert session.query(TaskRun).filter(TaskRun.portfolio_id == ctrl_id).count() == 0
+    assert session.query(Portfolio).filter(Portfolio.name == "Control Desk Portfolio").count() == 0
+
+
+def test_persist_user_turn_inserts_user_message(session):
+    """_persist_user_turn writes a user AgentMessage before streaming, mirroring
+    the chat endpoint's contract with stream_and_persist."""
+    from app.services.arena.runner import _persist_user_turn
+    from app.models import AgentThread, AgentMessage
+
+    thread = AgentThread(title="t", character="risk_manager", source="arena")
+    session.add(thread)
+    session.commit()
+    tid = thread.id
+
+    _persist_user_turn(tid, "What does the latest risk say?", {"channel": "zenmux"})
+
+    msgs = session.query(AgentMessage).filter(AgentMessage.thread_id == tid).all()
+    assert len(msgs) == 1
+    assert msgs[0].role == "user"
+    assert msgs[0].content == "What does the latest risk say?"

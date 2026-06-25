@@ -46,12 +46,41 @@ def _get_arena_service():
     return _ARENA_SERVICE
 
 
+def _persist_user_turn(thread_id: int, content: str, selection: dict) -> None:
+    """Insert the user AgentMessage for this turn, mirroring the chat endpoint.
+
+    ``AgentService.stream_and_persist`` assumes the caller has already inserted
+    the user message (the HTTP endpoint does this before streaming). Without it
+    the routed-stream turn cannot attach the route to the latest user message and
+    later turns lose the real prompts from DB-backed thread history.
+    """
+    from app import database
+    from app.models import AgentMessage
+
+    with database.SessionLocal() as session:
+        session.add(
+            AgentMessage(
+                thread_id=thread_id,
+                role="user",
+                character=None,
+                content=content,
+                meta={
+                    "model_selection": selection,
+                    "yolo_mode": True,
+                    "confirmed_cost_preview": True,
+                },
+            )
+        )
+        session.commit()
+
+
 def _default_drive(thread_id: int, content: str, selection: dict) -> None:
     """Drive one desk turn to completion via stream_and_persist (HITL auto-cleared).
 
     The transcript is harvested from the trace afterwards, so the streamed SSE
     events are consumed and discarded here.
     """
+    _persist_user_turn(thread_id, content, selection)
     svc = _get_arena_service()
 
     async def _run() -> None:
@@ -80,11 +109,25 @@ def _purge_seeded_portfolios(session, bundle) -> None:
     Dependents are removed by introspecting every mapped table for a
     ``portfolio_id`` or ``position_id`` column, which covers risk runs,
     valuations, scenario/backtest runs, hedge rows, and position children
-    without hard-coding table names.
+    without hard-coding table names. Deletes run in reverse FK-dependency order
+    (children before parents) because FK enforcement is ON (see database.py):
+    ``task_runs`` reference run rows (risk_run_id / scenario_test_run_id /
+    backtest_run_id) as well as ``portfolio_id``, so they must be deleted before
+    the run rows they point at.
     """
+    import warnings
+
     from sqlalchemy import delete, select
+    from sqlalchemy.exc import SAWarning
 
     from app import models
+
+    # sorted_tables warns about an unrelated FK cycle among the agent_*/workflows
+    # tables; none of those carry portfolio_id/position_id, so they fall outside
+    # the purge scope and the ordering of the tables we touch stays correct.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SAWarning)
+        fk_ordered_tables = list(reversed(models.Base.metadata.sorted_tables))
 
     names = [r["name"] for r in bundle.seed.get("portfolios", []) if r.get("name")]
     if names:
@@ -98,11 +141,10 @@ def _purge_seeded_portfolios(session, bundle) -> None:
                 )
             )
             portfolio_table = models.Portfolio.__table__
-            for mapper in models.Base.registry.mappers:
-                table = mapper.local_table
-                if table is None or table is portfolio_table:
+            for table in fk_ordered_tables:
+                if table is portfolio_table:
                     continue
-                if posids is not None and "position_id" in table.c:
+                if posids and "position_id" in table.c:
                     session.execute(delete(table).where(table.c.position_id.in_(posids)))
                 if "portfolio_id" in table.c:
                     session.execute(delete(table).where(table.c.portfolio_id.in_(pids)))
