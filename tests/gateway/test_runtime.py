@@ -358,3 +358,72 @@ def test_default_factory_builds_feishu_connector(configured_db):
     assert isinstance(connector, FeishuConnector), (
         f"Expected FeishuConnector, got {type(connector)!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Test 8: Empty connectors config → fully inert (no lock, no heartbeat)
+# ---------------------------------------------------------------------------
+
+
+def test_empty_connectors_config_is_fully_inert(tmp_path):
+    """start() with gateway_enabled_connectors="" must be a complete no-op.
+
+    Verifies:
+    - health()["worker_lock_owner"] is False (no lock acquired)
+    - The worker lock row remains FREE — a separate acquire_worker_lock call
+      with a different token returns True, proving start() left no lease.
+    - No heartbeat task was spawned (_heartbeat_task is None).
+    - stop() is a clean no-op (no error raised).
+    """
+    from app.services.gateway.runtime import acquire_worker_lock
+
+    empty_settings = Settings(
+        database_url=f"sqlite+pysqlite:///{tmp_path / 'inert_test.sqlite3'}",
+        artifact_dir=tmp_path / "artifacts",
+        agent_checkpoint_db_path=":memory:",
+        gateway_lock_lease_s=10,
+        gateway_dedupe_ttl_s=3600,
+        # Empty: no connectors at all
+        gateway_enabled_connectors="",
+    )
+
+    import app.database as _db
+
+    _db.configure_database(empty_settings)
+    _db.init_db()
+    sm = _db.SessionLocal
+
+    runtime = GatewayRuntime(
+        settings=empty_settings,
+        sessionmaker=sm,
+        bridge=_StubBridge(),
+    )
+
+    async def run():
+        # start() must return immediately without touching the DB or spawning tasks
+        await runtime.start()
+
+        # health() must report not-owner
+        h = await runtime.health()
+        assert h["worker_lock_owner"] is False, (
+            "Empty-config runtime must NOT report lock ownership"
+        )
+
+        # No heartbeat task spawned
+        assert runtime._heartbeat_task is None, (
+            "Empty-config runtime must NOT spawn a heartbeat task"
+        )
+
+        # The lock row must still be FREE: a fresh acquire with a different
+        # token must succeed (proving start() left no lease in the DB).
+        with sm() as session:
+            acquired = acquire_worker_lock(session, "other-token", empty_settings)
+        assert acquired is True, (
+            "Worker lock must be free after inert start() — "
+            "start() should not have touched the DB at all"
+        )
+
+        # stop() must be a clean no-op (no exception)
+        await runtime.stop()
+
+    asyncio.run(run())

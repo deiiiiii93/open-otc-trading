@@ -297,6 +297,15 @@ class GatewayRuntime:
             # Already started
             return
 
+        if not self._parse_connector_names():
+            # No connectors enabled: stay fully inert — acquire no lock, spawn no
+            # heartbeat. health() will report worker_lock_owner=False. This keeps the
+            # default (gateway_enabled_connectors="") a true no-op so that wiring
+            # start() into app startup does not touch the DB lock or leave background
+            # tasks in unrelated (non-gateway) tests.
+            _log.debug("GatewayRuntime: no connectors enabled; staying inert.")
+            return
+
         # Try to acquire the worker lock.
         with self._sessionmaker() as session:
             acquired = acquire_worker_lock(session, self._owner_token, self._settings)
