@@ -101,7 +101,9 @@ def test_run_match_seeds_creates_arena_thread_and_drives_each_step(tmp_path, mon
     # one drive call per workflow step, in order, with the zenmux selection
     assert [c[1] for c in drive_calls] == ["first ask", "second ask"]
     assert all(c[0] == 4242 for c in drive_calls)
-    assert drive_calls[0][2] == {"channel": "zenmux", "provider": "openai", "model": "gpt-5.5"}
+    assert drive_calls[0][2] == {
+        "channel": "zenmux", "provider": "openai", "model": "openai/gpt-5.5",
+    }
     assert transcript.workflow_id == "wf-test"
 
 

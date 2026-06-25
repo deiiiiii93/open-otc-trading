@@ -137,7 +137,12 @@ def get_model(s: str) -> ArenaModel:
 def arena_model_to_selection(model: ArenaModel) -> dict[str, str]:
     """Map an ArenaModel's zenmux_name to a desk model_selection dict.
 
-    "openai/gpt-5.5" -> {"channel": "zenmux", "provider": "openai", "model": "gpt-5.5"}
+    "openai/gpt-5.5" -> {"channel": "zenmux", "provider": "openai", "model": "openai/gpt-5.5"}
+
+    The desk channel registry (config/agent_channels.yaml) keys Zenmux models by
+    their FULL id (e.g. ``openai/gpt-5.5``), so ``model`` carries the whole
+    zenmux_name; ``provider`` is the vendor prefix. Returning a stripped model id
+    would fail ``resolve_agent_model_selection`` before any turn is driven.
 
     Raises:
         ValueError: if zenmux_name does not contain a '<vendor>/<model>' slash.
@@ -147,8 +152,8 @@ def arena_model_to_selection(model: ArenaModel) -> dict[str, str]:
         raise ValueError(
             f"zenmux_name '{name}' must be '<vendor>/<model>' (e.g. 'openai/gpt-5.5')."
         )
-    provider, _, model_name = name.partition("/")
-    return {"channel": "zenmux", "provider": provider, "model": model_name}
+    provider = name.split("/", 1)[0]
+    return {"channel": "zenmux", "provider": provider, "model": name}
 
 
 def validate_model_ids(ids: list[str]) -> list[str]:
