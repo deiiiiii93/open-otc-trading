@@ -190,9 +190,14 @@ class _FakeAgentBridge:
         binding: GatewayBinding,
         thread: AgentThread,
         text: str,
-    ):
-        """Return an async iterable of AgentEvent for render_turn to consume."""
-        # Record the actor.
+    ) -> AsyncIterator["AgentEvent"]:
+        """Async generator of AgentEvent for render_turn to consume.
+
+        Calling submit_turn(...) (no await) returns this async generator directly.
+        The dispatcher must iterate it via render_turn rather than awaiting it.
+        """
+        # Record the actor eagerly — happens as soon as the generator is iterated
+        # (render_turn calls async for immediately after submit_turn returns the gen).
         self.submit_turn_actors.append(binding.desk_user)
 
         if "book" in text.lower():
@@ -209,44 +214,38 @@ class _FakeAgentBridge:
                 msg_session.refresh(msg)
                 message_id = msg.id
 
-            async def _booking_events():
-                yield AgentEvent(type="token", data={"content": "I will book the position."})
-                yield AgentEvent(
-                    type="done",
-                    data={
-                        "thread_id": thread.id,
-                        "message_id": message_id,
-                        "pending_actions": [
-                            {
-                                "id": f"action-{uuid.uuid4()}",
-                                "tool_name": "book_position",
-                                "label": "Book vanilla call",
-                                "summary": "Book a vanilla call option",
-                                "payload": {
-                                    "product": {
-                                        "product_family": "vanilla",
-                                        "quantark_class": "EuropeanOption",
-                                        "underlying": "000300.SH",
-                                        "currency": "CNY",
-                                        "terms": {"strike": 4200.0, "expiry": "2026-12-31"},
-                                    },
-                                    "quantity": 100.0,
-                                    "portfolio_id": 1,
+            yield AgentEvent(type="token", data={"content": "I will book the position."})
+            yield AgentEvent(
+                type="done",
+                data={
+                    "thread_id": thread.id,
+                    "message_id": message_id,
+                    "pending_actions": [
+                        {
+                            "id": f"action-{uuid.uuid4()}",
+                            "tool_name": "book_position",
+                            "label": "Book vanilla call",
+                            "summary": "Book a vanilla call option",
+                            "payload": {
+                                "product": {
+                                    "product_family": "vanilla",
+                                    "quantark_class": "EuropeanOption",
+                                    "underlying": "000300.SH",
+                                    "currency": "CNY",
+                                    "terms": {"strike": 4200.0, "expiry": "2026-12-31"},
                                 },
-                                "requires_confirmation": True,
-                                "status": "pending",
-                            }
-                        ],
-                    },
-                )
-
-            return _booking_events()
+                                "quantity": 100.0,
+                                "portfolio_id": 1,
+                            },
+                            "requires_confirmation": True,
+                            "status": "pending",
+                        }
+                    ],
+                },
+            )
         else:
-            async def _simple_events():
-                yield AgentEvent(type="token", data={"content": "Hello from the desk agent."})
-                yield AgentEvent(type="done", data={"thread_id": thread.id, "message_id": 0, "pending_actions": []})
-
-            return _simple_events()
+            yield AgentEvent(type="token", data={"content": "Hello from the desk agent."})
+            yield AgentEvent(type="done", data={"thread_id": thread.id, "message_id": 0, "pending_actions": []})
 
     # ------------------------------------------------------------------
     # resume — record call, write AuditEvent, return minimal message
@@ -451,14 +450,21 @@ async def test_gateway_e2e_vertical_slice(configured_sm, e2e_settings):
     query_msg = _make_dm(text="What is our risk exposure?", event_id=_new_event_id())
     await dispatcher.handle(query_msg)
 
-    # Assert: some text answer appeared in outbox from the agent.
+    # Assert: the scripted answer text from the REAL async-generator path appeared in
+    # outbox.  FakeAgentBridge.submit_turn is an async generator function; the
+    # dispatcher must call it WITHOUT await (getting the generator) and pass it to
+    # render_turn for iteration.  If the dispatcher mistakenly *awaits* submit_turn
+    # it raises TypeError and no text reaches the outbox, failing this assertion.
     query_outbox = connector.outbox[:]
     query_texts = _outbox_texts(query_outbox)
     assert len(query_texts) > 0, (
-        f"Expected text in outbox after query, got: {query_outbox}"
+        f"Expected text in outbox after query (dispatcher must iterate submit_turn "
+        f"async-generator, not await it), got: {query_outbox}"
     )
+    # The scripted token payload is "Hello from the desk agent." — assert it arrived.
     assert any("desk agent" in t.lower() or "hello" in t.lower() for t in query_texts), (
-        f"Expected scripted answer in outbox. Texts: {query_texts}"
+        f"Expected 'Hello from the desk agent.' token in outbox — the async-generator "
+        f"path was not exercised. Texts: {query_texts}"
     )
 
     # Assert: submit_turn was called with binding.desk_user as actor.

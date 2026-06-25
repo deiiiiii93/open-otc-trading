@@ -429,7 +429,7 @@ class Dispatcher:
             session.commit()
 
         with self._sessionmaker() as session:
-            events = await self._bridge.submit_turn(
+            events = self._bridge.submit_turn(
                 session, binding, thread, inbound.text.strip()
             )
             await self._renderer.render_turn(session, binding, inbound.chat, events)

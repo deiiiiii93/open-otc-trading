@@ -134,13 +134,20 @@ class _RecorderBridge:
         self.thread_for_calls.append((binding, chat))
         return _FakeThread()
 
-    async def submit_turn(self, session, binding, thread, text):
+    def submit_turn(self, session, binding, thread, text):
         self.submit_turn_calls.append((binding, thread, text))
         self.order_log.append(("start", text))
-        if self.gate is not None:
-            await self.gate.wait()
-        self.order_log.append(("finish", text))
-        return _empty_async_gen()
+        gate = self.gate
+        order_log = self.order_log
+
+        async def _gen():
+            if gate is not None:
+                await gate.wait()
+            order_log.append(("finish", text))
+            return
+            yield  # make it an async generator function
+
+        return _gen()
 
     def resume(self, session, binding, thread_id, message_id, action_id, decision):
         self.resume_calls.append((session, binding, thread_id, message_id, action_id, decision))

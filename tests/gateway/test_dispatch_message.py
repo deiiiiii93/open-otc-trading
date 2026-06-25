@@ -70,9 +70,8 @@ class _RecorderBridge:
         self.thread_for_calls.append((binding, chat))
         return self._fake_thread
 
-    async def submit_turn(self, session, binding, thread, text):
+    def submit_turn(self, session, binding, thread, text):
         self.submit_turn_calls.append((binding, thread, text))
-        # Return empty async generator
         return _empty_async_gen()
 
 
