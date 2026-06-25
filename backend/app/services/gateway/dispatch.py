@@ -25,8 +25,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import GatewayInboundSeen
+from app.models import GatewayBinding, GatewayInboundSeen
+from app.services.gateway import actions
 from app.services.gateway import identity as identity_svc
+from app.services.gateway.coalescer import ResumeOk, ResumeRaised
 from app.services.gateway.types import InboundMessage, OutboundMessage
 
 _HELP_TEXT = "I can only read text messages."
@@ -181,10 +183,7 @@ class Dispatcher:
         if inbound.kind == "message":
             await self._handle_message_async(inbound)
         else:
-            # 12c: card-action path — leave the seam intact
-            with self._sessionmaker() as session:
-                self._finish_inbound(session, inbound)
-                session.commit()
+            await self._handle_card_action_async(inbound)
 
     # ------------------------------------------------------------------
     # Message path (Task 12b)
@@ -327,3 +326,65 @@ class Dispatcher:
         with self._sessionmaker() as session:
             self._finish_inbound(session, inbound)
             session.commit()
+
+    # ------------------------------------------------------------------
+    # Card-action path (Task 12c)
+    # ------------------------------------------------------------------
+
+    async def _handle_card_action_async(self, inbound: InboundMessage) -> None:
+        """Async implementation of the card-action path.
+
+        Priority lane — never queued behind turns.
+
+        Execution order:
+        1. verify_and_claim the token (atomic DB update).
+        2a. Losing/invalid claim → render_claim_error; then finish dedup row.
+        2b. Winning claim → commit the resolving state BEFORE resume (fail-closed);
+            look up the binding; call bridge.resume wrapped broadly so a raise
+            becomes ResumeRaised; render_resume_result; then finish dedup row.
+        """
+        with self._sessionmaker() as session:
+            result = actions.verify_and_claim(
+                session,
+                token=inbound.action.token,
+                source_message_ref=inbound.action.source_message_ref,
+            )
+
+            if isinstance(result, actions.ClaimError):
+                # Losing or invalid claim — notify the caller and finish.
+                await self._renderer.render_claim_error(
+                    session, inbound.action.source_message_ref, result
+                )
+                self._finish_inbound(session, inbound)
+                session.commit()
+            else:
+                # Winning claim: commit the "resolving" status BEFORE resume
+                # so that a crash during resume leaves the row non-pending.
+                session.commit()
+
+                # Fetch the binding in a fresh session (prior session committed).
+                with self._sessionmaker() as session2:
+                    binding = session2.get(GatewayBinding, result.binding_id)
+
+                    try:
+                        agent_message = self._bridge.resume(
+                            session2,
+                            binding,
+                            result.thread_id,
+                            result.message_id,
+                            result.action_id,
+                            result.decision,
+                        )
+                        outcome = ResumeOk(agent_message=agent_message)
+                    except Exception:
+                        outcome = ResumeRaised()
+
+                    await self._renderer.render_resume_result(
+                        session2,
+                        binding,
+                        result,
+                        inbound.action.source_message_ref,
+                        outcome,
+                    )
+                    self._finish_inbound(session2, inbound)
+                    session2.commit()
