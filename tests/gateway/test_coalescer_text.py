@@ -287,3 +287,77 @@ async def test_send_retry_on_failure(db_session, db_settings):
     # Final message made it through
     sends = [e for e in connector.outbox if e["type"] == "message"]
     assert len(sends) == 1
+
+
+# ---------------------------------------------------------------------------
+# (e) Token-bucket rate limiter — primary throttle (C1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_token_bucket_throttles_rapid_burst(db_session, db_settings):
+    """More than `burst` rapid sends in zero elapsed time → bucket throttles.
+
+    With burst=5 and the monotonic clock frozen at t=0 (no refill), a burst of
+    8 separate sends consumes the 5 starter tokens immediately, then must SLEEP
+    (via the injected sleep) to refill one token per send for the remaining 3.
+    """
+    from app.services.gateway.coalescer import StreamRenderer
+
+    connector = FakeConnector()
+    binding = _make_binding(db_session)
+    chat = _make_chat()
+
+    # Freeze monotonic at 0 → no passive refill ever happens.
+    def frozen_monotonic() -> float:
+        return 0.0
+
+    sleep_calls: list[float] = []
+
+    async def fake_sleep(s: float) -> None:
+        sleep_calls.append(s)
+
+    # max_message_chars small so a single long token splits into many separate
+    # send_message calls — each one consumes a bucket token.
+    connector.capabilities = ConnectorCapabilities(
+        supports_edit_in_place_message=True,
+        supports_edit_in_place_card=True,
+        supports_interactive_cards=True,
+        max_message_chars=1,  # 1 char per chunk → 1 send per char
+    )
+
+    settings = dataclasses.replace(
+        db_settings,
+        gateway_flush_interval_ms=0,
+        gateway_flush_chars=1,
+    )
+
+    renderer = StreamRenderer(
+        connector=connector,
+        settings=settings,
+        sleep=fake_sleep,
+        monotonic=frozen_monotonic,
+    )
+
+    # 8 chars → 8 chunked send_message calls (>5 burst).
+    events = _events(
+        AgentEvent(type="token", data={"content": "ABCDEFGH"}),
+        AgentEvent(type="done", data={}),
+    )
+
+    await renderer.render_turn(db_session, binding, chat, events)
+
+    sends = [e for e in connector.outbox if e["type"] == "message"]
+    assert len(sends) == 8, f"Expected 8 chunked sends, got {len(sends)}: {connector.outbox}"
+
+    # First 5 sends consume starter tokens (no sleep); the remaining 3 must each
+    # wait for a refill → at least 3 throttle sleeps, total wait > 0.
+    assert len(sleep_calls) >= 3, (
+        f"Expected ≥3 bucket-throttle sleeps after a {len(sends)}-send burst, "
+        f"got {len(sleep_calls)}: {sleep_calls}"
+    )
+    assert sum(sleep_calls) > 0, "Expected total throttle sleep time > 0"
+    # Refill is 5 tokens/s → one token = 0.2s wait.
+    assert any(abs(s - 0.2) < 1e-9 for s in sleep_calls), (
+        f"Expected a 0.2s (one-token) refill wait, got: {sleep_calls}"
+    )

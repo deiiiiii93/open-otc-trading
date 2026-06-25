@@ -142,6 +142,24 @@ async def test_done_with_pending_action_sends_card(db_session, db_settings):
     assert "Approve" in labels
     assert "Reject" in labels
 
+    # The minted GatewayCardAction rows must carry the PLACEHOLDER's real
+    # out_message_id (proves the two-phase send threads the provider ref into
+    # the token rows).
+    from app.models import GatewayCardAction
+
+    placeholder_ref = card_sends[0]["ref"]
+    action_rows = (
+        db_session.query(GatewayCardAction)
+        .filter_by(message_id=message.id, action_id=action_data["id"])
+        .all()
+    )
+    assert len(action_rows) == 2, f"Expected 2 token rows (confirm+dismiss), got {len(action_rows)}"
+    for row in action_rows:
+        assert row.out_message_id == placeholder_ref.message_id, (
+            f"token out_message_id {row.out_message_id!r} != placeholder "
+            f"{placeholder_ref.message_id!r}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # (b) Both action_required and done for the same message_id → idempotent

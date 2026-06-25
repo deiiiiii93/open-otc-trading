@@ -278,6 +278,8 @@ async def test_render_claim_error_expired(db_session, db_settings):
     assert len(card_updates) == 1
     card = card_updates[0]["card"]
     assert "expir" in card.body.lower(), f"Body: {card.body!r}"
+    # Spec copy: must direct the user back to the agent (re-send), not the web desk.
+    assert "re-send" in card.body.lower(), f"Expected 're-send' copy, got: {card.body!r}"
 
 
 # ---------------------------------------------------------------------------
