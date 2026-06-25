@@ -32,9 +32,70 @@ _PERSONA_TO_CHARACTER = {
 
 _ARENA_SERVICE = None
 
+# Between-steps task settle: poll until the match's queued background tasks
+# finish so a later step reads completed results (e.g. the fresh risk run).
+TASK_SETTLE_MAX_ATTEMPTS = 150
+TASK_SETTLE_SLEEP_SECONDS = 2.0
+
 
 def _persona_to_character(persona: str) -> str:
     return _PERSONA_TO_CHARACTER.get(persona, "trader")
+
+
+def _wait_for_pending_tasks(
+    baseline_task_id: int,
+    *,
+    max_attempts: int = TASK_SETTLE_MAX_ATTEMPTS,
+    sleep_seconds: float = TASK_SETTLE_SLEEP_SECONDS,
+) -> None:
+    """Block until every TaskRun created after *baseline_task_id* is terminal.
+
+    Workflow tools (run_batch_pricing, run_scenario_test, …) queue a TaskRun that
+    a process-global thread pool executes asynchronously. Without waiting, the
+    next workflow step would read stale results. The arena's own ARENA_RUN task
+    is excluded so this never waits on itself. Bounded by *max_attempts* so a
+    stuck task degrades to stale data rather than hanging the match forever.
+    """
+    import time
+
+    from app import database
+    from app.models import TaskKind, TaskRun, TaskStatus
+
+    terminal = {
+        TaskStatus.COMPLETED.value,
+        TaskStatus.COMPLETED_WITH_ERRORS.value,
+        TaskStatus.FAILED.value,
+    }
+    for _ in range(max_attempts):
+        with database.SessionLocal() as session:
+            pending = (
+                session.query(TaskRun.id)
+                .filter(
+                    TaskRun.id > baseline_task_id,
+                    TaskRun.kind != TaskKind.ARENA_RUN.value,
+                    TaskRun.status.notin_(terminal),
+                )
+                .count()
+            )
+        if pending == 0:
+            return
+        time.sleep(sleep_seconds)
+
+
+def _make_default_settle():
+    """Snapshot the TaskRun high-water mark now, return a between-steps waiter."""
+    from sqlalchemy import func
+
+    from app import database
+    from app.models import TaskRun
+
+    with database.SessionLocal() as session:
+        baseline = session.query(func.max(TaskRun.id)).scalar() or 0
+
+    def settle() -> None:
+        _wait_for_pending_tasks(baseline)
+
+    return settle
 
 
 def _get_arena_service():
@@ -214,6 +275,7 @@ def run_match(
     run_id: int | None = None,
     drive: Callable[[int, str, dict], None] | None = None,
     harvest: Callable[..., Any] | None = None,
+    settle: Callable[[], None] | None = None,
 ) -> Any:
     """Run a single arena match and return a MatchTranscript.
 
@@ -226,6 +288,9 @@ def run_match(
             Defaults to the stream_and_persist-based ``_default_drive``.
         harvest: Injectable transcript harvester ``(thread_id, workflow, model)``.
             Defaults to ``transcript_from_trace``.
+        settle: Injectable no-arg waiter run after each step to let queued
+            background tasks finish before the next step reads their results.
+            Defaults to a DB-polling waiter; tests inject a no-op.
     """
     drive = drive or _default_drive
     harvest = harvest or transcript_from_trace
@@ -264,9 +329,16 @@ def run_match(
         session.commit()
         thread_id = thread.id
 
-    # Drive every workflow step as a turn on the same thread.
+    # Snapshot the task high-water mark (after seeding, before driving) so the
+    # settle step only waits on tasks this match queues.
+    if settle is None:
+        settle = _make_default_settle()
+
+    # Drive every workflow step as a turn on the same thread, waiting for queued
+    # background tasks to finish before the next step reads their results.
     for wf_step in workflow.steps:
         drive(thread_id, wf_step.user, selection)
+        settle()
 
     transcript = harvest(thread_id, workflow, model)
 

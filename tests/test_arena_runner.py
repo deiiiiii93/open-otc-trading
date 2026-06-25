@@ -91,7 +91,7 @@ def test_run_match_seeds_creates_arena_thread_and_drives_each_step(tmp_path, mon
     model = get_model("gpt-5-5")
     transcript = run_match(
         _Loaded(), model, artifact_root=tmp_path, run_id=7,
-        drive=fake_drive, harvest=fake_harvest,
+        drive=fake_drive, harvest=fake_harvest, settle=lambda: None,
     )
 
     assert seeded["called"] is True
@@ -244,6 +244,42 @@ def test_purge_deletes_task_rows_before_referenced_runs(session):
     assert session.query(RiskRun).filter(RiskRun.portfolio_id == ctrl_id).count() == 0
     assert session.query(TaskRun).filter(TaskRun.portfolio_id == ctrl_id).count() == 0
     assert session.query(Portfolio).filter(Portfolio.name == "Control Desk Portfolio").count() == 0
+
+
+def test_wait_for_pending_tasks_returns_when_all_terminal(session):
+    """No non-terminal tasks above the baseline → returns immediately."""
+    from app.services.arena.runner import _wait_for_pending_tasks
+    from app.models import TaskRun, TaskStatus
+
+    done = TaskRun(kind="batch_pricing", status=TaskStatus.COMPLETED.value)
+    session.add(done)
+    session.commit()
+    # baseline below the completed task; nothing pending → must not block
+    _wait_for_pending_tasks(0, max_attempts=1, sleep_seconds=0)
+
+
+def test_wait_for_pending_tasks_bounded_when_task_stuck(session):
+    """A stuck queued task degrades to a bounded wait, not an infinite hang."""
+    from app.services.arena.runner import _wait_for_pending_tasks
+    from app.models import TaskRun, TaskStatus
+
+    stuck = TaskRun(kind="batch_pricing", status=TaskStatus.QUEUED.value)
+    session.add(stuck)
+    session.commit()
+    # exceeds baseline and never completes; max_attempts bounds the loop
+    _wait_for_pending_tasks(0, max_attempts=2, sleep_seconds=0)  # returns, does not hang
+
+
+def test_wait_for_pending_tasks_ignores_arena_run_task(session):
+    """The arena's own ARENA_RUN task must not make settle wait on itself."""
+    from app.services.arena.runner import _wait_for_pending_tasks
+    from app.models import TaskRun, TaskKind, TaskStatus
+
+    arena_task = TaskRun(kind=TaskKind.ARENA_RUN.value, status=TaskStatus.RUNNING.value)
+    session.add(arena_task)
+    session.commit()
+    # only an ARENA_RUN task is non-terminal → excluded → returns immediately
+    _wait_for_pending_tasks(0, max_attempts=1, sleep_seconds=0)
 
 
 def test_persist_user_turn_inserts_user_message(session):

@@ -245,11 +245,14 @@ The `drive=`/`harvest=` seams stay injectable for unit tests.
 async checkpointer SQLite serialises writes. Each match seeds a fresh fixture set
 (unique IDs), so sequential matches never contaminate one another.
 
-**Known constraint — background tasks:** `run_batch_pricing` and similar queue a
-`TaskRun`; no worker executes them inside the arena process, so steps that depend
-on *completed* background results read prior state. The golden workflows are
-designed around queue-and-report, so their assertions check the queued action and
-`task_id`, not completed results.
+**Background tasks (settled between steps):** `run_batch_pricing` and similar
+queue a `TaskRun` that a process-global thread pool runs asynchronously. After
+each workflow step, `run_match` calls a `settle()` waiter that blocks until every
+`TaskRun` queued since the match started (excluding the arena run itself) is
+terminal, so a later step (e.g. `get_latest_risk_run`) reads the freshly computed
+result rather than stale state. The wait is bounded (`TASK_SETTLE_MAX_ATTEMPTS`),
+so a stuck task degrades to stale data instead of hanging the match. `settle=` is
+injectable (tests pass a no-op).
 
 ### 5.3 Demo generation (`app.services.demo.composition` + `scripts/generate_demo.py`)
 
