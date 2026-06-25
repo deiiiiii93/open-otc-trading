@@ -254,9 +254,9 @@ class GatewayRuntime:
             return self._bridge
         # Lazy import — only works when the full app is booted.
         from app.services.gateway.bridge import AgentBridge
-        from app.services.agents import active_agent_service
+        from app.services.agents import AgentService
 
-        self._bridge = AgentBridge(active_agent_service())
+        self._bridge = AgentBridge(AgentService(settings=self._settings))
         return self._bridge
 
     # ------------------------------------------------------------------

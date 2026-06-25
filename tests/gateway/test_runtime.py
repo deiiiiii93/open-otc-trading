@@ -224,3 +224,44 @@ def test_prune_inbound_seen_deletes_old_rows_only(configured_db):
         remaining = session.query(GatewayInboundSeen).all()
         assert len(remaining) == 1, f"Expected 1 row remaining, got {len(remaining)}"
         assert remaining[0].provider_event_id == "ev_fresh_001"
+
+
+# ---------------------------------------------------------------------------
+# Test 5: _ensure_bridge() builds AgentService on the default (no injected bridge) path
+# ---------------------------------------------------------------------------
+
+
+def test_ensure_bridge_default_path_builds_agent_service(
+    configured_db, monkeypatch
+):
+    """_ensure_bridge() must use AgentService, NOT the nonexistent active_agent_service.
+
+    This test would FAIL against the buggy import (ImportError: cannot import
+    name 'active_agent_service' from 'app.services.agents') and PASS after the
+    fix (AgentBridge wrapping a cheap FakeAgentService).
+    """
+    sm, settings = configured_db
+
+    # Patch AgentService so no real model/LLM is constructed.
+    class FakeAgentService:
+        def __init__(self, settings=None, **kw):
+            self.settings = settings
+
+    import app.services.agents as agents_module
+
+    monkeypatch.setattr(agents_module, "AgentService", FakeAgentService)
+
+    from app.services.gateway.bridge import AgentBridge
+
+    # Build a GatewayRuntime with NO injected bridge — this is the production path.
+    runtime = GatewayRuntime(
+        settings=settings,
+        sessionmaker=sm,
+    )
+
+    bridge = runtime._ensure_bridge()
+
+    assert bridge is not None, "_ensure_bridge() must return a bridge"
+    assert isinstance(bridge, AgentBridge), "_ensure_bridge() must return an AgentBridge"
+    assert isinstance(bridge._svc, FakeAgentService), "bridge._svc must be a FakeAgentService"
+    assert bridge._svc.settings is settings, "AgentService must be constructed with the runtime's settings"
