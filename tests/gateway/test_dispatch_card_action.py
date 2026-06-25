@@ -19,7 +19,6 @@ import pytest
 from app import database
 from app.config import Settings
 from app.models import GatewayBinding, GatewayCardAction, GatewayInboundSeen
-from app.services.gateway import identity
 from app.services.gateway import actions
 from app.services.gateway.actions import ClaimError
 from app.services.gateway.coalescer import ResumeOk, ResumeRaised
@@ -95,17 +94,7 @@ class _RecorderRenderer:
 
 def _seed_binding(sm) -> GatewayBinding:
     """Create and return an active GatewayBinding row."""
-    with sm() as session:
-        code, _ = identity.issue_linking_code(
-            session, persona="trader", settings=Settings(
-                database_url="",
-                artifact_dir="/tmp",
-                agent_checkpoint_db_path=":memory:",
-            )
-        )
-        session.commit()
-
-    # We need an actual binding row — create one directly.
+    # Create the binding directly — no linking code needed for these tests.
     with sm() as session:
         binding = GatewayBinding(
             provider="fake",
@@ -412,4 +401,71 @@ def test_fail_closed_resolving_state_committed_before_resume(sm, db_settings):
     assert status_at_resume_time[0] != "pending", (
         f"Expected status to be committed (not 'pending') before resume, "
         f"got: {status_at_resume_time[0]!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Real-renderer regression test (Finding 2)
+# Exercises the winning card-action path with the REAL StreamRenderer and a
+# FakeConnector — not the stub _RecorderRenderer.  Proves that the
+# GatewayCardAction row handed to render_resume_result is attached to the
+# session that render_resume_result operates on.
+# Without the dispatch.py fix (re-fetching via live_row = session2.get(...)),
+# render_resume_result calls mark_resolved which flushes the detached result
+# object and raises DetachedInstanceError.
+# ---------------------------------------------------------------------------
+
+
+def test_real_renderer_winning_claim_no_detached_instance_error(sm, db_settings):
+    """Winning card-action path with the real StreamRenderer must not raise.
+
+    Regression test for the DetachedInstanceError latent bug: the winning
+    GatewayCardAction row (result) was attached to session1 which is closed
+    before session2 opens.  render_resume_result calls mark_resolved(session2,
+    result) which flush()es — raising DetachedInstanceError unless the row is
+    re-fetched within session2.
+
+    Assertions:
+    (a) no exception escapes disp.handle(inbound)
+    (b) GatewayCardAction.status == 'resolved' after the call (proving
+        mark_resolved ran on an ATTACHED row — what the detachment bug broke)
+    """
+    import dataclasses
+    from app.services.gateway.coalescer import StreamRenderer
+
+    binding = _seed_binding(sm)
+    token, out_ref = _seed_card_action(sm, binding, db_settings)
+
+    # Simple stub agent-message-like object: has .content and .meta so
+    # StreamRenderer.render_resume_result takes the ResumeOk branch and calls
+    # mark_resolved on the card-action row.
+    class _StubAgentMessage:
+        content = "Action completed."
+        meta: dict = {}
+
+    class _StubBridge:
+        def resume(self, session, binding, thread_id, message_id, action_id, decision):
+            return _StubAgentMessage()
+
+    connector = FakeConnector()
+    settings = dataclasses.replace(
+        db_settings,
+        gateway_card_action_ttl_s=1800,
+        gateway_web_base_url=None,
+    )
+    renderer = StreamRenderer(connector=connector, settings=settings)
+    bridge = _StubBridge()
+
+    disp, _, _, _ = _make_dispatcher(sm, settings, bridge=bridge, renderer=renderer)
+
+    inbound = _make_card_action_inbound(token, out_ref, event_id="ev_card_007")
+
+    # (a) Must not raise — DetachedInstanceError would surface here if unfixed.
+    asyncio.run(disp.handle(inbound))
+
+    # (b) Row must be 'resolved' — proves mark_resolved ran on an attached row.
+    row = _get_card_action_by_token(sm, token)
+    assert row is not None
+    assert row.status == "resolved", (
+        f"Expected 'resolved' after real-renderer path, got {row.status!r}"
     )

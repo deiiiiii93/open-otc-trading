@@ -25,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import GatewayBinding, GatewayInboundSeen
+from app.models import GatewayBinding, GatewayCardAction, GatewayInboundSeen
 from app.services.gateway import actions
 from app.services.gateway import identity as identity_svc
 from app.services.gateway.coalescer import ResumeOk, ResumeRaised
@@ -362,18 +362,24 @@ class Dispatcher:
                 # so that a crash during resume leaves the row non-pending.
                 session.commit()
 
-                # Fetch the binding in a fresh session (prior session committed).
+                # Fetch the binding AND re-fetch the card-action row in a fresh
+                # session.  The `result` object (GatewayCardAction) was attached
+                # to the now-closed first session; passing it to render_resume_result
+                # (which calls mark_resolved/mark_unknown → flush) would raise
+                # DetachedInstanceError.  Re-fetching via session2 keeps the row
+                # attached to the session that render_resume_result operates on.
                 with self._sessionmaker() as session2:
                     binding = session2.get(GatewayBinding, result.binding_id)
+                    live_row = session2.get(GatewayCardAction, result.id)
 
                     try:
                         agent_message = self._bridge.resume(
                             session2,
                             binding,
-                            result.thread_id,
-                            result.message_id,
-                            result.action_id,
-                            result.decision,
+                            live_row.thread_id,
+                            live_row.message_id,
+                            live_row.action_id,
+                            live_row.decision,
                         )
                         outcome = ResumeOk(agent_message=agent_message)
                     except Exception:
@@ -382,7 +388,7 @@ class Dispatcher:
                     await self._renderer.render_resume_result(
                         session2,
                         binding,
-                        result,
+                        live_row,
                         inbound.action.source_message_ref,
                         outcome,
                     )
