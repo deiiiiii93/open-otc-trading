@@ -196,10 +196,7 @@ def _execute(
 
                 transcript = _run_match_fn(loaded, model, artifact_root=artifact_root)
 
-                if judge_fn is not None:
-                    judge_result = _judge_fn(transcript, loaded, post=post)
-                else:
-                    judge_result = _judge_fn(transcript, loaded, post=post)
+                judge_result = _judge_fn(transcript, loaded, post=post)
 
                 obj_score, _passed, _total = scoring.objective_score(transcript, loaded)
                 t_score = scoring.total_score(

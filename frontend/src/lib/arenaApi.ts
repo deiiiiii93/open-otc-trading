@@ -3,7 +3,7 @@
 export type ArenaRunStatus = 'pending' | 'running' | 'completed' | 'failed' | string;
 
 export type ArenaRunSummary = {
-  id: string;
+  id: number;
   status: ArenaRunStatus;
   created_at: string;
   workflow_ids: string[];
@@ -11,7 +11,7 @@ export type ArenaRunSummary = {
 };
 
 export type ArenaMatchSummary = {
-  id: string;
+  id: number;
   workflow_id: string;
   model_id: string;
   status: string;
@@ -56,11 +56,11 @@ export type ArenaRunsResponse = {
 export type ArenaCreateRunRequest = {
   workflow_ids: string[];
   model_ids: string[];
-  weights?: { objective: number; judge: number };
+  weights?: { obj: number; judge: number };
 };
 
 export type ArenaCreateRunResponse = {
-  run_id: string;
+  run_id: number;
   status: ArenaRunStatus;
 };
 
@@ -74,19 +74,19 @@ export function listArenaRuns(limit = 20, offset = 0): Promise<ArenaRunsResponse
   return apiFetch(`/api/arena/runs?limit=${limit}&offset=${offset}`);
 }
 
-export function getArenaRun(runId: string): Promise<ArenaRunDetail> {
+export function getArenaRun(runId: number): Promise<ArenaRunDetail> {
   return apiFetch(`/api/arena/runs/${runId}`);
 }
 
-export function getArenaLeaderboard(runId?: string, tag?: string): Promise<ArenaLeaderboard> {
+export function getArenaLeaderboard(runId?: number, tag?: string): Promise<ArenaLeaderboard> {
   const params = new URLSearchParams();
-  if (runId) params.set('run_id', runId);
+  if (runId != null) params.set('run_id', String(runId));
   if (tag) params.set('tag', tag);
   const qs = params.toString();
   return apiFetch(`/api/arena/leaderboard${qs ? `?${qs}` : ''}`);
 }
 
-export function getMatchTranscript(matchId: string): Promise<unknown> {
+export function getMatchTranscript(matchId: number): Promise<unknown> {
   return apiFetch(`/api/arena/matches/${matchId}/transcript`);
 }
 

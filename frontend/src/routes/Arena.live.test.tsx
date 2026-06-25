@@ -22,7 +22,7 @@ const mockModels = [
 
 const mockRuns = [
   {
-    id: 'run-abc123',
+    id: 1,
     status: 'completed',
     created_at: '2026-06-24T10:00:00Z',
     workflow_ids: ['workflow-a'],
@@ -37,7 +37,7 @@ const mockLeaderboard = [
 
 const mockMatches = [
   {
-    id: 'match-001',
+    id: 101,
     workflow_id: 'workflow-a',
     model_id: 'claude-sonnet',
     status: 'completed',
@@ -45,7 +45,7 @@ const mockMatches = [
     judged_score: 0.8,
     total_score: 0.85,
     judge_missing: false,
-    transcript_path: 'artifacts/arena/run-abc123/claude-sonnet/workflow-a/transcript.json',
+    transcript_path: 'artifacts/arena/run-1/claude-sonnet/workflow-a/transcript.json',
   },
 ];
 
@@ -82,21 +82,21 @@ describe('ArenaLive', () => {
     setupMocks();
     render(<ArenaLive />);
 
-    // Run ID (first 8 chars) should appear in the run picker
-    expect(await screen.findByText('run-abc1')).toBeInTheDocument();
+    // Run ID rendered as String(1).slice(0,8) === '1'
+    expect(await screen.findByText('1')).toBeInTheDocument();
   });
 
   it('clicking a run loads run detail and shows match grid', async () => {
     setupMocks();
     render(<ArenaLive />);
 
-    const runButton = await screen.findByText('run-abc1');
+    const runButton = await screen.findByText('1');
     await userEvent.click(runButton);
 
     // Match cell should appear with workflow and model info
     expect(await screen.findByText('workflow-a')).toBeInTheDocument();
     expect(await screen.findByText(/Total:/)).toBeInTheDocument();
-    expect(arenaApi.getArenaRun).toHaveBeenCalledWith('run-abc123');
+    expect(arenaApi.getArenaRun).toHaveBeenCalledWith(1);
   });
 
   it('clicking a match fetches the transcript and renders transcript content', async () => {
@@ -104,7 +104,7 @@ describe('ArenaLive', () => {
     render(<ArenaLive />);
 
     // First, click the run
-    const runButton = await screen.findByText('run-abc1');
+    const runButton = await screen.findByText('1');
     await userEvent.click(runButton);
 
     // Wait for match cell
@@ -113,7 +113,7 @@ describe('ArenaLive', () => {
 
     // Transcript should be loaded and shown
     await waitFor(() => {
-      expect(arenaApi.getMatchTranscript).toHaveBeenCalledWith('match-001');
+      expect(arenaApi.getMatchTranscript).toHaveBeenCalledWith(101);
     });
 
     // The transcript JSON content should appear

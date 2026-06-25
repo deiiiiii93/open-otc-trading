@@ -43,9 +43,9 @@ export function ArenaLive() {
   const [leaderboard, setLeaderboard] = useState<ArenaLeaderboardRow[]>([]);
   const [runs, setRuns] = useState<ArenaRunSummary[]>([]);
   const [models, setModels] = useState<ArenaModel[]>([]);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [runDetail, setRunDetail] = useState<ArenaRunDetail | null>(null);
-  const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
+  const [selectedMatchId, setSelectedMatchId] = useState<number | null>(null);
   const [transcript, setTranscript] = useState<unknown | null>(null);
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const [loadingTranscript, setLoadingTranscript] = useState(false);
@@ -68,7 +68,7 @@ export function ArenaLive() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const selectRun = useCallback((runId: string) => {
+  const selectRun = useCallback((runId: number) => {
     setSelectedRunId(runId);
     setRunDetail(null);
     setSelectedMatchId(null);
@@ -147,7 +147,7 @@ export function ArenaLive() {
                   className={`wl-arena__run-item${run.id === selectedRunId ? ' is-active' : ''}`}
                   onClick={() => selectRun(run.id)}
                 >
-                  <span className="wl-arena__run-id">{run.id.slice(0, 8)}</span>
+                  <span className="wl-arena__run-id">{String(run.id).slice(0, 8)}</span>
                   <span className={`wl-arena__status ${statusClass(run.status)}`}>
                     {run.status}
                   </span>
@@ -164,7 +164,7 @@ export function ArenaLive() {
             <div className="wl-arena__panel">
               <div className="wl-arena__section-head">
                 <span className="wl-arena__eyebrow">
-                  Matches — run {selectedRunId?.slice(0, 8)}
+                  Matches — run {selectedRunId != null ? String(selectedRunId).slice(0, 8) : ''}
                 </span>
                 <span className={`wl-arena__status ${statusClass(runDetail.run.status)}`}>
                   {runDetail.run.status}
