@@ -88,8 +88,16 @@ def _make_client(tmp_path: Path, runtime=None) -> tuple[TestClient, object]:
 
 def test_health_returns_503_when_runtime_not_set(tmp_path):
     """When no runtime is installed on app.state, health returns 503."""
-    client, _ = _make_client(tmp_path, runtime=None)
-    # Make sure there's no runtime on app.state
+    settings = Settings(
+        database_url=f"sqlite+pysqlite:///{tmp_path / 'test.sqlite3'}",
+        artifact_dir=tmp_path / "artifacts",
+        agent_checkpoint_db_path=":memory:",
+    )
+    from app.main import create_app as _ca
+    _app = _ca(settings=settings)
+    # Explicitly remove the runtime that create_app installs
+    del _app.state.gateway_runtime
+    client = TestClient(_app)
     resp = client.get("/api/gateway/health")
     assert resp.status_code == 503
 
@@ -134,7 +142,16 @@ def test_health_standby_returns_schema(tmp_path):
 
 def test_reload_503_when_runtime_not_set(tmp_path):
     """POST /api/gateway/reload returns 503 when no runtime is on app.state."""
-    client, _ = _make_client(tmp_path, runtime=None)
+    settings = Settings(
+        database_url=f"sqlite+pysqlite:///{tmp_path / 'test.sqlite3'}",
+        artifact_dir=tmp_path / "artifacts",
+        agent_checkpoint_db_path=":memory:",
+    )
+    from app.main import create_app as _ca
+    _app = _ca(settings=settings)
+    # Explicitly remove the runtime that create_app installs
+    del _app.state.gateway_runtime
+    client = TestClient(_app)
     resp = client.post("/api/gateway/reload")
     assert resp.status_code == 503
 

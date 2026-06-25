@@ -3892,6 +3892,26 @@ def create_app(
             ],
         }
 
+    # ------------------------------------------------------------------
+    # Gateway runtime lifecycle wiring (sub-task 15d)
+    # ------------------------------------------------------------------
+    from app.services.gateway.runtime import GatewayRuntime
+    from app.services.gateway.bridge import AgentBridge
+
+    app.state.gateway_runtime = GatewayRuntime(
+        active_settings,
+        database.SessionLocal,
+        bridge=AgentBridge(active_agent_service),
+    )
+
+    @app.on_event("startup")
+    async def _start_gateway_runtime() -> None:
+        await app.state.gateway_runtime.start()
+
+    @app.on_event("shutdown")
+    async def _stop_gateway_runtime() -> None:
+        await app.state.gateway_runtime.stop()
+
     app.include_router(build_skills_router(active_agent_service))
     app.include_router(build_tracing_router())
     return app
