@@ -2,6 +2,8 @@
 
 Task 12a: dedup state machine + session ownership.
 Task 12b: message path — group refuse, identity, enroll, validate, turn.
+Task 12c: card-action path — priority lane, claim→resume→finalize.
+Task 12d: per-chat serialization + backpressure.
 
 Transaction boundary contract:
   - After a "new" or "reclaim" claim, ``session.commit()`` is called IMMEDIATELY
@@ -12,14 +14,22 @@ Transaction boundary contract:
   - ``_finish_inbound`` sets the row's state to "done" and the caller commits in
     a SEPARATE terminal transaction after processing is complete.
 
-Tasks 12c (card-action path) and 12d (backpressure) will extend ``handle()``
-and add new methods to this class.
+Backpressure (Task 12d):
+  - Per-(connector, workspace_id, chat_id) asyncio serialization lock.
+  - Only the MESSAGE path uses lanes; card-actions bypass entirely.
+  - Bounded queue: when depth > gateway_max_queued_per_chat, drop newest turn
+    with a "Too many pending messages" notice.
+  - Age cap: when a queued turn has waited > gateway_queue_max_age_s after
+    acquiring the lock, drop it with a "Message too old" notice.
 """
 from __future__ import annotations
 
+import asyncio
 import secrets
+import time as _time_module
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Callable, Literal
+from typing import Callable, Literal, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -32,6 +42,17 @@ from app.services.gateway.coalescer import ResumeOk, ResumeRaised
 from app.services.gateway.types import InboundMessage, OutboundMessage
 
 _HELP_TEXT = "I can only read text messages."
+
+# Lane key type: (connector, workspace_id, chat_id)
+_LaneKey = Tuple[str, str, str]
+
+
+@dataclass
+class _Lane:
+    """Per-chat serialization lane for the message path."""
+
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    depth: int = 0  # count of events in the lane (running + waiting)
 
 
 class Dispatcher:
@@ -60,12 +81,17 @@ class Dispatcher:
         renderer,
         sessionmaker: Callable[[], Session],
         settings,
+        *,
+        monotonic: Callable[[], float] = _time_module.monotonic,
     ) -> None:
         self._connector = connector
         self._bridge = bridge
         self._renderer = renderer
         self._sessionmaker = sessionmaker
         self._settings = settings
+        self._monotonic = monotonic
+        # Per-chat serialization lanes (Task 12d).
+        self._lanes: dict[_LaneKey, _Lane] = {}
 
     # ------------------------------------------------------------------
     # Dedup state machine (Task 12a)
@@ -181,9 +207,94 @@ class Dispatcher:
             session.commit()
 
         if inbound.kind == "message":
-            await self._handle_message_async(inbound)
+            await self._run_in_lane(inbound)
         else:
             await self._handle_card_action_async(inbound)
+
+    # ------------------------------------------------------------------
+    # Per-chat lane: serialization + backpressure (Task 12d)
+    # ------------------------------------------------------------------
+
+    async def _run_in_lane(self, inbound: InboundMessage) -> None:
+        """Serialise message turns per (connector, workspace_id, chat_id).
+
+        Only the message path uses lanes.  Card-actions bypass entirely.
+
+        Depth semantics:
+          depth=0: lane idle (no entry in _lanes)
+          depth=N: N turns are either running or waiting in the lane
+
+        Drop-newest:
+          Before admitting a new turn, check whether the current depth already
+          exceeds ``gateway_max_queued_per_chat``.  If depth > max_queued the
+          NEW turn is dropped immediately (before incrementing depth).
+
+        Age-cap:
+          After a turn acquires the lock, check how long it waited.  If the
+          wait exceeds ``gateway_queue_max_age_s``, drop it without processing.
+        """
+        settings = self._settings
+        max_queued: int = settings.gateway_max_queued_per_chat
+        max_age_s: float = settings.gateway_queue_max_age_s
+
+        key: _LaneKey = (
+            inbound.chat.connector,
+            inbound.chat.workspace_id,
+            inbound.chat.chat_id,
+        )
+
+        # --- Get or create the lane ------------------------------------------
+        lane = self._lanes.get(key)
+        if lane is None:
+            lane = _Lane()
+            self._lanes[key] = lane
+
+        # --- Bounded-queue check (drop-newest) --------------------------------
+        if lane.depth > max_queued:
+            # Too many turns already queued — drop this newest one.
+            await self._connector.send_message(
+                inbound.chat,
+                OutboundMessage(
+                    text="Too many pending messages — dropped the latest. Try again shortly."
+                ),
+                idempotency_key=f"{inbound.provider_event_id}:drop-overflow",
+            )
+            with self._sessionmaker() as session:
+                self._finish_inbound(session, inbound)
+                session.commit()
+            # Clean up empty lane if nobody else is using it.
+            if lane.depth == 0:
+                self._lanes.pop(key, None)
+            return
+
+        # --- Admit the turn: increment depth and record enqueue time ---------
+        lane.depth += 1
+        enqueued_at: float = self._monotonic()
+
+        try:
+            async with lane.lock:
+                # --- Age-cap check (post-lock) --------------------------------
+                waited = self._monotonic() - enqueued_at
+                if waited > max_age_s:
+                    # Turn is too old — drop it.
+                    await self._connector.send_message(
+                        inbound.chat,
+                        OutboundMessage(
+                            text="Message too old to process — please resend."
+                        ),
+                        idempotency_key=f"{inbound.provider_event_id}:drop-stale",
+                    )
+                    with self._sessionmaker() as session:
+                        self._finish_inbound(session, inbound)
+                        session.commit()
+                    return
+
+                # --- Run the turn --------------------------------------------
+                await self._handle_message_async(inbound)
+        finally:
+            lane.depth -= 1
+            if lane.depth == 0:
+                self._lanes.pop(key, None)
 
     # ------------------------------------------------------------------
     # Message path (Task 12b)
