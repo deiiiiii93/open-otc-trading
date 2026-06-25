@@ -67,6 +67,29 @@ def test_upgrade_is_idempotent(tmp_path: Path) -> None:
     _run_migration(mig, "upgrade", engine)  # second call must not raise
 
 
+def test_init_db_incremental_repair_adds_thread_columns(tmp_path: Path) -> None:
+    """An existing agent_threads table that predates 0033 gets source/arena_run_id
+    added by the boot-time incremental repair (not just by Alembic)."""
+    from app import database
+
+    engine = sa.create_engine(f"sqlite+pysqlite:///{tmp_path / 'old.sqlite3'}")
+    with engine.begin() as conn:
+        conn.execute(sa.text(
+            "CREATE TABLE agent_threads ("
+            " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            " title VARCHAR(200),"
+            " character VARCHAR(40))"
+        ))
+
+    database._ensure_incremental_schema(engine)
+
+    cols = {c["name"] for c in inspect(engine).get_columns("agent_threads")}
+    assert "source" in cols
+    assert "arena_run_id" in cols
+    idx = {i["name"] for i in inspect(engine).get_indexes("agent_threads")}
+    assert "ix_agent_threads_arena_run_id" in idx
+
+
 def test_downgrade_removes_columns(tmp_path: Path) -> None:
     engine = _engine_with_agent_threads(tmp_path, "down.sqlite3")
     mig = importlib.import_module("backend.alembic.versions.0033_agent_thread_source")

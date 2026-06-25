@@ -168,6 +168,24 @@ def _ensure_incremental_schema(active_engine: Engine) -> None:
                     "ON agent_threads (active_workflow_id)"
                 )
             )
+            # Migration 0033 (arena threads): mirror here so existing local DBs
+            # that boot through create_all without running Alembic still get the
+            # columns the ORM now references on every AgentThread query.
+            if "source" not in thread_cols:
+                connection.execute(
+                    text("ALTER TABLE agent_threads ADD COLUMN source VARCHAR(20) "
+                         "NOT NULL DEFAULT 'desk'")
+                )
+            if "arena_run_id" not in thread_cols:
+                connection.execute(
+                    text("ALTER TABLE agent_threads ADD COLUMN arena_run_id INTEGER")
+                )
+            connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_agent_threads_arena_run_id "
+                    "ON agent_threads (arena_run_id)"
+                )
+            )
     if "agent_messages" in tables:
         message_cols = {c["name"] for c in inspector.get_columns("agent_messages")}
         with active_engine.begin() as connection:

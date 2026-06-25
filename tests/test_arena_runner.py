@@ -34,11 +34,13 @@ def test_run_match_seeds_creates_arena_thread_and_drives_each_step(tmp_path, mon
     created = {}
     seeded = {"called": False}
 
-    # Stub apply_seed (no real DB write of fixtures)
-    monkeypatch.setattr(
-        "app.services.arena.runner.apply_seed",
-        lambda b, s: seeded.__setitem__("called", True),
-    )
+    # Stub apply_seed (no real DB write of fixtures); returns the ids-by-alias
+    # shape run_match consumes (empty portfolios → no tagging pass).
+    def _fake_apply_seed(b, s):
+        seeded["called"] = True
+        return {"portfolios": {}}
+
+    monkeypatch.setattr("app.services.arena.runner.apply_seed", _fake_apply_seed)
     # Purge is exercised by its own DB-backed test; stub it here.
     monkeypatch.setattr(
         "app.services.arena.runner._purge_seeded_portfolios",
@@ -115,6 +117,17 @@ class _Bundle:
         self.seed = seed
 
 
+def _tag_arena(session, name: str) -> int:
+    """Mark a seeded portfolio arena-owned (mirrors run_match) and return its id."""
+    from app.services.arena.runner import ARENA_PORTFOLIO_TAG
+    from app.models import Portfolio
+
+    p = session.query(Portfolio).filter(Portfolio.name == name).one()
+    p.tags = [ARENA_PORTFOLIO_TAG]
+    session.commit()
+    return p.id
+
+
 def test_purge_then_reseed_avoids_name_collision(session):
     """portfolios.name is UNIQUE: re-seeding a name-based fixture only works
     because the purge frees the name first; the reseed gets a fresh autoincrement id."""
@@ -124,6 +137,7 @@ def test_purge_then_reseed_avoids_name_collision(session):
 
     bundle = _Bundle({"portfolios": [{"alias": "control", "name": "Control Desk Portfolio"}]})
     apply_seed(bundle, session)
+    _tag_arena(session, "Control Desk Portfolio")
     _purge_seeded_portfolios(session, bundle)
     ids2 = apply_seed(bundle, session)  # name freed by purge → reseed succeeds, no collision
     assert ids2["portfolios"]["control"] is not None
@@ -147,12 +161,12 @@ def test_purge_removes_named_portfolio_and_dependents_only(session):
         }],
     })
     apply_seed(bundle, session)
+    ctrl_id = _tag_arena(session, "Control Desk Portfolio")
     # an unrelated portfolio that must survive
     keep = Portfolio(name="Keep Me")
     session.add(keep)
     session.commit()
     # simulate an agent write: a risk run on the seeded portfolio
-    ctrl_id = session.query(Portfolio.id).filter(Portfolio.name == "Control Desk Portfolio").scalar()
     session.add(RiskRun(portfolio_id=ctrl_id))
     session.commit()
 
@@ -164,6 +178,22 @@ def test_purge_removes_named_portfolio_and_dependents_only(session):
     assert session.query(Portfolio).filter(Portfolio.name == "Keep Me").count() == 1
 
 
+def test_purge_spares_untagged_real_portfolio(session):
+    """A real desk portfolio sharing the fixture name (no arena tag) is NEVER
+    deleted by the purge."""
+    from app.services.arena.runner import _purge_seeded_portfolios
+    from app.models import Portfolio
+
+    real = Portfolio(name="Control Desk Portfolio")  # user data, no arena tag
+    session.add(real)
+    session.commit()
+
+    bundle = _Bundle({"portfolios": [{"alias": "control", "name": "Control Desk Portfolio"}]})
+    _purge_seeded_portfolios(session, bundle)  # must not touch the real portfolio
+
+    assert session.query(Portfolio).filter(Portfolio.name == "Control Desk Portfolio").count() == 1
+
+
 def test_purge_deletes_task_rows_before_referenced_runs(session):
     """A task_run referencing a purged risk_run must not cause an FK violation:
     deletes run in reverse FK-dependency order (children first)."""
@@ -173,7 +203,7 @@ def test_purge_deletes_task_rows_before_referenced_runs(session):
 
     bundle = _Bundle({"portfolios": [{"alias": "control", "name": "Control Desk Portfolio"}]})
     apply_seed(bundle, session)
-    ctrl_id = session.query(Portfolio.id).filter(Portfolio.name == "Control Desk Portfolio").scalar()
+    ctrl_id = _tag_arena(session, "Control Desk Portfolio")
     rr = RiskRun(portfolio_id=ctrl_id)
     session.add(rr)
     session.commit()
