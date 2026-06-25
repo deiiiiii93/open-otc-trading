@@ -215,6 +215,7 @@ class AgentThreadOut(BaseModel):
     title: str
     character: str
     report_currency: str = "by_position"
+    source: str = "desk"
     created_at: datetime
     updated_at: datetime
     messages: list[AgentMessageOut] = Field(default_factory=list)

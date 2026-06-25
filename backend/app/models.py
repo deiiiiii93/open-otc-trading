@@ -131,6 +131,10 @@ class AgentThread(Base):
     report_currency: Mapped[str] = mapped_column(
         String(16), default="by_position", server_default="by_position", nullable=False
     )
+    source: Mapped[str] = mapped_column(
+        String(20), default="desk", server_default="desk", nullable=False
+    )
+    arena_run_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
     active_workflow_id: Mapped[int | None] = mapped_column(
         ForeignKey("workflows.id", ondelete="SET NULL"), index=True, nullable=True
     )
