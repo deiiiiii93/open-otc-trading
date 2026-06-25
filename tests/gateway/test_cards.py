@@ -15,7 +15,7 @@ book_position payload keys (from app/tools/positions.py BookPositionInput):
 book_hedge payload keys (from app/tools/hedging.py BookHedgeInput):
   portfolio_id   int
   underlying     str
-  risk_run_id    int
+  risk_run_id    int    — REQUIRED (source risk run the hedge is based on)
   strategy       str
   spot           float
   legs           list[dict]
@@ -374,6 +374,136 @@ class TestBuildApprovalCardMissingField:
             settings=db_settings,
         )
         assert card.resolved is False
+
+
+# ---------------------------------------------------------------------------
+# None / empty required value → non-approvable (fail-CLOSED, not fail-open)
+# ---------------------------------------------------------------------------
+
+class TestBuildApprovalCardEmptyValue:
+    def _card_for(self, db_session, db_settings, payload):
+        binding = _make_binding(db_session)
+        action = _make_action("book_position", payload)
+        return build_approval_card(
+            db_session,
+            binding=binding,
+            thread_id=1,
+            message_id=10,
+            pending_action=action,
+            out_ref=_make_out_ref(),
+            settings=db_settings,
+        )
+
+    def test_quantity_none_is_non_approvable(self, db_session, db_settings):
+        """IRREVERSIBLE book_position with quantity=None must NOT be approvable."""
+        payload = dict(_FULL_BOOK_POSITION_PAYLOAD)
+        payload["quantity"] = None
+        card = self._card_for(db_session, db_settings, payload)
+        assert len(card.actions) == 0
+
+    def test_quantity_empty_string_is_non_approvable(self, db_session, db_settings):
+        payload = dict(_FULL_BOOK_POSITION_PAYLOAD)
+        payload["quantity"] = ""
+        card = self._card_for(db_session, db_settings, payload)
+        assert len(card.actions) == 0
+
+    def test_quantity_whitespace_string_is_non_approvable(self, db_session, db_settings):
+        payload = dict(_FULL_BOOK_POSITION_PAYLOAD)
+        payload["quantity"] = "   "
+        card = self._card_for(db_session, db_settings, payload)
+        assert len(card.actions) == 0
+
+    def test_empty_product_dict_is_non_approvable(self, db_session, db_settings):
+        payload = dict(_FULL_BOOK_POSITION_PAYLOAD)
+        payload["product"] = {}
+        card = self._card_for(db_session, db_settings, payload)
+        assert len(card.actions) == 0
+
+    def test_present_nonempty_value_is_approvable(self, db_session, db_settings):
+        """Control: a present non-empty value stays approvable (2 actions)."""
+        payload = dict(_FULL_BOOK_POSITION_PAYLOAD)
+        payload["quantity"] = 100.0
+        card = self._card_for(db_session, db_settings, payload)
+        assert len(card.actions) == 2
+
+    def test_zero_quantity_is_still_approvable(self, db_session, db_settings):
+        """A legitimate 0 must NOT be treated as missing (only None/empty are)."""
+        payload = dict(_FULL_BOOK_POSITION_PAYLOAD)
+        payload["quantity"] = 0
+        card = self._card_for(db_session, db_settings, payload)
+        assert len(card.actions) == 2
+
+    def test_irreversible_approve_rfq_with_none_is_non_approvable(self, db_session, db_settings):
+        """Cover an IRREVERSIBLE RFQ tool: rfq_id=None must be non-approvable."""
+        payload = dict(_FULL_APPROVE_RFQ_PAYLOAD)
+        payload["rfq_id"] = None
+        binding = _make_binding(db_session)
+        action = _make_action("approve_rfq", payload)
+        card = build_approval_card(
+            db_session,
+            binding=binding,
+            thread_id=1,
+            message_id=10,
+            pending_action=action,
+            out_ref=_make_out_ref(),
+            settings=db_settings,
+        )
+        assert len(card.actions) == 0
+
+
+# ---------------------------------------------------------------------------
+# book_hedge — risk_run_id is required (decision-relevant for irreversible hedge)
+# ---------------------------------------------------------------------------
+
+class TestBuildApprovalCardBookHedgeRiskRunId:
+    def test_risk_run_id_in_required_fields(self):
+        assert "risk_run_id" in REQUIRED_FIELDS["book_hedge"]
+
+    def test_full_payload_with_risk_run_id_is_approvable(self, db_session, db_settings):
+        binding = _make_binding(db_session)
+        action = _make_action("book_hedge", _FULL_BOOK_HEDGE_PAYLOAD)
+        card = build_approval_card(
+            db_session,
+            binding=binding,
+            thread_id=1,
+            message_id=10,
+            pending_action=action,
+            out_ref=_make_out_ref(),
+            settings=db_settings,
+        )
+        assert len(card.actions) == 2
+
+    def test_missing_risk_run_id_is_non_approvable(self, db_session, db_settings):
+        payload = dict(_FULL_BOOK_HEDGE_PAYLOAD)
+        del payload["risk_run_id"]
+        binding = _make_binding(db_session)
+        action = _make_action("book_hedge", payload)
+        card = build_approval_card(
+            db_session,
+            binding=binding,
+            thread_id=1,
+            message_id=10,
+            pending_action=action,
+            out_ref=_make_out_ref(),
+            settings=db_settings,
+        )
+        assert len(card.actions) == 0
+
+    def test_none_risk_run_id_is_non_approvable(self, db_session, db_settings):
+        payload = dict(_FULL_BOOK_HEDGE_PAYLOAD)
+        payload["risk_run_id"] = None
+        binding = _make_binding(db_session)
+        action = _make_action("book_hedge", payload)
+        card = build_approval_card(
+            db_session,
+            binding=binding,
+            thread_id=1,
+            message_id=10,
+            pending_action=action,
+            out_ref=_make_out_ref(),
+            settings=db_settings,
+        )
+        assert len(card.actions) == 0
 
 
 # ---------------------------------------------------------------------------

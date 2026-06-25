@@ -52,7 +52,7 @@ if TYPE_CHECKING:
 
 REQUIRED_FIELDS: dict[str, list[str]] = {
     "book_position": ["product", "quantity", "portfolio_id"],
-    "book_hedge": ["portfolio_id", "underlying", "strategy", "spot", "legs"],
+    "book_hedge": ["portfolio_id", "underlying", "risk_run_id", "strategy", "spot", "legs"],
     "quote_rfq": ["rfq_id", "quote_mode", "created_by"],
     "submit_rfq_for_approval": ["rfq_id", "actor"],
     "approve_rfq": ["rfq_id", "approver"],
@@ -70,6 +70,27 @@ _MAX_FIELD_CHARS = 200
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _is_missing(payload: dict[str, Any], field: str) -> bool:
+    """Return whether *field* is missing for fail-closed purposes.
+
+    A required field counts as missing when it is absent, ``None``, or an
+    empty/whitespace-only string. ``0``, ``False``, and empty containers are
+    NOT treated as missing (a legitimate zero value must not silently void
+    approval), with one exception: an empty dict has no decision-relevant
+    content, so it is treated as missing too.
+    """
+    if field not in payload:
+        return True
+    value = payload[field]
+    if value is None:
+        return True
+    if isinstance(value, str) and value.strip() == "":
+        return True
+    if isinstance(value, dict) and len(value) == 0:
+        return True
+    return False
+
 
 def _truncate_value(raw: Any) -> str:
     """Render a field value, truncating if it exceeds _MAX_FIELD_CHARS."""
@@ -160,7 +181,7 @@ def build_approval_card(
     # ------------------------------------------------------------------
     # Guard 2: missing required fields
     # ------------------------------------------------------------------
-    missing = [f for f in required if f not in payload]
+    missing = [f for f in required if _is_missing(payload, f)]
     if missing:
         return _non_approvable_card(
             title=card_title,
