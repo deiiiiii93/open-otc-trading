@@ -28,9 +28,9 @@
 
 **Files:**
 - Create: `backend/alembic/versions/0032_gateway_tables.py`
-- Create: `backend/tests/gateway/__init__.py` (empty — makes the test dir a package)
+- Create: `tests/gateway/__init__.py` (empty — makes the test dir a package)
 - Modify: `backend/app/models.py` (append 6 models)
-- Test: `backend/tests/gateway/test_gateway_models.py`
+- Test: `tests/gateway/test_gateway_models.py`
 
 **Interfaces:**
 - Produces: ORM models `GatewayBinding`, `GatewayLinkingCode`, `GatewayThreadMap`, `GatewayInboundSeen`, `GatewayCardAction`, `GatewayWorkerLock` with the columns named in the spec. Tables: `gateway_binding`, `gateway_linking_code`, `gateway_thread_map`, `gateway_inbound_seen`, `gateway_card_action`, `gateway_worker_lock`.
@@ -39,7 +39,7 @@
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# backend/tests/gateway/test_gateway_models.py
+# tests/gateway/test_gateway_models.py
 from sqlalchemy import inspect
 from app import models, database
 
@@ -65,7 +65,7 @@ def test_binding_active_partial_unique(db_session):
         db_session.commit()
 ```
 
-(If `database.make_engine` differs, use the project's existing engine factory — check `app/database.py`. Reuse the repo's `db_session` fixture from `backend/tests/conftest.py`.)
+(If `database.make_engine` differs, use the project's existing engine factory — check `app/database.py`. Reuse the repo's `db_session` fixture from `tests/conftest.py`.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -163,7 +163,7 @@ Fill in the remaining 5 `create_table` calls with the exact columns from Step 3.
 - [ ] **Step 5: Add a migration-application test (parity with ORM metadata)**
 
 ```python
-# append to backend/tests/gateway/test_gateway_models.py
+# append to tests/gateway/test_gateway_models.py
 def test_migration_creates_same_schema_as_metadata(tmp_path):
     from alembic.config import Config
     from alembic import command
@@ -191,7 +191,7 @@ Expected: PASS; SQL prints the new tables.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add backend/app/models.py backend/alembic/versions/0032_gateway_tables.py backend/tests/gateway/__init__.py backend/tests/gateway/test_gateway_models.py
+git add backend/app/models.py backend/alembic/versions/0032_gateway_tables.py tests/gateway/__init__.py tests/gateway/test_gateway_models.py
 git commit -m "feat(gateway): schema for IM gateway bindings, codes, cards, dedup, lock"
 ```
 
@@ -201,7 +201,7 @@ git commit -m "feat(gateway): schema for IM gateway bindings, codes, cards, dedu
 
 **Files:**
 - Create: `backend/app/services/gateway/__init__.py`, `backend/app/services/gateway/types.py`
-- Test: `backend/tests/gateway/test_types.py`
+- Test: `tests/gateway/test_types.py`
 
 **Interfaces:**
 - Produces: frozen dataclasses `ChatRef(connector, workspace_id, chat_id, chat_type)`, `MessageRef(connector, workspace_id, chat_id, message_id)`, `OutboundMessage(text)`, `CardAction(label, style, token)`, `CardSection(title, body)`, `OutboundCard(title, body, sections, actions, resolved, footer)`, `CardActionInbound(source_message_ref, token)`, `InboundMessage(connector, workspace_id, external_account_id, provider_event_id, chat, kind, text, action, raw)`, `ConnectorCapabilities(supports_edit_in_place_message, supports_edit_in_place_card, supports_interactive_cards, max_message_chars)`, `ConnectorHealth(name, state, detail)`, `AgentEvent(type, data)`. `kind ∈ {"message","card_action"}`; `chat_type ∈ {"dm","group"}`; `style ∈ {"primary","danger","default"}`; `decision ∈ {"confirm","dismiss"}`.
@@ -209,7 +209,7 @@ git commit -m "feat(gateway): schema for IM gateway bindings, codes, cards, dedu
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# backend/tests/gateway/test_types.py
+# tests/gateway/test_types.py
 from app.services.gateway.types import InboundMessage, ChatRef, OutboundCard, CardAction
 
 def test_inbound_message_card_action_has_no_text():
@@ -231,7 +231,7 @@ def test_card_action_carries_only_token_to_button():
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/services/gateway/__init__.py backend/app/services/gateway/types.py backend/tests/gateway/test_types.py
+git add backend/app/services/gateway/__init__.py backend/app/services/gateway/types.py tests/gateway/test_types.py
 git commit -m "feat(gateway): normalized transport types"
 ```
 
@@ -241,7 +241,7 @@ git commit -m "feat(gateway): normalized transport types"
 
 **Files:**
 - Create: `backend/app/services/gateway/connectors/__init__.py`, `backend/app/services/gateway/connectors/base.py`, `backend/app/services/gateway/connectors/fake.py`
-- Test: `backend/tests/gateway/test_fake_connector.py`
+- Test: `tests/gateway/test_fake_connector.py`
 
 **Interfaces:**
 - Consumes: types from Task 2.
@@ -250,7 +250,7 @@ git commit -m "feat(gateway): normalized transport types"
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# backend/tests/gateway/test_fake_connector.py
+# tests/gateway/test_fake_connector.py
 import pytest
 from app.services.gateway.connectors.fake import FakeConnector
 from app.services.gateway.types import ChatRef, OutboundMessage
@@ -280,7 +280,7 @@ async def test_idempotent_send_does_not_duplicate():
 **Files:**
 - Modify: `backend/app/config.py` (add fields to `Settings`)
 - Create: `backend/app/services/gateway/config.py`
-- Test: `backend/tests/gateway/test_config.py`
+- Test: `tests/gateway/test_config.py`
 
 **Interfaces:**
 - Produces: `Settings` gains `gateway_default_desk_user="desk_user"`, `gateway_linking_code_ttl_s=600`, `gateway_card_action_ttl_s=1800`, `gateway_max_inbound_chars=4000`, `gateway_max_queued_per_chat=8`, `gateway_queue_max_age_s=120`, `gateway_dedupe_ttl_s=86400`, `gateway_dedupe_lease_s=120`, `gateway_lock_lease_s=30`, `gateway_code_issue_per_min=10`, `gateway_flush_interval_ms=700`, `gateway_flush_chars=280`, `gateway_web_base_url: str | None = None`, `gateway_enabled_connectors: str = ""` (comma list), Feishu creds `feishu_app_id/feishu_app_secret/feishu_verification_token/feishu_encrypt_key` (all `str | None`). `gateway/config.py` exposes `GatewayConfig.from_settings(settings) -> GatewayConfig` typed view + `web_thread_link(thread_id)` / `web_action_link(thread_id, message_id, action_id)` helpers (return `None` if `gateway_web_base_url` unset, logging once).
@@ -297,7 +297,7 @@ async def test_idempotent_send_does_not_duplicate():
 
 **Files:**
 - Create: `backend/app/services/gateway/identity.py`
-- Test: `backend/tests/gateway/test_identity.py`
+- Test: `tests/gateway/test_identity.py`
 
 **Interfaces:**
 - Consumes: ORM models (Task 1), settings (Task 4), `record_audit`.
@@ -312,7 +312,7 @@ async def test_idempotent_send_does_not_duplicate():
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-# backend/tests/gateway/test_identity.py
+# tests/gateway/test_identity.py
 from app.services.gateway import identity
 from app.config import get_settings  # or however settings are obtained
 
@@ -360,7 +360,7 @@ def test_invalid_persona_rejected(db_session):
 **Files:**
 - Modify: `backend/app/services/agents.py` (add `resume_pending_action(...)`; add `actor` kwarg to `stream_and_persist`)
 - Modify: `backend/app/main.py` (`_resume_action` → thin wrapper; turn endpoint passes `actor="desk_user"`)
-- Test: `backend/tests/gateway/test_resume_refactor_characterization.py`
+- Test: `tests/gateway/test_resume_refactor_characterization.py`
 
 **Interfaces:**
 - Produces: `active_agent_service.resume_pending_action(*, thread_id, message_id, action_id, decision, actor, session) -> AgentMessage` (the body currently in `main.py:_resume_action`, audit `actor` substituted). `stream_and_persist(..., actor: str = "desk_user")` threading `actor` into the turn/resume audit calls that today hard-code `"desk_user"`.
@@ -369,7 +369,7 @@ def test_invalid_persona_rejected(db_session):
 - [ ] **Step 1: Write the characterization test FIRST (pins existing web behavior)**
 
 ```python
-# backend/tests/gateway/test_resume_refactor_characterization.py
+# tests/gateway/test_resume_refactor_characterization.py
 # Drive the existing HTTP confirm path; assert the resumed message + that an audit row
 # with actor="desk_user" is written. Capture current behavior BEFORE refactor.
 def test_web_confirm_still_uses_desk_user_actor(client, seeded_pending_action):
@@ -393,7 +393,7 @@ def test_web_confirm_still_uses_desk_user_actor(client, seeded_pending_action):
 
 **Files:**
 - Create: `backend/app/services/gateway/sse.py`
-- Test: `backend/tests/gateway/test_sse_parser.py`
+- Test: `tests/gateway/test_sse_parser.py`
 
 **Interfaces:**
 - Produces: `parse_sse_stream(aiter_str) -> AsyncIterator[AgentEvent]` consuming the raw SSE strings yielded by `stream_and_persist`. Maps `event:` → `AgentEvent.type ∈ {token, done, error, heartbeat, tool_started, tool_finished, action_required, unknown}`; accumulates multi-line `data:`; ignores `:`-comment lines; JSON-decodes once per frame; malformed/unknown → `AgentEvent("unknown", {...})` (never raises).
@@ -410,7 +410,7 @@ def test_web_confirm_still_uses_desk_user_actor(client, seeded_pending_action):
 
 **Files:**
 - Create: `backend/app/services/gateway/bridge.py`
-- Test: `backend/tests/gateway/test_bridge.py`
+- Test: `tests/gateway/test_bridge.py`
 
 **Interfaces:**
 - Consumes: `active_agent_service` (Task 6), `parse_sse_stream` (Task 7), `GatewayThreadMap`, types.
@@ -433,7 +433,7 @@ def test_web_confirm_still_uses_desk_user_actor(client, seeded_pending_action):
 
 **Files:**
 - Create: `backend/app/services/gateway/actions.py`
-- Test: `backend/tests/gateway/test_actions.py`
+- Test: `tests/gateway/test_actions.py`
 
 **Interfaces:**
 - Consumes: `GatewayCardAction`, settings.
@@ -454,7 +454,7 @@ def test_web_confirm_still_uses_desk_user_actor(client, seeded_pending_action):
 
 **Files:**
 - Create: `backend/app/services/gateway/cards.py`
-- Test: `backend/tests/gateway/test_cards.py`
+- Test: `tests/gateway/test_cards.py`
 
 **Interfaces:**
 - Consumes: `OutboundCard`, `CardAction`, settings, `mint_card_action` (Task 9).
@@ -491,7 +491,7 @@ IRREVERSIBLE = {"book_position", "book_hedge", "approve_rfq", "release_rfq"}
 
 **Files:**
 - Create: `backend/app/services/gateway/coalescer.py`
-- Test: `backend/tests/gateway/test_coalescer_text.py`
+- Test: `tests/gateway/test_coalescer_text.py`
 
 **Interfaces:**
 - Consumes: connector (3), `AgentEvent`, settings.
@@ -507,7 +507,7 @@ IRREVERSIBLE = {"book_position", "book_hedge", "approve_rfq", "release_rfq"}
 
 **Files:**
 - Modify: `backend/app/services/gateway/coalescer.py`
-- Test: `backend/tests/gateway/test_coalescer_cards.py`
+- Test: `tests/gateway/test_coalescer_cards.py`
 
 **Interfaces:**
 - Consumes: `build_approval_card` (10), 11a.
@@ -523,7 +523,7 @@ IRREVERSIBLE = {"book_position", "book_hedge", "approve_rfq", "release_rfq"}
 
 **Files:**
 - Modify: `backend/app/services/gateway/coalescer.py`
-- Test: `backend/tests/gateway/test_coalescer_resume.py`
+- Test: `tests/gateway/test_coalescer_resume.py`
 
 **Interfaces:**
 - Consumes: `actions.mark_resolved/mark_failed/mark_unknown` (9), `build_approval_card` (10).
@@ -541,7 +541,7 @@ IRREVERSIBLE = {"book_position", "book_hedge", "approve_rfq", "release_rfq"}
 
 **Files:**
 - Modify: `backend/app/services/gateway/coalescer.py`
-- Test: `backend/tests/gateway/test_coalescer_revocation.py`
+- Test: `tests/gateway/test_coalescer_revocation.py`
 
 **Interfaces:**
 - Consumes: `active_binding` (5), `record_audit`.
@@ -557,7 +557,7 @@ IRREVERSIBLE = {"book_position", "book_hedge", "approve_rfq", "release_rfq"}
 
 **Files:**
 - Create: `backend/app/services/gateway/dispatch.py`
-- Test: `backend/tests/gateway/test_dispatch_dedup.py`
+- Test: `tests/gateway/test_dispatch_dedup.py`
 
 **Interfaces:**
 - Consumes: `GatewayInboundSeen`, settings, a `sessionmaker`.
@@ -573,7 +573,7 @@ IRREVERSIBLE = {"book_position", "book_hedge", "approve_rfq", "release_rfq"}
 
 **Files:**
 - Modify: `backend/app/services/gateway/dispatch.py`
-- Test: `backend/tests/gateway/test_dispatch_message.py`
+- Test: `tests/gateway/test_dispatch_message.py`
 
 **Interfaces:**
 - Consumes: identity (5), bridge (8), coalescer (11a–11d), 12a.
@@ -589,7 +589,7 @@ IRREVERSIBLE = {"book_position", "book_hedge", "approve_rfq", "release_rfq"}
 
 **Files:**
 - Modify: `backend/app/services/gateway/dispatch.py`
-- Test: `backend/tests/gateway/test_dispatch_card_action.py`
+- Test: `tests/gateway/test_dispatch_card_action.py`
 
 **Interfaces:**
 - Consumes: `actions.verify_and_claim` (9), bridge (8), `renderer.render_resume_result` (11c).
@@ -605,7 +605,7 @@ IRREVERSIBLE = {"book_position", "book_hedge", "approve_rfq", "release_rfq"}
 
 **Files:**
 - Modify: `backend/app/services/gateway/dispatch.py`
-- Test: `backend/tests/gateway/test_dispatch_backpressure.py`
+- Test: `tests/gateway/test_dispatch_backpressure.py`
 
 **Interfaces:**
 - Consumes: 12a–12c, settings.
@@ -621,9 +621,9 @@ IRREVERSIBLE = {"book_position", "book_hedge", "approve_rfq", "release_rfq"}
 
 **Files:**
 - Create: `backend/app/services/gateway/connectors/feishu.py`
-- Test: `backend/tests/gateway/test_feishu_translation.py` (pure mapping/card JSON)
-- Test: `backend/tests/gateway/test_feishu_auth.py` (`verify_event`)
-- Test: `backend/tests/gateway/test_feishu_lifecycle.py` (mocked `lark_oapi` client)
+- Test: `tests/gateway/test_feishu_translation.py` (pure mapping/card JSON)
+- Test: `tests/gateway/test_feishu_auth.py` (`verify_event`)
+- Test: `tests/gateway/test_feishu_lifecycle.py` (mocked `lark_oapi` client)
 - Modify: `backend/pyproject.toml` (add `lark-oapi` dependency)
 
 **Interfaces:**
@@ -637,7 +637,7 @@ Implemented in three test-aligned commits (translation, auth, lifecycle) so each
 - [ ] **Step 6: Failing auth tests** (`test_feishu_auth.py`) — `verify_event` → `True` for correct verification token + AES-decryptable body; `False` for wrong token and undecryptable body.
 - [ ] **Step 7: Run → FAIL. Step 8: Implement `verify_event`. Step 9: Run → PASS. Step 10: Commit** — `git commit -m "feat(gateway): Feishu event verification + decryption"`.
 - [ ] **Step 11: Failing mocked-lifecycle tests** (`test_feishu_lifecycle.py`) — inject a fake ws-client (`ws_client_factory`) + `sleep`; assert `start(on_inbound)` wires inbound to the callback, a simulated disconnect triggers reconnect with backoff, `stop()` closes the client. No network.
-- [ ] **Step 12: Run → FAIL. Step 13: Implement lifecycle** (`ws_client_factory=<real lark client>`, `sleep=asyncio.sleep`; guard the `lark_oapi` import so the module loads without the lib/creds; connect only when configured). **Step 14: Run → PASS** (`pytest tests/gateway/test_feishu_*.py -v`). **Step 15: Commit** — `git add backend/app/services/gateway/connectors/feishu.py backend/tests/gateway/test_feishu_lifecycle.py backend/pyproject.toml && git commit -m "feat(gateway): Feishu WS lifecycle + reconnect"`.
+- [ ] **Step 12: Run → FAIL. Step 13: Implement lifecycle** (`ws_client_factory=<real lark client>`, `sleep=asyncio.sleep`; guard the `lark_oapi` import so the module loads without the lib/creds; connect only when configured). **Step 14: Run → PASS** (`pytest tests/gateway/test_feishu_*.py -v`). **Step 15: Commit** — `git add backend/app/services/gateway/connectors/feishu.py tests/gateway/test_feishu_lifecycle.py backend/pyproject.toml && git commit -m "feat(gateway): Feishu WS lifecycle + reconnect"`.
 
 ---
 
@@ -645,7 +645,7 @@ Implemented in three test-aligned commits (translation, auth, lifecycle) so each
 
 **Files:**
 - Create: `backend/app/services/gateway/runtime.py`
-- Test: `backend/tests/gateway/test_runtime.py`
+- Test: `tests/gateway/test_runtime.py`
 
 **Interfaces:**
 - Consumes: connectors registry, dispatcher (12a–12d), config (4), `GatewayWorkerLock`, a `sessionmaker`.
@@ -663,7 +663,7 @@ Implemented in three test-aligned commits (translation, auth, lifecycle) so each
 
 **Files:**
 - Modify: `backend/app/main.py`
-- Test: `backend/tests/gateway/test_http_enroll.py`
+- Test: `tests/gateway/test_http_enroll.py`
 
 **Interfaces:** Consumes identity (5). Produces `POST /api/gateway/linking-codes` (`{persona}` → `{code, expires_at}`; persona validated; rate-limited `gateway_code_issue_per_min` → 429) behind the same desk-web auth dependency existing internal write endpoints use.
 
@@ -677,7 +677,7 @@ Implemented in three test-aligned commits (translation, auth, lifecycle) so each
 
 **Files:**
 - Modify: `backend/app/main.py`
-- Test: `backend/tests/gateway/test_http_bindings.py`
+- Test: `tests/gateway/test_http_bindings.py`
 
 **Interfaces:** Consumes identity (5). Produces `GET /api/gateway/bindings?status=&limit=&cursor=` (ordered `bound_at DESC, id DESC`; `limit` default 50/max 200; cursor = base64 of `(bound_at,id)`) and `DELETE /api/gateway/bindings/{id}` (idempotent; unknown → 404). Same auth dependency.
 
@@ -691,7 +691,7 @@ Implemented in three test-aligned commits (translation, auth, lifecycle) so each
 
 **Files:**
 - Modify: `backend/app/main.py`
-- Test: `backend/tests/gateway/test_http_health_reload.py`
+- Test: `tests/gateway/test_http_health_reload.py`
 
 **Interfaces:** Consumes runtime (14). Produces `GET /api/gateway/health` (schema `{worker_lock_owner, connectors:[{name,state,detail}]}`) and `POST /api/gateway/reload` (owner-only → 200; non-owner → 409). Same auth dependency. The endpoints read the runtime from `app.state.gateway_runtime`.
 
@@ -707,7 +707,7 @@ Implemented in three test-aligned commits (translation, auth, lifecycle) so each
 
 **Files:**
 - Modify: `backend/app/main.py` (start `GatewayRuntime` after the startup-recovery block in `create_app`; stop on shutdown)
-- Test: `backend/tests/gateway/test_http_lifecycle.py`
+- Test: `tests/gateway/test_http_lifecycle.py`
 
 **Interfaces:** Consumes runtime (14). Produces: runtime constructed with the app's `sessionmaker`, `start()`ed at app startup, `stop()`ed at shutdown; FakeConnector enabled in test config so startup actually wires a connector.
 
@@ -720,7 +720,7 @@ Implemented in three test-aligned commits (translation, auth, lifecycle) so each
 ### Task 16: End-to-end vertical slice (FakeConnector)
 
 **Files:**
-- Test: `backend/tests/gateway/test_e2e_vertical_slice.py`
+- Test: `tests/gateway/test_e2e_vertical_slice.py`
 
 **Interfaces:**
 - Consumes: runtime + dispatcher + bridge + identity + a real agent thread.
@@ -737,7 +737,7 @@ Implemented in three test-aligned commits (translation, auth, lifecycle) so each
 # 5. feed an unbound user's message -> assert refusal + agent never called
 ```
 
-**Concrete fixture (no ambiguity):** define a `fake_booking_tool` in `backend/tests/gateway/conftest.py` — a recorded no-op standing in for `book_position` that, on first turn, causes the assistant message to carry a `pending_actions` entry with a full `book_position` payload (per Task 10 `REQUIRED_FIELDS`), and on `resume(confirm)` records the booking call and returns a resumed `AgentMessage`. Monkeypatch it into the agent's tool set for this test. The assertions stay on the gateway plumbing (card built, token claimed, `resume` invoked, audit `actor`), since agent internals are tested elsewhere.
+**Concrete fixture (no ambiguity):** define a `fake_booking_tool` in `tests/gateway/conftest.py` — a recorded no-op standing in for `book_position` that, on first turn, causes the assistant message to carry a `pending_actions` entry with a full `book_position` payload (per Task 10 `REQUIRED_FIELDS`), and on `resume(confirm)` records the booking call and returns a resumed `AgentMessage`. Monkeypatch it into the agent's tool set for this test. The assertions stay on the gateway plumbing (card built, token claimed, `resume` invoked, audit `actor`), since agent internals are tested elsewhere.
 
 - [ ] **Step 2: Run → FAIL** (until all wiring present).
 - [ ] **Step 3: Verify the concrete wiring checks** (no new features). Confirm each: runtime factory maps `"fake"`→FakeConnector; `Dispatcher` receives the test `sessionmaker`; `bridge.submit_turn` reaches `stream_and_persist` with `actor=binding.desk_user`; the approval card's token round-trips through `verify_and_claim`. If any check reveals missing behavior, **stop and file it as a new numbered task** (its own failing test + commit) rather than patching inline here; then resume this e2e test.
