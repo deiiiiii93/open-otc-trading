@@ -1,0 +1,226 @@
+"""Tests for GatewayRuntime — single-worker sentinel lease (Task 14).
+
+Test coverage:
+1. First runtime start() acquires lease → health()["worker_lock_owner"] is True
+   and the fake connector is started. stop() releases cleanly.
+2. A second runtime against the same DB, while the first holds a fresh lease,
+   start() → does NOT acquire → worker_lock_owner is False, connectors NOT started.
+3. Expired-lease reclaim: seed a lock row with lease_expires_at in the past;
+   a new runtime start() → acquires (True).
+4. prune_inbound_seen: seed one OLD and one FRESH GatewayInboundSeen row;
+   run prune_inbound_seen; assert only the old row is deleted.
+"""
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import pytest
+
+from app import database
+from app.config import Settings
+from app.models import GatewayInboundSeen, GatewayWorkerLock
+from app.services.gateway.connectors.fake import FakeConnector
+from app.services.gateway.runtime import GatewayRuntime, prune_inbound_seen
+
+
+# ---------------------------------------------------------------------------
+# Shared fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def gateway_settings(tmp_path: Path) -> Settings:
+    return Settings(
+        database_url=f"sqlite+pysqlite:///{tmp_path / 'runtime_test.sqlite3'}",
+        artifact_dir=tmp_path / "artifacts",
+        agent_checkpoint_db_path=":memory:",
+        # Fast lease for tests — no real sleeps needed
+        gateway_lock_lease_s=10,
+        gateway_dedupe_ttl_s=3600,
+        gateway_enabled_connectors="fake",
+    )
+
+
+@pytest.fixture
+def configured_db(gateway_settings: Settings):
+    """Configure the database and return (sessionmaker, settings)."""
+    database.configure_database(gateway_settings)
+    database.init_db()
+    return database.SessionLocal, gateway_settings
+
+
+# ---------------------------------------------------------------------------
+# Helper: build a GatewayRuntime with a stub bridge and fast sleep
+# ---------------------------------------------------------------------------
+
+
+class _StubBridge:
+    """Minimal bridge stub — no AgentService needed."""
+
+    pass
+
+
+def _make_runtime(sessionmaker, settings, *, fake_connector=None):
+    """Build a GatewayRuntime with a stub bridge and instant sleep."""
+
+    def connector_factory(name: str):
+        if name == "fake":
+            return fake_connector or FakeConnector()
+        raise ValueError(f"Unknown connector: {name}")
+
+    async def _instant_sleep(_seconds):
+        # Yield control once but don't actually wait
+        await asyncio.sleep(0)
+
+    return GatewayRuntime(
+        settings=settings,
+        sessionmaker=sessionmaker,
+        bridge=_StubBridge(),
+        connector_factory=connector_factory,
+        sleep=_instant_sleep,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 1: First runtime acquires lease; fake connector is started; stop cleans up
+# ---------------------------------------------------------------------------
+
+
+def test_first_runtime_acquires_and_starts_connector(configured_db):
+    """First runtime start() → acquires lease, fake connector is started; stop() releases."""
+    sm, settings = configured_db
+    connector = FakeConnector()
+    runtime = _make_runtime(sm, settings, fake_connector=connector)
+
+    async def run():
+        await runtime.start()
+
+        h = await runtime.health()
+        assert h["worker_lock_owner"] is True, "First runtime should own the lock"
+        # Fake connector should have been started (on_inbound callback registered)
+        assert connector._on_inbound is not None, "Fake connector should have been started"
+
+        await runtime.stop()
+        # After stop, connector should be stopped
+        assert connector._on_inbound is None, "Fake connector should be stopped"
+
+    asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# Test 2: Second runtime does NOT acquire while first holds a fresh lease
+# ---------------------------------------------------------------------------
+
+
+def test_second_runtime_does_not_acquire_while_first_holds_lease(configured_db):
+    """Second runtime start() while first still holds a fresh lease → not owner, connectors not started."""
+    sm, settings = configured_db
+    connector_a = FakeConnector()
+    connector_b = FakeConnector()
+    runtime_a = _make_runtime(sm, settings, fake_connector=connector_a)
+    runtime_b = _make_runtime(sm, settings, fake_connector=connector_b)
+
+    async def run():
+        # First runtime acquires
+        await runtime_a.start()
+        h_a = await runtime_a.health()
+        assert h_a["worker_lock_owner"] is True
+
+        # Second runtime should fail to acquire
+        await runtime_b.start()
+        h_b = await runtime_b.health()
+        assert h_b["worker_lock_owner"] is False, "Second runtime should NOT own the lock"
+        # Second runtime's connector should NOT have been started
+        assert connector_b._on_inbound is None, "Second runtime's connector should NOT be started"
+
+        # Clean up
+        await runtime_a.stop()
+        await runtime_b.stop()
+
+    asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# Test 3: Expired lease is reclaimable
+# ---------------------------------------------------------------------------
+
+
+def test_expired_lease_is_reclaimable(configured_db):
+    """Seed an expired lock row; a new runtime start() should acquire (True)."""
+    sm, settings = configured_db
+
+    # Seed a lock row with a lease that has already expired
+    with sm() as session:
+        past = datetime.utcnow() - timedelta(seconds=settings.gateway_lock_lease_s + 60)
+        row = GatewayWorkerLock(
+            id=1,
+            owner_token="old-dead-worker",
+            acquired_at=past,
+            lease_expires_at=past,
+        )
+        session.add(row)
+        session.commit()
+
+    connector = FakeConnector()
+    runtime = _make_runtime(sm, settings, fake_connector=connector)
+
+    async def run():
+        await runtime.start()
+        h = await runtime.health()
+        assert h["worker_lock_owner"] is True, "Should reclaim an expired lease"
+        assert connector._on_inbound is not None, "Connector should be started after reclaim"
+        await runtime.stop()
+
+    asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# Test 4: prune_inbound_seen deletes old rows and leaves fresh rows
+# ---------------------------------------------------------------------------
+
+
+def test_prune_inbound_seen_deletes_old_rows_only(configured_db):
+    """prune_inbound_seen deletes rows older than gateway_dedupe_ttl_s; fresh rows survive."""
+    sm, settings = configured_db
+
+    # Seed one old row (older than dedupe_ttl) and one fresh row
+    with sm() as session:
+        old_time = datetime.utcnow() - timedelta(seconds=settings.gateway_dedupe_ttl_s + 100)
+        fresh_time = datetime.utcnow() - timedelta(seconds=10)
+
+        old_row = GatewayInboundSeen(
+            connector="fake",
+            workspace_id="ws_old",
+            provider_event_id="ev_old_001",
+            state="done",
+            owner_token="tok_old",
+            claimed_at=old_time,
+            seen_at=old_time,
+        )
+        fresh_row = GatewayInboundSeen(
+            connector="fake",
+            workspace_id="ws_fresh",
+            provider_event_id="ev_fresh_001",
+            state="done",
+            owner_token="tok_fresh",
+            claimed_at=fresh_time,
+            seen_at=fresh_time,
+        )
+        session.add(old_row)
+        session.add(fresh_row)
+        session.commit()
+
+    # Run prune
+    with sm() as session:
+        deleted = prune_inbound_seen(session, settings)
+        session.commit()
+
+    assert deleted == 1, f"Expected 1 row deleted, got {deleted}"
+
+    # Verify: fresh row still exists, old row gone
+    with sm() as session:
+        remaining = session.query(GatewayInboundSeen).all()
+        assert len(remaining) == 1, f"Expected 1 row remaining, got {len(remaining)}"
+        assert remaining[0].provider_event_id == "ev_fresh_001"
