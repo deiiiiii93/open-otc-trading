@@ -3753,6 +3753,104 @@ def create_app(
             expires_at=expires_at.isoformat(),
         )
 
+    # ------------------------------------------------------------------
+    # Gateway HTTP control plane — bindings list + revoke (sub-task 15b)
+    # ------------------------------------------------------------------
+    import base64 as _base64
+    import json as _json
+    import datetime as _dt
+
+    @app.get("/api/gateway/bindings")
+    def list_bindings(
+        status: str | None = Query(default=None),
+        limit: int = Query(default=50, ge=1),
+        cursor: str | None = Query(default=None),
+        db: Session = Depends(get_db),  # follows the app's standard no-auth get_db pattern
+    ) -> GatewayBindingsResponse:
+        """List GatewayBinding rows, newest first, with cursor pagination."""
+        # Clamp limit to [1, 200]
+        effective_limit = min(limit, 200)
+
+        query = db.query(GatewayBinding)
+        if status is not None:
+            query = query.filter(GatewayBinding.status == status)
+
+        # Decode cursor: base64-encoded JSON {"bound_at": "<iso>", "id": <int>}
+        if cursor is not None:
+            try:
+                payload = _json.loads(_base64.b64decode(cursor + "==").decode())
+                cursor_bound_at = _dt.datetime.fromisoformat(payload["bound_at"])
+                cursor_id = int(payload["id"])
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid cursor")
+            # Fetch rows strictly before (bound_at, id) in DESC order:
+            # i.e. (bound_at < cursor_bound_at) OR (bound_at == cursor_bound_at AND id < cursor_id)
+            from sqlalchemy import or_, and_
+            query = query.filter(
+                or_(
+                    GatewayBinding.bound_at < cursor_bound_at,
+                    and_(
+                        GatewayBinding.bound_at == cursor_bound_at,
+                        GatewayBinding.id < cursor_id,
+                    ),
+                )
+            )
+
+        # Fetch limit+1 to detect whether there's a next page
+        rows = (
+            query
+            .order_by(GatewayBinding.bound_at.desc(), GatewayBinding.id.desc())
+            .limit(effective_limit + 1)
+            .all()
+        )
+
+        has_next = len(rows) > effective_limit
+        page_rows = rows[:effective_limit]
+
+        next_cursor: str | None = None
+        if has_next and page_rows:
+            last = page_rows[-1]
+            cursor_payload = {"bound_at": last.bound_at.isoformat(), "id": last.id}
+            next_cursor = _base64.b64encode(
+                _json.dumps(cursor_payload, separators=(",", ":")).encode()
+            ).decode().rstrip("=")
+
+        def _fmt(dt_val: object) -> str | None:
+            if dt_val is None:
+                return None
+            return dt_val.isoformat()  # type: ignore[union-attr]
+
+        bindings_out = [
+            GatewayBindingOut(
+                id=row.id,
+                provider=row.provider,
+                external_account_id=row.external_account_id,
+                workspace_id=row.workspace_id,
+                desk_user=row.desk_user,
+                persona=row.persona,
+                status=row.status,
+                bound_at=_fmt(row.bound_at),
+                last_seen_at=_fmt(row.last_seen_at),
+                revoked_at=_fmt(row.revoked_at),
+            )
+            for row in page_rows
+        ]
+
+        return GatewayBindingsResponse(bindings=bindings_out, next_cursor=next_cursor)
+
+    @app.delete("/api/gateway/bindings/{binding_id}")
+    def revoke_binding(
+        binding_id: int,
+        db: Session = Depends(get_db),  # follows the app's standard no-auth get_db pattern
+    ) -> dict:
+        """Revoke a GatewayBinding; idempotent — revoking an already-revoked binding is still 200."""
+        try:
+            result = _gateway_identity.revoke_binding(db, binding_id=binding_id)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        db.commit()
+        return {"status": result}
+
     app.include_router(build_skills_router(active_agent_service))
     app.include_router(build_tracing_router())
     return app
