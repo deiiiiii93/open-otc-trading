@@ -3853,6 +3853,45 @@ def create_app(
         db.commit()
         return {"status": result}
 
+    # ------------------------------------------------------------------
+    # Gateway HTTP control plane — health + reload (sub-task 15c)
+    # ------------------------------------------------------------------
+
+    def _get_gateway_runtime():
+        runtime = getattr(app.state, "gateway_runtime", None)
+        if runtime is None:
+            raise HTTPException(status_code=503, detail="gateway runtime not initialized")
+        return runtime
+
+    @app.get("/api/gateway/health")
+    async def gateway_health() -> dict:
+        """Return gateway runtime health: lock ownership and connector states."""
+        runtime = _get_gateway_runtime()
+        h = await runtime.health()
+        return {
+            "worker_lock_owner": h["worker_lock_owner"],
+            "connectors": [
+                {"name": name, "state": v["state"], "detail": v["detail"]}
+                for name, v in h["connectors"].items()
+            ],
+        }
+
+    @app.post("/api/gateway/reload")
+    async def gateway_reload() -> dict:
+        """Owner-only: reload gateway connectors. Returns 409 if not the owner."""
+        runtime = _get_gateway_runtime()
+        h = await runtime.health()
+        if not h["worker_lock_owner"]:
+            raise HTTPException(status_code=409, detail="not the gateway worker owner")
+        result = await runtime.reload()
+        return {
+            "worker_lock_owner": result["worker_lock_owner"],
+            "connectors": [
+                {"name": name, "state": v["state"], "detail": v["detail"]}
+                for name, v in result.get("connectors", {}).items()
+            ],
+        }
+
     app.include_router(build_skills_router(active_agent_service))
     app.include_router(build_tracing_router())
     return app
