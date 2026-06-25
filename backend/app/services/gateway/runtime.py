@@ -121,20 +121,21 @@ def refresh_worker_lock(session, owner_token: str, settings) -> bool:
 
 
 def release_worker_lock(session, owner_token: str) -> None:
-    """Vacate the lock by backdating the lease to the past.
+    """Vacate the lock by setting the lease to already-expired.
 
-    We set ``lease_expires_at`` to ``now`` (i.e., already expired) so the next
-    worker can immediately reclaim without waiting.  Only our own token is
-    updated.
+    We set ``lease_expires_at`` to one second in the past so the next worker
+    can immediately reclaim without waiting (the reclaim WHERE clause uses
+    ``< now``, strict inequality, so equal timestamps would NOT be reclaimable).
+    Only our own token is updated.
     """
-    now = datetime.utcnow()
+    past = datetime.utcnow() - timedelta(seconds=1)
     session.execute(
         text(
             "UPDATE gateway_worker_lock"
-            " SET lease_expires_at = :now"
+            " SET lease_expires_at = :past"
             " WHERE id = 1 AND owner_token = :tok"
         ),
-        {"tok": owner_token, "now": now},
+        {"tok": owner_token, "past": past},
     )
     session.commit()
 
@@ -155,29 +156,6 @@ def prune_inbound_seen(session, settings) -> int:
     return result.rowcount
 
 
-# ---------------------------------------------------------------------------
-# Default connector factory
-# ---------------------------------------------------------------------------
-
-def _default_connector_factory(name: str):
-    """Build a connector by name.  Registered names: 'feishu', 'fake'."""
-    if name == "feishu":
-        from app.services.gateway.connectors.feishu import FeishuConnector
-        from app.services.gateway.config import GatewayConfig
-
-        # GatewayConfig is built lazily from the settings passed at call time;
-        # the factory itself doesn't capture settings — GatewayRuntime passes
-        # settings as part of the constructor.  We'll receive settings via the
-        # closure in _build_connectors.
-        raise ValueError(
-            "FeishuConnector requires a GatewayConfig; use a custom connector_factory"
-            " or pass connector_factory=None and let GatewayRuntime wire it."
-        )
-    if name == "fake":
-        from app.services.gateway.connectors.fake import FakeConnector
-
-        return FakeConnector()
-    raise ValueError(f"Unknown connector name: {name!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +195,7 @@ class GatewayRuntime:
         self._settings = settings
         self._sessionmaker = sessionmaker
         self._bridge = bridge
-        self._connector_factory = connector_factory or _default_connector_factory
+        self._connector_factory = connector_factory or self._default_connector_factory
         self._sleep = sleep
 
         # State set during start()
@@ -233,6 +211,25 @@ class GatewayRuntime:
     def _parse_connector_names(self) -> list[str]:
         raw = self._settings.gateway_enabled_connectors or ""
         return [n.strip() for n in raw.split(",") if n.strip()]
+
+    def _default_connector_factory(self, name: str):
+        """Built-in connector factory that maps 'feishu' and 'fake' by name.
+
+        'feishu' builds a FeishuConnector from a GatewayConfig derived from
+        this runtime's settings.  lark_oapi is optional — the connector can
+        be constructed without it (the import guard lives inside the connector).
+        """
+        if name == "feishu":
+            from app.services.gateway.config import GatewayConfig
+            from app.services.gateway.connectors.feishu import FeishuConnector
+
+            config = GatewayConfig.from_settings(self._settings)
+            return FeishuConnector(config)
+        if name == "fake":
+            from app.services.gateway.connectors.fake import FakeConnector
+
+            return FakeConnector()
+        raise ValueError(f"Unknown connector name: {name!r}")
 
     def _build_connectors(self) -> list:
         names = self._parse_connector_names()
@@ -273,6 +270,12 @@ class GatewayRuntime:
             if not still_owner:
                 _log.warning("GatewayRuntime: lost worker lock ownership; stopping connectors.")
                 self._owner = False
+                for connector in self._connectors:
+                    try:
+                        await connector.stop()
+                    except Exception:
+                        _log.exception("Error stopping connector during stand-down.")
+                self._connectors = []
                 break
             with self._sessionmaker() as session:
                 pruned = prune_inbound_seen(session, self._settings)
