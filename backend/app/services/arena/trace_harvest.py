@@ -44,12 +44,17 @@ def _parse_tool_output(outputs_raw: Any) -> tuple[dict, str | None, str | None]:
     ``{"raw": <str>}`` content when the inner payload is not a JSON object.
     """
     parsed = _loads(outputs_raw)
-    output_str = parsed.get("output") if isinstance(parsed, dict) else None
-    if not isinstance(output_str, str):
+    output_val = parsed.get("output") if isinstance(parsed, dict) else None
+    # Some tool spans record a structured dict output ({"output": {...}}) rather
+    # than the stringified ToolMessage repr; use the dict directly so task_id /
+    # artifact payloads survive the harvest.
+    if isinstance(output_val, dict):
+        return output_val, output_val.get("name"), output_val.get("tool_call_id")
+    if not isinstance(output_val, str):
         return {}, None, None
-    m = TOOL_OUTPUT_RE.match(output_str)
+    m = TOOL_OUTPUT_RE.match(output_val)
     if not m:
-        return {"raw": output_str}, None, None
+        return {"raw": output_val}, None, None
     content = _loads(m.group("content"))
     if not isinstance(content, dict):
         content = {"raw": m.group("content")}

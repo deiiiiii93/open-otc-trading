@@ -30,6 +30,14 @@ def test_parse_tool_output_non_json_falls_back_to_raw():
     assert content == {"raw": "plain text"}
 
 
+def test_parse_tool_output_structured_dict_output_preserved():
+    # A tool span that records a dict output (not a stringified ToolMessage)
+    # must keep its payload (e.g. task_id) instead of being dropped.
+    raw = json.dumps({"output": {"task_id": 7, "status": "queued"}})
+    content, _, _ = _parse_tool_output(raw)
+    assert content == {"task_id": 7, "status": "queued"}
+
+
 def test_skills_routed_from_read_file_ordered():
     spans = [
         {"run_type": "tool", "name": "read_file", "start_time": "2026-01-01T00:00:02",
