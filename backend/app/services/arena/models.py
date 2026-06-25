@@ -134,6 +134,23 @@ def get_model(s: str) -> ArenaModel:
     return _BY_SLUG[canonical_model_id(s)]
 
 
+def arena_model_to_selection(model: ArenaModel) -> dict[str, str]:
+    """Map an ArenaModel's zenmux_name to a desk model_selection dict.
+
+    "openai/gpt-5.5" -> {"channel": "zenmux", "provider": "openai", "model": "gpt-5.5"}
+
+    Raises:
+        ValueError: if zenmux_name does not contain a '<vendor>/<model>' slash.
+    """
+    name = model.zenmux_name
+    if "/" not in name:
+        raise ValueError(
+            f"zenmux_name '{name}' must be '<vendor>/<model>' (e.g. 'openai/gpt-5.5')."
+        )
+    provider, _, model_name = name.partition("/")
+    return {"channel": "zenmux", "provider": provider, "model": model_name}
+
+
 def validate_model_ids(ids: list[str]) -> list[str]:
     """Canonicalize a list of model identifiers (slugs or zenmux_names).
 
