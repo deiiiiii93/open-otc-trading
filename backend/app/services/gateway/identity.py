@@ -14,16 +14,26 @@ The partial unique index ``uq_gateway_binding_active`` allows at most ONE
 active GatewayBinding per (provider, external_account_id, workspace_id).
 To honour this constraint during a transfer we MUST:
 
-  1. SELECT + validate the GatewayLinkingCode (unexpired, unredeemed).
-  2. REVOKE the existing active binding for the identity (if any).
-  3. INSERT the new active binding (supersedes_binding_id = old id if revoked).
-  4. Mark the code redeemed (redeemed_by_binding_id = new binding id).
-  5. Write the audit event.
+  1. SELECT + validate the GatewayLinkingCode (unexpired, unredeemed) — a
+     cheap pre-filter, NOT the authority.
+  2. Inside a SAVEPOINT (``session.begin_nested()``):
+       a. REVOKE the existing active binding for the identity (if any).
+       b. INSERT the new active binding (supersedes_binding_id = old id).
+       c. ATOMIC guarded UPDATE claiming the code:
+            UPDATE gateway_linking_code
+               SET redeemed_by_binding_id = :new_id
+             WHERE code = :code AND redeemed_by_binding_id IS NULL
+          If ``rowcount == 0`` another caller already claimed the code —
+          roll the SAVEPOINT back (undoing the revoke AND the insert) and
+          return ``None`` with NO partial side effects.
+  3. Write the audit event (only after a successful claim).
 
-Steps 2–4 happen inside the same transaction; the revoke precedes the insert
-so the unique index is never violated.  SQLite does not honour ``FOR UPDATE``
-but the single-writer default combined with the conditional update on the code
-row is sufficient for the test DB and the current deployment topology.
+The revoke precedes the insert so the partial unique index is never violated.
+The guarded UPDATE — not the step-1 read — is the concurrency authority: under
+concurrent Postgres two callers can both pass the step-1 "unredeemed" check,
+but only one wins the conditional UPDATE; the loser rolls its savepoint back.
+SQLite does not honour ``FOR UPDATE`` but is single-writer, so the same code
+path is correct there too (the test DB).
 """
 from __future__ import annotations
 
@@ -32,6 +42,7 @@ import datetime as dt
 import secrets
 import re
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.models import GatewayBinding, GatewayLinkingCode
@@ -161,13 +172,17 @@ def redeem_code(
 
     Transaction order (see module docstring for rationale)
     -------------------------------------------------------
-    1. SELECT + validate code (unexpired, unredeemed).
-    2. REVOKE existing active binding for the identity (if any).
-    3. INSERT new active binding (supersedes_binding_id if revoked).
-    4. Mark code redeemed.
-    5. Write audit event.
+    1. SELECT + validate code (unexpired, unredeemed) — cheap pre-filter.
+    2. Open a SAVEPOINT around revoke + insert + atomic claim:
+       a. REVOKE existing active binding for the identity (if any).
+       b. INSERT new active binding (supersedes_binding_id if revoked).
+       c. ATOMIC guarded UPDATE claiming the code (WHERE redeemed IS NULL).
+          If rowcount == 0 the code was already redeemed (lost the race) —
+          roll the SAVEPOINT back so neither the revoke nor the insert
+          persist, and return None (no partial side effects).
+    3. Write audit event (only after a successful claim).
     """
-    # Step 1 — validate the code row.
+    # Step 1 — cheap pre-filter validation of the code row.
     code_row: GatewayLinkingCode | None = (
         session.query(GatewayLinkingCode).filter_by(code=code).first()
     )
@@ -179,52 +194,74 @@ def redeem_code(
         return None
 
     provider = connector  # same value — rename for clarity
+    desk_user: str = code_row.desk_user
+    persona: str = code_row.persona
 
-    # Step 2 — revoke existing active binding (if any).
-    old_binding: GatewayBinding | None = (
-        session.query(GatewayBinding)
-        .filter_by(
+    # Step 2 — revoke + insert + atomic claim, inside a savepoint so a lost
+    # race undoes ALL side effects atomically.
+    savepoint = session.begin_nested()
+    try:
+        # 2a — revoke existing active binding (if any).
+        old_binding: GatewayBinding | None = (
+            session.query(GatewayBinding)
+            .filter_by(
+                provider=provider,
+                external_account_id=external_account_id,
+                workspace_id=workspace_id,
+                status="active",
+            )
+            .first()
+        )
+        supersedes_id: int | None = None
+        old_persona: str | None = None
+        if old_binding is not None:
+            old_binding.status = "revoked"
+            old_binding.revoked_at = dt.datetime.utcnow()
+            supersedes_id = old_binding.id
+            old_persona = old_binding.persona
+            session.flush()  # push the revoke before the INSERT
+
+        # 2b — insert new active binding.
+        new_binding = GatewayBinding(
             provider=provider,
             external_account_id=external_account_id,
             workspace_id=workspace_id,
+            desk_user=desk_user,
+            persona=persona,
             status="active",
+            supersedes_binding_id=supersedes_id,
         )
-        .first()
-    )
-    supersedes_id: int | None = None
-    if old_binding is not None:
-        old_binding.status = "revoked"
-        old_binding.revoked_at = dt.datetime.utcnow()
-        supersedes_id = old_binding.id
-        session.flush()  # push the revoke before the INSERT
+        session.add(new_binding)
+        session.flush()  # assign new_binding.id
 
-    # Step 3 — insert new active binding.
-    desk_user: str = code_row.desk_user
-    new_binding = GatewayBinding(
-        provider=provider,
-        external_account_id=external_account_id,
-        workspace_id=workspace_id,
-        desk_user=desk_user,
-        persona=code_row.persona,
-        status="active",
-        supersedes_binding_id=supersedes_id,
-    )
-    session.add(new_binding)
-    session.flush()  # assign new_binding.id
+        # 2c — ATOMIC guarded claim. Only succeeds if the code is still
+        # unredeemed; under concurrent Postgres exactly one caller wins.
+        result = session.execute(
+            update(GatewayLinkingCode)
+            .where(
+                GatewayLinkingCode.code == code,
+                GatewayLinkingCode.redeemed_by_binding_id.is_(None),
+            )
+            .values(redeemed_by_binding_id=new_binding.id)
+        )
+        if result.rowcount == 0:
+            # Lost the race / already redeemed — undo revoke + insert.
+            savepoint.rollback()
+            return None
+    except Exception:
+        if savepoint.is_active:
+            savepoint.rollback()
+        raise
+    else:
+        savepoint.commit()
 
-    # Step 4 — mark code redeemed.
-    code_row.redeemed_by_binding_id = new_binding.id
-    session.flush()
-
-    # Step 5 — audit.
+    # Step 3 — audit (only on a successful claim).
     if supersedes_id is None:
         audit_event = "gateway.bound"
+    elif old_persona is not None and old_persona != persona:
+        audit_event = "gateway.transferred"
     else:
-        # Distinguish between re-linking the same persona vs switching personas.
-        if old_binding is not None and old_binding.persona != new_binding.persona:
-            audit_event = "gateway.transferred"
-        else:
-            audit_event = "gateway.rebound"
+        audit_event = "gateway.rebound"
 
     record_audit(
         session,
@@ -236,7 +273,7 @@ def redeem_code(
             "connector": connector,
             "external_account_id": external_account_id,
             "workspace_id": workspace_id,
-            "persona": new_binding.persona,
+            "persona": persona,
             "supersedes_binding_id": supersedes_id,
         },
     )

@@ -115,8 +115,8 @@ def test_revoke_binding_idempotent(db_session):
     assert result2 == "revoked"
 
 
-def test_reused_code_rejected(db_session):
-    """A code already redeemed cannot be used again (rebound-no-op)."""
+def test_already_redeemed_code_rejected(db_session):
+    """A code already redeemed cannot be used again (atomic claim guard)."""
     s = _settings()
     code, _ = identity.issue_linking_code(db_session, persona="trader", settings=s)
     b1 = identity.redeem_code(
@@ -128,7 +128,8 @@ def test_reused_code_rejected(db_session):
         settings=s,
     )
     assert b1 is not None
-    # Second redemption with same code must return None
+    # Second redemption with same code must return None — and leave no
+    # partial side effects (no new binding for the second identity).
     b2 = identity.redeem_code(
         db_session,
         connector="feishu",
@@ -138,6 +139,74 @@ def test_reused_code_rejected(db_session):
         settings=s,
     )
     assert b2 is None
+    # The second identity must NOT have been bound by the rolled-back attempt.
+    assert (
+        identity.active_binding(
+            db_session,
+            connector="feishu",
+            external_account_id="ou_reuse2",
+            workspace_id="tk_reuse",
+        )
+        is None
+    )
+
+
+def test_audit_events_persisted_for_bind_transfer_rebound(db_session):
+    """Each redemption path writes the right AuditEvent with actor=desk_user."""
+    from app.models import AuditEvent
+
+    s = _settings()
+
+    def _latest_audit() -> AuditEvent:
+        return (
+            db_session.query(AuditEvent)
+            .order_by(AuditEvent.id.desc())
+            .first()
+        )
+
+    # First bind for the identity -> gateway.bound
+    code1, _ = identity.issue_linking_code(db_session, persona="trader", settings=s)
+    identity.redeem_code(
+        db_session,
+        connector="feishu",
+        external_account_id="ou_audit",
+        workspace_id="tk_audit",
+        code=code1,
+        settings=s,
+    )
+    ev = _latest_audit()
+    assert ev.event_type == "gateway.bound"
+    assert ev.actor == "desk_user"
+
+    # Re-link the SAME persona -> gateway.rebound
+    code2, _ = identity.issue_linking_code(db_session, persona="trader", settings=s)
+    identity.redeem_code(
+        db_session,
+        connector="feishu",
+        external_account_id="ou_audit",
+        workspace_id="tk_audit",
+        code=code2,
+        settings=s,
+    )
+    ev = _latest_audit()
+    assert ev.event_type == "gateway.rebound"
+    assert ev.actor == "desk_user"
+
+    # Switch to a DIFFERENT persona -> gateway.transferred
+    code3, _ = identity.issue_linking_code(
+        db_session, persona="risk_manager", settings=s
+    )
+    identity.redeem_code(
+        db_session,
+        connector="feishu",
+        external_account_id="ou_audit",
+        workspace_id="tk_audit",
+        code=code3,
+        settings=s,
+    )
+    ev = _latest_audit()
+    assert ev.event_type == "gateway.transferred"
+    assert ev.actor == "desk_user"
 
 
 def test_is_code_shaped(db_session):
