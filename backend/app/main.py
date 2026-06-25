@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Generator
 from copy import deepcopy
 from datetime import datetime, timedelta
@@ -11,7 +12,7 @@ from zipfile import BadZipFile
 
 logger = logging.getLogger("agent.api")
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from openpyxl.utils.exceptions import InvalidFileException
@@ -28,6 +29,7 @@ from .models import (
     AssumptionSet,
     ContextPack,
     DomainEvent,
+    GatewayBinding,
     Instrument,
     MarketDataProfile,
     MarketQuote,
@@ -264,8 +266,45 @@ from .services.try_solve import (
     validate_try_solve_row,
 )
 from .services.try_solve_registry import get_try_solve_catalog
+from .services.gateway import identity as _gateway_identity
 
 agent_service = AgentService()
+
+# ---------------------------------------------------------------------------
+# Gateway control-plane Pydantic models (module-level so FastAPI can resolve
+# the type annotations under `from __future__ import annotations`).
+# ---------------------------------------------------------------------------
+from pydantic import BaseModel as _GWBaseModel
+
+
+class GatewayLinkingCodeRequest(_GWBaseModel):
+    persona: str
+
+
+class GatewayLinkingCodeResponse(_GWBaseModel):
+    code: str
+    expires_at: str  # ISO 8601 UTC
+
+
+class GatewayBindingOut(_GWBaseModel):
+    id: int
+    provider: str
+    external_account_id: str
+    workspace_id: str
+    desk_user: str
+    persona: str
+    status: str
+    bound_at: str | None
+    last_seen_at: str | None
+    revoked_at: str | None
+
+    class Config:
+        from_attributes = True
+
+
+class GatewayBindingsResponse(_GWBaseModel):
+    bindings: list[GatewayBindingOut]
+    next_cursor: str | None
 
 
 def _number_or_none(value: object) -> float | None:
@@ -3670,6 +3709,48 @@ def create_app(
             as_of=profile.valuation_date,
             source="akshare",
             market_data_profile_id=profile.id,
+        )
+
+    # ------------------------------------------------------------------
+    # Gateway HTTP control plane — linking-code issuance (sub-task 15a)
+    # ------------------------------------------------------------------
+    # Rate-limiter state lives on app.state (NOT a module-global) so each
+    # test client gets a fresh deque and tests don't bleed across each
+    # other.  We key globally (no per-user identity in this auth-free app).
+    import time as _time
+
+    app.state.gateway_code_issue_times = deque()
+
+    @app.post("/api/gateway/linking-codes")
+    def issue_linking_code(
+        payload: GatewayLinkingCodeRequest,
+        db: Session = Depends(get_db),  # follows the app's standard no-auth get_db pattern
+    ) -> GatewayLinkingCodeResponse:
+        """Issue a one-time linking code for an IM enrollment."""
+        # Rate limiting: rolling 60-second window using wall-clock time.
+        # State is kept on app.state so each TestClient instance is isolated.
+        now = _time.monotonic()
+        window_start = now - 60.0
+        issue_times: deque = app.state.gateway_code_issue_times
+        # Evict records older than the window
+        while issue_times and issue_times[0] < window_start:
+            issue_times.popleft()
+        if len(issue_times) >= active_settings.gateway_code_issue_per_min:
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded: too many linking codes issued in the last 60 seconds.",
+            )
+        try:
+            code, expires_at = _gateway_identity.issue_linking_code(
+                db, persona=payload.persona, settings=active_settings
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        db.commit()
+        issue_times.append(now)
+        return GatewayLinkingCodeResponse(
+            code=code,
+            expires_at=expires_at.isoformat(),
         )
 
     app.include_router(build_skills_router(active_agent_service))
