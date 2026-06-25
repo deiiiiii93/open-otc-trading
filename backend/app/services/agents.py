@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import base64
+from copy import deepcopy
 import inspect
 import json as _json
 import logging
@@ -19,6 +20,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.errors import GraphDrained
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from .. import database as _database
 from ..config import Settings, get_settings
@@ -38,6 +40,7 @@ from .audit import record_audit
 from .deep_agent.channel_registry import ChannelRegistry, get_registry
 from .deep_agent.checkpointer import build_async_checkpointer, build_checkpointer
 from .deep_agent.hitl import (
+    build_resume_command,
     interrupt_on_config,
     pending_actions_from_interrupts,
 )
@@ -1143,6 +1146,29 @@ def _merge_assets(*groups: list[AgentAssetOut]) -> list[AgentAssetOut]:
     return merged
 
 
+class ResumeValidationError(ValueError):
+    """Raised by resume_pending_action when the request is structurally invalid.
+
+    Maps to HTTP 400/404 in the web layer.
+    """
+
+    def __init__(self, message: str, status_hint: int = 400) -> None:
+        super().__init__(message)
+        self.status_hint = status_hint
+
+
+class ResumeConflictError(RuntimeError):
+    """Raised when a pending action has already been resolved (HTTP 409)."""
+
+
+class ResumeAgentError(RuntimeError):
+    """Raised when the underlying agent invocation fails (HTTP 502/503)."""
+
+    def __init__(self, message: str, status_hint: int = 502) -> None:
+        super().__init__(message)
+        self.status_hint = status_hint
+
+
 class WorkflowResumeConflict(RuntimeError):
     """Raised when a task-scoped HITL action can no longer be resumed."""
 
@@ -1714,6 +1740,7 @@ class AgentService:
         accounting_date: date | str,
         model_selection: dict[str, str],
         yolo_mode: bool,
+        actor: str = "desk_user",
     ) -> AgentMessage:
         message = AgentMessage(
             thread_id=thread.id,
@@ -1745,7 +1772,7 @@ class AgentService:
         record_audit(
             session,
             event_type="chat.message",
-            actor="desk_user",
+            actor=actor,
             subject_type="thread",
             subject_id=thread.id,
             payload={
@@ -1847,6 +1874,7 @@ class AgentService:
         yolo_mode: bool,
         envelope_final: str,
         include_interactive_affordances: bool = True,
+        actor: str = "desk_user",
     ) -> AgentMessage:
         resolved = self.normalize_model_selection(model_selection)
         effective_accounting_date = _effective_accounting_date(accounting_date)
@@ -1941,7 +1969,7 @@ class AgentService:
         record_audit(
             session,
             event_type="chat.message",
-            actor="desk_user",
+            actor=actor,
             subject_type="thread",
             subject_id=thread.id,
             payload={
@@ -2068,6 +2096,7 @@ class AgentService:
         accounting_date: date | str | None = None,
         context_usage: AgentContextUsage | dict[str, Any] | None = None,
         yolo_mode: bool = False,
+        actor: str = "desk_user",
     ) -> int | None:
         assets = list(prepared.assets)
         assets = _merge_assets(
@@ -2119,6 +2148,7 @@ class AgentService:
                 yolo_mode,
                 state_final_text,
                 prepared.envelope_final,
+                actor,
             )
         except Exception:
             logger.exception("Persist failed for workflow-routed thread %s", thread_id)
@@ -2139,6 +2169,7 @@ class AgentService:
         yolo_mode: bool = False,
         state_final_text: str | None = None,
         envelope_final: str | None = None,
+        actor: str = "desk_user",
     ) -> int | None:
         resolved = self.normalize_model_selection(model_selection)
         effective_accounting_date = _effective_accounting_date(accounting_date)
@@ -2267,7 +2298,7 @@ class AgentService:
             record_audit(
                 session,
                 event_type="chat.message",
-                actor="desk_user",
+                actor=actor,
                 subject_type="thread",
                 subject_id=thread_id,
                 payload={
@@ -2316,6 +2347,7 @@ class AgentService:
         yolo_mode: bool = False,
         envelope: str | None = None,
         confirmed_cost_preview: bool = False,
+        actor: str = "desk_user",
     ):
         """Stream live LangGraph events for one agent turn, then persist.
 
@@ -2447,6 +2479,7 @@ class AgentService:
                         accounting_date=effective_accounting_date,
                         context_usage=context_usage,
                         yolo_mode=yolo_mode,
+                        actor=actor,
                     )
                     persisted = True
                     yield _sse("done", {"message_id": message_id})
@@ -2478,6 +2511,7 @@ class AgentService:
                                 accounting_date=effective_accounting_date,
                                 context_usage=context_usage,
                                 yolo_mode=yolo_mode,
+                                actor=actor,
                             )
                         except Exception:
                             logger.exception(
@@ -2606,6 +2640,7 @@ class AgentService:
                     effective_accounting_date,
                     context_usage,
                     yolo_mode,
+                    actor,
                 )
                 persisted = True
                 yield _sse("done", {"message_id": message_id})
@@ -2626,6 +2661,7 @@ class AgentService:
                             effective_accounting_date,
                             context_usage,
                             yolo_mode,
+                            actor,
                         )
                     except Exception:
                         logger.exception(
@@ -2705,6 +2741,494 @@ class AgentService:
             task_id=task_id, decision=decision, message=message
         )
 
+    def resume_pending_action(
+        self,
+        *,
+        thread_id: int,
+        message_id: int,
+        action_id: str,
+        decision: str,
+        actor: str,
+        session: Session,
+    ) -> AgentMessage:
+        """Resolve a pending HITL action and return the resulting AgentMessage.
+
+        Raises:
+            ResumeValidationError  — invalid request (maps to HTTP 400/404)
+            ResumeConflictError    — action already resolved (HTTP 409)
+            ResumeAgentError       — agent invocation failed (HTTP 502/503)
+            WorkflowResumeConflict — task-scoped conflict (HTTP 409)
+        """
+        source_message = (
+            session.query(AgentMessage)
+            .filter(AgentMessage.id == message_id)
+            .one_or_none()
+        )
+        if source_message is None or source_message.role != "assistant":
+            raise ResumeValidationError(
+                "Only assistant action proposals can be resumed", status_hint=400
+            )
+
+        source_meta = deepcopy(source_message.meta or {})
+        pending_actions = source_meta.get("pending_actions") or []
+        action = next((a for a in pending_actions if a.get("id") == action_id), None)
+        if action is None:
+            raise ResumeValidationError("Pending action not found", status_hint=404)
+        if action.get("status") != "pending":
+            raise ResumeConflictError(f"Action already {action.get('status')}")
+
+        # Async-agent bubble-up: the pending action's async_task_id field
+        # tells us this came from a background subagent; route the resume to
+        # the subagent's checkpointer thread_id instead of the parent thread.
+        async_task_id = action.get("async_task_id")
+        if isinstance(async_task_id, int):
+            from .async_agents import TaskNotResumableError
+
+            try:
+                self.resume_async_agent(
+                    async_task_id,
+                    "approve" if decision == "confirm" else "reject",
+                    "User dismissed the action." if decision == "dismiss" else None,
+                )
+            except TaskNotResumableError as exc:
+                raise ResumeConflictError(str(exc)) from exc
+            new_status = "confirmed" if decision == "confirm" else "dismissed"
+            _mark_pending_action_resolved(
+                pending_actions,
+                action_id=action_id,
+                status=new_status,
+            )
+            source_message.meta = {**source_meta, "pending_actions": pending_actions}
+            flag_modified(source_message, "meta")
+            record_audit(
+                session,
+                event_type=(
+                    "agent.action.confirmed"
+                    if decision == "confirm"
+                    else "agent.action.dismissed"
+                ),
+                actor=actor,
+                subject_type="thread",
+                subject_id=thread_id,
+                payload={
+                    "action_id": action_id,
+                    "tool_name": action.get("tool_name"),
+                    "async_task_id": async_task_id,
+                },
+            )
+            return source_message
+
+        action_source_meta = action.get("source_meta") or {}
+        if (
+            self.settings.feature_workflow_routing
+            and isinstance(action_source_meta, dict)
+            and action_source_meta.get("agent_runtime") == "deepagents"
+            and action_source_meta.get("task_id") is not None
+        ):
+            cmd = build_resume_command(
+                decision=("approve" if decision == "confirm" else "reject"),
+                message=(
+                    "User dismissed the action." if decision == "dismiss" else None
+                ),
+            )
+            originating = source_meta.get("model_selection")
+            yolo_mode = bool(source_meta.get("yolo_mode", False))
+            fallback_used = False
+            try:
+                resolved = self.normalize_model_selection(originating)
+            except ValueError:
+                resolved = self.default_model_selection
+                fallback_used = True
+                logger.warning(
+                    "Workflow HITL resume falling back to default; originating selection unresolvable: %r",
+                    originating,
+                )
+            resume_decision = "approve" if decision == "confirm" else "reject"
+            try:
+                execution = self.invoke_workflow_resume(
+                    session,
+                    cmd,
+                    source_meta=action_source_meta,
+                    model_selection=resolved,
+                    yolo_mode=yolo_mode,
+                    decision=resume_decision,
+                    actor=actor,
+                )
+            except WorkflowResumeConflict:
+                raise
+            except Exception as exc:
+                session.rollback()
+                logger.exception(
+                    "Workflow resume failed for thread %s action %s",
+                    thread_id,
+                    action_id,
+                )
+                raise ResumeAgentError(f"Agent resume failed: {exc}", status_hint=502) from exc
+
+            source_message = (
+                session.query(AgentMessage).filter(AgentMessage.id == message_id).one()
+            )
+            source_meta = deepcopy(source_message.meta or {})
+            pending_actions = source_meta.get("pending_actions") or []
+            new_status = "confirmed" if decision == "confirm" else "dismissed"
+            _mark_pending_action_resolved(
+                pending_actions,
+                action_id=action_id,
+                status=new_status,
+            )
+            source_message.meta = {**source_meta, "pending_actions": pending_actions}
+            flag_modified(source_message, "meta")
+
+            task = session.get(AgentTask, execution.task_id)
+            persona = task.assigned_persona if task is not None else "orchestrator"
+            if execution.artifact is None:
+                response_content = "Awaiting confirmation for the next step."
+                agent_phase = "awaiting_confirmation"
+                artifact_id = None
+                pending = pending_actions_from_interrupts(
+                    list(execution.interrupts or []),
+                    persona=persona,
+                    source_meta=self._task_source_meta(
+                        execution,
+                        envelope_final=execution.envelope,
+                    ),
+                )
+            else:
+                response_content = self._artifact_response_text(
+                    execution.artifact.payload
+                )
+                agent_phase = "completed"
+                artifact_id = execution.artifact.id
+                pending = []
+
+            new_msg = AgentMessage(
+                thread_id=thread_id,
+                workflow_id=execution.workflow_id,
+                session_id=execution.session_id,
+                role="assistant",
+                character=persona,
+                content=response_content,
+                meta={
+                    "agent_graph": "deepagents",
+                    "agent_phase": agent_phase,
+                    "workflow_routing": True,
+                    "workflow_id": execution.workflow_id,
+                    "task_id": execution.task_id,
+                    "session_id": execution.session_id,
+                    "context_pack_id": execution.context_pack_id,
+                    "artifact_id": artifact_id,
+                    "pending_actions": [
+                        a.model_dump(mode="json") for a in pending
+                    ],
+                    "interrupt_ids": [
+                        getattr(intr, "id", "")
+                        for intr in list(execution.interrupts or [])
+                    ],
+                    "agent_enabled": True,
+                    "model_selection": resolved,
+                    "model_selection_fallback": fallback_used,
+                    "yolo_mode": yolo_mode,
+                    "envelope_final": execution.envelope,
+                },
+            )
+            session.add(new_msg)
+            thread = session.query(AgentThread).filter(AgentThread.id == thread_id).one()
+            thread.character = persona or thread.character
+            session.flush()
+
+            record_audit(
+                session,
+                event_type=(
+                    "agent.action.confirmed"
+                    if decision == "confirm"
+                    else "agent.action.dismissed"
+                ),
+                actor=actor,
+                subject_type="thread",
+                subject_id=thread_id,
+                payload={
+                    "action_id": action_id,
+                    "tool_name": action.get("tool_name") or action.get("type"),
+                    "workflow_routing": True,
+                    "task_id": execution.task_id,
+                    "session_id": execution.session_id,
+                    "context_pack_id": execution.context_pack_id,
+                    "model_selection": resolved,
+                    "model_selection_fallback": fallback_used,
+                    "yolo_mode": yolo_mode,
+                },
+            )
+            return new_msg
+
+        if (
+            self.settings.feature_workflow_routing
+            and isinstance(action_source_meta, dict)
+            and action_source_meta.get("agent_runtime") == "deepagents_orchestrator"
+            and action_source_meta.get("checkpointer_key")
+            and action_source_meta.get("workflow_id") is not None
+            and action_source_meta.get("session_id") is not None
+        ):
+            cmd = build_resume_command(
+                decision=("approve" if decision == "confirm" else "reject"),
+                message=(
+                    "User dismissed the action." if decision == "dismiss" else None
+                ),
+            )
+            originating = source_meta.get("model_selection")
+            yolo_mode = bool(source_meta.get("yolo_mode", False))
+            fallback_used = False
+            try:
+                resolved = self.normalize_model_selection(originating)
+            except ValueError:
+                resolved = self.default_model_selection
+                fallback_used = True
+                logger.warning(
+                    "Orchestrator HITL resume falling back to default; originating selection unresolvable: %r",
+                    originating,
+                )
+
+            agent = self._sync_agent_for_selection(
+                resolved,
+                yolo_mode=yolo_mode,
+            )
+            if agent is None:
+                raise ResumeAgentError(
+                    "Agent is disabled (no LLM configured)", status_hint=503
+                )
+
+            prior_envelope = action_source_meta.get("envelope_final")
+            resume_envelope = (
+                "desk_async" if prior_envelope == "desk_async" else "desk_workflow"
+            )
+            resume_extras = {
+                "envelope": resume_envelope,
+                "confirmed_cost_preview": True,
+                "workflow_id": action_source_meta["workflow_id"],
+                "session_id": action_source_meta["session_id"],
+                "agent_runtime": "deepagents_orchestrator",
+            }
+            checkpointer_key = str(action_source_meta["checkpointer_key"])
+
+            session.rollback()
+            try:
+                result = agent.invoke(
+                    cmd,
+                    config=graph_run_config(
+                        self.settings,
+                        thread_id=checkpointer_key,
+                        configurable_extra=resume_extras,
+                        trace_meta={
+                            "thread_id": thread_id,
+                            "workflow_id": action_source_meta["workflow_id"],
+                        },
+                    ),
+                )
+            except Exception as exc:
+                session.rollback()
+                logger.exception(
+                    "Orchestrator resume failed for thread %s action %s",
+                    thread_id,
+                    action_id,
+                )
+                raise ResumeAgentError(
+                    f"Agent resume failed: {exc}", status_hint=502
+                ) from exc
+            task_watch = _task_watch_from_result(session, result)
+
+            source_message = (
+                session.query(AgentMessage).filter(AgentMessage.id == message_id).one()
+            )
+            source_meta = deepcopy(source_message.meta or {})
+            pending_actions = source_meta.get("pending_actions") or []
+            new_status = "confirmed" if decision == "confirm" else "dismissed"
+            _mark_pending_action_resolved(
+                pending_actions,
+                action_id=action_id,
+                status=new_status,
+                task_watch=task_watch,
+            )
+            source_message.meta = {**source_meta, "pending_actions": pending_actions}
+            flag_modified(source_message, "meta")
+
+            workflow_id = int(action_source_meta["workflow_id"])
+            session_id = int(action_source_meta["session_id"])
+            agent_session = session.get(AgentSession, session_id)
+            if agent_session is None:
+                raise ResumeConflictError(f"AgentSession {session_id} not found")
+            thread = session.query(AgentThread).filter(AgentThread.id == thread_id).one()
+            route = WorkspaceRouteDecision(
+                kind=source_meta.get("router_decision") or "continue_workflow",
+                workflow_id=workflow_id,
+                session_id=session_id,
+            )
+            new_msg = self._persist_workflow_orchestrator_result(
+                session,
+                thread,
+                result,
+                assets=[],
+                route=route,
+                agent_session=agent_session,
+                page_context=None,
+                accounting_date=None,
+                context_usage=None,
+                model_selection=resolved,
+                yolo_mode=yolo_mode,
+                envelope_final=resume_envelope,
+                include_interactive_affordances=False,
+            )
+            if fallback_used and isinstance(new_msg.meta, dict):
+                new_msg.meta = {**new_msg.meta, "model_selection_fallback": True}
+                flag_modified(new_msg, "meta")
+
+            record_audit(
+                session,
+                event_type=(
+                    "agent.action.confirmed"
+                    if decision == "confirm"
+                    else "agent.action.dismissed"
+                ),
+                actor=actor,
+                subject_type="thread",
+                subject_id=thread_id,
+                payload={
+                    "action_id": action_id,
+                    "tool_name": action.get("tool_name") or action.get("type"),
+                    "workflow_routing": True,
+                    "workflow_id": workflow_id,
+                    "session_id": session_id,
+                    "model_selection": resolved,
+                    "model_selection_fallback": fallback_used,
+                    "yolo_mode": yolo_mode,
+                    "agent_runtime": "deepagents_orchestrator",
+                },
+            )
+            return new_msg
+
+        cmd = build_resume_command(
+            decision=("approve" if decision == "confirm" else "reject"),
+            message=("User dismissed the action." if decision == "dismiss" else None),
+        )
+
+        # Resume against the originating message's model selection — not the default.
+        # Falls back with audit if the selection is no longer resolvable in the
+        # current registry (e.g., admin removed the model since the message was sent).
+        originating = source_meta.get("model_selection")
+        yolo_mode = bool(source_meta.get("yolo_mode", False))
+        fallback_used = False
+        try:
+            resolved = self.normalize_model_selection(originating)
+        except ValueError:
+            resolved = self.default_model_selection
+            fallback_used = True
+            logger.warning(
+                "HITL resume falling back to default; originating selection unresolvable: %r",
+                originating,
+            )
+
+        agent = self._sync_agent_for_selection(
+            resolved,
+            yolo_mode=yolo_mode,
+        )
+        if agent is None:
+            raise ResumeAgentError(
+                "Agent is disabled (no LLM configured)", status_hint=503
+            )
+
+        # The resumed graph may execute tools that open their own app DB
+        # sessions and write rows, e.g. run_batch_pricing -> queued run rows.
+        # Release this request session's read transaction first so SQLite does
+        # not block the tool write during the long-running agent invoke.
+        session.rollback()
+
+        # HITL paused BEFORE the capability gate ran on this tool, so
+        # source_meta.envelope_final reflects the pre-gate envelope (often
+        # pet_page for floating-pet writes). Always widen to at least
+        # desk_workflow so the approved write actually runs. Preserve
+        # desk_async if the original turn was already async so HITL
+        # callbacks don't downgrade async dispatch authority.
+        prior_envelope = source_meta.get("envelope_final")
+        if prior_envelope == "desk_async":
+            resume_envelope = "desk_async"
+        else:
+            resume_envelope = "desk_workflow"
+
+        # HITL approval is itself the cost-preview confirmation step (the
+        # user explicitly said yes to this action). Pre-confirm so the gate
+        # doesn't ask again with a structured cost_preview_required event
+        # the /confirm endpoint can't surface. Without this, large
+        # run_batch_pricing approvals would 502.
+        resume_extras = {
+            "envelope": resume_envelope,
+            "confirmed_cost_preview": True,
+        }
+        try:
+            result = agent.invoke(
+                cmd,
+                config=graph_run_config(
+                    self.settings,
+                    thread_id=thread_id,
+                    configurable_extra=resume_extras,
+                    trace_meta={"thread_id": thread_id},
+                ),
+            )
+        except Exception as exc:
+            session.rollback()
+            logger.exception(
+                "Resume failed for thread %s action %s", thread_id, action_id
+            )
+            raise ResumeAgentError(
+                f"Agent resume failed: {exc}", status_hint=502
+            ) from exc
+        task_watch = _task_watch_from_result(session, result)
+
+        source_message = (
+            session.query(AgentMessage).filter(AgentMessage.id == message_id).one()
+        )
+        new_status = "confirmed" if decision == "confirm" else "dismissed"
+        _mark_pending_action_resolved(
+            pending_actions,
+            action_id=action_id,
+            status=new_status,
+            task_watch=task_watch,
+        )
+        source_message.meta = {**source_meta, "pending_actions": pending_actions}
+        flag_modified(source_message, "meta")
+
+        record_audit(
+            session,
+            event_type=(
+                "agent.action.confirmed"
+                if decision == "confirm"
+                else "agent.action.dismissed"
+            ),
+            actor=actor,
+            subject_type="thread",
+            subject_id=thread_id,
+            payload={
+                "action_id": action_id,
+                "tool_name": action.get("tool_name") or action.get("type"),
+                "model_selection": resolved,
+                "model_selection_fallback": fallback_used,
+                "yolo_mode": yolo_mode,
+            },
+        )
+
+        thread = session.query(AgentThread).filter(AgentThread.id == thread_id).one()
+        new_msg = self._persist_agent_result(
+            session,
+            thread,
+            result,
+            assets=[],
+            page_context=None,
+            model_selection=resolved,
+            yolo_mode=yolo_mode,
+            include_interactive_affordances=False,
+        )
+        if fallback_used and isinstance(new_msg.meta, dict):
+            new_msg.meta = {**new_msg.meta, "model_selection_fallback": True}
+            flag_modified(new_msg, "meta")
+        return new_msg
+
     def invoke_resume(
         self,
         command: Any,
@@ -2740,6 +3264,7 @@ class AgentService:
         model_selection: dict[str, str] | None = None,
         yolo_mode: bool = False,
         decision: str,
+        actor: str = "desk_user",
     ) -> TaskExecutionResult:
         task_id = int(source_meta["task_id"])
         workflow_id = int(source_meta["workflow_id"])
@@ -2796,7 +3321,7 @@ class AgentService:
                 "context_pack_id": context_pack_id,
                 "decision": decision,
             },
-            actor="desk_user",
+            actor=actor,
         )
         writer.emit_event(
             workflow_id=workflow_id,
@@ -2991,6 +3516,7 @@ class AgentService:
         accounting_date: date | str | None = None,
         context_usage: AgentContextUsage | dict[str, Any] | None = None,
         yolo_mode: bool = False,
+        actor: str = "desk_user",
     ) -> int | None:
         """Read interrupts/personas from state, then persist a single AgentMessage."""
         assets = _merge_assets(
@@ -3041,6 +3567,7 @@ class AgentService:
                 context_usage,
                 yolo_mode,
                 state_final_text,
+                actor,
             )
         except Exception:
             logger.exception("Persist failed for thread %s", thread_id)
@@ -3312,6 +3839,7 @@ class AgentService:
         context_usage: AgentContextUsage | dict[str, Any] | None = None,
         yolo_mode: bool = False,
         state_final_text: str | None = None,
+        actor: str = "desk_user",
     ) -> int | None:
         resolved = self.normalize_model_selection(model_selection)
         effective_accounting_date = _effective_accounting_date(accounting_date)
@@ -3453,7 +3981,7 @@ class AgentService:
             record_audit(
                 session,
                 event_type="chat.message",
-                actor="desk_user",
+                actor=actor,
                 subject_type="thread",
                 subject_id=thread_id,
                 payload={
