@@ -3810,6 +3810,8 @@ def create_app(
         next_cursor: str | None = None
         if has_next and page_rows:
             last = page_rows[-1]
+            # Second-precision isoformat is sufficient: bound_at uses SQLite's
+            # func.now() server default, which has no sub-second resolution.
             cursor_payload = {"bound_at": last.bound_at.isoformat(), "id": last.id}
             next_cursor = _base64.b64encode(
                 _json.dumps(cursor_payload, separators=(",", ":")).encode()

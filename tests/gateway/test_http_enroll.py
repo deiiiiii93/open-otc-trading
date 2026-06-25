@@ -12,13 +12,14 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app import database
 from app.config import Settings
 from app.main import create_app
 
 
-def _make_client(tmp_path: Path, gateway_code_issue_per_min: int = 2) -> TestClient:
-    """Build a TestClient backed by a fresh temp DB."""
+def _make_client(
+    tmp_path: Path, gateway_code_issue_per_min: int = 2
+) -> tuple[TestClient, Settings]:
+    """Build a TestClient backed by a fresh temp DB. Returns (client, settings)."""
     settings = Settings(
         database_url=f"sqlite+pysqlite:///{tmp_path / 'test.sqlite3'}",
         artifact_dir=tmp_path / "artifacts",
@@ -26,7 +27,7 @@ def _make_client(tmp_path: Path, gateway_code_issue_per_min: int = 2) -> TestCli
         gateway_code_issue_per_min=gateway_code_issue_per_min,
     )
     app = create_app(settings=settings)
-    return TestClient(app)
+    return TestClient(app), settings
 
 
 # ---------------------------------------------------------------------------
@@ -36,7 +37,7 @@ def _make_client(tmp_path: Path, gateway_code_issue_per_min: int = 2) -> TestCli
 
 def test_issue_linking_code_returns_code_and_expiry(tmp_path):
     """POST /api/gateway/linking-codes returns code + expires_at ISO string."""
-    client = _make_client(tmp_path)
+    client, _settings = _make_client(tmp_path)
     resp = client.post("/api/gateway/linking-codes", json={"persona": "trader"})
     assert resp.status_code == 200
     body = resp.json()
@@ -52,19 +53,15 @@ def test_issue_linking_code_returns_code_and_expiry(tmp_path):
 
 def test_issue_linking_code_code_is_persisted(tmp_path):
     """The issued code must exist in the GatewayLinkingCode table."""
-    settings = Settings(
-        database_url=f"sqlite+pysqlite:///{tmp_path / 'test.sqlite3'}",
-        artifact_dir=tmp_path / "artifacts",
-        agent_checkpoint_db_path=":memory:",
-        gateway_code_issue_per_min=10,
-    )
-    app = create_app(settings=settings)
-    with TestClient(app) as client:
+    client, settings = _make_client(tmp_path, gateway_code_issue_per_min=10)
+    with client:
         resp = client.post("/api/gateway/linking-codes", json={"persona": "risk_manager"})
         assert resp.status_code == 200
         code = resp.json()["code"]
 
-    # Query the DB directly to confirm persistence
+    # Query the DB directly via a session bound to the same engine that
+    # create_app() configured — explicit, not relying on module-global order.
+    from app import database
     from app.models import GatewayLinkingCode
     with database.SessionLocal() as session:
         row = session.query(GatewayLinkingCode).filter_by(code=code).one_or_none()
@@ -74,7 +71,7 @@ def test_issue_linking_code_code_is_persisted(tmp_path):
 
 def test_invalid_persona_returns_422(tmp_path):
     """An unknown persona name must return 422."""
-    client = _make_client(tmp_path)
+    client, _settings = _make_client(tmp_path)
     resp = client.post("/api/gateway/linking-codes", json={"persona": "admin"})
     assert resp.status_code == 422
 
@@ -82,7 +79,7 @@ def test_invalid_persona_returns_422(tmp_path):
 def test_rate_limit_returns_429(tmp_path):
     """Exceeding gateway_code_issue_per_min within the window returns 429."""
     # Use limit=2 so the 3rd request triggers 429 deterministically
-    client = _make_client(tmp_path, gateway_code_issue_per_min=2)
+    client, _settings = _make_client(tmp_path, gateway_code_issue_per_min=2)
     r1 = client.post("/api/gateway/linking-codes", json={"persona": "trader"})
     r2 = client.post("/api/gateway/linking-codes", json={"persona": "trader"})
     r3 = client.post("/api/gateway/linking-codes", json={"persona": "trader"})
@@ -93,7 +90,7 @@ def test_rate_limit_returns_429(tmp_path):
 
 def test_all_known_personas_accepted(tmp_path):
     """trader, risk_manager, and high_board are all valid."""
-    client = _make_client(tmp_path, gateway_code_issue_per_min=10)
+    client, _settings = _make_client(tmp_path, gateway_code_issue_per_min=10)
     for persona in ("trader", "risk_manager", "high_board"):
         resp = client.post("/api/gateway/linking-codes", json={"persona": persona})
         assert resp.status_code == 200, f"persona={persona} failed: {resp.json()}"
