@@ -4,9 +4,10 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from langchain_core.messages import HumanMessage
 
 from app.services.tracing.store import TraceStore
-from app.services.tracing.tracer import LocalTracer, extract_token_usage
+from app.services.tracing.tracer import LocalTracer, _json, extract_token_usage
 
 
 @pytest.fixture()
@@ -90,3 +91,11 @@ def test_extract_token_usage_variants():
     ) == (5, 6, 11)
     assert extract_token_usage(None) == (None, None, None)
     assert extract_token_usage({"generations": [[{"text": "x"}]]}) == (None, None, None)
+
+
+def test_json_preserves_langchain_messages_structurally():
+    payload = _json({"messages": [HumanMessage(content="hello")], "files": {}})
+    assert payload is not None
+    parsed = __import__("json").loads(payload)
+    assert parsed["messages"][0]["id"][-1] == "HumanMessage"
+    assert parsed["messages"][0]["kwargs"]["content"] == "hello"
