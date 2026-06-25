@@ -196,6 +196,32 @@ def test_purge_spares_untagged_real_portfolio(session):
     assert session.query(Portfolio).filter(Portfolio.name == "Control Desk Portfolio").count() == 1
 
 
+def test_purge_removes_arena_profiles_but_spares_real_ones(session):
+    """Arena-marked pricing profiles are purged (no accumulation); a real desk
+    profile sharing the name is left untouched."""
+    from datetime import datetime, timezone
+
+    from app.services.arena.runner import _purge_seeded_portfolios, ARENA_PROFILE_MARKER
+    from app.models import PricingParameterProfile
+
+    vd = datetime(2026, 6, 24, tzinfo=timezone.utc)
+    arena_prof = PricingParameterProfile(
+        name="Control Profile", valuation_date=vd, summary={ARENA_PROFILE_MARKER: True}
+    )
+    real_prof = PricingParameterProfile(name="Control Profile", valuation_date=vd, summary={})
+    session.add_all([arena_prof, real_prof])
+    session.commit()
+
+    bundle = _Bundle({"pricing_profiles": [{"alias": "prof", "name": "Control Profile"}]})
+    _purge_seeded_portfolios(session, bundle)
+
+    remaining = session.query(PricingParameterProfile).filter(
+        PricingParameterProfile.name == "Control Profile"
+    ).all()
+    assert len(remaining) == 1
+    assert not (remaining[0].summary or {}).get(ARENA_PROFILE_MARKER)  # the real one survived
+
+
 def test_purge_deletes_task_rows_before_referenced_runs(session):
     """A task_run referencing a purged risk_run must not cause an FK violation:
     deletes run in reverse FK-dependency order (children first)."""

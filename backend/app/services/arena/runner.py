@@ -97,30 +97,36 @@ def _default_drive(thread_id: int, content: str, selection: dict) -> None:
 
 
 ARENA_PORTFOLIO_TAG = "arena"
+ARENA_PROFILE_MARKER = "arena_owned"  # set in PricingParameterProfile.summary
 
 
 def _purge_seeded_portfolios(session, bundle) -> None:
-    """Delete prior arena-seeded portfolios sharing a fixture name, plus their
-    dependents, so a re-seed for the next match starts from a clean slate.
+    """Delete prior arena-seeded fixture rows sharing a fixture name (portfolios
+    and pricing profiles), plus their dependents, so a re-seed for the next match
+    starts from a clean slate and arena rows never accumulate in the real DB.
 
     The golden workflows are name-based (the agent resolves "the control
-    portfolio" by name) and ``portfolios.name`` is UNIQUE, so a re-seed for the
-    next match would collide unless the prior one is removed first. Deletion is
-    scoped to portfolios this module created — those carrying the
-    ``ARENA_PORTFOLIO_TAG`` tag — so a real desk portfolio that happens to share
-    the fixture name is NEVER touched (it would instead make the seed fail
-    cleanly on the unique-name constraint, which is recorded as a failed match).
-    Pricing profiles are not purged: ``pricing_parameter_profiles.name`` is not
-    unique, so re-seeding never collides and there is nothing to clean up.
+    portfolio" by name) and ``portfolios.name`` is UNIQUE, so a re-seed would
+    collide unless the prior one is removed first. Pricing-profile names are NOT
+    unique, so they never collide — but they ARE inserted on every match, so
+    without cleanup repeated runs accumulate duplicate "Control Profile" rows in
+    the user's profile list. Both are therefore purged.
 
-    Dependents are removed by introspecting every mapped table for a
+    Deletion is scoped to rows THIS module created — portfolios carrying the
+    ``ARENA_PORTFOLIO_TAG`` tag and profiles whose ``summary`` carries
+    ``ARENA_PROFILE_MARKER`` — so a real desk portfolio/profile that happens to
+    share the fixture name is NEVER touched. (A real same-named portfolio instead
+    makes the seed fail cleanly on the unique-name constraint → failed match.)
+
+    Portfolio dependents are removed by introspecting every mapped table for a
     ``portfolio_id`` or ``position_id`` column, which covers risk runs,
-    valuations, scenario/backtest runs, hedge rows, and position children
-    without hard-coding table names. Deletes run in reverse FK-dependency order
-    (children before parents) because FK enforcement is ON (see database.py):
-    ``task_runs`` reference run rows (risk_run_id / scenario_test_run_id /
-    backtest_run_id) as well as ``portfolio_id``, so they must be deleted before
-    the run rows they point at.
+    valuations, scenario/backtest runs, hedge rows, and position children without
+    hard-coding table names. Deletes run in reverse FK-dependency order (children
+    before parents) because FK enforcement is ON (see database.py): ``task_runs``
+    reference run rows (risk_run_id / scenario_test_run_id / backtest_run_id) as
+    well as ``portfolio_id``, so they must be deleted before the run rows they
+    point at. Profiles are purged last (after the run rows that reference
+    ``pricing_parameter_profile_id`` are gone).
     """
     import warnings
 
@@ -129,23 +135,6 @@ def _purge_seeded_portfolios(session, bundle) -> None:
 
     from app import models
 
-    names = [r["name"] for r in bundle.seed.get("portfolios", []) if r.get("name")]
-    if not names:
-        return
-
-    # Only purge arena-owned portfolios; never a real desk portfolio that shares
-    # the fixture name.
-    candidates = session.scalars(
-        select(models.Portfolio).where(models.Portfolio.name.in_(names))
-    ).all()
-    pids = [p.id for p in candidates if ARENA_PORTFOLIO_TAG in (p.tags or [])]
-    if not pids:
-        return
-
-    posids = list(
-        session.scalars(select(models.Position.id).where(models.Position.portfolio_id.in_(pids)))
-    )
-
     # sorted_tables warns about an unrelated FK cycle among the agent_*/workflows
     # tables; none of those carry portfolio_id/position_id, so they fall outside
     # the purge scope and the ordering of the tables we touch stays correct.
@@ -153,15 +142,43 @@ def _purge_seeded_portfolios(session, bundle) -> None:
         warnings.simplefilter("ignore", SAWarning)
         fk_ordered_tables = list(reversed(models.Base.metadata.sorted_tables))
 
-    portfolio_table = models.Portfolio.__table__
-    for table in fk_ordered_tables:
-        if table is portfolio_table:
-            continue
-        if posids and "position_id" in table.c:
-            session.execute(delete(table).where(table.c.position_id.in_(posids)))
-        if "portfolio_id" in table.c:
-            session.execute(delete(table).where(table.c.portfolio_id.in_(pids)))
-    session.execute(delete(portfolio_table).where(portfolio_table.c.id.in_(pids)))
+    # --- portfolios + dependents (arena-tagged only) ---
+    names = [r["name"] for r in bundle.seed.get("portfolios", []) if r.get("name")]
+    if names:
+        candidates = session.scalars(
+            select(models.Portfolio).where(models.Portfolio.name.in_(names))
+        ).all()
+        pids = [p.id for p in candidates if ARENA_PORTFOLIO_TAG in (p.tags or [])]
+        if pids:
+            posids = list(
+                session.scalars(
+                    select(models.Position.id).where(models.Position.portfolio_id.in_(pids))
+                )
+            )
+            portfolio_table = models.Portfolio.__table__
+            for table in fk_ordered_tables:
+                if table is portfolio_table:
+                    continue
+                if posids and "position_id" in table.c:
+                    session.execute(delete(table).where(table.c.position_id.in_(posids)))
+                if "portfolio_id" in table.c:
+                    session.execute(delete(table).where(table.c.portfolio_id.in_(pids)))
+            session.execute(delete(portfolio_table).where(portfolio_table.c.id.in_(pids)))
+
+    # --- pricing profiles (arena-marked only) ---
+    prof_names = [r["name"] for r in bundle.seed.get("pricing_profiles", []) if r.get("name")]
+    if prof_names:
+        prof_candidates = session.scalars(
+            select(models.PricingParameterProfile).where(
+                models.PricingParameterProfile.name.in_(prof_names)
+            )
+        ).all()
+        prof_ids = [
+            p.id for p in prof_candidates if (p.summary or {}).get(ARENA_PROFILE_MARKER)
+        ]
+        if prof_ids:
+            prof_table = models.PricingParameterProfile.__table__
+            session.execute(delete(prof_table).where(prof_table.c.id.in_(prof_ids)))
 
     session.commit()
 
@@ -222,14 +239,20 @@ def run_match(
     with database.SessionLocal() as session:
         _purge_seeded_portfolios(session, loaded.fixtures)
         seed_ids = apply_seed(loaded.fixtures, session)
-        # Mark the seeded portfolios as arena-owned so the next match's purge
-        # only removes arena rows, never a real desk portfolio of the same name.
+        # Mark the seeded fixture rows as arena-owned so the next match's purge
+        # only removes arena rows, never a real desk portfolio/profile of the
+        # same name.
         seeded_pids = list(seed_ids.get("portfolios", {}).values())
-        if seeded_pids:
-            from app.models import Portfolio
+        seeded_prof_ids = list(seed_ids.get("pricing_profiles", {}).values())
+        if seeded_pids or seeded_prof_ids:
+            from app.models import PricingParameterProfile, Portfolio
 
             for portfolio in session.query(Portfolio).filter(Portfolio.id.in_(seeded_pids)):
                 portfolio.tags = sorted({*(portfolio.tags or []), ARENA_PORTFOLIO_TAG})
+            for prof in session.query(PricingParameterProfile).filter(
+                PricingParameterProfile.id.in_(seeded_prof_ids)
+            ):
+                prof.summary = {**(prof.summary or {}), ARENA_PROFILE_MARKER: True}
             session.commit()
         thread = AgentThread(
             title=f"[arena] {workflow.id} · {model.slug}",
