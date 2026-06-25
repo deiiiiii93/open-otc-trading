@@ -124,6 +124,12 @@ def transcript_from_trace(thread_id, workflow, model, *, store=None) -> MatchTra
         from app.services.tracing.store import get_trace_store
         store = get_trace_store(get_settings())
 
+    # The LocalTracer enqueues spans to a background writer thread; drain it so
+    # the just-completed turns are durable before we read them back. Guard with
+    # hasattr so injected fake stores (tests) don't need a flush method.
+    if hasattr(store, "flush"):
+        store.flush()
+
     roots = sorted(
         store.list_thread_traces(thread_id, limit=1000),
         key=lambda r: r.get("start_time") or "",

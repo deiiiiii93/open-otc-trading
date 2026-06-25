@@ -16,10 +16,13 @@ from app.golden_workflows.schema import (
 # Recognised seed namespaces and the set of keys each row must carry.
 # "alias" is always required.  Extra keys (column values) are passed
 # through to the ORM constructor unchanged.
+# ``id`` is optional for portfolios/pricing_profiles: omit it to let the DB
+# autoincrement so the same fixture can be re-seeded (once per arena match)
+# without primary-key/unique clashes. Fixtures that pin ``id`` still validate.
 _NAMESPACES: dict[str, set[str]] = {
-    "portfolios": {"alias", "id", "name"},
+    "portfolios": {"alias", "name"},
     "positions": {"alias", "portfolio", "underlying", "product_type", "quantity"},
-    "pricing_profiles": {"alias", "id", "name", "valuation_date"},
+    "pricing_profiles": {"alias", "name", "valuation_date"},
     "risk_runs": {"alias", "portfolio"},
 }
 
@@ -150,7 +153,14 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
         rows = bundle.seed.get(ns, [])
         for row in rows:
             if ns == "portfolios":
-                obj = models.Portfolio(id=row["id"], name=row["name"])
+                # ``id`` is optional: omit it to let the DB autoincrement, so the
+                # same fixture can be seeded repeatedly (e.g. once per arena match)
+                # without primary-key clashes. Explicit ids are still honoured for
+                # fixtures that pin them (e.g. $seed.<ns>.<alias>.id references).
+                pkw = {"name": row["name"]}
+                if "id" in row:
+                    pkw["id"] = row["id"]
+                obj = models.Portfolio(**pkw)
 
             elif ns == "pricing_profiles":
                 # Pass through any extra keys; default valuation_date if absent.

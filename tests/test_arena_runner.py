@@ -39,6 +39,11 @@ def test_run_match_seeds_creates_arena_thread_and_drives_each_step(tmp_path, mon
         "app.services.arena.runner.apply_seed",
         lambda b, s: seeded.__setitem__("called", True),
     )
+    # Purge is exercised by its own DB-backed test; stub it here.
+    monkeypatch.setattr(
+        "app.services.arena.runner._purge_seeded_portfolios",
+        lambda s, b: None,
+    )
 
     # Stub the DB session + thread creation
     class _Thread:
@@ -102,3 +107,58 @@ def test_run_match_requires_no_agent_param(tmp_path):
     # The old agent=/chat= params are gone; calling with them must error.
     with pytest.raises(TypeError):
         run_match(_Loaded(), get_model("gpt-5-5"), artifact_root=tmp_path, agent=object())
+
+
+class _Bundle:
+    """Minimal FixtureBundle-like object with a .seed dict."""
+    def __init__(self, seed):
+        self.seed = seed
+
+
+def test_purge_then_reseed_avoids_name_collision(session):
+    """portfolios.name is UNIQUE: re-seeding a name-based fixture only works
+    because the purge frees the name first; the reseed gets a fresh autoincrement id."""
+    from app.golden_workflows.fixtures import apply_seed
+    from app.services.arena.runner import _purge_seeded_portfolios
+    from app.models import Portfolio
+
+    bundle = _Bundle({"portfolios": [{"alias": "control", "name": "Control Desk Portfolio"}]})
+    apply_seed(bundle, session)
+    _purge_seeded_portfolios(session, bundle)
+    ids2 = apply_seed(bundle, session)  # name freed by purge → reseed succeeds, no collision
+    assert ids2["portfolios"]["control"] is not None
+    assert (
+        session.query(Portfolio).filter(Portfolio.name == "Control Desk Portfolio").count() == 1
+    )
+
+
+def test_purge_removes_named_portfolio_and_dependents_only(session):
+    """_purge_seeded_portfolios deletes the named portfolio + its positions/risk
+    runs, leaving unrelated portfolios untouched."""
+    from app.services.arena.runner import _purge_seeded_portfolios
+    from app.golden_workflows.fixtures import apply_seed
+    from app.models import Portfolio, Position, RiskRun
+
+    bundle = _Bundle({
+        "portfolios": [{"alias": "control", "name": "Control Desk Portfolio"}],
+        "positions": [{
+            "alias": "p1", "portfolio": "control", "underlying": "AAPL",
+            "product_type": "Futures", "quantity": 1.0,
+        }],
+    })
+    apply_seed(bundle, session)
+    # an unrelated portfolio that must survive
+    keep = Portfolio(name="Keep Me")
+    session.add(keep)
+    session.commit()
+    # simulate an agent write: a risk run on the seeded portfolio
+    ctrl_id = session.query(Portfolio.id).filter(Portfolio.name == "Control Desk Portfolio").scalar()
+    session.add(RiskRun(portfolio_id=ctrl_id))
+    session.commit()
+
+    _purge_seeded_portfolios(session, bundle)
+
+    assert session.query(Portfolio).filter(Portfolio.name == "Control Desk Portfolio").count() == 0
+    assert session.query(Position).filter(Position.portfolio_id == ctrl_id).count() == 0
+    assert session.query(RiskRun).filter(RiskRun.portfolio_id == ctrl_id).count() == 0
+    assert session.query(Portfolio).filter(Portfolio.name == "Keep Me").count() == 1

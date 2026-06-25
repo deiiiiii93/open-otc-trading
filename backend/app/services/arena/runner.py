@@ -67,6 +67,55 @@ def _default_drive(thread_id: int, content: str, selection: dict) -> None:
     asyncio.run(_run())
 
 
+def _purge_seeded_portfolios(session, bundle) -> None:
+    """Delete any portfolios sharing a fixture portfolio name, plus their
+    dependents, so a re-seed for the next match starts from a clean slate.
+
+    The golden workflows are name-based (the agent resolves "the control
+    portfolio" by name), so two matches must not leave two identically-named
+    portfolios in the shared DB — that would make the agent's name lookup
+    ambiguous and let one model see another model's writes. Pricing profiles
+    are purged by name for the same reason.
+
+    Dependents are removed by introspecting every mapped table for a
+    ``portfolio_id`` or ``position_id`` column, which covers risk runs,
+    valuations, scenario/backtest runs, hedge rows, and position children
+    without hard-coding table names.
+    """
+    from sqlalchemy import delete, select
+
+    from app import models
+
+    names = [r["name"] for r in bundle.seed.get("portfolios", []) if r.get("name")]
+    if names:
+        pids = list(
+            session.scalars(select(models.Portfolio.id).where(models.Portfolio.name.in_(names)))
+        )
+        if pids:
+            posids = list(
+                session.scalars(
+                    select(models.Position.id).where(models.Position.portfolio_id.in_(pids))
+                )
+            )
+            portfolio_table = models.Portfolio.__table__
+            for mapper in models.Base.registry.mappers:
+                table = mapper.local_table
+                if table is None or table is portfolio_table:
+                    continue
+                if posids is not None and "position_id" in table.c:
+                    session.execute(delete(table).where(table.c.position_id.in_(posids)))
+                if "portfolio_id" in table.c:
+                    session.execute(delete(table).where(table.c.portfolio_id.in_(pids)))
+            session.execute(delete(portfolio_table).where(portfolio_table.c.id.in_(pids)))
+
+    prof_names = [r["name"] for r in bundle.seed.get("pricing_profiles", []) if r.get("name")]
+    if prof_names:
+        prof_table = models.PricingParameterProfile.__table__
+        session.execute(delete(prof_table).where(prof_table.c.name.in_(prof_names)))
+
+    session.commit()
+
+
 def _copy_artifacts(artifacts: list[dict], artifact_root: Path, workflow_id: str) -> list[dict]:
     """Copy artifact files under artifact_root/workflow_id/ and rewrite paths.
 
@@ -118,8 +167,10 @@ def run_match(
     artifact_root = Path(artifact_root)
     selection = arena_model_to_selection(model)
 
-    # Seed fixtures (fresh IDs) + create the arena-tagged thread.
+    # Reset any prior same-named seed, then seed fresh (autoincrement IDs) and
+    # create the arena-tagged thread.
     with database.SessionLocal() as session:
+        _purge_seeded_portfolios(session, loaded.fixtures)
         apply_seed(loaded.fixtures, session)
         thread = AgentThread(
             title=f"[arena] {workflow.id} · {model.slug}",

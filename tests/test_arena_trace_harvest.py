@@ -128,6 +128,27 @@ def test_transcript_from_trace_maps_roots_to_steps_in_order():
     assert transcript.steps[1].response_text == "done"
 
 
+def test_transcript_from_trace_flushes_store_before_reading():
+    """The background trace writer must be drained before harvesting."""
+    events = []
+
+    class _FlushStore(_FakeStore):
+        def flush(self):
+            events.append("flush")
+
+        def list_thread_traces(self, thread_id, *, limit=50, offset=0):
+            events.append("read")
+            return list(self._roots)
+
+    roots = [{"trace_id": "T1", "start_time": "1", "end_time": "2"}]
+    traces = {"T1": [{"run_type": "llm", "name": "ChatAnthropic", "start_time": "1",
+                      "outputs": _llm_output("hi")}]}
+    model = ArenaModel(slug="m", zenmux_name="openai/x", display_name="M", default_config={})
+    transcript_from_trace(1, _WF(), model, store=_FlushStore(roots, traces))
+    assert events[0] == "flush"  # flush happens before the first read
+    assert "read" in events
+
+
 def test_transcript_from_trace_missing_root_records_error():
     roots = [{"trace_id": "T1", "start_time": "1", "end_time": "2"}]  # only 1 root, 2 steps
     traces = {"T1": [{"run_type": "llm", "name": "ChatAnthropic", "start_time": "1",
