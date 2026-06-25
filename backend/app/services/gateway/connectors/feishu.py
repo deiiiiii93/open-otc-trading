@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import logging
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
@@ -263,13 +264,17 @@ def verify_event(raw_body: bytes, config: "GatewayConfig") -> bool:
         cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
         decryptor = cipher.decryptor()
         padded = decryptor.update(ciphertext) + decryptor.finalize()
-        # PKCS7 unpad
+        # PKCS7 unpad — validate before slicing
         pad_len = padded[-1]
+        if pad_len < 1 or pad_len > 16 or pad_len > len(padded):
+            return False
+        if padded[-pad_len:] != bytes([pad_len]) * pad_len:
+            return False
         plaintext = padded[:-pad_len]
         event = json.loads(plaintext)
         # Extract token: check header.token (v2) then top-level token
         token = event.get("header", {}).get("token") or event.get("token")
-        return token == config.feishu_verification_token
+        return hmac.compare_digest(token or "", config.feishu_verification_token or "")
     except Exception:
         return False
 
@@ -345,12 +350,16 @@ class FeishuConnector:
                 event_dict.get("event", {}).get("action") is not None
                 and event_dict.get("event", {}).get("message") is None
             ):
-                msg = feishu_card_action_to_inbound(event_dict)
+                inbound = feishu_card_action_to_inbound(event_dict)
             else:
-                msg = feishu_event_to_inbound(event_dict)
-            await self._on_inbound(msg)
+                inbound = feishu_event_to_inbound(event_dict)
         except Exception:
-            _log.exception("Error handling Feishu event: %r", event_dict)
+            _log.exception("Failed to translate Feishu event: %r", event_dict)
+            return
+        try:
+            await self._on_inbound(inbound)
+        except Exception:
+            _log.exception("on_inbound handler failed for Feishu event: %r", event_dict)
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -427,7 +436,7 @@ class FeishuConnector:
             .build()
         )
         req = CreateMessageRequest.builder().request_body(body).build()
-        resp = await asyncio.get_event_loop().run_in_executor(
+        resp = await asyncio.get_running_loop().run_in_executor(
             None, lambda: client.im.v1.message.create(req)
         )
         message_id: str = resp.data.message_id if resp.data else idempotency_key
@@ -465,7 +474,7 @@ class FeishuConnector:
             .request_body(body)
             .build()
         )
-        await asyncio.get_event_loop().run_in_executor(
+        await asyncio.get_running_loop().run_in_executor(
             None, lambda: client.im.v1.message.update(req)
         )
 
@@ -501,7 +510,7 @@ class FeishuConnector:
             .build()
         )
         req = CreateMessageRequest.builder().request_body(body).build()
-        resp = await asyncio.get_event_loop().run_in_executor(
+        resp = await asyncio.get_running_loop().run_in_executor(
             None, lambda: client.im.v1.message.create(req)
         )
         message_id = resp.data.message_id if resp.data else idempotency_key
@@ -540,7 +549,7 @@ class FeishuConnector:
             .request_body(body)
             .build()
         )
-        await asyncio.get_event_loop().run_in_executor(
+        await asyncio.get_running_loop().run_in_executor(
             None, lambda: client.im.v1.message.patch(req)
         )
 

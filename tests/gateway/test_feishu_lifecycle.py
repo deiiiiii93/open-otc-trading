@@ -8,7 +8,6 @@ import pytest
 
 from app.services.gateway.connectors.feishu import (
     FeishuConnector,
-    feishu_card_action_to_inbound,
 )
 from app.services.gateway.config import GatewayConfig
 from app.services.gateway.types import InboundMessage
@@ -339,8 +338,11 @@ async def test_stop_halts_reconnect_loop():
         pass
 
     # After stop(), the loop should not keep building new clients indefinitely
-    # We just verify that the last client had stop() called on it or stop was requested
     assert not connector._running
+    # Exactly one client was built — the loop did not reconnect after stop()
+    assert len(factory.clients) == 1
+    # That client was stopped (stop() was called on it)
+    assert factory.clients[0].stopped is True
 
 
 @pytest.mark.asyncio
@@ -409,6 +411,9 @@ async def test_reconnect_on_disconnect_calls_sleep():
     # Sleep should have been called once (after first failure, before reconnect)
     assert len(sleep_calls) >= 1
     assert sleep_calls[0] == 1.0  # initial backoff
+    # The reconnect actually happened: a second client was built and started
+    assert len(clients_built) >= 2
+    assert clients_built[1].started is True
 
 
 @pytest.mark.asyncio
