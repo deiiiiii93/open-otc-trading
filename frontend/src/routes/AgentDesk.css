@@ -219,3 +219,20 @@
     max-height: 280px;
   }
 }
+.wl-desk__composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+.wl-desk__goal-clarify {
+  border: 1px solid var(--warn);
+  background: color-mix(in oklab, var(--warn) 10%, var(--paper));
+  padding: var(--gap-2);
+  color: var(--ink);
+  font-size: var(--type-small-size);
+}
+.wl-desk__goal-clarify ul {
+  margin: var(--gap-1) 0 0;
+  padding-left: var(--gap-3);
+  color: var(--ink-2);
+}

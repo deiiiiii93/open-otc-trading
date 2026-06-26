@@ -16,6 +16,18 @@ import type {
   ToolEvent,
 } from '../types';
 import { useViewMode, type ViewMode } from './useViewMode';
+import {
+  parseGoalCommand,
+  startGoal,
+  ratifyGoal as ratifyGoalApi,
+  cancelGoal as cancelGoalApi,
+  getGoal,
+  getGoalContract,
+  isClarification,
+  type GoalContract,
+  type GoalRunState,
+  type GoalClarification,
+} from '../lib/goalApi';
 
 type CostPreview = { tool_name: string; estimated_seconds: number };
 type EnvelopeTransition = {
@@ -82,6 +94,13 @@ export type AgentChatController = {
   confirmAction: (messageId: number, actionId: string) => Promise<void>;
   dismissAction: (messageId: number, actionId: string) => Promise<void>;
   refreshModels: () => Promise<void>;
+  // Goal mode (spec §G)
+  goalContract: GoalContract | null;
+  goalState: GoalRunState | null;
+  goalClarification: GoalClarification | null;
+  goalBusy: boolean;
+  ratifyActiveGoal: () => Promise<void>;
+  cancelActiveGoal: () => Promise<void>;
 };
 
 export function useAgentChatController(): AgentChatController {
@@ -104,6 +123,12 @@ export function useAgentChatController(): AgentChatController {
   const [taskRunsById, setTaskRunsById] = useState<Record<number, TaskRun>>({});
   const [asyncAgentPollNonce, setAsyncAgentPollNonce] = useState(0);
   const streamAbortRef = useRef<AbortController | null>(null);
+  // Goal mode (spec §G): the active thread's contract/run, plus a clarification ask
+  // when the framer needs more before it can draft checkable criteria.
+  const [goalContract, setGoalContract] = useState<GoalContract | null>(null);
+  const [goalState, setGoalState] = useState<GoalRunState | null>(null);
+  const [goalClarification, setGoalClarification] = useState<GoalClarification | null>(null);
+  const [goalBusy, setGoalBusy] = useState(false);
 
   const fetchCatalog = useCallback(async () => {
     const cfg = await api<AgentModelConfig>('/api/agent/models');
@@ -328,6 +353,31 @@ export function useAgentChatController(): AgentChatController {
       setActiveId(created.id);
     }
 
+    // Goal mode (spec §G): `/goal <description>` frames an acceptance contract instead
+    // of streaming a turn. The user ratifies it once (GoalRatifyCard) before the run.
+    const goalCommand = parseGoalCommand(message);
+    if (goalCommand) {
+      setError(null);
+      setGoalBusy(true);
+      try {
+        const result = await startGoal(threadId, goalCommand.goalText, executionMode);
+        if (isClarification(result)) {
+          setGoalClarification(result);
+          setGoalContract(null);
+          setGoalState(null);
+        } else {
+          setGoalClarification(null);
+          setGoalState(result);
+          setGoalContract(await getGoalContract(threadId));
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setGoalBusy(false);
+      }
+      return;
+    }
+
     setError(null);
     setSending(true);
     setDraft({ content: '', events: [] });
@@ -508,6 +558,62 @@ export function useAgentChatController(): AgentChatController {
     );
   }, [activeId, threads, sendMessage]);
 
+  const ratifyActiveGoal = useCallback(async () => {
+    if (activeId == null) return;
+    setGoalBusy(true);
+    try {
+      setGoalState(await ratifyGoalApi(activeId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGoalBusy(false);
+    }
+  }, [activeId]);
+
+  const cancelActiveGoal = useCallback(async () => {
+    if (activeId == null) return;
+    setGoalBusy(true);
+    try {
+      await cancelGoalApi(activeId);
+      setGoalContract(null);
+      setGoalState(null);
+      setGoalClarification(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGoalBusy(false);
+    }
+  }, [activeId]);
+
+  // Load the active thread's goal run (if any) when the selection changes, so a
+  // running/awaiting card survives a thread switch or reload.
+  useEffect(() => {
+    if (activeId == null) {
+      setGoalContract(null);
+      setGoalState(null);
+      setGoalClarification(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const state = await getGoal(activeId);
+        if (cancelled) return;
+        setGoalState(state);
+        setGoalClarification(null);
+        setGoalContract(state ? await getGoalContract(activeId) : null);
+      } catch {
+        if (!cancelled) {
+          setGoalContract(null);
+          setGoalState(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeId]);
+
   const streamingItem: ChatMessageType | null = draft
     ? {
         id: -1,
@@ -553,6 +659,12 @@ export function useAgentChatController(): AgentChatController {
     confirmAction,
     dismissAction,
     refreshModels,
+    goalContract,
+    goalState,
+    goalClarification,
+    goalBusy,
+    ratifyActiveGoal,
+    cancelActiveGoal,
   };
 }
 

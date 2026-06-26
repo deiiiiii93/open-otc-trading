@@ -16,6 +16,8 @@ import { Empty } from '../components/Empty';
 import { MessageList } from '../components/MessageList';
 import { AssetsPane } from '../components/AssetsPane';
 import { ChatComposer } from '../components/ChatComposer';
+import { GoalRatifyCard } from '../components/GoalRatifyCard';
+import type { GoalClarification, GoalContract, GoalRunState } from '../lib/goalApi';
 import type { ViewMode } from '../hooks/useViewMode';
 import './AgentDesk.css';
 
@@ -47,6 +49,12 @@ type Props = {
   onConfirmAction: (messageId: number, actionId: string) => void;
   onDismissAction: (messageId: number, actionId: string) => void;
   onConfirmCostPreview?: () => void;
+  goalContract?: GoalContract | null;
+  goalState?: GoalRunState | null;
+  goalClarification?: GoalClarification | null;
+  goalBusy?: boolean;
+  onRatifyGoal?: () => void;
+  onCancelGoal?: () => void;
 };
 
 function collectAssets(thread: Thread | null): AgentAsset[] {
@@ -92,6 +100,12 @@ export function AgentDesk({
   onConfirmAction,
   onDismissAction,
   onConfirmCostPreview,
+  goalContract,
+  goalState,
+  goalClarification,
+  goalBusy,
+  onRatifyGoal,
+  onCancelGoal,
 }: Props) {
   const activeThread = useMemo(
     () => threads.find((t) => t.id === activeThreadId) ?? null,
@@ -163,18 +177,39 @@ export function AgentDesk({
   );
 
   const composer = (
-    <ChatComposer
-      onSend={onSend}
-      sending={sending}
-      streaming={streaming}
-      channels={channels}
-      selectedModel={selectedModel}
-      executionMode={executionMode}
-      onChangeModel={onChangeModel}
-      onChangeMode={onChangeMode}
-      onStopStreaming={onStopStreaming}
-      onRefreshModels={onRefreshModels}
-    />
+    <div className="wl-desk__composer">
+      {goalContract && goalState && (
+        <GoalRatifyCard
+          contract={goalContract}
+          state={goalState}
+          busy={goalBusy}
+          onRatify={() => onRatifyGoal?.()}
+          onCancel={() => onCancelGoal?.()}
+        />
+      )}
+      {goalClarification && (
+        <div className="wl-desk__goal-clarify" role="status">
+          <strong>{goalClarification.summary}</strong>
+          <ul>
+            {goalClarification.questions.map((q, i) => (
+              <li key={i}>{q}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <ChatComposer
+        onSend={onSend}
+        sending={sending}
+        streaming={streaming}
+        channels={channels}
+        selectedModel={selectedModel}
+        executionMode={executionMode}
+        onChangeModel={onChangeModel}
+        onChangeMode={onChangeMode}
+        onStopStreaming={onStopStreaming}
+        onRefreshModels={onRefreshModels}
+      />
+    </div>
   );
 
   return (

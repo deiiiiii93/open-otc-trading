@@ -119,6 +119,12 @@ function AgentDeskLiveView({
         undefined,
         'desk_workflow',
       )}
+      goalContract={controller.goalContract}
+      goalState={controller.goalState}
+      goalClarification={controller.goalClarification}
+      goalBusy={controller.goalBusy}
+      onRatifyGoal={controller.ratifyActiveGoal}
+      onCancelGoal={controller.cancelActiveGoal}
     />
   );
 }

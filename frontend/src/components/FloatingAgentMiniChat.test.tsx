@@ -53,6 +53,12 @@ function controller(overrides: Partial<AgentChatController> = {}): AgentChatCont
     confirmAction: vi.fn(),
     dismissAction: vi.fn(),
     refreshModels: vi.fn(),
+    goalContract: null,
+    goalState: null,
+    goalClarification: null,
+    goalBusy: false,
+    ratifyActiveGoal: vi.fn(),
+    cancelActiveGoal: vi.fn(),
     ...overrides,
   };
 }
