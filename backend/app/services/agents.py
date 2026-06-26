@@ -1476,9 +1476,9 @@ class AgentService:
         return version
 
     def create_thread(
-        self, session: Session, title: str, character: str
+        self, session: Session, title: str, character: str, source: str = "desk"
     ) -> AgentThread:
-        thread = AgentThread(title=title, character=character)
+        thread = AgentThread(title=title, character=character, source=source)
         session.add(thread)
         session.flush()
         ensure_thread_workflow_state(session, thread.id)
@@ -1488,7 +1488,7 @@ class AgentService:
             actor="system",
             subject_type="thread",
             subject_id=thread.id,
-            payload={"character": character},
+            payload={"character": character, "source": source},
         )
         return thread
 

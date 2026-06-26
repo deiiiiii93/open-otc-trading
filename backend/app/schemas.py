@@ -11,6 +11,9 @@ from app.services.currency_codes import ISO_4217_CODES, normalize_currency
 class AgentThreadCreate(BaseModel):
     title: str = "New research thread"
     character: Literal["trader", "risk_manager", "high_board"] = "trader"
+    # "desk" = normal Agent Desk thread; "workflow_builder" = isolated builder
+    # conversation, hidden from the Agent Desk thread list.
+    source: str = "desk"
 
 
 class AgentThreadUpdate(BaseModel):
