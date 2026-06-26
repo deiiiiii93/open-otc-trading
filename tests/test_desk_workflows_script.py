@@ -59,6 +59,17 @@ def test_validate_ok():
     assert meta["persona"] == "trader" and meta["mode"] == "auto"
 
 
+def test_validate_rejects_unhashable_meta_value():
+    # An unhashable value (list) for a string field must not raise TypeError.
+    bad = (
+        'meta = {"name": "x", "title": "X", "persona": [], '
+        '"mode": "auto", "scope": "local"}\n'
+        'await step("hi")\n'
+    )
+    with pytest.raises(WorkflowScriptError):
+        validate_script(bad, slug="x")
+
+
 def test_validate_bad_enum():
     bad = GOOD.replace('"persona": "trader"', '"persona": "wizard"')
     with pytest.raises(WorkflowScriptError):

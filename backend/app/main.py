@@ -572,11 +572,12 @@ def _delete_thread_rows(session: Session, thread: AgentThread) -> set[str]:
     return checkpoint_keys
 
 
-def _desk_workflow_drive_factory(agent_service):
+def _desk_workflow_drive_factory(agent_service, character: str = "auto"):
     """Return an injectable per-step driver that forwards SSE frames.
 
     Monkeypatched in tests; in production it persists the step prompt as a user
-    turn then streams one ``stream_and_persist`` turn for that prompt.
+    turn then streams one ``stream_and_persist`` turn for that prompt, bound to
+    the workflow's persona-derived ``character``.
     """
 
     async def drive(thread_id: int, prompt: str, mode: str):
@@ -588,7 +589,11 @@ def _desk_workflow_drive_factory(agent_service):
             )
             s.commit()
         async for frame in agent_service.stream_and_persist(
-            thread_id=thread_id, content=prompt, mode=mode, confirmed_cost_preview=True,
+            thread_id=thread_id,
+            content=prompt,
+            requested_character=character,
+            mode=mode,
+            confirmed_cost_preview=True,
         ):
             yield frame
 
@@ -950,7 +955,7 @@ def create_app(
         payload: dict | None = None,
         session: Session = Depends(get_db),
     ):
-        from .services.desk_workflow_runner import run_desk_workflow
+        from .services.desk_workflow_runner import persona_to_character, run_desk_workflow
         from .services.desk_workflows import get_desk_workflow
 
         thread = session.get(AgentThread, thread_id)
@@ -962,7 +967,9 @@ def create_app(
         ensure_thread_workflow_state(session, thread.id)
         session.commit()
         mode = (payload or {}).get("mode") or wf.default_mode
-        drive = _desk_workflow_drive_factory(active_agent_service)
+        drive = _desk_workflow_drive_factory(
+            active_agent_service, persona_to_character(wf.persona)
+        )
         settle = _desk_workflow_settle_factory()
         return StreamingResponse(
             run_desk_workflow(

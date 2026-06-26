@@ -35,6 +35,8 @@ export function WorkflowsLive() {
 
   // Builder state: a live preview of the script the assistant just saved.
   const [builderDraft, setBuilderDraft] = useState('');
+  const [builderSlug, setBuilderSlug] = useState('');
+  const [builderSaving, setBuilderSaving] = useState(false);
   const baselineSlugs = useRef<Set<string>>(new Set());
 
   const refresh = useCallback(async () => {
@@ -71,7 +73,10 @@ export function WorkflowsLive() {
         const fresh = rows.find((r) => !baselineSlugs.current.has(r.slug));
         if (fresh) {
           const full = await getWorkflow(fresh.slug);
-          if (!cancelled) setBuilderDraft(full.script);
+          if (!cancelled) {
+            setBuilderDraft(full.script);
+            setBuilderSlug(full.slug);
+          }
         }
       });
     }, 4000);
@@ -103,9 +108,19 @@ export function WorkflowsLive() {
   };
 
   const finishBuilding = async () => {
-    await refresh();
-    setBuilderDraft('');
-    setMode('manage');
+    if (!builderDraft) return;
+    setBuilderSaving(true);
+    try {
+      // PUT upserts (creates if missing), so this persists the drafted script
+      // whether or not the assistant already saved it via the tool.
+      await updateWorkflow(builderSlug || '', builderDraft);
+      await refresh();
+      setBuilderDraft('');
+      setBuilderSlug('');
+      setMode('manage');
+    } finally {
+      setBuilderSaving(false);
+    }
   };
 
   return (
@@ -141,7 +156,7 @@ export function WorkflowsLive() {
           chat={<AgentDeskLive />}
           draftScript={builderDraft}
           onSave={finishBuilding}
-          saving={false}
+          saving={builderSaving}
         />
       )}
     </div>

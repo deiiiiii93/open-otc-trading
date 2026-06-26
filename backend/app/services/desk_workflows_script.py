@@ -75,6 +75,11 @@ def validate_script(script: str, *, slug: str) -> dict:
     missing = _REQUIRED_META - set(meta)
     if missing:
         raise WorkflowScriptError(f"meta missing keys: {sorted(missing)}")
+    for key in ("name", "title", "persona", "mode", "scope"):
+        if not isinstance(meta[key], str):
+            raise WorkflowScriptError(f"meta[{key!r}] must be a string")
+    if "description" in meta and not isinstance(meta["description"], str):
+        raise WorkflowScriptError("meta['description'] must be a string")
     if meta["name"] != slug:
         raise WorkflowScriptError(
             f"meta['name'] ({meta['name']!r}) must equal slug ({slug!r})"

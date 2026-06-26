@@ -45,7 +45,9 @@ def test_run_streams_workflow_events(client, monkeypatch):
     async def fake_drive(thread_id, prompt, mode):
         yield 'event: token\ndata: {"text": "ok"}\n\n'
 
-    monkeypatch.setattr(main_mod, "_desk_workflow_drive_factory", lambda svc: fake_drive)
+    monkeypatch.setattr(
+        main_mod, "_desk_workflow_drive_factory", lambda svc, character="auto": fake_drive
+    )
     monkeypatch.setattr(main_mod, "_desk_workflow_settle_factory", lambda: (lambda: None))
 
     tid = _make_thread(client)
