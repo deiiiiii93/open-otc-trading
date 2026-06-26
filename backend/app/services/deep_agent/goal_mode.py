@@ -516,3 +516,47 @@ def rubric_active(state: GoalRunStateV1) -> bool:
 def pointer_held(state: GoalRunStateV1) -> bool:
     """Whether the thread keeps ``active_goal_run_id`` set for this run."""
     return state.status in _POINTER_HELD
+
+
+class GoalRunStore:
+    """Thread-scoped persistence for the single active goal run (spec §H).
+
+    Backed by any ``MutableMapping`` of ``thread_id -> GoalRunStateV1 JSON`` (a dict
+    in tests; thread/``AgentMessage.meta`` in production). Holds at most one active
+    run per thread and clears the pointer once a run reaches a pointer-releasing
+    terminal state (satisfied / cancelled).
+    """
+
+    def __init__(self, backend: dict):
+        self._backend = backend
+
+    def active(self, thread_id: str) -> GoalRunStateV1 | None:
+        raw = self._backend.get(thread_id)
+        return GoalRunStateV1.model_validate(raw) if raw is not None else None
+
+    def start(self, thread_id: str, state: GoalRunStateV1) -> None:
+        if self.active(thread_id) is not None:
+            raise GoalStateError(
+                f"thread '{thread_id}' already has an active goal run; "
+                "satisfy, cancel, or resume it before starting another"
+            )
+        self._persist(thread_id, state)
+
+    def update(self, thread_id: str, transition) -> GoalRunStateV1:
+        current = self.active(thread_id)
+        if current is None:
+            raise GoalStateError(f"no active goal run on thread '{thread_id}'")
+        self._persist(thread_id, transition(current))
+        # re-read so callers see the post-clear view (None after terminal)
+        return self.active(thread_id) or transition(current)
+
+    def grader_should_attach(self, thread_id: str) -> bool:
+        """Service-layer activation gate: attach the grader only for a running run."""
+        state = self.active(thread_id)
+        return state is not None and rubric_active(state)
+
+    def _persist(self, thread_id: str, state: GoalRunStateV1) -> None:
+        if pointer_held(state):
+            self._backend[thread_id] = state.model_dump(mode="json")
+        else:
+            self._backend.pop(thread_id, None)  # terminal -> release the pointer
