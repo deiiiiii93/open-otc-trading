@@ -664,6 +664,28 @@ class GoalRunService:
     def active(self, thread_id: str) -> GoalRunStateV1 | None:
         return self._store.active(thread_id)
 
+    def record_evaluation(self, thread_id: str, evaluation: dict) -> GoalRunStateV1 | None:
+        """Apply a grader ``RubricEvaluation`` to the run (spec §F), the on_evaluation
+        callback the desk turn hands the grader. ``satisfied`` finishes the run;
+        ``max_iterations_reached``/``failed``/``grader_error`` escalate it to
+        ``stuck_needs_human`` with the failing criteria; ``needs_revision`` and any
+        non-running state are no-ops (the in-loop revision continues, and a callback
+        firing after the pointer is released must not crash)."""
+        if not self._store.grader_should_attach(thread_id):
+            return None  # no active running run -> nothing to record
+        result = evaluation.get("result")
+        if result == "satisfied":
+            return self._store.update(thread_id, mark_goal_satisfied)
+        if result in ("max_iterations_reached", "failed", "grader_error"):
+            failing = failing_criteria_from_evaluation(evaluation)
+            return self._store.update(
+                thread_id,
+                lambda s: escalate_goal_run(
+                    s, terminal_reason=result, failing_criteria=failing
+                ),
+            )
+        return self._store.active(thread_id)  # needs_revision / unknown -> unchanged
+
     def grader_invocation(self, thread_id: str) -> dict | None:
         """The invocation-state fragment to merge while the run is ``running``; ``None``
         otherwise (the service-layer activation gate)."""

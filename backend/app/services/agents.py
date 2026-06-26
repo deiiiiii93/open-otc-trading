@@ -57,6 +57,7 @@ from .deep_agent.escalation import resolve_escalation
 from .deep_agent.executor import TaskExecutionResult, TaskExecutor
 from .deep_agent.ledger import LedgerWriter
 from .deep_agent.orchestrator import build_orchestrator
+from .deep_agent.goal_mode import GoalRunService
 from .deep_agent.run_control import new_run_control, request_drain
 from .deep_agent.runtime_config import graph_run_config
 from .deep_agent.scheduler import schedule_tasks_from_plan
@@ -1213,6 +1214,9 @@ class AgentService:
                 enable_code_interpreter=self.settings.agent_code_interpreter_enabled,
             )
         self._owned_deep_agent = self.deep_agent
+        # Goal mode (spec §G): set by create_app once the DB-backed GoalRunService is
+        # built. The stream path consults it to attach the grader on a goal turn.
+        self.goal_service: GoalRunService | None = None
 
     def rebuild_default_model(self) -> None:
         """Refresh the cached default model after a registry reload."""
