@@ -1650,3 +1650,25 @@ class BacktestRunOut(BaseModel):
     excluded_positions: list | None
     artifacts: dict
     created_at: datetime
+
+
+class DeskWorkflowSave(BaseModel):
+    script: str
+
+
+class DeskWorkflowSummaryOut(BaseModel):
+    slug: str
+    title: str
+    persona: str
+    description: str
+    scope: str
+    default_mode: str
+    source: str
+
+    model_config = {"from_attributes": True}
+
+
+class DeskWorkflowOut(DeskWorkflowSummaryOut):
+    script: str
+
+    model_config = {"from_attributes": True}
