@@ -132,6 +132,7 @@ def _agent_middleware(
     backend: Any,
     tools: Sequence[BaseTool],
     yolo_mode: bool = False,
+    goal_grader: Any = None,
 ) -> list[Any]:
     from .compaction import LedgerScopedCompactionMiddleware
     from .cost_preview_hitl import LongRunningCostHITLMiddleware
@@ -151,6 +152,7 @@ def _agent_middleware(
         ]
     )
     if not enable_code_interpreter:
+        _append_goal_grader(middleware, goal_grader)
         return middleware
 
     from langchain_quickjs import (  # pyright: ignore[reportMissingImports]
@@ -164,7 +166,18 @@ def _agent_middleware(
             timeout=5.0,
         )
     )
+    _append_goal_grader(middleware, goal_grader)
     return middleware
+
+
+def _append_goal_grader(middleware: list[Any], goal_grader: Any) -> None:
+    """Attach the goal-mode acceptance grader last (it gates the agent's finish).
+
+    The caller supplies ``goal_grader`` only while an active goal run is ``running``
+    (spec §H activation gate); otherwise the agent has no rubric and runs unchanged.
+    """
+    if goal_grader is not None:
+        middleware.append(goal_grader)
 
 
 def build_orchestrator(
@@ -176,6 +189,7 @@ def build_orchestrator(
     enable_code_interpreter: bool = False,
     yolo_mode: bool = False,
     allow_reply_options: bool = True,
+    goal_grader: Any = None,
 ) -> Any:
     """Create the desk deep-agent orchestrator with three persona subagents.
 
@@ -210,6 +224,7 @@ def build_orchestrator(
             backend=backend,
             tools=persona_tools,
             yolo_mode=yolo_mode,
+            goal_grader=goal_grader,
         ),
         subagents=all_personas(
             model,
