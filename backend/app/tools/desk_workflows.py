@@ -10,7 +10,7 @@ from app import database
 from app.services.deep_agent.capability_gate import capability_gated
 from app.services.deep_agent.envelopes import ToolGroup
 from app.services.desk_workflows import upsert_desk_workflow
-from app.services.desk_workflows_script import WorkflowScriptError, extract_meta
+from app.services.desk_workflows_script import WorkflowScriptError, extract_slug
 
 
 class SaveDeskWorkflowInput(BaseModel):
@@ -26,7 +26,7 @@ def save_desk_workflow_tool(script: str) -> dict[str, Any]:
     """Validate and persist a desk workflow script. Returns the slug on success."""
     database.init_db()
     try:
-        slug = extract_meta(script)["name"]
+        slug = extract_slug(script)
     except WorkflowScriptError as exc:
         return {"ok": False, "error": str(exc)}
     with database.SessionLocal() as session:

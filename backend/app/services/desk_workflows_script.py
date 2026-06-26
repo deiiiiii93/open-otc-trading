@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import ast
+import re
+
+_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 # Non-dunder attribute names that still reach the type/escape machinery, or that
 # bypass the AST dunder check via string-literal field access (str.format). The
@@ -42,6 +45,14 @@ def extract_meta(script: str) -> dict:
     raise WorkflowScriptError("script must define a top-level `meta = {...}` literal")
 
 
+def extract_slug(script: str) -> str:
+    """Safely read meta['name'] as the slug, raising WorkflowScriptError if absent."""
+    name = extract_meta(script).get("name")
+    if not isinstance(name, str) or not name:
+        raise WorkflowScriptError("meta must define a non-empty string 'name'")
+    return name
+
+
 def guard_script(script: str) -> None:
     try:
         tree = ast.parse(script)
@@ -67,6 +78,10 @@ def validate_script(script: str, *, slug: str) -> dict:
     if meta["name"] != slug:
         raise WorkflowScriptError(
             f"meta['name'] ({meta['name']!r}) must equal slug ({slug!r})"
+        )
+    if not isinstance(slug, str) or not _SLUG_RE.match(slug):
+        raise WorkflowScriptError(
+            f"slug {slug!r} must be kebab-case (lowercase letters, digits, single dashes)"
         )
     if meta["persona"] not in VALID_PERSONAS:
         raise WorkflowScriptError(f"invalid persona {meta['persona']!r}")

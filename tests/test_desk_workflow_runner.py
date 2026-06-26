@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import pytest
@@ -73,6 +74,35 @@ async def test_runner_halts_on_step_error():
     assert "workflow.step.error" in names
     assert "workflow.complete" not in names
     assert names.count("workflow.step.start") == 1
+
+
+@pytest.mark.asyncio
+async def test_aclose_cancels_executor():
+    started = asyncio.Event()
+    cancelled = {"v": False}
+
+    async def drive(thread_id, prompt, mode):
+        started.set()
+        try:
+            await asyncio.Event().wait()  # hang on the first step
+        except asyncio.CancelledError:
+            cancelled["v"] = True
+            raise
+        yield ""  # pragma: no cover
+
+    script = (
+        'meta = {"name":"t","title":"T","persona":"risk_manager","mode":"yolo","scope":"local"}\n'
+        'await step("a")\n'
+        'await step("b")\n'
+    )
+    gen = run_desk_workflow(
+        thread_id=1, workflow=_wf(script), mode="yolo", drive=drive, settle=lambda: None,
+    )
+    assert (await gen.__anext__()).startswith("event: workflow.start")
+    assert "workflow.step.start" in (await gen.__anext__())
+    await started.wait()
+    await gen.aclose()
+    assert cancelled["v"] is True  # the hung step was cancelled, not left running
 
 
 def test_persona_to_character():

@@ -109,11 +109,21 @@ async def run_desk_workflow(
 
     yield _sse("workflow.start", {"slug": workflow.slug, "mode": resolved_mode})
     task = asyncio.create_task(_execute())
-    while True:
-        item = await queue.get()
-        if item is None:
-            break
-        yield item
-    await task
-    if state["error"] is None:
-        yield _sse("workflow.complete", {"steps": state["index"]})
+    try:
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            yield item
+        if state["error"] is None:
+            yield _sse("workflow.complete", {"steps": state["index"]})
+    finally:
+        # If the consumer disconnects / aborts (GeneratorExit) before the
+        # sentinel, cancel the executor so remaining steps don't keep running
+        # headless after the user hit Stop.
+        if not task.done():
+            task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass

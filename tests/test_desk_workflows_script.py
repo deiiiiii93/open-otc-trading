@@ -2,6 +2,7 @@ import pytest
 from app.services.desk_workflows_script import (
     WorkflowScriptError,
     extract_meta,
+    extract_slug,
     guard_script,
     validate_script,
 )
@@ -62,6 +63,21 @@ def test_validate_bad_enum():
     bad = GOOD.replace('"persona": "trader"', '"persona": "wizard"')
     with pytest.raises(WorkflowScriptError):
         validate_script(bad, slug="x")
+
+
+def test_extract_slug_missing_name():
+    with pytest.raises(WorkflowScriptError):
+        extract_slug('meta = {"title": "X"}\nawait step("hi")\n')
+
+
+def test_validate_rejects_unsafe_slug():
+    bad = (
+        'meta = {"name": "a/b", "title": "X", "persona": "trader", '
+        '"mode": "auto", "scope": "local"}\n'
+        'await step("hi")\n'
+    )
+    with pytest.raises(WorkflowScriptError):
+        validate_script(bad, slug="a/b")
 
 
 def test_validate_reserved_slug():

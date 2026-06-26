@@ -14,7 +14,7 @@ from ..services.desk_workflows import (
 )
 from ..services.desk_workflows_script import (
     WorkflowScriptError,
-    extract_meta,
+    extract_slug,
     validate_script,
 )
 
@@ -41,8 +41,7 @@ def build_desk_workflows_router(get_db: Callable | None = None) -> APIRouter:
     @router.post("/validate")
     def validate(payload: DeskWorkflowSave):
         try:
-            meta = extract_meta(payload.script)
-            validate_script(payload.script, slug=meta.get("name", ""))
+            validate_script(payload.script, slug=extract_slug(payload.script))
         except WorkflowScriptError as exc:
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "error": None}
@@ -66,7 +65,7 @@ def build_desk_workflows_router(get_db: Callable | None = None) -> APIRouter:
     @router.post("", response_model=DeskWorkflowOut)
     def create_workflow(payload: DeskWorkflowSave, session=Depends(_get_db)):
         try:
-            slug = extract_meta(payload.script)["name"]
+            slug = extract_slug(payload.script)
         except WorkflowScriptError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         if get_desk_workflow(session, slug) is not None:
