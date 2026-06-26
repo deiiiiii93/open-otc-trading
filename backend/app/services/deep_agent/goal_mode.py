@@ -592,3 +592,72 @@ class GoalRunStore:
             self._backend[thread_id] = state.model_dump(mode="json")
         else:
             self._backend.pop(thread_id, None)  # terminal -> release the pointer
+
+
+class GoalRunService:
+    """Orchestrates the goal-run lifecycle (spec §B/§H) over a ``GoalRunStore`` plus a
+    per-thread frozen-contract store. Endpoints and ``AgentService`` are thin wrappers.
+
+    ``model`` frames goals; ``grader_tool_allowlist`` bounds criterion tools to the
+    ``GOAL_GRADER_READ`` set; ``run_backend``/``contract_backend`` are the persistence
+    maps (dicts in tests; thread/``AgentMessage.meta`` in production).
+    """
+
+    def __init__(
+        self,
+        *,
+        model,
+        grader_tool_allowlist: set[str] | None = None,
+        run_backend: dict,
+        contract_backend: dict,
+    ):
+        self._model = model
+        self._allowlist = grader_tool_allowlist
+        self._store = GoalRunStore(run_backend)
+        self._contracts = contract_backend
+
+    def start(self, thread_id: str, goal_text: str, mode: GoalMode):
+        """Frame a goal. Returns a ``ClarificationResponse`` (no run started) or the
+        new ``GoalRunStateV1`` (auto-ratified to ``running`` for read-only goals)."""
+        framed = frame_goal(goal_text, model=self._model, grader_tool_allowlist=self._allowlist)
+        if isinstance(framed, ClarificationResponse):
+            return framed
+        contract = framed.contract
+        self._contracts[thread_id] = contract.model_dump(mode="json")
+        state = new_goal_run(goal_run_id=thread_id, contract_hash=None, mode=mode)
+        self._store.start(thread_id, state)
+        if contract.domain_write_policy == "forbidden":
+            return self._store.update(
+                thread_id, lambda s: ratify_goal_run(s, contract_hash=goal_contract_hash(contract))
+            )
+        return state
+
+    def ratify(self, thread_id: str) -> GoalRunStateV1:
+        contract = self._contract(thread_id)
+        return self._store.update(
+            thread_id, lambda s: ratify_goal_run(s, contract_hash=goal_contract_hash(contract))
+        )
+
+    def resume(self, thread_id: str) -> GoalRunStateV1:
+        return self._store.update(thread_id, resume_goal_run)
+
+    def cancel(self, thread_id: str) -> GoalRunStateV1:
+        result = self._store.update(thread_id, cancel_goal_run)
+        self._contracts.pop(thread_id, None)
+        return result
+
+    def active(self, thread_id: str) -> GoalRunStateV1 | None:
+        return self._store.active(thread_id)
+
+    def grader_invocation(self, thread_id: str) -> dict | None:
+        """The invocation-state fragment to merge while the run is ``running``; ``None``
+        otherwise (the service-layer activation gate)."""
+        if not self._store.grader_should_attach(thread_id):
+            return None
+        return goal_grader_state(self._contract(thread_id))
+
+    def _contract(self, thread_id: str) -> GoalContractV1:
+        raw = self._contracts.get(thread_id)
+        if raw is None:
+            raise GoalStateError(f"no frozen contract for thread '{thread_id}'")
+        return GoalContractV1.model_validate(raw)
