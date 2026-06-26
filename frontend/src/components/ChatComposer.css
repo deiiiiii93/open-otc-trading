@@ -81,3 +81,35 @@
   cursor: not-allowed;
   opacity: 0.6;
 }
+
+.wl-composer__slash {
+  list-style: none;
+  margin: 0 0 var(--gap-2) 0;
+  padding: var(--gap-1);
+  border: 1px solid var(--hairline);
+  background: var(--paper-2);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.wl-composer__slash-item {
+  width: 100%;
+  display: flex;
+  gap: var(--gap-2);
+  align-items: baseline;
+  padding: var(--gap-1) var(--gap-2);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-1);
+  text-align: left;
+}
+
+.wl-composer__slash-item:hover {
+  background: var(--paper-3, var(--paper-1));
+}
+
+.wl-composer__slash-item span {
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+}
