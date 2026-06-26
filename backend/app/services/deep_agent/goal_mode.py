@@ -150,3 +150,115 @@ def goal_contract_hash(contract: GoalContractV1) -> str:
         contract.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+# --- Goal run lifecycle & activation gate (spec §F/§H) ---------------------
+
+GoalRunStatus = Literal[
+    "awaiting_ratification", "running", "satisfied", "stuck_needs_human", "cancelled"
+]
+GoalMode = Literal["interactive", "auto", "yolo"]
+TerminalReason = Literal[
+    "max_iterations_reached", "failed", "grader_error", "context_ceiling"
+]
+
+# Statuses for which the thread keeps `active_goal_run_id` set (a run is in flight
+# or awaiting a human); satisfied/cancelled release the pointer.
+_POINTER_HELD: frozenset[str] = frozenset(
+    {"awaiting_ratification", "running", "stuck_needs_human"}
+)
+
+
+class GoalStateError(RuntimeError):
+    """Raised on an illegal goal-run state transition."""
+
+
+class FailingCriterion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    text: str = ""
+    status: Literal["failed", "unverified"] = "unverified"
+    reason: str = ""
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+class PartialLedgerRefs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    plan_artifact_ids: list[str] = Field(default_factory=list)
+    finding_artifact_ids: list[str] = Field(default_factory=list)
+    report_artifact_ids: list[str] = Field(default_factory=list)
+    persisted_run_ids: list[str] = Field(default_factory=list)
+
+
+class GoalRunStateV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: Literal["goal_run_state.v1"] = "goal_run_state.v1"
+    goal_run_id: str
+    contract_hash: str | None = None  # set on freeze; absent while awaiting_ratification
+    mode: GoalMode
+    status: GoalRunStatus = "awaiting_ratification"
+    terminal_reason: TerminalReason | None = None
+    last_verdict: Literal["satisfied", "needs_revision", "failed", "grader_error"] | None = None
+    failing_criteria: list[FailingCriterion] = Field(default_factory=list)
+    partial_ledger_refs: PartialLedgerRefs = Field(default_factory=PartialLedgerRefs)
+
+
+def new_goal_run(*, goal_run_id: str, contract_hash: str | None, mode: GoalMode) -> GoalRunStateV1:
+    """Create a run in ``awaiting_ratification``. The pointer is set from here."""
+    return GoalRunStateV1(goal_run_id=goal_run_id, contract_hash=contract_hash, mode=mode)
+
+
+def ratify_goal_run(state: GoalRunStateV1) -> GoalRunStateV1:
+    """awaiting_ratification -> running (freeze accepted)."""
+    if state.status != "awaiting_ratification":
+        raise GoalStateError(f"cannot ratify a run in status '{state.status}'")
+    return state.model_copy(update={"status": "running"})
+
+
+def mark_goal_satisfied(state: GoalRunStateV1) -> GoalRunStateV1:
+    """running -> satisfied (releases the pointer)."""
+    if state.status != "running":
+        raise GoalStateError(f"cannot satisfy a run in status '{state.status}'")
+    return state.model_copy(update={"status": "satisfied", "last_verdict": "satisfied"})
+
+
+def escalate_goal_run(
+    state: GoalRunStateV1,
+    *,
+    terminal_reason: TerminalReason,
+    failing_criteria: list[FailingCriterion] | None = None,
+    partial_ledger_refs: PartialLedgerRefs | None = None,
+) -> GoalRunStateV1:
+    """running -> stuck_needs_human (keeps the pointer until resume/cancel)."""
+    if state.status != "running":
+        raise GoalStateError(f"cannot escalate a run in status '{state.status}'")
+    update: dict = {"status": "stuck_needs_human", "terminal_reason": terminal_reason}
+    if failing_criteria is not None:
+        update["failing_criteria"] = failing_criteria
+    if partial_ledger_refs is not None:
+        update["partial_ledger_refs"] = partial_ledger_refs
+    return state.model_copy(update=update)
+
+
+def resume_goal_run(state: GoalRunStateV1) -> GoalRunStateV1:
+    """stuck_needs_human -> running (same frozen contract)."""
+    if state.status != "stuck_needs_human":
+        raise GoalStateError(f"cannot resume a run in status '{state.status}'")
+    return state.model_copy(update={"status": "running", "terminal_reason": None})
+
+
+def cancel_goal_run(state: GoalRunStateV1) -> GoalRunStateV1:
+    """Any non-terminal status -> cancelled (releases the pointer)."""
+    if state.status in {"satisfied", "cancelled"}:
+        raise GoalStateError(f"cannot cancel a run in terminal status '{state.status}'")
+    return state.model_copy(update={"status": "cancelled"})
+
+
+def rubric_active(state: GoalRunStateV1) -> bool:
+    """The activation gate: the rubric attaches (grader runs) ONLY while running."""
+    return state.status == "running"
+
+
+def pointer_held(state: GoalRunStateV1) -> bool:
+    """Whether the thread keeps ``active_goal_run_id`` set for this run."""
+    return state.status in _POINTER_HELD
