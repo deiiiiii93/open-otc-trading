@@ -204,6 +204,12 @@ class AgentMessageCreate(BaseModel):
     confirmed_cost_preview: bool = False
 
 
+class StartGoalRequest(BaseModel):
+    """Body for ``POST /api/chat/threads/{thread_id}/goal`` (the /goal command)."""
+    goal_text: str
+    mode: Literal["interactive", "auto", "yolo"] = "auto"
+
+
 class AgentMessageOut(BaseModel):
     id: int
     role: str
