@@ -5,7 +5,7 @@
   min-height: 0;
   height: 100%;
   border: 1px solid var(--hairline);
-  background: var(--paper-1);
+  background: var(--paper);
 }
 
 .wl-wf-chat__head {
