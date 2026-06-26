@@ -48,6 +48,7 @@ def test_persona_sources_are_workflow_only() -> None:
         "/skills/workflows/portfolios/",
         "/skills/workflows/rfq/",
         "/skills/workflows/snowballs/",
+        "/skills/workflows/desk-workflows/",
     ]
     assert risk_sources == [
         "/skills/workflows/positions/",
@@ -58,6 +59,7 @@ def test_persona_sources_are_workflow_only() -> None:
         "/skills/workflows/portfolios/",
         "/skills/workflows/reporting/",
         "/skills/workflows/snowballs/",
+        "/skills/workflows/desk-workflows/",
     ]
     assert board_sources == [
         "/skills/workflows/portfolios/",
@@ -147,7 +149,7 @@ def test_legacy_sources_are_empty(skills_backend: FilesystemBackend) -> None:
 def test_trader_total_workflow_catalog(skills_backend: FilesystemBackend) -> None:
     catalog = _persona_catalog(_build_backend(), _source_list(trader_spec(object(), [])))
 
-    assert len(catalog) == 24, f"Expected 24 entries, got {len(catalog)}: {catalog}"  # 22 + pricing-parameter-maintenance + asian-fixings
+    assert len(catalog) == 25, f"Expected 25 entries, got {len(catalog)}: {catalog}"  # 22 + pricing-parameter-maintenance + asian-fixings + build-workflow
     assert {
         "position-snapshot",
         "solve-imported-row",
@@ -167,7 +169,7 @@ def test_risk_manager_total_workflow_catalog(
 ) -> None:
     catalog = _persona_catalog(_build_backend(), _source_list(risk_spec(object(), [])))
 
-    assert len(catalog) == 26, f"Expected 26 entries, got {len(catalog)}: {catalog}"  # +asian-fixings (positions domain)
+    assert len(catalog) == 27, f"Expected 27 entries, got {len(catalog)}: {catalog}"  # +asian-fixings (positions domain) +build-workflow
     assert {
         "position-diagnosis",
         "run-risk",
