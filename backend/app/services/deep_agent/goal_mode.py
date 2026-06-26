@@ -19,7 +19,10 @@ class ContractValidationError(ValueError):
     """Raised when a framer-produced contract violates a §C validation rule."""
 
 
-_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+# C0 controls + DEL + C1 controls (incl. NEL \x85) + Unicode line/paragraph
+# separators ( / ). All of these are line breaks to str.splitlines()
+# and/or to LLM renderers, so any of them could split a rubric line.
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 
 
 def _no_control_chars(value: str) -> str:
