@@ -232,6 +232,50 @@ def goal_contract_hash(contract: GoalContractV1) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+# --- Framer output (spec §B/§C) -------------------------------------------
+
+class ContractResponse(BaseModel):
+    """The framer produced an executable contract."""
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["contract"] = "contract"
+    contract: GoalContractV1
+
+
+class ClarificationResponse(BaseModel):
+    """The goal is not yet executable; surface questions, start no run."""
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["needs_clarification"] = "needs_clarification"
+    summary: str
+    questions: list[str] = Field(min_length=1)
+
+
+FramerResponseV1 = Union[ContractResponse, ClarificationResponse]
+
+
+def interpret_framer_output(
+    raw: dict, *, grader_tool_allowlist: set[str] | None = None
+) -> FramerResponseV1:
+    """Turn the framer's raw structured output into a validated FramerResponseV1.
+
+    A ``needs_clarification`` passes through (no run starts from it). A ``contract``
+    is validated through ``parse_goal_contract`` — including the §C trust-hinge rules
+    and the grader tool allowlist — so an LLM cannot smuggle an untrustworthy contract
+    past the gate. Raises ``ContractValidationError`` on an invalid contract.
+    """
+    kind = raw.get("type")
+    if kind == "needs_clarification":
+        try:
+            return ClarificationResponse.model_validate(raw)
+        except Exception as exc:  # noqa: BLE001
+            raise ContractValidationError(str(exc)) from exc
+    if kind == "contract":
+        contract = parse_goal_contract(
+            raw.get("contract", {}), grader_tool_allowlist=grader_tool_allowlist
+        )
+        return ContractResponse(contract=contract)
+    raise ContractValidationError(f"unknown framer response type: {kind!r}")
+
+
 # --- Goal run lifecycle & activation gate (spec §F/§H) ---------------------
 
 GoalRunStatus = Literal[
