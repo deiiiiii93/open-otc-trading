@@ -117,6 +117,14 @@ export type AgentTodoItem = {
   status: 'pending' | 'in_progress' | 'completed';
 };
 
+/**
+ * Canonical agent execution mode sent on the chat request.
+ * - `interactive` — HITL confirmation prompts surface to the user.
+ * - `auto` (default) — auto-clears HITL prompts; the agent may still ask via reply-option cards.
+ * - `yolo` — fully headless: no HITL prompts and no reply cards; money-adjacent actions auto-execute.
+ */
+export type AgentExecutionMode = 'interactive' | 'auto' | 'yolo';
+
 export type ChatMessage = {
   id: number;
   role: string;
@@ -134,7 +142,9 @@ export type ChatMessage = {
     agent_phase?: 'completed' | 'completed_with_tool_errors' | 'drained' | 'error' | 'awaiting_confirmation';
     model_selection?: AgentModelSelection;
     model_selection_fallback?: boolean;
+    /** @deprecated Use `mode` instead. */
     yolo_mode?: boolean;
+    mode?: AgentExecutionMode;
     reply_options?: ReplyOptionMeta[];
     term_form?: TermFormMeta;
     envelope_initial?: Envelope;

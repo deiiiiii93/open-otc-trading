@@ -13,6 +13,7 @@ EXPECTED_META_FILES = {
     "desk-async-contract.md",
     "desk-workflow-contract.md",
     "escalation-policy.md",
+    "headless-policy.md",
     "page-context-contract.md",
     "pet-diagnostic-contract.md",
     "pet-page-contract.md",

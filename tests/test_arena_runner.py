@@ -113,6 +113,32 @@ def test_run_match_requires_no_agent_param(tmp_path):
         run_match(_Loaded(), get_model("gpt-5-5"), artifact_root=tmp_path, agent=object())
 
 
+def test_default_drive_uses_yolo_mode(monkeypatch):
+    """The arena drives every turn headless: stream_and_persist is called with
+    mode='yolo' (no propose_reply_options, no HITL), one turn per step."""
+    from app.services.arena import runner
+
+    calls = []
+
+    class _FakeSvc:
+        def stream_and_persist(self, **kwargs):
+            calls.append(kwargs)
+
+            async def _agen():
+                if False:
+                    yield None
+            return _agen()
+
+    monkeypatch.setattr(runner, "_get_arena_service", lambda: _FakeSvc())
+    monkeypatch.setattr(runner, "_persist_user_turn", lambda *a, **k: None)
+
+    result = runner._default_drive(99, "Run a fresh risk calc", {"channel": "zenmux"})
+    assert result is None  # single turn, no count returned
+    assert len(calls) == 1
+    assert calls[0]["mode"] == "yolo"
+    assert calls[0]["content"] == "Run a fresh risk calc"
+
+
 class _Bundle:
     """Minimal FixtureBundle-like object with a .seed dict."""
     def __init__(self, seed):
@@ -220,6 +246,33 @@ def test_purge_removes_arena_profiles_but_spares_real_ones(session):
     ).all()
     assert len(remaining) == 1
     assert not (remaining[0].summary or {}).get(ARENA_PROFILE_MARKER)  # the real one survived
+
+
+def test_purge_removes_profile_parameter_rows_before_profile(session):
+    """An arena profile's pricing_parameter_rows FK the profile (no cascade);
+    the purge must delete them first or hit an FK violation."""
+    from datetime import datetime, timezone
+
+    from app.services.arena.runner import _purge_seeded_portfolios, ARENA_PROFILE_MARKER
+    from app.models import PricingParameterProfile, PricingParameterRow
+
+    vd = datetime(2026, 6, 24, tzinfo=timezone.utc)
+    prof = PricingParameterProfile(
+        name="Control Profile", valuation_date=vd, summary={ARENA_PROFILE_MARKER: True}
+    )
+    session.add(prof)
+    session.flush()
+    session.add(PricingParameterRow(
+        profile_id=prof.id, source_trade_id="", symbol="AAPL",
+        rate=0.04, dividend_yield=0.005, volatility=0.30,
+    ))
+    session.commit()
+
+    bundle = _Bundle({"pricing_profiles": [{"alias": "prof", "name": "Control Profile"}]})
+    _purge_seeded_portfolios(session, bundle)  # must not raise IntegrityError
+
+    assert session.query(PricingParameterProfile).count() == 0
+    assert session.query(PricingParameterRow).count() == 0
 
 
 def test_purge_deletes_task_rows_before_referenced_runs(session):

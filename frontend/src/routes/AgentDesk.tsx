@@ -4,6 +4,7 @@ import {
   personaDisplayLabel,
   type AgentAsset,
   type AgentChannel,
+  type AgentExecutionMode,
   type AgentModelSelection,
   type ChatMessage as ChatMessageType,
   type TaskRun,
@@ -27,11 +28,11 @@ type Props = {
   viewMode: ViewMode;
   channels?: AgentChannel[];
   selectedModel?: AgentModelSelection | null;
-  yoloMode?: boolean;
+  executionMode?: AgentExecutionMode;
   confirmingActionIds?: ReadonlySet<string>;
   taskRunsById?: Record<number, TaskRun>;
   onChangeModel?: (s: AgentModelSelection) => void;
-  onChangeYoloMode?: (enabled: boolean) => void;
+  onChangeMode?: (mode: AgentExecutionMode) => void;
   onStopStreaming?: () => void;
   onRefreshModels?: () => void;
   onChangeViewMode: (mode: ViewMode) => void;
@@ -72,11 +73,11 @@ export function AgentDesk({
   viewMode,
   channels,
   selectedModel,
-  yoloMode,
+  executionMode,
   confirmingActionIds,
   taskRunsById,
   onChangeModel,
-  onChangeYoloMode,
+  onChangeMode,
   onStopStreaming,
   onRefreshModels,
   onChangeViewMode,
@@ -168,9 +169,9 @@ export function AgentDesk({
       streaming={streaming}
       channels={channels}
       selectedModel={selectedModel}
-      yoloMode={yoloMode}
+      executionMode={executionMode}
       onChangeModel={onChangeModel}
-      onChangeYoloMode={onChangeYoloMode}
+      onChangeMode={onChangeMode}
       onStopStreaming={onStopStreaming}
       onRefreshModels={onRefreshModels}
     />

@@ -851,6 +851,15 @@ def create_app(
         active_agent_service.auto_name_thread_from_first_message(
             session, thread, payload.content
         )
+        # Normalize the execution mode so the persisted metadata matches what
+        # actually runs: store the canonical mode and the derived clear-HITL
+        # boolean (back-compat key ``yolo_mode``) instead of the raw request
+        # fields, which disagree for AUTO/YOLO turns (mode set, yolo_mode False).
+        from .services.agents import resolve_execution_mode
+
+        norm_mode, clear_hitl, _allow_reply_options = resolve_execution_mode(
+            payload.mode, payload.yolo_mode
+        )
         user_msg = AgentMessage(
             thread_id=thread.id,
             role="user",
@@ -873,7 +882,8 @@ def create_app(
                     else None
                 ),
                 "model_selection": resolved_selection,
-                "yolo_mode": payload.yolo_mode,
+                "yolo_mode": clear_hitl,
+                "mode": norm_mode,
                 "envelope": payload.envelope,
                 "confirmed_cost_preview": payload.confirmed_cost_preview,
             },
@@ -891,6 +901,7 @@ def create_app(
                 accounting_date=payload.accounting_date,
                 model_selection=resolved_selection,
                 yolo_mode=payload.yolo_mode,
+                mode=payload.mode,
                 envelope=payload.envelope,
                 confirmed_cost_preview=payload.confirmed_cost_preview,
             ),

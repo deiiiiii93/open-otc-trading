@@ -189,6 +189,11 @@ class AgentMessageCreate(BaseModel):
     context_usage: AgentContextUsage | None = None
     accounting_date: date | None = None
     model: AgentModelSelection | None = None
+    # Execution mode (canonical). "interactive" surfaces HITL; "auto" auto-clears
+    # HITL but the model may still ask via reply cards; "yolo" is fully headless
+    # (no HITL, no deferral). When omitted, the deprecated ``yolo_mode`` boolean
+    # maps to auto/interactive for back-compat.
+    mode: Literal["interactive", "auto", "yolo"] | None = None
     yolo_mode: bool = False
     # Phase 2: optional, defaulted by the endpoint based on UI origin.
     envelope: AgentEnvelopeLiteral | None = None

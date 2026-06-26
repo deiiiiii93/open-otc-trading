@@ -1,6 +1,6 @@
 import { Send, Square } from 'lucide-react';
 import { useId, useState, type KeyboardEvent } from 'react';
-import type { AgentChannel, AgentModelSelection } from '../types';
+import type { AgentChannel, AgentExecutionMode, AgentModelSelection } from '../types';
 import { Button } from './Button';
 import { ModelPicker } from './ModelPicker';
 import './ChatComposer.css';
@@ -11,18 +11,40 @@ type Props = {
   streaming?: boolean;
   channels?: AgentChannel[];
   selectedModel?: AgentModelSelection | null;
-  yoloMode?: boolean;
+  executionMode?: AgentExecutionMode;
   onChangeModel?: (s: AgentModelSelection) => void;
-  onChangeYoloMode?: (enabled: boolean) => void;
+  onChangeMode?: (mode: AgentExecutionMode) => void;
   onStopStreaming?: () => void;
   onRefreshModels?: () => void | Promise<void>;
   compactModelPicker?: boolean;
 };
 
+const MODE_OPTIONS: ReadonlyArray<{
+  value: AgentExecutionMode;
+  label: string;
+  title: string;
+}> = [
+  {
+    value: 'interactive',
+    label: 'Interactive',
+    title: 'Confirmation prompts surface to you before write actions run.',
+  },
+  {
+    value: 'auto',
+    label: 'AUTO',
+    title: 'Auto-clears confirmation prompts; the agent may still ask via reply-option cards.',
+  },
+  {
+    value: 'yolo',
+    label: 'YOLO',
+    title: 'Headless — auto-executes, never prompts. Money-adjacent actions run without confirmation.',
+  },
+];
+
 export function ChatComposer({
   onSend, sending, streaming,
-  channels, selectedModel, yoloMode = false,
-  onChangeModel, onChangeYoloMode, onStopStreaming, onRefreshModels, compactModelPicker = false,
+  channels, selectedModel, executionMode = 'auto',
+  onChangeModel, onChangeMode, onStopStreaming, onRefreshModels, compactModelPicker = false,
 }: Props) {
   const [text, setText] = useState('');
   const id = useId();
@@ -66,19 +88,25 @@ export function ChatComposer({
             compact={compactModelPicker}
           />
         )}
-        {onChangeYoloMode && (
-          <label
-            className={`wl-composer__yolo${yoloMode ? ' is-active' : ''}`}
-            title="YOLO uses LangChain auto-approval for ordinary write actions. Irreversible actions still pause for confirmation."
-          >
-            <input
-              type="checkbox"
-              checked={yoloMode}
-              disabled={sending || !!streaming}
-              onChange={(event) => onChangeYoloMode(event.currentTarget.checked)}
-            />
-            <span>YOLO</span>
-          </label>
+        {onChangeMode && (
+          <div className="wl-composer__mode" role="group" aria-label="Execution mode">
+            {MODE_OPTIONS.map((option) => {
+              const active = executionMode === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`wl-composer__mode-btn${active ? ' is-active' : ''}`}
+                  title={option.title}
+                  aria-pressed={active}
+                  disabled={sending || !!streaming}
+                  onClick={() => onChangeMode(option.value)}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
         )}
         {streaming && onStopStreaming ? (
           <Button type="button" variant="danger" onClick={onStopStreaming}>

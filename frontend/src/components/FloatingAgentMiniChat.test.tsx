@@ -35,11 +35,11 @@ function controller(overrides: Partial<AgentChatController> = {}): AgentChatCont
     viewMode: 'compact',
     channels: [],
     selectedModel: null,
-    yoloMode: false,
+    executionMode: 'auto',
     confirmingActionIds: new Set(),
     taskRunsById: {},
     setSelectedModel: vi.fn(),
-    setYoloMode: vi.fn(),
+    setExecutionMode: vi.fn(),
     setViewMode: vi.fn(),
     selectThread: vi.fn(),
     createThread: vi.fn(),
@@ -133,22 +133,22 @@ describe('FloatingAgentMiniChat', () => {
     expect(call[3].estimated_tokens).toBeGreaterThan(0);
   });
 
-  it('renders the shared YOLO toggle in the pet composer', async () => {
-    const setYoloMode = vi.fn();
+  it('renders the shared execution-mode control in the pet composer', async () => {
+    const setExecutionMode = vi.fn();
     render(
       <FloatingAgentMiniChat
-        controller={controller({ yoloMode: true, setYoloMode })}
+        controller={controller({ executionMode: 'yolo', setExecutionMode })}
         pageContext={pageContext}
         onOpenDesk={() => {}}
       />,
     );
 
-    const toggle = screen.getByRole('checkbox', { name: /yolo/i });
-    expect(toggle).toBeChecked();
+    const yolo = screen.getByRole('button', { name: /yolo/i });
+    expect(yolo).toHaveAttribute('aria-pressed', 'true');
 
-    await userEvent.click(toggle);
+    await userEvent.click(screen.getByRole('button', { name: /interactive/i }));
 
-    expect(setYoloMode).toHaveBeenCalledWith(false);
+    expect(setExecutionMode).toHaveBeenCalledWith('interactive');
   });
 
   it('opens the full context drawer lazily', async () => {

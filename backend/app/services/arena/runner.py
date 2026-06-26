@@ -135,8 +135,17 @@ def _persist_user_turn(thread_id: int, content: str, selection: dict) -> None:
         session.commit()
 
 
+# The arena measures whether a model can operate the desk as a human would
+# WITHOUT human intervention. It drives every turn in YOLO (headless) mode: HITL
+# interrupts are auto-cleared AND the propose_reply_options card tool is withheld,
+# so the model cannot defer to a human and must execute on its own judgement.
+# There is no faked-human answering of cards (which previously caused target
+# drift), so each workflow step maps to exactly one driven turn.
+ARENA_MODE = "yolo"
+
+
 def _default_drive(thread_id: int, content: str, selection: dict) -> None:
-    """Drive one desk turn to completion via stream_and_persist (HITL auto-cleared).
+    """Drive one desk turn to completion via stream_and_persist in YOLO mode.
 
     The transcript is harvested from the trace afterwards, so the streamed SSE
     events are consumed and discarded here.
@@ -149,7 +158,7 @@ def _default_drive(thread_id: int, content: str, selection: dict) -> None:
             thread_id=thread_id,
             content=content,
             model_selection=selection,
-            yolo_mode=True,
+            mode=ARENA_MODE,
             confirmed_cost_preview=True,
         ):
             pass
@@ -238,6 +247,11 @@ def _purge_seeded_portfolios(session, bundle) -> None:
             p.id for p in prof_candidates if (p.summary or {}).get(ARENA_PROFILE_MARKER)
         ]
         if prof_ids:
+            # Child parameter rows FK the profile (no cascade) and must go first.
+            row_table = models.PricingParameterRow.__table__
+            session.execute(
+                delete(row_table).where(row_table.c.profile_id.in_(prof_ids))
+            )
             prof_table = models.PricingParameterProfile.__table__
             session.execute(delete(prof_table).where(prof_table.c.id.in_(prof_ids)))
 
@@ -273,7 +287,7 @@ def run_match(
     *,
     artifact_root: Path,
     run_id: int | None = None,
-    drive: Callable[[int, str, dict], None] | None = None,
+    drive: Callable[[int, str, dict], int | None] | None = None,
     harvest: Callable[..., Any] | None = None,
     settle: Callable[[], None] | None = None,
 ) -> Any:
@@ -334,8 +348,8 @@ def run_match(
     if settle is None:
         settle = _make_default_settle()
 
-    # Drive every workflow step as a turn on the same thread, waiting for queued
-    # background tasks to finish before the next step reads their results.
+    # Drive every workflow step as one YOLO turn on the same thread, waiting for
+    # queued background tasks to finish before the next step reads their results.
     for wf_step in workflow.steps:
         drive(thread_id, wf_step.user, selection)
         settle()

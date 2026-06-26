@@ -89,11 +89,11 @@ function AgentDeskLiveView({
       viewMode={controller.viewMode}
       channels={controller.channels}
       selectedModel={controller.selectedModel}
-      yoloMode={controller.yoloMode}
+      executionMode={controller.executionMode}
       confirmingActionIds={controller.confirmingActionIds}
       taskRunsById={controller.taskRunsById}
       onChangeModel={controller.setSelectedModel}
-      onChangeYoloMode={controller.setYoloMode}
+      onChangeMode={controller.setExecutionMode}
       onStopStreaming={controller.stopStreaming}
       onRefreshModels={controller.refreshModels}
       onChangeViewMode={controller.setViewMode}

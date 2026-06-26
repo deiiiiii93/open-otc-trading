@@ -34,7 +34,17 @@ def _loads(raw: Any) -> Any:
     try:
         return json.loads(raw)
     except (json.JSONDecodeError, TypeError):
-        return None
+        pass
+    # The trace serializer can emit a Python-repr artifact: ``\'`` is not a valid
+    # JSON escape, so an embedded one (e.g. inside a stringified error message)
+    # breaks json.loads. JSON never legitimately contains ``\'``, so stripping it
+    # is a safe one-shot repair before giving up.
+    if isinstance(raw, str) and "\\'" in raw:
+        try:
+            return json.loads(raw.replace("\\'", "'"))
+        except (json.JSONDecodeError, TypeError):
+            return None
+    return None
 
 
 def _parse_tool_output(outputs_raw: Any) -> tuple[dict, str | None, str | None]:
@@ -54,6 +64,15 @@ def _parse_tool_output(outputs_raw: Any) -> tuple[dict, str | None, str | None]:
         return {}, None, None
     m = TOOL_OUTPUT_RE.match(output_val)
     if not m:
+        # Some tool spans record the bare output payload (no ToolMessage repr
+        # wrapper). Parse it directly so tool_result_path assertions can
+        # introspect nested tool results instead of seeing an opaque string.
+        # A bare domain payload's own ``name``/``tool_call_id`` keys are business
+        # data (e.g. a portfolio named "Control"), NOT the tool identity — never
+        # mine them here. Return None so the caller uses the span's own name/id.
+        direct = _loads(output_val)
+        if isinstance(direct, dict):
+            return direct, None, None
         return {"raw": output_val}, None, None
     content = _loads(m.group("content"))
     if not isinstance(content, dict):
@@ -147,8 +166,9 @@ def transcript_from_trace(thread_id, workflow, model, *, store=None) -> MatchTra
     """Build a MatchTranscript for *thread_id* by reading its trace spans.
 
     Root traces (one orchestrator run per turn) map 1:1 to workflow steps in
-    chronological order. A step with no matching root records a ``missing_trace``
-    error rather than silently dropping.
+    chronological order — the arena drives exactly one YOLO turn per step. A step
+    with no matching root records a ``missing_trace`` error rather than silently
+    dropping.
     """
     if store is None:
         from app.config import get_settings

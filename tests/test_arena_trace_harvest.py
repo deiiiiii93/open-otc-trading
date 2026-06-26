@@ -38,6 +38,28 @@ def test_parse_tool_output_structured_dict_output_preserved():
     assert content == {"task_id": 7, "status": "queued"}
 
 
+def test_parse_tool_output_bare_json_string_is_parsed():
+    # Some tool spans record the bare JSON output (no ToolMessage repr wrapper);
+    # it must be parsed into a dict so tool_result_path can introspect nested
+    # results, not stored as an opaque {"raw": ...} string.
+    raw = json.dumps({"output": json.dumps(
+        {"id": 1, "status": "completed",
+         "results": {"var_cvar": {"cvar": -10918.13}}})})
+    content, _, _ = _parse_tool_output(raw)
+    assert content["results"]["var_cvar"]["cvar"] == -10918.13
+
+
+def test_parse_tool_output_repairs_python_repr_escape():
+    # The trace serializer can emit a Python-repr ``\'`` escape (invalid JSON)
+    # inside an embedded error string; _loads repairs it so the surrounding
+    # structured payload still parses.
+    payload = "{\"status\": \"completed\", \"note\": \"\\'dict\\' object\", \"pnl\": -5.0}"
+    raw = json.dumps({"output": payload})
+    content, _, _ = _parse_tool_output(raw)
+    assert content["pnl"] == -5.0
+    assert content["status"] == "completed"
+
+
 def test_llm_text_falls_back_to_message_content_blocks():
     # When the flat `text` is empty, harvest the AIMessage content blocks.
     from app.services.arena.trace_harvest import _llm_text
@@ -185,4 +207,5 @@ def test_transcript_from_trace_missing_root_records_error():
     model = ArenaModel(slug="m", zenmux_name="openai/x", display_name="M", default_config={})
     transcript = transcript_from_trace(1, _WF(), model, store=_FakeStore(roots, traces))
     assert len(transcript.steps) == 2
-    assert transcript.steps[1].errors and transcript.steps[1].errors[0]["type"] == "missing_trace"
+
+

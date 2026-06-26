@@ -1160,6 +1160,35 @@ class _WorkflowStreamTurn:
     router_response_text: str | None = None
 
 
+# Execution modes. Interactive surfaces HITL prompts; AUTO auto-clears them but
+# the model may still ask via propose_reply_options; YOLO is fully headless (no
+# HITL prompts AND no deferral — the card tool is withheld).
+_VALID_MODES = {"interactive", "auto", "yolo"}
+
+
+def resolve_execution_mode(
+    mode: str | None, yolo_mode: bool
+) -> tuple[str, bool, bool]:
+    """Resolve a turn's execution mode into ``(mode, clear_hitl, allow_reply_options)``.
+
+    ``mode`` is the canonical signal. When it is absent (legacy callers), it is
+    derived from the deprecated ``yolo_mode`` boolean: ``True`` → ``auto`` (the
+    old YOLO behavior — clears HITL but still allows reply cards), ``False`` →
+    ``interactive``. Legacy callers are never headless.
+
+    Returns the normalized mode plus the two capability flags the interior uses:
+    ``clear_hitl`` (the value threaded as ``yolo_mode`` internally) and
+    ``allow_reply_options``.
+    """
+    if mode is None:
+        mode = "auto" if yolo_mode else "interactive"
+    if mode not in _VALID_MODES:
+        raise ValueError(f"unknown execution mode {mode!r}; expected one of {sorted(_VALID_MODES)}")
+    clear_hitl = mode in {"auto", "yolo"}
+    allow_reply_options = mode != "yolo"
+    return mode, clear_hitl, allow_reply_options
+
+
 class AgentService:
     def __init__(
         self,
@@ -2314,6 +2343,7 @@ class AgentService:
         accounting_date: date | str | None = None,
         model_selection: dict[str, str] | None = None,
         yolo_mode: bool = False,
+        mode: str | None = None,
         envelope: str | None = None,
         confirmed_cost_preview: bool = False,
     ):
@@ -2322,7 +2352,12 @@ class AgentService:
         Single-invocation refactor: this method drives a single astream_events
         run, emits typed SSE events to the client, and persists ONE
         AgentMessage after the stream completes.
+
+        ``mode`` ("interactive" | "auto" | "yolo") is the canonical execution
+        signal; the deprecated ``yolo_mode`` boolean is accepted for back-compat
+        and maps to auto/interactive. YOLO drives the orchestrator headless.
         """
+        mode, yolo_mode, allow_reply_options = resolve_execution_mode(mode, yolo_mode)
         resolved = self.normalize_model_selection(model_selection)
         effective_accounting_date = _effective_accounting_date(accounting_date)
         if not self.is_enabled(resolved):
@@ -2343,7 +2378,9 @@ class AgentService:
             collector.envelope_final = resolved_envelope.value
             prepared: _WorkflowStreamTurn | None = None
             persisted = False
-            async with self._streaming_agent(resolved, yolo_mode=yolo_mode) as agent:
+            async with self._streaming_agent(
+                resolved, yolo_mode=yolo_mode, allow_reply_options=allow_reply_options
+            ) as agent:
                 try:
                     if agent is None:
                         raise RuntimeError("Agent is disabled (no LLM configured)")
@@ -2519,7 +2556,9 @@ class AgentService:
         collector.envelope_final = resolved_envelope.value
         persisted = False  # set True once _finalize_turn returns
 
-        async with self._streaming_agent(resolved, yolo_mode=yolo_mode) as agent:
+        async with self._streaming_agent(
+            resolved, yolo_mode=yolo_mode, allow_reply_options=allow_reply_options
+        ) as agent:
             try:
                 try:
                     async for sse_line in self._drive_stream(
@@ -2639,9 +2678,10 @@ class AgentService:
         model_selection: dict[str, str],
         *,
         yolo_mode: bool = False,
+        allow_reply_options: bool = True,
     ):
         """Yield an agent whose checkpointer supports async LangGraph methods."""
-        if yolo_mode or not self._is_default_model_selection(model_selection):
+        if not allow_reply_options or yolo_mode or not self._is_default_model_selection(model_selection):
             model = build_agent_model(self.registry, model_selection)
             if model is None:
                 yield None
@@ -2654,6 +2694,7 @@ class AgentService:
                     interrupt_on=interrupt_on_config(yolo_mode=yolo_mode),
                     enable_code_interpreter=self.settings.agent_code_interpreter_enabled,
                     yolo_mode=yolo_mode,
+                    allow_reply_options=allow_reply_options,
                 )
             return
 
@@ -2677,8 +2718,13 @@ class AgentService:
         model_selection: dict[str, str],
         *,
         yolo_mode: bool = False,
+        allow_reply_options: bool = True,
     ) -> Any:
-        if not yolo_mode and self._is_default_model_selection(model_selection):
+        if (
+            allow_reply_options
+            and not yolo_mode
+            and self._is_default_model_selection(model_selection)
+        ):
             return self.deep_agent
         model = build_agent_model(self.registry, model_selection)
         if model is None:
@@ -2690,6 +2736,7 @@ class AgentService:
             interrupt_on=interrupt_on_config(yolo_mode=yolo_mode),
             enable_code_interpreter=self.settings.agent_code_interpreter_enabled,
             yolo_mode=yolo_mode,
+            allow_reply_options=allow_reply_options,
         )
 
     def resume_async_agent(

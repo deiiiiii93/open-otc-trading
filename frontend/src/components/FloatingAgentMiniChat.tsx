@@ -223,9 +223,9 @@ export function FloatingAgentMiniChat({
         streaming={controller.streaming}
         channels={controller.channels}
         selectedModel={controller.selectedModel}
-        yoloMode={controller.yoloMode}
+        executionMode={controller.executionMode}
         onChangeModel={controller.setSelectedModel}
-        onChangeYoloMode={controller.setYoloMode}
+        onChangeMode={controller.setExecutionMode}
         onStopStreaming={controller.stopStreaming}
         onRefreshModels={controller.refreshModels}
         compactModelPicker

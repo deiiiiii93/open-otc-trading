@@ -74,6 +74,18 @@ def _load_identity(name: str) -> str:
     return (_PROMPTS_DIR / name).read_text(encoding="utf-8")
 
 
+def _resolve_policy_fragments(
+    fragments: Sequence[str], allow_reply_options: bool
+) -> tuple[str, ...]:
+    """In headless (YOLO) mode, swap the reply-options policy for the headless
+    policy so the persona never asks or proposes cards."""
+    if allow_reply_options:
+        return tuple(fragments)
+    return tuple(
+        "headless-policy" if f == "reply-options-policy" else f for f in fragments
+    )
+
+
 def _spec(
     *,
     name: str,
@@ -82,13 +94,16 @@ def _spec(
     tools: Sequence[BaseTool],
     policy_fragments: Sequence[str],
     skills: Sequence[str],
+    allow_reply_options: bool = True,
 ) -> SubAgent:
     return {
         "name": name,
         "description": description,
         "system_prompt": compose_persona_prompt(
             identity_prompt=_load_identity(prompt_file),
-            policy_fragment_names=policy_fragments,
+            policy_fragment_names=_resolve_policy_fragments(
+                policy_fragments, allow_reply_options
+            ),
         ),
         "tools": list(tools),
         "skills": list(skills),
@@ -96,7 +111,9 @@ def _spec(
     }
 
 
-def trader_spec(model: BaseChatModel, tools: Sequence[BaseTool]) -> SubAgent:
+def trader_spec(
+    model: BaseChatModel, tools: Sequence[BaseTool], *, allow_reply_options: bool = True
+) -> SubAgent:
     return _spec(
         name="trader",
         description=(
@@ -108,10 +125,13 @@ def trader_spec(model: BaseChatModel, tools: Sequence[BaseTool]) -> SubAgent:
         tools=tools,
         policy_fragments=_TRADER_POLICY,
         skills=workflow_skill_sources("trader"),
+        allow_reply_options=allow_reply_options,
     )
 
 
-def risk_spec(model: BaseChatModel, tools: Sequence[BaseTool]) -> SubAgent:
+def risk_spec(
+    model: BaseChatModel, tools: Sequence[BaseTool], *, allow_reply_options: bool = True
+) -> SubAgent:
     return _spec(
         name="risk_manager",
         description=(
@@ -123,10 +143,13 @@ def risk_spec(model: BaseChatModel, tools: Sequence[BaseTool]) -> SubAgent:
         tools=tools,
         policy_fragments=_RISK_POLICY,
         skills=workflow_skill_sources("risk_manager"),
+        allow_reply_options=allow_reply_options,
     )
 
 
-def board_spec(model: BaseChatModel, tools: Sequence[BaseTool]) -> SubAgent:
+def board_spec(
+    model: BaseChatModel, tools: Sequence[BaseTool], *, allow_reply_options: bool = True
+) -> SubAgent:
     return _spec(
         name="high_board",
         description=(
@@ -137,6 +160,7 @@ def board_spec(model: BaseChatModel, tools: Sequence[BaseTool]) -> SubAgent:
         tools=tools,
         policy_fragments=_BOARD_POLICY,
         skills=workflow_skill_sources("high_board"),
+        allow_reply_options=allow_reply_options,
     )
 
 
@@ -146,11 +170,12 @@ def all_personas(
     *,
     skills_backend: Any | None = None,
     yolo_mode: bool = False,
+    allow_reply_options: bool = True,
 ) -> list[SubAgent]:
     specs: list[SubAgent] = [
-        trader_spec(model, tools),
-        risk_spec(model, tools),
-        board_spec(model, tools),
+        trader_spec(model, tools, allow_reply_options=allow_reply_options),
+        risk_spec(model, tools, allow_reply_options=allow_reply_options),
+        board_spec(model, tools, allow_reply_options=allow_reply_options),
     ]
     if skills_backend is None:
         return specs

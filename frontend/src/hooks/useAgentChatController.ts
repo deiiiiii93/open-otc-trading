@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import type {
   AgentChannel,
   AgentContextUsage,
+  AgentExecutionMode,
   AgentModelConfig,
   AgentModelSelection,
   AgentTodoItem,
@@ -30,7 +31,8 @@ type Draft = {
   cost_preview?: CostPreview;
   envelope_transition?: EnvelopeTransition;
 };
-const YOLO_MODE_STORAGE_KEY = 'open-otc:agent:yolo-mode';
+const EXECUTION_MODE_STORAGE_KEY = 'open-otc:agent:execution-mode';
+const EXECUTION_MODES: readonly AgentExecutionMode[] = ['interactive', 'auto', 'yolo'];
 const ACTIVE_TASK_STATUSES = new Set(['queued', 'running']);
 
 export type AgentChatController = {
@@ -45,11 +47,11 @@ export type AgentChatController = {
   viewMode: ViewMode;
   channels: AgentChannel[];
   selectedModel: AgentModelSelection | null;
-  yoloMode: boolean;
+  executionMode: AgentExecutionMode;
   confirmingActionIds: ReadonlySet<string>;
   taskRunsById: Record<number, TaskRun>;
   setSelectedModel: (selection: AgentModelSelection) => void;
-  setYoloMode: Dispatch<SetStateAction<boolean>>;
+  setExecutionMode: Dispatch<SetStateAction<AgentExecutionMode>>;
   setViewMode: (mode: ViewMode) => void;
   selectThread: (id: number) => void;
   createThread: () => Promise<void>;
@@ -93,7 +95,11 @@ export function useAgentChatController(): AgentChatController {
   const [viewMode, setViewMode] = useViewMode();
   const [modelConfig, setModelConfig] = useState<AgentModelConfig | null>(null);
   const [selectedModel, setSelectedModel] = useState<AgentModelSelection | null>(null);
-  const [yoloMode, setYoloMode] = useSessionBoolean(YOLO_MODE_STORAGE_KEY, false);
+  const [executionMode, setExecutionMode] = useSessionString<AgentExecutionMode>(
+    EXECUTION_MODE_STORAGE_KEY,
+    'auto',
+    EXECUTION_MODES,
+  );
   const [confirmingActionIds, setConfirmingActionIds] = useState<Set<string>>(() => new Set());
   const [taskRunsById, setTaskRunsById] = useState<Record<number, TaskRun>>({});
   const [asyncAgentPollNonce, setAsyncAgentPollNonce] = useState(0);
@@ -335,7 +341,7 @@ export function useAgentChatController(): AgentChatController {
           content: message,
           meta: {
             ...(contextUsage ? { context_usage: contextUsage } : {}),
-            yolo_mode: yoloMode,
+            mode: executionMode,
           },
         }],
       };
@@ -354,7 +360,7 @@ export function useAgentChatController(): AgentChatController {
           content: message,
           character: 'auto',
           model: selectedModel,
-          yolo_mode: yoloMode,
+          mode: executionMode,
           page_context: pageContext ?? undefined,
           context_usage: contextUsage ?? undefined,
           accounting_date: accountingDate || undefined,
@@ -425,7 +431,7 @@ export function useAgentChatController(): AgentChatController {
         setSending(false);
       }
     }
-  }, [activeId, refresh, selectedModel, yoloMode]);
+  }, [activeId, refresh, selectedModel, executionMode]);
 
   const stopStreaming = useCallback(() => {
     streamAbortRef.current?.abort();
@@ -529,11 +535,11 @@ export function useAgentChatController(): AgentChatController {
     viewMode,
     channels: modelConfig?.channels ?? [],
     selectedModel,
-    yoloMode,
+    executionMode,
     confirmingActionIds,
     taskRunsById,
     setSelectedModel,
-    setYoloMode,
+    setExecutionMode,
     setViewMode,
     selectThread: setActiveId,
     createThread,
@@ -550,15 +556,18 @@ export function useAgentChatController(): AgentChatController {
   };
 }
 
-function useSessionBoolean(
+function useSessionString<T extends string>(
   key: string,
-  defaultValue: boolean,
-): [boolean, Dispatch<SetStateAction<boolean>>] {
-  const [value, setValue] = useState<boolean>(() => {
+  defaultValue: T,
+  allowed: readonly T[],
+): [T, Dispatch<SetStateAction<T>>] {
+  const [value, setValue] = useState<T>(() => {
     if (typeof window === 'undefined') return defaultValue;
     try {
       const stored = window.sessionStorage.getItem(key);
-      return stored == null ? defaultValue : stored === 'true';
+      return stored != null && (allowed as readonly string[]).includes(stored)
+        ? (stored as T)
+        : defaultValue;
     } catch {
       return defaultValue;
     }
@@ -567,9 +576,9 @@ function useSessionBoolean(
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
-      window.sessionStorage.setItem(key, value ? 'true' : 'false');
+      window.sessionStorage.setItem(key, value);
     } catch {
-      // Ignore storage failures; the in-memory toggle still works.
+      // Ignore storage failures; the in-memory selection still works.
     }
   }, [key, value]);
 

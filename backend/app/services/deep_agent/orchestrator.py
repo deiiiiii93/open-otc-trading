@@ -38,13 +38,16 @@ def _artifacts_root() -> Path:
         return Path(__file__).parent.parent.parent.parent.parent / "artifacts"
 
 
-def _orchestrator_prompt() -> str:
+def _orchestrator_prompt(allow_reply_options: bool = True) -> str:
     from .routing_table import inject_known_skills_table
 
     base = (_PROMPTS_DIR / "orchestrator.md").read_text(encoding="utf-8").rstrip()
     base = inject_known_skills_table(base)
-    pickable_options = load_policy_fragments(("reply-options-policy",))
-    return base + "\n\n" + pickable_options
+    # AUTO/Interactive: teach pickable reply options. YOLO (headless): swap in the
+    # headless policy so the model never asks or proposes cards.
+    fragment = "reply-options-policy" if allow_reply_options else "headless-policy"
+    policy = load_policy_fragments((fragment,))
+    return base + "\n\n" + policy
 
 
 def _build_backend() -> Any:
@@ -172,33 +175,48 @@ def build_orchestrator(
     interrupt_on: dict[str, Any] | None = None,
     enable_code_interpreter: bool = False,
     yolo_mode: bool = False,
+    allow_reply_options: bool = True,
 ) -> Any:
-    """Create the desk deep-agent orchestrator with three persona subagents."""
+    """Create the desk deep-agent orchestrator with three persona subagents.
+
+    ``allow_reply_options`` is False in YOLO (headless) mode: the
+    ``propose_reply_options`` card tool is withheld from BOTH the orchestrator
+    and the personas so neither can defer to a human, and the system prompt swaps
+    in the headless policy.
+    """
     from deepagents import create_deep_agent
 
-    # Orchestrator has no DOMAIN tools, but it also needs the UI-control tool
-    # ``propose_reply_options`` so final synthesis replies can attach pickable
-    # buttons. Personas receive their own copy through ``tools``.
+    # Orchestrator has no DOMAIN tools, but in non-headless modes it also needs
+    # the UI-control tool ``propose_reply_options`` so final synthesis replies can
+    # attach pickable buttons. Personas receive their own copy through ``tools``.
     from ..reply_options.tool import ProposeReplyOptionsTool
-    orchestrator_tools = [ProposeReplyOptionsTool()]
+    orchestrator_tools = [ProposeReplyOptionsTool()] if allow_reply_options else []
+    # Headless: also strip the card tool from the persona toolset so no subagent
+    # can defer either.
+    persona_tools = (
+        list(tools)
+        if allow_reply_options
+        else [t for t in tools if getattr(t, "name", None) != "propose_reply_options"]
+    )
     backend = _build_backend()
 
     return create_deep_agent(
         model=model,
         tools=orchestrator_tools,
-        system_prompt=_orchestrator_prompt(),
+        system_prompt=_orchestrator_prompt(allow_reply_options),
         middleware=_agent_middleware(
             enable_code_interpreter,
             model=model,
             backend=backend,
-            tools=tools,
+            tools=persona_tools,
             yolo_mode=yolo_mode,
         ),
         subagents=all_personas(
             model,
-            tools,
+            persona_tools,
             skills_backend=backend,
             yolo_mode=yolo_mode,
+            allow_reply_options=allow_reply_options,
         ),
         interrupt_on=interrupt_on if interrupt_on is not None else interrupt_on_config(),
         checkpointer=checkpointer,

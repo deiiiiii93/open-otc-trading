@@ -88,33 +88,66 @@ describe('ChatComposer', () => {
     expect(onStopStreaming).toHaveBeenCalledTimes(1);
   });
 
-  it('toggles YOLO mode when provided', async () => {
-    const onChangeYoloMode = vi.fn();
+  it('renders the three execution modes with AUTO active by default', () => {
     render(
       <ChatComposer
         onSend={() => {}}
         sending={false}
-        yoloMode={false}
-        onChangeYoloMode={onChangeYoloMode}
+        onChangeMode={() => {}}
       />,
     );
 
-    await userEvent.click(screen.getByRole('checkbox', { name: /yolo/i }));
-
-    expect(onChangeYoloMode).toHaveBeenCalledWith(true);
+    expect(screen.getByRole('button', { name: /interactive/i })).toBeInTheDocument();
+    const auto = screen.getByRole('button', { name: /^auto$/i });
+    const yolo = screen.getByRole('button', { name: /yolo/i });
+    expect(auto).toHaveAttribute('aria-pressed', 'true');
+    expect(yolo).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('disables YOLO toggle while streaming', () => {
+  it('marks the supplied executionMode as active', () => {
+    render(
+      <ChatComposer
+        onSend={() => {}}
+        sending={false}
+        executionMode="yolo"
+        onChangeMode={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: /yolo/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /^auto$/i })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('calls onChangeMode with the selected mode', async () => {
+    const onChangeMode = vi.fn();
+    render(
+      <ChatComposer
+        onSend={() => {}}
+        sending={false}
+        executionMode="auto"
+        onChangeMode={onChangeMode}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /interactive/i }));
+    expect(onChangeMode).toHaveBeenCalledWith('interactive');
+
+    await userEvent.click(screen.getByRole('button', { name: /yolo/i }));
+    expect(onChangeMode).toHaveBeenCalledWith('yolo');
+  });
+
+  it('disables the mode control while streaming', () => {
     render(
       <ChatComposer
         onSend={() => {}}
         sending
         streaming
-        yoloMode
-        onChangeYoloMode={() => {}}
+        executionMode="yolo"
+        onChangeMode={() => {}}
       />,
     );
 
-    expect(screen.getByRole('checkbox', { name: /yolo/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /yolo/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^auto$/i })).toBeDisabled();
   });
 });
