@@ -9,13 +9,30 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
 
 class ContractValidationError(ValueError):
     """Raised when a framer-produced contract violates a §C validation rule."""
+
+
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _no_control_chars(value: str) -> str:
+    """Reject control characters / newlines in any field that is interpolated into
+    the line-oriented grader rubric — otherwise framer text could split a criterion
+    or inject grader instructions (a prompt-injection vector through the gate)."""
+    if _CONTROL_RE.search(value):
+        raise ValueError("control characters / newlines are not allowed")
+    return value
+
+
+# A string safe to render into the rubric verbatim.
+SafeStr = Annotated[str, AfterValidator(_no_control_chars)]
 
 
 _UNARY_OPS = {"exists", "not_exists"}
@@ -24,7 +41,7 @@ _LIST_OPS = {"in"}
 
 class FieldPredicate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    path: str
+    path: SafeStr
     op: Literal[
         "exists", "not_exists", "eq", "neq", "lt", "lte", "gt", "gte", "in", "contains"
     ]
@@ -43,6 +60,10 @@ class FieldPredicate(BaseModel):
         else:
             if self.value is None or isinstance(self.value, list):
                 raise ValueError(f"operator '{self.op}' requires a scalar operand")
+        # string operands are rendered into the rubric too — keep them safe.
+        for item in self.value if isinstance(self.value, list) else [self.value]:
+            if isinstance(item, str):
+                _no_control_chars(item)
         return self
 
 
@@ -57,7 +78,7 @@ class ArtifactExistsCheck(BaseModel):
 class LedgerPredicateCheck(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: Literal["ledger_predicate"]
-    tool: str
+    tool: SafeStr
     args: dict = Field(default_factory=dict)
     # At least one predicate, else the criterion verifies nothing yet still
     # satisfies the allowed_by_mode end-state rule (a trust-hinge bypass).
@@ -67,13 +88,13 @@ class LedgerPredicateCheck(BaseModel):
 class MeasurableCheck(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: Literal["measurable"]
-    tool: str
+    tool: SafeStr
     args: dict = Field(default_factory=dict)
-    metric_path: str
+    metric_path: SafeStr
     transform: Literal["identity", "abs"] = "identity"
     op: Literal["<", "<=", ">", ">=", "==", "!="]
     threshold: float
-    units: str | None = None
+    units: SafeStr | None = None
 
 
 Check = Annotated[
@@ -86,8 +107,8 @@ _END_STATE_TYPES = {"ledger_predicate", "measurable"}
 
 class GoalCriterionV1(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str
-    text: str
+    id: SafeStr
+    text: SafeStr
     required: Literal[True] = True
     check: Check
 
@@ -142,8 +163,15 @@ def parse_goal_contract(
     return contract
 
 
+def _render_predicate(p: FieldPredicate) -> str:
+    # unary operators have no operand — rendering one would misstate the check.
+    if p.op in _UNARY_OPS:
+        return f"{p.path} {p.op}"
+    return f"{p.path} {p.op} {p.value!r}"
+
+
 def _render_predicates(preds: list[FieldPredicate]) -> str:
-    return ", ".join(f"{p.path} {p.op} {p.value!r}" for p in preds)
+    return ", ".join(_render_predicate(p) for p in preds)
 
 
 def _render_args(args: dict) -> str:
@@ -247,6 +275,17 @@ class GoalRunStateV1(BaseModel):
     failing_criteria: list[FailingCriterion] = Field(default_factory=list)
     partial_ledger_refs: PartialLedgerRefs = Field(default_factory=PartialLedgerRefs)
 
+    @model_validator(mode="after")
+    def _frozen_states_have_a_hash(self) -> "GoalRunStateV1":
+        """Freeze identity (spec §H): any run that has left awaiting_ratification —
+        running, stuck_needs_human, or satisfied — must carry a contract_hash."""
+        if self.status in _POINTER_HELD - {"awaiting_ratification"} or self.status == "satisfied":
+            if not self.contract_hash:
+                raise ValueError(
+                    f"status '{self.status}' requires a frozen contract_hash"
+                )
+        return self
+
 
 def new_goal_run(*, goal_run_id: str, contract_hash: str | None, mode: GoalMode) -> GoalRunStateV1:
     """Create a run in ``awaiting_ratification``. The pointer is set from here."""
@@ -310,8 +349,9 @@ def cancel_goal_run(state: GoalRunStateV1) -> GoalRunStateV1:
 
 
 def rubric_active(state: GoalRunStateV1) -> bool:
-    """The activation gate: the rubric attaches (grader runs) ONLY while running."""
-    return state.status == "running"
+    """The activation gate: the rubric attaches (grader runs) ONLY while running
+    AND bound to a frozen contract. Fails closed on a corrupt/unbound state."""
+    return state.status == "running" and bool(state.contract_hash)
 
 
 def pointer_held(state: GoalRunStateV1) -> bool:

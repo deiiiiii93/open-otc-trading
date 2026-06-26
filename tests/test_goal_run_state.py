@@ -5,8 +5,10 @@ grader) must be active ONLY while the run is `running`, else a finished goal wou
 re-grade every subsequent ordinary turn on the thread.
 """
 import pytest
+from pydantic import ValidationError
 
 from app.services.deep_agent.goal_mode import (
+    GoalRunStateV1,
     GoalStateError,
     cancel_goal_run,
     escalate_goal_run,
@@ -69,6 +71,21 @@ def test_ratify_requires_a_contract_hash():
     unfrozen = new_goal_run(goal_run_id="g1", contract_hash=None, mode="yolo")
     with pytest.raises(GoalStateError):
         ratify_goal_run(unfrozen)
+
+
+def test_running_state_must_have_a_frozen_hash():
+    """The freeze-identity invariant: an active/completed run cannot lack a hash."""
+    with pytest.raises(ValidationError):
+        GoalRunStateV1(goal_run_id="g1", mode="yolo", status="running", contract_hash=None)
+
+
+def test_rubric_active_fails_closed_for_unbound_running_state():
+    """Defense in depth: even a corrupt persisted state (validation bypassed)
+    must not attach the grader without a freeze identity."""
+    corrupt = GoalRunStateV1.model_construct(
+        goal_run_id="g1", mode="yolo", status="running", contract_hash=None
+    )
+    assert rubric_active(corrupt) is False
 
 
 def test_invalid_transitions_raise():
