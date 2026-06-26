@@ -93,6 +93,13 @@ type AgentChatControllerOptions = {
    * polling the DB for the persisted row.
    */
   onToolStart?: (name: string, args: unknown) => void;
+  /**
+   * Tags threads this controller creates (default 'desk') and scopes
+   * auto-selection to threads of that source. The workflow builder passes
+   * 'workflow_builder' so its conversations stay isolated from desk threads
+   * and it never auto-selects an unrelated desk thread on mount.
+   */
+  threadSource?: string;
 };
 
 export function useAgentChatController(
@@ -121,6 +128,7 @@ export function useAgentChatController(
   // stale callback between renders.
   const onToolStartRef = useRef(options?.onToolStart);
   onToolStartRef.current = options?.onToolStart;
+  const threadSource = options?.threadSource ?? 'desk';
 
   const fetchCatalog = useCallback(async () => {
     const cfg = await api<AgentModelConfig>('/api/agent/models');
@@ -155,9 +163,14 @@ export function useAgentChatController(
     setThreads(list);
     setActiveId((current) => {
       if (current != null && list.some((t) => t.id === current)) return current;
-      return list[0]?.id ?? null;
+      // Only auto-select threads owned by this controller's source. Keeps Agent
+      // Desk from landing on a hidden arena/builder thread, and the builder from
+      // landing on an unrelated desk thread. Missing source counts as 'desk'
+      // (backend default + legacy rows). `list` is updated_at-desc, so this
+      // resumes the most recent same-source thread.
+      return list.find((t) => (t.source ?? 'desk') === threadSource)?.id ?? null;
     });
-  }, []);
+  }, [threadSource]);
 
   useEffect(() => {
     let cancelled = false;
@@ -267,11 +280,11 @@ export function useAgentChatController(
   const createThread = useCallback(async () => {
     const created = await api<Thread>('/api/chat/threads', {
       method: 'POST',
-      body: JSON.stringify({ title: 'New research thread', character: 'trader' }),
+      body: JSON.stringify({ title: 'New research thread', character: 'trader', source: threadSource }),
     });
     setThreads((prev) => [created, ...prev]);
     setActiveId(created.id);
-  }, []);
+  }, [threadSource]);
 
   const renameThread = useCallback(async (threadId: number, title: string) => {
     setThreads((prev) => prev.map((thread) => (
@@ -338,7 +351,7 @@ export function useAgentChatController(
     if (threadId == null) {
       const created = await api<Thread>('/api/chat/threads', {
         method: 'POST',
-        body: JSON.stringify({ title: 'New research thread', character: 'trader' }),
+        body: JSON.stringify({ title: 'New research thread', character: 'trader', source: threadSource }),
       });
       threadId = created.id;
       setThreads((prev) => [created, ...prev]);
@@ -448,14 +461,14 @@ export function useAgentChatController(
         setSending(false);
       }
     }
-  }, [activeId, refresh, selectedModel, executionMode]);
+  }, [activeId, refresh, selectedModel, executionMode, threadSource]);
 
   const launchWorkflow = useCallback(async (slug: string, mode: 'auto' | 'yolo') => {
     let threadId = activeId;
     if (threadId == null) {
       const created = await api<Thread>('/api/chat/threads', {
         method: 'POST',
-        body: JSON.stringify({ title: 'New research thread', character: 'trader' }),
+        body: JSON.stringify({ title: 'New research thread', character: 'trader', source: threadSource }),
       });
       threadId = created.id;
       setThreads((prev) => [created, ...prev]);
@@ -570,7 +583,7 @@ export function useAgentChatController(
         setSending(false);
       }
     }
-  }, [activeId, refresh]);
+  }, [activeId, refresh, threadSource]);
 
   const stopStreaming = useCallback(() => {
     streamAbortRef.current?.abort();

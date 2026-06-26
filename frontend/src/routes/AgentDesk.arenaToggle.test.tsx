@@ -34,4 +34,18 @@ describe('AgentDesk arena thread toggle', () => {
     fireEvent.click(screen.getByLabelText(/show arena threads/i));
     expect(screen.getByText('Arena run')).toBeInTheDocument();
   });
+
+  it('never shows workflow_builder threads, even with the arena toggle on', () => {
+    const threads = [
+      thread(1, 'Desk one'),
+      thread(2, 'Build chat', 'workflow_builder'),
+    ];
+    render(<AgentDesk {...baseProps} threads={threads} />);
+
+    expect(screen.getByText('Desk one')).toBeInTheDocument();
+    expect(screen.queryByText('Build chat')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText(/show arena threads/i));
+    expect(screen.queryByText('Build chat')).not.toBeInTheDocument();
+  });
 });
