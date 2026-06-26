@@ -63,9 +63,13 @@ as truth. Goal mode is the work of bending that mechanism to our ledger-grounded
    user confirms/edits **once at kickoff**; the criteria are then **immutable** for the run.
    Rationale: keeps the criteria-author and the grader independent of the executor; framing is the
    cheapest, highest-leverage human touch and forces the goal to become precise.
-2. **Autonomy follows the thread mode.** Goal mode does not impose a checkpoint policy. Execution
-   gating is whatever Interactive / AUTO / YOLO already dictate. Goal mode adds only the framing
-   gate, the frozen criteria, the grader loop, and escalation.
+2. **Autonomy follows the thread mode.** Goal mode does not impose a checkpoint policy. The
+   *approval/checkpoint* behavior for writes is whatever Interactive / AUTO / YOLO already dictate.
+   Two clarifications: (a) the contract's `domain_write_policy: "forbidden"` *additionally* withholds
+   `DOMAIN_WRITE` capability entirely (orthogonal to mode); `"allowed_by_mode"` grants it and lets
+   mode govern approval. (b) Ratification is mandatory for `allowed_by_mode` contracts; a `forbidden`
+   (read-only/advisory) contract may be auto-ratified. Goal mode adds only the framing gate, the
+   frozen criteria, the grader loop, and escalation.
 
 ## The design
 
@@ -88,13 +92,13 @@ headless run begins, not during it).
 frame → ratify+freeze → execute (mode-gated) → grade → {satisfied | revise | escalate}
 ```
 
-1. **Frame.** A framer invocation reads the NL goal and emits a `GoalContract`: a working summary
-   plus a list of criteria (see §C). The framer is prompted to commit to checkable end-states, not
-   prose.
+1. **Frame.** A framer invocation reads the NL goal and emits a `FramerResponseV1` (§C) — either a
+   `GoalContractV1` or a `needs_clarification` (questions surfaced, no run started). The framer is
+   prompted to commit to checkable end-states, not prose.
 2. **Ratify + freeze.** The contract is surfaced to the user for one confirm/edit. On confirm it is
-   written to thread state as the immutable `rubric` plus a structured `goal_contract` sidecar. For
-   read-only/advisory goals ratification MAY be auto-skipped (low stakes); for any goal that writes,
-   ratification is mandatory.
+   frozen into thread state as the immutable `rubric`, the `goal_contract`, and `contract_hash` (§C).
+   A `forbidden` (read-only/advisory) contract MAY be auto-ratified (low stakes); an `allowed_by_mode`
+   contract (any goal that writes) MUST be ratified.
 3. **Execute.** The orchestrator runs the goal under the turn's mode. The executor maintains the
    durable `plan` artifact and accumulates `finding` artifacts (both ledger-protected).
 4. **Grade.** `RubricMiddleware` fires at the executor's natural finish, grading the **ledger**
@@ -248,8 +252,9 @@ fails closed instead of summarizing away grader evidence.
 Before every executor model call and every grader call, compute whether the required context fits
 (system/developer prompts + frozen `rubric` + `goal_contract` + compacted non-protected history +
 **all protected ledger artifacts** + tool scaffolding). If it cannot fit the model window or exceeds
-the configured goal-mode protected-context budget, stop immediately and escalate with
-`terminal_reason: "context_ceiling"` (§F) — do **not** keep looping to `max_iterations`.
+the configured budget `GOAL_PROTECTED_CONTEXT_BUDGET` (v1 default: 0.6 × model `max_input_tokens`),
+stop immediately and escalate with `terminal_reason: "context_ceiling"` (§F) — do **not** keep
+looping to `max_iterations` (v1 default `GOAL_MAX_ITERATIONS = 3`).
 
 The `/goal` ratification card states that v1 supports bounded-ledger goals; broad investigations
 that would accumulate unbounded findings must be narrowed, split into multiple goals, or deferred
@@ -266,7 +271,7 @@ structured `goal.escalated` event.
 type GoalRunStateV1 = {
   schema_version: "goal_run_state.v1";
   goal_run_id: string;
-  contract_hash: string;
+  contract_hash?: string;                // set on freeze; absent while awaiting_ratification
   mode: "interactive" | "auto" | "yolo";
   status: "awaiting_ratification" | "running" | "satisfied" | "stuck_needs_human" | "cancelled";
   terminal_reason?: "max_iterations_reached" | "failed" | "grader_error" | "context_ceiling";
@@ -277,7 +282,7 @@ type GoalRunStateV1 = {
     reason: string; evidence_refs: string[];
   }>;
   partial_ledger_refs: {
-    plan_artifact_id?: string;
+    plan_artifact_ids: string[];           // all plan revisions, latest last
     finding_artifact_ids: string[];
     report_artifact_ids: string[];
     persisted_run_ids: string[];
@@ -326,7 +331,9 @@ type PlanRevisionV1 = {
 };
 ```
 
-All domain side effects remain governed by the thread's execution mode.
+Domain *side effects* remain governed by the thread's execution mode for approval — except that a
+`forbidden` contract has no `DOMAIN_WRITE` capability at all, so a plan revision can never escalate
+it into writes.
 
 ### G. Activation: the `/goal` command
 
@@ -343,29 +350,61 @@ There is **no existing slash-command infrastructure** (verified: nothing in `Cha
    `/goal` with no text shows an inline hint instead of sending.
 2. **Orthogonal to mode.** `/goal` activates the *acceptance layer*; the Interactive/AUTO/YOLO
    segmented control still governs autonomy (Decision 2). A user picks the mode, then types `/goal …`.
-3. **Triggers framing, not execution.** `/goal` runs the framer and returns the `GoalContract` as a
-   ratify card; execution begins only after the user confirms/edits (§B). For a read-only goal under
-   a mode that auto-skips ratification, framing flows straight into execution.
+3. **Triggers framing, not execution.** `/goal` runs the framer. If the framer returns
+   `needs_clarification`, the questions are surfaced and **no** rubric/goal run is created — the user
+   resubmits a refined `/goal`. If it returns a `contract`, it is shown as a ratify card; a
+   `forbidden` contract may flow straight to execution (auto-ratified), an `allowed_by_mode` contract
+   executes only after the user confirms/edits (§B).
 
 A minimal command registry can come later; v1 hard-codes the one prefix.
+
+### H. Goal run lifecycle & activation gate
+
+Goal mode is **thread-scoped**: a thread holds at most one *active goal pointer*
+(`active_goal_run_id`) plus the persisted `GoalRunStateV1` (§F). The state machine:
+
+```
+(/goal) → awaiting_ratification → running → { satisfied | stuck_needs_human | cancelled }
+                       │                         │              │
+              (auto-ratify forbidden)      (resume) ───────────┘ (resume from stuck)
+```
+
+- `awaiting_ratification`: contract framed, not yet frozen (no `contract_hash`). A `forbidden`
+  contract transitions straight to `running`.
+- `running`: contract frozen; the executor is live. **This is the only state in which
+  `RubricMiddleware` is active.**
+- `satisfied` / `cancelled`: terminal. The orchestrator clears `active_goal_run_id`; the frozen
+  contract/state are retained for audit.
+- `stuck_needs_human`: terminal-pending; the pointer stays set until the user resumes (→ `running`)
+  or cancels (→ `cancelled`).
+
+**Activation gate (corrects the naive "rubric present" check):** `RubricMiddleware` must key off an
+**active `running` goal run**, not the mere presence of a `goal_contract`/`rubric` in state — else a
+`satisfied`/`stuck`/`cancelled` goal would keep re-grading every subsequent ordinary turn on the
+thread. Concretely, the orchestrator only attaches the rubric to the invocation state while
+`active_goal_run_id` resolves to a `running` (or just-resumed) `GoalRunStateV1`; otherwise the
+middleware is a no-op (`before_agent`/`after_agent` short-circuit on absent `rubric`).
 
 ## Data flow
 
 ```
 User types `/goal <description>`  (composer strips prefix → start-goal request { goal_text, mode })
-  → framer invocation → GoalContract { summary, criteria[] }
-  → ratify (user confirm/edit; mandatory if goal writes) → freeze
-  → thread state { rubric (frozen), goal_contract }
+  → framer invocation → FramerResponseV1
+       needs_clarification → surface questions; no run created  (user resubmits)
+       contract           → GoalRunState{ awaiting_ratification }
+  → ratify (auto for forbidden; user confirm/edit for allowed_by_mode)
+       → freeze { rubric, goal_contract, contract_hash }; state → running; set active_goal_run_id
   → build_orchestrator(yolo_mode=, allow_reply_options=)         (mode-derived, unchanged)
-       middleware += RubricMiddleware(
+       middleware += RubricMiddleware(                            (attached only while running)
            model, system_prompt=LEDGER_GRADER_PROMPT,
-           tools=ledger_read_tools, max_iterations=N,
+           tools=GOAL_GRADER_READ tools, max_iterations=GOAL_MAX_ITERATIONS,
            on_evaluation=record_evaluation)
-  → executor runs (plan + findings ledger; mode-gated writes)
-  → RubricMiddleware.after_agent → grader (reads ledger under read envelope)
-       satisfied        → return
-       needs_revision   → inject per-criterion feedback → loop
-       terminal-unsat   → escalate (in-band Interactive/AUTO; out-of-band YOLO)
+  → executor runs (plan + findings ledger; mode-gated writes; plan revisions on re-strategy)
+  → RubricMiddleware.after_agent → grader (reads ledger under GOAL_GRADER_READ)
+       satisfied      → state → satisfied; clear active_goal_run_id
+       needs_revision → inject per-criterion feedback → loop
+       terminal-unsat → write GoalRunState{ stuck_needs_human } + goal.escalated event
+                        (in-band card for Interactive/AUTO; structured card only for YOLO)
 ```
 
 ## Resolved decisions
@@ -400,7 +439,8 @@ explicitly out of v1.)
 - **Empty/over-broad criteria from the framer.** Ratification is the catch; an unratified
   consequential goal does not execute.
 - **Protected-set growth aborts a run.** If context cannot fit before `satisfied`, escalate as
-  `stuck` (do not loop to `max_iterations` burning tokens).
+  `stuck_needs_human` with `terminal_reason: "context_ceiling"` (do not loop to `max_iterations`
+  burning tokens).
 - **`/goal` while a goal is already active.** Reject with an inline hint (one goal per thread at a
   time); the active goal must reach a terminal verdict or be cancelled first. A bare `/goal` (no
   text) shows usage and sends nothing.
@@ -415,25 +455,30 @@ explicitly out of v1.)
 - **Named-target regression:** a run that drifts to the Default portfolio fails the
   `ledger_predicate(portfolio==Control)` criterion (the Opus-drift case).
 - **Grader envelope:** ledger-read tools succeed under the grader envelope; `DOMAIN_WRITE` denied.
-- **Escalation:** terminal-unsatisfied in YOLO produces a `stuck` session with failing criteria +
-  partial ledger; nothing is reported as done.
+- **Escalation:** terminal-unsatisfied in YOLO produces a `stuck_needs_human` `GoalRunStateV1` with
+  failing criteria + partial ledger; nothing is reported as done.
+- **Activation gate:** after a goal reaches `satisfied`/`cancelled`, a subsequent ordinary turn on
+  the same thread does **not** re-trigger the grader (rubric attached only while `running`).
 - **Compaction compose:** revision messages compact; protected artifacts survive across loop-backs.
 
 ## Migration / compatibility
 
-- No DB migration required for v1: the frozen rubric + `goal_contract` ride in thread/`AgentMessage.meta`
-  JSON alongside `mode`. A `stuck` escalation state may want a small persisted flag (Open decision #3).
-- Goal mode is opt-in per session; absent a goal contract, `RubricMiddleware` is a no-op
-  (`before_agent`/`after_agent` short-circuit when no `rubric` is present), so existing desk turns
-  are byte-for-byte unchanged.
+- No DB migration required for v1: the frozen `rubric` + `goal_contract` + `contract_hash`, the
+  `active_goal_run_id` pointer, and `GoalRunStateV1` all ride in thread/`AgentMessage.meta` JSON
+  alongside `mode` (§F is the structured shape; no new table).
+- Goal mode is opt-in per thread; the rubric is attached to invocation state only while the active
+  goal run is `running` (§H), so `RubricMiddleware` is a no-op
+  (`before_agent`/`after_agent` short-circuit on absent `rubric`) for every ordinary desk turn —
+  those remain byte-for-byte unchanged.
 
 ## Files touched (estimate)
 
 - Backend: `deep_agent/orchestrator.py` (add `RubricMiddleware` when a goal contract is present),
   a new `deep_agent/goal_mode.py` (framer, `GoalContract`/`GoalCriterion`, ledger grader prompt +
   tool set, escalation), `services/agents.py` (kickoff framing + ratification + freeze; thread
-  `goal_contract`), `deep_agent/capability_gate.py` / `envelopes.py` (grader envelope, Open #2),
-  `schemas.py` / `main.py` (start-goal request + ratify endpoint).
+  `goal_contract` + `active_goal_run_id` + `GoalRunStateV1`), `deep_agent/capability_gate.py` /
+  `envelopes.py` (the `GOAL_GRADER_READ` envelope, §D), `schemas.py` / `main.py` (start-goal request,
+  ratify endpoint, resume/cancel endpoints).
 - Frontend: net-new `/goal` command parse in `ChatComposer.tsx` (strip prefix → start-goal
   request; bare-`/goal` hint), a ratify/edit criteria card, `types.ts`,
   `useAgentChatController.ts` start-goal wiring.

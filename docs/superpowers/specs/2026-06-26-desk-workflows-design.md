@@ -124,9 +124,10 @@ await step("Generate a governance risk report for today's control session.")
 - Native Python control flow (loops, conditionals on `StepResult.text`) is available.
 - **No** `parallel`, no `import`, no filesystem/network in v1.
 
-`step` titles for framing: derived from the call index (`Step N/total`). Optionally a
-script may pass a title via `await step(prompt, title="...")`; if absent the UI shows
-`Step N/total`. (Title arg is a nice-to-have; default to index labels.)
+`step` titles for framing are **index-only in v1** (`Step N/total`); the helper
+signature is exactly `step(prompt, *, mode=None)` — no `title` argument. (A named-step
+arg is a possible future enhancement, deliberately out of v1 so generated
+scripts/tests never pass an unsupported kwarg.)
 
 ### 5.4 Restricted execution
 - The script runs **in-process** in a restricted namespace:
@@ -203,11 +204,21 @@ script may pass a title via `await step(prompt, title="...")`; if absent the UI 
 - New `/workflows` route in `lib/routing.ts` + nav entry.
 
 ### 7.2 `ChatComposer` slash picker
-- When the composer text starts with `/`, fetch `GET /api/workflows` and show a
-  filtered dropdown (slug + title + persona). Keyboard navigable.
+- **Reserved-command precedence.** A small set of composer commands handled by their
+  own logic — notably `/goal` (goal-mode spec) — is **reserved** and takes precedence
+  over the workflow-slug picker. The picker excludes reserved commands from its list
+  and does not intercept them; the composer dispatches a leading token matching a
+  reserved command to that command's handler first, and only falls through to the
+  workflow picker otherwise. (A shared reserved-command constant is the minimal
+  registry; both specs reference it.)
+- When the composer text starts with `/` and the first token is **not** a reserved
+  command, fetch `GET /api/workflows` and show a filtered dropdown (slug + title +
+  persona). Keyboard navigable.
 - Selecting opens a small **launch dialog** (run mode prefilled from `default_mode`,
   overridable `auto|yolo`) → new `onLaunchWorkflow(slug, mode)` prop.
 - A `/slug` is **never** sent as a normal chat message.
+- Workflow slugs may not collide with reserved commands; `upsert_desk_workflow`
+  rejects a reserved slug (`422`).
 
 ### 7.3 AgentDesk wiring
 - `onLaunchWorkflow` → `POST .../workflows/{slug}/run`, consume the SSE with the same
@@ -258,6 +269,7 @@ fields. The arena's `.md`/`.fixtures.json` and code are **not modified**.
 - Exact `persona → requested_character` mapping values (existing mechanism used by
   arena `run_match` / AgentDesk).
 - Safe-builtins allowlist contents.
-- Whether `step(prompt, title=...)` is included in v1 or step titles are index-only.
+- The reserved-command set + where the shared constant lives (coordinate with the
+  goal-mode spec so `/goal` and any siblings are excluded from the workflow picker).
 - Builder thread lifecycle (ephemeral per builder session vs. persisted, tagged like
   arena threads).
