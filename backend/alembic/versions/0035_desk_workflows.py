@@ -9,15 +9,35 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy import text
 
-from app.desk_workflow_seed import (
-    FLAGSHIP_DESCRIPTION,
-    FLAGSHIP_MODE,
-    FLAGSHIP_PERSONA,
-    FLAGSHIP_SCOPE,
-    FLAGSHIP_SCRIPT,
-    FLAGSHIP_SLUG,
-    FLAGSHIP_TITLE,
+# Seed values are inlined (not imported from app code) so this historical
+# revision is immutable and self-contained. The runtime boot-seed in
+# database.py shares constants via app.desk_workflow_seed.
+FLAGSHIP_SLUG = "risk-manager-control-day"
+FLAGSHIP_TITLE = "Risk Manager Control Day"
+FLAGSHIP_PERSONA = "risk_manager"
+FLAGSHIP_SCOPE = "shared"
+FLAGSHIP_MODE = "yolo"
+FLAGSHIP_DESCRIPTION = (
+    "Full desk-control loop: stale-check, refresh, hotspot, Greeks landscape, "
+    "stress test, backtest, governance report."
 )
+FLAGSHIP_SCRIPT = '''meta = {
+    "name": "risk-manager-control-day",
+    "title": "Risk Manager Control Day",
+    "persona": "risk_manager",
+    "mode": "yolo",
+    "scope": "shared",
+    "description": "Full desk-control loop: stale-check, refresh, hotspot, Greeks landscape, stress test, backtest, governance report.",
+}
+
+await step("What does the latest risk say for the control portfolio?")
+await step("Run a fresh risk calculation for the control portfolio using the Control Profile.")
+await step("Now check the updated risk result — what's the hotspot?")
+await step("Run a Greeks landscape across spot shifts for the control portfolio.")
+await step("Stress-test the control portfolio using the market-crash scenario set with the Control Profile.")
+await step("Run a historical backtest of the delta-hedge strategy from 2026-03-24 to 2026-06-24.")
+await step("Generate a governance risk report for today's control session.")
+'''
 
 revision = "0035_desk_workflows"
 down_revision = "0034_arena_match_score_breakdown"

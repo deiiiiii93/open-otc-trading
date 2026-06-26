@@ -449,6 +449,7 @@ export function useAgentChatController(): AgentChatController {
     setError(null);
     setSending(true);
     setDraft({ content: '', events: [] });
+    let workflowError: string | null = null;
 
     let streamAbortController: AbortController | null = null;
     try {
@@ -489,6 +490,7 @@ export function useAgentChatController(): AgentChatController {
             } else if (currentEventType === 'workflow.log') {
               marker = `\n_${String(parsed.message ?? '')}_\n`;
             } else if (currentEventType === 'workflow.step.error') {
+              workflowError = `Workflow step ${parsed.index} failed: ${String(parsed.message ?? '')}`;
               marker = `\n\n⚠️ Step ${parsed.index} failed: ${String(parsed.message ?? '')}\n`;
             } else if (currentEventType === 'workflow.complete') {
               marker = `\n\n✅ Workflow complete (${parsed.steps} steps)\n`;
@@ -532,6 +534,9 @@ export function useAgentChatController(): AgentChatController {
       }
       setDraft(null);
       await refresh();
+      // A step failure is otherwise lost when the refresh replaces the draft —
+      // surface it durably.
+      if (workflowError) setError(workflowError);
     } catch (e) {
       if (isAbortError(e)) {
         if (streamAbortRef.current === streamAbortController) {
