@@ -113,6 +113,22 @@ def test_contract_accepts_tools_inside_the_grader_allowlist():
     assert contract.criteria[0].check.tool == "get_latest_risk_run"
 
 
+def test_empty_ledger_predicate_expect_is_rejected():
+    """An empty `expect` would satisfy the end-state type rule yet give the grader
+    no real condition to verify — a trust-hinge bypass."""
+    data = _valid_write_contract()
+    data["criteria"][0]["check"]["expect"] = []
+    with pytest.raises(ContractValidationError):
+        parse_goal_contract(data)
+
+
+def test_nonpositive_artifact_min_count_is_rejected():
+    data = _valid_write_contract()
+    data["criteria"][1]["check"]["min_count"] = 0
+    with pytest.raises(ContractValidationError):
+        parse_goal_contract(data)
+
+
 def test_forbidden_contract_may_be_artifact_only():
     """The end-state rule is write-capable-only; a read-only/advisory goal may
     accept on artifact existence alone."""

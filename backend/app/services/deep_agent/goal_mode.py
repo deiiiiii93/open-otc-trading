@@ -32,7 +32,7 @@ class ArtifactExistsCheck(BaseModel):
     type: Literal["artifact_exists"]
     kind: Literal["plan", "finding", "report", "persisted_run"]
     selector: list[FieldPredicate] | None = None
-    min_count: int = 1
+    min_count: int = Field(default=1, ge=1)
 
 
 class LedgerPredicateCheck(BaseModel):
@@ -40,7 +40,9 @@ class LedgerPredicateCheck(BaseModel):
     type: Literal["ledger_predicate"]
     tool: str
     args: dict = Field(default_factory=dict)
-    expect: list[FieldPredicate]
+    # At least one predicate, else the criterion verifies nothing yet still
+    # satisfies the allowed_by_mode end-state rule (a trust-hinge bypass).
+    expect: list[FieldPredicate] = Field(min_length=1)
 
 
 class MeasurableCheck(BaseModel):
@@ -208,11 +210,21 @@ def new_goal_run(*, goal_run_id: str, contract_hash: str | None, mode: GoalMode)
     return GoalRunStateV1(goal_run_id=goal_run_id, contract_hash=contract_hash, mode=mode)
 
 
-def ratify_goal_run(state: GoalRunStateV1) -> GoalRunStateV1:
-    """awaiting_ratification -> running (freeze accepted)."""
+def ratify_goal_run(
+    state: GoalRunStateV1, *, contract_hash: str | None = None
+) -> GoalRunStateV1:
+    """awaiting_ratification -> running, freezing the contract identity.
+
+    The frozen ``contract_hash`` is established here (spec §H): pass it explicitly,
+    or rely on one already set on the state. A run may not reach ``running`` without
+    a freeze identity binding it to the accepted contract/rubric.
+    """
     if state.status != "awaiting_ratification":
         raise GoalStateError(f"cannot ratify a run in status '{state.status}'")
-    return state.model_copy(update={"status": "running"})
+    frozen = contract_hash if contract_hash is not None else state.contract_hash
+    if not frozen:
+        raise GoalStateError("ratification requires a frozen contract_hash")
+    return state.model_copy(update={"status": "running", "contract_hash": frozen})
 
 
 def mark_goal_satisfied(state: GoalRunStateV1) -> GoalRunStateV1:

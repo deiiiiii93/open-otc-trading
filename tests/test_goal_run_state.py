@@ -54,6 +54,23 @@ def test_pointer_held_through_running_and_stuck_cleared_on_terminal():
     assert pointer_held(cancelled) is False
 
 
+def test_ratify_freezes_the_contract_hash():
+    """spec §H: the frozen contract_hash is established at ratification, binding
+    the running run to the accepted contract/rubric."""
+    state = new_goal_run(goal_run_id="g1", contract_hash=None, mode="yolo")
+    assert state.contract_hash is None
+    running = ratify_goal_run(state, contract_hash="deadbeef")
+    assert running.status == "running"
+    assert running.contract_hash == "deadbeef"
+
+
+def test_ratify_requires_a_contract_hash():
+    """A run cannot reach `running` without a freeze identity."""
+    unfrozen = new_goal_run(goal_run_id="g1", contract_hash=None, mode="yolo")
+    with pytest.raises(GoalStateError):
+        ratify_goal_run(unfrozen)
+
+
 def test_invalid_transitions_raise():
     fresh = _fresh()
     with pytest.raises(GoalStateError):
