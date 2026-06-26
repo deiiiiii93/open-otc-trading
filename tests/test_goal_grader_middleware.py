@@ -6,7 +6,40 @@ from app.services.deep_agent.goal_mode import (
     GOAL_GRADER_SYSTEM_PROMPT,
     GOAL_MAX_ITERATIONS,
     build_goal_grader_middleware,
+    goal_grader_state,
+    parse_goal_contract,
+    render_goal_rubric,
 )
+
+
+def _valid_contract() -> dict:
+    return {
+        "schema_version": "goal_contract.v1",
+        "goal_text": "Refresh risk on Control",
+        "summary": "...",
+        "domain_write_policy": "allowed_by_mode",
+        "criteria": [
+            {
+                "id": "C1",
+                "text": "Latest risk run used the Control portfolio.",
+                "required": True,
+                "check": {
+                    "type": "ledger_predicate",
+                    "tool": "get_latest_risk_run",
+                    "args": {},
+                    "expect": [{"path": "portfolio", "op": "eq", "value": "Control"}],
+                },
+            }
+        ],
+    }
+
+
+def test_goal_grader_state_carries_the_rendered_rubric():
+    """RubricMiddleware reads `rubric` from invocation state; goal_grader_state is
+    the fragment the kickoff merges into the orchestrator invoke payload."""
+    contract = parse_goal_contract(_valid_contract())
+    state = goal_grader_state(contract)
+    assert state["rubric"] == render_goal_rubric(contract)
 
 
 def test_builder_returns_configured_rubric_middleware():

@@ -293,6 +293,17 @@ def build_goal_grader_middleware(
     )
 
 
+def goal_grader_state(contract: GoalContractV1) -> dict:
+    """The invocation-state fragment that carries the active run's rubric to the grader.
+
+    ``RubricMiddleware`` reads ``rubric`` from invocation state (not construction), so a
+    single grader instance can grade whatever run is active. The kickoff merges this into
+    the orchestrator's invoke payload while the run is ``running``; without it the grader
+    has no criteria to verify.
+    """
+    return {"rubric": render_goal_rubric(contract)}
+
+
 FRAMER_SYSTEM_PROMPT = (
     "You turn a desk user's natural-language goal into a structured acceptance "
     "contract for autonomous execution. Define DONE as checkable end-state, not "
@@ -546,9 +557,9 @@ class GoalRunStore:
         current = self.active(thread_id)
         if current is None:
             raise GoalStateError(f"no active goal run on thread '{thread_id}'")
-        self._persist(thread_id, transition(current))
-        # re-read so callers see the post-clear view (None after terminal)
-        return self.active(thread_id) or transition(current)
+        next_state = transition(current)  # compute exactly once
+        self._persist(thread_id, next_state)
+        return next_state
 
     def grader_should_attach(self, thread_id: str) -> bool:
         """Service-layer activation gate: attach the grader only for a running run."""

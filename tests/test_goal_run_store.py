@@ -46,6 +46,25 @@ def test_only_one_active_goal_per_thread():
         store.start("t1", new_goal_run(goal_run_id="g2", contract_hash=None, mode="yolo"))
 
 
+def test_update_runs_the_transition_exactly_once_on_terminal():
+    """A terminal transition must not be executed twice (no double side effects);
+    update returns the computed next state even after the pointer is cleared."""
+    store = GoalRunStore({})
+    store.start("t1", _awaiting())
+    store.update("t1", lambda s: ratify_goal_run(s, contract_hash="h"))
+
+    calls = []
+
+    def transition(s):
+        calls.append(1)
+        return mark_goal_satisfied(s)
+
+    result = store.update("t1", transition)
+    assert len(calls) == 1
+    assert result.status == "satisfied"
+    assert store.active("t1") is None  # pointer released
+
+
 def test_threads_are_isolated():
     store = GoalRunStore({})
     store.start("t1", _awaiting())
