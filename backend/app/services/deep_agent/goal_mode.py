@@ -305,6 +305,21 @@ def goal_grader_state(contract: GoalContractV1) -> dict:
     return {"rubric": render_goal_rubric(contract)}
 
 
+def goal_grader_tool_allowlist(tools) -> set[str]:
+    """The set of tool names the goal grader may call: exactly the DOMAIN_READ-grouped
+    tools (the ``GOAL_GRADER_READ`` envelope, DOMAIN_READ only). Ungated tools and any
+    write/dispatch group are excluded, so the framer can only pin criteria to tools the
+    grader is actually permitted to invoke. Feeds ``GoalRunService.grader_tool_allowlist``.
+    """
+    from .envelopes import ToolGroup
+
+    return {
+        t.name
+        for t in tools
+        if getattr(t, "__capability_group__", None) is ToolGroup.DOMAIN_READ
+    }
+
+
 FRAMER_SYSTEM_PROMPT = (
     "You turn a desk user's natural-language goal into a structured acceptance "
     "contract for autonomous execution. Define DONE as checkable end-state, not "

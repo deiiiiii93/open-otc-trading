@@ -255,6 +255,12 @@ from .services.quantark import (
 from .routers.skills import build_skills_router
 from .routers.tracing import build_tracing_router
 from .routers.arena import build_arena_router
+from .routers.goal import build_goal_router
+from .services.deep_agent.goal_mode import (
+    GoalRunService,
+    goal_grader_tool_allowlist,
+)
+from .services.deep_agent.goal_persistence import ThreadColumnBackend
 from .services import rfq as rfq_service
 from .services import fx as fx_service
 from .services.fx import parse_fx_pair_symbol
@@ -4149,6 +4155,18 @@ def create_app(
     app.include_router(build_skills_router(active_agent_service))
     app.include_router(build_tracing_router())
     app.include_router(build_arena_router(settings=active_settings))
+
+    # Goal mode (spec §G): the /goal lifecycle endpoints. The framer uses the desk
+    # model; criteria are bounded to the DOMAIN_READ tools the grader may call; run
+    # state and the frozen contract persist on the owning AgentThread row.
+    goal_service = GoalRunService(
+        model=active_agent_service.model,
+        grader_tool_allowlist=goal_grader_tool_allowlist(active_agent_service.tools),
+        run_backend=ThreadColumnBackend(database.SessionLocal, "goal_run"),
+        contract_backend=ThreadColumnBackend(database.SessionLocal, "goal_contract"),
+    )
+    active_agent_service.goal_service = goal_service
+    app.include_router(build_goal_router(goal_service))
     return app
 
 
