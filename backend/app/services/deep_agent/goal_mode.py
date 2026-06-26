@@ -293,6 +293,56 @@ def build_goal_grader_middleware(
     )
 
 
+FRAMER_SYSTEM_PROMPT = (
+    "You turn a desk user's natural-language goal into a structured acceptance "
+    "contract for autonomous execution. Define DONE as checkable end-state, not "
+    "effort: each criterion must be verifiable from the ledger (a durable artifact, "
+    "persisted run, or finding) via a read tool. If the goal would change desk state "
+    "(book, quote, hedge), set domain_write_policy='allowed_by_mode' and include at "
+    "least one ledger_predicate/measurable criterion that pins the named target and "
+    "the end-state; for read-only/advisory goals use 'forbidden'. Never substitute a "
+    "default for a named target. If the goal is too ambiguous to make checkable, "
+    "return needs_clarification with specific questions instead of guessing."
+)
+
+
+class _FramerOutput(BaseModel):
+    """Flat structured-output shape the framer model fills (normalised below)."""
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["contract", "needs_clarification"]
+    contract: dict | None = None
+    summary: str | None = None
+    questions: list[str] | None = None
+
+
+def frame_goal(
+    goal_text: str, *, model, grader_tool_allowlist: set[str] | None = None
+) -> FramerResponseV1:
+    """Frame a natural-language goal into a validated ``FramerResponseV1``.
+
+    Calls ``model`` for structured output, then routes it through
+    ``interpret_framer_output`` so the §C trust-hinge rules and the grader tool
+    allowlist apply — the LLM cannot bypass the gate. Raises ``ContractValidationError``
+    if the model returns an invalid contract.
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    structured = model.with_structured_output(_FramerOutput)
+    out = structured.invoke(
+        [SystemMessage(content=FRAMER_SYSTEM_PROMPT), HumanMessage(content=goal_text)]
+    )
+    data = out.model_dump(mode="json") if hasattr(out, "model_dump") else dict(out)
+    if data.get("type") == "contract":
+        raw = {"type": "contract", "contract": data.get("contract") or {}}
+    else:
+        raw = {
+            "type": "needs_clarification",
+            "summary": data.get("summary") or "",
+            "questions": data.get("questions") or [],
+        }
+    return interpret_framer_output(raw, grader_tool_allowlist=grader_tool_allowlist)
+
+
 def interpret_framer_output(
     raw: dict, *, grader_tool_allowlist: set[str] | None = None
 ) -> FramerResponseV1:
@@ -438,6 +488,23 @@ def cancel_goal_run(state: GoalRunStateV1) -> GoalRunStateV1:
     if state.status in {"satisfied", "cancelled"}:
         raise GoalStateError(f"cannot cancel a run in terminal status '{state.status}'")
     return state.model_copy(update={"status": "cancelled"})
+
+
+def failing_criteria_from_evaluation(evaluation: dict) -> list[FailingCriterion]:
+    """Map a grader ``RubricEvaluation`` to the failing criteria recorded on the
+    escalated run (spec §F). Only criteria the grader marked not-passed are kept,
+    each carrying the grader's ``gap`` as the reason."""
+    failing: list[FailingCriterion] = []
+    for criterion in evaluation.get("criteria") or []:
+        if not criterion.get("passed", False):
+            failing.append(
+                FailingCriterion(
+                    id=str(criterion.get("name") or "(unnamed criterion)"),
+                    status="failed",
+                    reason=str(criterion.get("gap") or ""),
+                )
+            )
+    return failing
 
 
 def rubric_active(state: GoalRunStateV1) -> bool:

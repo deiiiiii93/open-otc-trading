@@ -6,8 +6,27 @@ from app.services.deep_agent.goal_mode import (
     ClarificationResponse,
     ContractResponse,
     ContractValidationError,
+    frame_goal,
     interpret_framer_output,
 )
+
+
+class _FakeStructured:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def invoke(self, _messages):
+        return self._payload
+
+
+class _FakeModel:
+    """Stands in for a chat model with structured output."""
+
+    def __init__(self, payload):
+        self._payload = payload
+
+    def with_structured_output(self, _schema):
+        return _FakeStructured(self._payload)
 
 
 def _valid_contract() -> dict:
@@ -66,3 +85,31 @@ def test_interpret_enforces_grader_tool_allowlist():
             {"type": "contract", "contract": _valid_contract()},
             grader_tool_allowlist={"some_other_tool"},
         )
+
+
+def test_frame_goal_runs_model_contract_through_the_gate():
+    model = _FakeModel({"type": "contract", "contract": _valid_contract()})
+    resp = frame_goal(
+        "Get the latest risk run onto the Control portfolio",
+        model=model,
+        grader_tool_allowlist={"get_latest_risk_run"},
+    )
+    assert isinstance(resp, ContractResponse)
+    assert resp.contract.criteria[0].id == "C1"
+
+
+def test_frame_goal_rejects_an_invalid_contract_from_the_model():
+    bad = _valid_contract()
+    bad["criteria"][0]["check"] = {"type": "artifact_exists", "kind": "report"}
+    model = _FakeModel({"type": "contract", "contract": bad})
+    with pytest.raises(ContractValidationError):
+        frame_goal("do a thing", model=model)
+
+
+def test_frame_goal_passes_through_clarification():
+    model = _FakeModel(
+        {"type": "needs_clarification", "summary": "ambiguous", "questions": ["Which portfolio?"]}
+    )
+    resp = frame_goal("improve risk", model=model)
+    assert isinstance(resp, ClarificationResponse)
+    assert resp.questions == ["Which portfolio?"]
