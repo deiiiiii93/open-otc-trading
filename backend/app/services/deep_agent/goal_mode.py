@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 import re
+import threading
 from typing import Annotated, Literal, Union
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
@@ -337,24 +338,34 @@ def frame_goal(
     if the model returns an invalid contract.
     """
     from langchain_core.messages import HumanMessage, SystemMessage
+    from pydantic import ValidationError
 
     structured = model.with_structured_output(_FramerOutput)
-    out = structured.invoke(
-        [SystemMessage(content=FRAMER_SYSTEM_PROMPT), HumanMessage(content=goal_text)]
-    )
-    data = out.model_dump(mode="json") if hasattr(out, "model_dump") else dict(out)
-    kind = data.get("type")
-    if kind == "contract":
-        raw: dict = {"type": "contract", "contract": data.get("contract") or {}}
-    elif kind == "needs_clarification":
-        raw = {
-            "type": "needs_clarification",
-            "summary": data.get("summary") or "",
-            "questions": data.get("questions") or [],
-        }
-    else:
-        # don't coerce an unrecognised type into a clarification — reject it.
-        raise ContractValidationError(f"unknown framer response type: {kind!r}")
+    # A malformed structured output (pydantic ValidationError, raised during parsing in
+    # .invoke or during normalisation) is invalid model output, not a transport failure —
+    # surface it as the ContractValidationError callers expect. Transport/API errors are
+    # not ValidationError, so they propagate.
+    try:
+        out = structured.invoke(
+            [SystemMessage(content=FRAMER_SYSTEM_PROMPT), HumanMessage(content=goal_text)]
+        )
+        data = out.model_dump(mode="json") if hasattr(out, "model_dump") else dict(out)
+        kind = data.get("type")
+        if kind == "contract":
+            raw: dict = {"type": "contract", "contract": data.get("contract") or {}}
+        elif kind == "needs_clarification":
+            raw = {
+                "type": "needs_clarification",
+                "summary": data.get("summary") or "",
+                "questions": data.get("questions") or [],
+            }
+        else:
+            # don't coerce an unrecognised type into a clarification — reject it.
+            raise ContractValidationError(f"unknown framer response type: {kind!r}")
+    except ValidationError as exc:
+        raise ContractValidationError(
+            f"framer produced invalid structured output: {exc}"
+        ) from exc
     return interpret_framer_output(raw, grader_tool_allowlist=grader_tool_allowlist)
 
 
@@ -544,26 +555,32 @@ class GoalRunStore:
 
     def __init__(self, backend: dict):
         self._backend = backend
+        # Guards the check-then-persist critical sections so concurrent requests for
+        # the same thread can't both pass the active() check and clobber each other.
+        # (Cross-process atomicity is the DB transaction's job at the meta-backed layer.)
+        self._lock = threading.Lock()
 
     def active(self, thread_id: str) -> GoalRunStateV1 | None:
         raw = self._backend.get(thread_id)
         return GoalRunStateV1.model_validate(raw) if raw is not None else None
 
     def start(self, thread_id: str, state: GoalRunStateV1) -> None:
-        if self.active(thread_id) is not None:
-            raise GoalStateError(
-                f"thread '{thread_id}' already has an active goal run; "
-                "satisfy, cancel, or resume it before starting another"
-            )
-        self._persist(thread_id, state)
+        with self._lock:
+            if self.active(thread_id) is not None:
+                raise GoalStateError(
+                    f"thread '{thread_id}' already has an active goal run; "
+                    "satisfy, cancel, or resume it before starting another"
+                )
+            self._persist(thread_id, state)
 
     def update(self, thread_id: str, transition) -> GoalRunStateV1:
-        current = self.active(thread_id)
-        if current is None:
-            raise GoalStateError(f"no active goal run on thread '{thread_id}'")
-        next_state = transition(current)  # compute exactly once
-        self._persist(thread_id, next_state)
-        return next_state
+        with self._lock:
+            current = self.active(thread_id)
+            if current is None:
+                raise GoalStateError(f"no active goal run on thread '{thread_id}'")
+            next_state = transition(current)  # compute exactly once
+            self._persist(thread_id, next_state)
+            return next_state
 
     def grader_should_attach(self, thread_id: str) -> bool:
         """Service-layer activation gate: attach the grader only for a running run."""

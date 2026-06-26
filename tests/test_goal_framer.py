@@ -113,6 +113,42 @@ def test_frame_goal_rejects_an_unknown_response_type():
         frame_goal("do a thing", model=model)
 
 
+def test_frame_goal_wraps_structured_output_parse_errors():
+    """A malformed structured output (pydantic ValidationError) must surface as
+    ContractValidationError, the error callers handle to reject without a run."""
+    from pydantic import ValidationError
+
+    from app.services.deep_agent.goal_mode import GoalContractV1
+
+    class _BadStructured:
+        def invoke(self, _messages):
+            GoalContractV1.model_validate({})  # raises pydantic ValidationError
+
+    class _BadModel:
+        def with_structured_output(self, _schema):
+            return _BadStructured()
+
+    with pytest.raises(ContractValidationError):
+        frame_goal("x", model=_BadModel())
+    # sanity: the underlying error really is a ValidationError
+    assert issubclass(ValidationError, Exception)
+
+
+def test_frame_goal_does_not_swallow_transport_errors():
+    """An API/transport failure must propagate, not be masked as a contract error."""
+
+    class _Structured:
+        def invoke(self, _messages):
+            raise RuntimeError("api unreachable")
+
+    class _Model:
+        def with_structured_output(self, _schema):
+            return _Structured()
+
+    with pytest.raises(RuntimeError):
+        frame_goal("x", model=_Model())
+
+
 def test_frame_goal_passes_through_clarification():
     model = _FakeModel(
         {"type": "needs_clarification", "summary": "ambiguous", "questions": ["Which portfolio?"]}
