@@ -78,6 +78,7 @@ export type AgentChatController = {
     contextUsage?: AgentContextUsage | null,
     envelope?: Envelope,
   ) => Promise<void>;
+  launchWorkflow: (slug: string, mode: 'auto' | 'yolo') => Promise<void>;
   stopStreaming: () => void;
   confirmAction: (messageId: number, actionId: string) => Promise<void>;
   dismissAction: (messageId: number, actionId: string) => Promise<void>;
@@ -433,6 +434,123 @@ export function useAgentChatController(): AgentChatController {
     }
   }, [activeId, refresh, selectedModel, executionMode]);
 
+  const launchWorkflow = useCallback(async (slug: string, mode: 'auto' | 'yolo') => {
+    let threadId = activeId;
+    if (threadId == null) {
+      const created = await api<Thread>('/api/chat/threads', {
+        method: 'POST',
+        body: JSON.stringify({ title: 'New research thread', character: 'trader' }),
+      });
+      threadId = created.id;
+      setThreads((prev) => [created, ...prev]);
+      setActiveId(created.id);
+    }
+
+    setError(null);
+    setSending(true);
+    setDraft({ content: '', events: [] });
+
+    let streamAbortController: AbortController | null = null;
+    try {
+      streamAbortRef.current?.abort();
+      streamAbortController = new AbortController();
+      streamAbortRef.current = streamAbortController;
+      const response = await fetch(`/api/chat/threads/${threadId}/workflows/${slug}/run`, {
+        method: 'POST',
+        signal: streamAbortController.signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      if (response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let eventType = 'message';
+        let dataLines: string[] = [];
+
+        const dispatch = () => {
+          const dataPayload = dataLines.join('\n');
+          const currentEventType = eventType;
+          dataLines = [];
+          eventType = 'message';
+          if (!dataPayload) return;
+          if (currentEventType.startsWith('workflow.')) {
+            // Render workflow framing as inline markers in the live draft.
+            let parsed: Record<string, unknown> = {};
+            try {
+              parsed = JSON.parse(dataPayload) as Record<string, unknown>;
+            } catch {
+              return;
+            }
+            let marker = '';
+            if (currentEventType === 'workflow.step.start') {
+              marker = `\n\n▶ Step ${parsed.index}\n`;
+            } else if (currentEventType === 'workflow.log') {
+              marker = `\n_${String(parsed.message ?? '')}_\n`;
+            } else if (currentEventType === 'workflow.step.error') {
+              marker = `\n\n⚠️ Step ${parsed.index} failed: ${String(parsed.message ?? '')}\n`;
+            } else if (currentEventType === 'workflow.complete') {
+              marker = `\n\n✅ Workflow complete (${parsed.steps} steps)\n`;
+            }
+            if (marker) {
+              setDraft((prev) => ({
+                ...(prev ?? { events: [] }),
+                content: (prev?.content ?? '') + marker,
+                events: prev?.events ?? [],
+              }));
+            }
+            return;
+          }
+          handleSseEvent(currentEventType, dataPayload, setDraft);
+        };
+
+        const processLine = (line: string) => {
+          if (line === '') {
+            dispatch();
+            return;
+          }
+          if (line.startsWith('event:')) {
+            eventType = line.slice(6).trim() || 'message';
+            return;
+          }
+          if (line.startsWith('data:')) {
+            dataLines.push(line.slice(5).trim());
+          }
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) processLine(line.trimEnd());
+        }
+        if (buffer) processLine(buffer.trimEnd());
+        dispatch();
+      }
+      setDraft(null);
+      await refresh();
+    } catch (e) {
+      if (isAbortError(e)) {
+        if (streamAbortRef.current === streamAbortController) {
+          setDraft(null);
+          void refresh().catch((refreshError) => {
+            setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
+          });
+        }
+      } else if (streamAbortRef.current === streamAbortController) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    } finally {
+      if (streamAbortRef.current === streamAbortController) {
+        streamAbortRef.current = null;
+        setSending(false);
+      }
+    }
+  }, [activeId, refresh]);
+
   const stopStreaming = useCallback(() => {
     streamAbortRef.current?.abort();
     setDraft(null);
@@ -548,6 +666,7 @@ export function useAgentChatController(): AgentChatController {
     deleteThread,
     forkThread,
     sendMessage,
+    launchWorkflow,
     confirmCostPreview,
     stopStreaming,
     confirmAction,
@@ -612,6 +731,37 @@ function selectionExists(
       model.provider === selected.provider && model.model === selected.model
     ))
   ));
+}
+
+export type WorkflowSseEvent = { type: string; data: Record<string, unknown> };
+
+/** Parse a complete SSE text blob into ordered events (pure; for tests/non-streaming). */
+export function parseWorkflowSse(text: string): WorkflowSseEvent[] {
+  const events: WorkflowSseEvent[] = [];
+  let eventType = 'message';
+  let dataLines: string[] = [];
+  const flush = () => {
+    if (dataLines.length) {
+      try {
+        events.push({ type: eventType, data: JSON.parse(dataLines.join('\n')) });
+      } catch {
+        /* skip malformed */
+      }
+    }
+    eventType = 'message';
+    dataLines = [];
+  };
+  for (const line of text.split('\n')) {
+    if (line === '') {
+      flush();
+    } else if (line.startsWith('event:')) {
+      eventType = line.slice(6).trim();
+    } else if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).trim());
+    }
+  }
+  flush();
+  return events;
 }
 
 function handleSseEvent(

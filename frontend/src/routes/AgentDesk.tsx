@@ -7,6 +7,7 @@ import {
   type AgentExecutionMode,
   type AgentModelSelection,
   type ChatMessage as ChatMessageType,
+  type DeskWorkflowSummary,
   type TaskRun,
   type Thread,
 } from '../types';
@@ -47,6 +48,8 @@ type Props = {
   onConfirmAction: (messageId: number, actionId: string) => void;
   onDismissAction: (messageId: number, actionId: string) => void;
   onConfirmCostPreview?: () => void;
+  workflows?: DeskWorkflowSummary[];
+  onLaunchWorkflow?: (slug: string, mode: 'auto' | 'yolo') => void;
 };
 
 function collectAssets(thread: Thread | null): AgentAsset[] {
@@ -92,6 +95,8 @@ export function AgentDesk({
   onConfirmAction,
   onDismissAction,
   onConfirmCostPreview,
+  workflows,
+  onLaunchWorkflow,
 }: Props) {
   const activeThread = useMemo(
     () => threads.find((t) => t.id === activeThreadId) ?? null,
@@ -174,6 +179,8 @@ export function AgentDesk({
       onChangeMode={onChangeMode}
       onStopStreaming={onStopStreaming}
       onRefreshModels={onRefreshModels}
+      workflows={workflows}
+      onLaunchWorkflow={onLaunchWorkflow}
     />
   );
 
