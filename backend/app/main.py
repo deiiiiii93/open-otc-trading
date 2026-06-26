@@ -747,7 +747,7 @@ def create_app(
     @app.post("/api/chat/threads", response_model=AgentThreadOut)
     def create_thread(payload: AgentThreadCreate, session: Session = Depends(get_db)):
         thread = active_agent_service.create_thread(
-            session, payload.title, payload.character
+            session, payload.title, payload.character, source=payload.source
         )
         session.commit()
         return thread

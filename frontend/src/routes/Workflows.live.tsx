@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Workflows } from './Workflows';
 import { WorkflowBuilder } from './WorkflowBuilder';
-import { AgentDeskLive } from './AgentDesk.live';
+import { WorkflowBuilderChat } from './WorkflowBuilderChat';
 import { Button } from '../components/Button';
 import { useAgentChatController } from '../hooks/useAgentChatController';
 import {
@@ -145,7 +145,14 @@ function WorkflowBuilderLive({ onDone }: { onDone: () => Promise<void> }) {
     if (typeof script === 'string') setBuilderDraft(script);
   }, []);
 
-  const controller = useAgentChatController({ onToolStart });
+  // Builder conversations are tagged 'workflow_builder' so they stay out of the
+  // Agent Desk thread list and the controller resumes only its own threads.
+  const controller = useAgentChatController({ onToolStart, threadSource: 'workflow_builder' });
+
+  const onNewBuild = () => {
+    setBuilderDraft('');
+    void controller.createThread();
+  };
 
   const finishBuilding = async () => {
     if (!builderDraft) return;
@@ -165,7 +172,7 @@ function WorkflowBuilderLive({ onDone }: { onDone: () => Promise<void> }) {
 
   return (
     <WorkflowBuilder
-      chat={<AgentDeskLive controller={controller} />}
+      chat={<WorkflowBuilderChat controller={controller} onNewBuild={onNewBuild} />}
       draftScript={builderDraft}
       onSave={finishBuilding}
       saving={saving}
