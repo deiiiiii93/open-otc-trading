@@ -180,6 +180,16 @@ def _ensure_incremental_schema(active_engine: Engine) -> None:
                 connection.execute(
                     text("ALTER TABLE agent_threads ADD COLUMN arena_run_id INTEGER")
                 )
+            # Migration 0036 (goal mode): goal_run / goal_contract JSON columns the
+            # GoalRunService persists per thread; mirror here for the same reason.
+            if "goal_run" not in thread_cols:
+                connection.execute(
+                    text("ALTER TABLE agent_threads ADD COLUMN goal_run JSON")
+                )
+            if "goal_contract" not in thread_cols:
+                connection.execute(
+                    text("ALTER TABLE agent_threads ADD COLUMN goal_contract JSON")
+                )
             connection.execute(
                 text(
                     "CREATE INDEX IF NOT EXISTS ix_agent_threads_arena_run_id "

@@ -138,6 +138,11 @@ class AgentThread(Base):
     active_workflow_id: Mapped[int | None] = mapped_column(
         ForeignKey("workflows.id", ondelete="SET NULL"), index=True, nullable=True
     )
+    # Goal-mode (spec §H): at most one active goal run per thread plus its frozen
+    # contract. Null when no goal run is active; cleared on a pointer-releasing
+    # terminal state. Backed by ThreadColumnBackend -> GoalRunStore/GoalRunService.
+    goal_run: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    goal_contract: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, onupdate=utcnow
