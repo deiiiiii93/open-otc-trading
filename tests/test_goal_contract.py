@@ -86,6 +86,43 @@ def test_render_goal_rubric_surfaces_the_verifying_tool_for_predicates():
     assert "get_latest_risk_run" in rubric
 
 
+def test_render_distinguishes_contracts_by_tool_args():
+    """The rubric is all the grader sees; differing tool args must render
+    differently or the grader queries the wrong ledger state."""
+    a = _valid_write_contract()
+    a["criteria"][0]["check"]["args"] = {"as_of": "2026-01-01"}
+    b = _valid_write_contract()
+    b["criteria"][0]["check"]["args"] = {"as_of": "2026-06-26"}
+    rendered_a = render_goal_rubric(parse_goal_contract(a))
+    assert rendered_a != render_goal_rubric(parse_goal_contract(b))
+    assert "2026-01-01" in rendered_a
+
+
+def test_predicate_comparison_op_requires_an_operand():
+    data = _valid_write_contract()
+    data["criteria"][0]["check"]["expect"] = [{"path": "risk", "op": "lt"}]
+    with pytest.raises(ContractValidationError):
+        parse_goal_contract(data)
+
+
+def test_predicate_in_operator_requires_a_list_operand():
+    data = _valid_write_contract()
+    data["criteria"][0]["check"]["expect"] = [
+        {"path": "portfolio", "op": "in", "value": "Control"}
+    ]
+    with pytest.raises(ContractValidationError):
+        parse_goal_contract(data)
+
+
+def test_predicate_unary_op_rejects_an_operand():
+    data = _valid_write_contract()
+    data["criteria"][0]["check"]["expect"] = [
+        {"path": "report_id", "op": "exists", "value": "x"}
+    ]
+    with pytest.raises(ContractValidationError):
+        parse_goal_contract(data)
+
+
 def test_goal_contract_hash_is_stable_and_content_sensitive():
     h1 = goal_contract_hash(parse_goal_contract(_valid_write_contract()))
     h2 = goal_contract_hash(parse_goal_contract(_valid_write_contract()))

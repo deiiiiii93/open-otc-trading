@@ -11,11 +11,15 @@ import hashlib
 import json
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ContractValidationError(ValueError):
     """Raised when a framer-produced contract violates a §C validation rule."""
+
+
+_UNARY_OPS = {"exists", "not_exists"}
+_LIST_OPS = {"in"}
 
 
 class FieldPredicate(BaseModel):
@@ -25,6 +29,21 @@ class FieldPredicate(BaseModel):
         "exists", "not_exists", "eq", "neq", "lt", "lte", "gt", "gte", "in", "contains"
     ]
     value: str | float | bool | list[str] | list[float] | None = None
+
+    @model_validator(mode="after")
+    def _operand_matches_operator(self) -> "FieldPredicate":
+        """A predicate that can't be verified must not validate (spec §C):
+        unary ops take no operand, ``in`` needs a list, others need a scalar."""
+        if self.op in _UNARY_OPS:
+            if self.value is not None:
+                raise ValueError(f"operator '{self.op}' takes no operand")
+        elif self.op in _LIST_OPS:
+            if not isinstance(self.value, list):
+                raise ValueError(f"operator '{self.op}' requires a list operand")
+        else:
+            if self.value is None or isinstance(self.value, list):
+                raise ValueError(f"operator '{self.op}' requires a scalar operand")
+        return self
 
 
 class ArtifactExistsCheck(BaseModel):
@@ -123,16 +142,40 @@ def parse_goal_contract(
     return contract
 
 
+def _render_predicates(preds: list[FieldPredicate]) -> str:
+    return ", ".join(f"{p.path} {p.op} {p.value!r}" for p in preds)
+
+
+def _render_args(args: dict) -> str:
+    """Deterministic, canonical rendering of frozen tool args (empty → '')."""
+    return f" args={json.dumps(args, sort_keys=True)}" if args else ""
+
+
 def _render_check(check: Check) -> str:
-    """One-line, grader-readable description of what verifies a criterion."""
+    """One-line, grader-readable description of what verifies a criterion.
+
+    The rubric string is the only thing the grader sees, so every parameter that
+    changes *what* is verified (selector, tool args, units) must appear here.
+    """
     if isinstance(check, ArtifactExistsCheck):
-        return f"verify a `{check.kind}` artifact exists (min_count={check.min_count})"
+        sel = f" where {_render_predicates(check.selector)}" if check.selector else ""
+        return f"verify >= {check.min_count} `{check.kind}` artifact(s) exist{sel}"
     if isinstance(check, LedgerPredicateCheck):
-        preds = ", ".join(f"{p.path} {p.op} {p.value!r}" for p in check.expect)
-        return f"verify via tool `{check.tool}`: {preds}"
+        return (
+            f"verify via tool `{check.tool}`{_render_args(check.args)}: "
+            f"{_render_predicates(check.expect)}"
+        )
     # MeasurableCheck
-    metric = f"{check.transform}({check.metric_path})" if check.transform != "identity" else check.metric_path
-    return f"verify via tool `{check.tool}`: {metric} {check.op} {check.threshold}"
+    metric = (
+        f"{check.transform}({check.metric_path})"
+        if check.transform != "identity"
+        else check.metric_path
+    )
+    units = f" {check.units}" if check.units else ""
+    return (
+        f"verify via tool `{check.tool}`{_render_args(check.args)}: "
+        f"{metric} {check.op} {check.threshold}{units}"
+    )
 
 
 def render_goal_rubric(contract: GoalContractV1) -> str:
