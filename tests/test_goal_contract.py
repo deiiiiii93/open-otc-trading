@@ -96,6 +96,23 @@ def test_goal_contract_hash_is_stable_and_content_sensitive():
     assert goal_contract_hash(parse_goal_contract(drifted)) != h1
 
 
+def test_contract_rejects_tools_outside_the_grader_allowlist():
+    """spec §C/§D: a criterion may only reference a DOMAIN_READ tool the grader
+    is allowed to call; anything else fails before freeze."""
+    with pytest.raises(ContractValidationError, match="get_latest_risk_run"):
+        parse_goal_contract(
+            _valid_write_contract(), grader_tool_allowlist={"read_findings", "read_artifact"}
+        )
+
+
+def test_contract_accepts_tools_inside_the_grader_allowlist():
+    contract = parse_goal_contract(
+        _valid_write_contract(),
+        grader_tool_allowlist={"get_latest_risk_run", "read_artifact"},
+    )
+    assert contract.criteria[0].check.tool == "get_latest_risk_run"
+
+
 def test_forbidden_contract_may_be_artifact_only():
     """The end-state rule is write-capable-only; a read-only/advisory goal may
     accept on artifact existence alone."""

@@ -14,6 +14,9 @@ class Envelope(str, Enum):
     PET_DIAGNOSTIC = "pet_diagnostic"
     DESK_WORKFLOW = "desk_workflow"
     DESK_ASYNC = "desk_async"
+    # Goal-mode grader: observes the ledger to render an acceptance verdict.
+    # Deliberately narrower than PET_DIAGNOSTIC — DOMAIN_READ only, fail closed.
+    GOAL_GRADER_READ = "goal_grader_read"
 
 
 class EscalationReason(str, Enum):
@@ -71,6 +74,10 @@ _ALLOWED: dict[Envelope, frozenset[ToolGroup]] = {
         ToolGroup.DOMAIN_READ,
         ToolGroup.DOMAIN_WRITE,
         ToolGroup.ASYNC_DISPATCH,
+    }),
+    # Grader reads ledger/domain state to verify criteria; nothing else.
+    Envelope.GOAL_GRADER_READ: frozenset({
+        ToolGroup.DOMAIN_READ,
     }),
 }
 

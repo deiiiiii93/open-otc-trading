@@ -80,8 +80,21 @@ class GoalContractV1(BaseModel):
     criteria: list[GoalCriterionV1] = Field(min_length=1, max_length=10)
 
 
-def parse_goal_contract(data: dict) -> GoalContractV1:
+def _criterion_tool(check: Check) -> str | None:
+    """The grader tool a predicate/measurable criterion will call, if any."""
+    if isinstance(check, (LedgerPredicateCheck, MeasurableCheck)):
+        return check.tool
+    return None
+
+
+def parse_goal_contract(
+    data: dict, *, grader_tool_allowlist: set[str] | None = None
+) -> GoalContractV1:
     """Validate a framer-produced contract dict and return the model.
+
+    ``grader_tool_allowlist``, when provided, is the set of tool names the goal-mode
+    grader is permitted to call (see ``GOAL_GRADER_READ``); any criterion referencing a
+    tool outside it is rejected before freeze.
 
     Raises ``ContractValidationError`` on any structural or §C rule violation.
     """
@@ -96,6 +109,15 @@ def parse_goal_contract(data: dict) -> GoalContractV1:
                 "allowed_by_mode contract must contain at least one end-state predicate "
                 "(ledger_predicate or measurable), not artifact_exists alone"
             )
+
+    if grader_tool_allowlist is not None:
+        for criterion in contract.criteria:
+            tool = _criterion_tool(criterion.check)
+            if tool is not None and tool not in grader_tool_allowlist:
+                raise ContractValidationError(
+                    f"criterion {criterion.id} references tool '{tool}', which is not in "
+                    f"the grader allowlist (GOAL_GRADER_READ, DOMAIN_READ only)"
+                )
     return contract
 
 
