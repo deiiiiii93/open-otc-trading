@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from typing import Annotated, Literal, Union
 
@@ -63,10 +64,13 @@ class FieldPredicate(BaseModel):
         else:
             if self.value is None or isinstance(self.value, list):
                 raise ValueError(f"operator '{self.op}' requires a scalar operand")
-        # string operands are rendered into the rubric too — keep them safe.
         for item in self.value if isinstance(self.value, list) else [self.value]:
+            # string operands are rendered into the rubric too — keep them safe.
             if isinstance(item, str):
                 _no_control_chars(item)
+            # a non-finite operand (NaN/Inf) makes a comparison trivially (un)true.
+            elif isinstance(item, float) and not math.isfinite(item):
+                raise ValueError("numeric operand must be finite")
         return self
 
 
@@ -96,7 +100,7 @@ class MeasurableCheck(BaseModel):
     metric_path: SafeStr
     transform: Literal["identity", "abs"] = "identity"
     op: Literal["<", "<=", ">", ">=", "==", "!="]
-    threshold: float
+    threshold: float = Field(allow_inf_nan=False)
     units: SafeStr | None = None
 
 

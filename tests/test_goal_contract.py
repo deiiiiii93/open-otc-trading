@@ -200,6 +200,34 @@ def test_nonpositive_artifact_min_count_is_rejected():
         parse_goal_contract(data)
 
 
+def test_contract_rejects_non_finite_measurable_threshold():
+    """`metric < inf` is trivially true — a trust-hinge bypass."""
+    data = _valid_write_contract()
+    data["criteria"][1] = {
+        "id": "C2",
+        "text": "Net vega within bound",
+        "required": True,
+        "check": {
+            "type": "measurable",
+            "tool": "get_latest_risk_run",
+            "metric_path": "net_vega",
+            "op": "<",
+            "threshold": float("inf"),
+        },
+    }
+    with pytest.raises(ContractValidationError):
+        parse_goal_contract(data)
+
+
+def test_contract_rejects_non_finite_predicate_value():
+    data = _valid_write_contract()
+    data["criteria"][0]["check"]["expect"] = [
+        {"path": "risk", "op": "lt", "value": float("nan")}
+    ]
+    with pytest.raises(ContractValidationError):
+        parse_goal_contract(data)
+
+
 def test_forbidden_contract_may_be_artifact_only():
     """The end-state rule is write-capable-only; a read-only/advisory goal may
     accept on artifact existence alone."""
