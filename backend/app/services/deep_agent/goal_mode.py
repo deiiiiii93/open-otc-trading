@@ -320,6 +320,36 @@ def goal_grader_tool_allowlist(tools) -> set[str]:
     }
 
 
+def _domain_read_tools(tools) -> list:
+    from .envelopes import ToolGroup
+
+    return [
+        t for t in tools
+        if getattr(t, "__capability_group__", None) is ToolGroup.DOMAIN_READ
+    ]
+
+
+def goal_grader_for_turn(goal_service, *, model, tools, thread_id: str):
+    """Assemble the grader for one desk turn (spec §G). Returns ``(grader, fragment)``:
+    a ``RubricMiddleware`` plus the ``{rubric: ...}`` invocation-state fragment when the
+    thread has a *running* goal run, else ``(None, None)``. The caller appends the grader
+    to the orchestrator (``build_orchestrator(goal_grader=...)``) and merges ``fragment``
+    into the invoke payload. The grader judges the ledger via the DOMAIN_READ tools and
+    records its terminal verdict back through ``record_evaluation`` (the activation gate
+    lives in ``grader_invocation`` — no fragment, no grader)."""
+    if goal_service is None:
+        return None, None
+    fragment = goal_service.grader_invocation(thread_id)
+    if fragment is None:
+        return None, None
+    grader = build_goal_grader_middleware(
+        model=model,
+        tools=_domain_read_tools(tools),
+        on_evaluation=lambda evaluation: goal_service.record_evaluation(thread_id, evaluation),
+    )
+    return grader, fragment
+
+
 FRAMER_SYSTEM_PROMPT = (
     "You turn a desk user's natural-language goal into a structured acceptance "
     "contract for autonomous execution. Define DONE as checkable end-state, not "

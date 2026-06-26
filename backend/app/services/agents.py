@@ -57,7 +57,7 @@ from .deep_agent.escalation import resolve_escalation
 from .deep_agent.executor import TaskExecutionResult, TaskExecutor
 from .deep_agent.ledger import LedgerWriter
 from .deep_agent.orchestrator import build_orchestrator
-from .deep_agent.goal_mode import GoalRunService
+from .deep_agent.goal_mode import GoalRunService, goal_grader_for_turn
 from .deep_agent.run_control import new_run_control, request_drain
 from .deep_agent.runtime_config import graph_run_config
 from .deep_agent.scheduler import schedule_tasks_from_plan
@@ -2382,8 +2382,19 @@ class AgentService:
             collector.envelope_final = resolved_envelope.value
             prepared: _WorkflowStreamTurn | None = None
             persisted = False
+            # Goal mode (spec §G): if this thread has a running goal run, attach its
+            # ledger grader to the orchestrator and carry the rubric in the invoke state.
+            goal_grader, goal_state_fragment = goal_grader_for_turn(
+                self.goal_service,
+                model=self.model,
+                tools=self.tools,
+                thread_id=str(thread_id),
+            )
             async with self._streaming_agent(
-                resolved, yolo_mode=yolo_mode, allow_reply_options=allow_reply_options
+                resolved,
+                yolo_mode=yolo_mode,
+                allow_reply_options=allow_reply_options,
+                goal_grader=goal_grader,
             ) as agent:
                 try:
                     if agent is None:
@@ -2417,6 +2428,7 @@ class AgentService:
                             prepared.config,
                             collector,
                             stream_version=self._stream_version_for_selection(resolved),
+                            extra_state=goal_state_fragment,
                         ):
                             yield sse_line
                         # Runtime signals (capability denial, cost preview) are
@@ -2683,9 +2695,19 @@ class AgentService:
         *,
         yolo_mode: bool = False,
         allow_reply_options: bool = True,
+        goal_grader: Any = None,
     ):
-        """Yield an agent whose checkpointer supports async LangGraph methods."""
-        if not allow_reply_options or yolo_mode or not self._is_default_model_selection(model_selection):
+        """Yield an agent whose checkpointer supports async LangGraph methods.
+
+        A non-None ``goal_grader`` (a RubricMiddleware for an active goal run) forces a
+        fresh orchestrator — the prebuilt ``deep_agent`` lacks the grader — and is
+        appended to its middleware stack (spec §G)."""
+        if (
+            goal_grader is not None
+            or not allow_reply_options
+            or yolo_mode
+            or not self._is_default_model_selection(model_selection)
+        ):
             model = build_agent_model(self.registry, model_selection)
             if model is None:
                 yield None
@@ -2699,6 +2721,7 @@ class AgentService:
                     enable_code_interpreter=self.settings.agent_code_interpreter_enabled,
                     yolo_mode=yolo_mode,
                     allow_reply_options=allow_reply_options,
+                    goal_grader=goal_grader,
                 )
             return
 
@@ -3105,12 +3128,18 @@ class AgentService:
         collector: StreamCollector,
         *,
         stream_version: str | None = None,
+        extra_state: dict | None = None,
     ):
-        """Race astream_events against a 15s timeout to emit heartbeat events."""
+        """Race astream_events against a 15s timeout to emit heartbeat events.
+
+        ``extra_state`` is merged into the invocation state — goal mode passes the
+        ``{"rubric": ...}`` fragment here so the attached grader has its criteria."""
         queue: asyncio.Queue = asyncio.Queue()
         DONE = object()
         control = new_run_control()
-        payload = {"messages": [HumanMessage(content=prompt)]}
+        payload: dict[str, Any] = {"messages": [HumanMessage(content=prompt)]}
+        if extra_state:
+            payload.update(extra_state)
         version = stream_version or self.settings.agent_stream_version
 
         async def producer():
