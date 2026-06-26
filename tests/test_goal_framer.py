@@ -106,6 +106,13 @@ def test_frame_goal_rejects_an_invalid_contract_from_the_model():
         frame_goal("do a thing", model=model)
 
 
+def test_frame_goal_rejects_an_unknown_response_type():
+    """A malformed framer type must be rejected, not coerced to clarification."""
+    model = _FakeModel({"type": "typo", "questions": ["x"]})
+    with pytest.raises(ContractValidationError):
+        frame_goal("do a thing", model=model)
+
+
 def test_frame_goal_passes_through_clarification():
     model = _FakeModel(
         {"type": "needs_clarification", "summary": "ambiguous", "questions": ["Which portfolio?"]}

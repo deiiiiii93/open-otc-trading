@@ -343,14 +343,18 @@ def frame_goal(
         [SystemMessage(content=FRAMER_SYSTEM_PROMPT), HumanMessage(content=goal_text)]
     )
     data = out.model_dump(mode="json") if hasattr(out, "model_dump") else dict(out)
-    if data.get("type") == "contract":
-        raw = {"type": "contract", "contract": data.get("contract") or {}}
-    else:
+    kind = data.get("type")
+    if kind == "contract":
+        raw: dict = {"type": "contract", "contract": data.get("contract") or {}}
+    elif kind == "needs_clarification":
         raw = {
             "type": "needs_clarification",
             "summary": data.get("summary") or "",
             "questions": data.get("questions") or [],
         }
+    else:
+        # don't coerce an unrecognised type into a clarification — reject it.
+        raise ContractValidationError(f"unknown framer response type: {kind!r}")
     return interpret_framer_output(raw, grader_tool_allowlist=grader_tool_allowlist)
 
 
