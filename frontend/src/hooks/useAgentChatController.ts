@@ -85,7 +85,19 @@ export type AgentChatController = {
   refreshModels: () => Promise<void>;
 };
 
-export function useAgentChatController(): AgentChatController {
+type AgentChatControllerOptions = {
+  /**
+   * Fired when a tool begins (SSE `tool_start`), with the tool name and the
+   * raw args the model passed. Lets an embedding surface (e.g. the workflow
+   * builder) capture a drafted script straight from the stream instead of
+   * polling the DB for the persisted row.
+   */
+  onToolStart?: (name: string, args: unknown) => void;
+};
+
+export function useAgentChatController(
+  options?: AgentChatControllerOptions,
+): AgentChatController {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -105,6 +117,10 @@ export function useAgentChatController(): AgentChatController {
   const [taskRunsById, setTaskRunsById] = useState<Record<number, TaskRun>>({});
   const [asyncAgentPollNonce, setAsyncAgentPollNonce] = useState(0);
   const streamAbortRef = useRef<AbortController | null>(null);
+  // Keep the latest onToolStart in a ref so streaming closures never capture a
+  // stale callback between renders.
+  const onToolStartRef = useRef(options?.onToolStart);
+  onToolStartRef.current = options?.onToolStart;
 
   const fetchCatalog = useCallback(async () => {
     const cfg = await api<AgentModelConfig>('/api/agent/models');
@@ -383,7 +399,7 @@ export function useAgentChatController(): AgentChatController {
           const currentEventType = eventType;
           eventType = 'message';
           if (!dataPayload) return;
-          handleSseEvent(currentEventType, dataPayload, setDraft);
+          handleSseEvent(currentEventType, dataPayload, setDraft, onToolStartRef.current);
         };
 
         const processLine = (line: string) => {
@@ -504,7 +520,7 @@ export function useAgentChatController(): AgentChatController {
             }
             return;
           }
-          handleSseEvent(currentEventType, dataPayload, setDraft);
+          handleSseEvent(currentEventType, dataPayload, setDraft, onToolStartRef.current);
         };
 
         const processLine = (line: string) => {
@@ -773,6 +789,7 @@ function handleSseEvent(
   eventType: string,
   dataPayload: string,
   setDraft: Dispatch<SetStateAction<Draft | null>>,
+  onToolStart?: (name: string, args: unknown) => void,
 ) {
   if (eventType === 'heartbeat') return;
   let parsed: Record<string, unknown>;
@@ -794,6 +811,7 @@ function handleSseEvent(
   if (eventType === 'tool_start') {
     const id = typeof parsed.id === 'string' ? parsed.id : '';
     const name = typeof parsed.name === 'string' ? parsed.name : 'tool';
+    onToolStart?.(name, parsed.args);
     const newEvent: ToolEvent = {
       id,
       name,

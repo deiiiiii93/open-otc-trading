@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Workflows } from './Workflows';
 import { WorkflowBuilder } from './WorkflowBuilder';
 import { AgentDeskLive } from './AgentDesk.live';
 import { Button } from '../components/Button';
+import { useAgentChatController } from '../hooks/useAgentChatController';
 import {
   createWorkflow,
   deleteWorkflow,
@@ -26,18 +27,23 @@ const TEMPLATE = `meta = {
 await step("First step prompt")
 `;
 
+/**
+ * Pull the workflow slug out of a script's `meta` literal. The backend derives
+ * the slug from `meta["name"]` and rejects a PUT whose path slug disagrees, so
+ * the explicit Save must target exactly that name. Scoped to the meta block so
+ * a `"name":` inside a step prompt can't shadow it.
+ */
+export function parseWorkflowSlug(script: string): string {
+  const match = script.match(/meta\s*=\s*\{[\s\S]*?"name"\s*:\s*"([^"]+)"/);
+  return match ? match[1] : '';
+}
+
 export function WorkflowsLive() {
   const [mode, setMode] = useState<'manage' | 'create'>('manage');
   const [items, setItems] = useState<DeskWorkflowSummary[]>([]);
   const [selected, setSelected] = useState<DeskWorkflow | null>(null);
   const [draft, setDraft] = useState('');
   const [validation, setValidation] = useState<{ ok: boolean; error: string | null } | null>(null);
-
-  // Builder state: a live preview of the script the assistant just saved.
-  const [builderDraft, setBuilderDraft] = useState('');
-  const [builderSlug, setBuilderSlug] = useState('');
-  const [builderSaving, setBuilderSaving] = useState(false);
-  const baselineSlugs = useRef<Set<string>>(new Set());
 
   const refresh = useCallback(async () => {
     const rows = await listWorkflows();
@@ -59,33 +65,6 @@ export function WorkflowsLive() {
     return () => clearTimeout(handle);
   }, [draft]);
 
-  // While building with the assistant, poll for a newly-saved workflow and pull
-  // its script into the preview pane.
-  useEffect(() => {
-    if (mode !== 'create') return;
-    let cancelled = false;
-    void listWorkflows().then((rows) => {
-      baselineSlugs.current = new Set(rows.map((r) => r.slug));
-    });
-    const handle = setInterval(() => {
-      void listWorkflows().then(async (rows) => {
-        if (cancelled) return;
-        const fresh = rows.find((r) => !baselineSlugs.current.has(r.slug));
-        if (fresh) {
-          const full = await getWorkflow(fresh.slug);
-          if (!cancelled) {
-            setBuilderDraft(full.script);
-            setBuilderSlug(full.slug);
-          }
-        }
-      });
-    }, 4000);
-    return () => {
-      cancelled = true;
-      clearInterval(handle);
-    };
-  }, [mode]);
-
   const onSelect = async (slug: string) => {
     const wf = await getWorkflow(slug);
     setSelected(wf);
@@ -105,22 +84,6 @@ export function WorkflowsLive() {
     setSelected(null);
     setDraft('');
     await refresh();
-  };
-
-  const finishBuilding = async () => {
-    if (!builderDraft) return;
-    setBuilderSaving(true);
-    try {
-      // PUT upserts (creates if missing), so this persists the drafted script
-      // whether or not the assistant already saved it via the tool.
-      await updateWorkflow(builderSlug || '', builderDraft);
-      await refresh();
-      setBuilderDraft('');
-      setBuilderSlug('');
-      setMode('manage');
-    } finally {
-      setBuilderSaving(false);
-    }
   };
 
   return (
@@ -152,13 +115,60 @@ export function WorkflowsLive() {
           onNew={onNew}
         />
       ) : (
-        <WorkflowBuilder
-          chat={<AgentDeskLive />}
-          draftScript={builderDraft}
-          onSave={finishBuilding}
-          saving={builderSaving}
+        <WorkflowBuilderLive
+          onDone={async () => {
+            await refresh();
+            setMode('manage');
+          }}
         />
       )}
     </div>
+  );
+}
+
+/**
+ * The "Create with AI" surface. Embeds a normal agent thread whose
+ * build-workflow skill drafts a script and persists it via the
+ * `save_desk_workflow` tool. We capture that script straight off the tool-call
+ * stream (no DB polling) so the preview is instant and reflects edits/re-drafts,
+ * then the explicit Save guarantees persistence even if the tool body was denied
+ * by the capability gate or errored.
+ */
+function WorkflowBuilderLive({ onDone }: { onDone: () => Promise<void> }) {
+  const [builderDraft, setBuilderDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const onToolStart = useCallback((name: string, args: unknown) => {
+    if (name !== 'save_desk_workflow') return;
+    if (!args || typeof args !== 'object') return;
+    const script = (args as Record<string, unknown>).script;
+    if (typeof script === 'string') setBuilderDraft(script);
+  }, []);
+
+  const controller = useAgentChatController({ onToolStart });
+
+  const finishBuilding = async () => {
+    if (!builderDraft) return;
+    const slug = parseWorkflowSlug(builderDraft);
+    if (!slug) return;
+    setSaving(true);
+    try {
+      // PUT upserts on the meta-derived slug, so this persists the drafted
+      // script whether or not the tool already wrote it.
+      await updateWorkflow(slug, builderDraft);
+      setBuilderDraft('');
+      await onDone();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <WorkflowBuilder
+      chat={<AgentDeskLive controller={controller} />}
+      draftScript={builderDraft}
+      onSave={finishBuilding}
+      saving={saving}
+    />
   );
 }
