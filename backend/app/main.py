@@ -255,6 +255,7 @@ from .services.quantark import (
 from .routers.skills import build_skills_router
 from .routers.tracing import build_tracing_router
 from .routers.arena import build_arena_router
+from .routers.workflows import build_desk_workflows_router
 from .services import rfq as rfq_service
 from .services import fx as fx_service
 from .services.fx import parse_fx_pair_symbol
@@ -4149,6 +4150,7 @@ def create_app(
     app.include_router(build_skills_router(active_agent_service))
     app.include_router(build_tracing_router())
     app.include_router(build_arena_router(settings=active_settings))
+    app.include_router(build_desk_workflows_router())
     return app
 
 
