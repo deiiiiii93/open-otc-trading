@@ -266,6 +266,40 @@ def _ensure_incremental_schema(active_engine: Engine) -> None:
             },
         )
 
+    # Desk workflows (migration 0035): seed the flagship for create_all-booted
+    # DBs that never ran Alembic. Idempotent; the table itself comes from
+    # metadata.create_all.
+    if "desk_workflows" in tables:
+        from .desk_workflow_seed import (
+            FLAGSHIP_DESCRIPTION,
+            FLAGSHIP_MODE,
+            FLAGSHIP_PERSONA,
+            FLAGSHIP_SCOPE,
+            FLAGSHIP_SCRIPT,
+            FLAGSHIP_SLUG,
+            FLAGSHIP_TITLE,
+        )
+
+        with active_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO desk_workflows "
+                    "(slug, title, persona, description, scope, default_mode, script, source, created_at, updated_at) "
+                    "SELECT :slug, :title, :persona, :description, :scope, :default_mode, :script, 'seed', "
+                    "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP "
+                    "WHERE NOT EXISTS (SELECT 1 FROM desk_workflows WHERE slug = :slug)"
+                ),
+                {
+                    "slug": FLAGSHIP_SLUG,
+                    "title": FLAGSHIP_TITLE,
+                    "persona": FLAGSHIP_PERSONA,
+                    "description": FLAGSHIP_DESCRIPTION,
+                    "scope": FLAGSHIP_SCOPE,
+                    "default_mode": FLAGSHIP_MODE,
+                    "script": FLAGSHIP_SCRIPT,
+                },
+            )
+
     if "positions" not in tables:
         return
     if "position_lifecycle_events" in tables:

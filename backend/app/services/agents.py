@@ -423,6 +423,8 @@ DEEP_AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         # UI-control tool: personas can surface the same pickable-choice UX
         # as the orchestrator when their delegated reply asks the user to pick.
         "propose_reply_options",
+        # Desk-workflow authoring: the build-workflow skill persists drafts.
+        "save_desk_workflow",
     }
 )
 

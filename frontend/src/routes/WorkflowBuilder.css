@@ -1,0 +1,40 @@
+.wl-wf-builder {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--gap-4);
+  min-height: 0;
+  align-items: start;
+}
+
+.wl-wf-builder__chat {
+  min-width: 0;
+}
+
+.wl-wf-builder__preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  min-width: 0;
+}
+
+.wl-wf-builder__heading {
+  margin: 0;
+  font-size: var(--type-caps-size);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}
+
+.wl-wf-builder__script {
+  margin: 0;
+  padding: var(--gap-2);
+  background: var(--paper-2);
+  border: 1px solid var(--hairline);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--type-small-size);
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 320px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
