@@ -49,6 +49,10 @@ def build_goal_router(service: GoalRunService) -> APIRouter:
         state = service.active(thread_id)
         return state.model_dump(mode="json") if state is not None else None
 
+    @router.get(_BASE + "/contract")
+    def get_goal_contract(thread_id: str):
+        return service.contract_view(thread_id)
+
     return router
 
 

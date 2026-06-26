@@ -694,6 +694,12 @@ class GoalRunService:
     def active(self, thread_id: str) -> GoalRunStateV1 | None:
         return self._store.active(thread_id)
 
+    def contract_view(self, thread_id: str) -> dict | None:
+        """The frozen/draft contract JSON for the thread's run, or ``None``. The ratify
+        UI reads this to show the user the criteria they are accepting (the lifecycle
+        endpoints return only the run *state*)."""
+        return self._contracts.get(thread_id)
+
     def record_evaluation(self, thread_id: str, evaluation: dict) -> GoalRunStateV1 | None:
         """Apply a grader ``RubricEvaluation`` to the run (spec §F), the on_evaluation
         callback the desk turn hands the grader. ``satisfied`` finishes the run;

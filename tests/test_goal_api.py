@@ -67,6 +67,22 @@ def test_start_ratify_get_cancel_flow():
     assert client.get("/api/chat/threads/t1/goal").json() is None
 
 
+def test_contract_endpoint_exposes_criteria_for_ratification():
+    client, _ = _client({"type": "contract", "contract": _write_contract()})
+    client.post("/api/chat/threads/t1/goal", json={"goal_text": "refresh risk"})
+
+    r = client.get("/api/chat/threads/t1/goal/contract")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["goal_text"] == "Get latest risk run onto Control"
+    assert [c["id"] for c in body["criteria"]] == ["C1"]
+
+
+def test_contract_endpoint_is_null_without_a_run():
+    client, _ = _client({"type": "contract", "contract": _write_contract()})
+    assert client.get("/api/chat/threads/t1/goal/contract").json() is None
+
+
 def test_start_returns_clarification_without_a_run():
     client, svc = _client(
         {"type": "needs_clarification", "summary": "ambiguous", "questions": ["Which portfolio?"]}
