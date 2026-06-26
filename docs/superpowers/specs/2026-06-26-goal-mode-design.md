@@ -361,7 +361,11 @@ A minimal command registry can come later; v1 hard-codes the one prefix.
 ### H. Goal run lifecycle & activation gate
 
 Goal mode is **thread-scoped**: a thread holds at most one *active goal pointer*
-(`active_goal_run_id`) plus the persisted `GoalRunStateV1` (§F). The state machine:
+(`active_goal_run_id`) plus the persisted `GoalRunStateV1` (§F). The pointer is set when the
+`awaiting_ratification` state is created and stays set through `running` and `stuck_needs_human`; it
+is cleared only on `satisfied`/`cancelled`. The rubric is attached to invocation state (and thus
+`RubricMiddleware` is active) **only** while the pointed-to run's status is `running`. The state
+machine:
 
 ```
 (/goal) → awaiting_ratification → running → { satisfied | stuck_needs_human | cancelled }
@@ -369,8 +373,9 @@ Goal mode is **thread-scoped**: a thread holds at most one *active goal pointer*
               (auto-ratify forbidden)      (resume) ───────────┘ (resume from stuck)
 ```
 
-- `awaiting_ratification`: contract framed, not yet frozen (no `contract_hash`). A `forbidden`
-  contract transitions straight to `running`.
+- `awaiting_ratification`: contract framed, not yet frozen (no `contract_hash`); `active_goal_run_id`
+  is set here. A `forbidden` contract MAY be auto-ratified — if so it freezes and transitions
+  straight to `running`; otherwise it awaits user ratification like any contract.
 - `running`: contract frozen; the executor is live. **This is the only state in which
   `RubricMiddleware` is active.**
 - `satisfied` / `cancelled`: terminal. The orchestrator clears `active_goal_run_id`; the frozen
@@ -392,8 +397,9 @@ User types `/goal <description>`  (composer strips prefix → start-goal request
   → framer invocation → FramerResponseV1
        needs_clarification → surface questions; no run created  (user resubmits)
        contract           → GoalRunState{ awaiting_ratification }
-  → ratify (auto for forbidden; user confirm/edit for allowed_by_mode)
-       → freeze { rubric, goal_contract, contract_hash }; state → running; set active_goal_run_id
+       (active_goal_run_id set at awaiting_ratification)
+  → ratify (forbidden MAY auto-ratify; allowed_by_mode requires user confirm/edit)
+       → freeze { rubric, goal_contract, contract_hash }; state → running
   → build_orchestrator(yolo_mode=, allow_reply_options=)         (mode-derived, unchanged)
        middleware += RubricMiddleware(                            (attached only while running)
            model, system_prompt=LEDGER_GRADER_PROMPT,
@@ -442,8 +448,9 @@ explicitly out of v1.)
   `stuck_needs_human` with `terminal_reason: "context_ceiling"` (do not loop to `max_iterations`
   burning tokens).
 - **`/goal` while a goal is already active.** Reject with an inline hint (one goal per thread at a
-  time); the active goal must reach a terminal verdict or be cancelled first. A bare `/goal` (no
-  text) shows usage and sends nothing.
+  time): the active goal must be `satisfied` or `cancelled` first; if `stuck_needs_human`, the user
+  must resume or cancel it before starting another `/goal`. A bare `/goal` (no text) shows usage and
+  sends nothing.
 
 ## Testing
 
@@ -473,7 +480,8 @@ explicitly out of v1.)
 
 ## Files touched (estimate)
 
-- Backend: `deep_agent/orchestrator.py` (add `RubricMiddleware` when a goal contract is present),
+- Backend: `deep_agent/orchestrator.py` (attach/activate `RubricMiddleware` only while
+  `active_goal_run_id` resolves to a `running` goal run, with the rubric on invocation state),
   a new `deep_agent/goal_mode.py` (framer, `GoalContract`/`GoalCriterion`, ledger grader prompt +
   tool set, escalation), `services/agents.py` (kickoff framing + ratification + freeze; thread
   `goal_contract` + `active_goal_run_id` + `GoalRunStateV1`), `deep_agent/capability_gate.py` /
