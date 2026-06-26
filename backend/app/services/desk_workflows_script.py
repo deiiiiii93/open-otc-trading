@@ -3,6 +3,12 @@ from __future__ import annotations
 
 import ast
 
+# Non-dunder attribute names that still reach the type/escape machinery, or that
+# bypass the AST dunder check via string-literal field access (str.format). The
+# guard is a footgun-reducer, not a security boundary (single-user MVP) — see the
+# desk-workflows spec §5.4/§9.
+_DANGEROUS_ATTRS = {"format", "format_map", "mro", "subclasses"}
+
 VALID_PERSONAS = {"trader", "risk_manager", "sales", "quant"}
 VALID_MODES = {"auto", "yolo"}
 VALID_SCOPES = {"local", "shared"}
@@ -44,9 +50,11 @@ def guard_script(script: str) -> None:
     for node in ast.walk(tree):
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             raise WorkflowScriptError("import statements are not allowed")
-        if isinstance(node, ast.Attribute) and node.attr.startswith("__"):
+        if isinstance(node, ast.Attribute) and (
+            node.attr.startswith("__") or node.attr in _DANGEROUS_ATTRS
+        ):
             raise WorkflowScriptError(
-                f"access to dunder attribute {node.attr!r} is not allowed"
+                f"access to attribute {node.attr!r} is not allowed"
             )
 
 

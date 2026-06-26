@@ -37,6 +37,17 @@ def test_guard_rejects_dunder():
         guard_script('x = ().__class__\nawait step("hi")\n')
 
 
+def test_guard_rejects_format_dunder_bypass():
+    # str.format reaches __class__ via a string literal (no ast.Attribute node).
+    with pytest.raises(WorkflowScriptError):
+        guard_script('x = "{0.__class__}".format(())\nawait step("hi")\n')
+
+
+def test_guard_rejects_mro():
+    with pytest.raises(WorkflowScriptError):
+        guard_script('x = type.mro\nawait step("hi")\n')
+
+
 def test_validate_slug_mismatch():
     with pytest.raises(WorkflowScriptError):
         validate_script(GOOD, slug="other")
