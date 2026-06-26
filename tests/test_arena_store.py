@@ -54,6 +54,26 @@ def test_get_run_returns_dict_with_matches(session):
     assert len(result["matches"]) == 2
 
 
+def test_score_breakdown_round_trips_through_match_dict(session):
+    rid = _make_run(session)
+    breakdown = {
+        "passed": 1, "total": 2,
+        "objective": {"steps": [{"index": 0, "user": "u",
+                                  "checks": [{"kind": "skill", "label": "skill: x",
+                                              "passed": True, "detail": ""}]}],
+                      "success": []},
+        "judge": {"rubric_scores": [{"point": "p1", "score": 80}], "judged_score": 80.0},
+    }
+    store.record_match(
+        session, rid, "wf-a", "model-x",
+        objective_score=50.0, judged_score=80.0, total_score=65.0,
+        judge_missing=False, config={}, transcript_path=None, status="scored",
+        score_breakdown=breakdown,
+    )
+    result = store.get_run(session, rid)
+    assert result["matches"][0]["score_breakdown"] == breakdown
+
+
 def test_get_run_returns_none_for_missing(session):
     assert store.get_run(session, 99999) is None
 

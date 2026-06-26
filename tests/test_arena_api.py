@@ -122,6 +122,34 @@ def test_get_run_404_unknown(session, settings):
     assert resp.status_code == 404
 
 
+def test_get_run_returns_score_breakdown_on_matches(session, settings):
+    """The run-detail endpoint must surface score_breakdown (the MatchSummary
+    schema previously dropped it even though the store returned it)."""
+    breakdown = {
+        "objective": {"passed": 1, "total": 2,
+                      "steps": [{"index": 0, "user": "u",
+                                 "checks": [{"kind": "skill", "label": "skill: x",
+                                             "passed": True, "detail": ""}]}],
+                      "success": []},
+        "judge": {"rubric_scores": [{"point": "p1", "score": 80}],
+                  "judged_score": 80.0, "judge_missing": False},
+    }
+    run_id = arena_store.create_run(session, workflow_ids=["wf-a"], model_ids=["model-x"])
+    arena_store.record_match(
+        session, run_id, "wf-a", "model-x",
+        objective_score=50.0, judged_score=80.0, total_score=65.0,
+        judge_missing=False, config={}, transcript_path=None, status="scored",
+        score_breakdown=breakdown,
+    )
+    session.commit()
+
+    client = _make_arena_app(session, settings)
+    resp = client.get(f"/api/arena/runs/{run_id}")
+    assert resp.status_code == 200
+    match = resp.json()["matches"][0]
+    assert match["score_breakdown"] == breakdown
+
+
 # ---------------------------------------------------------------------------
 # GET /api/arena/matches/{id}/transcript — no path
 # ---------------------------------------------------------------------------

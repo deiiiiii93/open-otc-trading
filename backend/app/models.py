@@ -1788,6 +1788,9 @@ class ArenaMatch(Base):
     total_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     judge_missing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     config: Mapped[dict] = mapped_column(JSON, nullable=False)
+    # Per-check objective + per-rubric judge breakdown behind the aggregate
+    # scores, so the UI can show exactly where the model won/lost points.
+    score_breakdown: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     transcript_path: Mapped[str | None] = mapped_column(String, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)

@@ -56,12 +56,16 @@ class JudgeResult:
         judged_score:  Mean of rubric_scores[].score, or None if judge_missing.
         judge_missing: True when the judge could not produce a valid response.
         notes:         Overall notes returned by the judge (or failure reason).
+        diagnosis:     1-3 sentence failure/success analysis — WHERE and WHY the
+                       assistant did well or fell down (tool engagement, blockers,
+                       stalls). Empty when the judge is missing.
     """
 
     rubric_scores: list[dict] = field(default_factory=list)
     judged_score: float | None = None
     judge_missing: bool = False
     notes: str = ""
+    diagnosis: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +158,8 @@ Respond with a JSON object matching this exact schema:
   "rubric_scores": [
     {{"point": "<exact rubric text>", "score": <0-100>, "rationale": "<brief reason>"}}
   ],
-  "overall_notes": "<brief overall assessment>"
+  "overall_notes": "<brief overall assessment>",
+  "diagnosis": "<1-3 sentences: WHERE and WHY the assistant succeeded or failed — did it engage the expected skills/tools, get blocked by an error, or stall asking for input it was already given? Name the concrete failure mode.>"
 }}
 
 One entry per rubric point above, in the same order. Do not add or omit any points."""
@@ -182,11 +187,12 @@ def _build_payload(messages: list[dict]) -> dict:
 
 def _parse_response(
     raw: str, expected_points: list[str]
-) -> tuple[list[dict], str] | None:
+) -> tuple[list[dict], str, str] | None:
     """Parse and validate the judge's JSON response.
 
     Returns:
-        (rubric_scores, overall_notes) on success, or None on failure.
+        (rubric_scores, overall_notes, diagnosis) on success, or None on failure.
+        ``diagnosis`` is optional in the payload and defaults to "".
 
     Validates:
         - Valid JSON
@@ -246,7 +252,8 @@ def _parse_response(
     # (Strict alignment is the length + no-duplicate invariant per spec.)
 
     notes = str(data.get("overall_notes", ""))
-    return validated, notes
+    diagnosis = str(data.get("diagnosis", ""))
+    return validated, notes, diagnosis
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +314,7 @@ def judge_match(
             last_error = f"Parse/validation failure (attempt {attempt+1})"
             continue
 
-        rubric_scores, notes = parsed
+        rubric_scores, notes, diagnosis = parsed
         judged_score = (
             sum(s["score"] for s in rubric_scores) / len(rubric_scores)
             if rubric_scores
@@ -318,6 +325,7 @@ def judge_match(
             judged_score=judged_score,
             judge_missing=False,
             notes=notes,
+            diagnosis=diagnosis,
         )
 
     # All attempts exhausted

@@ -14,7 +14,12 @@ import pytest
 
 from app.golden_workflows.registry import get_workflow_bundle
 from app.golden_workflows.transcript import transcript_from_replay
-from app.services.arena.scoring import objective_score, total_score
+from app.services.arena.scoring import (
+    objective_score,
+    objective_breakdown,
+    diagnose_heuristic,
+    total_score,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -48,6 +53,44 @@ class TestFlagshipPin:
         assert step_assertion_points == 8
         assert success_points == 6
         assert skill_points + tool_points + step_assertion_points + success_points == 31
+
+    def test_breakdown_matches_aggregate_and_shape(self):
+        """objective_breakdown's passed/total equal objective_score, and every
+        manifest check appears once with a kind/label/passed/detail."""
+        loaded = get_workflow_bundle("risk-manager-control-day")
+        transcript = transcript_from_replay(loaded)
+
+        _score, passed, total = objective_score(transcript, loaded)
+        bd = objective_breakdown(transcript, loaded)
+
+        assert bd["passed"] == passed == 31
+        assert bd["total"] == total == 31
+        assert len(bd["steps"]) == len(loaded.workflow.steps)
+        assert len(bd["success"]) == len(loaded.workflow.success.assertions)
+
+        all_checks = [c for s in bd["steps"] for c in s["checks"]] + bd["success"]
+        assert len(all_checks) == total
+        for c in all_checks:
+            assert set(c) == {"kind", "label", "passed", "detail"}
+            assert c["kind"] in {"skill", "tool", "assertion"}
+            assert c["passed"] is True  # full replay → every check passes
+        # First step's first check is its expected skill, labelled readably.
+        assert bd["steps"][0]["checks"][0]["kind"] == "skill"
+        assert "read-risk-result" in bd["steps"][0]["checks"][0]["label"]
+
+    def test_breakdown_records_failure_detail(self):
+        """A check that fails carries passed=False and a non-empty detail."""
+        loaded = get_workflow_bundle("risk-manager-control-day")
+        transcript = transcript_from_replay(loaded)
+        # Drop a step's skills_routed so its expected_skill check fails.
+        transcript.steps[0].skills_routed = []
+        bd = objective_breakdown(transcript, loaded)
+
+        skill_check = bd["steps"][0]["checks"][0]
+        assert skill_check["kind"] == "skill"
+        assert skill_check["passed"] is False
+        assert skill_check["detail"]  # non-empty reason
+        assert bd["passed"] < bd["total"]
 
 
 # ---------------------------------------------------------------------------
@@ -197,3 +240,35 @@ class TestEmptyWorkflow:
         assert total == 0
         assert passed == 0
         assert score == 0.0
+
+
+class TestDiagnoseHeuristic:
+    """The deterministic engagement summary behind a match diagnosis."""
+
+    def test_full_replay_summary_reports_all_engagement(self):
+        loaded = get_workflow_bundle("risk-manager-control-day")
+        transcript = transcript_from_replay(loaded)
+        diag = diagnose_heuristic(transcript, loaded)
+        # A fully-passing replay: every expected skill hit, all 31 checks pass.
+        assert diag["skills_hit"] == diag["skills_total"] == 7
+        assert diag["checks_passed"] == diag["checks_total"] == 31
+        assert diag["tool_calls"] > 0
+        assert "7/7 expected skills" in diag["summary"]
+        assert "31/31 checks" in diag["summary"]
+
+    def test_empty_transcript_summary_reports_zero_engagement(self):
+        """A model that never engaged: 0 skills, 0 tools, 0 checks — the exact
+        shape behind a 0.0 match (e.g. the MiniMax over-caution stall)."""
+        from app.golden_workflows.transcript import MatchTranscript
+
+        loaded = get_workflow_bundle("risk-manager-control-day")
+        empty = MatchTranscript(
+            schema_version=1, run_id=None, workflow_id="risk-manager-control-day",
+            model_id="stall", started_at=None, finished_at=None, steps=[],
+        )
+        diag = diagnose_heuristic(empty, loaded)
+        assert diag["skills_hit"] == 0
+        assert diag["tool_calls"] == 0
+        assert diag["checks_passed"] == 0
+        assert diag["checks_total"] == 31
+        assert diag["summary"].startswith("0/7 expected skills · 0 tool calls · 0/31 checks")

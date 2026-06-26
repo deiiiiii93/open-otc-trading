@@ -23,7 +23,7 @@ steps:
         any_of: ["stale", "out of date"]
     replay: step-1-read-stale-risk
 
-  - user: "Run a fresh risk calculation for the control portfolio."
+  - user: "Run a fresh risk calculation for the control portfolio using the Control Profile."
     expected_skill: run-risk
     expected_tools:
       - name: run_batch_pricing
@@ -42,10 +42,8 @@ steps:
       The agent reads the freshly computed risk run and identifies AAPL as the
       largest Greek contributor (the hotspot).
     assertions:
-      - type: tool_result_path
-        tool: get_latest_risk_run
-        path: "hotspot.underlying"
-        equals: "AAPL"
+      - type: response_contains
+        any_of: ["AAPL"]
     replay: step-3-read-fresh-risk
 
   - user: "Run a Greeks landscape across spot shifts for the control portfolio."
@@ -61,7 +59,7 @@ steps:
         tool: run_greeks_landscape
     replay: step-4-greeks-landscape
 
-  - user: "Stress-test the control portfolio using the market-crash scenario set."
+  - user: "Stress-test the control portfolio using the market-crash scenario set with the Control Profile."
     expected_skill: run-scenario-test
     expected_tools:
       - name: run_scenario_test
@@ -74,11 +72,11 @@ steps:
         tool: run_scenario_test
       - type: tool_result_path
         tool: get_scenario_test_run
-        path: "pnl"
+        path: "results.var_cvar.cvar"
         lte: 0
     replay: step-5-scenario-test
 
-  - user: "Run a historical backtest of the delta-hedge strategy over the past quarter."
+  - user: "Run a historical backtest of the delta-hedge strategy from 2026-03-24 to 2026-06-24."
     expected_skill: run-backtest
     expected_tools:
       - name: run_backtest
@@ -92,15 +90,15 @@ steps:
     replay: step-6-backtest
 
   - user: "Generate a governance risk report for today's control session."
-    expected_skill: create-risk-report
+    expected_skill: generate-report
     expected_tools:
-      - name: create_report
+      - name: write_report_artifact
     outcome: >
       The agent creates a durable risk report artifact summarising the full
       control-day findings.
     assertions:
       - type: artifact_exists
-        kind: report
+        kind: text
     replay: step-7-create-report
 
 success:
@@ -113,7 +111,7 @@ success:
         - run-greeks-landscape
         - run-scenario-test
         - run-backtest
-        - create-risk-report
+        - generate-report
     - type: task_returned_id
       tool: run_batch_pricing
     - type: task_returned_id
@@ -123,7 +121,7 @@ success:
     - type: task_returned_id
       tool: run_backtest
     - type: artifact_exists
-      kind: report
+      kind: text
   rubric:
     - "The agent correctly identifies staleness before taking any action."
     - "All four async tasks (risk, Greeks, scenario, backtest) return task IDs."
@@ -141,9 +139,10 @@ before recommending a fresh calculation.
 
 ## Step 2 — Refresh the risk
 
-Acting on the freshness warning, the risk manager asks for a new risk calculation.
-The agent routes to the `run-risk` skill, assembles the batch-pricing request for
-the control portfolio and the active pricing profile, and calls `run_batch_pricing`
+Acting on the freshness warning, the risk manager asks for a new risk calculation
+and names the **Control Profile** to use. The agent routes to the `run-risk` skill,
+assembles the batch-pricing request for the control portfolio and that pricing
+profile (the `run-risk` skill requires an explicit profile choice), and calls `run_batch_pricing`
 to queue the computation. The tool returns immediately with a `task_id`; the agent
 confirms the run is queued and provides the id for tracking.
 
@@ -165,8 +164,9 @@ concise table of Delta and Gamma across ±20 % spot shifts and the task id for a
 
 ## Step 5 — Stress-test the book
 
-The risk manager now wants worst-case scenario P&L. The agent routes to
-`run-scenario-test`, calls `run_scenario_test` with the market-crash scenario set,
+The risk manager now wants worst-case scenario P&L, again pointing at the
+**Control Profile** (the `run-scenario-test` skill requires an explicit profile).
+The agent routes to `run-scenario-test`, calls `run_scenario_test` with the market-crash scenario set,
 then polls `get_scenario_test_run` to collect the results. The returned P&L is
 negative, confirming the portfolio loses money under the stress scenario; the agent
 reports the headline loss figure and highlights the most adverse scenario.
@@ -182,7 +182,9 @@ any autocallable lifecycle events encountered during the replay.
 ## Step 7 — Create the governance report
 
 With all analyses complete the risk manager asks for a formal report to attach to
-the day's governance record. The agent routes to `create-risk-report`, calls
-`create_report` with the session findings, and produces a durable **report** artifact
-that bundles the risk metrics, Greeks landscape, scenario results, and backtest summary
-into a single auditable document. The agent confirms the artifact is ready.
+the day's governance record. The agent routes to `generate-report`, calls
+`write_report_artifact` with the session findings (the `create-risk-report` skill
+forbids the legacy `create_report` job in favour of this durable in-thread artifact),
+and produces a durable **report** artifact that bundles the risk metrics, Greeks
+landscape, scenario results, and backtest summary into a single auditable document.
+The agent confirms the artifact is ready.

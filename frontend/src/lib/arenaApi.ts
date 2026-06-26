@@ -10,6 +10,41 @@ export type ArenaRunSummary = {
   model_ids: string[];
 };
 
+export type ArenaCheck = {
+  kind: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+};
+
+export type ArenaObjectiveStep = {
+  index: number;
+  user: string;
+  checks: ArenaCheck[];
+};
+
+export type ArenaScoreBreakdown = {
+  objective: {
+    passed: number;
+    total: number;
+    steps: ArenaObjectiveStep[];
+    success: ArenaCheck[];
+  };
+  judge: {
+    rubric_scores: { point: string; score: number }[];
+    judged_score: number | null;
+    judge_missing?: boolean;
+  };
+  diagnosis?: {
+    counts: string;
+    analysis: string;
+    counts_detail?: Record<string, number | string>;
+  };
+  weights?: { obj: number; judge: number };
+  objective_score?: number;
+  total_score?: number;
+};
+
 export type ArenaMatchSummary = {
   id: number;
   workflow_id: string;
@@ -20,6 +55,7 @@ export type ArenaMatchSummary = {
   total_score: number | null;
   judge_missing: boolean;
   transcript_path: string | null;
+  score_breakdown: ArenaScoreBreakdown | null;
 };
 
 export type ArenaRunDetail = {

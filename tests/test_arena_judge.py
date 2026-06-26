@@ -86,6 +86,28 @@ class TestValidResponse:
         result = judge_match(transcript, loaded, post=lambda p: raw, retries=0)
         assert "Excellent" in result.notes
 
+    def test_diagnosis_returned_when_present(self):
+        loaded, transcript, rubric_points = _flagship_setup()
+        raw = json.dumps({
+            "rubric_scores": [{"point": pt, "score": 0.0, "rationale": "r"} for pt in rubric_points],
+            "overall_notes": "Poor.",
+            "diagnosis": "Never engaged the expected skills; stalled asking for the named profile.",
+        })
+        result = judge_match(transcript, loaded, post=lambda p: raw, retries=0)
+        assert "stalled" in result.diagnosis
+
+    def test_diagnosis_defaults_empty_when_omitted(self):
+        """Backward compatibility: a payload without 'diagnosis' still parses,
+        with diagnosis defaulting to ''."""
+        loaded, transcript, rubric_points = _flagship_setup()
+        raw = json.dumps({
+            "rubric_scores": [{"point": pt, "score": 90.0, "rationale": "r"} for pt in rubric_points],
+            "overall_notes": "Good.",
+        })
+        result = judge_match(transcript, loaded, post=lambda p: raw, retries=0)
+        assert result.judge_missing is False
+        assert result.diagnosis == ""
+
     def test_markdown_fenced_json_is_accepted(self):
         """Judge response wrapped in ```json ... ``` is still parsed correctly."""
         loaded, transcript, rubric_points = _flagship_setup()

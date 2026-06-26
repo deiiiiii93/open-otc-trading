@@ -10,9 +10,9 @@ channels:
     base_url: https://zenmux.ai/api/v1
     anthropic_base_url: https://zenmux.ai/api/anthropic
     models:
-      - id: anthropic/claude-opus-4.7
+      - id: anthropic/claude-opus-4.8
         provider: anthropic
-        label: Claude Opus 4.7
+        label: Claude Opus 4.8
         description: Most capable, highest cost
         tags: [tool-use, reasoning, premium]
       - id: anthropic/claude-sonnet-4.6
@@ -27,6 +27,37 @@ channels:
         provider: openai
         label: GPT-5.5
         tags: [tool-use]
+      - id: google/gemini-2.5-pro
+        provider: openai
+        label: Gemini 2.5 Pro
+        tags: [tool-use, reasoning]
+      # Third-party vendors routed through Zenmux's OpenAI-compatible gateway.
+      # provider must be 'openai' (the dispatch SDK label); the real vendor lives
+      # in the id. Keep in sync with CANDIDATE_MODELS in services/arena/models.py.
+      - id: z-ai/glm-5.2
+        provider: openai
+        label: GLM 5.2
+        tags: [tool-use, reasoning]
+      - id: moonshotai/kimi-k2.7-code
+        provider: openai
+        label: Kimi 2.7
+        tags: [tool-use, reasoning]
+      - id: minimax/minimax-m3
+        provider: openai
+        label: MiniMax M3
+        tags: [tool-use]
+      - id: xiaomi/mimo-v2.5-pro
+        provider: openai
+        label: MiMo V2.5 Pro
+        tags: [tool-use]
+      - id: deepseek/deepseek-v4-pro
+        provider: openai
+        label: DeepSeek V4 Pro
+        tags: [tool-use, reasoning]
+      - id: qwen/qwen3.7-max
+        provider: openai
+        label: Qwen 3.7 Max
+        tags: [tool-use, reasoning]
 
   - name: deepseek
     label: DeepSeek

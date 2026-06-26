@@ -206,6 +206,28 @@ def _execute(
                     judge_missing=judge_result.judge_missing,
                 )
 
+                # Per-check breakdown behind the aggregate scores, persisted so
+                # the /arena match drilldown can show where points were won/lost.
+                heuristic = scoring.diagnose_heuristic(transcript, loaded)
+                breakdown = {
+                    "objective": scoring.objective_breakdown(transcript, loaded),
+                    "judge": {
+                        "rubric_scores": judge_result.rubric_scores,
+                        "judged_score": judge_result.judged_score,
+                        "judge_missing": judge_result.judge_missing,
+                    },
+                    # Why/where the model won or lost: deterministic engagement
+                    # counts (always present) + the judge's LLM failure analysis.
+                    "diagnosis": {
+                        "counts": heuristic["summary"],
+                        "counts_detail": heuristic,
+                        "analysis": judge_result.diagnosis,
+                    },
+                    "weights": weights or {"obj": 0.5, "judge": 0.5},
+                    "objective_score": round(obj_score, 1),
+                    "total_score": t_score,
+                }
+
                 # Save transcript to disk
                 transcript_path: str | None = None
                 try:
@@ -232,6 +254,7 @@ def _execute(
                     config={"weights": weights},
                     transcript_path=transcript_path,
                     status="scored",
+                    score_breakdown=breakdown,
                 )
 
             except Exception as exc:

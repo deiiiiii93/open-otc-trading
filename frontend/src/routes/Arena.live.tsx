@@ -12,8 +12,109 @@ import {
   type ArenaModel,
   type ArenaRunDetail,
   type ArenaRunSummary,
+  type ArenaScoreBreakdown,
+  type ArenaCheck,
 } from '../lib/arenaApi';
 import './Arena.css';
+
+function CheckRow({ check }: { check: ArenaCheck }) {
+  return (
+    <li className={`wl-arena__check wl-arena__check--${check.passed ? 'pass' : 'fail'}`}>
+      <span className="wl-arena__check-mark" aria-hidden="true">
+        {check.passed ? '✓' : '✗'}
+      </span>
+      <span className="wl-arena__check-label">{check.label}</span>
+      {!check.passed && check.detail && (
+        <span className="wl-arena__check-detail">{check.detail}</span>
+      )}
+    </li>
+  );
+}
+
+function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
+  const obj = breakdown.objective;
+  const judge = breakdown.judge;
+  const diagnosis = breakdown.diagnosis;
+  return (
+    <div className="wl-arena__breakdown">
+      <div className="wl-arena__breakdown-head">
+        <span className="wl-arena__transcript-title">Score breakdown</span>
+        <span className="wl-arena__breakdown-tally">
+          Objective {obj.passed}/{obj.total}
+          {judge.judged_score != null && !judge.judge_missing
+            ? ` · Judge ${judge.judged_score.toFixed(1)}`
+            : ' · Judge n/a'}
+        </span>
+      </div>
+
+      {diagnosis && (diagnosis.counts || diagnosis.analysis) && (
+        <div className="wl-arena__diagnosis">
+          <span className="wl-arena__diagnosis-title">Diagnosis</span>
+          {diagnosis.counts && (
+            <div className="wl-arena__diagnosis-counts">{diagnosis.counts}</div>
+          )}
+          {diagnosis.analysis && (
+            <p className="wl-arena__diagnosis-analysis">{diagnosis.analysis}</p>
+          )}
+        </div>
+      )}
+
+      {obj.steps.map((step) => {
+        const passed = step.checks.filter((c) => c.passed).length;
+        return (
+          <div key={step.index} className="wl-arena__breakdown-step">
+            <div className="wl-arena__breakdown-step-head">
+              <span className="wl-arena__breakdown-step-title">
+                Step {step.index + 1}
+              </span>
+              <span className="wl-arena__breakdown-step-tally">
+                {passed}/{step.checks.length}
+              </span>
+            </div>
+            <div className="wl-arena__breakdown-step-user">{step.user}</div>
+            <ul className="wl-arena__check-list">
+              {step.checks.map((c, i) => (
+                <CheckRow key={i} check={c} />
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+
+      {obj.success.length > 0 && (
+        <div className="wl-arena__breakdown-step">
+          <div className="wl-arena__breakdown-step-head">
+            <span className="wl-arena__breakdown-step-title">Success criteria</span>
+            <span className="wl-arena__breakdown-step-tally">
+              {obj.success.filter((c) => c.passed).length}/{obj.success.length}
+            </span>
+          </div>
+          <ul className="wl-arena__check-list">
+            {obj.success.map((c, i) => (
+              <CheckRow key={i} check={c} />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {judge.rubric_scores.length > 0 && (
+        <div className="wl-arena__breakdown-step">
+          <div className="wl-arena__breakdown-step-head">
+            <span className="wl-arena__breakdown-step-title">Judge rubric</span>
+          </div>
+          <ul className="wl-arena__check-list">
+            {judge.rubric_scores.map((r, i) => (
+              <li key={i} className="wl-arena__check wl-arena__check--judge">
+                <span className="wl-arena__check-score">{r.score}</span>
+                <span className="wl-arena__check-label">{r.point}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function statusClass(status: string): string {
   if (status === 'completed') return 'wl-arena__status--completed';
@@ -200,6 +301,11 @@ export function ArenaLive() {
                         {' · '}
                         Obj: {fmtScore(match.objective_score)}
                       </span>
+                      {match.score_breakdown?.diagnosis?.analysis && (
+                        <span className="wl-arena__match-diagnosis">
+                          {match.score_breakdown.diagnosis.analysis}
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -213,14 +319,27 @@ export function ArenaLive() {
             </div>
           ) : null}
 
-          {/* Transcript drill-down */}
+          {/* Match drill-down: score breakdown + transcript */}
           {selectedMatchId && (
             <div className="wl-arena__transcript" style={{ marginTop: 'var(--gap-3)' }}>
               <div className="wl-arena__transcript-head">
-                <span className="wl-arena__transcript-title">Transcript</span>
+                <span className="wl-arena__transcript-title">Match detail</span>
                 <Button variant="ghost" onClick={() => { setSelectedMatchId(null); setTranscript(null); }}>
                   Close
                 </Button>
+              </div>
+              {(() => {
+                const selectedMatch = runDetail?.matches.find((m) => m.id === selectedMatchId);
+                return selectedMatch?.score_breakdown ? (
+                  <ScoreBreakdownView breakdown={selectedMatch.score_breakdown} />
+                ) : selectedMatch ? (
+                  <span style={{ color: 'var(--ink-2)', fontSize: 'var(--type-small-size)' }}>
+                    No score breakdown for this match (older run or failed match).
+                  </span>
+                ) : null;
+              })()}
+              <div className="wl-arena__transcript-head" style={{ marginTop: 'var(--gap-3)' }}>
+                <span className="wl-arena__transcript-title">Transcript</span>
               </div>
               {loadingTranscript && (
                 <span style={{ color: 'var(--ink-2)', fontSize: 'var(--type-small-size)' }}>

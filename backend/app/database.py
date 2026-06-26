@@ -186,6 +186,16 @@ def _ensure_incremental_schema(active_engine: Engine) -> None:
                     "ON agent_threads (arena_run_id)"
                 )
             )
+    if "arena_match" in tables:
+        # Migration 0034: per-check score breakdown. Mirror here so local DBs
+        # booting via create_all without Alembic still get the column the ORM
+        # now references on every ArenaMatch read.
+        arena_match_cols = {c["name"] for c in inspector.get_columns("arena_match")}
+        if "score_breakdown" not in arena_match_cols:
+            with active_engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE arena_match ADD COLUMN score_breakdown JSON")
+                )
     if "agent_messages" in tables:
         message_cols = {c["name"] for c in inspector.get_columns("agent_messages")}
         with active_engine.begin() as connection:

@@ -121,3 +121,36 @@ def test_apply_seed_inserts_explicit_ids_and_resolves_fk(tmp_path, session):
     pos = session.get(models.Position, ids["positions"]["p1"])
     assert pos is not None
     assert pos.portfolio_id == 6
+
+
+def test_apply_seed_inserts_pricing_parameter_rows_under_profile(tmp_path, session):
+    """The pricing_parameter_rows namespace FK-resolves to its profile and
+    forwards r/q/vol so profile-bound batch pricing can extract parameters."""
+    from app import models
+
+    p = _write(tmp_path, {
+        "schema_version": 1,
+        "seed": {
+            "pricing_profiles": [
+                {"alias": "prof", "name": "Control Profile",
+                 "valuation_date": "2026-06-24"}
+            ],
+            "pricing_parameter_rows": [
+                {"alias": "ppr-aapl", "profile": "prof", "symbol": "AAPL",
+                 "rate": 0.04, "dividend_yield": 0.005, "volatility": 0.30}
+            ],
+        },
+        "replay": {},
+    })
+    from app.golden_workflows.fixtures import apply_seed
+
+    ids = apply_seed(load_fixtures(p), session)
+
+    profile_id = ids["pricing_profiles"]["prof"]
+    row = session.get(models.PricingParameterRow, ids["pricing_parameter_rows"]["ppr-aapl"])
+    assert row is not None
+    assert row.profile_id == profile_id
+    assert row.symbol == "AAPL"
+    assert (row.rate, row.dividend_yield, row.volatility) == (0.04, 0.005, 0.30)
+    # source_trade_id is NOT NULL on the model; the seeder defaults it to "".
+    assert row.source_trade_id == ""

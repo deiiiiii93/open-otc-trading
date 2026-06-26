@@ -9,7 +9,7 @@ At module load the registry validates uniqueness of both slugs and zenmux_names.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -22,12 +22,20 @@ class ArenaModel:
         zenmux_name: The model name as Zenmux routes it (e.g. "openai/gpt-5.5").
         display_name: Human-readable label shown in the UI.
         default_config: Fallback inference params (temperature, max_tokens, …).
+        provider: Desk-channel dispatch label ("anthropic" or "openai"). Empty
+            means "derive from the zenmux_name vendor prefix" — correct only when
+            that prefix IS the dispatch label (anthropic/openai). Third-party
+            vendors routed through Zenmux's OpenAI-compatible gateway (GLM, Kimi,
+            MiniMax, MiMo, DeepSeek, Qwen, …) carry their real vendor in the
+            zenmux_name but MUST set provider="openai" so the selection matches
+            the channel-registry entry in config/agent_channels.yaml.
     """
 
     slug: str
     zenmux_name: str
     display_name: str
     default_config: dict[str, Any]
+    provider: str = ""
 
 
 def _index_models(
@@ -64,33 +72,84 @@ def _index_models(
 
 
 # ---------------------------------------------------------------------------
-# Seed registry — 4 plausible candidate models
+# Seed registry — candidate models
+#
+# Anthropic/OpenAI models let the dispatch label fall out of the zenmux_name
+# vendor prefix (provider=""). Third-party vendors route through Zenmux's
+# OpenAI-compatible gateway, so they pin provider="openai" explicitly and need a
+# matching entry in config/agent_channels.yaml to be dispatchable in a live run.
 # ---------------------------------------------------------------------------
+
+_DEFAULT_CONFIG = {"temperature": 0, "max_tokens": 4096}
 
 CANDIDATE_MODELS: list[ArenaModel] = [
     ArenaModel(
         slug="gpt-5-5",
         zenmux_name="openai/gpt-5.5",
         display_name="GPT-5.5",
-        default_config={"temperature": 0, "max_tokens": 4096},
+        default_config=_DEFAULT_CONFIG,
     ),
     ArenaModel(
         slug="claude-opus-4-8",
         zenmux_name="anthropic/claude-opus-4.8",
         display_name="Claude Opus 4.8",
-        default_config={"temperature": 0, "max_tokens": 4096},
+        default_config=_DEFAULT_CONFIG,
     ),
     ArenaModel(
         slug="claude-sonnet-4-6",
         zenmux_name="anthropic/claude-sonnet-4.6",
         display_name="Claude Sonnet 4.6",
-        default_config={"temperature": 0, "max_tokens": 4096},
+        default_config=_DEFAULT_CONFIG,
     ),
     ArenaModel(
         slug="gemini-2-5-pro",
         zenmux_name="google/gemini-2.5-pro",
         display_name="Gemini 2.5 Pro",
-        default_config={"temperature": 0, "max_tokens": 4096},
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",  # routed via Zenmux's OpenAI-compatible gateway
+    ),
+    # --- Zenmux-routed third-party vendors (OpenAI-compatible gateway) ---
+    ArenaModel(
+        slug="glm-5-2",
+        zenmux_name="z-ai/glm-5.2",
+        display_name="GLM 5.2",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
+    ArenaModel(
+        slug="kimi-2-7",
+        zenmux_name="moonshotai/kimi-k2.7-code",
+        display_name="Kimi 2.7",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
+    ArenaModel(
+        slug="minimax-m3",
+        zenmux_name="minimax/minimax-m3",
+        display_name="MiniMax M3",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
+    ArenaModel(
+        slug="mimo-2-5-pro",
+        zenmux_name="xiaomi/mimo-v2.5-pro",
+        display_name="MiMo V2.5 Pro",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
+    ArenaModel(
+        slug="deepseek-v4-pro",
+        zenmux_name="deepseek/deepseek-v4-pro",
+        display_name="DeepSeek V4 Pro",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
+    ArenaModel(
+        slug="qwen-3-7-max",
+        zenmux_name="qwen/qwen3.7-max",
+        display_name="Qwen 3.7 Max",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
     ),
 ]
 
@@ -141,8 +200,12 @@ def arena_model_to_selection(model: ArenaModel) -> dict[str, str]:
 
     The desk channel registry (config/agent_channels.yaml) keys Zenmux models by
     their FULL id (e.g. ``openai/gpt-5.5``), so ``model`` carries the whole
-    zenmux_name; ``provider`` is the vendor prefix. Returning a stripped model id
-    would fail ``resolve_agent_model_selection`` before any turn is driven.
+    zenmux_name. ``provider`` is the desk dispatch label: an explicit
+    ``model.provider`` when set (third-party vendors routed through Zenmux's
+    OpenAI-compatible gateway pin "openai"), otherwise the vendor prefix of the
+    zenmux_name (correct when that prefix is itself "anthropic"/"openai").
+    Returning a stripped model id, or a provider that disagrees with the YAML
+    entry, would fail ``resolve_agent_model_selection`` before any turn is driven.
 
     Raises:
         ValueError: if zenmux_name does not contain a '<vendor>/<model>' slash.
@@ -152,7 +215,7 @@ def arena_model_to_selection(model: ArenaModel) -> dict[str, str]:
         raise ValueError(
             f"zenmux_name '{name}' must be '<vendor>/<model>' (e.g. 'openai/gpt-5.5')."
         )
-    provider = name.split("/", 1)[0]
+    provider = model.provider or name.split("/", 1)[0]
     return {"channel": "zenmux", "provider": provider, "model": name}
 
 

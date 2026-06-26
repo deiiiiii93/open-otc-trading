@@ -42,6 +42,7 @@ def record_match(
     transcript_path: str | None,
     status: str,
     error: str | None = None,
+    score_breakdown: dict | None = None,
 ) -> int:
     """Upsert an ArenaMatch row; return its id."""
     existing = (
@@ -58,6 +59,7 @@ def record_match(
         existing.config = config
         existing.transcript_path = transcript_path
         existing.error = error
+        existing.score_breakdown = score_breakdown
         session.flush()
         return existing.id
 
@@ -73,6 +75,7 @@ def record_match(
         config=config,
         transcript_path=transcript_path,
         error=error,
+        score_breakdown=score_breakdown,
     )
     session.add(match)
     session.flush()
@@ -229,6 +232,7 @@ def _match_to_dict(m: ArenaMatch) -> dict:
         "total_score": m.total_score,
         "judge_missing": m.judge_missing,
         "config": m.config,
+        "score_breakdown": m.score_breakdown,
         "transcript_path": m.transcript_path,
         "error": m.error,
         "created_at": m.created_at.isoformat() if m.created_at else None,

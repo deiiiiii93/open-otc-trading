@@ -23,17 +23,24 @@ _NAMESPACES: dict[str, set[str]] = {
     "portfolios": {"alias", "name"},
     "positions": {"alias", "portfolio", "underlying", "product_type", "quantity"},
     "pricing_profiles": {"alias", "name", "valuation_date"},
+    # A profile-bound batch-pricing run resolves r/q/vol from the profile's
+    # parameter rows (matched by ``symbol`` == position.underlying). Seed one
+    # complete row per underlying so live pricing produces non-empty Greeks.
+    "pricing_parameter_rows": {"alias", "profile", "symbol"},
     "risk_runs": {"alias", "portfolio"},
 }
 
 # FK edges: {child_ns: {field_in_row: parent_ns}}
 _FK: dict[str, dict[str, str]] = {
     "positions": {"portfolio": "portfolios"},
+    "pricing_parameter_rows": {"profile": "pricing_profiles"},
     "risk_runs": {"portfolio": "portfolios"},
 }
 
 # Insertion order so FK parents exist before children.
-_INSERT_ORDER = ["portfolios", "pricing_profiles", "positions", "risk_runs"]
+_INSERT_ORDER = [
+    "portfolios", "pricing_profiles", "pricing_parameter_rows", "positions", "risk_runs",
+]
 
 # Column allowlist for the risk_runs seed namespace.  Only keys in this set
 # (beyond the always-excluded "alias" / "portfolio") are forwarded to the
@@ -43,6 +50,9 @@ _RISK_RUN_COLS: frozenset[str] = frozenset({
     "method", "status", "metrics", "scenario_cells",
     "resolved_position_ids", "pricing_parameter_profile_id",
     "engine_config_id", "market_snapshot_id",
+    # created_at is seedable so a fixture can pin a genuinely-stale run (computed
+    # >24h ago); without it the row defaults to now and reads as current.
+    "created_at",
 })
 
 
@@ -180,6 +190,18 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
                         extra["valuation_date"] = datetime.fromisoformat(vd)
                 obj = models.PricingParameterProfile(**extra)
 
+            elif ns == "pricing_parameter_rows":
+                profile_id = _parent_id("pricing_profiles", row["profile"])
+                # source_trade_id is NOT NULL on the model; default to "" so the
+                # resolver falls through to the symbol (underlying) match path.
+                extra = {
+                    k: v
+                    for k, v in row.items()
+                    if k not in ("alias", "profile")
+                }
+                extra.setdefault("source_trade_id", "")
+                obj = models.PricingParameterRow(profile_id=profile_id, **extra)
+
             elif ns == "positions":
                 portfolio_id = _parent_id("portfolios", row["portfolio"])
                 # Pass through any extra keys (e.g. engine_name) the test provides.
@@ -199,6 +221,15 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
                     for k, v in row.items()
                     if k not in ("alias", "portfolio") and k in _RISK_RUN_COLS
                 }
+                # created_at maps to a DateTime column; parse ISO strings so the
+                # row sorts/compares as a real timestamp (e.g. for staleness).
+                ca = extra.get("created_at")
+                if isinstance(ca, str):
+                    extra["created_at"] = (
+                        datetime.strptime(ca, "%Y-%m-%d")
+                        if len(ca) == 10
+                        else datetime.fromisoformat(ca)
+                    )
                 obj = models.RiskRun(portfolio_id=portfolio_id, **extra)
 
             else:  # pragma: no cover

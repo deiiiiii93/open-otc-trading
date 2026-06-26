@@ -46,6 +46,32 @@ const mockMatches = [
     total_score: 0.85,
     judge_missing: false,
     transcript_path: 'artifacts/arena/run-1/claude-sonnet/workflow-a/transcript.json',
+    score_breakdown: {
+      objective: {
+        passed: 1,
+        total: 2,
+        steps: [
+          {
+            index: 0,
+            user: 'Check the latest risk',
+            checks: [
+              { kind: 'skill', label: 'skill: read-risk-result', passed: true, detail: '' },
+              { kind: 'tool', label: 'tool: get_latest_risk_run', passed: false, detail: 'not called' },
+            ],
+          },
+        ],
+        success: [],
+      },
+      judge: { rubric_scores: [{ point: 'Identifies staleness', score: 80 }], judged_score: 80, judge_missing: false },
+      diagnosis: {
+        counts: '1/7 expected skills · 0 tool calls · 1/2 checks',
+        analysis: 'Over-caution — asked for the portfolio instead of resolving the named profile.',
+        counts_detail: { skills_hit: 1, tool_calls: 0, checks_passed: 1, checks_total: 2 },
+      },
+      weights: { obj: 0.5, judge: 0.5 },
+      objective_score: 50,
+      total_score: 65,
+    },
   },
 ];
 
@@ -118,6 +144,41 @@ describe('ArenaLive', () => {
 
     // The transcript JSON content should appear
     expect(await screen.findByText(/Run workflow/)).toBeInTheDocument();
+  });
+
+  it('clicking a match shows the per-check score breakdown', async () => {
+    setupMocks();
+    render(<ArenaLive />);
+
+    await userEvent.click(await screen.findByText('1'));
+    await userEvent.click(await screen.findByText('workflow-a'));
+
+    // Breakdown header + aggregate tally
+    expect(await screen.findByText('Score breakdown')).toBeInTheDocument();
+    expect(screen.getByText(/Objective 1\/2/)).toBeInTheDocument();
+    // A passed check and a failed check with its detail
+    expect(screen.getByText('skill: read-risk-result')).toBeInTheDocument();
+    expect(screen.getByText('tool: get_latest_risk_run')).toBeInTheDocument();
+    expect(screen.getByText('not called')).toBeInTheDocument();
+    // Judge rubric point surfaces
+    expect(screen.getByText('Identifies staleness')).toBeInTheDocument();
+  });
+
+  it('clicking a match shows the diagnosis (counts + analysis)', async () => {
+    setupMocks();
+    render(<ArenaLive />);
+
+    await userEvent.click(await screen.findByText('1'));
+    await userEvent.click(await screen.findByText('workflow-a'));
+
+    expect(await screen.findByText('Diagnosis')).toBeInTheDocument();
+    expect(
+      screen.getByText('1/7 expected skills · 0 tool calls · 1/2 checks'),
+    ).toBeInTheDocument();
+    // The analysis narrative appears (match cell + drilldown both render it)
+    expect(
+      screen.getAllByText(/Over-caution — asked for the portfolio/).length,
+    ).toBeGreaterThan(0);
   });
 
   it('shows empty state when no leaderboard data', async () => {

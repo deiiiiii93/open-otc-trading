@@ -169,3 +169,45 @@ def test_arena_match_fk_enforced(tmp_path: Path) -> None:
         row = conn.execute(sa.text("SELECT workflow_id FROM arena_match WHERE run_id=1")).fetchone()
         assert row is not None
         assert row[0] == "wf-a"
+
+
+# ---------------------------------------------------------------------------
+# Test 4: migration 0034 adds/removes arena_match.score_breakdown
+# ---------------------------------------------------------------------------
+
+def test_0034_adds_and_drops_score_breakdown(tmp_path: Path) -> None:
+    engine = _fresh_engine(tmp_path, "test_0034.sqlite3")
+    base = importlib.import_module("backend.alembic.versions.0032_arena_runs")
+    mig = importlib.import_module(
+        "backend.alembic.versions.0034_arena_match_score_breakdown"
+    )
+
+    _run_migration(base, "upgrade", engine)
+    assert "score_breakdown" not in {
+        c["name"] for c in inspect(engine).get_columns("arena_match")
+    }
+
+    _run_migration(mig, "upgrade", engine)
+    assert "score_breakdown" in {
+        c["name"] for c in inspect(engine).get_columns("arena_match")
+    }
+
+    _run_migration(mig, "downgrade", engine)
+    assert "score_breakdown" not in {
+        c["name"] for c in inspect(engine).get_columns("arena_match")
+    }
+
+
+def test_0034_upgrade_is_idempotent(tmp_path: Path) -> None:
+    """Re-running upgrade() when the column already exists must not raise."""
+    engine = _fresh_engine(tmp_path, "test_0034_idem.sqlite3")
+    base = importlib.import_module("backend.alembic.versions.0032_arena_runs")
+    mig = importlib.import_module(
+        "backend.alembic.versions.0034_arena_match_score_breakdown"
+    )
+    _run_migration(base, "upgrade", engine)
+    _run_migration(mig, "upgrade", engine)
+    _run_migration(mig, "upgrade", engine)  # second time: no-op, no error
+    assert "score_breakdown" in {
+        c["name"] for c in inspect(engine).get_columns("arena_match")
+    }

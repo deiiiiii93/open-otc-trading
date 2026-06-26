@@ -43,6 +43,7 @@ class MatchSummary(BaseModel):
     total_score: float | None
     judge_missing: bool
     transcript_path: str | None
+    score_breakdown: dict | None = None
 
 
 class CreateRunRequest(BaseModel):
@@ -183,6 +184,7 @@ def build_arena_router(
                 total_score=m.get("total_score"),
                 judge_missing=m.get("judge_missing", False),
                 transcript_path=m.get("transcript_path"),
+                score_breakdown=m.get("score_breakdown"),
             )
             for m in (run_dict.get("matches") or [])
         ]

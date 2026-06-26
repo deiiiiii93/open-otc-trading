@@ -14,34 +14,144 @@
         "valuation_date": "2026-06-24"
       }
     ],
+    "pricing_parameter_rows": [
+      {
+        "alias": "ppr-aapl",
+        "profile": "prof",
+        "symbol": "AAPL",
+        "rate": 0.04,
+        "dividend_yield": 0.005,
+        "volatility": 0.30
+      },
+      {
+        "alias": "ppr-tsla",
+        "profile": "prof",
+        "symbol": "TSLA",
+        "rate": 0.04,
+        "dividend_yield": 0.0,
+        "volatility": 0.45
+      },
+      {
+        "alias": "ppr-nvda",
+        "profile": "prof",
+        "symbol": "NVDA",
+        "rate": 0.04,
+        "dividend_yield": 0.0,
+        "volatility": 0.40
+      }
+    ],
     "positions": [
       {
         "alias": "pos-aapl",
         "portfolio": "control",
         "underlying": "AAPL",
-        "product_type": "vanilla",
-        "quantity": 1000
+        "product_type": "EuropeanVanillaOption",
+        "quantity": 1000,
+        "product_kwargs": {
+          "strike": 100.0,
+          "option_type": "CALL",
+          "maturity": 0.5
+        }
       },
       {
         "alias": "pos-tsla",
         "portfolio": "control",
         "underlying": "TSLA",
-        "product_type": "vanilla",
-        "quantity": 500
+        "product_type": "EuropeanVanillaOption",
+        "quantity": 500,
+        "product_kwargs": {
+          "strike": 100.0,
+          "option_type": "CALL",
+          "maturity": 0.5
+        }
       },
       {
         "alias": "pos-nvda",
         "portfolio": "control",
         "underlying": "NVDA",
-        "product_type": "barrier",
-        "quantity": 750
+        "product_type": "BarrierOption",
+        "quantity": 750,
+        "product_kwargs": {
+          "strike": 100.0,
+          "option_type": "CALL",
+          "maturity": 0.5,
+          "barrier": 130.0,
+          "barrier_type": "UP_OUT"
+        }
       }
     ],
     "risk_runs": [
       {
         "alias": "stale",
         "portfolio": "control",
-        "as_of": "2026-06-22"
+        "status": "completed",
+        "method": "summary",
+        "created_at": "2026-06-22T16:00:00",
+        "metrics": {
+          "valuation_as_of": "2026-06-22T16:00:00",
+          "by_currency": {
+            "USD": {
+              "delta": 573.3,
+              "gamma": 21.4,
+              "vega": 349.5,
+              "theta": -39.5,
+              "rho": 359.5,
+              "delta_cash": 86046.8,
+              "market_value": 17268.3,
+              "position_count": 3
+            }
+          },
+          "shared": {
+            "delta_proxy": 573.3
+          },
+          "positions": [
+            {
+              "position_id": 1,
+              "underlying": "AAPL",
+              "product_type": "EuropeanVanillaOption",
+              "quantity": 1000,
+              "delta": 573.3,
+              "gamma": 18.2,
+              "vega": 250.1,
+              "price": 9.25,
+              "market_value": 9246.3,
+              "greeks_ok": true,
+              "pricing_ok": true,
+              "currency": "USD",
+              "spot": 100.0
+            },
+            {
+              "position_id": 2,
+              "underlying": "TSLA",
+              "product_type": "EuropeanVanillaOption",
+              "quantity": 500,
+              "delta": 293.9,
+              "gamma": 9.1,
+              "vega": 120.4,
+              "price": 13.53,
+              "market_value": 6765.2,
+              "greeks_ok": true,
+              "pricing_ok": true,
+              "currency": "USD",
+              "spot": 100.0
+            },
+            {
+              "position_id": 3,
+              "underlying": "NVDA",
+              "product_type": "BarrierOption",
+              "quantity": 750,
+              "delta": -6.8,
+              "gamma": 0.4,
+              "vega": -21.0,
+              "price": 1.68,
+              "market_value": 1256.8,
+              "greeks_ok": true,
+              "pricing_ok": true,
+              "currency": "USD",
+              "spot": 100.0
+            }
+          ]
+        }
       }
     ]
   },
@@ -82,7 +192,7 @@
         "read-risk-result"
       ],
       "artifacts": [],
-      "response_text": "The latest risk run for the control portfolio is **stale** \u2014 it was computed on 2026-06-22, which is more than 24 hours ago and therefore out of date. The total delta is -250,000 and AAPL is the largest contributor. I recommend running a fresh risk calculation before taking any action."
+      "response_text": "The latest risk run for the control portfolio is **stale** — it was computed on 2026-06-22, which is more than 24 hours ago and therefore out of date. The total delta is -250,000 and AAPL is the largest contributor. I recommend running a fresh risk calculation before taking any action."
     },
     "step-2-run-risk": {
       "ai": {
@@ -115,7 +225,7 @@
         "run-risk"
       ],
       "artifacts": [],
-      "response_text": "The fresh risk calculation has been queued. Task ID: `rp-task-20260624-001`. The batch-pricing run will recompute all position valuations and risk metrics for the control portfolio using the current pricing profile."
+      "response_text": "The fresh risk calculation has been queued. Task ID: `rp-task-20260624-001`. The batch-pricing run will recompute all position valuations and risk metrics for the control portfolio using the Control Profile."
     },
     "step-3-read-fresh-risk": {
       "ai": {
@@ -154,7 +264,7 @@
         "read-risk-result"
       ],
       "artifacts": [],
-      "response_text": "The updated risk run is fresh as of 2026-06-24. The hotspot is **AAPL** with a net delta of -148,000 and gamma of -7,200 \u2014 by far the largest Greek contributor across the portfolio. TSLA and NVDA are secondary. Total portfolio delta is -248,500."
+      "response_text": "The updated risk run is fresh as of 2026-06-24. The hotspot is **AAPL** with a net delta of -148,000 and gamma of -7,200 — by far the largest Greek contributor across the portfolio. TSLA and NVDA are secondary. Total portfolio delta is -248,500."
     },
     "step-4-greeks-landscape": {
       "ai": {
@@ -277,23 +387,28 @@
             "run_id": 201,
             "task_id": "st-task-20260624-001",
             "status": "completed",
-            "pnl": -1850000.0,
-            "worst_scenario": "2008-financial-crisis",
-            "cvar_95": -2100000.0,
-            "scenarios": [
-              {
-                "name": "2008-financial-crisis",
-                "pnl": -1850000.0
+            "results": {
+              "worst_scenario": "2008-financial-crisis",
+              "var_cvar": {
+                "var": -1650000.0,
+                "cvar": -2100000.0,
+                "confidence": 0.95
               },
-              {
-                "name": "2020-covid-crash",
-                "pnl": -1420000.0
-              },
-              {
-                "name": "2022-rate-shock",
-                "pnl": -980000.0
-              }
-            ]
+              "scenarios": [
+                {
+                  "name": "2008-financial-crisis",
+                  "pnl": -1850000.0
+                },
+                {
+                  "name": "2020-covid-crash",
+                  "pnl": -1420000.0
+                },
+                {
+                  "name": "2022-rate-shock",
+                  "pnl": -980000.0
+                }
+              ]
+            }
           }
         }
       ],
@@ -363,10 +478,10 @@
         "tool_calls": [
           {
             "id": "call_s7_001",
-            "name": "create_report_tool",
+            "name": "write_report_artifact_tool",
             "args": {
               "portfolio_id": 6,
-              "title": "Control Day Risk Report \u2014 2026-06-24",
+              "title": "Control Day Risk Report — 2026-06-24",
               "include_risk_run": true,
               "include_scenario_test": true,
               "include_backtest": true
@@ -377,31 +492,31 @@
       "tool_results": [
         {
           "tool_call_id": "call_s7_001",
-          "name": "create_report_tool",
+          "name": "write_report_artifact_tool",
           "content": {
             "report_id": "rpt-20260624-control",
-            "title": "Control Day Risk Report \u2014 2026-06-24",
+            "title": "Control Day Risk Report — 2026-06-24",
             "status": "created",
             "artifacts": [
               {
-                "kind": "report",
-                "report_id": "rpt-20260624-control",
-                "title": "Control Day Risk Report \u2014 2026-06-24",
-                "url": "/reports/rpt-20260624-control"
+                "kind": "text",
+                "path": "/trading_desk/reports/rpt-20260624-control.md",
+                "title": "Control Day Risk Report — 2026-06-24",
+                "url": "/trading_desk/reports/rpt-20260624-control"
               }
             ]
           }
         }
       ],
       "skills_routed": [
-        "create-risk-report"
+        "generate-report"
       ],
       "artifacts": [
         {
-          "kind": "report",
-          "report_id": "rpt-20260624-control",
-          "title": "Control Day Risk Report \u2014 2026-06-24",
-          "url": "/reports/rpt-20260624-control"
+          "kind": "text",
+          "path": "/trading_desk/reports/rpt-20260624-control.md",
+          "title": "Control Day Risk Report — 2026-06-24",
+          "url": "/trading_desk/reports/rpt-20260624-control"
         }
       ],
       "response_text": "The governance risk report has been created. Report ID: `rpt-20260624-control`. The report bundles today's risk run (hotspot: AAPL), Greeks landscape, market-crash scenario results (worst-case P&L: -1,850,000), and quarterly backtest summary (Sharpe 1.12). It is now available as a durable artifact for the governance record."
