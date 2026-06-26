@@ -81,3 +81,15 @@
   display: flex;
   gap: var(--gap-2);
 }
+
+.wl-workflows-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  min-height: 0;
+}
+
+.wl-workflows-page__tabs {
+  display: flex;
+  gap: var(--gap-2);
+}
