@@ -15,8 +15,8 @@ def test_tool_registered():
     assert "save_desk_workflow" in {t.name for t in all_agent_tools()}
 
 
-def test_tool_saves():
-    database.init_db()
+def test_tool_saves(session):
+    # `session` fixture points the global SessionLocal at a tmp DB.
     out = save_desk_workflow_tool.invoke({"script": SCRIPT})
     assert out["ok"] is True and out["slug"] == "tool-wf"
     with database.SessionLocal() as s:
@@ -25,7 +25,6 @@ def test_tool_saves():
         assert get_desk_workflow(s, "tool-wf") is not None
 
 
-def test_tool_rejects_bad_script():
-    database.init_db()
+def test_tool_rejects_bad_script(session):
     out = save_desk_workflow_tool.invoke({"script": "import os\n"})
     assert out["ok"] is False and out["error"]
