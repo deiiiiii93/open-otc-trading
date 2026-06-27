@@ -161,6 +161,21 @@ Claude, OpenAI-compatible protocol for the rest):
 
 ### 4.1 The leaderboard
 
+**Mean total score** — frontier (Opus/GPT) vs. the open-weight cluster vs. the floor (1 block ≈ 2 points):
+
+```
+Claude Opus 4.8   █████████████████████████████████▎  66.4  🥇
+GPT-5.5           █████████████████████████████████▏  66.3  🥈
+Claude Sonnet 4.6 █████████████████████████████▌  59.1  🥉
+Kimi 2.7          ████████████████████████████▌  56.9
+MiMo V2.5 Pro     ███████████████████████████▋  55.3
+GLM 5.2           ██████████████████████████▋  53.3  ⚠️ n=2
+DeepSeek V4 Pro   ██████████████████████████  52.0
+Gemini 3.1 Pro    ████████████████████████▍  48.7
+MiniMax M3        ▎  0.6
+Qwen 3.7 Max        0.0
+```
+
 | Rank | Model | **Total** | σ | Objective | Judge | n |
 |-----:|-------|----------:|---:|----------:|------:|:-:|
 | 🥇 1 | **Claude Opus 4.8** | **66.4** | 8.1 | 50.3 | 82.5 | 5 |
@@ -194,6 +209,19 @@ wash out.
 
 Rank ≠ reliability. The standard deviation tells you whether you can trust a model
 to run the desk unattended on *any given day*:
+
+**Reliability** — standard deviation across the five trials (**shorter is steadier**; 1 block ≈ 1 point of σ):
+
+```
+Claude Sonnet 4.6 ██▊  2.7   ← steadiest
+GLM 5.2           ██▎  2.3   (n=2)
+MiMo V2.5 Pro     █████▏  5.1
+Gemini 3.1 Pro    ██████▍  6.4
+Claude Opus 4.8   ████████▏  8.1
+GPT-5.5           ████████▎  8.2
+Kimi 2.7          ██████████▍  10.4
+DeepSeek V4 Pro   █████████████▊  13.7  ← most volatile
+```
 
 - **Sonnet 4.6 — σ 2.7:** the steadiest operator in the field. It never tops the
   board, but it never collapses either (range 54.8–61.4).
@@ -280,6 +308,8 @@ evaluation, explicitly distinct from the *model* limitations of MiniMax and Qwen
 
 ## 7. Cost & token usage
 
+> **Note.** This section reports what the trace could capture in run #8; **the full usage detail will be added in the future reports.**
+
 ### 7.1 What we could measure
 
 The trace log records per-span token counts. For the two Anthropic-native models,
@@ -335,6 +365,21 @@ Opus $0.50/M, Sonnet $0.30/M), real cost on this prompt-heavy workload is
 
 ### 7.3 Cost–performance
 
+**Score per dollar** — the open-weight tier inverts the quality ranking on cost-efficiency (1 block ≈ 2.6 points/$):
+
+```
+Kimi 2.7          ████████████████████████  63  ← cost-perf champion
+MiMo V2.5 Pro     ███████████████████████▍  61
+GLM 5.2           ██████████████████████▌  59  (n=2)
+DeepSeek V4 Pro   ██████████████████████  58
+Gemini 3.1 Pro    ████▎  11
+Claude Sonnet 4.6 ███▌  9
+Claude Opus 4.8   ██▍  6   ← best absolute quality
+GPT-5.5           ██▍  6
+MiniMax M3        ▊  2
+Qwen 3.7 Max        0
+```
+
 The frontier (Opus/GPT, ~$11/match) buys the top ~7 points of score; the
 open-weight tier (~$0.90/match) delivers **~80–86 % of that score at ~1/12 the
 cost**:
@@ -355,7 +400,8 @@ open-weight tier (Kimi/MiMo/DeepSeek) is the Pareto-efficient choice.
 ## 8. Limitations & threats to validity
 
 - **One workflow.** Run #8 covers a single flagship task. Rankings may shift on
-  other desk workflows; this is a depth-over-breadth design.
+  other desk workflows; this is a depth-over-breadth design. We're also working on
+  other long-workflow match designs, and will make them public soon.
 - **Judge model in the loop.** Half the score comes from a GPT-5.5 judge, which
   may carry stylistic bias. (Notably it did *not* simply crown its own family —
   Opus outscored GPT-5.5 on the judge axis.)
