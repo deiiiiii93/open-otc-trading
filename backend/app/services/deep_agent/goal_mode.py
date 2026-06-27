@@ -710,17 +710,23 @@ class GoalRunService:
         if not self._store.grader_should_attach(thread_id):
             return None  # no active running run -> nothing to record
         result = evaluation.get("result")
-        if result == "satisfied":
-            return self._finish(thread_id, mark_goal_satisfied)
-        if result in ("max_iterations_reached", "failed", "grader_error"):
-            failing = failing_criteria_from_evaluation(evaluation)
-            return self._finish(
-                thread_id,
-                lambda s: escalate_goal_run(
-                    s, terminal_reason=result, failing_criteria=failing
-                ),
-            )
-        return self._store.active(thread_id)  # needs_revision / unknown -> unchanged
+        # The check above and the transition below are separate store operations; a
+        # concurrent cancel/terminal transition can release the pointer in between, so
+        # treat the now-stale transition as a late-callback no-op rather than crashing.
+        try:
+            if result == "satisfied":
+                return self._finish(thread_id, mark_goal_satisfied)
+            if result in ("max_iterations_reached", "failed", "grader_error"):
+                failing = failing_criteria_from_evaluation(evaluation)
+                return self._finish(
+                    thread_id,
+                    lambda s: escalate_goal_run(
+                        s, terminal_reason=result, failing_criteria=failing
+                    ),
+                )
+            return self._store.active(thread_id)  # needs_revision / unknown -> unchanged
+        except GoalStateError:
+            return None  # raced with cancel / another terminal transition
 
     def _finish(self, thread_id: str, transition) -> GoalRunStateV1:
         """Apply a terminal transition and drop the frozen contract once the run

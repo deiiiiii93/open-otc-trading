@@ -597,16 +597,27 @@ export function useAgentChatController(): AgentChatController {
   const ratifyActiveGoal = useCallback(async () => {
     const threadId = activeId;
     if (threadId == null) return;
+    // The frozen goal text seeds the kickoff turn the grader will judge — capture it
+    // before ratify clears state, so "Accept & start" actually starts the run.
+    const kickoff = goalContract?.goal_text ?? goalContract?.summary ?? '';
     setGoalBusy(true);
+    let ratified = false;
     try {
       const state = await ratifyGoalApi(threadId);
       if (activeIdRef.current === threadId) setGoalState(state);
+      ratified = true;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setGoalBusy(false);
     }
-  }, [activeId]);
+    // Start the autonomous run the frozen criteria grade: the grader attaches to this
+    // streamed turn because the run is now `running`. Without this, ratify leaves the
+    // goal idle until the user manually sends another message.
+    if (ratified && kickoff && activeIdRef.current === threadId) {
+      void sendMessage(kickoff, null, null, null, 'desk_workflow');
+    }
+  }, [activeId, goalContract, sendMessage]);
 
   const cancelActiveGoal = useCallback(async () => {
     const threadId = activeId;

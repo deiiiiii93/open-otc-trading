@@ -107,3 +107,17 @@ def test_escalation_keeps_the_contract_for_resume():
     svc = _running_service("t1")
     svc.record_evaluation("t1", {"result": "max_iterations_reached", "criteria": []})
     assert svc.contract_view("t1") is not None  # resumable against the same frozen criteria
+
+
+def test_record_evaluation_swallows_a_cancellation_race():
+    """grader_should_attach() and the transition are separate store ops; if a cancel
+    releases the pointer in between, the stale transition is a no-op, not a crash."""
+    from app.services.deep_agent import goal_mode
+
+    svc = _running_service("t1")
+
+    def boom(*_a, **_k):
+        raise goal_mode.GoalStateError("no active goal run on thread 't1'")
+
+    svc._store.update = boom  # simulate the run vanishing between check and transition
+    assert svc.record_evaluation("t1", {"result": "satisfied", "criteria": []}) is None
