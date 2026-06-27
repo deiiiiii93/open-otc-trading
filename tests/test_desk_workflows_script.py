@@ -6,6 +6,7 @@ from app.services.desk_workflows_script import (
     guard_script,
     validate_params,
     validate_script,
+    validate_workflow_args,
 )
 
 GOOD = (
@@ -141,3 +142,37 @@ def test_validate_params_happy_normalizes():
 def test_validate_params_rejects(params):
     with pytest.raises(WorkflowScriptError):
         validate_params(_meta(params))
+
+
+_PARAMS = [
+    {"name": "portfolio", "label": "Portfolio", "type": "portfolio"},
+    {"name": "start", "label": "Start", "type": "date"},
+]
+_PMETA = {"name": "x", "params": _PARAMS}
+
+
+def test_validate_args_happy_strips():
+    out = validate_workflow_args(_PMETA, {"portfolio": " Default ", "start": "2026-06-25"})
+    assert out == {"portfolio": "Default", "start": "2026-06-25"}
+
+
+def test_validate_args_no_params_ignores_input():
+    assert validate_workflow_args({"name": "x"}, {}) == {}
+
+
+@pytest.mark.parametrize("args", ["foo", [1, 2], 7])
+def test_validate_args_rejects_non_dict(args):
+    with pytest.raises(WorkflowScriptError):
+        validate_workflow_args(_PMETA, args)
+
+
+@pytest.mark.parametrize("args", [
+    {"portfolio": "Default"},                              # missing start
+    {"portfolio": "  ", "start": "2026-06-25"},            # blank value
+    {"portfolio": "Default", "start": "2026-13-01"},       # bad month
+    {"portfolio": "Default", "start": "06/25/2026"},       # wrong format
+    {"portfolio": "Default", "start": "2026-06-25", "x": "y"},  # unknown key
+])
+def test_validate_args_rejects(args):
+    with pytest.raises(WorkflowScriptError):
+        validate_workflow_args(_PMETA, args)

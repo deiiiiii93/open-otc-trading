@@ -95,6 +95,43 @@ def validate_params(meta: dict) -> list[dict]:
     return out
 
 
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def validate_workflow_args(meta: dict, args) -> dict[str, str]:
+    """Validate launch-time args against meta['params']; return a clean dict.
+
+    Every declared param is required and must be a non-empty string; date-typed
+    params must be ISO YYYY-MM-DD. Unknown keys and non-dict args are rejected.
+    """
+    if not isinstance(args, dict):
+        raise WorkflowScriptError("args must be an object")
+    params = validate_params(meta)
+    declared = {p["name"]: p for p in params}
+    unknown = set(args) - set(declared)
+    if unknown:
+        raise WorkflowScriptError(f"unknown parameter {sorted(unknown)[0]!r}")
+    clean: dict[str, str] = {}
+    for name, spec in declared.items():
+        raw = args.get(name)
+        value = raw.strip() if isinstance(raw, str) else ""
+        if not value:
+            raise WorkflowScriptError(f"missing required parameter {name!r}")
+        if spec["type"] == "date":
+            if not _DATE_RE.match(value):
+                raise WorkflowScriptError(
+                    f"parameter {name!r} must be an ISO date (YYYY-MM-DD)"
+                )
+            try:
+                datetime.date.fromisoformat(value)
+            except ValueError as exc:
+                raise WorkflowScriptError(
+                    f"parameter {name!r} must be an ISO date (YYYY-MM-DD)"
+                ) from exc
+        clean[name] = value
+    return clean
+
+
 def guard_script(script: str) -> None:
     try:
         tree = ast.parse(script)
