@@ -15,12 +15,25 @@
   letter-spacing: 0.06em;
   color: var(--ink-2);
 }
+/* The input layers a transparent-text textarea over a mirror backdrop that paints the
+   text — so the leading command token can be tinted while keeping a real textarea. */
+.wl-composer__input {
+  position: relative;
+  min-width: 0;
+}
 .wl-composer__textarea {
+  position: relative;
+  z-index: 1;
+  /* block, not the default inline-block — otherwise the line box reserves descender space
+     below it and the input container ends up taller than the textarea, so the absolutely
+     positioned backdrop (inset: 0) overshoots and its synced scroll drifts. */
+  display: block;
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--hairline-2);
-  background: var(--paper);
-  color: var(--ink);
+  background: transparent;
+  color: transparent;
+  caret-color: var(--ink);
   padding: var(--input-padding-y) var(--input-padding-x);
   font-family: var(--font-ui);
   font-size: var(--type-body-size);
@@ -28,10 +41,45 @@
   min-height: 72px;
   border-radius: 0;
 }
+.wl-composer__textarea::placeholder {
+  color: var(--ink-2);
+}
 .wl-composer__textarea:focus {
   outline: none;
   border: 2px solid var(--ink);
   padding: calc(var(--input-padding-y) - 1px) calc(var(--input-padding-x) - 1px);
+}
+/* Mirror of the textarea: identical box metrics so the painted text aligns glyph-for-glyph.
+   Transparent 1px border matches the textarea's resting border; on focus the textarea swaps
+   to a 2px border with -1px padding, so its content box never moves and this stays aligned. */
+.wl-composer__highlights {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  padding: var(--input-padding-y) var(--input-padding-x);
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+/* The textarea swaps to a 2px border with -1px padding on focus; the backdrop must mirror
+   that exactly, or its content box grows taller, its max scroll shrinks, and the synced
+   scrollTop clamps — drifting the painted text out of line once the input overflows. */
+.wl-composer__input:focus-within .wl-composer__highlights {
+  border-width: 2px;
+  padding: calc(var(--input-padding-y) - 1px) calc(var(--input-padding-x) - 1px);
+}
+/* Colour only — never change weight/size/spacing here, or the painted glyphs would drift
+   from the textarea's caret (advance widths must match the transparent textarea exactly). */
+.wl-composer__cmd-token {
+  color: var(--info);
 }
 .wl-composer__actions {
   display: flex;
@@ -101,12 +149,19 @@
   background: transparent;
   border: none;
   cursor: pointer;
-  color: var(--ink-1);
+  color: var(--ink);
   text-align: left;
 }
 
-.wl-composer__slash-item:hover {
-  background: var(--paper-3, var(--paper-1));
+.wl-composer__slash-item:hover,
+.wl-composer__slash-item.is-active {
+  background: var(--paper-3);
+}
+
+/* The slash token reads as a command, not prose — tint it with the info accent so it
+   stands apart from the description text. */
+.wl-composer__slash-slug {
+  color: var(--info);
 }
 
 .wl-composer__slash-item span {

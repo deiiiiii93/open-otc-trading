@@ -190,4 +190,138 @@ describe('ChatComposer', () => {
       expect(onSend).toHaveBeenCalledWith('/goal refresh risk');
     });
   });
+
+  describe('slash-command keyboard navigation', () => {
+    const workflow = {
+      slug: 'run-risk',
+      title: 'Run risk',
+      persona: 'risk_manager' as const,
+      description: '',
+      scope: 'local' as const,
+      default_mode: 'auto' as const,
+      source: 'seed' as const,
+    };
+
+    it('highlights the first option by default when the menu opens', async () => {
+      render(
+        <ChatComposer
+          onSend={() => {}}
+          sending={false}
+          workflows={[workflow]}
+          onLaunchWorkflow={() => {}}
+        />,
+      );
+      await userEvent.type(screen.getByLabelText(/ask anything/i), '/');
+      expect(screen.getByRole('option', { name: /\/goal/ })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByRole('option', { name: /\/run-risk/ })).toHaveAttribute('aria-selected', 'false');
+    });
+
+    it('moves the highlight down with ArrowDown', async () => {
+      render(
+        <ChatComposer
+          onSend={() => {}}
+          sending={false}
+          workflows={[workflow]}
+          onLaunchWorkflow={() => {}}
+        />,
+      );
+      const box = screen.getByLabelText(/ask anything/i);
+      await userEvent.type(box, '/');
+      fireEvent.keyDown(box, { key: 'ArrowDown' });
+      expect(screen.getByRole('option', { name: /\/run-risk/ })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByRole('option', { name: /\/goal/ })).toHaveAttribute('aria-selected', 'false');
+    });
+
+    it('wraps the highlight to the last option with ArrowUp from the top', async () => {
+      render(
+        <ChatComposer
+          onSend={() => {}}
+          sending={false}
+          workflows={[workflow]}
+          onLaunchWorkflow={() => {}}
+        />,
+      );
+      const box = screen.getByLabelText(/ask anything/i);
+      await userEvent.type(box, '/');
+      fireEvent.keyDown(box, { key: 'ArrowUp' });
+      expect(screen.getByRole('option', { name: /\/run-risk/ })).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('Enter selects the highlighted option, not the first one', async () => {
+      const onLaunchWorkflow = vi.fn();
+      const box = renderAndOpen(onLaunchWorkflow, workflow);
+      fireEvent.keyDown(box, { key: 'ArrowDown' });
+      fireEvent.keyDown(box, { key: 'Enter' });
+      expect(onLaunchWorkflow).toHaveBeenCalledWith('run-risk', 'auto');
+    });
+
+    it('Tab autocompletes the highlighted slug without launching it', async () => {
+      const onLaunchWorkflow = vi.fn();
+      const box = renderAndOpen(onLaunchWorkflow, workflow) as HTMLTextAreaElement;
+      fireEvent.keyDown(box, { key: 'ArrowDown' });
+      fireEvent.keyDown(box, { key: 'Tab' });
+      expect(box.value).toBe('/run-risk');
+      expect(onLaunchWorkflow).not.toHaveBeenCalled();
+    });
+
+    function renderAndOpen(
+      onLaunchWorkflow: (slug: string, mode: 'auto' | 'yolo') => void,
+      wf: typeof workflow,
+    ) {
+      render(
+        <ChatComposer
+          onSend={() => {}}
+          sending={false}
+          workflows={[wf]}
+          onLaunchWorkflow={onLaunchWorkflow}
+        />,
+      );
+      const box = screen.getByLabelText(/ask anything/i);
+      fireEvent.change(box, { target: { value: '/' } });
+      return box;
+    }
+  });
+
+  describe('command-token highlighting in the input', () => {
+    const workflow = {
+      slug: 'run-risk',
+      title: 'Run risk',
+      persona: 'risk_manager' as const,
+      description: '',
+      scope: 'local' as const,
+      default_mode: 'auto' as const,
+      source: 'seed' as const,
+    };
+
+    it('wraps a leading built-in command in a highlighted token, even with trailing args', () => {
+      const { container } = render(<ChatComposer onSend={() => {}} sending={false} />);
+      fireEvent.change(screen.getByLabelText(/ask anything/i), {
+        target: { value: '/goal create a risk report for portfolio "Default"' },
+      });
+      const token = container.querySelector('.wl-composer__cmd-token');
+      expect(token?.textContent).toBe('/goal');
+    });
+
+    it('highlights a recognized workflow slug typed into the input', () => {
+      const { container } = render(
+        <ChatComposer
+          onSend={() => {}}
+          sending={false}
+          workflows={[workflow]}
+          onLaunchWorkflow={() => {}}
+        />,
+      );
+      fireEvent.change(screen.getByLabelText(/ask anything/i), { target: { value: '/run-risk' } });
+      expect(container.querySelector('.wl-composer__cmd-token')?.textContent).toBe('/run-risk');
+    });
+
+    it('does not highlight ordinary prose or an unrecognized slash token', () => {
+      const { container } = render(<ChatComposer onSend={() => {}} sending={false} />);
+      const box = screen.getByLabelText(/ask anything/i);
+      fireEvent.change(box, { target: { value: 'price a snowball' } });
+      expect(container.querySelector('.wl-composer__cmd-token')).toBeNull();
+      fireEvent.change(box, { target: { value: '/notacommand do things' } });
+      expect(container.querySelector('.wl-composer__cmd-token')).toBeNull();
+    });
+  });
 });
