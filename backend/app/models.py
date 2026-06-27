@@ -200,6 +200,15 @@ class DeskWorkflow(Base):
         DateTime, default=utcnow, onupdate=utcnow
     )
 
+    @property
+    def params(self) -> list[dict]:
+        """Declared launch params, derived from the stored script's meta."""
+        from .services.desk_workflows_script import extract_meta, validate_params
+        try:
+            return validate_params(extract_meta(self.script))
+        except Exception:
+            return []  # stored scripts are validated at save; be defensive
+
 
 class MemoryEntry(Base):
     __tablename__ = "memory_entries"

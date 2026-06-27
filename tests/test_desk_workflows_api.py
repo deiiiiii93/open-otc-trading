@@ -47,3 +47,16 @@ def test_validate_endpoint(session):
     assert client.post("/api/workflows/validate", json={"script": SCRIPT}).json()["ok"] is True
     bad = client.post("/api/workflows/validate", json={"script": "import os\n"})
     assert bad.json()["ok"] is False and bad.json()["error"]
+
+
+def test_list_includes_params(session):
+    client = _make_app(session)
+    script = (
+        'meta = {"name":"with-params","title":"WP","persona":"trader","mode":"auto",'
+        '"scope":"local","params":[{"name":"p","label":"P","type":"date"}]}\n'
+        'await step(f"{args.p}")\n'
+    )
+    assert client.post("/api/workflows", json={"script": script}).status_code == 200
+    rows = client.get("/api/workflows").json()
+    row = next(r for r in rows if r["slug"] == "with-params")
+    assert row["params"] == [{"name": "p", "label": "P", "type": "date"}]

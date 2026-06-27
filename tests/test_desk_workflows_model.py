@@ -25,3 +25,24 @@ def test_seed_flagship_present(session):
     assert wf.source == "seed"
     assert wf.persona == "risk_manager"
     assert wf.script.count("await step(") == 7
+
+
+def test_desk_workflow_params_property(session):
+    script = (
+        'meta = {"name":"pw","title":"PW","persona":"trader","mode":"auto",'
+        '"scope":"local","params":[{"name":"p","label":"P","type":"portfolio"}]}\n'
+        'await step(f"{args.p}")\n'
+    )
+    wf = DeskWorkflow(
+        slug="pw", title="PW", persona="trader", description="",
+        scope="local", default_mode="auto", script=script, source="user",
+    )
+    assert wf.params == [{"name": "p", "label": "P", "type": "portfolio"}]
+
+
+def test_desk_workflow_params_empty_when_absent(session):
+    wf = DeskWorkflow(
+        slug="np", title="NP", persona="trader", description="",
+        scope="local", default_mode="auto", script="meta = {}\n", source="user",
+    )
+    assert wf.params == []
