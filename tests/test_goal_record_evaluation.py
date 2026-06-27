@@ -94,3 +94,16 @@ def test_grader_error_escalates():
     state = svc.record_evaluation("t1", {"result": "grader_error", "criteria": []})
     assert state.status == "stuck_needs_human"
     assert state.terminal_reason == "grader_error"
+
+
+def test_satisfied_drops_the_frozen_contract():
+    svc = _running_service("t1")
+    assert svc.contract_view("t1") is not None
+    svc.record_evaluation("t1", {"result": "satisfied", "criteria": []})
+    assert svc.contract_view("t1") is None  # no stale criteria after the pointer releases
+
+
+def test_escalation_keeps_the_contract_for_resume():
+    svc = _running_service("t1")
+    svc.record_evaluation("t1", {"result": "max_iterations_reached", "criteria": []})
+    assert svc.contract_view("t1") is not None  # resumable against the same frozen criteria

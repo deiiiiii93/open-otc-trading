@@ -129,6 +129,33 @@ export function useAgentChatController(): AgentChatController {
   const [goalState, setGoalState] = useState<GoalRunState | null>(null);
   const [goalClarification, setGoalClarification] = useState<GoalClarification | null>(null);
   const [goalBusy, setGoalBusy] = useState(false);
+  // Always reflects the committed active thread, so async goal updates can refuse to
+  // write a response for a thread the user has since switched away from.
+  const activeIdRef = useRef<number | null>(activeId);
+  activeIdRef.current = activeId;
+  // Whether the active thread has a running goal run — gates the post-stream refetch so
+  // a graded turn that transitions the run (satisfied / stuck) refreshes the card.
+  const goalRunningRef = useRef(false);
+  goalRunningRef.current = goalState?.status === 'running';
+
+  // Fetch and commit the goal run + contract for `threadId`, but only if it is still
+  // the active thread when each request resolves (guards every cross-thread race).
+  const reloadGoalFor = useCallback(async (threadId: number) => {
+    try {
+      const state = await getGoal(threadId);
+      if (activeIdRef.current !== threadId) return;
+      const contract = state ? await getGoalContract(threadId) : null;
+      if (activeIdRef.current !== threadId) return;
+      setGoalState(state);
+      setGoalContract(contract);
+      setGoalClarification(null);
+    } catch {
+      if (activeIdRef.current === threadId) {
+        setGoalContract(null);
+        setGoalState(null);
+      }
+    }
+  }, []);
 
   const fetchCatalog = useCallback(async () => {
     const cfg = await api<AgentModelConfig>('/api/agent/models');
@@ -351,6 +378,7 @@ export function useAgentChatController(): AgentChatController {
       threadId = created.id;
       setThreads((prev) => [created, ...prev]);
       setActiveId(created.id);
+      activeIdRef.current = created.id;  // reflect the just-selected thread before any await
     }
 
     // Goal mode (spec §G): `/goal <description>` frames an acceptance contract instead
@@ -361,14 +389,17 @@ export function useAgentChatController(): AgentChatController {
       setGoalBusy(true);
       try {
         const result = await startGoal(threadId, goalCommand.goalText, executionMode);
+        if (activeIdRef.current !== threadId) return;  // user switched away mid-frame
         if (isClarification(result)) {
           setGoalClarification(result);
           setGoalContract(null);
           setGoalState(null);
         } else {
+          const contract = await getGoalContract(threadId);
+          if (activeIdRef.current !== threadId) return;
           setGoalClarification(null);
           setGoalState(result);
-          setGoalContract(await getGoalContract(threadId));
+          setGoalContract(contract);
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
@@ -480,8 +511,13 @@ export function useAgentChatController(): AgentChatController {
         streamAbortRef.current = null;
         setSending(false);
       }
+      // A graded turn can transition the goal run server-side (satisfied / stuck) — the
+      // grader runs in-loop with no SSE of its own — so refresh the card after the turn.
+      if (threadId != null && goalRunningRef.current) {
+        void reloadGoalFor(threadId);
+      }
     }
-  }, [activeId, refresh, selectedModel, executionMode]);
+  }, [activeId, refresh, selectedModel, executionMode, reloadGoalFor]);
 
   const stopStreaming = useCallback(() => {
     streamAbortRef.current?.abort();
@@ -559,10 +595,12 @@ export function useAgentChatController(): AgentChatController {
   }, [activeId, threads, sendMessage]);
 
   const ratifyActiveGoal = useCallback(async () => {
-    if (activeId == null) return;
+    const threadId = activeId;
+    if (threadId == null) return;
     setGoalBusy(true);
     try {
-      setGoalState(await ratifyGoalApi(activeId));
+      const state = await ratifyGoalApi(threadId);
+      if (activeIdRef.current === threadId) setGoalState(state);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -571,13 +609,16 @@ export function useAgentChatController(): AgentChatController {
   }, [activeId]);
 
   const cancelActiveGoal = useCallback(async () => {
-    if (activeId == null) return;
+    const threadId = activeId;
+    if (threadId == null) return;
     setGoalBusy(true);
     try {
-      await cancelGoalApi(activeId);
-      setGoalContract(null);
-      setGoalState(null);
-      setGoalClarification(null);
+      await cancelGoalApi(threadId);
+      if (activeIdRef.current === threadId) {
+        setGoalContract(null);
+        setGoalState(null);
+        setGoalClarification(null);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -587,35 +628,15 @@ export function useAgentChatController(): AgentChatController {
 
   // Load the active thread's goal run (if any) when the selection changes, so a
   // running/awaiting card survives a thread switch or reload. Clear immediately so a
-  // previous thread's card never shows against the new thread, fetch state + contract
-  // into locals, and commit them together only if this effect is still current — a
-  // stale fetch must not overwrite the thread the user has since switched to.
+  // previous thread's card never shows against the new thread; reloadGoalFor commits
+  // only if `activeId` is still current when its requests resolve.
   useEffect(() => {
     setGoalContract(null);
     setGoalState(null);
     setGoalClarification(null);
     if (activeId == null) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const state = await getGoal(activeId);
-        if (cancelled) return;
-        const contract = state ? await getGoalContract(activeId) : null;
-        if (cancelled) return;
-        setGoalState(state);
-        setGoalContract(contract);
-        setGoalClarification(null);
-      } catch {
-        if (!cancelled) {
-          setGoalContract(null);
-          setGoalState(null);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeId]);
+    reloadGoalFor(activeId);
+  }, [activeId, reloadGoalFor]);
 
   const streamingItem: ChatMessageType | null = draft
     ? {

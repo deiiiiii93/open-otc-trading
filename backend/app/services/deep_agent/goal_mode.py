@@ -711,16 +711,26 @@ class GoalRunService:
             return None  # no active running run -> nothing to record
         result = evaluation.get("result")
         if result == "satisfied":
-            return self._store.update(thread_id, mark_goal_satisfied)
+            return self._finish(thread_id, mark_goal_satisfied)
         if result in ("max_iterations_reached", "failed", "grader_error"):
             failing = failing_criteria_from_evaluation(evaluation)
-            return self._store.update(
+            return self._finish(
                 thread_id,
                 lambda s: escalate_goal_run(
                     s, terminal_reason=result, failing_criteria=failing
                 ),
             )
         return self._store.active(thread_id)  # needs_revision / unknown -> unchanged
+
+    def _finish(self, thread_id: str, transition) -> GoalRunStateV1:
+        """Apply a terminal transition and drop the frozen contract once the run
+        releases its pointer (satisfied), so ``/goal/contract`` can't return stale
+        criteria for a thread with no active run. Escalation keeps the contract — the
+        run is resumable against the same frozen criteria."""
+        state = self._store.update(thread_id, transition)
+        if not pointer_held(state):
+            self._contracts.pop(thread_id, None)
+        return state
 
     def grader_invocation(self, thread_id: str) -> dict | None:
         """The invocation-state fragment to merge while the run is ``running``; ``None``
