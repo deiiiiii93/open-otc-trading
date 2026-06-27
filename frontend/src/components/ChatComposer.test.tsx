@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ChatComposer } from './ChatComposer';
+import type { DeskWorkflowSummary } from '../types';
 
 describe('ChatComposer', () => {
   it('renders textarea and send button', () => {
@@ -323,5 +324,44 @@ describe('ChatComposer', () => {
       fireEvent.change(box, { target: { value: '/notacommand do things' } });
       expect(container.querySelector('.wl-composer__cmd-token')).toBeNull();
     });
+  });
+
+  const _wfBase: Omit<DeskWorkflowSummary, 'slug' | 'params'> = {
+    title: 'T', persona: 'trader', description: '', scope: 'local',
+    default_mode: 'auto', source: 'user',
+  };
+  const plainWf: DeskWorkflowSummary = { ..._wfBase, slug: 'plain' };
+  const paramWf: DeskWorkflowSummary = {
+    ..._wfBase, slug: 'needs', params: [{ name: 'p', label: 'P', type: 'string' }],
+  };
+
+  it('requests params (not launch) for a parameterized workflow', () => {
+    const onLaunch = vi.fn();
+    const onRequestParams = vi.fn();
+    render(
+      <ChatComposer
+        onSend={() => {}} sending={false}
+        workflows={[paramWf]} onLaunchWorkflow={onLaunch} onRequestParams={onRequestParams}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText('Ask anything'), { target: { value: '/needs' } });
+    fireEvent.click(screen.getByRole('option', { name: /\/needs/ }));
+    expect(onRequestParams).toHaveBeenCalledWith(paramWf);
+    expect(onLaunch).not.toHaveBeenCalled();
+  });
+
+  it('launches a zero-param workflow directly', () => {
+    const onLaunch = vi.fn();
+    const onRequestParams = vi.fn();
+    render(
+      <ChatComposer
+        onSend={() => {}} sending={false}
+        workflows={[plainWf]} onLaunchWorkflow={onLaunch} onRequestParams={onRequestParams}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText('Ask anything'), { target: { value: '/plain' } });
+    fireEvent.click(screen.getByRole('option', { name: /\/plain/ }));
+    expect(onLaunch).toHaveBeenCalledWith('plain', 'auto');
+    expect(onRequestParams).not.toHaveBeenCalled();
   });
 });

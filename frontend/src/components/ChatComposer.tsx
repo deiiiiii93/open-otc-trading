@@ -25,6 +25,7 @@ type Props = {
   compactModelPicker?: boolean;
   workflows?: DeskWorkflowSummary[];
   onLaunchWorkflow?: (slug: string, mode: 'auto' | 'yolo') => void;
+  onRequestParams?: (workflow: DeskWorkflowSummary) => void;
 };
 
 // Built-in composer slash-commands (not workflows) — surfaced in the slash menu so they
@@ -60,7 +61,7 @@ export function ChatComposer({
   onSend, sending, streaming,
   channels, selectedModel, executionMode = 'auto',
   onChangeModel, onChangeMode, onStopStreaming, onRefreshModels, compactModelPicker = false,
-  workflows, onLaunchWorkflow,
+  workflows, onLaunchWorkflow, onRequestParams,
 }: Props) {
   const [text, setText] = useState('');
   // Index of the highlighted slash-menu item (keyboard/hover cursor). Reset to 0 whenever
@@ -85,6 +86,11 @@ export function ChatComposer({
       : [];
 
   const launch = (w: DeskWorkflowSummary) => {
+    if ((w.params?.length ?? 0) > 0 && onRequestParams) {
+      onRequestParams(w);
+      setText('');
+      return;
+    }
     onLaunchWorkflow?.(w.slug, w.default_mode);
     setText('');
   };
