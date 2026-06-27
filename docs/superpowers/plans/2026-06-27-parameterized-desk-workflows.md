@@ -321,6 +321,17 @@ async def test_runner_undeclared_arg_errors():
     names = [e[0] for e in _parse(frames)]
     assert "workflow.step.error" in names
     assert "workflow.complete" not in names
+
+
+def test_args_is_read_only():
+    from app.services.desk_workflow_runner import _Args
+
+    a = _Args({"portfolio": "Default"})
+    assert a.portfolio == "Default" and a["portfolio"] == "Default"
+    with pytest.raises(Exception):
+        a.portfolio = "Other"          # __setattr__ raises
+    with pytest.raises(Exception):
+        a._values["portfolio"] = "X"   # MappingProxyType is immutable
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -330,20 +341,26 @@ Expected: FAIL — `run_desk_workflow() got an unexpected keyword argument 'args
 
 - [ ] **Step 3: Implement `_Args` + the `args` parameter**
 
-In `backend/app/services/desk_workflow_runner.py`, change the import line to also bring in `WorkflowScriptError`:
+In `backend/app/services/desk_workflow_runner.py`, add `from types import MappingProxyType` near the top imports, and change the desk-workflows-script import line to also bring in `WorkflowScriptError`:
 
 ```python
 from .desk_workflows_script import WorkflowScriptError, guard_script
 ```
 
-Add the `_Args` class after `_SAFE_BUILTINS`:
+Add the `_Args` class after `_SAFE_BUILTINS`. It must be **genuinely read-only**: the
+backing map is a `MappingProxyType` (so a script that reaches `args._values` — single
+underscore, which the dunder-only AST guard does not block — still cannot mutate it),
+and `__setattr__` is overridden so `args.x = ...` raises instead of silently succeeding.
+Missing-key access raises `WorkflowScriptError` (the endpoint already guarantees the
+supplied keys equal the declared params, so a missing key means the script referenced an
+undeclared parameter):
 
 ```python
 class _Args:
-    """Read-only view of launch params: supports args.x and args["x"]."""
+    """Read-only view of validated launch params: supports args.x and args["x"]."""
 
     def __init__(self, values: dict) -> None:
-        object.__setattr__(self, "_values", dict(values))
+        object.__setattr__(self, "_values", MappingProxyType(dict(values)))
 
     def __getattr__(self, name: str) -> str:
         try:
@@ -353,9 +370,18 @@ class _Args:
                 f"workflow referenced undeclared parameter {name!r}"
             ) from None
 
+    def __setattr__(self, name: str, value: object) -> None:
+        raise WorkflowScriptError("workflow args are read-only")
+
     def __getitem__(self, name: str) -> str:
         return self.__getattr__(name)
 ```
+
+> Scope note: per spec §5.4/§9 the runtime is a footgun-reducer, not a security boundary
+> (single-user MVP). `_Args` enforces read-only access and missing-key errors; enforcing
+> that the *supplied* keys match the *declared* params is the endpoint validator's job
+> (`validate_workflow_args`, Task 4), run before the stream starts so it can return a
+> clean 422.
 
 Change the `run_desk_workflow` signature to add `args`:
 
