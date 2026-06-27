@@ -11,11 +11,12 @@ from __future__ import annotations
 import ast
 import asyncio
 import json as _json
+from types import MappingProxyType
 from typing import AsyncIterator, Callable
 
 from ..models import DeskWorkflow
 from .agents import _sse, resolve_execution_mode
-from .desk_workflows_script import guard_script
+from .desk_workflows_script import WorkflowScriptError, guard_script
 
 _CHARACTER_BY_PERSONA = {
     "trader": "trader",
@@ -34,6 +35,30 @@ _SAFE_BUILTINS = {
     "set": set, "min": min, "max": max, "sum": sum, "sorted": sorted, "abs": abs,
     "round": round, "any": any, "all": all, "zip": zip,
 }
+
+
+class _Args:
+    """Read-only view of validated launch params: supports args.x and args["x"]."""
+
+    def __init__(self, values: dict) -> None:
+        object.__setattr__(self, "_values", MappingProxyType(dict(values)))
+
+    def __getattr__(self, name: str) -> str:
+        try:
+            return object.__getattribute__(self, "_values")[name]
+        except KeyError:
+            raise WorkflowScriptError(
+                f"workflow referenced undeclared parameter {name!r}"
+            ) from None
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise WorkflowScriptError("workflow args are read-only")
+
+    def __delattr__(self, name: str) -> None:
+        raise WorkflowScriptError("workflow args are read-only")
+
+    def __getitem__(self, name: str) -> str:
+        return self.__getattr__(name)
 
 
 def persona_to_character(persona: str) -> str:
@@ -64,6 +89,7 @@ async def run_desk_workflow(
     mode: str,
     drive: Drive,
     settle: Settle,
+    args: dict | None = None,
 ) -> AsyncIterator[str]:
     guard_script(workflow.script)
     resolved_mode, _clear_hitl, _allow = resolve_execution_mode(mode, False)
@@ -95,7 +121,10 @@ async def run_desk_workflow(
     async def _execute() -> None:
         module = _wrap_async(workflow.script)
         code = compile(module, filename=f"<desk-workflow:{workflow.slug}>", mode="exec")
-        ns: dict = {"__builtins__": dict(_SAFE_BUILTINS), "step": step, "log": log}
+        ns: dict = {
+            "__builtins__": dict(_SAFE_BUILTINS),
+            "step": step, "log": log, "args": _Args(args or {}),
+        }
         try:
             exec(code, ns)
             await ns["__workflow__"]()

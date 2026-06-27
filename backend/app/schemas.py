@@ -1673,6 +1673,7 @@ class DeskWorkflowSummaryOut(BaseModel):
     scope: str
     default_mode: str
     source: str
+    params: list[dict] = []
 
     model_config = {"from_attributes": True}
 

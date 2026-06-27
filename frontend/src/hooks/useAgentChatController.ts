@@ -90,7 +90,7 @@ export type AgentChatController = {
     contextUsage?: AgentContextUsage | null,
     envelope?: Envelope,
   ) => Promise<void>;
-  launchWorkflow: (slug: string, mode: 'auto' | 'yolo') => Promise<void>;
+  launchWorkflow: (slug: string, mode: 'auto' | 'yolo', args?: Record<string, string>) => Promise<void>;
   stopStreaming: () => void;
   confirmAction: (messageId: number, actionId: string) => Promise<void>;
   dismissAction: (messageId: number, actionId: string) => Promise<void>;
@@ -549,7 +549,7 @@ export function useAgentChatController(
     }
   }, [activeId, refresh, selectedModel, executionMode, threadSource, reloadGoalFor]);
 
-  const launchWorkflow = useCallback(async (slug: string, mode: 'auto' | 'yolo') => {
+  const launchWorkflow = useCallback(async (slug: string, mode: 'auto' | 'yolo', args?: Record<string, string>) => {
     let threadId = activeId;
     if (threadId == null) {
       const created = await api<Thread>('/api/chat/threads', {
@@ -575,7 +575,7 @@ export function useAgentChatController(
         method: 'POST',
         signal: streamAbortController.signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify({ mode, args: args ?? {} }),
       });
       if (!response.ok) throw new Error(await response.text());
       if (response.body) {

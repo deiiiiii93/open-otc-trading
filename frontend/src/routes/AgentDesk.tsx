@@ -52,6 +52,7 @@ type Props = {
   onConfirmCostPreview?: () => void;
   workflows?: DeskWorkflowSummary[];
   onLaunchWorkflow?: (slug: string, mode: 'auto' | 'yolo') => void;
+  onRequestParams?: (workflow: DeskWorkflowSummary) => void;
   goalContract?: GoalContract | null;
   goalState?: GoalRunState | null;
   goalClarification?: GoalClarification | null;
@@ -105,6 +106,7 @@ export function AgentDesk({
   onConfirmCostPreview,
   workflows,
   onLaunchWorkflow,
+  onRequestParams,
   goalContract,
   goalState,
   goalClarification,
@@ -215,6 +217,7 @@ export function AgentDesk({
         onRefreshModels={onRefreshModels}
         workflows={workflows}
         onLaunchWorkflow={onLaunchWorkflow}
+        onRequestParams={onRequestParams}
       />
     </div>
   );

@@ -264,6 +264,8 @@ export const backtestArtifactUrl = (runId: number, name: string, options?: { dow
 };
 
 // --- desk workflows ---
+export const listPortfolios = () =>
+  api<Array<{ name: string }>>('/api/portfolios').then((rows) => rows.map((r) => r.name));
 export const listWorkflows = () => api<DeskWorkflowSummary[]>('/api/workflows');
 export const getWorkflow = (slug: string) => api<DeskWorkflow>(`/api/workflows/${slug}`);
 export const createWorkflow = (script: string) =>

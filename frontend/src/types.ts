@@ -23,6 +23,12 @@ export type Route =
   | 'arena'
   | 'workflows';
 
+export type WorkflowParam = {
+  name: string;
+  label: string;
+  type: 'string' | 'date' | 'portfolio';
+};
+
 export type DeskWorkflowSummary = {
   slug: string;
   title: string;
@@ -31,6 +37,7 @@ export type DeskWorkflowSummary = {
   scope: 'local' | 'shared';
   default_mode: 'auto' | 'yolo';
   source: 'seed' | 'user';
+  params?: WorkflowParam[];
 };
 
 export type DeskWorkflow = DeskWorkflowSummary & { script: string };

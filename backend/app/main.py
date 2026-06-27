@@ -963,6 +963,11 @@ def create_app(
     ):
         from .services.desk_workflow_runner import persona_to_character, run_desk_workflow
         from .services.desk_workflows import get_desk_workflow
+        from .services.desk_workflows_script import (
+            WorkflowScriptError,
+            extract_meta,
+            validate_workflow_args,
+        )
 
         thread = session.get(AgentThread, thread_id)
         if not thread:
@@ -970,6 +975,13 @@ def create_app(
         wf = get_desk_workflow(session, slug)
         if wf is None:
             raise HTTPException(status_code=404, detail="Workflow not found")
+        raw_args = (payload or {}).get("args")
+        if raw_args is None:
+            raw_args = {}
+        try:
+            validated_args = validate_workflow_args(extract_meta(wf.script), raw_args)
+        except WorkflowScriptError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         ensure_thread_workflow_state(session, thread.id)
         session.commit()
         mode = (payload or {}).get("mode") or wf.default_mode
@@ -979,7 +991,8 @@ def create_app(
         settle = _desk_workflow_settle_factory()
         return StreamingResponse(
             run_desk_workflow(
-                thread_id=thread.id, workflow=wf, mode=mode, drive=drive, settle=settle,
+                thread_id=thread.id, workflow=wf, mode=mode,
+                drive=drive, settle=settle, args=validated_args,
             ),
             media_type="text/event-stream",
         )

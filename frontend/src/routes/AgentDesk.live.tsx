@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { DeskWorkflowSummary, PageContext } from '../types';
 import { AgentDesk } from './AgentDesk';
+import { WorkflowParamsDialog } from '../components/WorkflowParamsDialog';
 import { Skeleton } from '../components/Skeleton';
 import { Empty } from '../components/Empty';
-import { listWorkflows } from '../api/client';
+import { listPortfolios, listWorkflows } from '../api/client';
 import {
   useAgentChatController,
   type AgentChatController,
@@ -68,9 +69,18 @@ function AgentDeskLiveView({
   onOpenTrace?: (threadId: number) => void;
 }) {
   const [workflows, setWorkflows] = useState<DeskWorkflowSummary[]>([]);
+  const [paramsWorkflow, setParamsWorkflow] = useState<DeskWorkflowSummary | null>(null);
+  const [portfolios, setPortfolios] = useState<string[]>([]);
   useEffect(() => {
     void listWorkflows().then(setWorkflows).catch(() => setWorkflows([]));
   }, []);
+
+  const handleRequestParams = (wf: DeskWorkflowSummary) => {
+    if ((wf.params ?? []).some((p) => p.type === 'portfolio') && portfolios.length === 0) {
+      void listPortfolios().then(setPortfolios).catch(() => setPortfolios([]));
+    }
+    setParamsWorkflow(wf);
+  };
 
   if (controller.loading) {
     return (
@@ -87,6 +97,7 @@ function AgentDeskLiveView({
   }
 
   return (
+    <>
     <AgentDesk
       threads={controller.threads}
       activeThreadId={controller.activeThreadId}
@@ -128,6 +139,7 @@ function AgentDeskLiveView({
       )}
       workflows={workflows}
       onLaunchWorkflow={controller.launchWorkflow}
+      onRequestParams={handleRequestParams}
       goalContract={controller.goalContract}
       goalState={controller.goalState}
       goalClarification={controller.goalClarification}
@@ -135,5 +147,19 @@ function AgentDeskLiveView({
       onRatifyGoal={controller.ratifyActiveGoal}
       onCancelGoal={controller.cancelActiveGoal}
     />
+    {paramsWorkflow && (
+      <WorkflowParamsDialog
+        open
+        workflow={paramsWorkflow}
+        portfolios={portfolios}
+        onCancel={() => setParamsWorkflow(null)}
+        onRun={(args) => {
+          const wf = paramsWorkflow;
+          setParamsWorkflow(null);
+          void controller.launchWorkflow(wf.slug, wf.default_mode, args);
+        }}
+      />
+    )}
+    </>
   );
 }
