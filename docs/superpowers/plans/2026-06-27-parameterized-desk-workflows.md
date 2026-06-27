@@ -331,6 +331,8 @@ def test_args_is_read_only():
     with pytest.raises(Exception):
         a.portfolio = "Other"          # __setattr__ raises
     with pytest.raises(Exception):
+        del a._values                  # __delattr__ raises
+    with pytest.raises(Exception):
         a._values["portfolio"] = "X"   # MappingProxyType is immutable
 ```
 
@@ -371,6 +373,9 @@ class _Args:
             ) from None
 
     def __setattr__(self, name: str, value: object) -> None:
+        raise WorkflowScriptError("workflow args are read-only")
+
+    def __delattr__(self, name: str) -> None:
         raise WorkflowScriptError("workflow args are read-only")
 
     def __getitem__(self, name: str) -> str:
