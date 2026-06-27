@@ -109,3 +109,55 @@ def test_persona_to_character():
     assert persona_to_character("risk_manager") == "risk_manager"
     assert persona_to_character("quant") == "high_board"
     assert persona_to_character("sales") == "trader"
+
+
+@pytest.mark.asyncio
+async def test_runner_substitutes_args_into_prompt():
+    seen = []
+
+    async def drive(thread_id, prompt, mode):
+        seen.append(prompt)
+        yield 'event: token\ndata: {"text": "ok"}\n\n'
+
+    script = (
+        'meta = {"name":"t","title":"T","persona":"risk_manager","mode":"yolo",'
+        '"scope":"local","params":[{"name":"portfolio","label":"P","type":"portfolio"}]}\n'
+        'await step(f"latest risk for {args.portfolio}?")\n'
+    )
+    frames = [f async for f in run_desk_workflow(
+        thread_id=1, workflow=_wf(script), mode="yolo",
+        drive=drive, settle=lambda: None, args={"portfolio": "Default"},
+    )]
+    assert seen == ["latest risk for Default?"]
+    assert any('"prompt": "latest risk for Default?"' in f for f in frames)
+
+
+@pytest.mark.asyncio
+async def test_runner_undeclared_arg_errors():
+    async def drive(thread_id, prompt, mode):
+        yield 'event: token\ndata: {"text": "ok"}\n\n'
+
+    script = (
+        'meta = {"name":"t","title":"T","persona":"risk_manager","mode":"yolo","scope":"local"}\n'
+        'await step(f"{args.nope}")\n'
+    )
+    frames = [f async for f in run_desk_workflow(
+        thread_id=1, workflow=_wf(script), mode="yolo",
+        drive=drive, settle=lambda: None, args={},
+    )]
+    names = [e[0] for e in _parse(frames)]
+    assert "workflow.step.error" in names
+    assert "workflow.complete" not in names
+
+
+def test_args_is_read_only():
+    from app.services.desk_workflow_runner import _Args
+
+    a = _Args({"portfolio": "Default"})
+    assert a.portfolio == "Default" and a["portfolio"] == "Default"
+    with pytest.raises(Exception):
+        a.portfolio = "Other"          # __setattr__ raises
+    with pytest.raises(Exception):
+        del a._values                  # __delattr__ raises
+    with pytest.raises(Exception):
+        a._values["portfolio"] = "X"   # MappingProxyType is immutable
