@@ -150,4 +150,44 @@ describe('ChatComposer', () => {
     expect(screen.getByRole('button', { name: /yolo/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /^auto$/i })).toBeDisabled();
   });
+
+  describe('slash-command discovery', () => {
+    it('surfaces the built-in /goal command when typing a slash (no workflows needed)', async () => {
+      render(<ChatComposer onSend={() => {}} sending={false} />);
+      await userEvent.type(screen.getByLabelText(/ask anything/i), '/');
+      expect(screen.getByRole('option', { name: /\/goal/ })).toBeInTheDocument();
+    });
+
+    it('matches /goal by prefix as you type', async () => {
+      render(<ChatComposer onSend={() => {}} sending={false} />);
+      await userEvent.type(screen.getByLabelText(/ask anything/i), '/go');
+      expect(screen.getByRole('option', { name: /\/goal/ })).toBeInTheDocument();
+    });
+
+    it('clicking the /goal option fills the composer with "/goal " instead of sending', async () => {
+      const onSend = vi.fn();
+      render(<ChatComposer onSend={onSend} sending={false} />);
+      const box = screen.getByLabelText(/ask anything/i) as HTMLTextAreaElement;
+      await userEvent.type(box, '/goal');
+      await userEvent.click(screen.getByRole('option', { name: /\/goal/ }));
+      expect(box.value).toBe('/goal ');
+      expect(onSend).not.toHaveBeenCalled();
+    });
+
+    it('pressing Enter on a bare /goal prompts for the description rather than sending', async () => {
+      const onSend = vi.fn();
+      render(<ChatComposer onSend={onSend} sending={false} />);
+      const box = screen.getByLabelText(/ask anything/i) as HTMLTextAreaElement;
+      await userEvent.type(box, '/goal{Enter}');
+      expect(onSend).not.toHaveBeenCalled();
+      expect(box.value).toBe('/goal ');
+    });
+
+    it('sends a fully-typed /goal command through onSend', async () => {
+      const onSend = vi.fn();
+      render(<ChatComposer onSend={onSend} sending={false} />);
+      await userEvent.type(screen.getByLabelText(/ask anything/i), '/goal refresh risk{Enter}');
+      expect(onSend).toHaveBeenCalledWith('/goal refresh risk');
+    });
+  });
 });

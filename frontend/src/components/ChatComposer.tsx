@@ -1,5 +1,5 @@
 import { Send, Square } from 'lucide-react';
-import { useId, useState, type KeyboardEvent } from 'react';
+import { useId, useRef, useState, type KeyboardEvent } from 'react';
 import type {
   AgentChannel,
   AgentExecutionMode,
@@ -26,6 +26,13 @@ type Props = {
   workflows?: DeskWorkflowSummary[];
   onLaunchWorkflow?: (slug: string, mode: 'auto' | 'yolo') => void;
 };
+
+// Built-in composer slash-commands (not workflows) — surfaced in the slash menu so they
+// are discoverable. `/goal <description>` is intercepted by the chat controller, which
+// frames an acceptance contract; see useAgentChatController + reservedCommands.
+const BUILTIN_COMMANDS: ReadonlyArray<{ name: string; title: string }> = [
+  { name: 'goal', title: 'Define a goal with acceptance criteria for the agent to pursue' },
+];
 
 const MODE_OPTIONS: ReadonlyArray<{
   value: AgentExecutionMode;
@@ -57,33 +64,46 @@ export function ChatComposer({
 }: Props) {
   const [text, setText] = useState('');
   const id = useId();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const firstToken = text.startsWith('/') ? text.slice(1).split(/\s+/)[0] ?? '' : null;
-  const showPicker =
-    firstToken !== null &&
-    !text.includes(' ') &&
-    !RESERVED_COMPOSER_COMMANDS.has(firstToken) &&
-    !!onLaunchWorkflow &&
-    (workflows?.length ?? 0) > 0;
-  const matches = showPicker
-    ? (workflows ?? []).filter(
-        (w) =>
-          w.slug.includes(firstToken ?? '') ||
-          w.title.toLowerCase().includes((firstToken ?? '').toLowerCase()),
-      )
-    : [];
+  // The "/token" being typed before any space (lower-cased); null when not composing a
+  // command. Built-in commands (e.g. /goal) match by name prefix and need no workflows;
+  // workflow matches are gated on a launcher and exclude reserved built-in names.
+  const slashToken =
+    text.startsWith('/') && !text.includes(' ') ? text.slice(1).toLowerCase() : null;
+  const builtinMatches =
+    slashToken === null ? [] : BUILTIN_COMMANDS.filter((c) => c.name.startsWith(slashToken));
+  const workflowMatches =
+    slashToken !== null && !RESERVED_COMPOSER_COMMANDS.has(slashToken) && onLaunchWorkflow
+      ? (workflows ?? []).filter(
+          (w) => w.slug.includes(slashToken) || w.title.toLowerCase().includes(slashToken),
+        )
+      : [];
+  const showMenu = builtinMatches.length > 0 || workflowMatches.length > 0;
 
   const launch = (w: DeskWorkflowSummary) => {
     onLaunchWorkflow?.(w.slug, w.default_mode);
     setText('');
   };
 
+  // A built-in command needs an argument, so selecting it fills "/name " and keeps focus
+  // for the user to type the rest — it does NOT submit.
+  const fillCommand = (name: string) => {
+    setText(`/${name} `);
+    textareaRef.current?.focus();
+  };
+
   const handleSend = () => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
+    // Bare built-in command (e.g. "/goal" with no description): prompt for its argument.
+    if (slashToken !== null && BUILTIN_COMMANDS.some((c) => c.name === slashToken)) {
+      fillCommand(slashToken);
+      return;
+    }
     // A bare "/slug" that matches a workflow launches it instead of sending chat.
-    if (showPicker && matches.length > 0) {
-      launch(matches[0]);
+    if (workflowMatches.length > 0) {
+      launch(workflowMatches[0]);
       return;
     }
     onSend(trimmed);
@@ -103,9 +123,23 @@ export function ChatComposer({
   return (
     <div className="wl-composer">
       <label htmlFor={id} className="wl-composer__label">Ask anything</label>
-      {showPicker && matches.length > 0 && (
-        <ul className="wl-composer__slash" role="listbox" aria-label="Workflows">
-          {matches.map((w) => (
+      {showMenu && (
+        <ul className="wl-composer__slash" role="listbox" aria-label="Commands">
+          {builtinMatches.map((c) => (
+            <li key={`builtin-${c.name}`}>
+              <button
+                type="button"
+                className="wl-composer__slash-item"
+                role="option"
+                aria-selected={false}
+                onClick={() => fillCommand(c.name)}
+              >
+                <strong>/{c.name}</strong>
+                <span>{c.title}</span>
+              </button>
+            </li>
+          ))}
+          {workflowMatches.map((w) => (
             <li key={w.slug}>
               <button
                 type="button"
@@ -123,6 +157,7 @@ export function ChatComposer({
       )}
       <textarea
         id={id}
+        ref={textareaRef}
         className="wl-composer__textarea"
         value={text}
         onChange={(e) => setText(e.target.value)}
