@@ -11,6 +11,9 @@ from app.services.currency_codes import ISO_4217_CODES, normalize_currency
 class AgentThreadCreate(BaseModel):
     title: str = "New research thread"
     character: Literal["trader", "risk_manager", "high_board"] = "trader"
+    # "desk" = normal Agent Desk thread; "workflow_builder" = isolated builder
+    # conversation, hidden from the Agent Desk thread list.
+    source: str = "desk"
 
 
 class AgentThreadUpdate(BaseModel):
@@ -189,6 +192,11 @@ class AgentMessageCreate(BaseModel):
     context_usage: AgentContextUsage | None = None
     accounting_date: date | None = None
     model: AgentModelSelection | None = None
+    # Execution mode (canonical). "interactive" surfaces HITL; "auto" auto-clears
+    # HITL but the model may still ask via reply cards; "yolo" is fully headless
+    # (no HITL, no deferral). When omitted, the deprecated ``yolo_mode`` boolean
+    # maps to auto/interactive for back-compat.
+    mode: Literal["interactive", "auto", "yolo"] | None = None
     yolo_mode: bool = False
     # Phase 2: optional, defaulted by the endpoint based on UI origin.
     envelope: AgentEnvelopeLiteral | None = None
@@ -197,6 +205,12 @@ class AgentMessageCreate(BaseModel):
     # into configurable.confirmed_cost_preview so the gate lets the tool
     # past the long-running estimator check.
     confirmed_cost_preview: bool = False
+
+
+class StartGoalRequest(BaseModel):
+    """Body for ``POST /api/chat/threads/{thread_id}/goal`` (the /goal command)."""
+    goal_text: str
+    mode: Literal["interactive", "auto", "yolo"] = "auto"
 
 
 class AgentMessageOut(BaseModel):
@@ -215,6 +229,7 @@ class AgentThreadOut(BaseModel):
     title: str
     character: str
     report_currency: str = "by_position"
+    source: str = "desk"
     created_at: datetime
     updated_at: datetime
     messages: list[AgentMessageOut] = Field(default_factory=list)
@@ -1644,3 +1659,26 @@ class BacktestRunOut(BaseModel):
     excluded_positions: list | None
     artifacts: dict
     created_at: datetime
+
+
+class DeskWorkflowSave(BaseModel):
+    script: str
+
+
+class DeskWorkflowSummaryOut(BaseModel):
+    slug: str
+    title: str
+    persona: str
+    description: str
+    scope: str
+    default_mode: str
+    source: str
+    params: list[dict] = []
+
+    model_config = {"from_attributes": True}
+
+
+class DeskWorkflowOut(DeskWorkflowSummaryOut):
+    script: str
+
+    model_config = {"from_attributes": True}

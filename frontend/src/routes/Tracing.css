@@ -1,18 +1,36 @@
 .wl-tracing__workspace {
   display: grid;
   grid-template-columns: minmax(320px, 1fr) minmax(360px, 1.2fr);
+  /* Bound the single row to the container height so each panel's overflow-y:auto
+     engages instead of growing to content and scrolling the page — same pattern
+     as .wl-conversation (ConversationalWorkspace). */
+  grid-template-rows: minmax(0, 1fr);
   gap: var(--gap-4);
   min-width: 0;
   min-height: 0;
+  height: 70vh;
+  min-height: 520px;
 }
 
 .wl-tracing__tree,
 .wl-tracing__detail {
   overflow-y: auto;
   min-height: 0;
+  /* Keep wheel scroll inside the panel — don't chain to the page when the panel
+     hits its top/bottom boundary. */
+  overscroll-behavior: contain;
   border: 1px solid var(--hairline);
   background: var(--paper);
   padding: var(--panel-padding-tight);
+}
+
+/* The trace list rail: bound it to the same height as the workspace so it
+   scrolls internally instead of growing and pushing the page. overscroll-behavior
+   keeps wheel scroll from chaining to the page at the rail's boundaries. */
+.wl-tracing__list {
+  height: 70vh;
+  min-height: 520px;
+  overscroll-behavior: contain;
 }
 /* The trace list is a RailList (border + paper-2 + scroll); only the header
    inset needs setting since rows carry their own padding. */
@@ -24,6 +42,15 @@
 @media (max-width: 900px) {
   .wl-tracing__workspace {
     grid-template-columns: 1fr;
+    /* Stack naturally on narrow screens: let the page scroll instead of trapping
+       both panels in one short row. */
+    grid-template-rows: none;
+    height: auto;
+    min-height: 0;
+  }
+  .wl-tracing__list {
+    height: auto;
+    min-height: 0;
   }
 }
 
@@ -180,6 +207,42 @@
   border-color: var(--ink-3);
 }
 
+/* Raw/Rendered segmented toggle in the detail head. Pushed to the right edge
+   of the flex .wl-tracing__detail-head so it sits opposite the name + status. */
+.wl-tracing__view-mode {
+  display: inline-flex;
+  border: 1px solid var(--hairline);
+  padding: 0;
+  margin: 0 0 0 auto;
+  min-width: 0;
+}
+
+.wl-tracing__view-mode-btn {
+  border: none;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  padding: var(--gap-1) var(--gap-2);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.wl-tracing__view-mode-btn:hover {
+  color: var(--ink);
+  background: var(--paper-2);
+}
+
+.wl-tracing__view-mode-btn.is-active {
+  background: var(--paper-3);
+  color: var(--ink);
+}
+
+.wl-tracing__view-mode-btn:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
 .wl-tracing__detail-meta {
   display: flex;
   flex-wrap: wrap;
@@ -282,4 +345,326 @@
 .wl-json-bool { color: var(--warn); }
 .wl-json-null { color: var(--ink-3); font-style: italic; }
 .wl-json-punct { color: var(--ink-2); }
-.wl-json-indent { padding-left: 1.5em; display: block; }
+/* Rendered JSON tree lives in a normal-whitespace container (so markdown blocks
+   can render), so the structural newlines/indentation inside __indent must opt
+   back into pre-formatted whitespace. */
+.wl-json-indent { padding-left: 1.5em; display: block; white-space: pre-wrap; }
+
+/* Rendered mode container: same chrome as the raw <pre>, but normal whitespace
+   flow so block-level markdown (headings, lists, tables) renders correctly. */
+.wl-tracing__payload-body--rendered {
+  white-space: normal;
+  word-break: normal;
+  font-family: var(--font-ui);
+}
+
+/* A markdown string rendered inline within the JSON tree. Breaks out of the
+   monospace column flow into readable prose. */
+.wl-tracing__markdown {
+  display: block;
+  white-space: normal;
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  line-height: 1.5;
+  color: var(--ink);
+  margin: var(--gap-1) 0;
+  padding: var(--gap-2) var(--gap-3);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+}
+
+.wl-tracing__markdown > :first-child { margin-top: 0; }
+.wl-tracing__markdown > :last-child { margin-bottom: 0; }
+
+.wl-tracing__markdown h1,
+.wl-tracing__markdown h2,
+.wl-tracing__markdown h3,
+.wl-tracing__markdown h4 {
+  font-family: var(--font-ui);
+  font-weight: var(--type-h2-weight);
+  line-height: 1.25;
+  margin: var(--gap-3) 0 var(--gap-2);
+}
+
+.wl-tracing__markdown h1 { font-size: var(--type-h2-size); }
+.wl-tracing__markdown h2 { font-size: var(--type-h3-size); }
+.wl-tracing__markdown h3,
+.wl-tracing__markdown h4 { font-size: var(--type-body-size); }
+
+.wl-tracing__markdown h1:first-child,
+.wl-tracing__markdown h2:first-child,
+.wl-tracing__markdown h3:first-child { margin-top: 0; }
+
+.wl-tracing__markdown p { margin: 0 0 var(--gap-2); }
+
+.wl-tracing__markdown ul,
+.wl-tracing__markdown ol {
+  margin: 0 0 var(--gap-2);
+  padding-left: 1.25rem;
+}
+
+.wl-tracing__markdown li + li { margin-top: 2px; }
+
+.wl-tracing__markdown strong { font-weight: 800; }
+
+.wl-tracing__markdown a {
+  color: var(--acc);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.wl-tracing__markdown blockquote {
+  margin: 0 0 var(--gap-2);
+  padding: 0 var(--gap-3);
+  border-left: 2px solid var(--hairline);
+  color: var(--ink-2);
+}
+
+.wl-tracing__markdown code {
+  font-family: var(--font-numeric);
+  font-size: 0.95em;
+  background: var(--paper-2);
+  border: 1px solid var(--hairline);
+  padding: 0 var(--gap-1);
+  border-radius: 2px;
+}
+
+.wl-tracing__markdown pre {
+  margin: 0 0 var(--gap-2);
+  padding: var(--gap-2);
+  overflow-x: auto;
+  background: var(--paper-2);
+  border: 1px solid var(--hairline);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+}
+
+.wl-tracing__markdown pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.wl-tracing__markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--gap-2) 0;
+  font-size: var(--type-small-size);
+}
+
+.wl-tracing__markdown th,
+.wl-tracing__markdown td {
+  padding: var(--gap-1) var(--gap-2);
+  border: 1px solid var(--hairline);
+  text-align: left;
+  vertical-align: top;
+}
+
+.wl-tracing__markdown thead th {
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-weight: var(--type-h3-weight);
+}
+
+.wl-tracing__markdown hr {
+  border: none;
+  border-top: 1px solid var(--hairline);
+  margin: var(--gap-3) 0;
+}
+
+/* --- Structure-aware rendered view (Rendered mode) ------------------------
+ * Unwraps the LangChain Run envelope into human-readable sections. Stacked
+ * vertically with gaps; each section (response markdown, tool calls, usage)
+ * is self-contained so it reads like a transcript, not a JSON dump. */
+.wl-tracing__readable {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+
+/* When the markdown response sits inside the readable column it owns its own
+   card, so reset the outer payload-body padding via this selector. */
+.wl-tracing__readable .wl-tracing__markdown {
+  margin: 0;
+}
+
+.wl-tracing__messages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-4);
+}
+
+.wl-tracing__message {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  padding: var(--gap-2);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+}
+
+.wl-tracing__section-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  padding: var(--gap-2);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+}
+
+.wl-tracing__message-head {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+}
+
+.wl-tracing__message-role {
+  align-self: flex-start;
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  background: var(--paper-2);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 0 var(--gap-2);
+}
+
+.wl-tracing__message-name {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+
+.wl-tracing__message-expand {
+  border: 1px solid var(--hairline);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  padding: var(--gap-1) var(--gap-2);
+  text-align: center;
+}
+
+.wl-tracing__message-expand:hover {
+  background: var(--paper-3);
+  color: var(--ink);
+}
+
+.wl-tracing__message-expand:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.wl-tracing__empty-note {
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+  font-style: italic;
+}
+
+.wl-tracing__table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+}
+
+.wl-tracing__data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--type-small-size);
+  color: var(--ink);
+}
+
+.wl-tracing__data-table th,
+.wl-tracing__data-table td {
+  padding: var(--gap-1) var(--gap-2);
+  border-bottom: 1px solid var(--hairline);
+  border-right: 1px solid var(--hairline);
+  text-align: left;
+  vertical-align: top;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.wl-tracing__data-table th {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+  background: var(--paper-2);
+}
+
+.wl-tracing__data-table td {
+  font-family: var(--font-numeric);
+}
+
+.wl-tracing__data-table th:last-child,
+.wl-tracing__data-table td:last-child {
+  border-right: none;
+}
+
+.wl-tracing__data-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* Tool calls: one row per call — name chip + pretty-printed args. */
+.wl-tracing__toolcalls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+
+.wl-tracing__toolcall {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+  padding: var(--gap-2);
+  background: var(--paper-2);
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+}
+
+.wl-tracing__toolcall-name {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--acc);
+  font-weight: var(--type-h3-weight);
+  align-self: flex-start;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  padding: 0 var(--gap-2);
+  border-radius: 999px;
+}
+
+.wl-tracing__toolcall-args {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+/* Usage chips: compact inline token counts under the response. */
+.wl-tracing__usage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+}
+
+.wl-tracing__usage-chip {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  background: var(--paper-2);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 0 var(--gap-2);
+}

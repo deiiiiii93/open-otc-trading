@@ -1,0 +1,104 @@
+.wl-goalcard {
+  border: 1px solid var(--info);
+  background: color-mix(in oklab, var(--info) 8%, var(--paper));
+  padding: var(--gap-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+.wl-goalcard--running {
+  border-color: var(--info);
+  background: color-mix(in oklab, var(--info) 12%, var(--paper));
+}
+.wl-goalcard--satisfied {
+  border-color: var(--pos);
+  background: color-mix(in oklab, var(--pos) 10%, var(--paper));
+}
+.wl-goalcard--stuck_needs_human {
+  border-color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 10%, var(--paper));
+}
+.wl-goalcard--cancelled {
+  border-color: var(--hairline);
+  background: var(--paper-2);
+}
+
+.wl-goalcard__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.wl-goalcard__tag {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--info);
+}
+.wl-goalcard__status {
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+
+.wl-goalcard__summary {
+  font-weight: var(--type-h3-weight);
+  color: var(--ink);
+}
+.wl-goalcard__policy {
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+
+.wl-goalcard__criteria {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+}
+.wl-goalcard__criterion {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap-2);
+}
+.wl-goalcard__criterion-id {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--info);
+  font-weight: var(--type-h3-weight);
+}
+.wl-goalcard__criterion-text {
+  flex: 1;
+  color: var(--ink);
+}
+.wl-goalcard__criterion-check {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  border: 1px solid var(--hairline);
+  padding: 0 var(--gap-1);
+}
+
+.wl-goalcard__escalation {
+  border-top: 1px solid var(--hairline);
+  padding-top: var(--gap-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+}
+.wl-goalcard__escalation-reason {
+  color: var(--warn);
+  font-size: var(--type-small-size);
+}
+.wl-goalcard__failing {
+  margin: 0;
+  padding-left: var(--gap-3);
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+}
+
+.wl-goalcard__actions {
+  display: flex;
+  gap: var(--gap-2);
+}

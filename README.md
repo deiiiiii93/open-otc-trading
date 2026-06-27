@@ -5,6 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB.svg)](https://react.dev/)
+[![Agent Arena: Run #8](https://img.shields.io/badge/Agent_Arena-Run_%238-8a2be2.svg)](docs/arena/)
 
 ![Open OTC agent desk](docs/screenshots/agent-desk.png)
 
@@ -54,6 +55,38 @@ The product walkthrough tells it as one continuous flow:
 - **RFQ workflow** — Client portal for quote requests with an internal approval pipeline.
 - **Market data** — AKShare adapter with caching and fallback for A-share / HK markets.
 - **Reproducible & audited** — Every pricing run, risk run, and agent trace is persisted; QuantArk keeps the math deterministic.
+
+---
+
+## 🏆 The OTC Desk Agent Arena
+
+**Can an LLM run the desk on its own?** The [**Agent Arena**](docs/arena/) is a
+controlled, repeated-trial benchmark that drives the *real* desk orchestrator
+end-to-end — pull risk, price the book, find the hotspot, stress it, back-test the
+hedge, write the governance report — with **no human in the loop**, then scores
+whether the model actually did it. Unlike a frozen-prompt benchmark, it runs the
+production agent and reads each model's work back out of the system's own trace log.
+
+**Run #8** evaluated **ten models over five independent trials each**:
+
+| Rank | Model | Total | σ |
+|:---:|---|:---:|:---:|
+| 🥇 | Claude Opus 4.8 | **66.4** | 8.1 |
+| 🥈 | GPT-5.5 | **66.3** | 8.2 |
+| 🥉 | Claude Sonnet 4.6 | 59.1 | **2.7** |
+
+A **statistical tie at the top** (0.1 apart, σ ≈ 8); Sonnet 4.6 is the steadiest
+operator in the field; and the open-weight tier (Kimi / MiMo / DeepSeek) delivers
+**~85% of the frontier's score at ~1/12 the cost**.
+
+📖 **Read Run #8 in full** —
+[Markdown](docs/arena/2026-06-27-run8-otc-desk-agent-arena.md) ·
+[HTML](https://htmlpreview.github.io/?https://github.com/deiiiiii93/open-otc-trading/blob/main/docs/arena/2026-06-27-run8-otc-desk-agent-arena.html) ·
+[PDF](docs/arena/2026-06-27-run8-otc-desk-agent-arena.pdf)
+&nbsp;·&nbsp; all reports live in [**`docs/arena/`**](docs/arena/).
+
+> New runs and additional **long-workflow match designs** are in progress and will
+> be published in the Arena as they're released.
 
 ---
 
@@ -174,7 +207,8 @@ open-otc-trading/
 │       └── hooks/           # Custom React hooks
 ├── config/                  # Agent channel configuration
 ├── tests/                   # Backend test suite
-└── docs/                    # Design specs & plans
+└── docs/
+    └── arena/               # 🏆 Agent Arena — autonomous-desk benchmark reports
 ```
 
 ---
@@ -200,6 +234,11 @@ cd frontend && npm test
 **AI/LLM:** LangGraph agents, ZenMux (Anthropic/OpenAI gateway), DeepSeek, LangSmith tracing
 
 ---
+
+## Changelog
+
+Release history is tracked in [CHANGELOG.md](CHANGELOG.md), following
+[Keep a Changelog](https://keepachangelog.com/).
 
 ## License
 

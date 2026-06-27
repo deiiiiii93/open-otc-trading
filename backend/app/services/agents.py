@@ -57,6 +57,7 @@ from .deep_agent.escalation import resolve_escalation
 from .deep_agent.executor import TaskExecutionResult, TaskExecutor
 from .deep_agent.ledger import LedgerWriter
 from .deep_agent.orchestrator import build_orchestrator
+from .deep_agent.goal_mode import GoalRunService, goal_grader_for_turn
 from .deep_agent.run_control import new_run_control, request_drain
 from .deep_agent.runtime_config import graph_run_config
 from .deep_agent.scheduler import schedule_tasks_from_plan
@@ -423,6 +424,8 @@ DEEP_AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         # UI-control tool: personas can surface the same pickable-choice UX
         # as the orchestrator when their delegated reply asks the user to pick.
         "propose_reply_options",
+        # Desk-workflow authoring: the build-workflow skill persists drafts.
+        "save_desk_workflow",
     }
 )
 
@@ -1160,6 +1163,35 @@ class _WorkflowStreamTurn:
     router_response_text: str | None = None
 
 
+# Execution modes. Interactive surfaces HITL prompts; AUTO auto-clears them but
+# the model may still ask via propose_reply_options; YOLO is fully headless (no
+# HITL prompts AND no deferral — the card tool is withheld).
+_VALID_MODES = {"interactive", "auto", "yolo"}
+
+
+def resolve_execution_mode(
+    mode: str | None, yolo_mode: bool
+) -> tuple[str, bool, bool]:
+    """Resolve a turn's execution mode into ``(mode, clear_hitl, allow_reply_options)``.
+
+    ``mode`` is the canonical signal. When it is absent (legacy callers), it is
+    derived from the deprecated ``yolo_mode`` boolean: ``True`` → ``auto`` (the
+    old YOLO behavior — clears HITL but still allows reply cards), ``False`` →
+    ``interactive``. Legacy callers are never headless.
+
+    Returns the normalized mode plus the two capability flags the interior uses:
+    ``clear_hitl`` (the value threaded as ``yolo_mode`` internally) and
+    ``allow_reply_options``.
+    """
+    if mode is None:
+        mode = "auto" if yolo_mode else "interactive"
+    if mode not in _VALID_MODES:
+        raise ValueError(f"unknown execution mode {mode!r}; expected one of {sorted(_VALID_MODES)}")
+    clear_hitl = mode in {"auto", "yolo"}
+    allow_reply_options = mode != "yolo"
+    return mode, clear_hitl, allow_reply_options
+
+
 class AgentService:
     def __init__(
         self,
@@ -1184,6 +1216,9 @@ class AgentService:
                 enable_code_interpreter=self.settings.agent_code_interpreter_enabled,
             )
         self._owned_deep_agent = self.deep_agent
+        # Goal mode (spec §G): set by create_app once the DB-backed GoalRunService is
+        # built. The stream path consults it to attach the grader on a goal turn.
+        self.goal_service: GoalRunService | None = None
 
     def rebuild_default_model(self) -> None:
         """Refresh the cached default model after a registry reload."""
@@ -1445,9 +1480,9 @@ class AgentService:
         return version
 
     def create_thread(
-        self, session: Session, title: str, character: str
+        self, session: Session, title: str, character: str, source: str = "desk"
     ) -> AgentThread:
-        thread = AgentThread(title=title, character=character)
+        thread = AgentThread(title=title, character=character, source=source)
         session.add(thread)
         session.flush()
         ensure_thread_workflow_state(session, thread.id)
@@ -1457,7 +1492,7 @@ class AgentService:
             actor="system",
             subject_type="thread",
             subject_id=thread.id,
-            payload={"character": character},
+            payload={"character": character, "source": source},
         )
         return thread
 
@@ -2314,6 +2349,7 @@ class AgentService:
         accounting_date: date | str | None = None,
         model_selection: dict[str, str] | None = None,
         yolo_mode: bool = False,
+        mode: str | None = None,
         envelope: str | None = None,
         confirmed_cost_preview: bool = False,
     ):
@@ -2322,7 +2358,12 @@ class AgentService:
         Single-invocation refactor: this method drives a single astream_events
         run, emits typed SSE events to the client, and persists ONE
         AgentMessage after the stream completes.
+
+        ``mode`` ("interactive" | "auto" | "yolo") is the canonical execution
+        signal; the deprecated ``yolo_mode`` boolean is accepted for back-compat
+        and maps to auto/interactive. YOLO drives the orchestrator headless.
         """
+        mode, yolo_mode, allow_reply_options = resolve_execution_mode(mode, yolo_mode)
         resolved = self.normalize_model_selection(model_selection)
         effective_accounting_date = _effective_accounting_date(accounting_date)
         if not self.is_enabled(resolved):
@@ -2343,7 +2384,20 @@ class AgentService:
             collector.envelope_final = resolved_envelope.value
             prepared: _WorkflowStreamTurn | None = None
             persisted = False
-            async with self._streaming_agent(resolved, yolo_mode=yolo_mode) as agent:
+            # Goal mode (spec §G): if this thread has a running goal run, attach its
+            # ledger grader to the orchestrator and carry the rubric in the invoke state.
+            goal_grader, goal_state_fragment = goal_grader_for_turn(
+                self.goal_service,
+                model=self.model,
+                tools=self.tools,
+                thread_id=str(thread_id),
+            )
+            async with self._streaming_agent(
+                resolved,
+                yolo_mode=yolo_mode,
+                allow_reply_options=allow_reply_options,
+                goal_grader=goal_grader,
+            ) as agent:
                 try:
                     if agent is None:
                         raise RuntimeError("Agent is disabled (no LLM configured)")
@@ -2376,6 +2430,7 @@ class AgentService:
                             prepared.config,
                             collector,
                             stream_version=self._stream_version_for_selection(resolved),
+                            extra_state=goal_state_fragment,
                         ):
                             yield sse_line
                         # Runtime signals (capability denial, cost preview) are
@@ -2519,7 +2574,9 @@ class AgentService:
         collector.envelope_final = resolved_envelope.value
         persisted = False  # set True once _finalize_turn returns
 
-        async with self._streaming_agent(resolved, yolo_mode=yolo_mode) as agent:
+        async with self._streaming_agent(
+            resolved, yolo_mode=yolo_mode, allow_reply_options=allow_reply_options
+        ) as agent:
             try:
                 try:
                     async for sse_line in self._drive_stream(
@@ -2639,9 +2696,20 @@ class AgentService:
         model_selection: dict[str, str],
         *,
         yolo_mode: bool = False,
+        allow_reply_options: bool = True,
+        goal_grader: Any = None,
     ):
-        """Yield an agent whose checkpointer supports async LangGraph methods."""
-        if yolo_mode or not self._is_default_model_selection(model_selection):
+        """Yield an agent whose checkpointer supports async LangGraph methods.
+
+        A non-None ``goal_grader`` (a RubricMiddleware for an active goal run) forces a
+        fresh orchestrator — the prebuilt ``deep_agent`` lacks the grader — and is
+        appended to its middleware stack (spec §G)."""
+        if (
+            goal_grader is not None
+            or not allow_reply_options
+            or yolo_mode
+            or not self._is_default_model_selection(model_selection)
+        ):
             model = build_agent_model(self.registry, model_selection)
             if model is None:
                 yield None
@@ -2654,6 +2722,8 @@ class AgentService:
                     interrupt_on=interrupt_on_config(yolo_mode=yolo_mode),
                     enable_code_interpreter=self.settings.agent_code_interpreter_enabled,
                     yolo_mode=yolo_mode,
+                    allow_reply_options=allow_reply_options,
+                    goal_grader=goal_grader,
                 )
             return
 
@@ -2677,8 +2747,13 @@ class AgentService:
         model_selection: dict[str, str],
         *,
         yolo_mode: bool = False,
+        allow_reply_options: bool = True,
     ) -> Any:
-        if not yolo_mode and self._is_default_model_selection(model_selection):
+        if (
+            allow_reply_options
+            and not yolo_mode
+            and self._is_default_model_selection(model_selection)
+        ):
             return self.deep_agent
         model = build_agent_model(self.registry, model_selection)
         if model is None:
@@ -2690,6 +2765,7 @@ class AgentService:
             interrupt_on=interrupt_on_config(yolo_mode=yolo_mode),
             enable_code_interpreter=self.settings.agent_code_interpreter_enabled,
             yolo_mode=yolo_mode,
+            allow_reply_options=allow_reply_options,
         )
 
     def resume_async_agent(
@@ -3054,12 +3130,18 @@ class AgentService:
         collector: StreamCollector,
         *,
         stream_version: str | None = None,
+        extra_state: dict | None = None,
     ):
-        """Race astream_events against a 15s timeout to emit heartbeat events."""
+        """Race astream_events against a 15s timeout to emit heartbeat events.
+
+        ``extra_state`` is merged into the invocation state — goal mode passes the
+        ``{"rubric": ...}`` fragment here so the attached grader has its criteria."""
         queue: asyncio.Queue = asyncio.Queue()
         DONE = object()
         control = new_run_control()
-        payload = {"messages": [HumanMessage(content=prompt)]}
+        payload: dict[str, Any] = {"messages": [HumanMessage(content=prompt)]}
+        if extra_state:
+            payload.update(extra_state)
         version = stream_version or self.settings.agent_stream_version
 
         async def producer():

@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import type {
   AgentChannel,
   AgentContextUsage,
+  AgentExecutionMode,
   AgentModelConfig,
   AgentModelSelection,
   AgentTodoItem,
@@ -15,6 +16,18 @@ import type {
   ToolEvent,
 } from '../types';
 import { useViewMode, type ViewMode } from './useViewMode';
+import {
+  parseGoalCommand,
+  startGoal,
+  ratifyGoal as ratifyGoalApi,
+  cancelGoal as cancelGoalApi,
+  getGoal,
+  getGoalContract,
+  isClarification,
+  type GoalContract,
+  type GoalRunState,
+  type GoalClarification,
+} from '../lib/goalApi';
 
 type CostPreview = { tool_name: string; estimated_seconds: number };
 type EnvelopeTransition = {
@@ -30,7 +43,8 @@ type Draft = {
   cost_preview?: CostPreview;
   envelope_transition?: EnvelopeTransition;
 };
-const YOLO_MODE_STORAGE_KEY = 'open-otc:agent:yolo-mode';
+const EXECUTION_MODE_STORAGE_KEY = 'open-otc:agent:execution-mode';
+const EXECUTION_MODES: readonly AgentExecutionMode[] = ['interactive', 'auto', 'yolo'];
 const ACTIVE_TASK_STATUSES = new Set(['queued', 'running']);
 
 export type AgentChatController = {
@@ -45,11 +59,11 @@ export type AgentChatController = {
   viewMode: ViewMode;
   channels: AgentChannel[];
   selectedModel: AgentModelSelection | null;
-  yoloMode: boolean;
+  executionMode: AgentExecutionMode;
   confirmingActionIds: ReadonlySet<string>;
   taskRunsById: Record<number, TaskRun>;
   setSelectedModel: (selection: AgentModelSelection) => void;
-  setYoloMode: Dispatch<SetStateAction<boolean>>;
+  setExecutionMode: Dispatch<SetStateAction<AgentExecutionMode>>;
   setViewMode: (mode: ViewMode) => void;
   selectThread: (id: number) => void;
   createThread: () => Promise<void>;
@@ -76,13 +90,40 @@ export type AgentChatController = {
     contextUsage?: AgentContextUsage | null,
     envelope?: Envelope,
   ) => Promise<void>;
+  launchWorkflow: (slug: string, mode: 'auto' | 'yolo', args?: Record<string, string>) => Promise<void>;
   stopStreaming: () => void;
   confirmAction: (messageId: number, actionId: string) => Promise<void>;
   dismissAction: (messageId: number, actionId: string) => Promise<void>;
   refreshModels: () => Promise<void>;
+  // Goal mode (spec §G)
+  goalContract: GoalContract | null;
+  goalState: GoalRunState | null;
+  goalClarification: GoalClarification | null;
+  goalBusy: boolean;
+  ratifyActiveGoal: () => Promise<void>;
+  cancelActiveGoal: () => Promise<void>;
 };
 
-export function useAgentChatController(): AgentChatController {
+type AgentChatControllerOptions = {
+  /**
+   * Fired when a tool begins (SSE `tool_start`), with the tool name and the
+   * raw args the model passed. Lets an embedding surface (e.g. the workflow
+   * builder) capture a drafted script straight from the stream instead of
+   * polling the DB for the persisted row.
+   */
+  onToolStart?: (name: string, args: unknown) => void;
+  /**
+   * Tags threads this controller creates (default 'desk') and scopes
+   * auto-selection to threads of that source. The workflow builder passes
+   * 'workflow_builder' so its conversations stay isolated from desk threads
+   * and it never auto-selects an unrelated desk thread on mount.
+   */
+  threadSource?: string;
+};
+
+export function useAgentChatController(
+  options?: AgentChatControllerOptions,
+): AgentChatController {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,11 +134,53 @@ export function useAgentChatController(): AgentChatController {
   const [viewMode, setViewMode] = useViewMode();
   const [modelConfig, setModelConfig] = useState<AgentModelConfig | null>(null);
   const [selectedModel, setSelectedModel] = useState<AgentModelSelection | null>(null);
-  const [yoloMode, setYoloMode] = useSessionBoolean(YOLO_MODE_STORAGE_KEY, false);
+  const [executionMode, setExecutionMode] = useSessionString<AgentExecutionMode>(
+    EXECUTION_MODE_STORAGE_KEY,
+    'auto',
+    EXECUTION_MODES,
+  );
   const [confirmingActionIds, setConfirmingActionIds] = useState<Set<string>>(() => new Set());
   const [taskRunsById, setTaskRunsById] = useState<Record<number, TaskRun>>({});
   const [asyncAgentPollNonce, setAsyncAgentPollNonce] = useState(0);
   const streamAbortRef = useRef<AbortController | null>(null);
+  // Keep the latest onToolStart in a ref so streaming closures never capture a
+  // stale callback between renders.
+  const onToolStartRef = useRef(options?.onToolStart);
+  onToolStartRef.current = options?.onToolStart;
+  const threadSource = options?.threadSource ?? 'desk';
+  // Goal mode (spec §G): the active thread's contract/run, plus a clarification ask
+  // when the framer needs more before it can draft checkable criteria.
+  const [goalContract, setGoalContract] = useState<GoalContract | null>(null);
+  const [goalState, setGoalState] = useState<GoalRunState | null>(null);
+  const [goalClarification, setGoalClarification] = useState<GoalClarification | null>(null);
+  const [goalBusy, setGoalBusy] = useState(false);
+  // Always reflects the committed active thread, so async goal updates can refuse to
+  // write a response for a thread the user has since switched away from.
+  const activeIdRef = useRef<number | null>(activeId);
+  activeIdRef.current = activeId;
+  // Whether the active thread has a running goal run — gates the post-stream refetch so
+  // a graded turn that transitions the run (satisfied / stuck) refreshes the card.
+  const goalRunningRef = useRef(false);
+  goalRunningRef.current = goalState?.status === 'running';
+
+  // Fetch and commit the goal run + contract for `threadId`, but only if it is still
+  // the active thread when each request resolves (guards every cross-thread race).
+  const reloadGoalFor = useCallback(async (threadId: number) => {
+    try {
+      const state = await getGoal(threadId);
+      if (activeIdRef.current !== threadId) return;
+      const contract = state ? await getGoalContract(threadId) : null;
+      if (activeIdRef.current !== threadId) return;
+      setGoalState(state);
+      setGoalContract(contract);
+      setGoalClarification(null);
+    } catch {
+      if (activeIdRef.current === threadId) {
+        setGoalContract(null);
+        setGoalState(null);
+      }
+    }
+  }, []);
 
   const fetchCatalog = useCallback(async () => {
     const cfg = await api<AgentModelConfig>('/api/agent/models');
@@ -132,9 +215,14 @@ export function useAgentChatController(): AgentChatController {
     setThreads(list);
     setActiveId((current) => {
       if (current != null && list.some((t) => t.id === current)) return current;
-      return list[0]?.id ?? null;
+      // Only auto-select threads owned by this controller's source. Keeps Agent
+      // Desk from landing on a hidden arena/builder thread, and the builder from
+      // landing on an unrelated desk thread. Missing source counts as 'desk'
+      // (backend default + legacy rows). `list` is updated_at-desc, so this
+      // resumes the most recent same-source thread.
+      return list.find((t) => (t.source ?? 'desk') === threadSource)?.id ?? null;
     });
-  }, []);
+  }, [threadSource]);
 
   useEffect(() => {
     let cancelled = false;
@@ -244,11 +332,11 @@ export function useAgentChatController(): AgentChatController {
   const createThread = useCallback(async () => {
     const created = await api<Thread>('/api/chat/threads', {
       method: 'POST',
-      body: JSON.stringify({ title: 'New research thread', character: 'trader' }),
+      body: JSON.stringify({ title: 'New research thread', character: 'trader', source: threadSource }),
     });
     setThreads((prev) => [created, ...prev]);
     setActiveId(created.id);
-  }, []);
+  }, [threadSource]);
 
   const renameThread = useCallback(async (threadId: number, title: string) => {
     setThreads((prev) => prev.map((thread) => (
@@ -315,11 +403,40 @@ export function useAgentChatController(): AgentChatController {
     if (threadId == null) {
       const created = await api<Thread>('/api/chat/threads', {
         method: 'POST',
-        body: JSON.stringify({ title: 'New research thread', character: 'trader' }),
+        body: JSON.stringify({ title: 'New research thread', character: 'trader', source: threadSource }),
       });
       threadId = created.id;
       setThreads((prev) => [created, ...prev]);
       setActiveId(created.id);
+      activeIdRef.current = created.id;  // reflect the just-selected thread before any await
+    }
+
+    // Goal mode (spec §G): `/goal <description>` frames an acceptance contract instead
+    // of streaming a turn. The user ratifies it once (GoalRatifyCard) before the run.
+    const goalCommand = parseGoalCommand(message);
+    if (goalCommand) {
+      setError(null);
+      setGoalBusy(true);
+      try {
+        const result = await startGoal(threadId, goalCommand.goalText, executionMode);
+        if (activeIdRef.current !== threadId) return;  // user switched away mid-frame
+        if (isClarification(result)) {
+          setGoalClarification(result);
+          setGoalContract(null);
+          setGoalState(null);
+        } else {
+          const contract = await getGoalContract(threadId);
+          if (activeIdRef.current !== threadId) return;
+          setGoalClarification(null);
+          setGoalState(result);
+          setGoalContract(contract);
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setGoalBusy(false);
+      }
+      return;
     }
 
     setError(null);
@@ -335,7 +452,7 @@ export function useAgentChatController(): AgentChatController {
           content: message,
           meta: {
             ...(contextUsage ? { context_usage: contextUsage } : {}),
-            yolo_mode: yoloMode,
+            mode: executionMode,
           },
         }],
       };
@@ -354,7 +471,7 @@ export function useAgentChatController(): AgentChatController {
           content: message,
           character: 'auto',
           model: selectedModel,
-          yolo_mode: yoloMode,
+          mode: executionMode,
           page_context: pageContext ?? undefined,
           context_usage: contextUsage ?? undefined,
           accounting_date: accountingDate || undefined,
@@ -376,7 +493,7 @@ export function useAgentChatController(): AgentChatController {
           const currentEventType = eventType;
           eventType = 'message';
           if (!dataPayload) return;
-          handleSseEvent(currentEventType, dataPayload, setDraft);
+          handleSseEvent(currentEventType, dataPayload, setDraft, onToolStartRef.current);
         };
 
         const processLine = (line: string) => {
@@ -424,8 +541,135 @@ export function useAgentChatController(): AgentChatController {
         streamAbortRef.current = null;
         setSending(false);
       }
+      // A graded turn can transition the goal run server-side (satisfied / stuck) — the
+      // grader runs in-loop with no SSE of its own — so refresh the card after the turn.
+      if (threadId != null && goalRunningRef.current) {
+        void reloadGoalFor(threadId);
+      }
     }
-  }, [activeId, refresh, selectedModel, yoloMode]);
+  }, [activeId, refresh, selectedModel, executionMode, threadSource, reloadGoalFor]);
+
+  const launchWorkflow = useCallback(async (slug: string, mode: 'auto' | 'yolo', args?: Record<string, string>) => {
+    let threadId = activeId;
+    if (threadId == null) {
+      const created = await api<Thread>('/api/chat/threads', {
+        method: 'POST',
+        body: JSON.stringify({ title: 'New research thread', character: 'trader', source: threadSource }),
+      });
+      threadId = created.id;
+      setThreads((prev) => [created, ...prev]);
+      setActiveId(created.id);
+    }
+
+    setError(null);
+    setSending(true);
+    setDraft({ content: '', events: [] });
+    let workflowError: string | null = null;
+
+    let streamAbortController: AbortController | null = null;
+    try {
+      streamAbortRef.current?.abort();
+      streamAbortController = new AbortController();
+      streamAbortRef.current = streamAbortController;
+      const response = await fetch(`/api/chat/threads/${threadId}/workflows/${slug}/run`, {
+        method: 'POST',
+        signal: streamAbortController.signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode, args: args ?? {} }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      if (response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let eventType = 'message';
+        let dataLines: string[] = [];
+
+        const dispatch = () => {
+          const dataPayload = dataLines.join('\n');
+          const currentEventType = eventType;
+          dataLines = [];
+          eventType = 'message';
+          if (!dataPayload) return;
+          if (currentEventType.startsWith('workflow.')) {
+            // Render workflow framing as inline markers in the live draft.
+            let parsed: Record<string, unknown> = {};
+            try {
+              parsed = JSON.parse(dataPayload) as Record<string, unknown>;
+            } catch {
+              return;
+            }
+            let marker = '';
+            if (currentEventType === 'workflow.step.start') {
+              marker = `\n\n▶ Step ${parsed.index}\n`;
+            } else if (currentEventType === 'workflow.log') {
+              marker = `\n_${String(parsed.message ?? '')}_\n`;
+            } else if (currentEventType === 'workflow.step.error') {
+              workflowError = `Workflow step ${parsed.index} failed: ${String(parsed.message ?? '')}`;
+              marker = `\n\n⚠️ Step ${parsed.index} failed: ${String(parsed.message ?? '')}\n`;
+            } else if (currentEventType === 'workflow.complete') {
+              marker = `\n\n✅ Workflow complete (${parsed.steps} steps)\n`;
+            }
+            if (marker) {
+              setDraft((prev) => ({
+                ...(prev ?? { events: [] }),
+                content: (prev?.content ?? '') + marker,
+                events: prev?.events ?? [],
+              }));
+            }
+            return;
+          }
+          handleSseEvent(currentEventType, dataPayload, setDraft, onToolStartRef.current);
+        };
+
+        const processLine = (line: string) => {
+          if (line === '') {
+            dispatch();
+            return;
+          }
+          if (line.startsWith('event:')) {
+            eventType = line.slice(6).trim() || 'message';
+            return;
+          }
+          if (line.startsWith('data:')) {
+            dataLines.push(line.slice(5).trim());
+          }
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) processLine(line.trimEnd());
+        }
+        if (buffer) processLine(buffer.trimEnd());
+        dispatch();
+      }
+      setDraft(null);
+      await refresh();
+      // A step failure is otherwise lost when the refresh replaces the draft —
+      // surface it durably.
+      if (workflowError) setError(workflowError);
+    } catch (e) {
+      if (isAbortError(e)) {
+        if (streamAbortRef.current === streamAbortController) {
+          setDraft(null);
+          void refresh().catch((refreshError) => {
+            setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
+          });
+        }
+      } else if (streamAbortRef.current === streamAbortController) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    } finally {
+      if (streamAbortRef.current === streamAbortController) {
+        streamAbortRef.current = null;
+        setSending(false);
+      }
+    }
+  }, [activeId, refresh, threadSource]);
 
   const stopStreaming = useCallback(() => {
     streamAbortRef.current?.abort();
@@ -502,6 +746,61 @@ export function useAgentChatController(): AgentChatController {
     );
   }, [activeId, threads, sendMessage]);
 
+  const ratifyActiveGoal = useCallback(async () => {
+    const threadId = activeId;
+    if (threadId == null) return;
+    // The frozen goal text seeds the kickoff turn the grader will judge — capture it
+    // before ratify clears state, so "Accept & start" actually starts the run.
+    const kickoff = goalContract?.goal_text ?? goalContract?.summary ?? '';
+    setGoalBusy(true);
+    let ratified = false;
+    try {
+      const state = await ratifyGoalApi(threadId);
+      if (activeIdRef.current === threadId) setGoalState(state);
+      ratified = true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGoalBusy(false);
+    }
+    // Start the autonomous run the frozen criteria grade: the grader attaches to this
+    // streamed turn because the run is now `running`. Without this, ratify leaves the
+    // goal idle until the user manually sends another message.
+    if (ratified && kickoff && activeIdRef.current === threadId) {
+      void sendMessage(kickoff, null, null, null, 'desk_workflow');
+    }
+  }, [activeId, goalContract, sendMessage]);
+
+  const cancelActiveGoal = useCallback(async () => {
+    const threadId = activeId;
+    if (threadId == null) return;
+    setGoalBusy(true);
+    try {
+      await cancelGoalApi(threadId);
+      if (activeIdRef.current === threadId) {
+        setGoalContract(null);
+        setGoalState(null);
+        setGoalClarification(null);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGoalBusy(false);
+    }
+  }, [activeId]);
+
+  // Load the active thread's goal run (if any) when the selection changes, so a
+  // running/awaiting card survives a thread switch or reload. Clear immediately so a
+  // previous thread's card never shows against the new thread; reloadGoalFor commits
+  // only if `activeId` is still current when its requests resolve.
+  useEffect(() => {
+    setGoalContract(null);
+    setGoalState(null);
+    setGoalClarification(null);
+    if (activeId == null) return;
+    reloadGoalFor(activeId);
+  }, [activeId, reloadGoalFor]);
+
   const streamingItem: ChatMessageType | null = draft
     ? {
         id: -1,
@@ -529,11 +828,11 @@ export function useAgentChatController(): AgentChatController {
     viewMode,
     channels: modelConfig?.channels ?? [],
     selectedModel,
-    yoloMode,
+    executionMode,
     confirmingActionIds,
     taskRunsById,
     setSelectedModel,
-    setYoloMode,
+    setExecutionMode,
     setViewMode,
     selectThread: setActiveId,
     createThread,
@@ -542,23 +841,33 @@ export function useAgentChatController(): AgentChatController {
     deleteThread,
     forkThread,
     sendMessage,
+    launchWorkflow,
     confirmCostPreview,
     stopStreaming,
     confirmAction,
     dismissAction,
     refreshModels,
+    goalContract,
+    goalState,
+    goalClarification,
+    goalBusy,
+    ratifyActiveGoal,
+    cancelActiveGoal,
   };
 }
 
-function useSessionBoolean(
+function useSessionString<T extends string>(
   key: string,
-  defaultValue: boolean,
-): [boolean, Dispatch<SetStateAction<boolean>>] {
-  const [value, setValue] = useState<boolean>(() => {
+  defaultValue: T,
+  allowed: readonly T[],
+): [T, Dispatch<SetStateAction<T>>] {
+  const [value, setValue] = useState<T>(() => {
     if (typeof window === 'undefined') return defaultValue;
     try {
       const stored = window.sessionStorage.getItem(key);
-      return stored == null ? defaultValue : stored === 'true';
+      return stored != null && (allowed as readonly string[]).includes(stored)
+        ? (stored as T)
+        : defaultValue;
     } catch {
       return defaultValue;
     }
@@ -567,9 +876,9 @@ function useSessionBoolean(
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
-      window.sessionStorage.setItem(key, value ? 'true' : 'false');
+      window.sessionStorage.setItem(key, value);
     } catch {
-      // Ignore storage failures; the in-memory toggle still works.
+      // Ignore storage failures; the in-memory selection still works.
     }
   }, [key, value]);
 
@@ -605,10 +914,42 @@ function selectionExists(
   ));
 }
 
+export type WorkflowSseEvent = { type: string; data: Record<string, unknown> };
+
+/** Parse a complete SSE text blob into ordered events (pure; for tests/non-streaming). */
+export function parseWorkflowSse(text: string): WorkflowSseEvent[] {
+  const events: WorkflowSseEvent[] = [];
+  let eventType = 'message';
+  let dataLines: string[] = [];
+  const flush = () => {
+    if (dataLines.length) {
+      try {
+        events.push({ type: eventType, data: JSON.parse(dataLines.join('\n')) });
+      } catch {
+        /* skip malformed */
+      }
+    }
+    eventType = 'message';
+    dataLines = [];
+  };
+  for (const line of text.split('\n')) {
+    if (line === '') {
+      flush();
+    } else if (line.startsWith('event:')) {
+      eventType = line.slice(6).trim();
+    } else if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).trim());
+    }
+  }
+  flush();
+  return events;
+}
+
 function handleSseEvent(
   eventType: string,
   dataPayload: string,
   setDraft: Dispatch<SetStateAction<Draft | null>>,
+  onToolStart?: (name: string, args: unknown) => void,
 ) {
   if (eventType === 'heartbeat') return;
   let parsed: Record<string, unknown>;
@@ -630,6 +971,7 @@ function handleSseEvent(
   if (eventType === 'tool_start') {
     const id = typeof parsed.id === 'string' ? parsed.id : '';
     const name = typeof parsed.name === 'string' ? parsed.name : 'tool';
+    onToolStart?.(name, parsed.args);
     const newEvent: ToolEvent = {
       id,
       name,

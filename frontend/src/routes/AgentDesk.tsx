@@ -4,8 +4,10 @@ import {
   personaDisplayLabel,
   type AgentAsset,
   type AgentChannel,
+  type AgentExecutionMode,
   type AgentModelSelection,
   type ChatMessage as ChatMessageType,
+  type DeskWorkflowSummary,
   type TaskRun,
   type Thread,
 } from '../types';
@@ -15,6 +17,8 @@ import { Empty } from '../components/Empty';
 import { MessageList } from '../components/MessageList';
 import { AssetsPane } from '../components/AssetsPane';
 import { ChatComposer } from '../components/ChatComposer';
+import { GoalRatifyCard } from '../components/GoalRatifyCard';
+import type { GoalClarification, GoalContract, GoalRunState } from '../lib/goalApi';
 import type { ViewMode } from '../hooks/useViewMode';
 import './AgentDesk.css';
 
@@ -27,11 +31,11 @@ type Props = {
   viewMode: ViewMode;
   channels?: AgentChannel[];
   selectedModel?: AgentModelSelection | null;
-  yoloMode?: boolean;
+  executionMode?: AgentExecutionMode;
   confirmingActionIds?: ReadonlySet<string>;
   taskRunsById?: Record<number, TaskRun>;
   onChangeModel?: (s: AgentModelSelection) => void;
-  onChangeYoloMode?: (enabled: boolean) => void;
+  onChangeMode?: (mode: AgentExecutionMode) => void;
   onStopStreaming?: () => void;
   onRefreshModels?: () => void;
   onChangeViewMode: (mode: ViewMode) => void;
@@ -46,6 +50,15 @@ type Props = {
   onConfirmAction: (messageId: number, actionId: string) => void;
   onDismissAction: (messageId: number, actionId: string) => void;
   onConfirmCostPreview?: () => void;
+  workflows?: DeskWorkflowSummary[];
+  onLaunchWorkflow?: (slug: string, mode: 'auto' | 'yolo') => void;
+  onRequestParams?: (workflow: DeskWorkflowSummary) => void;
+  goalContract?: GoalContract | null;
+  goalState?: GoalRunState | null;
+  goalClarification?: GoalClarification | null;
+  goalBusy?: boolean;
+  onRatifyGoal?: () => void;
+  onCancelGoal?: () => void;
 };
 
 function collectAssets(thread: Thread | null): AgentAsset[] {
@@ -72,11 +85,11 @@ export function AgentDesk({
   viewMode,
   channels,
   selectedModel,
-  yoloMode,
+  executionMode,
   confirmingActionIds,
   taskRunsById,
   onChangeModel,
-  onChangeYoloMode,
+  onChangeMode,
   onStopStreaming,
   onRefreshModels,
   onChangeViewMode,
@@ -91,6 +104,15 @@ export function AgentDesk({
   onConfirmAction,
   onDismissAction,
   onConfirmCostPreview,
+  workflows,
+  onLaunchWorkflow,
+  onRequestParams,
+  goalContract,
+  goalState,
+  goalClarification,
+  goalBusy,
+  onRatifyGoal,
+  onCancelGoal,
 }: Props) {
   const activeThread = useMemo(
     () => threads.find((t) => t.id === activeThreadId) ?? null,
@@ -162,18 +184,42 @@ export function AgentDesk({
   );
 
   const composer = (
-    <ChatComposer
-      onSend={onSend}
-      sending={sending}
-      streaming={streaming}
-      channels={channels}
-      selectedModel={selectedModel}
-      yoloMode={yoloMode}
-      onChangeModel={onChangeModel}
-      onChangeYoloMode={onChangeYoloMode}
-      onStopStreaming={onStopStreaming}
-      onRefreshModels={onRefreshModels}
-    />
+    <div className="wl-desk__composer">
+      {goalContract && Array.isArray(goalContract.criteria) && goalState?.status && (
+        <GoalRatifyCard
+          contract={goalContract}
+          state={goalState}
+          busy={goalBusy}
+          onRatify={() => onRatifyGoal?.()}
+          onCancel={() => onCancelGoal?.()}
+        />
+      )}
+      {goalClarification && (
+        <div className="wl-desk__goal-clarify" role="status">
+          <strong>{goalClarification.summary}</strong>
+          <ul>
+            {goalClarification.questions.map((q, i) => (
+              <li key={i}>{q}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <ChatComposer
+        onSend={onSend}
+        sending={sending}
+        streaming={streaming}
+        channels={channels}
+        selectedModel={selectedModel}
+        executionMode={executionMode}
+        onChangeModel={onChangeModel}
+        onChangeMode={onChangeMode}
+        onStopStreaming={onStopStreaming}
+        onRefreshModels={onRefreshModels}
+        workflows={workflows}
+        onLaunchWorkflow={onLaunchWorkflow}
+        onRequestParams={onRequestParams}
+      />
+    </div>
   );
 
   return (
@@ -231,18 +277,24 @@ function ThreadRail({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showArena, setShowArena] = useState(false);
 
   const filteredThreads = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return threads;
     return threads.filter((thread) => {
+      // Builder threads live on the Workflows builder surface, never here.
+      // Arena threads stay behind the toggle. Everything else (desk threads,
+      // and legacy rows with no source) shows normally.
+      if (thread.source === 'workflow_builder') return false;
+      if (!showArena && thread.source === 'arena') return false;
+      if (!query) return true;
       const haystack = [
         thread.title,
         ...thread.messages.map((message) => message.content),
       ].join(' ').toLowerCase();
       return haystack.includes(query);
     });
-  }, [threads, searchQuery]);
+  }, [threads, searchQuery, showArena]);
 
   const startRename = (thread: Thread) => {
     setEditingId(thread.id);
@@ -286,6 +338,15 @@ function ThreadRail({
           onChange={(event) => setSearchQuery(event.target.value)}
           aria-label="Search threads by name or content"
         />
+      </label>
+
+      <label className="wl-agent-desk__arena-toggle">
+        <input
+          type="checkbox"
+          checked={showArena}
+          onChange={(event) => setShowArena(event.target.checked)}
+        />
+        Show arena threads
       </label>
 
       <div className="wl-agent-desk__thread-list">

@@ -1,6 +1,8 @@
 import type {
   BacktestRun,
   BacktestRunRequest,
+  DeskWorkflow,
+  DeskWorkflowSummary,
   EngineConfigVariant,
   EngineConfigVariantInput,
   FxRate,
@@ -260,3 +262,20 @@ export const backtestArtifactUrl = (runId: number, name: string, options?: { dow
   const query = options?.download ? '?download=true' : '';
   return `/api/backtest/runs/${runId}/artifacts/${encodeURIComponent(basename)}${query}`;
 };
+
+// --- desk workflows ---
+export const listPortfolios = () =>
+  api<Array<{ name: string }>>('/api/portfolios').then((rows) => rows.map((r) => r.name));
+export const listWorkflows = () => api<DeskWorkflowSummary[]>('/api/workflows');
+export const getWorkflow = (slug: string) => api<DeskWorkflow>(`/api/workflows/${slug}`);
+export const createWorkflow = (script: string) =>
+  api<DeskWorkflow>('/api/workflows', { method: 'POST', body: JSON.stringify({ script }) });
+export const updateWorkflow = (slug: string, script: string) =>
+  api<DeskWorkflow>(`/api/workflows/${slug}`, { method: 'PUT', body: JSON.stringify({ script }) });
+export const deleteWorkflow = (slug: string) =>
+  api<{ ok: boolean }>(`/api/workflows/${slug}`, { method: 'DELETE' });
+export const validateWorkflow = (script: string) =>
+  api<{ ok: boolean; error: string | null }>('/api/workflows/validate', {
+    method: 'POST',
+    body: JSON.stringify({ script }),
+  });

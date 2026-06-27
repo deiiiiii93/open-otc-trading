@@ -21,6 +21,8 @@ export const ROUTE_PATHS: Record<NavRoute, string> = {
   reports: '/reports',
   skills: '/skills',
   tracing: '/tracing',
+  arena: '/arena',
+  workflows: '/workflows',
   chat: '/agent-desk',
   rfq: '/rfqs/approval',
   'try-solve': '/try-solve',
