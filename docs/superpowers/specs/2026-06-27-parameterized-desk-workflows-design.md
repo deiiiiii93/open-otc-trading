@@ -62,8 +62,9 @@ behavior, unchanged). When present, each entry is a dict:
 
 | key     | rule                                                                 |
 |---------|----------------------------------------------------------------------|
-| `name`  | required; must match `^[a-z][a-z0-9_]*$` (valid Python identifier);   |
-|         | unique within the list; not in the reserved set `{step, log, args}`. |
+| `name`  | required; must match `^[a-z][a-z0-9_]*$` **and not be a Python**      |
+|         | **keyword** (`keyword.iskeyword`); unique within the list; not in the |
+|         | reserved set `{step, log, args}`.                                    |
 | `label` | required; non-empty string (human field caption — spaces allowed).   |
 | `type`  | required; one of `string`, `date`, `portfolio`.                      |
 
@@ -77,7 +78,9 @@ might want ("Portfolio name") lives in `label`, never in `name`.
 **New function** `validate_params(meta) -> list[dict]`:
 - Returns `[]` if `params` absent.
 - Raises `WorkflowScriptError` if `params` is not a list, an entry is not a dict,
-  a required key is missing/non-string, `name` fails the identifier regex, `name` is
+  a required key is missing/non-string, `name` fails the identifier regex, `name` is a
+  Python keyword (`keyword.iskeyword(name)` — `for`/`class`/`from`/`if`/…, which the
+  lowercase regex would otherwise admit but `args.for` cannot reference), `name` is
   duplicated, `name` is reserved, or `type` is not in `VALID_PARAM_TYPES`.
 - Returns the normalized list of `{name, label, type}` dicts.
 
@@ -86,6 +89,9 @@ workflow with a malformed `params` block is rejected at save time (422 via the
 existing `_upsert` path).
 
 **New function** `validate_workflow_args(meta, args) -> dict[str, str]`:
+- First: `if not isinstance(args, dict): raise WorkflowScriptError("args must be an
+  object")`. This rejects a truthy non-dict payload (string/list/number) with a 422
+  rather than letting it reach `.get`/iteration and raise an opaque `TypeError`.
 - `params = validate_params(meta)`.
 - For each declared param: the key must be present in `args` with a non-empty
   (after `strip()`) string value, else `WorkflowScriptError(f"missing required
@@ -138,7 +144,10 @@ ordinary attribute/subscript access (not dunder, not `.format`).
 
 ## Unit 3 — Run endpoint (`main.py`)
 
-`run_thread_workflow` reads `args = (payload or {}).get("args") or {}` and calls
+`run_thread_workflow` reads `args = (payload or {}).get("args")` — defaulting **only a
+missing/None value** to `{}` (`if args is None: args = {}`), *not* `or {}`, so a
+falsy-but-wrong value like `[]` or `""` is not silently swallowed but flows into
+`validate_workflow_args`, which rejects non-dicts. It then calls
 `validate_workflow_args(extract_meta(wf.script), args)` before streaming. On
 `WorkflowScriptError` it raises `HTTPException(status_code=422, detail=str(exc))`.
 The validated dict is passed to `run_desk_workflow(..., args=validated)`.
@@ -224,10 +233,11 @@ literals (which share `desk_workflow_seed.py` constants).
 
 **Backend**
 - `validate_params`: happy (3 typed params); rejects non-list, non-dict entry,
-  missing key, non-identifier name (`"portfolio name"`), duplicate name, reserved
-  name (`args`), unknown type. Absent `params` ⇒ `[]`.
-- `validate_workflow_args`: happy; missing required; empty/whitespace value; bad date
-  (`2026-13-01`, `06/25/2026`); unknown key; portfolio/string accept any non-empty.
+  missing key, non-identifier name (`"portfolio name"`), Python-keyword name (`"for"`),
+  duplicate name, reserved name (`args`), unknown type. Absent `params` ⇒ `[]`.
+- `validate_workflow_args`: happy; non-dict `args` (`"foo"`, `[]`) ⇒ rejected; missing
+  required; empty/whitespace value; bad date (`2026-13-01`, `06/25/2026`); unknown key;
+  portfolio/string accept any non-empty.
 - Runner: injects `args`; f-string substitution reaches the driven prompt (assert the
   prompt forwarded to the `drive` seam contains the substituted value); undeclared
   `args.x` surfaces a `workflow.step.error`; no-args call still drives.
