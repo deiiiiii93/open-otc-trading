@@ -53,7 +53,9 @@ def test_run_streams_workflow_events(client, monkeypatch):
     tid = _make_thread(client)
     body = client.post(
         f"/api/chat/threads/{tid}/workflows/risk-manager-control-day/run",
-        json={"mode": "yolo"},
+        json={"mode": "yolo", "args": {
+            "portfolio": "Default", "start": "2026-03-24", "end": "2026-06-24",
+        }},
     )
     assert body.status_code == 200
     text = body.text

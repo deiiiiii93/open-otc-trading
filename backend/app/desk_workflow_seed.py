@@ -23,13 +23,18 @@ FLAGSHIP_SCRIPT = '''meta = {
     "mode": "yolo",
     "scope": "shared",
     "description": "Full desk-control loop: stale-check, refresh, hotspot, Greeks landscape, stress test, backtest, governance report.",
+    "params": [
+        {"name": "portfolio", "label": "Portfolio", "type": "portfolio"},
+        {"name": "start", "label": "Backtest start", "type": "date"},
+        {"name": "end", "label": "Backtest end", "type": "date"},
+    ],
 }
 
-await step("What does the latest risk say for the control portfolio?")
-await step("Run a fresh risk calculation for the control portfolio using the Control Profile.")
+await step(f"What does the latest risk say for the portfolio: {args.portfolio}?")
+await step(f"Run a fresh risk calculation for portfolio {args.portfolio} using the Control Profile.")
 await step("Now check the updated risk result — what's the hotspot?")
-await step("Run a Greeks landscape across spot shifts for the control portfolio.")
-await step("Stress-test the control portfolio using the market-crash scenario set with the Control Profile.")
-await step("Run a historical backtest of the delta-hedge strategy from 2026-03-24 to 2026-06-24.")
-await step("Generate a governance risk report for today's control session.")
+await step(f"Run a Greeks landscape across spot shifts for portfolio {args.portfolio}.")
+await step(f"Stress-test portfolio {args.portfolio} using the market-crash scenario set with the Control Profile.")
+await step(f"Run a historical backtest of the delta-hedge strategy from {args.start} to {args.end}.")
+await step(f"Generate a governance risk report for today's control session on portfolio {args.portfolio}.")
 '''
