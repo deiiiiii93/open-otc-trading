@@ -65,6 +65,20 @@ def test_set_on_missing_thread_raises_keyerror(session):
     raise AssertionError("expected KeyError for a non-existent thread")
 
 
+def test_non_numeric_thread_id_reads_as_missing(session):
+    """A non-integer path segment (e.g. /threads/not-a-number/goal) must read as a
+    missing thread — controlled null / default / KeyError — never an uncaught 500."""
+    b = _backend("goal_run")
+    assert b.get("not-a-number") is None
+    assert b.get("not-a-number", "fallback") == "fallback"
+    assert b.pop("not-a-number", "gone") == "gone"
+    try:
+        b["not-a-number"] = {"x": 1}
+    except KeyError:
+        return
+    raise AssertionError("expected KeyError for a non-numeric thread id")
+
+
 def test_two_columns_are_independent(session, agent_thread_factory):
     thread = agent_thread_factory()
     session.commit()

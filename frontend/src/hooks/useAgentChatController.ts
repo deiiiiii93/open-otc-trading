@@ -586,22 +586,25 @@ export function useAgentChatController(): AgentChatController {
   }, [activeId]);
 
   // Load the active thread's goal run (if any) when the selection changes, so a
-  // running/awaiting card survives a thread switch or reload.
+  // running/awaiting card survives a thread switch or reload. Clear immediately so a
+  // previous thread's card never shows against the new thread, fetch state + contract
+  // into locals, and commit them together only if this effect is still current — a
+  // stale fetch must not overwrite the thread the user has since switched to.
   useEffect(() => {
-    if (activeId == null) {
-      setGoalContract(null);
-      setGoalState(null);
-      setGoalClarification(null);
-      return;
-    }
+    setGoalContract(null);
+    setGoalState(null);
+    setGoalClarification(null);
+    if (activeId == null) return;
     let cancelled = false;
     (async () => {
       try {
         const state = await getGoal(activeId);
         if (cancelled) return;
+        const contract = state ? await getGoalContract(activeId) : null;
+        if (cancelled) return;
         setGoalState(state);
+        setGoalContract(contract);
         setGoalClarification(null);
-        setGoalContract(state ? await getGoalContract(activeId) : null);
       } catch {
         if (!cancelled) {
           setGoalContract(null);

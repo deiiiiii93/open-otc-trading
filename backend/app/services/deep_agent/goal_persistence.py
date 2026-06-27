@@ -43,8 +43,9 @@ class ThreadColumnBackend:
         return default if value is _SENTINEL else value
 
     def __setitem__(self, thread_id: str, value: Any) -> None:
+        pk = _as_pk(thread_id)
         with self._session_factory() as session:
-            thread = session.get(AgentThread, int(thread_id))
+            thread = None if pk is None else session.get(AgentThread, pk)
             if thread is None:
                 raise KeyError(thread_id)
             setattr(thread, self._column, value)
@@ -55,14 +56,25 @@ class ThreadColumnBackend:
             value = self._read(session, thread_id, _SENTINEL)
             if value is _SENTINEL:
                 return default
-            thread = session.get(AgentThread, int(thread_id))
+            thread = session.get(AgentThread, _as_pk(thread_id))
             setattr(thread, self._column, None)
             session.commit()
             return default if value is None else value
 
     def _read(self, session: Session, thread_id: str, missing: Any) -> Any:
-        thread = session.get(AgentThread, int(thread_id))
+        pk = _as_pk(thread_id)
+        thread = None if pk is None else session.get(AgentThread, pk)
         if thread is None:
             return missing
         value = getattr(thread, self._column)
         return missing if value is None else value
+
+
+def _as_pk(thread_id: str) -> int | None:
+    """Coerce an HTTP thread id to an ``AgentThread`` primary key, or ``None`` when it
+    isn't an integer — a non-numeric path segment then reads as a missing thread
+    (controlled null / KeyError) rather than raising an uncaught ``ValueError`` (500)."""
+    try:
+        return int(thread_id)
+    except (TypeError, ValueError):
+        return None
