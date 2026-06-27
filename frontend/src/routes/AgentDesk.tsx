@@ -7,6 +7,7 @@ import {
   type AgentExecutionMode,
   type AgentModelSelection,
   type ChatMessage as ChatMessageType,
+  type DeskWorkflowSummary,
   type TaskRun,
   type Thread,
 } from '../types';
@@ -49,6 +50,8 @@ type Props = {
   onConfirmAction: (messageId: number, actionId: string) => void;
   onDismissAction: (messageId: number, actionId: string) => void;
   onConfirmCostPreview?: () => void;
+  workflows?: DeskWorkflowSummary[];
+  onLaunchWorkflow?: (slug: string, mode: 'auto' | 'yolo') => void;
   goalContract?: GoalContract | null;
   goalState?: GoalRunState | null;
   goalClarification?: GoalClarification | null;
@@ -100,6 +103,8 @@ export function AgentDesk({
   onConfirmAction,
   onDismissAction,
   onConfirmCostPreview,
+  workflows,
+  onLaunchWorkflow,
   goalContract,
   goalState,
   goalClarification,
@@ -178,7 +183,7 @@ export function AgentDesk({
 
   const composer = (
     <div className="wl-desk__composer">
-      {goalContract && goalState && (
+      {goalContract && Array.isArray(goalContract.criteria) && goalState?.status && (
         <GoalRatifyCard
           contract={goalContract}
           state={goalState}
@@ -208,6 +213,8 @@ export function AgentDesk({
         onChangeMode={onChangeMode}
         onStopStreaming={onStopStreaming}
         onRefreshModels={onRefreshModels}
+        workflows={workflows}
+        onLaunchWorkflow={onLaunchWorkflow}
       />
     </div>
   );
@@ -272,6 +279,10 @@ function ThreadRail({
   const filteredThreads = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return threads.filter((thread) => {
+      // Builder threads live on the Workflows builder surface, never here.
+      // Arena threads stay behind the toggle. Everything else (desk threads,
+      // and legacy rows with no source) shows normally.
+      if (thread.source === 'workflow_builder') return false;
       if (!showArena && thread.source === 'arena') return false;
       if (!query) return true;
       const haystack = [

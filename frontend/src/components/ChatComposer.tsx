@@ -1,8 +1,14 @@
 import { Send, Square } from 'lucide-react';
 import { useId, useState, type KeyboardEvent } from 'react';
-import type { AgentChannel, AgentExecutionMode, AgentModelSelection } from '../types';
+import type {
+  AgentChannel,
+  AgentExecutionMode,
+  AgentModelSelection,
+  DeskWorkflowSummary,
+} from '../types';
 import { Button } from './Button';
 import { ModelPicker } from './ModelPicker';
+import { RESERVED_COMPOSER_COMMANDS } from '../lib/reservedCommands';
 import './ChatComposer.css';
 
 type Props = {
@@ -17,6 +23,8 @@ type Props = {
   onStopStreaming?: () => void;
   onRefreshModels?: () => void | Promise<void>;
   compactModelPicker?: boolean;
+  workflows?: DeskWorkflowSummary[];
+  onLaunchWorkflow?: (slug: string, mode: 'auto' | 'yolo') => void;
 };
 
 const MODE_OPTIONS: ReadonlyArray<{
@@ -45,13 +53,39 @@ export function ChatComposer({
   onSend, sending, streaming,
   channels, selectedModel, executionMode = 'auto',
   onChangeModel, onChangeMode, onStopStreaming, onRefreshModels, compactModelPicker = false,
+  workflows, onLaunchWorkflow,
 }: Props) {
   const [text, setText] = useState('');
   const id = useId();
 
+  const firstToken = text.startsWith('/') ? text.slice(1).split(/\s+/)[0] ?? '' : null;
+  const showPicker =
+    firstToken !== null &&
+    !text.includes(' ') &&
+    !RESERVED_COMPOSER_COMMANDS.has(firstToken) &&
+    !!onLaunchWorkflow &&
+    (workflows?.length ?? 0) > 0;
+  const matches = showPicker
+    ? (workflows ?? []).filter(
+        (w) =>
+          w.slug.includes(firstToken ?? '') ||
+          w.title.toLowerCase().includes((firstToken ?? '').toLowerCase()),
+      )
+    : [];
+
+  const launch = (w: DeskWorkflowSummary) => {
+    onLaunchWorkflow?.(w.slug, w.default_mode);
+    setText('');
+  };
+
   const handleSend = () => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
+    // A bare "/slug" that matches a workflow launches it instead of sending chat.
+    if (showPicker && matches.length > 0) {
+      launch(matches[0]);
+      return;
+    }
     onSend(trimmed);
     setText('');
   };
@@ -69,6 +103,24 @@ export function ChatComposer({
   return (
     <div className="wl-composer">
       <label htmlFor={id} className="wl-composer__label">Ask anything</label>
+      {showPicker && matches.length > 0 && (
+        <ul className="wl-composer__slash" role="listbox" aria-label="Workflows">
+          {matches.map((w) => (
+            <li key={w.slug}>
+              <button
+                type="button"
+                className="wl-composer__slash-item"
+                role="option"
+                aria-selected={false}
+                onClick={() => launch(w)}
+              >
+                <strong>/{w.slug}</strong>
+                <span>{w.title}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <textarea
         id={id}
         className="wl-composer__textarea"

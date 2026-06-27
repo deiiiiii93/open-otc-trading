@@ -36,6 +36,7 @@ import { ScenarioTestLive } from './routes/ScenarioTest';
 import { BacktestLive } from './routes/Backtest';
 import { TracingLive } from './routes/Tracing.live';
 import { ArenaLive } from './routes/Arena.live';
+import { WorkflowsLive } from './routes/Workflows.live';
 import { fetchTracingConfig } from './api/client';
 import { openTraceTarget } from './lib/tracing';
 import type { TracingConfig } from './types';
@@ -60,6 +61,7 @@ const navItems = [
   { route: 'skills' as const,    label: 'Skills' },
   { route: 'tracing' as const,   label: 'Tracing' },
   { route: 'arena' as const,     label: 'Arena' },
+  { route: 'workflows' as const, label: 'Workflows' },
   { route: 'client' as const,    label: 'Client RFQ' },
 ];
 
@@ -195,6 +197,7 @@ function App() {
     { id: 'jump-tasks',     group: 'Jump To', label: 'Tasks',         shortcut: '↵' },
     { id: 'jump-reports',   group: 'Jump To', label: 'Reports',       shortcut: '↵' },
     { id: 'jump-skills',    group: 'Jump To', label: 'Skills',        shortcut: '↵' },
+    { id: 'jump-workflows', group: 'Jump To', label: 'Workflows',     shortcut: '↵' },
     { id: 'jump-tracing',   group: 'Jump To', label: 'Tracing',       shortcut: '↵' },
     { id: 'jump-chat',      group: 'Jump To', label: 'Agent Desk',    shortcut: '↵' },
     { id: 'jump-client',    group: 'Jump To', label: 'Client RFQ',    shortcut: '↵' },
@@ -314,6 +317,7 @@ function App() {
         {route === 'skills'    && <SkillsLive onPageContextChange={handlePageContextChange} />}
         {route === 'tracing'   && <TracingLive threadId={traceThreadId} />}
         {route === 'arena'     && <ArenaLive />}
+        {route === 'workflows' && <WorkflowsLive />}
         {route === 'client'    && <ClientRfqLive onPageContextChange={handlePageContextChange} />}
       </AppShell>
       <CommandPalette

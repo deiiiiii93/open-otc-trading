@@ -175,6 +175,32 @@ class AgentMessage(Base):
     thread: Mapped[AgentThread] = relationship(back_populates="messages")
 
 
+class DeskWorkflow(Base):
+    """A user-authored, reusable desk workflow stored as a Python script.
+
+    The ``script`` is the source of truth (self-describing via a ``meta`` dict
+    literal); the metadata columns are a denormalized cache extracted from that
+    literal on save. Distinct from the runtime ``Workflow`` (per-thread session
+    bookkeeping).
+    """
+
+    __tablename__ = "desk_workflows"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    title: Mapped[str] = mapped_column(String(160))
+    persona: Mapped[str] = mapped_column(String(40))
+    description: Mapped[str] = mapped_column(Text, default="")
+    scope: Mapped[str] = mapped_column(String(16), default="local")
+    default_mode: Mapped[str] = mapped_column(String(16), default="auto")
+    script: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(16), default="user")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow
+    )
+
+
 class MemoryEntry(Base):
     __tablename__ = "memory_entries"
 

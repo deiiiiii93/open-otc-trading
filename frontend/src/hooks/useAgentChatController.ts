@@ -90,6 +90,7 @@ export type AgentChatController = {
     contextUsage?: AgentContextUsage | null,
     envelope?: Envelope,
   ) => Promise<void>;
+  launchWorkflow: (slug: string, mode: 'auto' | 'yolo') => Promise<void>;
   stopStreaming: () => void;
   confirmAction: (messageId: number, actionId: string) => Promise<void>;
   dismissAction: (messageId: number, actionId: string) => Promise<void>;
@@ -103,7 +104,26 @@ export type AgentChatController = {
   cancelActiveGoal: () => Promise<void>;
 };
 
-export function useAgentChatController(): AgentChatController {
+type AgentChatControllerOptions = {
+  /**
+   * Fired when a tool begins (SSE `tool_start`), with the tool name and the
+   * raw args the model passed. Lets an embedding surface (e.g. the workflow
+   * builder) capture a drafted script straight from the stream instead of
+   * polling the DB for the persisted row.
+   */
+  onToolStart?: (name: string, args: unknown) => void;
+  /**
+   * Tags threads this controller creates (default 'desk') and scopes
+   * auto-selection to threads of that source. The workflow builder passes
+   * 'workflow_builder' so its conversations stay isolated from desk threads
+   * and it never auto-selects an unrelated desk thread on mount.
+   */
+  threadSource?: string;
+};
+
+export function useAgentChatController(
+  options?: AgentChatControllerOptions,
+): AgentChatController {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -123,6 +143,11 @@ export function useAgentChatController(): AgentChatController {
   const [taskRunsById, setTaskRunsById] = useState<Record<number, TaskRun>>({});
   const [asyncAgentPollNonce, setAsyncAgentPollNonce] = useState(0);
   const streamAbortRef = useRef<AbortController | null>(null);
+  // Keep the latest onToolStart in a ref so streaming closures never capture a
+  // stale callback between renders.
+  const onToolStartRef = useRef(options?.onToolStart);
+  onToolStartRef.current = options?.onToolStart;
+  const threadSource = options?.threadSource ?? 'desk';
   // Goal mode (spec §G): the active thread's contract/run, plus a clarification ask
   // when the framer needs more before it can draft checkable criteria.
   const [goalContract, setGoalContract] = useState<GoalContract | null>(null);
@@ -190,9 +215,14 @@ export function useAgentChatController(): AgentChatController {
     setThreads(list);
     setActiveId((current) => {
       if (current != null && list.some((t) => t.id === current)) return current;
-      return list[0]?.id ?? null;
+      // Only auto-select threads owned by this controller's source. Keeps Agent
+      // Desk from landing on a hidden arena/builder thread, and the builder from
+      // landing on an unrelated desk thread. Missing source counts as 'desk'
+      // (backend default + legacy rows). `list` is updated_at-desc, so this
+      // resumes the most recent same-source thread.
+      return list.find((t) => (t.source ?? 'desk') === threadSource)?.id ?? null;
     });
-  }, []);
+  }, [threadSource]);
 
   useEffect(() => {
     let cancelled = false;
@@ -302,11 +332,11 @@ export function useAgentChatController(): AgentChatController {
   const createThread = useCallback(async () => {
     const created = await api<Thread>('/api/chat/threads', {
       method: 'POST',
-      body: JSON.stringify({ title: 'New research thread', character: 'trader' }),
+      body: JSON.stringify({ title: 'New research thread', character: 'trader', source: threadSource }),
     });
     setThreads((prev) => [created, ...prev]);
     setActiveId(created.id);
-  }, []);
+  }, [threadSource]);
 
   const renameThread = useCallback(async (threadId: number, title: string) => {
     setThreads((prev) => prev.map((thread) => (
@@ -373,7 +403,7 @@ export function useAgentChatController(): AgentChatController {
     if (threadId == null) {
       const created = await api<Thread>('/api/chat/threads', {
         method: 'POST',
-        body: JSON.stringify({ title: 'New research thread', character: 'trader' }),
+        body: JSON.stringify({ title: 'New research thread', character: 'trader', source: threadSource }),
       });
       threadId = created.id;
       setThreads((prev) => [created, ...prev]);
@@ -463,7 +493,7 @@ export function useAgentChatController(): AgentChatController {
           const currentEventType = eventType;
           eventType = 'message';
           if (!dataPayload) return;
-          handleSseEvent(currentEventType, dataPayload, setDraft);
+          handleSseEvent(currentEventType, dataPayload, setDraft, onToolStartRef.current);
         };
 
         const processLine = (line: string) => {
@@ -517,7 +547,129 @@ export function useAgentChatController(): AgentChatController {
         void reloadGoalFor(threadId);
       }
     }
-  }, [activeId, refresh, selectedModel, executionMode, reloadGoalFor]);
+  }, [activeId, refresh, selectedModel, executionMode, threadSource, reloadGoalFor]);
+
+  const launchWorkflow = useCallback(async (slug: string, mode: 'auto' | 'yolo') => {
+    let threadId = activeId;
+    if (threadId == null) {
+      const created = await api<Thread>('/api/chat/threads', {
+        method: 'POST',
+        body: JSON.stringify({ title: 'New research thread', character: 'trader', source: threadSource }),
+      });
+      threadId = created.id;
+      setThreads((prev) => [created, ...prev]);
+      setActiveId(created.id);
+    }
+
+    setError(null);
+    setSending(true);
+    setDraft({ content: '', events: [] });
+    let workflowError: string | null = null;
+
+    let streamAbortController: AbortController | null = null;
+    try {
+      streamAbortRef.current?.abort();
+      streamAbortController = new AbortController();
+      streamAbortRef.current = streamAbortController;
+      const response = await fetch(`/api/chat/threads/${threadId}/workflows/${slug}/run`, {
+        method: 'POST',
+        signal: streamAbortController.signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      if (response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let eventType = 'message';
+        let dataLines: string[] = [];
+
+        const dispatch = () => {
+          const dataPayload = dataLines.join('\n');
+          const currentEventType = eventType;
+          dataLines = [];
+          eventType = 'message';
+          if (!dataPayload) return;
+          if (currentEventType.startsWith('workflow.')) {
+            // Render workflow framing as inline markers in the live draft.
+            let parsed: Record<string, unknown> = {};
+            try {
+              parsed = JSON.parse(dataPayload) as Record<string, unknown>;
+            } catch {
+              return;
+            }
+            let marker = '';
+            if (currentEventType === 'workflow.step.start') {
+              marker = `\n\n▶ Step ${parsed.index}\n`;
+            } else if (currentEventType === 'workflow.log') {
+              marker = `\n_${String(parsed.message ?? '')}_\n`;
+            } else if (currentEventType === 'workflow.step.error') {
+              workflowError = `Workflow step ${parsed.index} failed: ${String(parsed.message ?? '')}`;
+              marker = `\n\n⚠️ Step ${parsed.index} failed: ${String(parsed.message ?? '')}\n`;
+            } else if (currentEventType === 'workflow.complete') {
+              marker = `\n\n✅ Workflow complete (${parsed.steps} steps)\n`;
+            }
+            if (marker) {
+              setDraft((prev) => ({
+                ...(prev ?? { events: [] }),
+                content: (prev?.content ?? '') + marker,
+                events: prev?.events ?? [],
+              }));
+            }
+            return;
+          }
+          handleSseEvent(currentEventType, dataPayload, setDraft, onToolStartRef.current);
+        };
+
+        const processLine = (line: string) => {
+          if (line === '') {
+            dispatch();
+            return;
+          }
+          if (line.startsWith('event:')) {
+            eventType = line.slice(6).trim() || 'message';
+            return;
+          }
+          if (line.startsWith('data:')) {
+            dataLines.push(line.slice(5).trim());
+          }
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) processLine(line.trimEnd());
+        }
+        if (buffer) processLine(buffer.trimEnd());
+        dispatch();
+      }
+      setDraft(null);
+      await refresh();
+      // A step failure is otherwise lost when the refresh replaces the draft —
+      // surface it durably.
+      if (workflowError) setError(workflowError);
+    } catch (e) {
+      if (isAbortError(e)) {
+        if (streamAbortRef.current === streamAbortController) {
+          setDraft(null);
+          void refresh().catch((refreshError) => {
+            setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
+          });
+        }
+      } else if (streamAbortRef.current === streamAbortController) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    } finally {
+      if (streamAbortRef.current === streamAbortController) {
+        streamAbortRef.current = null;
+        setSending(false);
+      }
+    }
+  }, [activeId, refresh, threadSource]);
 
   const stopStreaming = useCallback(() => {
     streamAbortRef.current?.abort();
@@ -689,6 +841,7 @@ export function useAgentChatController(): AgentChatController {
     deleteThread,
     forkThread,
     sendMessage,
+    launchWorkflow,
     confirmCostPreview,
     stopStreaming,
     confirmAction,
@@ -761,10 +914,42 @@ function selectionExists(
   ));
 }
 
+export type WorkflowSseEvent = { type: string; data: Record<string, unknown> };
+
+/** Parse a complete SSE text blob into ordered events (pure; for tests/non-streaming). */
+export function parseWorkflowSse(text: string): WorkflowSseEvent[] {
+  const events: WorkflowSseEvent[] = [];
+  let eventType = 'message';
+  let dataLines: string[] = [];
+  const flush = () => {
+    if (dataLines.length) {
+      try {
+        events.push({ type: eventType, data: JSON.parse(dataLines.join('\n')) });
+      } catch {
+        /* skip malformed */
+      }
+    }
+    eventType = 'message';
+    dataLines = [];
+  };
+  for (const line of text.split('\n')) {
+    if (line === '') {
+      flush();
+    } else if (line.startsWith('event:')) {
+      eventType = line.slice(6).trim();
+    } else if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).trim());
+    }
+  }
+  flush();
+  return events;
+}
+
 function handleSseEvent(
   eventType: string,
   dataPayload: string,
   setDraft: Dispatch<SetStateAction<Draft | null>>,
+  onToolStart?: (name: string, args: unknown) => void,
 ) {
   if (eventType === 'heartbeat') return;
   let parsed: Record<string, unknown>;
@@ -786,6 +971,7 @@ function handleSseEvent(
   if (eventType === 'tool_start') {
     const id = typeof parsed.id === 'string' ? parsed.id : '';
     const name = typeof parsed.name === 'string' ? parsed.name : 'tool';
+    onToolStart?.(name, parsed.args);
     const newEvent: ToolEvent = {
       id,
       name,

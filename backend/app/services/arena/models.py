@@ -108,6 +108,13 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         default_config=_DEFAULT_CONFIG,
         provider="openai",  # routed via Zenmux's OpenAI-compatible gateway
     ),
+    ArenaModel(
+        slug="gemini-3-1-pro",
+        zenmux_name="google/gemini-3.1-pro-preview",
+        display_name="Gemini 3.1 Pro",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",  # routed via Zenmux's OpenAI-compatible gateway
+    ),
     # --- Zenmux-routed third-party vendors (OpenAI-compatible gateway) ---
     ArenaModel(
         slug="glm-5-2",

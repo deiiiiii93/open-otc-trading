@@ -20,6 +20,7 @@ PERSONA_WORKFLOW_DOMAINS: Final[dict[str, tuple[str, ...]]] = {
         "portfolios",
         "rfq",
         "snowballs",
+        "desk-workflows",
     ),
     "risk_manager": (
         "positions",
@@ -30,6 +31,7 @@ PERSONA_WORKFLOW_DOMAINS: Final[dict[str, tuple[str, ...]]] = {
         "portfolios",
         "reporting",
         "snowballs",
+        "desk-workflows",
     ),
     "high_board": (
         "portfolios",

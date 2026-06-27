@@ -256,6 +256,7 @@ from .routers.skills import build_skills_router
 from .routers.tracing import build_tracing_router
 from .routers.arena import build_arena_router
 from .routers.goal import build_goal_router
+from .routers.workflows import build_desk_workflows_router
 from .services.deep_agent.goal_mode import (
     GoalRunService,
     goal_grader_tool_allowlist,
@@ -577,6 +578,45 @@ def _delete_thread_rows(session: Session, thread: AgentThread) -> set[str]:
     return checkpoint_keys
 
 
+def _desk_workflow_drive_factory(agent_service, character: str = "auto"):
+    """Return an injectable per-step driver that forwards SSE frames.
+
+    Monkeypatched in tests; in production it persists the step prompt as a user
+    turn then streams one ``stream_and_persist`` turn for that prompt, bound to
+    the workflow's persona-derived ``character``.
+    """
+
+    async def drive(thread_id: int, prompt: str, mode: str):
+        with database.SessionLocal() as s:
+            s.add(
+                AgentMessage(
+                    thread_id=thread_id, role="user", content=prompt, meta={"mode": mode}
+                )
+            )
+            s.commit()
+        async for frame in agent_service.stream_and_persist(
+            thread_id=thread_id,
+            content=prompt,
+            requested_character=character,
+            mode=mode,
+            confirmed_cost_preview=True,
+        ):
+            yield frame
+
+    return drive
+
+
+def _desk_workflow_settle_factory():
+    """Return a settle() that waits on tasks queued after this baseline.
+
+    Reuses the arena's between-steps waiter (snapshots the TaskRun high-water
+    mark now, then blocks until tasks queued after it are terminal).
+    """
+    from .services.arena.runner import _make_default_settle
+
+    return _make_default_settle()
+
+
 def create_app(
     settings: Settings | None = None,
     agent_service_override: AgentService | None = None,
@@ -713,7 +753,7 @@ def create_app(
     @app.post("/api/chat/threads", response_model=AgentThreadOut)
     def create_thread(payload: AgentThreadCreate, session: Session = Depends(get_db)):
         thread = active_agent_service.create_thread(
-            session, payload.title, payload.character
+            session, payload.title, payload.character, source=payload.source
         )
         session.commit()
         return thread
@@ -910,6 +950,36 @@ def create_app(
                 mode=payload.mode,
                 envelope=payload.envelope,
                 confirmed_cost_preview=payload.confirmed_cost_preview,
+            ),
+            media_type="text/event-stream",
+        )
+
+    @app.post("/api/chat/threads/{thread_id}/workflows/{slug}/run")
+    async def run_thread_workflow(
+        thread_id: int,
+        slug: str,
+        payload: dict | None = None,
+        session: Session = Depends(get_db),
+    ):
+        from .services.desk_workflow_runner import persona_to_character, run_desk_workflow
+        from .services.desk_workflows import get_desk_workflow
+
+        thread = session.get(AgentThread, thread_id)
+        if not thread:
+            raise HTTPException(status_code=404, detail="Thread not found")
+        wf = get_desk_workflow(session, slug)
+        if wf is None:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        ensure_thread_workflow_state(session, thread.id)
+        session.commit()
+        mode = (payload or {}).get("mode") or wf.default_mode
+        drive = _desk_workflow_drive_factory(
+            active_agent_service, persona_to_character(wf.persona)
+        )
+        settle = _desk_workflow_settle_factory()
+        return StreamingResponse(
+            run_desk_workflow(
+                thread_id=thread.id, workflow=wf, mode=mode, drive=drive, settle=settle,
             ),
             media_type="text/event-stream",
         )
@@ -4155,6 +4225,7 @@ def create_app(
     app.include_router(build_skills_router(active_agent_service))
     app.include_router(build_tracing_router())
     app.include_router(build_arena_router(settings=active_settings))
+    app.include_router(build_desk_workflows_router())
 
     # Goal mode (spec §G): the /goal lifecycle endpoints. The framer uses the desk
     # model; criteria are bounded to the DOMAIN_READ tools the grader may call; run

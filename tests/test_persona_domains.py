@@ -20,6 +20,7 @@ def test_trader_sources_unchanged() -> None:
         "/skills/workflows/portfolios/",
         "/skills/workflows/rfq/",
         "/skills/workflows/snowballs/",
+        "/skills/workflows/desk-workflows/",
     ]
 
 
@@ -33,6 +34,7 @@ def test_risk_manager_sources_unchanged() -> None:
         "/skills/workflows/portfolios/",
         "/skills/workflows/reporting/",
         "/skills/workflows/snowballs/",
+        "/skills/workflows/desk-workflows/",
     ]
 
 

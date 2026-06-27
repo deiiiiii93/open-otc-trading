@@ -1,7 +1,7 @@
 """agent_threads.goal_run and goal_contract (goal mode, spec §H)
 
 Revision ID: 0036_agent_thread_goal_run
-Revises: 0034_arena_match_score_breakdown
+Revises: 0035_desk_workflows
 Create Date: 2026-06-26
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ from alembic import op
 from sqlalchemy import inspect
 
 revision = "0036_agent_thread_goal_run"
-down_revision = "0034_arena_match_score_breakdown"
+down_revision = "0035_desk_workflows"
 branch_labels = None
 depends_on = None
 

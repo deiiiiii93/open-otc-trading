@@ -11,6 +11,9 @@ from app.services.currency_codes import ISO_4217_CODES, normalize_currency
 class AgentThreadCreate(BaseModel):
     title: str = "New research thread"
     character: Literal["trader", "risk_manager", "high_board"] = "trader"
+    # "desk" = normal Agent Desk thread; "workflow_builder" = isolated builder
+    # conversation, hidden from the Agent Desk thread list.
+    source: str = "desk"
 
 
 class AgentThreadUpdate(BaseModel):
@@ -1656,3 +1659,25 @@ class BacktestRunOut(BaseModel):
     excluded_positions: list | None
     artifacts: dict
     created_at: datetime
+
+
+class DeskWorkflowSave(BaseModel):
+    script: str
+
+
+class DeskWorkflowSummaryOut(BaseModel):
+    slug: str
+    title: str
+    persona: str
+    description: str
+    scope: str
+    default_mode: str
+    source: str
+
+    model_config = {"from_attributes": True}
+
+
+class DeskWorkflowOut(DeskWorkflowSummaryOut):
+    script: str
+
+    model_config = {"from_attributes": True}

@@ -47,11 +47,11 @@ export function GoalRatifyCard({ contract, state, onRatify, onCancel, busy }: Pr
       </div>
 
       <ol className="wl-goalcard__criteria">
-        {contract.criteria.map((c) => (
+        {(contract.criteria ?? []).map((c) => (
           <li key={c.id} className="wl-goalcard__criterion">
             <span className="wl-goalcard__criterion-id">{c.id}</span>
             <span className="wl-goalcard__criterion-text">{c.text}</span>
-            <code className="wl-goalcard__criterion-check">{c.check.type}</code>
+            <code className="wl-goalcard__criterion-check">{c.check?.type}</code>
           </li>
         ))}
       </ol>

@@ -1,7 +1,9 @@
-import type { PageContext } from '../types';
+import { useEffect, useState } from 'react';
+import type { DeskWorkflowSummary, PageContext } from '../types';
 import { AgentDesk } from './AgentDesk';
 import { Skeleton } from '../components/Skeleton';
 import { Empty } from '../components/Empty';
+import { listWorkflows } from '../api/client';
 import {
   useAgentChatController,
   type AgentChatController,
@@ -65,6 +67,11 @@ function AgentDeskLiveView({
   accountingDate?: string;
   onOpenTrace?: (threadId: number) => void;
 }) {
+  const [workflows, setWorkflows] = useState<DeskWorkflowSummary[]>([]);
+  useEffect(() => {
+    void listWorkflows().then(setWorkflows).catch(() => setWorkflows([]));
+  }, []);
+
   if (controller.loading) {
     return (
       <div>
@@ -119,6 +126,8 @@ function AgentDeskLiveView({
         undefined,
         'desk_workflow',
       )}
+      workflows={workflows}
+      onLaunchWorkflow={controller.launchWorkflow}
       goalContract={controller.goalContract}
       goalState={controller.goalState}
       goalClarification={controller.goalClarification}

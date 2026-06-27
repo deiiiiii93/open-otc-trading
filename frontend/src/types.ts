@@ -20,7 +20,20 @@ export type Route =
   | 'instruments'
   | 'skills'
   | 'tracing'
-  | 'arena';
+  | 'arena'
+  | 'workflows';
+
+export type DeskWorkflowSummary = {
+  slug: string;
+  title: string;
+  persona: 'trader' | 'risk_manager' | 'sales' | 'quant';
+  description: string;
+  scope: 'local' | 'shared';
+  default_mode: 'auto' | 'yolo';
+  source: 'seed' | 'user';
+};
+
+export type DeskWorkflow = DeskWorkflowSummary & { script: string };
 
 export type Thread = {
   id: number;

@@ -424,6 +424,8 @@ DEEP_AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         # UI-control tool: personas can surface the same pickable-choice UX
         # as the orchestrator when their delegated reply asks the user to pick.
         "propose_reply_options",
+        # Desk-workflow authoring: the build-workflow skill persists drafts.
+        "save_desk_workflow",
     }
 )
 
@@ -1478,9 +1480,9 @@ class AgentService:
         return version
 
     def create_thread(
-        self, session: Session, title: str, character: str
+        self, session: Session, title: str, character: str, source: str = "desk"
     ) -> AgentThread:
-        thread = AgentThread(title=title, character=character)
+        thread = AgentThread(title=title, character=character, source=source)
         session.add(thread)
         session.flush()
         ensure_thread_workflow_state(session, thread.id)
@@ -1490,7 +1492,7 @@ class AgentService:
             actor="system",
             subject_type="thread",
             subject_id=thread.id,
-            payload={"character": character},
+            payload={"character": character, "source": source},
         )
         return thread
 

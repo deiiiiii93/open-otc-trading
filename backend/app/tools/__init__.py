@@ -23,6 +23,7 @@ from app.services.reply_options.tool import ProposeReplyOptionsTool
 from app.services.term_form.tool import ProposeTermFormTool
 from app.services.sandbox_tool import run_python_tool
 
+from .desk_workflows import save_desk_workflow_tool
 from .market_data import fetch_market_snapshot_tool, list_market_data_profiles_tool
 from .portfolios import (
     add_portfolio_sources_tool,
@@ -240,6 +241,7 @@ QUANT_AGENT_TOOLS = [
     # delegated persona replies can offer the same pickable-choice UX.
     capability_gated(group=ToolGroup.PAGE_ACTION)(ProposeReplyOptionsTool()),
     capability_gated(group=ToolGroup.PAGE_ACTION)(ProposeTermFormTool()),
+    save_desk_workflow_tool,
 ]
 
 

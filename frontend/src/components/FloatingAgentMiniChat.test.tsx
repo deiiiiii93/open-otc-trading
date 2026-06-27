@@ -48,6 +48,7 @@ function controller(overrides: Partial<AgentChatController> = {}): AgentChatCont
     deleteThread: vi.fn(),
     forkThread: vi.fn(),
     sendMessage: vi.fn(),
+    launchWorkflow: vi.fn(),
     confirmCostPreview: vi.fn(),
     stopStreaming: vi.fn(),
     confirmAction: vi.fn(),
