@@ -4,6 +4,7 @@ from app.services.desk_workflows_script import (
     extract_meta,
     extract_slug,
     guard_script,
+    validate_params,
     validate_script,
 )
 
@@ -99,3 +100,44 @@ def test_validate_reserved_slug():
     )
     with pytest.raises(WorkflowScriptError):
         validate_script(reserved, slug="goal")
+
+
+def _meta(params):
+    return {
+        "name": "x", "title": "X", "persona": "trader",
+        "mode": "auto", "scope": "local", "params": params,
+    }
+
+
+def test_validate_params_absent_returns_empty():
+    assert validate_params({"name": "x"}) == []
+
+
+def test_validate_params_happy_normalizes():
+    out = validate_params(_meta([
+        {"name": "portfolio", "label": "Portfolio", "type": "portfolio"},
+        {"name": "start", "label": "Start date", "type": "date"},
+    ]))
+    assert out == [
+        {"name": "portfolio", "label": "Portfolio", "type": "portfolio"},
+        {"name": "start", "label": "Start date", "type": "date"},
+    ]
+
+
+@pytest.mark.parametrize("params", [
+    "notalist",
+    [["not", "a", "dict"]],
+    [{"label": "L", "type": "string"}],                    # missing name
+    [{"name": "p", "type": "string"}],                     # missing label
+    [{"name": "p", "label": "L"}],                         # missing type
+    [{"name": "p", "label": "L", "type": "color"}],        # bad type
+    [{"name": "Portfolio", "label": "L", "type": "string"}],   # uppercase
+    [{"name": "portfolio name", "label": "L", "type": "string"}],  # space
+    [{"name": "for", "label": "L", "type": "string"}],     # python keyword
+    [{"name": "args", "label": "L", "type": "string"}],    # reserved
+    [{"name": "p", "label": "L", "type": "string"},
+     {"name": "p", "label": "L2", "type": "date"}],        # duplicate
+])
+def test_validate_params_rejects(params):
+    with pytest.raises(WorkflowScriptError):
+        validate_params(_meta(params))
