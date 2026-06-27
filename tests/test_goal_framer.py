@@ -113,6 +113,52 @@ def test_frame_goal_rejects_an_unknown_response_type():
         frame_goal("do a thing", model=model)
 
 
+class _CapturingModel:
+    """Captures the messages frame_goal sends so we can assert the prompt content."""
+
+    def __init__(self, payload):
+        self._payload = payload
+        self.seen_messages = None
+
+    def with_structured_output(self, _schema):
+        outer = self
+
+        class _S:
+            def invoke(self, messages):
+                outer.seen_messages = messages
+                return outer._payload
+
+        return _S()
+
+
+def test_frame_goal_prompt_carries_schema_and_allowed_tools():
+    """The framer must be told the exact GoalContractV1 field names AND which read
+    tools it may reference — without this the live model invents field names / tools
+    and every contract 422s (found by the live e2e)."""
+    model = _CapturingModel({"type": "contract", "contract": _valid_contract()})
+    frame_goal(
+        "Get the latest risk run onto the Control portfolio",
+        model=model,
+        grader_tool_allowlist={"get_latest_risk_run", "get_report"},
+    )
+    system = model.seen_messages[0].content
+    # exact contract schema field names + check shapes are spelled out
+    for token in ("schema_version", "goal_text", "criteria", "domain_write_policy",
+                  "artifact_exists", "ledger_predicate", "measurable"):
+        assert token in system, f"framer prompt missing {token!r}"
+    # the allowed read tools are injected so the model can only name real tools
+    assert "get_latest_risk_run" in system
+    assert "get_report" in system
+
+
+def test_frame_goal_prompt_handles_empty_allowlist():
+    # A clarification payload avoids the allowlist gate so we can inspect the prompt.
+    model = _CapturingModel({"type": "needs_clarification", "summary": "?", "questions": ["?"]})
+    frame_goal("do a thing", model=model, grader_tool_allowlist=set())
+    system = model.seen_messages[0].content
+    assert "No read tools are available" in system
+
+
 def test_frame_goal_wraps_structured_output_parse_errors():
     """A malformed structured output (pydantic ValidationError) must surface as
     ContractValidationError, the error callers handle to reject without a run."""

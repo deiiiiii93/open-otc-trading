@@ -356,10 +356,36 @@ FRAMER_SYSTEM_PROMPT = (
     "effort: each criterion must be verifiable from the ledger (a durable artifact, "
     "persisted run, or finding) via a read tool. If the goal would change desk state "
     "(book, quote, hedge), set domain_write_policy='allowed_by_mode' and include at "
-    "least one ledger_predicate/measurable criterion that pins the named target and "
+    "least one ledger_predicate or measurable criterion that pins the named target and "
     "the end-state; for read-only/advisory goals use 'forbidden'. Never substitute a "
     "default for a named target. If the goal is too ambiguous to make checkable, "
-    "return needs_clarification with specific questions instead of guessing."
+    "return needs_clarification with specific questions instead of guessing.\n\n"
+    "Return EXACTLY this structured output. Set `type` to \"contract\" and fill "
+    "`contract`, OR set `type` to \"needs_clarification\" and fill `summary` + "
+    "`questions`. Do NOT invent other top-level fields.\n\n"
+    "The `contract` object MUST use these exact field names:\n"
+    "{\n"
+    '  "schema_version": "goal_contract.v1",\n'
+    '  "goal_text": "<the user\'s goal, verbatim or lightly cleaned>",\n'
+    '  "summary": "<one sentence describing DONE>",\n'
+    '  "domain_write_policy": "forbidden" | "allowed_by_mode",\n'
+    '  "criteria": [ { "id": "C1", "text": "<plain-language check>", '
+    '"required": true, "check": <CHECK> }, ... ]\n'
+    "}\n\n"
+    "Each <CHECK> is exactly one of:\n"
+    '  artifact_exists: {"type":"artifact_exists","kind":"plan"|"finding"|"report"'
+    '|"persisted_run","min_count":1}\n'
+    '  ledger_predicate: {"type":"ledger_predicate","tool":"<allowed read tool>",'
+    '"args":{},"expect":[{"path":"<dotted.path>","op":"<OP>","value":<scalar|list>}]}\n'
+    '  measurable: {"type":"measurable","tool":"<allowed read tool>","args":{},'
+    '"metric_path":"<dotted.path>","transform":"identity"|"abs",'
+    '"op":"<"|"<="|">"|">="|"=="|"!=","threshold":<finite number>}\n\n'
+    "OP is one of exists, not_exists, eq, neq, lt, lte, gt, gte, in, contains. "
+    "exists/not_exists take NO value; `in` takes a list; all others take a scalar. "
+    "`allowed_by_mode` requires at least one ledger_predicate or measurable criterion. "
+    "Every `tool` you reference MUST be one of the allowed read tools listed below — "
+    "never name a tool that is not listed. If no listed tool can verify the end-state, "
+    "return needs_clarification."
 )
 
 
@@ -386,13 +412,27 @@ def frame_goal(
     from pydantic import ValidationError
 
     structured = model.with_structured_output(_FramerOutput)
+    # Tell the framer which read tools it may reference in checks; an empty allowlist
+    # means no ledger_predicate/measurable check can be verified, so it must either use
+    # artifact_exists only or ask for clarification.
+    if grader_tool_allowlist:
+        tools_line = (
+            "Allowed read tools (use ONLY these in any check's `tool`): "
+            + ", ".join(sorted(grader_tool_allowlist))
+        )
+    else:
+        tools_line = (
+            "No read tools are available, so you cannot use ledger_predicate or "
+            "measurable checks — use artifact_exists checks or return needs_clarification."
+        )
+    system = FRAMER_SYSTEM_PROMPT + "\n\n" + tools_line
     # A malformed structured output (pydantic ValidationError, raised during parsing in
     # .invoke or during normalisation) is invalid model output, not a transport failure —
     # surface it as the ContractValidationError callers expect. Transport/API errors are
     # not ValidationError, so they propagate.
     try:
         out = structured.invoke(
-            [SystemMessage(content=FRAMER_SYSTEM_PROMPT), HumanMessage(content=goal_text)]
+            [SystemMessage(content=system), HumanMessage(content=goal_text)]
         )
         data = out.model_dump(mode="json") if hasattr(out, "model_dump") else dict(out)
         kind = data.get("type")
