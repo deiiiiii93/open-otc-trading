@@ -59,6 +59,21 @@ def _parse_tool_output(outputs_raw: Any) -> tuple[dict, str | None, str | None]:
     # than the stringified ToolMessage repr; use the dict directly so task_id /
     # artifact payloads survive the harvest.
     if isinstance(output_val, dict):
+        # LangChain v3 serializes a ToolMessage as an lc-constructor dict:
+        # {"lc":1,"type":"constructor","id":[...,"ToolMessage"],
+        #  "kwargs":{"content":"<json>","name":..,"tool_call_id":..}}. The real
+        # tool payload is the (JSON-string) ``kwargs.content`` — unwrap it so
+        # tool_result_path / rfq-id harvest see the payload, not the envelope.
+        if output_val.get("lc") and isinstance(output_val.get("kwargs"), dict):
+            kw = output_val["kwargs"]
+            inner = _loads(kw.get("content"))
+            if isinstance(inner, dict):
+                content = inner
+            elif kw.get("content") is not None:
+                content = {"raw": kw.get("content")}
+            else:
+                content = {}
+            return content, kw.get("name"), kw.get("tool_call_id")
         return output_val, output_val.get("name"), output_val.get("tool_call_id")
     if not isinstance(output_val, str):
         return {}, None, None

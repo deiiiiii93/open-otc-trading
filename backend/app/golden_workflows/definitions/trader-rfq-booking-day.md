@@ -48,7 +48,7 @@ steps:
         any_of: ["submitted", "approval"]
     replay: step-3-submit
 
-  - user: "Risk has the quote. Build the product so we can book it — 1-year down-and-in barrier put on MSFT, strike at-the-money, knock-in at 80%."
+  - user: "Set the RFQ aside now. Build a fresh product directly from these terms using build-product (validate only, do not book through the RFQ): a 1-year down-and-in barrier put on MSFT, strike at-the-money (100), knock-in barrier at 80. Confirm it validates with barrier_type DOWN_IN."
     expected_skill: build-product
     expected_tools:
       - name: fetch_market_snapshot
@@ -60,7 +60,7 @@ steps:
         any_of: ["down-and-in", "DOWN_IN", "down and in"]
     replay: step-4-build
 
-  - user: "Approved — book it into the Arena Trader Desk portfolio."
+  - user: "Now book that built product directly into the Arena Trader Desk portfolio using book-position — a direct booking from the validated terms, not a booking through the RFQ."
     expected_skill: book-position
     expected_tools:
       - name: book_position

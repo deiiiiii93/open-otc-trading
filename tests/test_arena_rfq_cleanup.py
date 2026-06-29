@@ -24,6 +24,30 @@ def test_collect_rfq_ids_touched_from_spans():
     assert ids == {42}
 
 
+def test_collect_unwraps_lc_constructor_toolmessage():
+    # LangChain v3 serializes the tool output as an lc-constructor ToolMessage;
+    # the rfq_id lives in the JSON-string kwargs.content, not the envelope.
+    spans = [{
+        "run_type": "tool",
+        "name": "create_or_update_rfq_draft",
+        "outputs": {"output": {
+            "lc": 1, "type": "constructor",
+            "id": ["langchain", "schema", "messages", "ToolMessage"],
+            "kwargs": {"content": '{"rfq_id": 7, "status": "draft"}',
+                       "name": "create_or_update_rfq_draft", "tool_call_id": "c1"},
+        }},
+    }]
+
+    class _Store:
+        def list_thread_traces(self, thread_id, limit=1000):
+            return [{"trace_id": "t1", "start_time": "2026-01-01"}]
+
+        def get_trace(self, trace_id):
+            return spans
+
+    assert collect_rfq_ids_touched(thread_id=1, store=_Store()) == {7}
+
+
 def test_collect_ignores_non_rfq_tool_spans():
     spans = [{
         "run_type": "tool",
