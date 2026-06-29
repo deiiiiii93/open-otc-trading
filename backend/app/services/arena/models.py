@@ -158,6 +158,22 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         default_config=_DEFAULT_CONFIG,
         provider="openai",
     ),
+    # --- Run #10 candidates: flash-tier models on the trader-rfq-booking-day
+    # workflow (registry entries mirror the Run #9 field on main, 32b8850). ---
+    ArenaModel(
+        slug="step-3-7-flash",
+        zenmux_name="stepfun/step-3.7-flash",
+        display_name="Step 3.7 Flash",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
+    ArenaModel(
+        slug="deepseek-v4-flash",
+        zenmux_name="deepseek/deepseek-v4-flash",
+        display_name="DeepSeek V4 Flash",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
 ]
 
 # Build module-level maps (validates uniqueness at import time)
