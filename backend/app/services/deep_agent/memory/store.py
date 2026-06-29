@@ -275,3 +275,85 @@ class MemoryStore:
             _normalize_source_error(row)
             session.flush()
         return True
+
+    # -- apply_diff -------------------------------------------------------
+
+    def _resolve_scope_id(self, scope_type, ctx: WriteContext) -> str | None:
+        if scope_type in ("user", "correction"):
+            return "desk"
+        if scope_type == "domain":
+            return "global"
+        if scope_type == "book":
+            return ctx.book_scope_id
+        return None
+
+    def apply_diff(self, session, diff, ctx: WriteContext) -> None:
+        with _LOCK:
+            with session.begin_nested():   # atomic unit: rolls back ALL on error
+                self._apply_diff_inner(session, diff, ctx)
+
+    def _apply_diff_inner(self, session, diff, ctx: WriteContext) -> None:
+        touched: set[tuple[str, str]] = set()
+        for item in diff.add:
+            scope_type = item.get("scope_type")
+            if scope_type not in ctx.allowed_scopes:
+                continue
+            scope_id = self._resolve_scope_id(scope_type, ctx)
+            if scope_id is None:
+                continue
+            try:
+                norm = self._validate_new(scope_type, item.get("content", ""),
+                                          item.get("confidence", 1.0))
+                status = "proposed" if scope_type == "domain" else "active"
+                _validate_scope_status(scope_type, status)   # matrix gate (defense in depth)
+            except MemoryValidationError:
+                continue
+            if self._dedup_exists(session, scope_type, scope_id, norm):
+                continue
+            row = MemoryEntry(
+                scope_type=scope_type, scope_id=scope_id, content=item["content"],
+                normalized_content=norm, confidence=item.get("confidence", 1.0),
+                status=status,
+                category=_clean_category(item.get("category"), self.config.category_max_chars),
+                source_error=(scope_type == "correction"),
+                created_by="extractor", pinned=False, meta=dict(ctx.meta))
+            sp = session.begin_nested()
+            session.add(row)
+            try:
+                session.flush()
+                sp.commit()
+            except IntegrityError:
+                sp.rollback()
+                continue
+            touched.add((scope_type, scope_id))
+        for rid in diff.remove:
+            row = session.get(MemoryEntry, rid)
+            # Guard scope_id too (not just scope_type): a job allowed for book "1"
+            # must not archive a fact in book "2" (same scope_type, different id).
+            if (row is None or row.pinned or row.status == "archived"
+                    or row.scope_type not in ctx.allowed_scopes
+                    or row.scope_id != self._resolve_scope_id(row.scope_type, ctx)):
+                if row is not None and row.pinned:
+                    logger.info("memory extractor remove targeted pinned id=%s (no-op)", rid)
+                continue
+            row.status = "archived"
+            _normalize_source_error(row)
+        for upd in diff.update:
+            row = session.get(MemoryEntry, upd.get("id"))
+            if (row is None or row.scope_type not in ctx.allowed_scopes
+                    or row.scope_id != self._resolve_scope_id(row.scope_type, ctx)):
+                continue
+            if row.pinned:
+                logger.info("memory extractor update targeted pinned id=%s (no-op)", row.id)
+                continue
+            sp = session.begin_nested()
+            try:
+                self._update_row(session, row, content=upd.get("content"),
+                                 confidence=upd.get("confidence"), category=upd.get("category"))
+                sp.commit()
+            except (MemoryValidationError, MemoryConflictError, IntegrityError):
+                sp.rollback()
+                continue
+        session.flush()
+        for scope_type, scope_id in touched:
+            self._enforce_caps(session, scope_type, scope_id)
