@@ -73,6 +73,75 @@ def test_sweep_reenqueues_closed_session_with_thread_id(session, agent_thread_fa
         q.close()
 
 
+def test_sweep_closed_session_skipped_when_run_exists(session, agent_thread_factory):
+    """Closed-session scan must NOT enqueue sessions that already have a run row.
+
+    A pending (in-flight) or failed run is owned by the eligible_runs path; the
+    closed-session scan handles ONLY sessions with no run row yet.
+    We stub out eligible_runs→[] so only the closed-session-scan path contributes
+    jobs, letting us assert exactly what it enqueues.
+    """
+    from unittest.mock import patch
+    thread = agent_thread_factory()
+
+    # Session A — closed, NO run row → must be enqueued by closed-session scan.
+    wf_a = Workflow(thread_id=thread.id, title="t", intent="chat")
+    session.add(wf_a); session.flush()
+    s_a = AgentSession(workflow_id=wf_a.id, persona="trader", episode_id=10,
+                       status="closed", checkpointer_key="ka")
+    session.add(s_a); session.flush()
+
+    # Session B — closed, pending run → must NOT be enqueued by closed-session scan.
+    wf_b = Workflow(thread_id=thread.id, title="t2", intent="chat")
+    session.add(wf_b); session.flush()
+    s_b = AgentSession(workflow_id=wf_b.id, persona="trader", episode_id=11,
+                       status="closed", checkpointer_key="kb")
+    session.add(s_b); session.flush()
+    from app.services.deep_agent.memory.runs import session_run_key as srk
+    run_b = MemoryExtractionRun(run_key=srk(s_b.id), kind="session",
+                                session_id=s_b.id, thread_id=thread.id,
+                                persona="trader", status="pending", attempts=0)
+    session.add(run_b)
+
+    # Session C — closed, failed run (within budget) → must NOT be enqueued by closed-session scan.
+    wf_c = Workflow(thread_id=thread.id, title="t3", intent="chat")
+    session.add(wf_c); session.flush()
+    s_c = AgentSession(workflow_id=wf_c.id, persona="trader", episode_id=12,
+                       status="closed", checkpointer_key="kc")
+    session.add(s_c); session.flush()
+    run_c = MemoryExtractionRun(run_key=srk(s_c.id), kind="session",
+                                session_id=s_c.id, thread_id=thread.id,
+                                persona="trader", status="failed", attempts=1)
+    session.add(run_c)
+    session.commit()
+
+    q = _queue()
+    q._ensure_writer = lambda: None   # deterministic: no background races
+
+    # Stub eligible_runs to return nothing so only the closed-session scan
+    # contributes — lets us assert the scan's exact enqueue behaviour.
+    with patch.object(q.runs, "eligible_runs", return_value=[]):
+        try:
+            with database.SessionLocal() as s2:
+                q.sweep(s2); s2.commit()
+
+            # Drain all enqueued normal jobs.
+            enqueued_session_ids = set()
+            while True:
+                job = q._next_job()
+                if job is None:
+                    break
+                enqueued_session_ids.add(job.spec.session_id)
+
+            # Session A (no run) must be enqueued.
+            assert s_a.id in enqueued_session_ids, "session with no run row must be enqueued"
+            # Sessions B & C (existing run) must NOT be enqueued by the closed-session scan.
+            assert s_b.id not in enqueued_session_ids, "session with pending run must not be re-enqueued by closed-scan"
+            assert s_c.id not in enqueued_session_ids, "session with failed run must not be re-enqueued by closed-scan"
+        finally:
+            q.close()
+
+
 def test_flush_drains(session):
     q = _queue()
     try:

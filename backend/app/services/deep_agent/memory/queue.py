@@ -74,8 +74,8 @@ class MemoryWriteQueue:
         for s in closed:
             key = session_run_key(s.id)
             run = session.get(MemoryExtractionRun, key)
-            if run is not None and run.status == "succeeded":
-                continue
+            if run is not None:
+                continue  # any existing run (pending/failed/succeeded) is owned by eligible_runs
             wf = session.get(Workflow, s.workflow_id)
             thread_id = wf.thread_id if wf is not None else None   # AgentThread id, not workflow id
             book = self._resolve_book(session, s.id) if self._resolve_book else None
