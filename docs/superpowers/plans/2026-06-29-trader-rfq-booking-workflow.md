@@ -216,7 +216,7 @@ git commit -m "feat(golden): add rfq seed namespace + optional positions.rfq FK"
 
 **Interfaces:**
 - Consumes: `TraceStore` spans for a thread (same source `transcript_from_trace` reads); `app.models.RFQ`.
-- Produces: `collect_rfq_ids_touched(thread_id: int, store=None) -> set[int]` — the rfq ids appearing in this thread's RFQ-tool span outputs (touched, NOT necessarily created). `_purge_arena_rfqs(session, rfq_ids: set[int]) -> None` — ORM-deletes those RFQs (cascading `rfq_quote_versions` + `approvals`). `run_match` snapshots `max(rfqs.id)` before driving and only deletes harvested ids **above** that baseline (creation proof) — `quote_rfq`/`submit_rfq_for_approval` act on existing rows and `create_or_update_rfq_draft` can update, so a harvested id alone is not proof of creation.
+- Produces: `collect_rfq_ids_touched(thread_id: int, store=None) -> set[int]` — the rfq ids appearing in this thread's RFQ-tool span outputs (touched, NOT necessarily created). `_purge_arena_rfqs(session, rfq_ids: set[int]) -> None` — ORM-deletes those RFQs (cascading `rfq_quote_versions` + `approvals`). `run_match` deletes a harvested id only if it is **above** the pre-match `max(rfqs.id)` baseline AND the row's `client_name` carries the arena sentinel (`ARENA_RFQ_CLIENT_PREFIX`) — `quote_rfq`/`submit_rfq_for_approval` act on existing rows and `create_or_update_rfq_draft` can update, so a harvested id alone is not proof of creation. Fail-safe: a missing sentinel skips deletion (cosmetic leak), never deletes a real row.
 
 - [ ] **Step 1: Probe the rfq tool-output shape (record the id path)**
 
@@ -351,16 +351,28 @@ In `run_match`, BEFORE the step-driving loop (`for wf_step in workflow.steps:` ~
         rfq_id_baseline = session.query(func.max(models.RFQ.id)).scalar() or 0
 ```
 
-After `transcript = harvest(thread_id, workflow, model)` (~line 357) and before the artifact-copy loop, add:
+After `transcript = harvest(thread_id, workflow, model)` (~line 357) and before the artifact-copy loop, add (THREE guards: touched ∩ id>baseline ∩ arena client sentinel):
 
 ```python
-    # Delete only RFQs created during this match: harvested (touched) ids that are
-    # also above the pre-match baseline. See collect_rfq_ids_touched / _purge_arena_rfqs.
+    # Delete only RFQs CREATED BY THIS MATCH: harvested (touched) ids, created after
+    # the pre-match baseline, AND carrying the arena client sentinel. Fail-safe — if
+    # a model never set the sentinel, the RFQ is skipped (cosmetic leak), never a
+    # real/seeded RFQ deleted. See collect_rfq_ids_touched / _purge_arena_rfqs.
     touched = collect_rfq_ids_touched(thread_id)
-    created = {rid for rid in touched if rid > rfq_id_baseline}
-    if created:
+    candidates = {rid for rid in touched if rid > rfq_id_baseline}
+    if candidates:
         with database.SessionLocal() as session:
-            _purge_arena_rfqs(session, created)
+            owned = [
+                r.id for r in session.query(models.RFQ).filter(models.RFQ.id.in_(candidates))
+                if (r.client_name or "").startswith(ARENA_RFQ_CLIENT_PREFIX)
+            ]
+            _purge_arena_rfqs(session, owned)
+```
+
+Add the sentinel constant near the other arena tags (`ARENA_PORTFOLIO_TAG`, ~`runner.py:169`):
+
+```python
+ARENA_RFQ_CLIENT_PREFIX = "ARENA"  # step-1 turn names the client with this prefix
 ```
 
 Ensure `models` is imported in `run_match`'s scope (it is imported lazily elsewhere in this module — add `from app import models` at the top of `run_match` if not already in scope). Add the harvest import at the top with the other arena imports:
@@ -491,7 +503,7 @@ fixtures: trader-rfq-booking-day.fixtures.json
 tags: [flagship, trader, rfq, booking, desk-workflow]
 
 steps:
-  - user: "A client wants a 1-year down-and-in barrier put on MSFT, strike at-the-money, knock-in at 80%. Capture it as an RFQ for the Arena Trader Desk."
+  - user: "A client — book it under client name 'ARENA Demo Client' — wants a 1-year down-and-in barrier put on MSFT, strike at-the-money, knock-in at 80%. Capture it as an RFQ for the Arena Trader Desk."
     expected_skill: intake-request
     expected_tools:
       - name: create_or_update_rfq_draft
@@ -561,7 +573,7 @@ steps:
         any_of: ["80", "down-and-in", "DOWN_IN"]
     replay: step-6-snapshot
 
-  - user: "Now price the Arena Trader Desk book with this position in it."
+  - user: "Now price the Arena Trader Desk book using the Arena Trader Profile, with this position in it."
     expected_skill: price-portfolio
     expected_tools:
       - name: run_batch_pricing

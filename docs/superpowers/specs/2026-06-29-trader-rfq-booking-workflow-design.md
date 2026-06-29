@@ -236,19 +236,25 @@ trace + an id baseline.** Two guards combine:
    outputs.
 2. **Creation baseline.** Snapshot `max(rfqs.id)` *before* driving the match (the
    same high-water-mark pattern the task-settle step already uses). Only delete a
-   harvested id if it is **greater than the baseline** — proof it was created during
-   this match, not merely touched.
+   harvested id if it is **greater than the baseline** — it was created after the
+   snapshot, not a pre-existing row the agent merely touched.
+3. **Owner sentinel.** The step-1 user turn names the client with a recognizable
+   arena sentinel (e.g. `client_name` starting `"ARENA"`); at purge time, delete a
+   candidate only if its `client_name` carries that sentinel. This is the durable
+   ownership proof that guards the residual shared-DB race in guard 2 (a row created
+   concurrently *after* the baseline).
 
-Both guards are necessary: `quote_rfq`/`submit_rfq_for_approval` act on an
-*existing* RFQ, and `create_or_update_rfq_draft` can *update* an existing row — so a
-harvested id is NOT by itself proof of creation. The baseline filter prevents
-deleting a real or seeded RFQ the agent merely referenced. `run_match` then ORM-
-deletes the surviving ids (so `quote_versions`/`approvals` cascade) as part of the
-same post-match cleanup that purges portfolios/profiles.
+All three guards are necessary because the harvested id alone is not proof of
+creation: `quote_rfq`/`submit_rfq_for_approval` act on an *existing* RFQ, and
+`create_or_update_rfq_draft` can *update* an existing row. `run_match` ORM-deletes
+the surviving ids (so `quote_versions`/`approvals` cascade) as part of the same
+post-match cleanup that purges portfolios/profiles.
 
-- **Scope:** exactly the RFQs *created during this match* — maximally precise, no new
-  tag, not dependent on the model passing a sentinel. A pre-existing RFQ (id ≤
-  baseline) the agent touched is never deleted.
+- **Scope:** RFQs this match's agent touched, created after the baseline, AND
+  carrying the arena client sentinel — a real/seeded RFQ is never deleted.
+- **Fail-safe:** the sentinel is model-set (the turn names it). If a model omits it,
+  cleanup skips that RFQ — it leaks (cosmetic) rather than risking deletion of a real
+  row. Erring toward a cosmetic leak over data loss is the correct bias.
 - **Deterministic regression:** unaffected — replay never touches the live RFQ DB.
 - **Fallback if harvest plumbing proves heavy:** a sentinel `client_name` (named in
   the step-1 turn) + an `id > baseline` guard captured at match start. Documented as
