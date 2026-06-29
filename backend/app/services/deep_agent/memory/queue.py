@@ -89,10 +89,12 @@ class MemoryWriteQueue:
         return True
 
     def pending_normal_count(self) -> int:
-        return len(self._normal)
+        with self._lock:
+            return len(self._normal)
 
     def pending_high_count(self) -> int:
-        return len(self._high)
+        with self._lock:
+            return len(self._high)
 
     def _next_job(self) -> QueueJob | None:
         with self._lock:

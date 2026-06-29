@@ -50,6 +50,13 @@ def test_fairness_four_high_then_one_normal():
     assert priorities[:5] == ["high", "high", "high", "high", "normal"]
 
 
+def test_distinct_normal_keys_coexist():
+    q = _queue()
+    assert q.enqueue(QueueJob(_spec(1), "normal")) is True
+    assert q.enqueue(QueueJob(_spec(2), "normal")) is True  # different session_id → different key
+    assert q.pending_normal_count() == 2
+
+
 def test_memory_write_session_sets_busy_timeout(session):
     from app import database
     from sqlalchemy import text
