@@ -5,6 +5,7 @@ import collections
 import contextlib
 import logging
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -12,7 +13,7 @@ from sqlalchemy import text
 
 from .config import MemoryConfig
 from .extractor import MalformedDiffError, extract_facts
-from .runs import RunSpec
+from .runs import RunSpec, session_run_key
 from .scope import active_write_scopes
 from .store import WriteContext
 
@@ -56,9 +57,78 @@ class MemoryWriteQueue:
         self._high_cycle = 0
         self.counters: dict[str, int] = collections.defaultdict(int)
 
+    def sweep(self, session) -> int:
+        from app.models import AgentSession, MemoryExtractionRun, Workflow
+
+        count = 0
+        for run in self.runs.eligible_runs(session):
+            self.enqueue(QueueJob(RunSpec(
+                run_key=run.run_key, kind=run.kind, session_id=run.session_id,
+                thread_id=run.thread_id, persona=run.persona,
+                book_scope_id=run.book_scope_id,
+                trigger_message_id=run.trigger_message_id),
+                "high" if run.kind == "correction" else "normal"))
+            count += 1
+        closed = (session.query(AgentSession)
+                  .filter(AgentSession.status.in_(("closed", "archived"))).all())
+        for s in closed:
+            key = session_run_key(s.id)
+            run = session.get(MemoryExtractionRun, key)
+            if run is not None and run.status == "succeeded":
+                continue
+            wf = session.get(Workflow, s.workflow_id)
+            thread_id = wf.thread_id if wf is not None else None   # AgentThread id, not workflow id
+            book = self._resolve_book(session, s.id) if self._resolve_book else None
+            self.enqueue(QueueJob(RunSpec(
+                run_key=key, kind="session", session_id=s.id,
+                thread_id=thread_id, persona=s.persona,
+                book_scope_id=book, trigger_message_id=None), "normal"))
+            count += 1
+        return count
+
+    def _run_sweep(self) -> None:
+        with memory_write_session(self._session_factory,
+                                  self.config.writer_busy_timeout_ms) as session:
+            try:
+                self.sweep(session)
+                session.commit()
+            except Exception:  # noqa: BLE001
+                session.rollback()
+                logger.warning("memory sweep failed", exc_info=True)
+
     def _ensure_writer(self) -> None:
-        # Task 13 replaces this with real lazy-thread start. No-op until then.
-        return
+        if self._writer is not None or not self._accepting or self._session_factory is None:
+            return
+        with self._lock:
+            if self._writer is not None:
+                return
+            self._writer = threading.Thread(target=self._loop, name="memory-writer",
+                                            daemon=True)
+            self._writer.start()
+
+    def _loop(self) -> None:
+        self._run_sweep()  # initial reconciliation sweep on start
+        last_sweep = time.monotonic()
+        while not self._stop.is_set():
+            did = self.process_one()
+            now = time.monotonic()
+            if now - last_sweep >= self.config.sweep_interval_seconds:
+                self._run_sweep()
+                last_sweep = now
+            if not did:
+                time.sleep(0.02)
+
+    def flush(self, *, grace: float | None = None) -> None:
+        self._accepting = False
+        budget = grace if grace is not None else self.config.shutdown_grace_seconds
+        deadline = time.monotonic() + budget
+        while time.monotonic() < deadline and self.process_one():
+            pass
+
+    def close(self) -> None:
+        self._stop.set()
+        if self._writer is not None and self._writer.is_alive():
+            self._writer.join(timeout=5)
 
     @staticmethod
     def _normal_key(spec: RunSpec):
