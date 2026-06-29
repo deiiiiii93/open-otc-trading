@@ -67,11 +67,12 @@ def test_enqueue_session_close_lazy_starts_writer(session, agent_thread_factory,
     monkeypatch.setenv("OPEN_OTC_MEMORY", "on")
     from app.services.deep_agent.memory import runtime as rt
     rt.reset_memory_runtime()
-    # stub the extractor llm so no network + a window loader that yields one message
+    # stub extractor llm, window loader, and model-id resolver (no YAML in worktree)
     monkeypatch.setattr(rt, "_extractor_llm",
                         lambda prompt: '{"add":[{"content":"books in USD","scope_type":"user","confidence":0.9}]}')
     monkeypatch.setattr(rt, "_window_loader",
                         lambda sid, after, cfg: [{"id": 1, "role": "human", "content": "book in USD"}])
+    monkeypatch.setattr(rt, "_extractor_model_id", lambda: "stub-model")
     q = rt.get_memory_queue()
     try:
         rt.enqueue_session_close(session_id=31, thread_id=1, persona="trader", book_scope_id=None)
@@ -152,3 +153,64 @@ def test_extractor_llm_unavailable_model_raises(monkeypatch):
 
     with pytest.raises(RuntimeError, match="unavailable"):
         rt._extractor_llm("some prompt")
+
+
+# ---------------------------------------------------------------------------
+# Fix 1: API-limitation provenance — meta.extractor_model reflects real model
+#
+# ChannelRegistry has no find_by_tag API; "flash" in MemoryConfig.extractor_model
+# is a tier concept with no matching tag or model id in the registry.  The fix
+# wires _extractor_model_id() (which reads registry.default_selection()["model"])
+# into queue as extractor_model_fn so stored meta records the real model id.
+# ---------------------------------------------------------------------------
+
+def test_extractor_model_id_reads_registry_default(monkeypatch):
+    """_extractor_model_id() returns the registry's resolved default model id,
+    NOT the tier-concept string from MemoryConfig.extractor_model."""
+    import app.services.deep_agent.channel_registry as cr
+    from app.services.deep_agent.memory import runtime as rt
+
+    class _FakeRegistry:
+        def default_selection(self):
+            return {"channel": "zenmux", "provider": "anthropic", "model": "claude-haiku-test"}
+
+    monkeypatch.setattr(cr, "get_registry", _FakeRegistry)
+    result = rt._extractor_model_id()
+    assert result == "claude-haiku-test"
+    assert result != "flash"  # not the config tier name
+
+
+def test_meta_extractor_model_reflects_real_model(session):
+    """meta.extractor_model in a stored MemoryEntry is the actual resolved model id,
+    not the 'flash' tier string from MemoryConfig.extractor_model.
+
+    This is the API-limitation provenance fix: since ChannelRegistry.find_by_tag
+    does not exist, we fall back to default selection but record WHAT we actually
+    used via extractor_model_fn rather than blindly copying config.extractor_model.
+    """
+    from app import database
+    from app.models import MemoryEntry
+    from app.services.deep_agent.memory.config import MemoryConfig
+    from app.services.deep_agent.memory.store import MemoryStore
+    from app.services.deep_agent.memory.runs import ExtractionRunStore, RunSpec, session_run_key
+    from app.services.deep_agent.memory.queue import MemoryWriteQueue
+
+    actual_model_id = "anthropic/claude-haiku-resolved"
+    cfg = MemoryConfig()
+    q = MemoryWriteQueue(
+        cfg, MemoryStore(cfg), ExtractionRunStore(cfg),
+        session_factory=lambda: database.SessionLocal(),
+        window_loader=lambda sid, after, c: [{"id": 1, "role": "user", "content": "USD books"}],
+        extractor_llm=lambda p: '{"add":[{"content":"books USD","scope_type":"user","confidence":0.9}]}',
+        portfolio_resolver=lambda s, sid: None,
+        extractor_model_fn=lambda: actual_model_id,
+    )
+    spec = RunSpec(run_key=session_run_key(991), kind="session", session_id=991,
+                   thread_id=1, persona="trader", book_scope_id=None, trigger_message_id=None)
+    with database.SessionLocal() as s:
+        q.run_job(s, spec); s.commit()
+    with database.SessionLocal() as s:
+        entry = s.query(MemoryEntry).filter_by(scope_type="user").first()
+        assert entry is not None
+        assert entry.meta["extractor_model"] == actual_model_id
+        assert entry.meta["extractor_model"] != cfg.extractor_model  # not "flash"

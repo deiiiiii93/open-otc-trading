@@ -1,7 +1,7 @@
 import pytest
 from app.services.deep_agent.memory.config import MemoryConfig
 from app.services.deep_agent.memory.extractor import (
-    MemoryDiff, validate_diff, parse_diff, extract_facts, MalformedDiffError,
+    MemoryDiff, validate_diff, parse_diff, extract_facts, MalformedDiffError, _clamp,
 )
 
 
@@ -71,3 +71,32 @@ def test_extract_facts_with_stub_llm():
 def test_extract_facts_malformed_raises():
     with pytest.raises(MalformedDiffError):
         extract_facts([], [], ["user"], llm=lambda p: "garbage", config=MemoryConfig())
+
+
+# ---------------------------------------------------------------------------
+# Fix 2: _clamp non-numeric confidence → floor-drop (0.0), not max-trust (1.0)
+# ---------------------------------------------------------------------------
+
+def test_clamp_non_numeric_returns_zero():
+    """Non-numeric confidence values must return 0.0 (floor-drop), not 1.0 (max-trust)."""
+    assert _clamp("high") == 0.0
+    assert _clamp("medium") == 0.0
+    assert _clamp(None) == 0.0
+    assert _clamp([0.9]) == 0.0
+    # numeric values still work
+    assert _clamp(0.8) == 0.8
+    assert _clamp(5.0) == 1.0   # clamped to max
+    assert _clamp(-0.1) == 0.0  # clamped to min
+
+
+def test_non_numeric_confidence_add_is_floor_dropped():
+    """An add item whose confidence is a non-numeric string is dropped by the floor check
+    because _clamp returns 0.0 (< confidence_floor=0.7), not 1.0."""
+    raw = {"add": [
+        {"content": "fact with string confidence", "scope_type": "user", "confidence": "high"},
+        {"content": "fact with numeric confidence", "scope_type": "user", "confidence": 0.9},
+    ]}
+    diff = validate_diff(raw, ["user"], set(), MemoryConfig())
+    # "high" → _clamp returns 0.0 → 0.0 < 0.7 → dropped
+    assert len(diff.add) == 1
+    assert diff.add[0]["content"] == "fact with numeric confidence"

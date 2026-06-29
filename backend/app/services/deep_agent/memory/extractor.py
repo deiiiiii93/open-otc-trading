@@ -38,7 +38,7 @@ def _clamp(value, default=1.0) -> float:
     try:
         v = float(value)
     except (TypeError, ValueError):
-        return default
+        return 0.0  # malformed confidence (e.g. "high") → floor-drop, not max-trust
     return max(0.0, min(1.0, v))
 
 

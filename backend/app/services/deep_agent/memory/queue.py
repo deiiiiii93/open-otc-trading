@@ -39,7 +39,8 @@ def memory_write_session(session_factory, busy_timeout_ms: int):
 class MemoryWriteQueue:
     def __init__(self, config: MemoryConfig, store, runs, *, session_factory,
                  window_loader: Callable | None, extractor_llm: Callable | None,
-                 portfolio_resolver: Callable | None) -> None:
+                 portfolio_resolver: Callable | None,
+                 extractor_model_fn: Callable[[], str] | None = None) -> None:
         self.config = config
         self.store = store
         self.runs = runs
@@ -47,6 +48,11 @@ class MemoryWriteQueue:
         self._window_loader = window_loader
         self._llm = extractor_llm
         self._resolve_book = portfolio_resolver
+        # Callable[[], str] that returns the ACTUAL model id used by the extractor
+        # (resolved at invocation time, not the tier-concept string from config).
+        # Falls back to config.extractor_model when absent (e.g. in unit tests that
+        # stub the extractor llm directly and don't care about provenance).
+        self._extractor_model_fn = extractor_model_fn
         self._high: collections.deque[QueueJob] = collections.deque()
         self._high_keys: set[str] = set()
         self._normal: "collections.OrderedDict[tuple, QueueJob]" = collections.OrderedDict()
@@ -208,11 +214,16 @@ class MemoryWriteQueue:
             self.counters["extract_failed"] += 1
             self.runs.mark_failed(session, spec.run_key, f"extract: {exc}")
             return
+        extractor_model_label = (
+            self._extractor_model_fn()
+            if self._extractor_model_fn is not None
+            else self.config.extractor_model
+        )
         ctx = WriteContext(allowed_scopes=allowed, book_scope_id=spec.book_scope_id,
                            created_by="extractor",
                            meta={"session_id": spec.session_id, "thread_id": spec.thread_id,
                                  "persona": spec.persona,
-                                 "extractor_model": self.config.extractor_model})
+                                 "extractor_model": extractor_model_label})
         try:
             self.store.apply_diff(session, diff, ctx)
         except Exception as exc:  # noqa: BLE001 — facts already rolled back by savepoint

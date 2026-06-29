@@ -12,6 +12,7 @@ def test_shutdown_drains_queued_job(session, monkeypatch):
                         lambda prompt: '{"add":[{"content":"books in USD","scope_type":"user","confidence":0.9}]}')
     monkeypatch.setattr(rt, "_window_loader",
                         lambda sid, after, cfg: [{"id": 1, "role": "user", "content": "book in USD"}])
+    monkeypatch.setattr(rt, "_extractor_model_id", lambda: "stub-model")
     q = rt.get_memory_queue()
     q._ensure_writer = lambda: None   # no bg thread; flush() drains synchronously
     spec = RunSpec(run_key=session_run_key(41), kind="session", session_id=41,

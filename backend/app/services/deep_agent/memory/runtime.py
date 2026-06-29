@@ -25,6 +25,12 @@ def _extractor_llm(prompt: str) -> str:
     from ..channel_registry import get_registry
     from ..model_factory import build_agent_model
 
+    # NOTE: MemoryConfig.extractor_model is a tier concept ("flash") but
+    # ChannelRegistry has no find_by_tag API — it only accepts exact
+    # (channel, provider, model) triples.  Until a tag-selection API is added,
+    # we fall back to the registry default.  Provenance is recorded via
+    # _extractor_model_id() so meta.extractor_model reflects the real model
+    # rather than the tier string.  See task-15-report.md §API-limitation.
     model = build_agent_model(get_registry())
     if model is None:
         raise RuntimeError("extractor model unavailable")
@@ -35,6 +41,16 @@ def _extractor_llm(prompt: str) -> str:
             "expected a plain-text JSON response"
         )
     return content
+
+
+def _extractor_model_id() -> str:
+    """Return the ACTUAL model id resolved by the registry for extraction.
+
+    Called at job-run time so meta.extractor_model records the real model,
+    not the tier-concept string from MemoryConfig.extractor_model.
+    """
+    from ..channel_registry import get_registry
+    return get_registry().default_selection()["model"]
 
 
 def _window_loader(session_id, after_message_id, config: MemoryConfig):
@@ -60,7 +76,8 @@ def get_memory_queue() -> MemoryWriteQueue:
                 session_factory=lambda: database.SessionLocal(),
                 window_loader=lambda sid, after, cfg: _window_loader(sid, after, cfg),
                 extractor_llm=lambda prompt: _extractor_llm(prompt),
-                portfolio_resolver=book_scope_for_session)
+                portfolio_resolver=book_scope_for_session,
+                extractor_model_fn=lambda: _extractor_model_id())
         return _QUEUE
 
 
