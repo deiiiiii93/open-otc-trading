@@ -365,3 +365,63 @@ def test_persist_user_turn_inserts_user_message(session):
     assert len(msgs) == 1
     assert msgs[0].role == "user"
     assert msgs[0].content == "What does the latest risk say?"
+
+
+def test_run_match_cleans_rfqs_even_when_harvest_raises(tmp_path, monkeypatch):
+    """An aborted match must still purge the RFQs it created — a leaked RFQ would
+    be permanent (the next match's baseline is taken after it exists)."""
+    import app.services.arena.runner as runner
+
+    monkeypatch.setattr(runner, "apply_seed", lambda b, s: {})
+    monkeypatch.setattr(runner, "_purge_seeded_portfolios", lambda s, b: None)
+
+    class _Thread:
+        def __init__(self, **kw):
+            self.id = 4242
+            for k, v in kw.items():
+                setattr(self, k, v)
+
+    monkeypatch.setattr(runner, "AgentThread", _Thread)
+
+    class _Q:
+        def scalar(self):
+            return 0
+
+    class _Sess:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def add(self, obj):
+            pass
+
+        def commit(self):
+            pass
+
+        def query(self, *a, **k):
+            return _Q()
+
+    monkeypatch.setattr(
+        runner,
+        "database",
+        type("D", (), {"SessionLocal": staticmethod(lambda *a, **k: _Sess())})(),
+    )
+
+    cleaned: list[tuple[int, int]] = []
+    monkeypatch.setattr(
+        runner, "_purge_match_rfqs", lambda thread_id, baseline: cleaned.append((thread_id, baseline))
+    )
+
+    def boom_harvest(thread_id, workflow, model, **kw):
+        raise RuntimeError("harvest blew up")
+
+    with pytest.raises(RuntimeError, match="harvest blew up"):
+        run_match(
+            _Loaded(), get_model("gpt-5-5"), artifact_root=tmp_path, run_id=7,
+            drive=lambda *a: None, harvest=boom_harvest, settle=lambda: None,
+        )
+
+    # Cleanup ran in the finally despite the harvest failure, with the baseline.
+    assert cleaned == [(4242, 0)]

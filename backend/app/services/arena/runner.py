@@ -13,6 +13,7 @@ The `drive` and `harvest` seams are injectable for unit tests.
 from __future__ import annotations
 
 import asyncio
+import logging
 import shutil
 from pathlib import Path
 from typing import Any, Callable
@@ -22,6 +23,8 @@ from app.golden_workflows.fixtures import apply_seed
 from app.models import AgentThread
 from app.services.arena.models import arena_model_to_selection
 from app.services.arena.trace_harvest import collect_rfq_ids_touched, transcript_from_trace
+
+logger = logging.getLogger(__name__)
 
 _PERSONA_TO_CHARACTER = {
     "trader": "trader",
@@ -181,6 +184,35 @@ def _purge_arena_rfqs(session, rfq_ids) -> None:
     for rfq in session.query(models.RFQ).filter(models.RFQ.id.in_(list(rfq_ids))):
         session.delete(rfq)
     session.commit()
+
+
+def _purge_match_rfqs(thread_id: int, rfq_id_baseline: int) -> None:
+    """Best-effort cleanup of RFQs CREATED BY THIS MATCH: harvested (touched) ids,
+    created after the pre-match baseline, AND carrying the arena client sentinel.
+
+    Runs in a ``finally`` so an aborted match still cleans up. This matters because
+    a leaked RFQ would otherwise be PERMANENT: the next match's baseline is taken
+    after the leaked row already exists, so its ``id > baseline`` guard would never
+    re-catch it. Fail-safe — a missing sentinel skips the row (cosmetic leak), never
+    a real/seeded RFQ deleted. Never raises: cleanup is cosmetic hygiene and must not
+    mask a match failure.
+    """
+    from app import models
+
+    try:
+        touched = collect_rfq_ids_touched(thread_id)
+        candidates = {rid for rid in touched if rid > rfq_id_baseline}
+        if not candidates:
+            return
+        with database.SessionLocal() as session:
+            owned = [
+                r.id
+                for r in session.query(models.RFQ).filter(models.RFQ.id.in_(candidates))
+                if (r.client_name or "").startswith(ARENA_RFQ_CLIENT_PREFIX)
+            ]
+            _purge_arena_rfqs(session, owned)
+    except Exception:  # noqa: BLE001 — best-effort; never mask the match outcome
+        logger.warning("arena RFQ cleanup failed for thread %s", thread_id, exc_info=True)
 
 
 def _purge_seeded_portfolios(session, bundle) -> None:
@@ -373,26 +405,16 @@ def run_match(
 
     # Drive every workflow step as one YOLO turn on the same thread, waiting for
     # queued background tasks to finish before the next step reads their results.
-    for wf_step in workflow.steps:
-        drive(thread_id, wf_step.user, selection)
-        settle()
+    # The RFQ cleanup runs in a finally so an aborted match still purges the RFQs
+    # it created (an un-purged leak would be permanent — see _purge_match_rfqs).
+    try:
+        for wf_step in workflow.steps:
+            drive(thread_id, wf_step.user, selection)
+            settle()
 
-    transcript = harvest(thread_id, workflow, model)
-
-    # Delete only RFQs CREATED BY THIS MATCH: harvested (touched) ids, created after
-    # the pre-match baseline, AND carrying the arena client sentinel. Fail-safe — if
-    # a model never set the sentinel, the RFQ is skipped (cosmetic leak), never a
-    # real/seeded RFQ deleted.
-    touched = collect_rfq_ids_touched(thread_id)
-    candidates = {rid for rid in touched if rid > rfq_id_baseline}
-    if candidates:
-        with database.SessionLocal() as session:
-            owned = [
-                r.id
-                for r in session.query(models.RFQ).filter(models.RFQ.id.in_(candidates))
-                if (r.client_name or "").startswith(ARENA_RFQ_CLIENT_PREFIX)
-            ]
-            _purge_arena_rfqs(session, owned)
+        transcript = harvest(thread_id, workflow, model)
+    finally:
+        _purge_match_rfqs(thread_id, rfq_id_baseline)
 
     # Copy any harvested artifacts under the run's artifact root.
     copied_steps = []
