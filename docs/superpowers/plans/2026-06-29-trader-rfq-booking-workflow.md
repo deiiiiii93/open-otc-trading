@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Spec: `docs/superpowers/specs/2026-06-29-trader-rfq-booking-workflow-design.md` — this plan implements it.
-- Name-based fixtures: no `$seed` ids; assertions use names / `response_contains`. Seeded portfolios tagged `tags=["arena"]`; profiles marked `summary["arena_owned"]=True`.
+- Name-based fixtures: no `$seed` ids; assertions use names / `response_contains`. Arena ownership markers (`Portfolio.tags=["arena"]`, `PricingParameterProfile.summary["arena_owned"]=True`) are applied by `run_match` AT RUNTIME after `apply_seed` (`runner.py:329-334`) — do NOT put them in the fixtures JSON (`apply_seed` ignores them; the flagship fixtures carry none).
 - Registry reference checks (already enforced): every `expected_skill` must map to a real `SKILL.md` (`name:` field), every `expected_tools` entry to a real tool in `all_agent_tools()` (the `_tool` suffix is stripped on both sides), every `step.replay` key to a `replay` entry in the fixtures.
 - QuantArk product convention: real class names (`BarrierOption`, `EuropeanVanillaOption`), native `product_kwargs` (`maturity`, NOT `maturity_years`, on seeded positions). Per `app/skills/references/products/build-contract.md`.
 - Env (live steps only): run in the PRIMARY checkout on `main` (quant-ark on the venv `.pth`; `config/agent_channels.yaml` is gitignored). Always `PYTHONPATH=backend /Users/fuxinyao/open-otc-trading/.venv/bin/python` — anaconda `python` shadows the venv.
@@ -26,7 +26,7 @@
 |---|---|---|
 | `backend/app/golden_workflows/fixtures.py` | Add `rfqs` seed namespace + optional `positions.rfq` FK | 1 |
 | `tests/test_golden_fixtures_rfq.py` (new) | Unit tests for the `rfqs` namespace | 1 |
-| `backend/app/services/arena/trace_harvest.py` | Add `collect_created_rfq_ids(thread_id, store=None)` | 2 |
+| `backend/app/services/arena/trace_harvest.py` | Add `collect_rfq_ids_touched(thread_id, store=None)` | 2 |
 | `backend/app/services/arena/runner.py` | `_purge_arena_rfqs` + wire into `run_match` | 2 |
 | `tests/test_arena_rfq_cleanup.py` (new) | Unit tests for harvest + purge | 2 |
 | `docs/superpowers/findings/2026-06-29-barrier-build-probe.md` (new) | Probe findings: clean DOWN_IN terms, engine, Layer-2 value | 3 |
@@ -210,13 +210,13 @@ git commit -m "feat(golden): add rfq seed namespace + optional positions.rfq FK"
 ## Task 2: Harvest created RFQ ids + purge them after each match
 
 **Files:**
-- Modify: `backend/app/services/arena/trace_harvest.py` (add `collect_created_rfq_ids`)
+- Modify: `backend/app/services/arena/trace_harvest.py` (add `collect_rfq_ids_touched`)
 - Modify: `backend/app/services/arena/runner.py` (add `_purge_arena_rfqs`; call after `harvest` in `run_match` ~`runner.py:357`)
 - Test: `tests/test_arena_rfq_cleanup.py` (new)
 
 **Interfaces:**
 - Consumes: `TraceStore` spans for a thread (same source `transcript_from_trace` reads); `app.models.RFQ`.
-- Produces: `collect_created_rfq_ids(thread_id: int, store=None) -> set[int]` — the rfq ids appearing in this thread's RFQ-tool span outputs. `_purge_arena_rfqs(session, rfq_ids: set[int]) -> None` — ORM-deletes those RFQs (cascading `rfq_quote_versions` + `approvals`).
+- Produces: `collect_rfq_ids_touched(thread_id: int, store=None) -> set[int]` — the rfq ids appearing in this thread's RFQ-tool span outputs (touched, NOT necessarily created). `_purge_arena_rfqs(session, rfq_ids: set[int]) -> None` — ORM-deletes those RFQs (cascading `rfq_quote_versions` + `approvals`). `run_match` snapshots `max(rfqs.id)` before driving and only deletes harvested ids **above** that baseline (creation proof) — `quote_rfq`/`submit_rfq_for_approval` act on existing rows and `create_or_update_rfq_draft` can update, so a harvested id alone is not proof of creation.
 
 - [ ] **Step 1: Probe the rfq tool-output shape (record the id path)**
 
@@ -238,12 +238,12 @@ Record in the test below the key under which the id appears (expected: a top-lev
 Create `tests/test_arena_rfq_cleanup.py`:
 
 ```python
-from app.services.arena.trace_harvest import collect_created_rfq_ids
+from app.services.arena.trace_harvest import collect_rfq_ids_touched
 from app.services.arena import runner
 from app import models
 
 
-def test_collect_created_rfq_ids_from_spans(monkeypatch):
+def test_collect_rfq_ids_touched_from_spans(monkeypatch):
     # A fake store returning one tool span whose output carries rfq_id=42.
     spans = [{
         "run_type": "tool",
@@ -256,7 +256,7 @@ def test_collect_created_rfq_ids_from_spans(monkeypatch):
         def spans_for_thread(self, thread_id):  # match the real TraceStore method name
             return spans
 
-    ids = collect_created_rfq_ids(thread_id=1, store=_Store())
+    ids = collect_rfq_ids_touched(thread_id=1, store=_Store())
     assert ids == {42}
 
 
@@ -275,17 +275,18 @@ def test_purge_arena_rfqs_cascades(db_session):
     assert db_session.query(models.RFQQuoteVersion).filter_by(rfq_id=rid).count() == 0
 ```
 
-> Confirm the real `TraceStore` reader method name (the test stub must match what `collect_created_rfq_ids` calls) by checking how `transcript_from_trace` loads spans in `trace_harvest.py`; reuse that exact method. Confirm `RFQQuoteVersion`'s required columns (e.g. `version`, and any non-null `payload`) and fill them so the row inserts.
+> Confirm the real `TraceStore` reader method name (the test stub must match what `collect_rfq_ids_touched` calls) by checking how `transcript_from_trace` loads spans in `trace_harvest.py`; reuse that exact method. Confirm `RFQQuoteVersion`'s required columns (e.g. `version`, and any non-null `payload`) and fill them so the row inserts.
 
 - [ ] **Step 3: Run the tests to verify they fail**
 
 Run: `PYTHONPATH=backend /Users/fuxinyao/open-otc-trading/.venv/bin/python -m pytest tests/test_arena_rfq_cleanup.py -v`
-Expected: FAIL — `ImportError: cannot import name 'collect_created_rfq_ids'`.
+Expected: FAIL — `ImportError: cannot import name 'collect_rfq_ids_touched'`.
 
-- [ ] **Step 4: Implement `collect_created_rfq_ids` in `trace_harvest.py`**
+- [ ] **Step 4: Implement `collect_rfq_ids_touched` in `trace_harvest.py`**
 
 ```python
-# RFQ-creating/mutating tools whose outputs carry the rfq id we must clean up.
+# RFQ tools whose outputs carry an rfq id. These TOUCH an rfq (create OR update,
+# quote, submit) — touched != created, so run_match filters by an id baseline.
 _RFQ_TOOLS = {"create_or_update_rfq_draft", "quote_rfq", "submit_rfq_for_approval"}
 
 
@@ -298,13 +299,15 @@ def _extract_rfq_id(content: Any) -> int | None:
     return None
 
 
-def collect_created_rfq_ids(thread_id: int, store=None) -> set[int]:
+def collect_rfq_ids_touched(thread_id: int, store=None) -> set[int]:
     """Return the rfq ids appearing in this thread's RFQ-tool span outputs.
 
-    Used by the arena runner to delete live-created RFQs after a match so they
-    do not accumulate in the real desk DB (RFQ has no portfolio_id/position_id
-    column, and direct book_position leaves Position.rfq_id null, so the
-    portfolio-scoped purge cannot reach them).
+    These are ids the agent TOUCHED (created or merely quoted/submitted/updated).
+    The caller (run_match) intersects this with an "id > pre-match baseline" guard
+    to delete only RFQs CREATED during the match — never a pre-existing real or
+    seeded RFQ the agent referenced. Needed because RFQ has no
+    portfolio_id/position_id column and direct book_position leaves
+    Position.rfq_id null, so the portfolio-scoped purge cannot reach them.
     """
     store = store or _default_store()
     out: set[int] = set()
@@ -335,22 +338,35 @@ def _purge_arena_rfqs(session, rfq_ids) -> None:
     session.commit()
 ```
 
-- [ ] **Step 6: Wire cleanup into `run_match` after harvest**
+- [ ] **Step 6: Capture the rfq baseline before driving, and wire filtered cleanup after harvest**
 
-In `runner.py`, after `transcript = harvest(thread_id, workflow, model)` (~line 357) and before the artifact-copy loop, add:
+In `run_match`, BEFORE the step-driving loop (`for wf_step in workflow.steps:` ~line 353), snapshot the current max rfq id so we can prove which RFQs are new:
 
 ```python
-    # Clean up RFQs this match's agent created live (see _purge_arena_rfqs).
-    created_rfq_ids = collect_created_rfq_ids(thread_id)
-    if created_rfq_ids:
-        with database.SessionLocal() as session:
-            _purge_arena_rfqs(session, created_rfq_ids)
+    # High-water mark for RFQs so post-match cleanup only deletes rows CREATED
+    # during this match (a harvested id <= baseline was merely touched, e.g. a
+    # pre-existing RFQ the agent quoted — never delete it).
+    from sqlalchemy import func
+    with database.SessionLocal() as session:
+        rfq_id_baseline = session.query(func.max(models.RFQ.id)).scalar() or 0
 ```
 
-Add the import at the top with the other arena imports:
+After `transcript = harvest(thread_id, workflow, model)` (~line 357) and before the artifact-copy loop, add:
 
 ```python
-from app.services.arena.trace_harvest import collect_created_rfq_ids, transcript_from_trace
+    # Delete only RFQs created during this match: harvested (touched) ids that are
+    # also above the pre-match baseline. See collect_rfq_ids_touched / _purge_arena_rfqs.
+    touched = collect_rfq_ids_touched(thread_id)
+    created = {rid for rid in touched if rid > rfq_id_baseline}
+    if created:
+        with database.SessionLocal() as session:
+            _purge_arena_rfqs(session, created)
+```
+
+Ensure `models` is imported in `run_match`'s scope (it is imported lazily elsewhere in this module — add `from app import models` at the top of `run_match` if not already in scope). Add the harvest import at the top with the other arena imports:
+
+```python
+from app.services.arena.trace_harvest import collect_rfq_ids_touched, transcript_from_trace
 ```
 
 - [ ] **Step 7: Run the tests to verify they pass**
@@ -770,7 +786,7 @@ print("arena rfqs after 2 matches:", count_arena_rfqs())
 PY
 ```
 
-Expected: stable count (cleanup deletes each match's live RFQs). If RFQs accumulate, the `collect_created_rfq_ids` id-extraction path (Task 2 Step 1) didn't match the live tool output — fix `_extract_rfq_id`.
+Expected: stable count (cleanup deletes each match's live RFQs). If RFQs accumulate, either the `collect_rfq_ids_touched` id-extraction path (Task 2 Step 1) didn't match the live tool output (fix `_extract_rfq_id`), or the baseline filter excluded a genuinely-new id (check the snapshot timing).
 
 - [ ] **Step 5: Run the golden/arena regression once more, then commit**
 

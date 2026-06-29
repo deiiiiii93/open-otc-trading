@@ -227,18 +227,28 @@ Two confirmed facts rule out a `Position.rfq_id` back-link purge:
   does **not** set `Position.rfq_id`. So the workflow's RFQ never links to its
   position and stays in `SUBMITTED`; a back-link purge would clean nothing.
 
-**Mechanism — delete exactly the RFQ ids the agent created, sourced from the trace
-the harness already harvests.** Step 1's `create_or_update_rfq_draft` tool span
-output carries the new `rfq_id`. The live driver already reconstructs the transcript
-from `TraceStore`; extend the harvest to collect the set of `rfq_id`s appearing in
-this match's `create_or_update_rfq_draft` / `quote_rfq` / `submit_rfq_for_approval`
-tool outputs, and have `run_match` delete those `rfqs` rows (ORM delete so
-`quote_versions`/`approvals` cascade) as part of the same post-match cleanup that
-purges portfolios/profiles.
+**Mechanism — delete only RFQs *newly created during this match*, identified by
+trace + an id baseline.** Two guards combine:
 
-- **Scope:** exactly the RFQs *this match's agent* created — maximally precise, no
-  new tag, no `created_at` window race in the shared DB, not dependent on the model
-  passing a sentinel.
+1. **Trace set.** The live driver reconstructs the transcript from `TraceStore`;
+   collect the set of `rfq_id`s appearing in this match's
+   `create_or_update_rfq_draft` / `quote_rfq` / `submit_rfq_for_approval` tool
+   outputs.
+2. **Creation baseline.** Snapshot `max(rfqs.id)` *before* driving the match (the
+   same high-water-mark pattern the task-settle step already uses). Only delete a
+   harvested id if it is **greater than the baseline** — proof it was created during
+   this match, not merely touched.
+
+Both guards are necessary: `quote_rfq`/`submit_rfq_for_approval` act on an
+*existing* RFQ, and `create_or_update_rfq_draft` can *update* an existing row — so a
+harvested id is NOT by itself proof of creation. The baseline filter prevents
+deleting a real or seeded RFQ the agent merely referenced. `run_match` then ORM-
+deletes the surviving ids (so `quote_versions`/`approvals` cascade) as part of the
+same post-match cleanup that purges portfolios/profiles.
+
+- **Scope:** exactly the RFQs *created during this match* — maximally precise, no new
+  tag, not dependent on the model passing a sentinel. A pre-existing RFQ (id ≤
+  baseline) the agent touched is never deleted.
 - **Deterministic regression:** unaffected — replay never touches the live RFQ DB.
 - **Fallback if harvest plumbing proves heavy:** a sentinel `client_name` (named in
   the step-1 turn) + an `id > baseline` guard captured at match start. Documented as
