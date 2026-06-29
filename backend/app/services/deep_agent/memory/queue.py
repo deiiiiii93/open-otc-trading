@@ -11,7 +11,10 @@ from dataclasses import dataclass
 from sqlalchemy import text
 
 from .config import MemoryConfig
+from .extractor import MalformedDiffError, extract_facts
 from .runs import RunSpec
+from .scope import active_write_scopes
+from .store import WriteContext
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +98,74 @@ class MemoryWriteQueue:
     def pending_high_count(self) -> int:
         with self._lock:
             return len(self._high)
+
+    def run_job(self, session, spec: RunSpec) -> None:
+        # enqueue_run returns False for a TERMINAL run (succeeded, or failed at
+        # max_extract_attempts). Honor it: do not load a window, call the LLM,
+        # or apply anything — the run is done until a human resets it.
+        if not self.runs.enqueue_run(session, spec):
+            return
+        run = self.runs.get(session, spec.run_key)
+        if run is None or run.status == "succeeded":
+            return
+        cursor = run.last_extracted_message_id
+        try:
+            window = self._window_loader(spec.session_id, cursor, self.config)
+        except Exception as exc:  # noqa: BLE001 — any window-loader failure
+            self.counters["window_failed"] += 1
+            self.runs.mark_failed(session, spec.run_key, f"window: {exc}")
+            return
+        if window is None:
+            self.counters["window_failed"] += 1
+            self.runs.mark_failed(session, spec.run_key, "window retrieval failed")
+            return
+        book = ("book", spec.book_scope_id) if spec.book_scope_id else None
+        allowed = ["correction"] if spec.kind == "correction" else active_write_scopes(book)
+        existing = []
+        for scope_type in allowed:
+            scope_id = ("desk" if scope_type in ("user", "correction")
+                        else "global" if scope_type == "domain" else spec.book_scope_id)
+            if scope_id is None:
+                continue
+            existing.extend(self.store.load_existing(session, scope_type, scope_id))
+        try:
+            diff = extract_facts(window, existing, allowed, llm=self._llm, config=self.config)
+        except MalformedDiffError:
+            self.counters["malformed_diff"] += 1
+            self.runs.mark_failed(session, spec.run_key, "malformed diff")
+            return
+        except Exception as exc:  # noqa: BLE001 — LLM/network/other extraction failure
+            self.counters["extract_failed"] += 1
+            self.runs.mark_failed(session, spec.run_key, f"extract: {exc}")
+            return
+        ctx = WriteContext(allowed_scopes=allowed, book_scope_id=spec.book_scope_id,
+                           created_by="extractor",
+                           meta={"session_id": spec.session_id, "thread_id": spec.thread_id,
+                                 "persona": spec.persona,
+                                 "extractor_model": self.config.extractor_model})
+        try:
+            self.store.apply_diff(session, diff, ctx)
+        except Exception as exc:  # noqa: BLE001 — facts already rolled back by savepoint
+            self.counters["apply_failed"] += 1
+            self.runs.mark_failed(session, spec.run_key, f"apply: {exc}")
+            return
+        last_id = max((m.get("id") for m in window if isinstance(m.get("id"), int)),
+                      default=cursor)
+        self.runs.mark_succeeded(session, spec.run_key, last_id)
+
+    def process_one(self) -> bool:
+        job = self._next_job()
+        if job is None:
+            return False
+        with memory_write_session(self._session_factory,
+                                  self.config.writer_busy_timeout_ms) as session:
+            try:
+                self.run_job(session, job.spec)
+                session.commit()
+            except Exception:  # noqa: BLE001
+                session.rollback()
+                logger.warning("memory job crashed; left for sweep", exc_info=True)
+        return True
 
     def _next_job(self) -> QueueJob | None:
         with self._lock:
