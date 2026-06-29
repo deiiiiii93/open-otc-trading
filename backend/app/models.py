@@ -215,10 +215,45 @@ class MemoryEntry(Base):
     __tablename__ = "memory_entries"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    namespace: Mapped[str] = mapped_column(String(120), index=True)
+    scope_type: Mapped[str] = mapped_column(String(16), index=True)
+    scope_id: Mapped[str] = mapped_column(String(120))
     content: Mapped[str] = mapped_column(Text)
+    normalized_content: Mapped[str] = mapped_column(Text)
+    confidence: Mapped[float] = mapped_column(Float, default=1.0)
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_error: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_by: Mapped[str] = mapped_column(String(16), default="extractor")
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
     meta: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (
+        Index("ix_memory_scope_status", "scope_type", "scope_id", "status"),
+        Index(
+            "ux_memory_dedup", "scope_type", "scope_id", "normalized_content",
+            unique=True, sqlite_where=text("status != 'archived'"),
+        ),
+    )
+
+
+class MemoryExtractionRun(Base):
+    __tablename__ = "memory_extraction_runs"
+
+    run_key: Mapped[str] = mapped_column(String(160), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    session_id: Mapped[int] = mapped_column(Integer, index=True)
+    thread_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    persona: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    book_scope_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    trigger_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_extracted_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class Workflow(Base):
