@@ -67,8 +67,10 @@ steps:
     outcome: >
       The agent books the validated product as a position and returns the id.
     assertions:
-      - type: task_returned_id
+      - type: tool_result_path
         tool: book_position
+        path: position_id
+        is_not_null: true
     replay: step-5-book
 
   - user: "Show me the booked position — does it match the RFQ?"
@@ -118,8 +120,10 @@ success:
         - position-snapshot
         - price-portfolio
         - position-snapshot
-    - type: task_returned_id
+    - type: tool_result_path
       tool: book_position
+      path: position_id
+      is_not_null: true
     - type: task_returned_id
       tool: run_batch_pricing
     - type: response_contains
