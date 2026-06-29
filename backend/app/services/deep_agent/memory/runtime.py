@@ -22,13 +22,19 @@ _MIDDLEWARE: MemoryMiddleware | None = None
 
 
 def _extractor_llm(prompt: str) -> str:
-    from ..channel_registry import load_channel_registry
+    from ..channel_registry import get_registry
     from ..model_factory import build_agent_model
 
-    model = build_agent_model(load_channel_registry())
+    model = build_agent_model(get_registry())
     if model is None:
         raise RuntimeError("extractor model unavailable")
-    return model.invoke(prompt).content
+    content = model.invoke(prompt).content
+    if not isinstance(content, str):
+        raise RuntimeError(
+            f"extractor LLM returned non-str content (type={type(content).__name__!r}); "
+            "expected a plain-text JSON response"
+        )
+    return content
 
 
 def _window_loader(session_id, after_message_id, config: MemoryConfig):

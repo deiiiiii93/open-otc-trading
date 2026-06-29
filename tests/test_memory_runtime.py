@@ -1,5 +1,6 @@
 # tests/test_memory_runtime.py
 import time
+import pytest
 from app import database
 from app.models import AgentMessage, MemoryExtractionRun
 
@@ -86,3 +87,68 @@ def test_enqueue_session_close_lazy_starts_writer(session, agent_thread_factory,
             assert s.get(MemoryExtractionRun, "session:31").status == "succeeded"
     finally:
         rt.reset_memory_runtime()
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for _extractor_llm real body (import + model construction)
+# These tests stub at the model-factory / registry boundary so they exercise
+# the actual function body — they would have caught the broken import.
+# ---------------------------------------------------------------------------
+
+class _FakeResponse:
+    def __init__(self, content):
+        self.content = content
+
+
+class _FakeModel:
+    def __init__(self, content):
+        self._content = content
+
+    def invoke(self, prompt):
+        return _FakeResponse(self._content)
+
+
+def test_extractor_llm_real_body_returns_str(monkeypatch):
+    """_extractor_llm exercises get_registry + build_agent_model and returns the
+    model's string content unchanged.  Stubs at the factory boundary so the
+    import path and function body are fully exercised."""
+    from app.services.deep_agent.memory import runtime as rt
+    import app.services.deep_agent.channel_registry as cr
+    import app.services.deep_agent.model_factory as mf
+
+    expected = '{"add":[],"remove":[]}'
+    fake_registry = object()
+    monkeypatch.setattr(cr, "get_registry", lambda: fake_registry)
+    monkeypatch.setattr(mf, "build_agent_model",
+                        lambda reg, sel=None: _FakeModel(expected))
+
+    result = rt._extractor_llm("some prompt")
+    assert result == expected
+
+
+def test_extractor_llm_non_str_content_raises(monkeypatch):
+    """When the model returns non-str content (multimodal list), _extractor_llm
+    must raise RuntimeError with a diagnostic message."""
+    from app.services.deep_agent.memory import runtime as rt
+    import app.services.deep_agent.channel_registry as cr
+    import app.services.deep_agent.model_factory as mf
+
+    monkeypatch.setattr(cr, "get_registry", lambda: object())
+    monkeypatch.setattr(mf, "build_agent_model",
+                        lambda reg, sel=None: _FakeModel([{"type": "text", "text": "hi"}]))
+
+    with pytest.raises(RuntimeError, match="non-str content"):
+        rt._extractor_llm("some prompt")
+
+
+def test_extractor_llm_unavailable_model_raises(monkeypatch):
+    """When build_agent_model returns None (channel unhealthy) a RuntimeError is raised."""
+    from app.services.deep_agent.memory import runtime as rt
+    import app.services.deep_agent.channel_registry as cr
+    import app.services.deep_agent.model_factory as mf
+
+    monkeypatch.setattr(cr, "get_registry", lambda: object())
+    monkeypatch.setattr(mf, "build_agent_model", lambda reg, sel=None: None)
+
+    with pytest.raises(RuntimeError, match="unavailable"):
+        rt._extractor_llm("some prompt")
