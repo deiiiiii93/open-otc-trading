@@ -28,18 +28,21 @@ _NAMESPACES: dict[str, set[str]] = {
     # complete row per underlying so live pricing produces non-empty Greeks.
     "pricing_parameter_rows": {"alias", "profile", "symbol"},
     "risk_runs": {"alias", "portfolio"},
+    "rfqs": {"alias", "status"},
 }
 
-# FK edges: {child_ns: {field_in_row: parent_ns}}
+# FK edges: {child_ns: {field_in_row: parent_ns}}. The positions.rfq edge is
+# OPTIONAL — a position row may omit it (validated by the skip-when-absent branch
+# in load_fixtures).
 _FK: dict[str, dict[str, str]] = {
-    "positions": {"portfolio": "portfolios"},
+    "positions": {"portfolio": "portfolios", "rfq": "rfqs"},
     "pricing_parameter_rows": {"profile": "pricing_profiles"},
     "risk_runs": {"portfolio": "portfolios"},
 }
 
-# Insertion order so FK parents exist before children.
+# Insertion order so FK parents exist before children (rfqs before positions).
 _INSERT_ORDER = [
-    "portfolios", "pricing_profiles", "pricing_parameter_rows", "positions", "risk_runs",
+    "portfolios", "pricing_profiles", "pricing_parameter_rows", "rfqs", "positions", "risk_runs",
 ]
 
 # Column allowlist for the risk_runs seed namespace.  Only keys in this set
@@ -53,6 +56,12 @@ _RISK_RUN_COLS: frozenset[str] = frozenset({
     # created_at is seedable so a fixture can pin a genuinely-stale run (computed
     # >24h ago); without it the row defaults to now and reads as current.
     "created_at",
+})
+
+# Column allowlist for the rfqs seed namespace (beyond "alias"/"status").
+_RFQ_COLS: frozenset[str] = frozenset({
+    "client_name", "channel", "status", "request_payload",
+    "quote_payload", "approved_response",
 })
 
 
@@ -112,6 +121,8 @@ def load_fixtures(path: Path) -> FixtureBundle:
     for ns, fks in _FK.items():
         for row in seed.get(ns, []):
             for fld, target_ns in fks.items():
+                if fld not in row:
+                    continue  # optional FK (e.g. positions.rfq) — absent is fine
                 ref = row.get(fld)
                 if ref not in aliases.get(target_ns, set()):
                     raise UnresolvedAliasError(
@@ -202,14 +213,28 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
                 extra.setdefault("source_trade_id", "")
                 obj = models.PricingParameterRow(profile_id=profile_id, **extra)
 
-            elif ns == "positions":
-                portfolio_id = _parent_id("portfolios", row["portfolio"])
-                # Pass through any extra keys (e.g. engine_name) the test provides.
+            elif ns == "rfqs":
+                # Pass through only real RFQ columns; model defaults cover the rest.
                 extra = {
                     k: v
                     for k, v in row.items()
-                    if k not in ("alias", "portfolio")
+                    if k != "alias" and k in _RFQ_COLS
                 }
+                if "id" in row:
+                    extra["id"] = row["id"]
+                obj = models.RFQ(**extra)
+
+            elif ns == "positions":
+                portfolio_id = _parent_id("portfolios", row["portfolio"])
+                # Pass through any extra keys (e.g. engine_name) the test provides.
+                # The optional "rfq" alias resolves to Position.rfq_id.
+                extra = {
+                    k: v
+                    for k, v in row.items()
+                    if k not in ("alias", "portfolio", "rfq")
+                }
+                if "rfq" in row:
+                    extra["rfq_id"] = _parent_id("rfqs", row["rfq"])
                 obj = models.Position(portfolio_id=portfolio_id, **extra)
 
             elif ns == "risk_runs":
