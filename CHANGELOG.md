@@ -10,13 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Agent Arena reports, released as HTML + PDF.** Each run's Markdown report now
   renders to a styled, self-contained HTML page and a print-quality PDF via
-  [`docs/arena/render_report.py`](docs/arena/render_report.py); reports are indexed
-  in [`docs/arena/`](docs/arena/) and linked prominently from the README.
+  [`docs/arena/render_report.py`](docs/arena/render_report.py) — now data-driven
+  (per-report `*.charts.json` sidecar) so every new run is a drop-in. Reports are
+  indexed in [`docs/arena/`](docs/arena/) and linked prominently from the README.
+- **[Agent Arena — Run #9](docs/arena/2026-06-28-run9-otc-desk-agent-arena.md)** —
+  the **flash tier**: nine fast/low-cost models × five trials, with **exact,
+  measured per-match token consumption and cost** (the `stream_usage=True` capture
+  now lands usage for OpenAI-gateway models). Gemini 3.5 Flash (59.1) ≈ Step 3.7
+  Flash (57.9), but Step costs 1/14th as much — "flash" is a latency claim, not a
+  price one. Adds the flash candidates to the arena model registry. Doubao is
+  reported separately on two routes: `doubao-seed-evolving` was infrastructure-
+  censored (0/5), and the sibling `doubao-seed-2.1-turbo` posted the highest
+  *functional* score in the field (65.3) on just 2/5 completed trials — a dark
+  horse, flagged and not placed.
 
 ### In progress
 - Additional **long-workflow match designs** for the Agent Arena.
-- Per-model **usage and cost accounting** captured per generation
-  (record `x-generation-id` on every arena call) for exact, run-isolated billing.
 
 ## [0.1.0] — 2026-06-27
 

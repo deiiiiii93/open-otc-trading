@@ -5,6 +5,7 @@ The three ASCII bar charts in the markdown are swapped for real CSS bar charts s
 the HTML/PDF read better than monospace blocks. Output is a single .html file with
 all CSS inlined (no external assets) so the PDF render is deterministic.
 """
+import json
 import re
 import subprocess
 import sys
@@ -13,10 +14,19 @@ import markdown
 
 # Default to the run-8 report living next to this script; override with argv[1].
 HERE = Path(__file__).resolve().parent
-SRC = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / "2026-06-27-run8-otc-desk-agent-arena.md"
+SRC = (Path(sys.argv[1]) if len(sys.argv) > 1
+       else HERE / "2026-06-27-run8-otc-desk-agent-arena.md").resolve()
 OUT_HTML = SRC.with_suffix(".html")
 OUT_PDF = SRC.with_suffix(".pdf")
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+# Each report carries the same three ASCII charts; for HTML/PDF we swap them for
+# real CSS bar charts. The chart data is per-report: a sibling `<src>.charts.json`
+# (a list of [caption, axis_max, unit, rows] specs, rows = [label, value, cls,
+# vlabel]) overrides the built-in run-8 defaults below, so every new run is a
+# drop-in — no code edit, just author the report + its charts sidecar.
+RUN_LABEL = next((m.group(0).replace("run", "Run #")
+                  for m in [re.search(r"run\d+", SRC.name)] if m), "Run")
 
 # ---------------------------------------------------------------- chart data ---
 # (label, value, css-class)  — class drives the bar colour
@@ -56,6 +66,14 @@ PPD = ("Score per dollar (est.) — cost-efficiency inverts the quality ranking"
     ("MiniMax M3",         2, "floor", "≈2"),
     ("Qwen 3.7 Max",       0, "floor", "0"),
 ])
+
+_SIDECAR = SRC.with_suffix(".charts.json")
+if _SIDECAR.exists():
+    # Sidecar: [[caption, axis_max, unit, [[label, value, cls, vlabel], ...]], x3]
+    _specs = [(s[0], s[1], s[2], [tuple(r) for r in s[3]])
+              for s in json.loads(_SIDECAR.read_text())]
+    LEADERBOARD, RELIABILITY, PPD = _specs
+
 
 def chart_html(spec):
     caption, axis_max, unit, rows = spec
@@ -176,13 +194,13 @@ td:first-child,th:first-child{white-space:nowrap}
 doc = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OTC Desk Agent Arena — Run #8</title>
+<title>OTC Desk Agent Arena — {RUN_LABEL}</title>
 <style>{CSS}</style>
 </head><body>
 {body}
 <p class="footer-note">Rendered from
-<code>docs/arena/2026-06-27-run8-otc-desk-agent-arena.md</code> ·
-OTC Desk Agent Arena · Run #8.</p>
+<code>docs/arena/{SRC.name}</code> ·
+OTC Desk Agent Arena · {RUN_LABEL}.</p>
 </body></html>
 """
 
