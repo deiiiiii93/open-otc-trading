@@ -13,9 +13,10 @@ from app.services.deep_agent.envelopes import (
 )
 
 
-def test_envelope_enum_has_four_members():
+def test_envelope_enum_members():
     assert {e.value for e in Envelope} == {
         "pet_page", "pet_diagnostic", "desk_workflow", "desk_async",
+        "goal_grader_read",
     }
 
 
@@ -57,8 +58,10 @@ def test_only_desk_async_can_dispatch_async():
         assert tool_allowed(env, ToolGroup.ASYNC_DISPATCH) is expected
 
 
-def test_all_envelopes_allow_page_groups_and_deterministic_py():
-    """page_read/detail/action, task_poll, deterministic_py are universal."""
+def test_all_desk_pet_envelopes_allow_page_groups_and_deterministic_py():
+    """page_read/detail/action, task_poll, deterministic_py are universal across
+    the pet/desk envelopes. GOAL_GRADER_READ is the deliberate exception — it is a
+    fail-closed grader scope (DOMAIN_READ only), so it is excluded here."""
     universal = {
         ToolGroup.PAGE_READ,
         ToolGroup.PAGE_DETAIL,
@@ -67,8 +70,16 @@ def test_all_envelopes_allow_page_groups_and_deterministic_py():
         ToolGroup.DETERMINISTIC_PY,
     }
     for env in Envelope:
+        if env is Envelope.GOAL_GRADER_READ:
+            continue
         for group in universal:
             assert tool_allowed(env, group), f"{env.value} should allow {group.value}"
+
+
+def test_goal_grader_read_is_fail_closed_domain_read_only():
+    """Locks the narrowness: the grader gets DOMAIN_READ and nothing else."""
+    granted = {g for g in ToolGroup if tool_allowed(Envelope.GOAL_GRADER_READ, g)}
+    assert granted == {ToolGroup.DOMAIN_READ}
 
 
 @pytest.mark.parametrize(

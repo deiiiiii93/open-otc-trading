@@ -164,10 +164,18 @@ def build_agent_model(
         )
 
     from langchain_openai import ChatOpenAI
+    # stream_usage=True sends OpenAI's stream_options={"include_usage": true}, so
+    # the final streamed chunk carries token usage. Without it, OpenAI-compatible
+    # streaming (the arena's path) drops usage entirely and the tracer records
+    # zero tokens for every non-Anthropic model. With it, usage_metadata flows into
+    # the trace token columns (prompt/completion/total) exactly like ChatAnthropic,
+    # giving exact, run-isolated per-match token counts — no external billing API
+    # needed. (ChatAnthropic already reports usage natively.)
     return ChatOpenAI(
         model=model_desc.id,
         api_key=SecretStr(channel.api_key) if channel.api_key else SecretStr(""),
         base_url=channel.base_url,
+        stream_usage=True,
     )
 
 

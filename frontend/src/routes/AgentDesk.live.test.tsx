@@ -132,7 +132,7 @@ describe('AgentDeskLive SSE parsing', () => {
 
     render(<AgentDeskLive pageContext={pageContext} />);
     await waitFor(() => screen.getByLabelText(/ask anything/i));
-    await userEvent.click(screen.getByRole('checkbox', { name: /yolo/i }));
+    await userEvent.click(screen.getByRole('button', { name: /yolo/i }));
     await userEvent.type(screen.getByLabelText(/ask anything/i), 'hi');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
 
@@ -161,7 +161,7 @@ describe('AgentDeskLive SSE parsing', () => {
       title: 'Positions - Book A',
       entity_ids: { portfolio_id: 7 },
     });
-    expect(body.yolo_mode).toBe(true);
+    expect(body.mode).toBe('yolo');
   });
 
   it('shows an auto-renamed thread title after the post-stream refresh', async () => {

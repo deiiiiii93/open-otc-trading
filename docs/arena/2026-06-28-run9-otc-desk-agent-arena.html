@@ -1,0 +1,939 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OTC Desk Agent Arena — Run #9</title>
+<style>
+:root{
+  --ink:#1a1d21; --muted:#5b6470; --line:#e3e6eb; --bg:#ffffff;
+  --accent:#2f5d8a; --soft:#f4f6f9;
+  --gold:#caa12e; --silver:#9aa0a6; --bronze:#b06a3b; --mid:#3b6fb0; --floor:#c5c9d1;
+  --good:#2e8b57; --neutral:#6b7280; --warn:#d98a2b; --bad:#c0392b; --frontier:#3b6fb0;
+}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+body{
+  font-family:"Charter","Georgia",Cambria,"Times New Roman",serif;
+  color:var(--ink); background:var(--bg); line-height:1.62;
+  max-width:820px; margin:0 auto; padding:56px 40px 80px; font-size:16.5px;
+}
+h1,h2,h3,h4{font-family:-apple-system,"Inter","Segoe UI",Helvetica,Arial,sans-serif;
+  line-height:1.22; letter-spacing:-.01em; color:var(--ink)}
+h1{font-size:2.05rem; margin:.2em 0 .1em; font-weight:800}
+h2{font-size:1.42rem; margin:2.1em 0 .55em; padding-bottom:.28em;
+  border-bottom:2px solid var(--line); font-weight:750}
+h3{font-size:1.12rem; margin:1.7em 0 .5em; font-weight:700; color:#2b3038}
+h1+p em, body>p:first-of-type em{color:var(--muted)}
+p,li{font-size:1rem}
+a{color:var(--accent); text-decoration:none}
+hr{border:none; border-top:1px solid var(--line); margin:2.2em 0}
+code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.86em;
+  background:var(--soft); padding:.1em .35em; border-radius:4px}
+blockquote{margin:1.1em 0; padding:.7em 1.1em; background:var(--soft);
+  border-left:4px solid var(--accent); border-radius:0 6px 6px 0; color:#2b3038}
+blockquote p{margin:.3em 0}
+strong{font-weight:700}
+
+/* tables */
+table{border-collapse:collapse; width:100%; margin:1.1em 0; font-size:.9rem;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+th,td{padding:.5em .7em; border-bottom:1px solid var(--line); text-align:left}
+thead th{background:#f7f9fc; border-bottom:2px solid #d6dbe3; font-weight:700;
+  font-size:.82rem; letter-spacing:.01em; color:#39414c}
+tbody tr:nth-child(even){background:#fbfcfe}
+td:first-child,th:first-child{white-space:nowrap}
+
+/* charts */
+.chart{margin:1.3em 0 1.6em; padding:0}
+.chart .row{display:flex; align-items:center; gap:12px; margin:5px 0;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+.chart .lbl{flex:0 0 168px; text-align:right; font-size:.82rem; color:#39414c; font-weight:600}
+.chart .track{flex:1; height:22px; background:#eef1f5; border-radius:5px; overflow:hidden}
+.chart .bar{display:block; height:100%; border-radius:5px}
+.chart .val{flex:0 0 150px; font-size:.78rem; color:var(--muted); font-variant-numeric:tabular-nums}
+.chart figcaption{margin-top:.7em; font-size:.76rem; color:var(--muted);
+  font-family:-apple-system,"Inter",sans-serif; text-align:right}
+.bar.gold{background:linear-gradient(90deg,#d9b13f,#caa12e)}
+.bar.silver{background:linear-gradient(90deg,#aab0b6,#9aa0a6)}
+.bar.bronze{background:linear-gradient(90deg,#c07c4a,#b06a3b)}
+.bar.mid{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.frontier{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.floor{background:#c5c9d1}
+.bar.good{background:linear-gradient(90deg,#37a169,#2e8b57)}
+.bar.neutral{background:#8a929e}
+.bar.warn{background:linear-gradient(90deg,#e09a3e,#d98a2b)}
+.bar.bad{background:linear-gradient(90deg,#d04b3c,#c0392b)}
+
+/* report header band */
+.masthead{border-bottom:3px solid var(--ink); padding-bottom:.6em; margin-bottom:1.4em}
+.footer-note{margin-top:3em; padding-top:1em; border-top:1px solid var(--line);
+  font-size:.8rem; color:var(--muted); font-family:-apple-system,"Inter",sans-serif}
+
+@page{size:A4; margin:16mm 15mm}
+@media print{
+  body{max-width:none; margin:0; padding:0; font-size:10.6pt}
+  h2{margin-top:1.4em}
+  h2,h3,h4{break-after:avoid}
+  table,.chart,blockquote,figure{break-inside:avoid}
+  tr{break-inside:avoid}
+  a{color:var(--ink)}
+}
+</style>
+</head><body>
+<h1>The OTC Desk Agent Arena — Methodology &amp; Results (Run #9)</h1>
+<p><em>A controlled, repeated-trial evaluation of nine </em><em>flash-tier</em><em> LLMs operating a
+real OTC derivatives trading desk, fully autonomously, with no human in the loop.</em></p>
+<p><strong>Date:</strong> 2026-06-28 · <strong>Run:</strong> #9 · <strong>Task:</strong> <code>risk-manager-control-day</code>
+· <strong>Trials:</strong> 5 per model · <strong>Gateway:</strong> ZenMux</p>
+<hr />
+<h2>Abstract</h2>
+<p>Most LLM benchmarks score a model on a frozen prompt. A trading desk is not a
+frozen prompt — it is a stateful environment where the operator must read risk,
+price portfolios, run scenarios, back-test hedges, and produce a governance
+report, each step depending on the last, with no human to approve or correct
+intermediate actions. The <strong>OTC Desk Agent Arena</strong> measures exactly this: it
+drives the <em>real</em> desk orchestrator end-to-end and scores whether a model can run
+a risk-manager's control day on its own.</p>
+<p>Where Run #8 ranked the <strong>frontier</strong> tier, Run #9 turns the same harness on the
+<strong>flash tier</strong> — the fast, low-cost models a desk would actually reach for to run
+autonomous workflows at scale. We evaluated <strong>nine flash models</strong> over <strong>five
+independent trials each</strong> under the identical single execution regime (headless
+"YOLO" — no human-in-the-loop interrupts, no deferral tool), scored by a 31-point
+objective manifest combined 50/50 with a GPT-5.5 judge.</p>
+<p>The headline is <strong>not</strong> the winner — it is the <strong>price of the winner</strong>.
+<strong>Gemini 3.5 Flash tops the board (59.1)</strong>, but at <strong>$14.28 per match it is the
+single most expensive desk operator the Arena has ever measured — pricier than
+Run #8's frontier Opus and GPT-5.5 (~$11).</strong> Right behind it, <strong>Step 3.7 Flash
+(57.9)</strong> lands within 0.1, is the steadiest model in the field, and costs
+<strong>$1.04 — one-fourteenth as much.</strong> "Flash" turns out to be a statement about
+latency, not cost.</p>
+<p>This run also closes Run #8's biggest measurement gap. There, only the two
+Anthropic-native models surfaced token usage; every OpenAI-gateway model logged
+zero. With streaming usage capture now wired through the trace
+(<code>stream_usage=True</code>), <strong>Run #9 reports exact, per-match token consumption and
+cost for every model</strong> — no proxies, no estimates.</p>
+<p>As in Run #8, we separate two failure modes that a naive leaderboard conflates:
+<strong>model incapability</strong> (the model connects fine but cannot operate the desk)
+versus <strong>resource/infrastructure shortage</strong> (the model is capable but its gateway
+route failed). Both materialised this run — three models genuinely cannot operate
+the desk, and <strong>Doubao</strong> was censored by wedged routes (0/5 on its primary route;
+2/5 on a sibling route, where it nonetheless posted the <strong>highest functional score
+in the field, 65.3</strong> — the run's dark horse). Each is flagged and reported
+separately (§6) rather than allowed to depress — or inflate — the board silently.</p>
+<hr />
+<h2>1. Introduction</h2>
+<p>Agentic benchmarks increasingly try to measure "can the model do the job," not
+"can the model answer the question." For a derivatives desk, the job is a
+<em>sequence</em> of stateful operations:</p>
+<blockquote>
+<p><em>"Pull the latest risk on the control portfolio → price it on the control
+profile → find the hotspot underlying → run the Greeks landscape → stress it →
+back-test the hedge → write the governance report."</em></p>
+</blockquote>
+<p>What makes this hard for an LLM is not any single step — it is doing all seven
+<strong>without a human</strong>: resolving ambiguous references ("the control portfolio") to
+the right entity, threading IDs from one async task into the next, and never
+stalling to ask for confirmation. A model that is excellent in a chat box but
+freezes the moment no human is present will fail here, and that failure is
+invisible to a single-shot benchmark.</p>
+<p><strong>Why the flash tier?</strong> The frontier models in Run #8 run the desk well, but at
+~$11 a match they are expensive to operate at the cadence real automation implies
+(every portfolio, every morning). The flash tier promises most of the capability
+at a fraction of the price. Run #9 asks the obvious follow-up: <em>how much
+desk-operation autonomy survives the move down to the fast, cheap tier — and which
+flash model gives you the most of it per dollar?</em> The answer is more nuanced than
+"you get what you pay for."</p>
+<h3>What the arena measures</h3>
+<blockquote>
+<p><strong>The ability to operate the desk as a competent human would, end-to-end, with
+zero human intervention.</strong></p>
+</blockquote>
+<p>Concretely: did the model route the expected skills, call the right tools on the
+right entities, produce the durable artifacts (risk run, valuation, scenario,
+back-test, report), and narrate the governance decisions — across all seven steps,
+on its own.</p>
+<hr />
+<h2>2. The Arena</h2>
+<h3>2.1 The task</h3>
+<p>The flagship workflow <code>risk-manager-control-day</code> is a <strong>seven-step risk-manager
+control day</strong> with a 31-point objective manifest. The scenario is seeded so that a
+specific underlying (AAPL) becomes the portfolio's risk hotspot only <em>after</em> a
+fresh pricing run — a model that prices the wrong portfolio, or reads stale risk,
+surfaces the wrong hotspot and cascades errors through the remaining steps.</p>
+<h3>2.2 The environment — real, not simulated</h3>
+<p>Each trial:</p>
+<ol>
+<li><strong>Seeds fixtures</strong> into the live desk database under fresh, arena-tagged IDs
+   (portfolios, positions, pricing-parameter profiles), then purges them after.</li>
+<li><strong>Creates a real agent thread</strong> and drives every workflow step through the
+   production <code>AgentService.stream_and_persist</code> path bound to the candidate model.</li>
+<li><strong>Reconstructs the transcript from the trace log.</strong> Skills routed are
+   <em>ground truth</em> — the deep-agent loads each skill it follows by reading the
+   actual <code>SKILL.md</code> file, so the trace records what the model genuinely did, not
+   what it claimed.</li>
+</ol>
+<p>Because it is the real orchestrator, every production safeguard, tool, and
+sub-agent is in play — including the failure surface (gateway latency, tool
+errors, sub-agent delegation), which becomes part of what we measure and, where
+relevant, control for.</p>
+<h3>2.3 Execution regime — headless "YOLO"</h3>
+<p>The arena drives every turn in a <strong>single regime</strong>: fully headless.</p>
+<ul>
+<li><strong>No human-in-the-loop interrupts.</strong> HITL gates auto-clear.</li>
+<li><strong>No deferral tool.</strong> The <code>propose_reply_options</code> card tool — the mechanism a
+  model uses to bounce a decision back to a human — is <em>withheld entirely</em>, and
+  the system prompt instructs the model that no user is present.</li>
+</ul>
+<p>This eliminates a confound: a model cannot "pass" by deferring to a (non-existent)
+human. Removing the deferral path means <strong>the model must commit to its own
+judgment</strong>, which is the entire point of an autonomy benchmark. As §5 shows, three
+of the nine flash models fail precisely here — they stall asking for a
+confirmation that will never come.</p>
+<blockquote>
+<p><strong>Single-regime fairness.</strong> Every model in Run #9 was driven through the
+identical headless path. A model cannot score by punting to a human, and none
+is advantaged by a different harness.</p>
+</blockquote>
+<h3>2.4 Scoring</h3>
+<p>Each trial's total is a 50/50 blend:</p>
+<ul>
+<li><strong>Objective (0–100):</strong> fraction of the 31-point manifest satisfied —
+  deterministic checks against the trace (correct entities priced, hotspot
+  identified, artifacts produced, async task IDs surfaced, etc.).</li>
+<li><strong>Judge (0–100):</strong> GPT-5.5 grades the transcript against the workflow rubric
+  (governance narration, correctness, completeness), with retries to ride out
+  transient gateway errors.</li>
+</ul>
+<p><code>total = 0.5 · objective + 0.5 · judge</code>.</p>
+<h3>2.5 Repetition and averaging</h3>
+<p>Every model runs <strong>five independent trials</strong>; its score is the <strong>mean</strong> of the
+trial totals, reported with the <strong>standard deviation</strong> as a first-class reliability
+signal. The <code>ArenaMatch</code> table enforces one row per (run, workflow, model), so the
+five trials are averaged into a single row whose breakdown carries the per-trial
+detail. A trial that fails for <strong>resource/infrastructure</strong> reasons (a wedged or
+SIGKILLed gateway route) is recorded as such and excluded from the model's mean,
+which is then reported with its reduced <em>n</em> and flagged — distinct from a trial
+where the model connected but could not operate the desk.</p>
+<hr />
+<h2>3. Models evaluated</h2>
+<p>Nine flash-tier models, all routed through the ZenMux gateway over its
+OpenAI-compatible protocol:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Vendor</th>
+<th>ZenMux route</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Doubao Seed Evolving</td>
+<td>ByteDance</td>
+<td><code>bytedance/doubao-seed-evolving</code></td>
+</tr>
+<tr>
+<td>Qwen 3.7 Plus</td>
+<td>Alibaba</td>
+<td><code>qwen/qwen3.7-plus</code></td>
+</tr>
+<tr>
+<td>Step 3.7 Flash</td>
+<td>StepFun</td>
+<td><code>stepfun/step-3.7-flash</code></td>
+</tr>
+<tr>
+<td>Agnes 2.0 Flash</td>
+<td>Sapiens AI</td>
+<td><code>sapiens-ai/agnes-2.0-flash</code></td>
+</tr>
+<tr>
+<td>Gemini 3.5 Flash</td>
+<td>Google</td>
+<td><code>google/gemini-3.5-flash</code></td>
+</tr>
+<tr>
+<td>GPT-5.5 Instant</td>
+<td>OpenAI</td>
+<td><code>openai/chat-latest</code></td>
+</tr>
+<tr>
+<td>DeepSeek V4 Flash</td>
+<td>DeepSeek</td>
+<td><code>deepseek/deepseek-v4-flash</code></td>
+</tr>
+<tr>
+<td>MiMo V2.5</td>
+<td>Xiaomi</td>
+<td><code>xiaomi/mimo-v2.5</code></td>
+</tr>
+<tr>
+<td>Hunyuan 3 Preview</td>
+<td>Tencent</td>
+<td><code>tencent/hy3-preview</code></td>
+</tr>
+</tbody>
+</table>
+<p>When the ByteDance candidate's primary route (<code>doubao-seed-evolving</code>) proved
+infrastructure-censored, Doubao was additionally re-run on the sibling route
+<code>bytedance/doubao-seed-2.1-turbo</code> to recover a functional result (§6).</p>
+<p>The judge throughout is <strong>GPT-5.5</strong> (the full model, not Instant), the same judge
+family as Run #8, so the two runs' judge axes are comparable.</p>
+<hr />
+<h2>4. Results</h2>
+<h3>4.1 The leaderboard</h3>
+<p><strong>Mean total score</strong> — two flash models clear the bar cleanly; a censored dark
+horse posts the highest functional number; a long tail collapses
+(1 block ≈ 2 points):</p>
+<figure class="chart">
+<div class="row"><span class="lbl">⚠️ Doubao Seed 2.1 Turbo</span><span class="track"><span class="bar warn" style="width:93.3%"></span></span><span class="val">65.3 · n=2 (3/5 censored)</span></div>
+<div class="row"><span class="lbl">🥇 Gemini 3.5 Flash</span><span class="track"><span class="bar gold" style="width:84.4%"></span></span><span class="val">59.1 · n=5</span></div>
+<div class="row"><span class="lbl">🥈 Step 3.7 Flash</span><span class="track"><span class="bar silver" style="width:82.7%"></span></span><span class="val">57.9 · n=5</span></div>
+<div class="row"><span class="lbl">🥉 DeepSeek V4 Flash</span><span class="track"><span class="bar bronze" style="width:70.3%"></span></span><span class="val">49.2</span></div>
+<div class="row"><span class="lbl">MiMo V2.5</span><span class="track"><span class="bar mid" style="width:69.0%"></span></span><span class="val">48.3</span></div>
+<div class="row"><span class="lbl">GPT-5.5 Instant</span><span class="track"><span class="bar mid" style="width:49.3%"></span></span><span class="val">34.5</span></div>
+<div class="row"><span class="lbl">Agnes 2.0 Flash</span><span class="track"><span class="bar floor" style="width:0.4%"></span></span><span class="val">0.0</span></div>
+<div class="row"><span class="lbl">Hunyuan 3 Preview</span><span class="track"><span class="bar floor" style="width:0.4%"></span></span><span class="val">0.0</span></div>
+<div class="row"><span class="lbl">Qwen 3.7 Plus</span><span class="track"><span class="bar floor" style="width:0.4%"></span></span><span class="val">0.0</span></div>
+<div class="row"><span class="lbl">Doubao Seed Evolving ⚠️</span><span class="track"><span class="bar floor" style="width:0.4%"></span></span><span class="val">censored · 0/5</span></div>
+<figcaption>Mean total score — ⚠️ Doubao rows are censored (n<5), not placed · axis 0–70 pt</figcaption>
+</figure>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Rank</th>
+<th>Model</th>
+<th style="text-align: right;"><strong>Total</strong></th>
+<th style="text-align: right;">σ</th>
+<th style="text-align: right;">Objective</th>
+<th style="text-align: right;">Judge</th>
+<th style="text-align: center;">n</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">⚠️</td>
+<td>Doubao Seed 2.1 Turbo ⚠️</td>
+<td style="text-align: right;"><em>65.3</em></td>
+<td style="text-align: right;">9.1</td>
+<td style="text-align: right;">53.2</td>
+<td style="text-align: right;">77.5</td>
+<td style="text-align: center;"><strong>2</strong></td>
+</tr>
+<tr>
+<td style="text-align: right;">🥇 1</td>
+<td><strong>Gemini 3.5 Flash</strong></td>
+<td style="text-align: right;"><strong>59.1</strong></td>
+<td style="text-align: right;">5.5</td>
+<td style="text-align: right;">57.4</td>
+<td style="text-align: right;">60.8</td>
+<td style="text-align: center;">5</td>
+</tr>
+<tr>
+<td style="text-align: right;">🥈 2</td>
+<td><strong>Step 3.7 Flash</strong></td>
+<td style="text-align: right;"><strong>57.9</strong></td>
+<td style="text-align: right;"><strong>4.3</strong></td>
+<td style="text-align: right;">52.3</td>
+<td style="text-align: right;">63.5</td>
+<td style="text-align: center;">5</td>
+</tr>
+<tr>
+<td style="text-align: right;">🥉 3</td>
+<td>DeepSeek V4 Flash</td>
+<td style="text-align: right;">49.2</td>
+<td style="text-align: right;">15.5</td>
+<td style="text-align: right;">40.0</td>
+<td style="text-align: right;">58.5</td>
+<td style="text-align: center;">5</td>
+</tr>
+<tr>
+<td style="text-align: right;">4</td>
+<td>MiMo V2.5</td>
+<td style="text-align: right;">48.3</td>
+<td style="text-align: right;">12.4</td>
+<td style="text-align: right;">47.1</td>
+<td style="text-align: right;">49.5</td>
+<td style="text-align: center;">5</td>
+</tr>
+<tr>
+<td style="text-align: right;">5</td>
+<td>GPT-5.5 Instant</td>
+<td style="text-align: right;">34.5</td>
+<td style="text-align: right;">19.8</td>
+<td style="text-align: right;">34.2</td>
+<td style="text-align: right;">34.8</td>
+<td style="text-align: center;">5</td>
+</tr>
+<tr>
+<td style="text-align: right;">6</td>
+<td>Agnes 2.0 Flash</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: center;">5</td>
+</tr>
+<tr>
+<td style="text-align: right;">7</td>
+<td>Hunyuan 3 Preview</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: center;">5</td>
+</tr>
+<tr>
+<td style="text-align: right;">8</td>
+<td>Qwen 3.7 Plus</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: center;">5</td>
+</tr>
+<tr>
+<td style="text-align: right;">—</td>
+<td>Doubao Seed Evolving ⚠️</td>
+<td style="text-align: right;"><em>censored</em></td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: center;"><strong>0</strong></td>
+</tr>
+</tbody>
+</table>
+<p>⚠️ <strong>The two Doubao rows are not comparable to the clean n=5 rows.</strong> The ByteDance
+candidate's primary route (<code>doubao-seed-evolving</code>) was <strong>infrastructure-censored</strong> —
+it wedged on all five attempts (0 functional trials). Re-run on the sibling route
+<code>doubao-seed-2.1-turbo</code>, Doubao posted the <strong>highest functional score in the field
+(65.3)</strong> but completed only <strong>2 of 5</strong> attempts. Neither is a placed result; both
+are reported separately in §6. <strong>Among models that completed all five trials,
+Gemini 3.5 Flash (59.1) and Step 3.7 Flash (57.9) lead.</strong></p>
+<h3>4.2 Headline: the winner is the worst buy</h3>
+<p><strong>The asterisk first.</strong> Doubao Seed 2.1 Turbo posts the single highest functional
+score (65.3) — and on its best trial earned the highest judge score of the entire
+run (88.75) — but it completed only 2 of 5 attempts, too few to crown and not
+comparable to the clean rows (§6). The placed contest is between the two models
+that completed all five trials.</p>
+<p>Gemini 3.5 Flash (59.1) and Step 3.7 Flash (57.9) are separated by <strong>1.2</strong>, well
+inside their combined variance — effectively a tie for the flash crown. They reach
+it differently: <strong>Step wins the judge axis</strong> (63.5 vs 60.8 — cleaner governance
+narration) while <strong>Gemini wins objective coverage</strong> (57.4 vs 52.3 — it satisfies
+more manifest checks, routing all 7 skills and firing 80 tool calls in its best
+trial).</p>
+<p>But the leaderboard hides the real story, which only the (now exact) cost data
+tells: <strong>Gemini's win costs $14.28 a match — more than any frontier model in
+Run #8</strong> — because it is both pricier per token ($1.5 / $9 per M) <em>and</em>
+token-hungry (8.5 M prompt tokens a match). <strong>Step delivers 98% of Gemini's score
+for $1.04</strong> — a <strong>14× cost gap for a 2% quality gap.</strong> If you are choosing a flash
+model to run the desk unattended, the rank-1 model is the one you should <em>not</em>
+pick. See §7.</p>
+<h3>4.3 Consistency is a signal, not noise</h3>
+<p>Rank ≠ reliability. The standard deviation tells you whether you can trust a model
+to run the desk unattended on <em>any given day</em>:</p>
+<p><strong>Reliability</strong> — standard deviation across the five trials (<strong>shorter is
+steadier</strong>; 1 block ≈ 1 point of σ):</p>
+<figure class="chart">
+<div class="row"><span class="lbl">Step 3.7 Flash</span><span class="track"><span class="bar good" style="width:21.5%"></span></span><span class="val">4.3 · steadiest</span></div>
+<div class="row"><span class="lbl">Gemini 3.5 Flash</span><span class="track"><span class="bar good" style="width:27.5%"></span></span><span class="val">5.5</span></div>
+<div class="row"><span class="lbl">Doubao Seed 2.1 Turbo</span><span class="track"><span class="bar neutral" style="width:45.5%"></span></span><span class="val">9.1 · n=2</span></div>
+<div class="row"><span class="lbl">MiMo V2.5</span><span class="track"><span class="bar warn" style="width:62.0%"></span></span><span class="val">12.4</span></div>
+<div class="row"><span class="lbl">DeepSeek V4 Flash</span><span class="track"><span class="bar warn" style="width:77.5%"></span></span><span class="val">15.5</span></div>
+<div class="row"><span class="lbl">GPT-5.5 Instant</span><span class="track"><span class="bar bad" style="width:99.0%"></span></span><span class="val">19.8 · most volatile</span></div>
+<figcaption>Std-dev across trials — shorter is steadier · axis 0–20 σ</figcaption>
+</figure>
+<ul>
+<li><strong>Step 3.7 Flash — σ 4.3:</strong> the steadiest operator in the field, never dropping
+  below 50.7 across five trials. Combined with its cost, this is the model you
+  would actually deploy.</li>
+<li><strong>GPT-5.5 Instant — σ 19.8:</strong> wildly inconsistent, swinging 18.8 → 57.0 → 18.8.
+  Its mean (34.5) is almost meaningless: on a given day it either runs the desk
+  competently or stalls in read-only mode (see §5). The <em>instant</em> variant trades
+  away exactly the consistency an autonomy use-case needs.</li>
+<li><strong>DeepSeek V4 Flash — σ 15.5:</strong> the open-weight swinger, 22.9 → 61.7, echoing
+  the full DeepSeek's volatility in Run #8 (σ 13.7).</li>
+</ul>
+<h3>4.4 The floor</h3>
+<p><strong>Agnes 2.0 Flash</strong>, <strong>Hunyuan 3 Preview</strong>, and <strong>Qwen 3.7 Plus</strong> sit at the floor
+across all five trials (σ 0.0) — these zeros are reproducible and real (see §5).
+Three of nine flash models simply cannot operate the desk without a human.</p>
+<hr />
+<h2>5. Failure-mode taxonomy</h2>
+<p>A score near zero can mean two completely different things. The arena's trace log
+lets us separate them by reading what the model actually <em>emitted</em>.</p>
+<table>
+<thead>
+<tr>
+<th>Failure mode</th>
+<th>Signature</th>
+<th>Cause</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Infrastructure wedge</strong></td>
+<td>run never completes; connection frozen, 0 output</td>
+<td>gateway/route, <strong>not the model</strong> (recorded as a resource failure, SIGKILLed at the hard cap)</td>
+</tr>
+<tr>
+<td><strong>Infrastructure blank</strong></td>
+<td>run completes but emits <strong>0 characters</strong> every step</td>
+<td>gateway returned empty streams</td>
+</tr>
+<tr>
+<td><strong>Model stall</strong></td>
+<td>run completes, emits <strong>coherent text</strong>, but 0 useful tool calls</td>
+<td>the <strong>model</strong> can't/won't operate</td>
+</tr>
+</tbody>
+</table>
+<p>The discriminator is simple: <strong>a model that fails <em>behaviorally</em> still talks.</strong> A
+model whose <em>pipe</em> failed produces nothing.</p>
+<p>Evidence from the transcripts:</p>
+<table>
+<thead>
+<tr>
+<th>Run</th>
+<th style="text-align: center;">tool calls</th>
+<th style="text-align: right;">completion tok</th>
+<th>what it emitted</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Agnes 2.0 Flash — 0.0</td>
+<td style="text-align: center;"><strong>0</strong></td>
+<td style="text-align: right;">~1,000</td>
+<td>pseudo tool-call JSON written as prose; stalled at step 1 asking for clarification despite being given the control portfolio</td>
+</tr>
+<tr>
+<td>Qwen 3.7 Plus — 0.0</td>
+<td style="text-align: center;"><strong>0</strong></td>
+<td style="text-align: right;">~13,000</td>
+<td>coherent prose, then a claimed "subagent delegation / tool-call ID error" that aborted all execution</td>
+</tr>
+<tr>
+<td>Hunyuan 3 Preview — 0.0</td>
+<td style="text-align: center;"><strong>0</strong></td>
+<td style="text-align: right;">~5,000</td>
+<td>stalled before tool execution every step — delegation failure plus unnecessary clarification</td>
+</tr>
+<tr>
+<td>Doubao Seed Evolving</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: right;">—</td>
+<td><em>nothing</em> — route wedged, 0 output, SIGKILLed at 1800 s × 5 (see §6)</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Agnes / Qwen / Hunyuan</strong> are <em>genuine model results</em>: the pipe worked (0
+  wedges in 5 trials each), the model emitted thousands of characters, but it
+  could not operate the desk. All three share the same failure: they <strong>stall in
+  the headless regime</strong>, either asking for a confirmation that no human will give
+  or emitting tool calls as natural-language pseudo-code that never parse into real
+  calls. <strong>Their zeros are trustworthy</strong> — this is a capability ceiling, not a
+  pipe failure.</li>
+<li><strong>Doubao's absence</strong> is <em>not a model result</em>: its route never produced a single
+  completion across five 30-minute attempts. That is the signature of an
+  infrastructure wedge, not a model that tried and failed.</li>
+</ul>
+<hr />
+<h2>6. Doubao — an infrastructure-censored result, on two routes</h2>
+<p>Doubao deserves separate treatment because its raw leaderboard number badly
+misrepresents what we know about the model — and because we measured it on <strong>two
+routes</strong>, which together tell the real story.</p>
+<h3>6.1 The primary route: <code>doubao-seed-evolving</code> — fully censored</h3>
+<p>A trivial one-shot connectivity probe to <code>bytedance/doubao-seed-evolving</code> returned
+cleanly in ~4 seconds with token usage reported — the route is <em>reachable</em>. But
+under the sustained, multi-turn agentic load of a full control day, every one of
+its five attempts <strong>wedged</strong>: the connection froze mid-run, produced zero output,
+and was SIGKILLed at the 1800-second hard cap.</p>
+<table>
+<thead>
+<tr>
+<th>Outcome</th>
+<th style="text-align: center;">Count</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Wedged / timed out</strong></td>
+<td style="text-align: center;"><strong>5</strong></td>
+<td>route froze under load; SIGKILLed — <em>infrastructure</em></td>
+</tr>
+<tr>
+<td>Completed, functional</td>
+<td style="text-align: center;">0</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>This is the same proxy-wedge pathology Run #8 documented for GLM 5.2: a
+blocking-sync freeze the in-process async timeout cannot cancel, where a fresh
+probe to the same model still answers in seconds.</p>
+<h3>6.2 The sibling route: <code>doubao-seed-2.1-turbo</code> — the best operator, when it runs</h3>
+<p>Because the primary route was censored, we re-ran Doubao on the sibling
+<code>doubao-seed-2.1-turbo</code> route (still Run #9). The route is healthier — but only
+just:</p>
+<table>
+<thead>
+<tr>
+<th>Outcome</th>
+<th style="text-align: center;">Count</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Completed, functional</strong></td>
+<td style="text-align: center;"><strong>2</strong></td>
+<td><strong>71.8 and 58.9</strong> → mean <strong>65.3</strong> — <em>the real model</em></td>
+</tr>
+<tr>
+<td>Wedged (SIGKILLed)</td>
+<td style="text-align: center;">2</td>
+<td>route froze under load — <em>infrastructure</em></td>
+</tr>
+<tr>
+<td>Turn-timeout (slow)</td>
+<td style="text-align: center;">1</td>
+<td>a single turn ran past the 25-min per-turn cap — <em>performance</em></td>
+</tr>
+</tbody>
+</table>
+<p>When it completes, Doubao Seed 2.1 Turbo is <strong>the strongest desk operator in the
+flash field</strong>: a functional mean of <strong>65.3</strong> (above Gemini's 59.1), and on its best
+trial it earned a <strong>judge score of 88.75 — the highest in the entire run</strong> — routing
+all seven skills with clean governance narration. But it completes only <strong>2 of 5</strong>
+attempts, and even its successes are slow (11–24 min). For an <em>unattended</em> desk that
+is a disqualifying reliability profile, however high the ceiling.</p>
+<h3>6.3 How we report it</h3>
+<p>We therefore <strong>do not place either Doubao row on the leaderboard.</strong> Both are
+<em>resource/infrastructure</em> (and, for Turbo, partly <em>performance</em>) limitations of
+this evaluation window — explicitly distinct from the <em>model</em> limitations of Agnes,
+Qwen, and Hunyuan, which completed every trial and simply could not operate the
+desk. We report Doubao two ways, GLM-style:</p>
+<ul>
+<li><strong>Functional estimate (Turbo): 65.3</strong> (mean of 2 completed runs; <strong>n=2,
+  low-confidence</strong>) — its ceiling on a route that holds.</li>
+<li><strong>Primary route (Evolving): uncharacterizable</strong> (0 of 5 completed) — a dead route
+  this window.</li>
+</ul>
+<p>A clean re-run on a healthy route is required to place Doubao with confidence.</p>
+<blockquote>
+<p><strong>This is the "mark it specially" case.</strong> The harness tags every errored trial
+with a <code>fail_class</code> (<code>infra_timeout</code> for a wedge, <code>subprocess_error</code> for the
+turn-timeout) so a dead or slow route can never be confused with — or silently
+averaged into — a model's real score.</p>
+</blockquote>
+<hr />
+<h2>7. Cost &amp; token usage</h2>
+<blockquote>
+<p><strong>Note.</strong> Unlike Run #8, these figures are <strong>measured, not estimated</strong> — every
+model in Run #9 routes through ZenMux's OpenAI-compatible gateway, and with
+streaming usage capture wired into the trace, each match's exact prompt and
+completion token counts are summed from the trace spans of that match's thread.</p>
+</blockquote>
+<h3>7.1 What we measured</h3>
+<p>Mean tokens per match (5 trials each; the workload is ~98% prompt-dominated — the
+desk loads large context each turn, while the model's own output is small):</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align: right;">Prompt / match</th>
+<th style="text-align: right;">Completion / match</th>
+<th style="text-align: right;">Total / match</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gemini 3.5 Flash</td>
+<td style="text-align: right;">8,530,694</td>
+<td style="text-align: right;">164,777</td>
+<td style="text-align: right;"><strong>8.70 M</strong></td>
+</tr>
+<tr>
+<td>Step 3.7 Flash</td>
+<td style="text-align: right;">7,016,607</td>
+<td style="text-align: right;">121,795</td>
+<td style="text-align: right;">7.14 M</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Flash</td>
+<td style="text-align: right;">4,605,724</td>
+<td style="text-align: right;">130,497</td>
+<td style="text-align: right;">4.74 M</td>
+</tr>
+<tr>
+<td>Doubao Seed 2.1 Turbo ‡</td>
+<td style="text-align: right;">4,232,275</td>
+<td style="text-align: right;">76,871</td>
+<td style="text-align: right;">4.31 M</td>
+</tr>
+<tr>
+<td>MiMo V2.5</td>
+<td style="text-align: right;">3,913,534</td>
+<td style="text-align: right;">66,308</td>
+<td style="text-align: right;">3.98 M</td>
+</tr>
+<tr>
+<td>GPT-5.5 Instant</td>
+<td style="text-align: right;">1,720,606</td>
+<td style="text-align: right;">15,538</td>
+<td style="text-align: right;">1.74 M</td>
+</tr>
+<tr>
+<td>Qwen 3.7 Plus †</td>
+<td style="text-align: right;">676,469</td>
+<td style="text-align: right;">15,372</td>
+<td style="text-align: right;">0.69 M</td>
+</tr>
+<tr>
+<td>Hunyuan 3 Preview †</td>
+<td style="text-align: right;">406,736</td>
+<td style="text-align: right;">3,442</td>
+<td style="text-align: right;">0.41 M</td>
+</tr>
+<tr>
+<td>Agnes 2.0 Flash †</td>
+<td style="text-align: right;">63,998</td>
+<td style="text-align: right;">967</td>
+<td style="text-align: right;">0.06 M</td>
+</tr>
+</tbody>
+</table>
+<p>† zero-scoring models — their low token counts reflect early give-up, not
+efficiency. ‡ Doubao Seed 2.1 Turbo: mean over its <strong>2 completed</strong> trials (§6).</p>
+<p>Note the <strong>spread of 130×</strong> in token appetite between Gemini (8.70 M) and Agnes
+(0.06 M). A model that stalls early is cheap precisely <em>because</em> it does no work;
+token volume only means value when the work gets done.</p>
+<h3>7.2 Price and measured cost</h3>
+<p>ZenMux list price (USD per million tokens) and <strong>measured</strong> cost per match. The
+no-cache column is the upper bound; the cache column assumes ~90% of the
+prompt-heavy context is served from cache-read (which these gateways price at
+~1/10–1/50 of fresh prompt):</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align: right;">in $/M</th>
+<th style="text-align: right;">out $/M</th>
+<th style="text-align: right;">$/match (no cache)</th>
+<th style="text-align: right;">$/match (cached)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Gemini 3.5 Flash</strong></td>
+<td style="text-align: right;">1.50</td>
+<td style="text-align: right;">9.00</td>
+<td style="text-align: right;"><strong>14.28</strong></td>
+<td style="text-align: right;">3.91</td>
+</tr>
+<tr>
+<td>GPT-5.5 Instant</td>
+<td style="text-align: right;">5.00</td>
+<td style="text-align: right;">30.00</td>
+<td style="text-align: right;">9.07</td>
+<td style="text-align: right;">2.10</td>
+</tr>
+<tr>
+<td>Doubao Seed 2.1 Turbo ‡</td>
+<td style="text-align: right;">0.423</td>
+<td style="text-align: right;">2.113</td>
+<td style="text-align: right;">1.95</td>
+<td style="text-align: right;">0.50</td>
+</tr>
+<tr>
+<td>Step 3.7 Flash</td>
+<td style="text-align: right;">0.135</td>
+<td style="text-align: right;">0.776</td>
+<td style="text-align: right;">1.04</td>
+<td style="text-align: right;">0.36</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Flash</td>
+<td style="text-align: right;">0.140</td>
+<td style="text-align: right;">0.280</td>
+<td style="text-align: right;">0.68</td>
+<td style="text-align: right;">0.11</td>
+</tr>
+<tr>
+<td>MiMo V2.5</td>
+<td style="text-align: right;">0.140</td>
+<td style="text-align: right;">0.271</td>
+<td style="text-align: right;">0.57</td>
+<td style="text-align: right;">0.08</td>
+</tr>
+<tr>
+<td>Qwen 3.7 Plus</td>
+<td style="text-align: right;">0.137</td>
+<td style="text-align: right;">0.549</td>
+<td style="text-align: right;">0.10</td>
+<td style="text-align: right;">0.03</td>
+</tr>
+<tr>
+<td>Hunyuan 3 Preview</td>
+<td style="text-align: right;">0.138</td>
+<td style="text-align: right;">0.460</td>
+<td style="text-align: right;">0.06</td>
+<td style="text-align: right;">0.02</td>
+</tr>
+<tr>
+<td>Agnes 2.0 Flash</td>
+<td style="text-align: right;">0.100</td>
+<td style="text-align: right;">0.200</td>
+<td style="text-align: right;">0.01</td>
+<td style="text-align: right;">0.01</td>
+</tr>
+</tbody>
+</table>
+<p>‡ Doubao Seed 2.1 Turbo over its 2 completed trials — mid-tier on cost ($1.95),
+but see §6 for the reliability caveat that no price can offset.</p>
+<p>The two costliest models in the field are the two with <em>frontier</em> pricing: Gemini
+3.5 Flash ($1.5 / $9) and GPT-5.5 Instant ($5 / $30, identical to full GPT-5.5).
+Everything else is genuine flash pricing (~$0.1–0.14 in). <strong>"Flash" is a latency
+claim, not a price claim</strong> — and on this prompt-heavy desk workload, the per-token
+price compounds with token appetite to make Gemini the single most expensive
+operator the Arena has measured across both runs.</p>
+<h3>7.3 Cost–performance</h3>
+<p><strong>Score per dollar</strong> (mean total ÷ measured no-cache $/match) — cost-efficiency
+<em>inverts</em> the quality ranking (1 block ≈ 3 points/$):</p>
+<figure class="chart">
+<div class="row"><span class="lbl">MiMo V2.5</span><span class="track"><span class="bar good" style="width:94.8%"></span></span><span class="val">85.3 · champion</span></div>
+<div class="row"><span class="lbl">DeepSeek V4 Flash</span><span class="track"><span class="bar good" style="width:80.2%"></span></span><span class="val">72.2</span></div>
+<div class="row"><span class="lbl">Step 3.7 Flash</span><span class="track"><span class="bar good" style="width:61.8%"></span></span><span class="val">55.6</span></div>
+<div class="row"><span class="lbl">Doubao Seed 2.1 Turbo</span><span class="track"><span class="bar neutral" style="width:37.2%"></span></span><span class="val">33.5 · n=2</span></div>
+<div class="row"><span class="lbl">Gemini 3.5 Flash</span><span class="track"><span class="bar frontier" style="width:4.6%"></span></span><span class="val">4.1 · top n=5 score, worst value</span></div>
+<div class="row"><span class="lbl">GPT-5.5 Instant</span><span class="track"><span class="bar frontier" style="width:4.2%"></span></span><span class="val">3.8</span></div>
+<figcaption>Score per dollar (measured) — cost-efficiency inverts the quality ranking · axis 0–90 pts/$</figcaption>
+</figure>
+<ul>
+<li><strong>MiMo V2.5 — 85 points per dollar:</strong> the cost-performance champion (48.3 at
+  $0.57). If you want the most desk-operation per dollar, this is it.</li>
+<li><strong>DeepSeek V4 Flash (72) and Step 3.7 Flash (56)</strong> round out the
+  Pareto-efficient cluster — all three deliver real desk work at well under a
+  dollar a match.</li>
+<li><strong>Doubao Seed 2.1 Turbo (33.5, n=2)</strong> sits mid-table on value — its high score
+  offsets its mid-tier price — but its 2-of-5 completion rate (§6) makes the
+  number aspirational, not bankable.</li>
+<li><strong>Gemini 3.5 Flash (4.1) and GPT-5.5 Instant (3.8)</strong> are the value floor: a
+  frontier price tag for a flash-tier (or worse) result.</li>
+</ul>
+<blockquote>
+<p><strong>The practitioner's read.</strong> The model to <em>deploy</em> is <strong>Step 3.7 Flash</strong> — near
+the top on score (57.9), the steadiest in the field (σ 4.3), and ~$1 a match.
+The model to <em>avoid</em> is the rank-1 winner: Gemini 3.5 Flash buys you 1.2 extra
+points of mean score for <strong>14× the cost</strong> and more variance.</p>
+</blockquote>
+<hr />
+<h2>8. Limitations &amp; threats to validity</h2>
+<ul>
+<li><strong>One workflow.</strong> Run #9 covers a single flagship task. Rankings may shift on
+  other desk workflows; this is a depth-over-breadth design. We're also working on
+  other long-workflow match designs, and will make them public soon.</li>
+<li><strong>Judge model in the loop.</strong> Half the score comes from a GPT-5.5 judge, which
+  may carry stylistic bias. (Notably it did <em>not</em> favour its own family — GPT-5.5
+  Instant placed fifth, and full GPT-5.5 is not a candidate this run.)</li>
+<li><strong>Gateway variance.</strong> All traffic shares one gateway (ZenMux). Route instability
+  is real and asymmetric — it censored both Doubao routes this run. We detect and
+  flag it rather than letting it silently depress a score, but it remains a confound.</li>
+<li><strong>Doubao under-sampled.</strong> Its primary route (<code>doubao-seed-evolving</code>) returned 0/5;
+  the sibling <code>doubao-seed-2.1-turbo</code> returned only 2/5 (mean 65.3, low-confidence).
+  Neither is a placed result; a clean re-run on a healthy route is required. Every
+  other model reached the full five trials.</li>
+<li><strong>Cache assumptions.</strong> The "cached" cost column is a model of a real deployment
+  with prompt caching; the measured, reproducible figure is the no-cache column.</li>
+<li><strong>Flash-tier framing.</strong> These are fast/low-cost variants; a vendor's full-size
+  model may score very differently (compare Run #8's frontier board).</li>
+</ul>
+<hr />
+<h2>9. Reproducibility</h2>
+<ul>
+<li><strong>Run:</strong> <code>ArenaRun #9</code>, status <code>completed</code>, viewable on the <code>/arena</code> page; each
+  model's per-trial detail is in its <code>score_breakdown.aggregate</code>.</li>
+<li><strong>Regime:</strong> headless YOLO (<code>mode="yolo"</code>) — HITL auto-cleared, deferral tool
+  withheld.</li>
+<li><strong>Token capture:</strong> <code>build_agent_model</code> sets <code>stream_usage=True</code>, so
+  <code>usage_metadata</code> flows into the trace token columns for every model; per-match
+  totals are summed over the match's trace spans (this is what makes §7 exact).</li>
+<li><strong>Engineering note:</strong> an intermittent gateway wedge (any model, a blocking-sync
+  freeze the in-process async timeout could not cancel) forces each match to run
+  in an isolated subprocess under a hard <code>SIGKILL</code> wall-clock guard, with
+  checkpoint-to-disk so the 45-match sweep is resumable across restarts. This is
+  why the failure surface is measured rather than hidden — and why Doubao's five
+  wedges cost wall-clock time but not data integrity.</li>
+</ul>
+<hr />
+<h2>Appendix A — per-trial totals</h2>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>trials</th>
+<th style="text-align: center;">n</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gemini 3.5 Flash</td>
+<td>56.4, 58.8, 53.3, 58.8, 68.1</td>
+<td style="text-align: center;">5</td>
+</tr>
+<tr>
+<td>Step 3.7 Flash</td>
+<td>58.7, 61.3, 50.7, 60.8, 57.9</td>
+<td style="text-align: center;">5</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Flash</td>
+<td>22.9, 52.3, 59.2, 50.1, 61.7</td>
+<td style="text-align: center;">5</td>
+</tr>
+<tr>
+<td>MiMo V2.5</td>
+<td>30.1, 49.2, 61.3, 43.2, 57.7</td>
+<td style="text-align: center;">5</td>
+</tr>
+<tr>
+<td>GPT-5.5 Instant</td>
+<td>18.8, 22.6, 57.0, 55.2, 18.8</td>
+<td style="text-align: center;">5</td>
+</tr>
+<tr>
+<td>Agnes 2.0 Flash</td>
+<td>0.0, 0.0, 0.0, 0.0, 0.0</td>
+<td style="text-align: center;">5</td>
+</tr>
+<tr>
+<td>Hunyuan 3 Preview</td>
+<td>0.0, 0.0, 0.0, 0.0, 0.0</td>
+<td style="text-align: center;">5</td>
+</tr>
+<tr>
+<td>Qwen 3.7 Plus</td>
+<td>0.0, 0.0, 0.0, 0.0, 0.0</td>
+<td style="text-align: center;">5</td>
+</tr>
+<tr>
+<td>Doubao Seed 2.1 Turbo ‡</td>
+<td>71.8, 58.9 <em>(+1 turn-timeout, +2 wedged)</em></td>
+<td style="text-align: center;">2</td>
+</tr>
+<tr>
+<td>Doubao Seed Evolving</td>
+<td><em>5 wedged / SIGKILLed — infrastructure-censored</em></td>
+<td style="text-align: center;">0</td>
+</tr>
+</tbody>
+</table>
+<p>‡ Doubao Seed 2.1 Turbo — sibling route, functional runs only; 3 of 5 attempts
+failed (infrastructure/performance), so n=2 and not placed on the board (§6).</p>
+<p><em>Run #9 · OTC Desk Agent Arena · generated 2026-06-28.</em></p>
+<p class="footer-note">Rendered from
+<code>docs/arena/2026-06-28-run9-otc-desk-agent-arena.md</code> ·
+OTC Desk Agent Arena · Run #9.</p>
+</body></html>

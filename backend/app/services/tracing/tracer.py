@@ -11,6 +11,7 @@ import json
 import logging
 from typing import Any
 
+from langchain_core.load.dump import dumpd
 from langchain_core.tracers.base import BaseTracer
 from langchain_core.tracers.schemas import Run
 
@@ -19,11 +20,25 @@ from .store import SpanEnd, SpanStart, TraceStore
 logger = logging.getLogger(__name__)
 
 
+def _normalize_for_json(obj: Any) -> Any:
+    """Preserve LangChain objects as structured JSON instead of repr strings."""
+    if obj is None or isinstance(obj, (str, int, float, bool)):
+        return obj
+    if isinstance(obj, dict):
+        return {str(k): _normalize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_normalize_for_json(v) for v in obj]
+    try:
+        return dumpd(obj)
+    except Exception:
+        return str(obj)
+
+
 def _json(obj: Any) -> str | None:
     if obj is None:
         return None
     try:
-        return json.dumps(obj, default=str)
+        return json.dumps(_normalize_for_json(obj))
     except Exception:
         return json.dumps(str(obj))
 

@@ -130,6 +130,8 @@ def test_render_empty_rows_is_header_only() -> None:
 # Extended with the run-greeks-landscape routing row (23 rows total).
 # Extended with the asian-fixings routing row (24 rows total).
 OLD_TABLE_ROWS: set[tuple[str, str, str]] = {
+    ("Create or edit a reusable desk workflow", "risk_manager", "build-workflow"),
+    ("Build a slash-command workflow playbook", "trader", "build-workflow"),
     ("Snowball terms or payoff interpretation", "trader", "snowball-term-interpretation"),
     ("Snowball pricing or valuation drivers", "trader", "snowball-pricing"),
     ("Snowball risk, hedge feasibility, gamma near KI", "risk_manager", "snowball-risk-explain"),

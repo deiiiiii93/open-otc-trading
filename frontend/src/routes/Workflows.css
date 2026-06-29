@@ -1,0 +1,95 @@
+.wl-workflows {
+  display: grid;
+  grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
+  gap: var(--gap-4);
+  min-height: 0;
+}
+
+.wl-workflows__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  min-width: 0;
+}
+
+.wl-workflows__list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+}
+
+.wl-workflows__item {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--gap-2);
+  background: var(--paper-2);
+  border: 1px solid var(--hairline);
+  cursor: pointer;
+  color: var(--ink-1);
+}
+
+.wl-workflows__item[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+
+.wl-workflows__item-title {
+  font-weight: 500;
+}
+
+.wl-workflows__item-meta {
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+}
+
+.wl-workflows__badge {
+  align-self: flex-start;
+  font-style: normal;
+  font-size: var(--type-caps-size);
+  color: var(--ink-2);
+  border: 1px solid var(--hairline);
+  padding: 0 var(--gap-1);
+}
+
+.wl-workflows__editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  min-width: 0;
+}
+
+.wl-workflows__script {
+  width: 100%;
+  min-height: 360px;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--type-small-size);
+  resize: vertical;
+}
+
+.wl-workflows__error {
+  color: var(--neg);
+  font-size: var(--type-small-size);
+  margin: 0;
+}
+
+.wl-workflows__actions {
+  display: flex;
+  gap: var(--gap-2);
+}
+
+.wl-workflows-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  min-height: 0;
+}
+
+.wl-workflows-page__tabs {
+  display: flex;
+  gap: var(--gap-2);
+}

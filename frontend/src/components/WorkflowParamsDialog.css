@@ -1,0 +1,26 @@
+.wl-wf-params {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  padding: var(--gap-3);
+}
+
+.wl-wf-params__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+
+.wl-wf-params__field > span {
+  font-size: var(--type-caps-size);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+}
+
+.wl-wf-params__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--gap-2);
+  margin-top: var(--gap-2);
+}

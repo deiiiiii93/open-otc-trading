@@ -168,6 +168,44 @@ def _ensure_incremental_schema(active_engine: Engine) -> None:
                     "ON agent_threads (active_workflow_id)"
                 )
             )
+            # Migration 0033 (arena threads): mirror here so existing local DBs
+            # that boot through create_all without running Alembic still get the
+            # columns the ORM now references on every AgentThread query.
+            if "source" not in thread_cols:
+                connection.execute(
+                    text("ALTER TABLE agent_threads ADD COLUMN source VARCHAR(20) "
+                         "NOT NULL DEFAULT 'desk'")
+                )
+            if "arena_run_id" not in thread_cols:
+                connection.execute(
+                    text("ALTER TABLE agent_threads ADD COLUMN arena_run_id INTEGER")
+                )
+            # Migration 0036 (goal mode): goal_run / goal_contract JSON columns the
+            # GoalRunService persists per thread; mirror here for the same reason.
+            if "goal_run" not in thread_cols:
+                connection.execute(
+                    text("ALTER TABLE agent_threads ADD COLUMN goal_run JSON")
+                )
+            if "goal_contract" not in thread_cols:
+                connection.execute(
+                    text("ALTER TABLE agent_threads ADD COLUMN goal_contract JSON")
+                )
+            connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_agent_threads_arena_run_id "
+                    "ON agent_threads (arena_run_id)"
+                )
+            )
+    if "arena_match" in tables:
+        # Migration 0034: per-check score breakdown. Mirror here so local DBs
+        # booting via create_all without Alembic still get the column the ORM
+        # now references on every ArenaMatch read.
+        arena_match_cols = {c["name"] for c in inspector.get_columns("arena_match")}
+        if "score_breakdown" not in arena_match_cols:
+            with active_engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE arena_match ADD COLUMN score_breakdown JSON")
+                )
     if "agent_messages" in tables:
         message_cols = {c["name"] for c in inspector.get_columns("agent_messages")}
         with active_engine.begin() as connection:
@@ -237,6 +275,55 @@ def _ensure_incremental_schema(active_engine: Engine) -> None:
                 "rules": json.dumps(DEFAULT_ENGINE_CONFIG_RULES),
             },
         )
+
+    # Desk workflows (migration 0035): seed the flagship for create_all-booted
+    # DBs that never ran Alembic. Idempotent; the table itself comes from
+    # metadata.create_all.
+    if "desk_workflows" in tables:
+        from .desk_workflow_seed import (
+            FLAGSHIP_DESCRIPTION,
+            FLAGSHIP_MODE,
+            FLAGSHIP_PERSONA,
+            FLAGSHIP_SCOPE,
+            FLAGSHIP_SCRIPT,
+            FLAGSHIP_SLUG,
+            FLAGSHIP_TITLE,
+        )
+
+        seed_params = {
+            "slug": FLAGSHIP_SLUG,
+            "title": FLAGSHIP_TITLE,
+            "persona": FLAGSHIP_PERSONA,
+            "description": FLAGSHIP_DESCRIPTION,
+            "scope": FLAGSHIP_SCOPE,
+            "default_mode": FLAGSHIP_MODE,
+            "script": FLAGSHIP_SCRIPT,
+        }
+        with active_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO desk_workflows "
+                    "(slug, title, persona, description, scope, default_mode, script, source, created_at, updated_at) "
+                    "SELECT :slug, :title, :persona, :description, :scope, :default_mode, :script, 'seed', "
+                    "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP "
+                    "WHERE NOT EXISTS (SELECT 1 FROM desk_workflows WHERE slug = :slug)"
+                ),
+                seed_params,
+            )
+            # Refresh an already-seeded flagship so existing DBs pick up changes to
+            # the canonical script (e.g. new launch params). Scoped to source='seed'
+            # so a user-authored workflow with the same slug is never clobbered;
+            # no-op when the row already matches.
+            connection.execute(
+                text(
+                    "UPDATE desk_workflows "
+                    "SET title = :title, persona = :persona, description = :description, "
+                    "scope = :scope, default_mode = :default_mode, script = :script, "
+                    "updated_at = CURRENT_TIMESTAMP "
+                    "WHERE slug = :slug AND source = 'seed' AND script != :script"
+                ),
+                seed_params,
+            )
 
     if "positions" not in tables:
         return

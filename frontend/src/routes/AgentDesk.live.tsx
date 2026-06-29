@@ -1,7 +1,10 @@
-import type { PageContext } from '../types';
+import { useEffect, useState } from 'react';
+import type { DeskWorkflowSummary, PageContext } from '../types';
 import { AgentDesk } from './AgentDesk';
+import { WorkflowParamsDialog } from '../components/WorkflowParamsDialog';
 import { Skeleton } from '../components/Skeleton';
 import { Empty } from '../components/Empty';
+import { listPortfolios, listWorkflows } from '../api/client';
 import {
   useAgentChatController,
   type AgentChatController,
@@ -65,6 +68,20 @@ function AgentDeskLiveView({
   accountingDate?: string;
   onOpenTrace?: (threadId: number) => void;
 }) {
+  const [workflows, setWorkflows] = useState<DeskWorkflowSummary[]>([]);
+  const [paramsWorkflow, setParamsWorkflow] = useState<DeskWorkflowSummary | null>(null);
+  const [portfolios, setPortfolios] = useState<string[]>([]);
+  useEffect(() => {
+    void listWorkflows().then(setWorkflows).catch(() => setWorkflows([]));
+  }, []);
+
+  const handleRequestParams = (wf: DeskWorkflowSummary) => {
+    if ((wf.params ?? []).some((p) => p.type === 'portfolio') && portfolios.length === 0) {
+      void listPortfolios().then(setPortfolios).catch(() => setPortfolios([]));
+    }
+    setParamsWorkflow(wf);
+  };
+
   if (controller.loading) {
     return (
       <div>
@@ -80,6 +97,7 @@ function AgentDeskLiveView({
   }
 
   return (
+    <>
     <AgentDesk
       threads={controller.threads}
       activeThreadId={controller.activeThreadId}
@@ -89,11 +107,11 @@ function AgentDeskLiveView({
       viewMode={controller.viewMode}
       channels={controller.channels}
       selectedModel={controller.selectedModel}
-      yoloMode={controller.yoloMode}
+      executionMode={controller.executionMode}
       confirmingActionIds={controller.confirmingActionIds}
       taskRunsById={controller.taskRunsById}
       onChangeModel={controller.setSelectedModel}
-      onChangeYoloMode={controller.setYoloMode}
+      onChangeMode={controller.setExecutionMode}
       onStopStreaming={controller.stopStreaming}
       onRefreshModels={controller.refreshModels}
       onChangeViewMode={controller.setViewMode}
@@ -119,6 +137,29 @@ function AgentDeskLiveView({
         undefined,
         'desk_workflow',
       )}
+      workflows={workflows}
+      onLaunchWorkflow={controller.launchWorkflow}
+      onRequestParams={handleRequestParams}
+      goalContract={controller.goalContract}
+      goalState={controller.goalState}
+      goalClarification={controller.goalClarification}
+      goalBusy={controller.goalBusy}
+      onRatifyGoal={controller.ratifyActiveGoal}
+      onCancelGoal={controller.cancelActiveGoal}
     />
+    {paramsWorkflow && (
+      <WorkflowParamsDialog
+        open
+        workflow={paramsWorkflow}
+        portfolios={portfolios}
+        onCancel={() => setParamsWorkflow(null)}
+        onRun={(args) => {
+          const wf = paramsWorkflow;
+          setParamsWorkflow(null);
+          void controller.launchWorkflow(wf.slug, wf.default_mode, args);
+        }}
+      />
+    )}
+    </>
   );
 }

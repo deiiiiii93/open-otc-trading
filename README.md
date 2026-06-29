@@ -5,6 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB.svg)](https://react.dev/)
+[![Agent Arena: Run #9](https://img.shields.io/badge/Agent_Arena-Run_%239-8a2be2.svg)](docs/arena/)
 
 ![Open OTC agent desk](docs/screenshots/agent-desk.png)
 
@@ -54,6 +55,44 @@ The product walkthrough tells it as one continuous flow:
 - **RFQ workflow** — Client portal for quote requests with an internal approval pipeline.
 - **Market data** — AKShare adapter with caching and fallback for A-share / HK markets.
 - **Reproducible & audited** — Every pricing run, risk run, and agent trace is persisted; QuantArk keeps the math deterministic.
+
+---
+
+## 🏆 The OTC Desk Agent Arena
+
+**Can an LLM run the desk on its own?** The [**Agent Arena**](docs/arena/) is a
+controlled, repeated-trial benchmark that drives the *real* desk orchestrator
+end-to-end — pull risk, price the book, find the hotspot, stress it, back-test the
+hedge, write the governance report — with **no human in the loop**, then scores
+whether the model actually did it. Unlike a frozen-prompt benchmark, it runs the
+production agent and reads each model's work back out of the system's own trace log.
+
+**Run #9 (latest)** evaluated **nine flash-tier models over five trials each** — with
+**exact, measured token & cost** per match:
+
+| Rank | Model | Total | σ | $/match | pts/$ |
+|:---:|---|:---:|:---:|:---:|:---:|
+| 🥇 | Gemini 3.5 Flash | **59.1** | 5.5 | $14.28 | 4.1 |
+| 🥈 | Step 3.7 Flash | 57.9 | **4.3** | **$1.04** | 55.6 |
+| 🥉 | DeepSeek V4 Flash | 49.2 | 15.5 | $0.68 | 72.2 |
+
+**"Flash" is a latency claim, not a price claim.** Gemini 3.5 Flash wins the
+*placed* board but is the *most expensive* operator the Arena has measured (dearer
+than Run #8's frontier models); **Step 3.7 Flash** lands 0.1 behind, is the
+steadiest in the field, and costs **14× less**. Cost-efficiency inverts the ranking
+(MiMo V2.5 ≈ 85 pts/$). The dark horse, **Doubao Seed 2.1 Turbo**, posts the highest
+*functional* score (65.3) but completed only 2/5 trials — reported separately, not
+placed. Three of nine couldn't operate the desk at all.
+
+📖 **Read Run #9 in full** —
+[Markdown](docs/arena/2026-06-28-run9-otc-desk-agent-arena.md) ·
+[HTML](https://htmlpreview.github.io/?https://github.com/deiiiiii93/open-otc-trading/blob/main/docs/arena/2026-06-28-run9-otc-desk-agent-arena.html) ·
+[PDF](docs/arena/2026-06-28-run9-otc-desk-agent-arena.pdf)
+&nbsp;·&nbsp; **Run #8** (frontier tier) and all reports live in
+[**`docs/arena/`**](docs/arena/).
+
+> New runs and additional **long-workflow match designs** are in progress and will
+> be published in the Arena as they're released.
 
 ---
 
@@ -174,7 +213,8 @@ open-otc-trading/
 │       └── hooks/           # Custom React hooks
 ├── config/                  # Agent channel configuration
 ├── tests/                   # Backend test suite
-└── docs/                    # Design specs & plans
+└── docs/
+    └── arena/               # 🏆 Agent Arena — autonomous-desk benchmark reports
 ```
 
 ---
@@ -200,6 +240,11 @@ cd frontend && npm test
 **AI/LLM:** LangGraph agents, ZenMux (Anthropic/OpenAI gateway), DeepSeek, LangSmith tracing
 
 ---
+
+## Changelog
+
+Release history is tracked in [CHANGELOG.md](CHANGELOG.md), following
+[Keep a Changelog](https://keepachangelog.com/).
 
 ## License
 

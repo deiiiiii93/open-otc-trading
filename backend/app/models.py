@@ -63,6 +63,7 @@ class TaskKind(str, Enum):
     REPORT_JOB = "report_job"
     HEDGE_LOAD = "hedge_instrument_load"
     BACKTEST = "backtest"
+    ARENA_RUN = "arena_run"
 
 
 class TaskStatus(str, Enum):
@@ -131,9 +132,18 @@ class AgentThread(Base):
     report_currency: Mapped[str] = mapped_column(
         String(16), default="by_position", server_default="by_position", nullable=False
     )
+    source: Mapped[str] = mapped_column(
+        String(20), default="desk", server_default="desk", nullable=False
+    )
+    arena_run_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
     active_workflow_id: Mapped[int | None] = mapped_column(
         ForeignKey("workflows.id", ondelete="SET NULL"), index=True, nullable=True
     )
+    # Goal-mode (spec §H): at most one active goal run per thread plus its frozen
+    # contract. Null when no goal run is active; cleared on a pointer-releasing
+    # terminal state. Backed by ThreadColumnBackend -> GoalRunStore/GoalRunService.
+    goal_run: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    goal_contract: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, onupdate=utcnow
@@ -164,6 +174,41 @@ class AgentMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     thread: Mapped[AgentThread] = relationship(back_populates="messages")
+
+
+class DeskWorkflow(Base):
+    """A user-authored, reusable desk workflow stored as a Python script.
+
+    The ``script`` is the source of truth (self-describing via a ``meta`` dict
+    literal); the metadata columns are a denormalized cache extracted from that
+    literal on save. Distinct from the runtime ``Workflow`` (per-thread session
+    bookkeeping).
+    """
+
+    __tablename__ = "desk_workflows"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    title: Mapped[str] = mapped_column(String(160))
+    persona: Mapped[str] = mapped_column(String(40))
+    description: Mapped[str] = mapped_column(Text, default="")
+    scope: Mapped[str] = mapped_column(String(16), default="local")
+    default_mode: Mapped[str] = mapped_column(String(16), default="auto")
+    script: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(16), default="user")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow
+    )
+
+    @property
+    def params(self) -> list[dict]:
+        """Declared launch params, derived from the stored script's meta."""
+        from .services.desk_workflows_script import extract_meta, validate_params
+        try:
+            return validate_params(extract_meta(self.script))
+        except Exception:
+            return []  # stored scripts are validated at save; be defensive
 
 
 class MemoryEntry(Base):
@@ -1751,6 +1796,52 @@ class HedgeBand(Base):
             text("1"),
             unique=True,
             sqlite_where=text("underlying_id IS NULL"),
+        ),
+    )
+
+
+class ArenaRun(Base):
+    __tablename__ = "arena_run"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    workflow_ids: Mapped[list] = mapped_column(JSON, nullable=False)
+    model_ids: Mapped[list] = mapped_column(JSON, nullable=False)
+    weights: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    matches: Mapped[list["ArenaMatch"]] = relationship(
+        back_populates="run", cascade="all, delete-orphan"
+    )
+
+
+class ArenaMatch(Base):
+    __tablename__ = "arena_match"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("arena_run.id"), nullable=False, index=True)
+    workflow_id: Mapped[str] = mapped_column(String, nullable=False)
+    model_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    objective_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    judged_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    judge_missing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    config: Mapped[dict] = mapped_column(JSON, nullable=False)
+    # Per-check objective + per-rubric judge breakdown behind the aggregate
+    # scores, so the UI can show exactly where the model won/lost points.
+    score_breakdown: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    transcript_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+
+    run: Mapped["ArenaRun"] = relationship(back_populates="matches")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id", "workflow_id", "model_id",
+            name="uq_arena_match_run_workflow_model",
         ),
     )
 
