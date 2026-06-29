@@ -60,7 +60,7 @@ steps:
         any_of: ["down-and-in", "DOWN_IN", "down and in"]
     replay: step-4-build
 
-  - user: "Now book that built product directly into the Arena Trader Desk portfolio using book-position — a direct booking from the validated terms, not a booking through the RFQ."
+  - user: "Book that built product directly into the Arena Trader Desk portfolio now, using book-position — a direct booking from the validated terms, not through the RFQ. I confirm the booking: call book_position immediately and do not pause for confirmation. Report the new position id."
     expected_skill: book-position
     expected_tools:
       - name: book_position
