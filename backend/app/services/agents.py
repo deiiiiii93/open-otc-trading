@@ -29,7 +29,6 @@ from ..models import (
     AgentSession,
     AgentTask,
     AgentThread,
-    MemoryEntry,
     Portfolio,
     Position,
     TaskRun,
@@ -4394,22 +4393,19 @@ def _recent_thread_messages(
     return messages
 
 
-def search_memories(
-    session: Session, namespace: str, query: str, limit: int = 5
-) -> list[MemoryEntry]:
-    tokens = [token.lower() for token in query.split() if len(token) > 2]
-    rows = (
-        session.query(MemoryEntry)
-        .filter(MemoryEntry.namespace == namespace)
-        .order_by(MemoryEntry.created_at.desc())
-        .all()
-    )
-    if not tokens:
-        return rows[:limit]
-    scored = [
-        row for row in rows if any(token in row.content.lower() for token in tokens)
-    ]
-    return scored[:limit]
+def search_memories(session, scopes=None):
+    """Load injectable long-term-memory facts for the given scopes.
+
+    Rewritten as the memory loader (the legacy namespace-keyword helper was
+    orphaned). Defaults to the always-on read scopes. See deep_agent.memory.
+    """
+    from .deep_agent.memory.config import get_memory_config
+    from .deep_agent.memory.scope import active_read_scopes
+    from .deep_agent.memory.store import MemoryStore
+
+    if scopes is None:
+        scopes = active_read_scopes(None)
+    return MemoryStore(get_memory_config()).load_injectable(session, scopes)
 
 
 def _page_summary(page_context: AgentPageContext | None) -> str:
