@@ -15,6 +15,9 @@ import pytest
 # trace DBs into data/. Tracing tests opt in explicitly via monkeypatch.
 os.environ.setdefault("OPEN_OTC_TRACING", "off")
 
+# Default the whole suite to memory OFF: tests opt in explicitly.
+os.environ.setdefault("OPEN_OTC_MEMORY", "off")
+
 from app import database
 from app.config import Settings
 
