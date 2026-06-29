@@ -46,7 +46,7 @@
       "response_text": "Built a down-and-in BarrierOption (DOWN_IN, KI 80%) on MSFT."},
     "step-5-book": {
       "ai": {"content": "Booking the validated product.", "tool_calls": [{"id": "c5", "name": "book_position_tool", "args": {}}]},
-      "tool_results": [{"tool_call_id": "c5", "name": "book_position_tool", "content": {"position_id": 5001, "portfolio": "Arena Trader Desk", "family": "BarrierOption"}}],
+      "tool_results": [{"tool_call_id": "c5", "name": "book_position_tool", "content": {"ok": true, "source": "product_booking", "position": {"id": 5001, "portfolio_id": 1, "product": {"product_family": "barrier", "underlying": "MSFT"}}}}],
       "skills_routed": ["book-position"], "artifacts": [],
       "response_text": "Booked position 5001 into Arena Trader Desk."},
     "step-6-snapshot": {

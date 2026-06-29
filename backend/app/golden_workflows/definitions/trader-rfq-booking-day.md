@@ -69,7 +69,7 @@ steps:
     assertions:
       - type: tool_result_path
         tool: book_position
-        path: position_id
+        path: position.id
         is_not_null: true
     replay: step-5-book
 
@@ -122,7 +122,7 @@ success:
         - position-snapshot
     - type: tool_result_path
       tool: book_position
-      path: position_id
+      path: position.id
       is_not_null: true
     - type: task_returned_id
       tool: run_batch_pricing
