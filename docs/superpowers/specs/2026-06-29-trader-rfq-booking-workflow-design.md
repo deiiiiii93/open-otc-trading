@@ -19,12 +19,29 @@ The workflow feeds the same three consumers as the flagship:
 3. **Hyperframes demo** — transcript → composition (out of scope to build here;
    the workflow must be demo-shaped but no new demo code is required).
 
-It is **purely additive**: one new `definitions/trader-rfq-booking-day.md` plus a
-sibling `trader-rfq-booking-day.fixtures.json`. No changes to the golden-workflows
-engine, the arena services, the registry, or the schema. The registry's existing
-reference checks (every `expected_skill` maps to a real `SKILL.md`, every
-`expected_tools` entry to a real tool in `all_agent_tools()`, every `replay` key to
-the fixtures replay block) bound the design to skills/tools that already exist.
+The workflow itself is **additive**: one new `definitions/trader-rfq-booking-day.md`
+plus a sibling `trader-rfq-booking-day.fixtures.json`. It cites only skills/tools
+that already exist — the registry's reference checks (every `expected_skill` maps to
+a real `SKILL.md`, every `expected_tools` entry to a real tool in
+`all_agent_tools()`, every `replay` key to the fixtures replay block) bound it to
+the existing surface.
+
+This being the **first** workflow to create RFQs *live* exposes two harness gaps it
+must also close (see §8.5):
+
+1. **Arena cleanup misses RFQs.** `_purge_seeded_portfolios` cleans by introspecting
+   mapped tables for `portfolio_id`/`position_id` columns; `RFQ` has neither, and the
+   autonomous flow's `book_position` leaves `Position.rfq_id` null, so live-created
+   `rfqs` (+ cascaded `rfq_quote_versions`, `approvals`) leak into the real desk DB
+   across matches. → delete them by the `rfq_id`s harvested from the match trace.
+2. **No `rfq` seed namespace.** Added now as a forward-looking harness investment so
+   future workflows can *start* from a pre-existing RFQ (e.g. an "approve queued
+   RFQs" ops/risk workflow). This workflow does **not** seed its RFQ — step 1
+   creates it live — so the namespace ships with its own unit test rather than being
+   exercised by the trader happy path.
+
+No schema change / no alembic migration: the `rfqs` table already exists; both
+changes are loader/runtime logic.
 
 ## 2. Why the trader persona / why this scenario
 
@@ -196,6 +213,60 @@ The replay path is the **clean** path (step-4 replay returns `ok == true` with
 `barrier_type == DOWN_IN`); the Layer-1/Layer-2 discriminators only ever materialize
 in *live* arena runs with a real model.
 
+## 8.5 Harness hardening (this cycle)
+
+### 8.5.1 Clean live-created RFQs via the harvested trace (not a back-link)
+
+Two confirmed facts rule out a `Position.rfq_id` back-link purge:
+
+- `book_rfq_to_position` requires `RfqStatus.CLIENT_ACCEPTED` (`services/rfq.py:889`),
+  reachable only via approve → release → mark-accepted — a risk/governance authority
+  the autonomous trader run cannot exercise. So step 5 **must** use direct
+  `book_position`.
+- Direct `book_position` (via `ProductBookingSpec`, the "book without an RFQ" path)
+  does **not** set `Position.rfq_id`. So the workflow's RFQ never links to its
+  position and stays in `SUBMITTED`; a back-link purge would clean nothing.
+
+**Mechanism — delete exactly the RFQ ids the agent created, sourced from the trace
+the harness already harvests.** Step 1's `create_or_update_rfq_draft` tool span
+output carries the new `rfq_id`. The live driver already reconstructs the transcript
+from `TraceStore`; extend the harvest to collect the set of `rfq_id`s appearing in
+this match's `create_or_update_rfq_draft` / `quote_rfq` / `submit_rfq_for_approval`
+tool outputs, and have `run_match` delete those `rfqs` rows (ORM delete so
+`quote_versions`/`approvals` cascade) as part of the same post-match cleanup that
+purges portfolios/profiles.
+
+- **Scope:** exactly the RFQs *this match's agent* created — maximally precise, no
+  new tag, no `created_at` window race in the shared DB, not dependent on the model
+  passing a sentinel.
+- **Deterministic regression:** unaffected — replay never touches the live RFQ DB.
+- **Fallback if harvest plumbing proves heavy:** a sentinel `client_name` (named in
+  the step-1 turn) + an `id > baseline` guard captured at match start. Documented as
+  the secondary option; the trace-harvest path is preferred.
+
+### 8.5.2 Add an `rfq` seed namespace to `fixtures.py`
+
+A forward-looking harness investment (not used by this workflow's happy path).
+
+- **`_NAMESPACES["rfqs"]`** — minimal required keys, mirroring the existing pattern
+  (`portfolios: {alias, name}`). Proposed: `{alias, status}` with optional
+  `client_name`, `channel`, `request_payload`, `quote_payload`. `id` optional
+  (autoincrement, per the name-based convention).
+- **`apply_seed` branch** — build an `RFQ(...)` row from the seed dict, defaulting
+  `client_name`/`channel`/`status` to the model defaults when omitted.
+- **`_INSERT_ORDER`** — `rfqs` must precede `positions` so a seeded position can
+  reference a seeded RFQ.
+- **`_FK`** — optionally add `positions: {"rfq": "rfqs"}` so a seeded position can
+  resolve its `rfq` alias to a seeded RFQ id (in addition to the existing
+  `{"portfolio": "portfolios"}`). Keep `rfq` optional on positions.
+- **Tests** — a unit test in the fixtures test module that seeds an `rfqs` entry and
+  asserts the row persists with the expected status; a second asserting a seeded
+  position can link a seeded RFQ via the `rfq` alias.
+- **Purge scoping for *seeded* RFQs** is deferred: since this workflow seeds none,
+  and a future RFQ-starting workflow will need its own arena-scoping decision
+  (sentinel `client_name`, or the booked-position back-link), we do not generalize
+  the purge to seeded-but-unbooked RFQs now.
+
 ## 9. Consumer compatibility & known traps (from the flagship)
 
 - **Live-shape assertions.** Author step assertions against the shapes the *live*
@@ -214,11 +285,14 @@ in *live* arena runs with a real model.
 
 ## 10. Out of scope (YAGNI)
 
-- No new golden-workflows engine, schema, registry, arena, or demo code.
+- No golden-workflows schema or registry changes; no new arena migration. (The two
+  harness changes in §8.5 are loader/runtime logic only.)
 - No hyperframes composition build (the workflow is demo-shaped; rendering is a
   later, separate cycle).
 - No new agent tools or skills — the workflow only cites existing ones.
 - No `sales` or `quant` persona workflows (separate future cycles).
+- No purge handling for *seeded* RFQs (this workflow seeds none; a future
+  RFQ-starting workflow decides its own arena-scoping — §8.5.2).
 
 ## 11. Open items to resolve during implementation
 
@@ -229,3 +303,10 @@ in *live* arena runs with a real model.
    with a seeded `pricing_parameter_rows` row works).
 4. **Confirm `intake-request`'s exact tool** — `create_or_update_rfq_draft` vs a
    validate-then-draft pair — against the skill's live behavior.
+5. **Plumb harvested `rfq_id`s into post-match cleanup** (§8.5.1) and confirm the
+   ORM delete cascades `rfq_quote_versions`/`approvals`, with a test that runs two
+   consecutive matches and asserts no arena `rfqs` rows remain.
+6. **Confirm the `rfq_id` is recoverable from the trace** — that
+   `create_or_update_rfq_draft` (and/or `quote_rfq`) tool-span outputs expose the
+   `rfq_id` in the shape `trace_harvest` parses; if not, fall back to the sentinel
+   `client_name` + `id > baseline` mechanism (§8.5.1 fallback).
