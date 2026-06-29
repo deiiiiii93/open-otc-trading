@@ -16,11 +16,39 @@ with an LLM judge.
 
 | Run | Date | Task | Field | Headline | Read |
 |:---:|:---:|---|---|---|---|
+| **#9** | 2026-06-28 | `risk-manager-control-day` | 9 **flash** models × 5 trials | **Gemini 3.5 Flash (59.1) ≈ Step 3.7 Flash (57.9)** — but Step costs **1/14th** as much; "flash" ≠ cheap | [📄 Markdown](2026-06-28-run9-otc-desk-agent-arena.md) · [🌐 HTML](https://htmlpreview.github.io/?https://github.com/deiiiiii93/open-otc-trading/blob/main/docs/arena/2026-06-28-run9-otc-desk-agent-arena.html) · [📕 PDF](2026-06-28-run9-otc-desk-agent-arena.pdf) |
 | **#8** | 2026-06-27 | `risk-manager-control-day` | 10 models × 5 trials | **Claude Opus 4.8 (66.4) ≈ GPT-5.5 (66.3)** — a statistical tie at the top | [📄 Markdown](2026-06-27-run8-otc-desk-agent-arena.md) · [🌐 HTML](https://htmlpreview.github.io/?https://github.com/deiiiiii93/open-otc-trading/blob/main/docs/arena/2026-06-27-run8-otc-desk-agent-arena.html) · [📕 PDF](2026-06-27-run8-otc-desk-agent-arena.pdf) |
 
 > **Coming soon.** Additional **long-workflow match designs** are in progress and
 > will be published here as they're released. Detailed per-model **usage and cost
 > accounting** will be added in future reports.
+
+## Run #9 at a glance — the flash tier
+
+| Rank | Model | Total | σ | $/match | pts/$ |
+|:---:|---|:---:|:---:|:---:|:---:|
+| ⚠️ | Doubao Seed 2.1 Turbo *(n=2)* | *65.3* | 9.1 | $1.95 | 33.5 |
+| 🥇 | Gemini 3.5 Flash | **59.1** | 5.5 | $14.28 | 4.1 |
+| 🥈 | Step 3.7 Flash | 57.9 | **4.3** | **$1.04** | 55.6 |
+| 🥉 | DeepSeek V4 Flash | 49.2 | 15.5 | $0.68 | 72.2 |
+| 4 | MiMo V2.5 | 48.3 | 12.4 | $0.57 | **85.3** |
+| 5 | GPT-5.5 Instant | 34.5 | 19.8 | $9.07 | 3.8 |
+
+- **"Flash" is a latency claim, not a price claim.** Gemini 3.5 Flash wins the
+  *placed* board — but at **$14.28 a match it is the most expensive operator the
+  Arena has measured, dearer than Run #8's frontier models.** **Step 3.7 Flash**
+  lands 0.1 behind, is the *steadiest* model in the field (σ 4.3), and costs
+  **14× less**.
+- **The dark horse:** **Doubao Seed 2.1 Turbo** posts the highest *functional*
+  score (65.3) and the run's best single judge score (88.75) — but on a sibling
+  route it completed only **2 of 5** attempts, too few to crown (its primary route,
+  Doubao Seed Evolving, was censored 0/5). Reported separately, not placed.
+- **Cost-efficiency inverts the ranking.** MiMo V2.5 (85 pts/$) and DeepSeek V4
+  Flash (72) deliver real desk work for well under a dollar a match; the two
+  frontier-priced flash models are the worst buys (≈4 pts/$).
+- **Three of nine cannot operate the desk** unattended (Agnes / Hunyuan / Qwen 3.7
+  Plus — model-ability zeros). Tokens and cost are **measured** this run, not
+  estimated.
 
 ## Run #8 at a glance
 

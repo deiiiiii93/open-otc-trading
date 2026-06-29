@@ -158,8 +158,30 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         default_config=_DEFAULT_CONFIG,
         provider="openai",
     ),
-    # --- Run #10 candidates: flash-tier models on the trader-rfq-booking-day
-    # workflow (registry entries mirror the Run #9 field on main, 32b8850). ---
+    # --- Run #9 candidate field: flash-tier models (all Zenmux OpenAI-compat) ---
+    ArenaModel(
+        slug="doubao-seed-evolving",
+        zenmux_name="bytedance/doubao-seed-evolving",
+        display_name="Doubao Seed Evolving",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
+    ArenaModel(
+        # Sibling Doubao route used to obtain a functional result when the
+        # doubao-seed-evolving route is infrastructure-censored (Run #9).
+        slug="doubao-seed-2-1-turbo",
+        zenmux_name="bytedance/doubao-seed-2.1-turbo",
+        display_name="Doubao Seed 2.1 Turbo",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
+    ArenaModel(
+        slug="qwen-3-7-plus",
+        zenmux_name="qwen/qwen3.7-plus",
+        display_name="Qwen 3.7 Plus",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
     ArenaModel(
         slug="step-3-7-flash",
         zenmux_name="stepfun/step-3.7-flash",
@@ -168,9 +190,43 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         provider="openai",
     ),
     ArenaModel(
+        slug="agnes-2-0-flash",
+        zenmux_name="sapiens-ai/agnes-2.0-flash",
+        display_name="Agnes 2.0 Flash",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
+    ArenaModel(
+        slug="gemini-3-5-flash",
+        zenmux_name="google/gemini-3.5-flash",
+        display_name="Gemini 3.5 Flash",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
+    ArenaModel(
+        slug="gpt-5-5-instant",
+        zenmux_name="openai/chat-latest",
+        display_name="GPT-5.5 Instant",
+        default_config=_DEFAULT_CONFIG,
+    ),
+    ArenaModel(
         slug="deepseek-v4-flash",
         zenmux_name="deepseek/deepseek-v4-flash",
         display_name="DeepSeek V4 Flash",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
+    ArenaModel(
+        slug="mimo-2-5",
+        zenmux_name="xiaomi/mimo-v2.5",
+        display_name="MiMo V2.5",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
+    ArenaModel(
+        slug="hunyuan-3-preview",
+        zenmux_name="tencent/hy3-preview",
+        display_name="Hunyuan 3 Preview",
         default_config=_DEFAULT_CONFIG,
         provider="openai",
     ),

@@ -1,0 +1,30 @@
+[
+  ["Mean total score — ⚠️ Doubao rows are censored (n<5), not placed", 70, "pt", [
+    ["⚠️ Doubao Seed 2.1 Turbo", 65.3, "warn", "65.3 · n=2 (3/5 censored)"],
+    ["🥇 Gemini 3.5 Flash", 59.1, "gold", "59.1 · n=5"],
+    ["🥈 Step 3.7 Flash", 57.9, "silver", "57.9 · n=5"],
+    ["🥉 DeepSeek V4 Flash", 49.2, "bronze", "49.2"],
+    ["MiMo V2.5", 48.3, "mid", "48.3"],
+    ["GPT-5.5 Instant", 34.5, "mid", "34.5"],
+    ["Agnes 2.0 Flash", 0.0, "floor", "0.0"],
+    ["Hunyuan 3 Preview", 0.0, "floor", "0.0"],
+    ["Qwen 3.7 Plus", 0.0, "floor", "0.0"],
+    ["Doubao Seed Evolving ⚠️", 0.0, "floor", "censored · 0/5"]
+  ]],
+  ["Std-dev across trials — shorter is steadier", 20, "σ", [
+    ["Step 3.7 Flash", 4.3, "good", "4.3 · steadiest"],
+    ["Gemini 3.5 Flash", 5.5, "good", "5.5"],
+    ["Doubao Seed 2.1 Turbo", 9.1, "neutral", "9.1 · n=2"],
+    ["MiMo V2.5", 12.4, "warn", "12.4"],
+    ["DeepSeek V4 Flash", 15.5, "warn", "15.5"],
+    ["GPT-5.5 Instant", 19.8, "bad", "19.8 · most volatile"]
+  ]],
+  ["Score per dollar (measured) — cost-efficiency inverts the quality ranking", 90, "pts/$", [
+    ["MiMo V2.5", 85.3, "good", "85.3 · champion"],
+    ["DeepSeek V4 Flash", 72.2, "good", "72.2"],
+    ["Step 3.7 Flash", 55.6, "good", "55.6"],
+    ["Doubao Seed 2.1 Turbo", 33.5, "neutral", "33.5 · n=2"],
+    ["Gemini 3.5 Flash", 4.1, "frontier", "4.1 · top n=5 score, worst value"],
+    ["GPT-5.5 Instant", 3.8, "frontier", "3.8"]
+  ]]
+]
