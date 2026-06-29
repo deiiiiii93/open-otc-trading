@@ -25,6 +25,8 @@ def test_run_keys():
 def test_enqueue_inserts_pending(session, runs):
     assert runs.enqueue_run(session, _spec()) is True
     assert runs.get(session, "session:1").status == "pending"
+    # already pending → still returns True (idempotent re-enqueue)
+    assert runs.enqueue_run(session, _spec()) is True
 
 
 def test_succeeded_is_noop(session, runs):
@@ -43,15 +45,45 @@ def test_failed_under_max_reenqueues(session, runs):
 
 def test_failed_at_max_is_terminal(session, runs):
     runs.enqueue_run(session, _spec())
-    for _ in range(3):
-        runs.get(session, "session:1").status = "pending"
-        runs.mark_failed(session, "session:1", "boom")
+    runs.mark_failed(session, "session:1", "boom")       # attempts=1
+    assert runs.enqueue_run(session, _spec()) is True    # iter 1 reset
+    runs.mark_failed(session, "session:1", "boom")       # attempts=2
+    assert runs.enqueue_run(session, _spec()) is True    # iter 2 reset
+    runs.mark_failed(session, "session:1", "boom")       # attempts=3 → terminal
+    assert runs.enqueue_run(session, _spec()) is False   # terminal: no more resets
     assert runs.get(session, "session:1").attempts == 3
-    assert runs.enqueue_run(session, _spec()) is False
 
 
 def test_eligible_runs(session, runs):
+    # spec 1: pending — must appear
     runs.enqueue_run(session, _spec(1))
+
+    # spec 2: failed-below-max — must appear (proves filter is not just status=="pending")
     runs.enqueue_run(session, _spec(2))
-    runs.mark_succeeded(session, "session:2", 5)
-    assert {r.run_key for r in runs.eligible_runs(session)} == {"session:1"}
+    runs.mark_failed(session, "session:2", "transient")   # attempts=1 < 3
+
+    # spec 3: succeeded — must NOT appear
+    runs.enqueue_run(session, _spec(3))
+    runs.mark_succeeded(session, "session:3", 5)
+
+    # spec 4: terminal-failed (attempts==max) — must NOT appear
+    runs.enqueue_run(session, _spec(4))
+    runs.mark_failed(session, "session:4", "boom")        # attempts=1
+    runs.enqueue_run(session, _spec(4))                   # reset
+    runs.mark_failed(session, "session:4", "boom")        # attempts=2
+    runs.enqueue_run(session, _spec(4))                   # reset
+    runs.mark_failed(session, "session:4", "boom")        # attempts=3 → terminal
+    assert runs.enqueue_run(session, _spec(4)) is False   # confirm terminal
+
+    eligible_keys = {r.run_key for r in runs.eligible_runs(session)}
+    assert eligible_keys == {"session:1", "session:2"}
+
+
+def test_mark_succeeded_null_cursor_guard(session, runs):
+    """mark_succeeded with None must not overwrite an existing cursor."""
+    runs.enqueue_run(session, _spec())
+    runs.mark_succeeded(session, "session:1", 42)
+    runs.mark_succeeded(session, "session:1", None)       # should be a no-op for cursor
+    row = runs.get(session, "session:1")
+    assert row.last_extracted_message_id == 42
+    assert row.status == "succeeded"
