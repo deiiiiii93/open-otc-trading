@@ -61,7 +61,8 @@ def test_backfill_resolves_invalid_pairs_and_dups(tmp_path: Path) -> None:
             "('user:desk', 'books in USD', '{}', '2026-01-02'),"
             "('user:desk', 'Books   in  USD', '{}', '2026-01-03'),"
             "('weird:xx', 'fallback row', '{}', '2026-01-04'),"
-            "('user:desk', '   ', '{}', '2026-01-05')"
+            "('user:desk', '   ', '{}', '2026-01-05'),"
+            "('correction:desk', 'user said EUR not USD', '{}', '2026-01-06')"
         ))
 
     m38 = importlib.import_module("backend.alembic.versions.0038_memory_entries_evolve")
@@ -93,6 +94,14 @@ def test_backfill_resolves_invalid_pairs_and_dups(tmp_path: Path) -> None:
     assert domain and domain[0][2] == "proposed", \
         f"domain row should be proposed, got {domain[0][2]!r}"
 
+    # I-1: explicitly exercise the source_error=True branch (correction namespace).
+    correction = [r for r in rows if r[0] == "correction"]
+    assert correction, "correction row missing — True branch of source_error backfill untested"
+    assert bool(correction[0][4]), \
+        f"correction row should have source_error=True, got {correction[0][4]!r}"
+    assert correction[0][2] == "active", \
+        f"correction row should have status='active', got {correction[0][2]!r}"
+
     # NOT NULL tightening matches the ORM; category stays nullable.
     cols = {c["name"]: c for c in sa.inspect(engine).get_columns("memory_entries")}
     for name in ("scope_type", "scope_id", "normalized_content", "confidence",
@@ -100,6 +109,22 @@ def test_backfill_resolves_invalid_pairs_and_dups(tmp_path: Path) -> None:
         assert cols[name]["nullable"] is False, f"column {name!r} should be NOT NULL"
     assert cols["category"]["nullable"] is True, "category should remain nullable"
     assert "namespace" not in cols, "namespace column should have been dropped"
+
+
+def test_migration_chain() -> None:
+    """I-2: validate revision / down_revision without a DB (no tmp_path needed)."""
+    m38 = importlib.import_module("backend.alembic.versions.0038_memory_entries_evolve")
+    m39 = importlib.import_module("backend.alembic.versions.0039_memory_extraction_runs")
+
+    assert m38.revision == "0038_memory_entries_evolve", \
+        f"0038 revision mismatch: {m38.revision!r}"
+    assert m38.down_revision == "0037_gateway_tables", \
+        f"0038 down_revision mismatch: {m38.down_revision!r}"
+
+    assert m39.revision == "0039_memory_extraction_runs", \
+        f"0039 revision mismatch: {m39.revision!r}"
+    assert m39.down_revision == "0038_memory_entries_evolve", \
+        f"0039 down_revision mismatch: {m39.down_revision!r}"
 
 
 def test_extraction_runs_table_exists(tmp_path: Path) -> None:

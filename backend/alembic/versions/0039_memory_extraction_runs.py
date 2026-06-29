@@ -35,8 +35,8 @@ def upgrade() -> None:
             sa.Column("status", sa.String(), nullable=False, server_default="pending"),
             sa.Column("attempts", sa.Integer(), nullable=False, server_default="0"),
             sa.Column("last_error", sa.String(), nullable=True),
-            sa.Column("created_at", sa.DateTime(), server_default=sa.func.now()),
-            sa.Column("updated_at", sa.DateTime(), server_default=sa.func.now()),
+            sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
+            sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         )
         op.create_index("ix_memory_runs_session", "memory_extraction_runs", ["session_id"])
         op.create_index("ix_memory_runs_status", "memory_extraction_runs", ["status"])
