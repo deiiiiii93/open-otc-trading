@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "seed": {
+    "portfolios": [
+      {"alias": "desk", "name": "Arena Trader Desk"}
+    ],
+    "pricing_profiles": [
+      {"alias": "prof", "name": "Arena Trader Profile", "valuation_date": "2026-06-29"}
+    ],
+    "pricing_parameter_rows": [
+      {"alias": "pr_msft", "profile": "prof", "symbol": "MSFT", "rate": 0.04, "dividend_yield": 0.01, "volatility": 0.28},
+      {"alias": "pr_aapl", "profile": "prof", "symbol": "AAPL", "rate": 0.04, "dividend_yield": 0.005, "volatility": 0.30},
+      {"alias": "pr_nvda", "profile": "prof", "symbol": "NVDA", "rate": 0.04, "dividend_yield": 0.0, "volatility": 0.45}
+    ],
+    "positions": [
+      {"alias": "ex_aapl", "portfolio": "desk", "underlying": "AAPL", "product_type": "EuropeanVanillaOption", "quantity": 200,
+       "product_kwargs": {"strike": 100, "maturity": 1.0, "option_type": "CALL"}},
+      {"alias": "ex_nvda", "portfolio": "desk", "underlying": "NVDA", "product_type": "BarrierOption", "quantity": 100,
+       "product_kwargs": {"strike": 100, "barrier": 80, "maturity": 1.0, "option_type": "PUT", "barrier_type": "DOWN_IN"}}
+    ]
+  },
+  "replay": {
+    "step-1-intake": {
+      "ai": {"content": "Captured the request as an RFQ draft.", "tool_calls": [{"id": "c1", "name": "create_or_update_rfq_draft_tool", "args": {}}]},
+      "tool_results": [{"tool_call_id": "c1", "name": "create_or_update_rfq_draft_tool", "content": {"rfq_id": 9001, "status": "draft"}}],
+      "skills_routed": ["intake-request"], "artifacts": [],
+      "response_text": "Captured the MSFT down-and-in barrier put as RFQ 9001 (draft)."},
+    "step-2-quote": {
+      "ai": {"content": "Solving and quoting the draft.", "tool_calls": [{"id": "c2a", "name": "solve_rfq_tool", "args": {}}, {"id": "c2b", "name": "quote_rfq_tool", "args": {}}]},
+      "tool_results": [
+        {"tool_call_id": "c2a", "name": "solve_rfq_tool", "content": {"rfq_id": 9001, "solved_value": 3.21, "engine": "BarrierAnalyticalEngine"}},
+        {"tool_call_id": "c2b", "name": "quote_rfq_tool", "content": {"rfq_id": 9001, "quote_id": 1, "solved_value": 3.21, "engine": "BarrierAnalyticalEngine", "status": "quoted"}}],
+      "skills_routed": ["quote-rfq"], "artifacts": [],
+      "response_text": "Quoted RFQ 9001 at 3.21 via the BarrierAnalyticalEngine (quoted)."},
+    "step-3-submit": {
+      "ai": {"content": "Submitting the quoted RFQ for approval.", "tool_calls": [{"id": "c3", "name": "submit_rfq_for_approval_tool", "args": {}}]},
+      "tool_results": [{"tool_call_id": "c3", "name": "submit_rfq_for_approval_tool", "content": {"rfq_id": 9001, "prior_state": "quoted", "new_state": "submitted"}}],
+      "skills_routed": ["submit-for-approval"], "artifacts": [],
+      "response_text": "Submitted RFQ 9001 for approval (quoted -> submitted)."},
+    "step-4-build": {
+      "ai": {"content": "Fetching spot and building the product.", "tool_calls": [{"id": "c4a", "name": "fetch_market_snapshot_tool", "args": {}}, {"id": "c4b", "name": "build_product_tool", "args": {}}]},
+      "tool_results": [
+        {"tool_call_id": "c4a", "name": "fetch_market_snapshot_tool", "content": {"underlying": "MSFT", "spot": 100.0}},
+        {"tool_call_id": "c4b", "name": "build_product_tool", "content": {"ok": true, "engine_name": "BarrierAnalyticalEngine", "product_spec": {"product_family": "BarrierOption", "terms": {"strike": 100, "barrier": 80, "maturity_years": 1, "option_type": "PUT", "barrier_type": "DOWN_IN"}}}}],
+      "skills_routed": ["build-product"], "artifacts": [],
+      "response_text": "Built a down-and-in BarrierOption (DOWN_IN, KI 80%) on MSFT."},
+    "step-5-book": {
+      "ai": {"content": "Booking the validated product.", "tool_calls": [{"id": "c5", "name": "book_position_tool", "args": {}}]},
+      "tool_results": [{"tool_call_id": "c5", "name": "book_position_tool", "content": {"position_id": 5001, "portfolio": "Arena Trader Desk", "family": "BarrierOption"}}],
+      "skills_routed": ["book-position"], "artifacts": [],
+      "response_text": "Booked position 5001 into Arena Trader Desk."},
+    "step-6-snapshot": {
+      "ai": {"content": "Reading the booked position.", "tool_calls": [{"id": "c6", "name": "get_position_summaries_tool", "args": {}}]},
+      "tool_results": [{"tool_call_id": "c6", "name": "get_position_summaries_tool", "content": {"positions": [{"id": 5001, "underlying": "MSFT", "barrier_type": "DOWN_IN", "barrier": 80}]}}],
+      "skills_routed": ["position-snapshot"], "artifacts": [],
+      "response_text": "Booked position matches the RFQ: down-and-in barrier at 80 on MSFT."},
+    "step-7-price": {
+      "ai": {"content": "Queuing batch pricing over the book.", "tool_calls": [{"id": "c7", "name": "run_batch_pricing_tool", "args": {}}]},
+      "tool_results": [{"tool_call_id": "c7", "name": "run_batch_pricing_tool", "content": {"task_id": 7001, "status": "queued"}}],
+      "skills_routed": ["price-portfolio"], "artifacts": [],
+      "response_text": "Queued batch pricing 7001 over Arena Trader Desk."},
+    "step-8-impact": {
+      "ai": {"content": "Reading fresh valuations.", "tool_calls": [{"id": "c8", "name": "get_latest_position_valuations_tool", "args": {}}]},
+      "tool_results": [{"tool_call_id": "c8", "name": "get_latest_position_valuations_tool", "content": {"positions": [{"id": 5001, "greeks": {"delta": -45.2}}]}}],
+      "skills_routed": ["position-snapshot"], "artifacts": [],
+      "response_text": "The new MSFT put adds about -45 delta to the book."}
+  }
+}
