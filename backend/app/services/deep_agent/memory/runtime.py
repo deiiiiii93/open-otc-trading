@@ -75,6 +75,19 @@ def get_memory_middleware() -> MemoryMiddleware:
         return _MIDDLEWARE
 
 
+def shutdown_memory_runtime(*, grace: float | None = None) -> None:
+    """Drain + close the memory writer on app shutdown.
+
+    No-op if the queue was never created (never spin one up at shutdown).
+    flush() persists any in-memory pending run rows (run_job's first step is
+    enqueue_run), so unprocessed jobs survive as durable `pending` runs.
+    """
+    if _QUEUE is None:
+        return
+    _QUEUE.flush(grace=grace)
+    _QUEUE.close()
+
+
 def reset_memory_runtime() -> None:
     global _STORE, _QUEUE, _MIDDLEWARE
     with _LOCK:

@@ -4014,6 +4014,11 @@ def create_app(
     async def _stop_gateway_runtime() -> None:
         await app.state.gateway_runtime.stop()
 
+    @app.on_event("shutdown")
+    async def _drain_memory_queue() -> None:
+        from app.services.deep_agent.memory.runtime import shutdown_memory_runtime
+        shutdown_memory_runtime()
+
     app.include_router(build_memory_router())
     app.include_router(build_skills_router(active_agent_service))
     app.include_router(build_tracing_router())
