@@ -195,7 +195,7 @@ def test_migration_creates_same_schema_as_metadata(tmp_path, monkeypatch):
     worktree_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     cfg = Config(os.path.join(worktree_root, "alembic.ini"))
     cfg.set_main_option("sqlalchemy.url", url)
-    command.upgrade(cfg, "0032_gateway_tables")
+    command.upgrade(cfg, "0037_gateway_tables")
 
     eng = create_engine(url)
     insp = inspect(eng)

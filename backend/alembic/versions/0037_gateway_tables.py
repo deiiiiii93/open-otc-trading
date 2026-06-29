@@ -1,7 +1,7 @@
 """gateway tables — IM message gateway bindings, codes, cards, dedup, lock
 
-Revision ID: 0032_gateway_tables
-Revises: 0031_asian_averaging_weight
+Revision ID: 0037_gateway_tables
+Revises: 0036_agent_thread_goal_run
 Create Date: 2026-06-24
 """
 from __future__ import annotations
@@ -11,8 +11,8 @@ from alembic import op
 from sqlalchemy import inspect
 
 
-revision = "0032_gateway_tables"
-down_revision = "0031_asian_averaging_weight"
+revision = "0037_gateway_tables"
+down_revision = "0036_agent_thread_goal_run"
 branch_labels = None
 depends_on = None
 
