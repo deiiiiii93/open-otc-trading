@@ -1852,6 +1852,16 @@ class AgentService:
             yolo_mode=yolo_mode,
         )
         resolved_envelope = self._resolve_envelope(envelope, page_context)
+        memory_extra = {}
+        from .deep_agent.memory.config import get_memory_config
+        if get_memory_config().enabled:
+            from .deep_agent.memory.runtime import latest_user_message_id, memory_configurable
+            memory_extra = memory_configurable(
+                session_id=route.session_id,
+                thread_id=thread.id,
+                persona=getattr(agent_session, "persona", None),
+                message_id=latest_user_message_id(session, thread.id),
+            )
         config = graph_run_config(
             self.settings,
             thread_id=agent_session.checkpointer_key,
@@ -1861,6 +1871,7 @@ class AgentService:
                 "envelope": resolved_envelope.value,
                 "router_decision": route.kind,
                 "agent_runtime": "deepagents_orchestrator",
+                **memory_extra,
             },
         )
 

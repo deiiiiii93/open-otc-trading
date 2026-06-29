@@ -231,4 +231,19 @@ def release_session_lease(
                 "closed_reason": close_reason,
             },
         )
+        try:
+            from .memory.runtime import enqueue_session_close
+            from .memory.scope import book_scope_for_session
+
+            # thread_id must be the AgentThread id (workflow.thread_id), not the
+            # workflow id. `Workflow` is already imported at the top of this module.
+            workflow = session.get(Workflow, agent_session.workflow_id)
+            enqueue_session_close(
+                session_id=agent_session.id,
+                thread_id=workflow.thread_id if workflow is not None else None,
+                persona=agent_session.persona,
+                book_scope_id=book_scope_for_session(session, agent_session.id),
+            )
+        except Exception:  # noqa: BLE001 — memory must never break a turn
+            pass
     return True

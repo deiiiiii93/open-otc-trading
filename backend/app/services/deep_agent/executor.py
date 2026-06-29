@@ -94,17 +94,27 @@ class TaskExecutor:
 
         envelope_value = envelope.value if isinstance(envelope, Envelope) else envelope
         task_thread_id = f"{agent_session.checkpointer_key}:task:{task.id}"
+        configurable_extra = {
+            "workflow_id": workflow.id,
+            "session_id": agent_session.id,
+            "task_id": task.id,
+            "context_pack_id": pack.id,
+            "envelope": envelope_value,
+            "tools_scope": sorted(registration.tools_scope),
+        }
+        from .memory.config import get_memory_config
+        from .memory.runtime import latest_user_message_id, memory_configurable
+        if get_memory_config().enabled:
+            configurable_extra.update(memory_configurable(
+                session_id=agent_session.id,
+                thread_id=workflow.thread_id,
+                persona=agent_session.persona,
+                message_id=latest_user_message_id(session, workflow.thread_id),
+            ))
         config = graph_run_config(
             self.settings,
             thread_id=task_thread_id,
-            configurable_extra={
-                "workflow_id": workflow.id,
-                "session_id": agent_session.id,
-                "task_id": task.id,
-                "context_pack_id": pack.id,
-                "envelope": envelope_value,
-                "tools_scope": sorted(registration.tools_scope),
-            },
+            configurable_extra=configurable_extra,
             trace_meta={"workflow_id": workflow.id, "task_id": task.id},
         )
 

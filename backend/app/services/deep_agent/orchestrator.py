@@ -151,6 +151,10 @@ def _agent_middleware(
             LedgerScopedCompactionMiddleware(model=model, backend=backend),
         ]
     )
+    from .memory.config import get_memory_config
+    if get_memory_config().enabled:
+        from .memory.runtime import get_memory_middleware
+        middleware.append(get_memory_middleware())
     if not enable_code_interpreter:
         _append_goal_grader(middleware, goal_grader)
         return middleware
