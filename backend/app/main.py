@@ -248,6 +248,7 @@ from .services.quantark import (
     gross_notional_for_position,
     usable_model_value,
 )
+from .routers.memory import build_memory_router
 from .routers.skills import build_skills_router
 from .routers.tracing import build_tracing_router
 from .routers.arena import build_arena_router
@@ -4013,6 +4014,7 @@ def create_app(
     async def _stop_gateway_runtime() -> None:
         await app.state.gateway_runtime.stop()
 
+    app.include_router(build_memory_router())
     app.include_router(build_skills_router(active_agent_service))
     app.include_router(build_tracing_router())
     app.include_router(build_arena_router(settings=active_settings))
