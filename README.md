@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB.svg)](https://react.dev/)
-[![Agent Arena: Run #8](https://img.shields.io/badge/Agent_Arena-Run_%238-8a2be2.svg)](docs/arena/)
+[![Agent Arena: Run #9](https://img.shields.io/badge/Agent_Arena-Run_%239-8a2be2.svg)](docs/arena/)
 
 ![Open OTC agent desk](docs/screenshots/agent-desk.png)
 
@@ -67,23 +67,29 @@ hedge, write the governance report — with **no human in the loop**, then score
 whether the model actually did it. Unlike a frozen-prompt benchmark, it runs the
 production agent and reads each model's work back out of the system's own trace log.
 
-**Run #8** evaluated **ten models over five independent trials each**:
+**Run #9 (latest)** evaluated **nine flash-tier models over five trials each** — with
+**exact, measured token & cost** per match:
 
-| Rank | Model | Total | σ |
-|:---:|---|:---:|:---:|
-| 🥇 | Claude Opus 4.8 | **66.4** | 8.1 |
-| 🥈 | GPT-5.5 | **66.3** | 8.2 |
-| 🥉 | Claude Sonnet 4.6 | 59.1 | **2.7** |
+| Rank | Model | Total | σ | $/match | pts/$ |
+|:---:|---|:---:|:---:|:---:|:---:|
+| 🥇 | Gemini 3.5 Flash | **59.1** | 5.5 | $14.28 | 4.1 |
+| 🥈 | Step 3.7 Flash | 57.9 | **4.3** | **$1.04** | 55.6 |
+| 🥉 | DeepSeek V4 Flash | 49.2 | 15.5 | $0.68 | 72.2 |
 
-A **statistical tie at the top** (0.1 apart, σ ≈ 8); Sonnet 4.6 is the steadiest
-operator in the field; and the open-weight tier (Kimi / MiMo / DeepSeek) delivers
-**~85% of the frontier's score at ~1/12 the cost**.
+**"Flash" is a latency claim, not a price claim.** Gemini 3.5 Flash wins the
+*placed* board but is the *most expensive* operator the Arena has measured (dearer
+than Run #8's frontier models); **Step 3.7 Flash** lands 0.1 behind, is the
+steadiest in the field, and costs **14× less**. Cost-efficiency inverts the ranking
+(MiMo V2.5 ≈ 85 pts/$). The dark horse, **Doubao Seed 2.1 Turbo**, posts the highest
+*functional* score (65.3) but completed only 2/5 trials — reported separately, not
+placed. Three of nine couldn't operate the desk at all.
 
-📖 **Read Run #8 in full** —
-[Markdown](docs/arena/2026-06-27-run8-otc-desk-agent-arena.md) ·
-[HTML](https://htmlpreview.github.io/?https://github.com/deiiiiii93/open-otc-trading/blob/main/docs/arena/2026-06-27-run8-otc-desk-agent-arena.html) ·
-[PDF](docs/arena/2026-06-27-run8-otc-desk-agent-arena.pdf)
-&nbsp;·&nbsp; all reports live in [**`docs/arena/`**](docs/arena/).
+📖 **Read Run #9 in full** —
+[Markdown](docs/arena/2026-06-28-run9-otc-desk-agent-arena.md) ·
+[HTML](https://htmlpreview.github.io/?https://github.com/deiiiiii93/open-otc-trading/blob/main/docs/arena/2026-06-28-run9-otc-desk-agent-arena.html) ·
+[PDF](docs/arena/2026-06-28-run9-otc-desk-agent-arena.pdf)
+&nbsp;·&nbsp; **Run #8** (frontier tier) and all reports live in
+[**`docs/arena/`**](docs/arena/).
 
 > New runs and additional **long-workflow match designs** are in progress and will
 > be published in the Arena as they're released.

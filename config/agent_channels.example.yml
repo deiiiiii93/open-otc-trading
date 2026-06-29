@@ -62,6 +62,47 @@ channels:
         provider: openai
         label: Qwen 3.7 Max
         tags: [tool-use, reasoning]
+      # --- Run #9 flash-tier candidate field (Zenmux OpenAI-compatible) ---
+      - id: bytedance/doubao-seed-evolving
+        provider: openai
+        label: Doubao Seed Evolving
+        tags: [fast, tool-use]
+      - id: bytedance/doubao-seed-2.1-turbo
+        provider: openai
+        label: Doubao Seed 2.1 Turbo
+        tags: [fast, tool-use]
+      - id: qwen/qwen3.7-plus
+        provider: openai
+        label: Qwen 3.7 Plus
+        tags: [fast, tool-use]
+      - id: stepfun/step-3.7-flash
+        provider: openai
+        label: Step 3.7 Flash
+        tags: [fast, tool-use]
+      - id: sapiens-ai/agnes-2.0-flash
+        provider: openai
+        label: Agnes 2.0 Flash
+        tags: [fast, tool-use]
+      - id: google/gemini-3.5-flash
+        provider: openai
+        label: Gemini 3.5 Flash
+        tags: [fast, tool-use]
+      - id: openai/chat-latest
+        provider: openai
+        label: GPT-5.5 Instant
+        tags: [fast, tool-use]
+      - id: deepseek/deepseek-v4-flash
+        provider: openai
+        label: DeepSeek V4 Flash
+        tags: [fast, tool-use, reasoning]
+      - id: xiaomi/mimo-v2.5
+        provider: openai
+        label: MiMo V2.5
+        tags: [fast, tool-use]
+      - id: tencent/hy3-preview
+        provider: openai
+        label: Hunyuan 3 Preview
+        tags: [fast, tool-use]
 
   - name: deepseek
     label: DeepSeek
