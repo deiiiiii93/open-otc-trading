@@ -21,7 +21,7 @@ from app import database
 from app.golden_workflows.fixtures import apply_seed
 from app.models import AgentThread
 from app.services.arena.models import arena_model_to_selection
-from app.services.arena.trace_harvest import transcript_from_trace
+from app.services.arena.trace_harvest import collect_rfq_ids_touched, transcript_from_trace
 
 _PERSONA_TO_CHARACTER = {
     "trader": "trader",
@@ -168,6 +168,19 @@ def _default_drive(thread_id: int, content: str, selection: dict) -> None:
 
 ARENA_PORTFOLIO_TAG = "arena"
 ARENA_PROFILE_MARKER = "arena_owned"  # set in PricingParameterProfile.summary
+ARENA_RFQ_CLIENT_PREFIX = "ARENA"  # the step-1 turn names the client with this prefix
+
+
+def _purge_arena_rfqs(session, rfq_ids) -> None:
+    """ORM-delete the given RFQ rows so quote_versions/approvals cascade
+    (both relationships are cascade='all, delete-orphan')."""
+    if not rfq_ids:
+        return
+    from app import models
+
+    for rfq in session.query(models.RFQ).filter(models.RFQ.id.in_(list(rfq_ids))):
+        session.delete(rfq)
+    session.commit()
 
 
 def _purge_seeded_portfolios(session, bundle) -> None:
@@ -348,6 +361,16 @@ def run_match(
     if settle is None:
         settle = _make_default_settle()
 
+    # High-water mark for RFQs so post-match cleanup only deletes rows CREATED
+    # during this match (a harvested id <= baseline was merely touched, e.g. a
+    # pre-existing RFQ the agent quoted — never delete it).
+    from sqlalchemy import func
+
+    from app import models
+
+    with database.SessionLocal() as session:
+        rfq_id_baseline = session.query(func.max(models.RFQ.id)).scalar() or 0
+
     # Drive every workflow step as one YOLO turn on the same thread, waiting for
     # queued background tasks to finish before the next step reads their results.
     for wf_step in workflow.steps:
@@ -355,6 +378,21 @@ def run_match(
         settle()
 
     transcript = harvest(thread_id, workflow, model)
+
+    # Delete only RFQs CREATED BY THIS MATCH: harvested (touched) ids, created after
+    # the pre-match baseline, AND carrying the arena client sentinel. Fail-safe — if
+    # a model never set the sentinel, the RFQ is skipped (cosmetic leak), never a
+    # real/seeded RFQ deleted.
+    touched = collect_rfq_ids_touched(thread_id)
+    candidates = {rid for rid in touched if rid > rfq_id_baseline}
+    if candidates:
+        with database.SessionLocal() as session:
+            owned = [
+                r.id
+                for r in session.query(models.RFQ).filter(models.RFQ.id.in_(candidates))
+                if (r.client_name or "").startswith(ARENA_RFQ_CLIENT_PREFIX)
+            ]
+            _purge_arena_rfqs(session, owned)
 
     # Copy any harvested artifacts under the run's artifact root.
     copied_steps = []

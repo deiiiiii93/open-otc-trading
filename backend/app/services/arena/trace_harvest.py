@@ -162,6 +162,51 @@ def _spans_to_turn_events(index: int, user: str, spans: list[dict]) -> dict:
     }
 
 
+# RFQ tools whose outputs carry an rfq id. These TOUCH an rfq (create OR update,
+# quote, submit) — touched != created, so run_match filters by an id baseline and an
+# arena client sentinel before deleting. Names are the tools' ``.name`` (no _tool
+# suffix), matching the raw span name recorded in the trace.
+_RFQ_TOOLS = {"create_or_update_rfq_draft", "quote_rfq", "submit_rfq_for_approval"}
+
+
+def _extract_rfq_id(content: Any) -> int | None:
+    if isinstance(content, dict):
+        for key in ("rfq_id", "id"):
+            v = content.get(key)
+            if isinstance(v, int):
+                return v
+    return None
+
+
+def collect_rfq_ids_touched(thread_id, store=None) -> set[int]:
+    """Return the rfq ids appearing in this thread's RFQ-tool span outputs.
+
+    These are ids the agent TOUCHED (created or merely quoted/submitted/updated).
+    The caller (run_match) intersects this with an "id > pre-match baseline" guard
+    and an arena client sentinel to delete only RFQs created BY THIS MATCH — never a
+    pre-existing real or seeded RFQ the agent referenced. Needed because RFQ has no
+    portfolio_id/position_id column and direct book_position leaves Position.rfq_id
+    null, so the portfolio-scoped purge cannot reach them.
+    """
+    if store is None:
+        from app.config import get_settings
+        from app.services.tracing.store import get_trace_store
+        store = get_trace_store(get_settings())
+    if hasattr(store, "flush"):
+        store.flush()
+
+    out: set[int] = set()
+    for root in store.list_thread_traces(thread_id, limit=1000):
+        for sp in store.get_trace(root["trace_id"]):
+            if sp.get("run_type") != "tool" or sp.get("name") not in _RFQ_TOOLS:
+                continue
+            content, _name, _tcid = _parse_tool_output(sp.get("outputs"))
+            rid = _extract_rfq_id(content)
+            if rid is not None:
+                out.add(rid)
+    return out
+
+
 def transcript_from_trace(thread_id, workflow, model, *, store=None) -> MatchTranscript:
     """Build a MatchTranscript for *thread_id* by reading its trace spans.
 

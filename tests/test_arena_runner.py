@@ -55,6 +55,11 @@ def test_run_match_seeds_creates_arena_thread_and_drives_each_step(tmp_path, mon
 
     monkeypatch.setattr("app.services.arena.runner.AgentThread", _Thread)
 
+    class _Q:
+        # Supports the run_match RFQ baseline snapshot: query(func.max(...)).scalar().
+        def scalar(self):
+            return 0
+
     class _Sess:
         def __enter__(self):
             return self
@@ -68,9 +73,17 @@ def test_run_match_seeds_creates_arena_thread_and_drives_each_step(tmp_path, mon
         def commit(self):
             pass
 
+        def query(self, *a, **k):
+            return _Q()
+
     monkeypatch.setattr(
         "app.services.arena.runner.database",
         type("D", (), {"SessionLocal": staticmethod(lambda *a, **k: _Sess())})(),
+    )
+    # Post-match RFQ cleanup reads the trace store; stub it to no RFQs so the
+    # orchestration test stays hermetic (cleanup is exercised in its own test).
+    monkeypatch.setattr(
+        "app.services.arena.runner.collect_rfq_ids_touched", lambda thread_id: set()
     )
 
     drive_calls = []
