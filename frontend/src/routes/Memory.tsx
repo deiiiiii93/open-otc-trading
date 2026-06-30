@@ -123,19 +123,23 @@ export function Memory(props: MemoryProps) {
     columns.push({
       key: 'scope',
       header: 'Scope',
-      width: 'minmax(0, 0.8fr)',
+      width: 'minmax(0, 0.9fr)',
       render: (f) => (f.scope_type === 'book' ? portfolioName(f.scope_id) : f.scope_type),
     });
   }
+  // NOTE: Table renders each row as its own independent CSS grid, so only `fr`
+  // and fixed lengths align across rows — content-based tracks (max-content/auto)
+  // resolve per-row and break column alignment. Columns that must not clip
+  // (status badge, conf, the 4-button actions) get fixed widths; the rest flex.
   columns.push(
-    { key: 'status', header: 'Status', width: 'max-content', render: (f) => <Badge variant={statusBadge(f.status)}>{f.status}</Badge> },
-    { key: 'content', header: 'Content', width: 'minmax(0, 2fr)', render: (f) => f.content },
-    { key: 'confidence', header: 'Conf', numeric: true, width: 'max-content', render: (f) => f.confidence.toFixed(2) },
+    { key: 'status', header: 'Status', width: '7rem', render: (f) => <Badge variant={statusBadge(f.status)}>{f.status}</Badge> },
+    { key: 'content', header: 'Content', width: 'minmax(0, 2.4fr)', render: (f) => f.content },
+    { key: 'confidence', header: 'Conf', numeric: true, width: '4.5rem', render: (f) => f.confidence.toFixed(2) },
     { key: 'category', header: 'Category', width: 'minmax(0, 1fr)', render: (f) => f.category ?? '—' },
     {
       key: 'source',
       header: 'Source',
-      width: 'minmax(0, 1fr)',
+      width: 'minmax(0, 1.1fr)',
       render: (f) => {
         const b = sourceBadge(f.created_by);
         const detail = [f.extractor_model, f.source_session_id != null ? `session #${f.source_session_id}` : null]
@@ -152,7 +156,7 @@ export function Memory(props: MemoryProps) {
     {
       key: 'actions',
       header: '',
-      width: 'max-content',
+      width: '17rem',
       render: (f) => {
         const busy = rowBusy.has(f.id);
         return (
