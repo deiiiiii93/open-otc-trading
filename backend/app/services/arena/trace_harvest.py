@@ -59,6 +59,21 @@ def _parse_tool_output(outputs_raw: Any) -> tuple[dict, str | None, str | None]:
     # than the stringified ToolMessage repr; use the dict directly so task_id /
     # artifact payloads survive the harvest.
     if isinstance(output_val, dict):
+        # LangChain v3 serializes a ToolMessage as an lc-constructor dict:
+        # {"lc":1,"type":"constructor","id":[...,"ToolMessage"],
+        #  "kwargs":{"content":"<json>","name":..,"tool_call_id":..}}. The real
+        # tool payload is the (JSON-string) ``kwargs.content`` — unwrap it so
+        # tool_result_path / rfq-id harvest see the payload, not the envelope.
+        if output_val.get("lc") and isinstance(output_val.get("kwargs"), dict):
+            kw = output_val["kwargs"]
+            inner = _loads(kw.get("content"))
+            if isinstance(inner, dict):
+                content = inner
+            elif kw.get("content") is not None:
+                content = {"raw": kw.get("content")}
+            else:
+                content = {}
+            return content, kw.get("name"), kw.get("tool_call_id")
         return output_val, output_val.get("name"), output_val.get("tool_call_id")
     if not isinstance(output_val, str):
         return {}, None, None
@@ -160,6 +175,51 @@ def _spans_to_turn_events(index: int, user: str, spans: list[dict]) -> dict:
         "response_text": response_text,
         "errors": [],
     }
+
+
+# RFQ tools whose outputs carry an rfq id. These TOUCH an rfq (create OR update,
+# quote, submit) — touched != created, so run_match filters by an id baseline and an
+# arena client sentinel before deleting. Names are the tools' ``.name`` (no _tool
+# suffix), matching the raw span name recorded in the trace.
+_RFQ_TOOLS = {"create_or_update_rfq_draft", "quote_rfq", "submit_rfq_for_approval"}
+
+
+def _extract_rfq_id(content: Any) -> int | None:
+    if isinstance(content, dict):
+        for key in ("rfq_id", "id"):
+            v = content.get(key)
+            if isinstance(v, int):
+                return v
+    return None
+
+
+def collect_rfq_ids_touched(thread_id, store=None) -> set[int]:
+    """Return the rfq ids appearing in this thread's RFQ-tool span outputs.
+
+    These are ids the agent TOUCHED (created or merely quoted/submitted/updated).
+    The caller (run_match) intersects this with an "id > pre-match baseline" guard
+    and an arena client sentinel to delete only RFQs created BY THIS MATCH — never a
+    pre-existing real or seeded RFQ the agent referenced. Needed because RFQ has no
+    portfolio_id/position_id column and direct book_position leaves Position.rfq_id
+    null, so the portfolio-scoped purge cannot reach them.
+    """
+    if store is None:
+        from app.config import get_settings
+        from app.services.tracing.store import get_trace_store
+        store = get_trace_store(get_settings())
+    if hasattr(store, "flush"):
+        store.flush()
+
+    out: set[int] = set()
+    for root in store.list_thread_traces(thread_id, limit=1000):
+        for sp in store.get_trace(root["trace_id"]):
+            if sp.get("run_type") != "tool" or sp.get("name") not in _RFQ_TOOLS:
+                continue
+            content, _name, _tcid = _parse_tool_output(sp.get("outputs"))
+            rid = _extract_rfq_id(content)
+            if rid is not None:
+                out.add(rid)
+    return out
 
 
 def transcript_from_trace(thread_id, workflow, model, *, store=None) -> MatchTranscript:

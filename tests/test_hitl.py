@@ -121,6 +121,16 @@ def test_yolo_mode_uses_langchain_auto_approval_for_write_tools():
         assert config[tool_name]["allowed_decisions"] == ["approve", "reject"]
 
 
+def test_headless_mode_clears_all_hitl_including_irreversible():
+    # The new "yolo" (headless) mode omits ALL HITL — unlike "auto"
+    # (yolo_mode=True) which keeps irreversible operations gated. With an empty
+    # interrupt_on, LangChain auto-approves every tool, so a headless arena run
+    # can complete irreversible operations like book_position / approve_rfq.
+    assert interrupt_on_config(headless=True) == {}
+    # headless dominates the auto-level yolo_mode flag.
+    assert interrupt_on_config(yolo_mode=True, headless=True) == {}
+
+
 def test_yolo_mode_cost_preview_middleware_interrupts_long_write(monkeypatch):
     from langchain_core.messages import AIMessage
     from langchain_core.tools import tool

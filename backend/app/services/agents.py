@@ -2406,6 +2406,10 @@ class AgentService:
         and maps to auto/interactive. YOLO drives the orchestrator headless.
         """
         mode, yolo_mode, allow_reply_options = resolve_execution_mode(mode, yolo_mode)
+        # "yolo" is the headless mode: omit ALL HITL (incl. irreversible bookings)
+        # so a headless run completes with no human in the loop. "auto" keeps
+        # irreversible operations gated (yolo_mode bool only clears writes).
+        headless = mode == "yolo"
         resolved = self.normalize_model_selection(model_selection)
         effective_accounting_date = _effective_accounting_date(accounting_date)
         if not self.is_enabled(resolved):
@@ -2437,6 +2441,7 @@ class AgentService:
             async with self._streaming_agent(
                 resolved,
                 yolo_mode=yolo_mode,
+                headless=headless,
                 allow_reply_options=allow_reply_options,
                 goal_grader=goal_grader,
             ) as agent:
@@ -2619,7 +2624,8 @@ class AgentService:
         persisted = False  # set True once _finalize_turn returns
 
         async with self._streaming_agent(
-            resolved, yolo_mode=yolo_mode, allow_reply_options=allow_reply_options
+            resolved, yolo_mode=yolo_mode, headless=headless,
+            allow_reply_options=allow_reply_options,
         ) as agent:
             try:
                 try:
@@ -2742,6 +2748,7 @@ class AgentService:
         model_selection: dict[str, str],
         *,
         yolo_mode: bool = False,
+        headless: bool = False,
         allow_reply_options: bool = True,
         goal_grader: Any = None,
     ):
@@ -2765,7 +2772,7 @@ class AgentService:
                     model=model,
                     tools=self.tools,
                     checkpointer=checkpointer,
-                    interrupt_on=interrupt_on_config(yolo_mode=yolo_mode),
+                    interrupt_on=interrupt_on_config(yolo_mode=yolo_mode, headless=headless),
                     enable_code_interpreter=self.settings.agent_code_interpreter_enabled,
                     yolo_mode=yolo_mode,
                     allow_reply_options=allow_reply_options,

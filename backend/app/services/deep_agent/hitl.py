@@ -146,13 +146,22 @@ _ACTION_CARD_PERSONAS = {"trader", "risk_manager", "high_board"}
 
 
 def interrupt_on_config(
-    *, yolo_mode: bool = False
+    *, yolo_mode: bool = False, headless: bool = False
 ) -> dict[str, bool | InterruptOnConfig]:
     """Return the interrupt_on mapping passed to create_deep_agent.
 
-    YOLO mode bypasses ordinary write confirmations, but keeps irreversible
-    operations gated. Unknown tools remain gated by default.
+    Three execution modes map onto this gate:
+
+    - interactive (defaults): every state-mutating tool is gated.
+    - auto (``yolo_mode=True``): ordinary *write* confirmations are bypassed, but
+      *irreversible* operations stay gated. Unknown tools remain gated by default.
+    - yolo / ``headless=True``: ALL HITL is omitted — including irreversible
+      operations — so a headless run (e.g. an arena match in its isolated,
+      auto-cleaned DB) can complete bookings/approvals with no human in the loop.
+      ``headless`` dominates ``yolo_mode``.
     """
+    if headless:
+        return {}
     names = tuple(name for name in INTERRUPT_TOOL_NAMES if name != "run_python")
     if yolo_mode:
         names = tuple(
