@@ -55,14 +55,18 @@
 
 .wl-memory__source {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: var(--gap-1);
+  min-width: 0;
 }
 
 .wl-memory__source-detail {
   font-family: var(--font-numeric);
   font-size: var(--type-caps-size);
   color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wl-memory__footer {

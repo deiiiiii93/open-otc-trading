@@ -123,17 +123,19 @@ export function Memory(props: MemoryProps) {
     columns.push({
       key: 'scope',
       header: 'Scope',
+      width: 'minmax(0, 0.8fr)',
       render: (f) => (f.scope_type === 'book' ? portfolioName(f.scope_id) : f.scope_type),
     });
   }
   columns.push(
-    { key: 'status', header: 'Status', render: (f) => <Badge variant={statusBadge(f.status)}>{f.status}</Badge> },
-    { key: 'content', header: 'Content', width: '2fr', render: (f) => f.content },
-    { key: 'confidence', header: 'Conf', numeric: true, render: (f) => f.confidence.toFixed(2) },
-    { key: 'category', header: 'Category', render: (f) => f.category ?? '—' },
+    { key: 'status', header: 'Status', width: 'max-content', render: (f) => <Badge variant={statusBadge(f.status)}>{f.status}</Badge> },
+    { key: 'content', header: 'Content', width: 'minmax(0, 2fr)', render: (f) => f.content },
+    { key: 'confidence', header: 'Conf', numeric: true, width: 'max-content', render: (f) => f.confidence.toFixed(2) },
+    { key: 'category', header: 'Category', width: 'minmax(0, 1fr)', render: (f) => f.category ?? '—' },
     {
       key: 'source',
       header: 'Source',
+      width: 'minmax(0, 1fr)',
       render: (f) => {
         const b = sourceBadge(f.created_by);
         const detail = [f.extractor_model, f.source_session_id != null ? `session #${f.source_session_id}` : null]
@@ -142,7 +144,7 @@ export function Memory(props: MemoryProps) {
         return (
           <div className="wl-memory__source">
             <Badge variant={b.variant}>{b.label}</Badge>
-            <span className="wl-memory__source-detail">{detail || '—'}</span>
+            {detail && <span className="wl-memory__source-detail">{detail}</span>}
           </div>
         );
       },
@@ -150,6 +152,7 @@ export function Memory(props: MemoryProps) {
     {
       key: 'actions',
       header: '',
+      width: 'max-content',
       render: (f) => {
         const busy = rowBusy.has(f.id);
         return (
