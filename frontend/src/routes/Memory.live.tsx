@@ -34,6 +34,12 @@ export function MemoryLive(_props: Props) {
 
   const reqSeq = useRef(0);
   const nextOffset = useRef(0);
+  // Mirror the active filters in refs so loadView has a STABLE identity and a
+  // post-mutation refresh always uses the CURRENT filters — never the stale
+  // closure from the render where the row action was clicked.
+  const scopeRef = useRef(activeScope);
+  const statusRef = useRef(statusFilter);
+  const portfolioRef = useRef(selectedPortfolio);
 
   const confidenceFloor = status?.config.confidence_floor ?? DEFAULT_FLOOR;
 
@@ -41,10 +47,11 @@ export function MemoryLive(_props: Props) {
     async (reset: boolean) => {
       const token = ++reqSeq.current;
       if (reset) setLoading(true);
-      const scope_type = activeScope === 'all' ? undefined : activeScope;
-      const statusParam = statusFilter === 'current' ? undefined : statusFilter;
+      const scope = scopeRef.current;
+      const scope_type = scope === 'all' ? undefined : scope;
+      const statusParam = statusRef.current === 'current' ? undefined : statusRef.current;
       const scope_id =
-        activeScope === 'book' && selectedPortfolio != null ? String(selectedPortfolio) : undefined;
+        scope === 'book' && portfolioRef.current != null ? String(portfolioRef.current) : undefined;
       const offset = reset ? 0 : nextOffset.current;
 
       const [factsR, statusR] = await Promise.allSettled([
@@ -76,10 +83,17 @@ export function MemoryLive(_props: Props) {
       }
       if (reset) setLoading(false);
     },
-    [activeScope, statusFilter, selectedPortfolio],
+    [],
   );
 
-  useEffect(() => { void loadView(true); }, [loadView]);
+  // Sync filter refs THEN reload — runs on mount and on every filter change.
+  useEffect(() => {
+    scopeRef.current = activeScope;
+    statusRef.current = statusFilter;
+    portfolioRef.current = selectedPortfolio;
+    void loadView(true);
+  }, [activeScope, statusFilter, selectedPortfolio, loadView]);
+
   useEffect(() => {
     listPortfoliosWithIds()
       .then(setPortfolios)

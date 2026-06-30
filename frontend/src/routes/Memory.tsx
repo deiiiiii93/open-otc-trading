@@ -175,6 +175,7 @@ export function Memory(props: MemoryProps) {
     modalSaving ||
     !draft ||
     !draft.content.trim() ||
+    !Number.isFinite(draft.confidence) ||
     draft.confidence < confidenceFloor ||
     draft.confidence > 1 ||
     (draft.scope_type === 'book' && draft.portfolioId == null);
@@ -249,19 +250,27 @@ export function Memory(props: MemoryProps) {
         <Empty message="Loading memory…" variant="loading" />
       ) : error ? (
         <Empty message={error} variant="error" />
-      ) : visible.length === 0 ? (
-        <Empty message="No facts in this view" variant="empty" hint="Try a different scope or status filter." />
       ) : (
         <>
-          <Table columns={columns} rows={visible} rowKey={(f) => f.id} />
-          <div className="wl-memory__footer">
-            <span className="wl-memory__count">
-              Showing {visible.length} of {facts.length} loaded · {total} total
-            </span>
-            {facts.length < total && (
-              <Button variant="default" onClick={onLoadMore}>Load more</Button>
-            )}
-          </div>
+          {visible.length === 0 ? (
+            <Empty
+              message={search.trim() ? 'No loaded facts match your search' : 'No facts in this view'}
+              variant="empty"
+              hint={search.trim() ? 'Load more to search later pages, or clear the search.' : 'Try a different scope or status filter.'}
+            />
+          ) : (
+            <Table columns={columns} rows={visible} rowKey={(f) => f.id} />
+          )}
+          {(facts.length > 0 || total > 0) && (
+            <div className="wl-memory__footer">
+              <span className="wl-memory__count">
+                Showing {visible.length} of {facts.length} loaded · {total} total
+              </span>
+              {facts.length < total && (
+                <Button variant="default" onClick={onLoadMore}>Load more</Button>
+              )}
+            </div>
+          )}
         </>
       )}
 
@@ -324,7 +333,7 @@ export function Memory(props: MemoryProps) {
                 onChange={(e) => onModalChange({ ...draft, confidence: Number(e.target.value) })}
               />
             </label>
-            {(draft.confidence < confidenceFloor || draft.confidence > 1) && (
+            {(!Number.isFinite(draft.confidence) || draft.confidence < confidenceFloor || draft.confidence > 1) && (
               <span className="wl-memory__error">confidence must be between {confidenceFloor} and 1.0</span>
             )}
             <label className="wl-memory__field">
