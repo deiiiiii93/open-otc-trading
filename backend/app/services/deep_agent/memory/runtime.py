@@ -22,18 +22,26 @@ _MIDDLEWARE: MemoryMiddleware | None = None
 
 
 def resolve_extractor_selection(registry, config: MemoryConfig) -> dict:
-    """Resolve the configured extractor tier to a concrete model selection.
+    """Resolve the configured extractor tags to a concrete model selection.
 
-    Prefer a healthy model tagged ``config.extractor_model`` (e.g. "fast"), so
-    extraction routes to the cheap flash tier rather than the agent default.
-    Falls back to ``registry.default_selection()`` when no healthy channel
-    declares a model with that tag. Both the build path (_extractor_llm) and the
-    provenance path (_extractor_model_id) go through this single resolver, so the
-    model we record can never drift from the model we run.
+    Two-tier, in priority order, so cost-routing degrades gracefully:
+      1. ``config.extractor_model`` — the dedicated "extractor" tag (one pinned model).
+      2. ``config.extractor_fallback_tag`` — the cheap "fast" tier, used when no
+         healthy model carries the dedicated tag.
+    Only if NEITHER tag resolves to a healthy model does it fall back to
+    ``registry.default_selection()`` (the agent default) — so a missing/typo'd
+    extractor tag costs you the cheap tier, never silently the expensive default.
+
+    Both the build path (_extractor_llm) and the provenance path
+    (_extractor_model_id) go through this single resolver, so the model we record
+    can never drift from the model we run.
     """
-    selection = registry.select_by_tag(config.extractor_model)
-    if selection is not None:
-        return selection
+    for tag in (config.extractor_model, config.extractor_fallback_tag):
+        if not tag:
+            continue
+        selection = registry.select_by_tag(tag)
+        if selection is not None:
+            return selection
     return registry.default_selection()
 
 

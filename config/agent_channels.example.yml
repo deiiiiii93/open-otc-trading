@@ -94,7 +94,10 @@ channels:
       - id: deepseek/deepseek-v4-flash
         provider: openai
         label: DeepSeek V4 Flash
-        tags: [fast, tool-use, reasoning]
+        # 'extractor' pins this as the memory diff-extraction model (cheap, JSON).
+        # Routed via Zenmux's OpenAI-compatible gateway, so it shares ZENMUX_API_KEY
+        # and needs no langchain-deepseek — unlike the deepseek-channel entry below.
+        tags: [fast, tool-use, reasoning, extractor]
       - id: xiaomi/mimo-v2.5
         provider: openai
         label: MiMo V2.5

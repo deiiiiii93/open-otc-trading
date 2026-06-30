@@ -111,15 +111,20 @@ class _FakeModel:
 
 class _FakeRegistry:
     """Minimal registry stub exposing the two methods the extractor resolver
-    uses. ``tag_selection`` is what select_by_tag returns (None => no tagged
-    model => caller falls back to default_selection)."""
+    uses. ``tag_selection`` is returned for ANY tag (convenience). ``tag_map``
+    (tag -> selection) returns per-tag, for proving the two-tier priority order;
+    a tag absent from the map resolves to None (=> caller tries the next tag,
+    then default_selection)."""
 
-    def __init__(self, *, tag_selection=None, default=None):
+    def __init__(self, *, tag_selection=None, tag_map=None, default=None):
         self._tag_selection = tag_selection
+        self._tag_map = tag_map
         self._default = default or {
             "channel": "zenmux", "provider": "anthropic", "model": "default-model"}
 
     def select_by_tag(self, tag):
+        if self._tag_map is not None:
+            return self._tag_map.get(tag)
         return self._tag_selection
 
     def default_selection(self):
@@ -215,6 +220,38 @@ def test_resolve_extractor_selection_falls_back_to_default():
 
     default = {"channel": "zenmux", "provider": "anthropic", "model": "claude-opus"}
     reg = _FakeRegistry(tag_selection=None, default=default)
+    assert rt.resolve_extractor_selection(reg, MemoryConfig()) == default
+
+
+def test_resolve_prefers_dedicated_extractor_tag_over_fallback():
+    """The dedicated 'extractor' tag wins over the 'fast' fallback when both resolve."""
+    from app.services.deep_agent.memory import runtime as rt
+    from app.services.deep_agent.memory.config import MemoryConfig
+
+    dedicated = {"channel": "zenmux", "provider": "openai", "model": "deepseek-v4-flash"}
+    cheap = {"channel": "zenmux", "provider": "anthropic", "model": "claude-haiku-4.5"}
+    reg = _FakeRegistry(tag_map={"extractor": dedicated, "fast": cheap})
+    assert rt.resolve_extractor_selection(reg, MemoryConfig()) == dedicated
+
+
+def test_resolve_uses_fast_fallback_when_no_dedicated_tag():
+    """With no 'extractor'-tagged model, the resolver falls to the cheap 'fast' tier
+    — NOT the (expensive) registry default."""
+    from app.services.deep_agent.memory import runtime as rt
+    from app.services.deep_agent.memory.config import MemoryConfig
+
+    cheap = {"channel": "zenmux", "provider": "anthropic", "model": "claude-haiku-4.5"}
+    expensive_default = {"channel": "zenmux", "provider": "anthropic", "model": "claude-opus-4.8"}
+    reg = _FakeRegistry(tag_map={"fast": cheap}, default=expensive_default)
+    assert rt.resolve_extractor_selection(reg, MemoryConfig()) == cheap
+
+
+def test_resolve_falls_back_to_default_only_when_neither_tag_resolves():
+    from app.services.deep_agent.memory import runtime as rt
+    from app.services.deep_agent.memory.config import MemoryConfig
+
+    default = {"channel": "zenmux", "provider": "anthropic", "model": "claude-opus-4.8"}
+    reg = _FakeRegistry(tag_map={}, default=default)  # neither 'extractor' nor 'fast' present
     assert rt.resolve_extractor_selection(reg, MemoryConfig()) == default
 
 

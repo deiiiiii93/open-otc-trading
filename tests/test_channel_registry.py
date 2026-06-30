@@ -160,6 +160,25 @@ def test_select_by_tag_returns_none_when_only_unhealthy_has_tag():
     assert reg.select_by_tag("fast") is None
 
 
+# ---------------------------------------------------------------------------
+# Template guard: the shipped agent_channels.example.yml must pin EXACTLY ONE
+# model with the dedicated 'extractor' tag, and it must be the Zenmux-proxied
+# deepseek-v4-flash (provider 'openai') — NOT the deepseek-channel variant,
+# which needs a separate key + langchain-deepseek. select_by_tag returns the
+# FIRST match, so >1 'extractor'-tagged model would make the pin ambiguous.
+# ---------------------------------------------------------------------------
+
+def test_example_config_pins_exactly_one_extractor_model():
+    example = Path(__file__).resolve().parents[1] / "config" / "agent_channels.example.yml"
+    reg = channel_registry.load_from_path(example, force_reread_dotenv=False)
+    tagged = [(ch.name, md.provider, md.id)
+              for ch in reg.channels for md in ch.models if "extractor" in md.tags]
+    assert len(tagged) == 1, f"expected exactly one extractor-tagged model, got {tagged}"
+    _channel, provider, model_id = tagged[0]
+    assert model_id == "deepseek/deepseek-v4-flash"
+    assert provider == "openai"  # Zenmux OpenAI-compatible gateway, shares ZENMUX_API_KEY
+
+
 YAML_FIXTURE = """
 default:
   channel: zenmux

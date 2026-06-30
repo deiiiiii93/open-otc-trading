@@ -23,7 +23,8 @@ def test_defaults_match_spec():
     assert c.content_max_chars == 2000
     assert c.category_max_chars == 64
     assert c.tiktoken_encoder == "cl100k_base"
-    assert c.extractor_model == "fast"  # registry tag for the flash tier
+    assert c.extractor_model == "extractor"        # dedicated tag (primary)
+    assert c.extractor_fallback_tag == "fast"      # cheap-tier fallback
     assert "that's wrong" in DEFAULT_CORRECTION_PHRASES
     assert any("api" in d for d in DEFAULT_DENYLIST)
 

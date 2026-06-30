@@ -42,11 +42,18 @@ class MemoryConfig:
     content_max_chars: int = 2000
     category_max_chars: int = 64
     tiktoken_encoder: str = "cl100k_base"
-    # Registry TAG identifying the cheap extraction tier. Resolved against
-    # ChannelRegistry.select_by_tag() at run time; falls back to the registry
-    # default model when no healthy channel declares a model with this tag.
-    # "fast" matches the tag the flash-tier models carry in agent_channels.yaml.
-    extractor_model: str = "fast"
+    # Registry TAGS identifying the extraction model, resolved against
+    # ChannelRegistry.select_by_tag() at run time (see resolve_extractor_selection).
+    # Two-tier so a missing dedicated tag degrades to the cheap tier, never back to
+    # the (expensive) agent default:
+    #   1. extractor_model       — dedicated tag; tag exactly ONE model with it in
+    #                              agent_channels.yaml to pin the extractor model.
+    #   2. extractor_fallback_tag — cheap-tier fallback when no healthy model carries
+    #                              the dedicated tag ("fast" => Haiku on the primary
+    #                              channel). Only if neither resolves does the
+    #                              resolver fall back to the registry default.
+    extractor_model: str = "extractor"
+    extractor_fallback_tag: str = "fast"
     shutdown_grace_seconds: float = 5.0
     # First-enable cutoff: the reconciliation sweep only DISCOVERS closed sessions
     # whose closed_at >= this instant. None => no cutoff (reconcile all closed
