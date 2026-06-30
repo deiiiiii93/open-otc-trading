@@ -172,6 +172,10 @@ class _EnvironmentSettings(BaseSettings):
         None,
         validation_alias="FEISHU_ENCRYPT_KEY",
     )
+    gateway_agent_model: str | None = Field(
+        None,
+        validation_alias="GATEWAY_AGENT_MODEL",
+    )
 
 
 def _read_environment_settings() -> _EnvironmentSettings:
@@ -273,6 +277,9 @@ class Settings:
     )
     feishu_encrypt_key: str | None = field(
         default_factory=lambda: _env_value("feishu_encrypt_key")
+    )
+    gateway_agent_model: str | None = field(
+        default_factory=lambda: _env_value("gateway_agent_model")
     )
 
     def __post_init__(self) -> None:

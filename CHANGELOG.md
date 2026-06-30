@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Instant-messaging gateway (Feishu/Lark).** Drive the full desk agent from IM
+  with web-desk parity — streaming **markdown** replies, human-in-the-loop
+  Approve/Reject **cards** for bookings, pickable **reply-option** cards, and
+  linking-code enrollment. An in-process subsystem behind a single `AgentBridge`
+  over the agent service: `GatewayRuntime` (single-worker DB-lease election +
+  heartbeat) → `MessageConnector` (Feishu WebSocket long-connection) → `Dispatcher`
+  (at-least-once dedup, message + priority card-action lanes, per-chat
+  serialization) → `StreamRenderer` (coalesced streaming, two-phase approval cards,
+  mid-flight revocation, token-bucket rate limit). Endpoints `/api/gateway/*`
+  (linking-codes, bindings, health, reload); migration `0037`; per-turn model via
+  `GATEWAY_AGENT_MODEL` and card deep-links via `GATEWAY_WEB_BASE_URL`. Runs as a
+  dedicated worker — **not** the `--reload` dev server (the lark WS client's
+  blocking event loop runs on a daemon thread and does not survive hot-reloads).
+- **Feishu connector — live `lark-oapi` integration.** Brought the WebSocket
+  inbound path and outbound sends onto the real SDK (the prior shape was inferred
+  and fake-tested only): a typed `EventDispatcherHandler` whose events are
+  marshalled back to dicts and dispatched onto the server loop via
+  `run_coroutine_threadsafe`; the blocking WS client run on a daemon thread with a
+  rebound event loop; **schema-2.0** cards (buttons inside `body.elements` with
+  `behaviors` callbacks, markdown-element text bubbles, no `note`); corrected
+  `receive_id_type` / `message.patch` builders with surfaced API errors; cumulative
+  in-place streaming; and a `done`-event enriched with `thread_id` +
+  `pending_actions` + `reply_options` so IM connectors can render cards (the web UI
+  ignores the extras). Non-blocking runtime startup; `GATEWAY_AGENT_MODEL` is a
+  `.env`-loadable setting resolved explicit-arg → settings → env → registry default.
 - **Agent Arena reports, released as HTML + PDF.** Each run's Markdown report now
   renders to a styled, self-contained HTML page and a print-quality PDF via
   [`docs/arena/render_report.py`](docs/arena/render_report.py) — now data-driven

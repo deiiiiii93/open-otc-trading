@@ -315,6 +315,15 @@ def test_card_body_contains_body_text():
     assert any("some body text" in str(e) for e in elements)
 
 
+def _buttons(result: dict) -> list[dict]:
+    """Extract schema-2.0 button elements from body.elements."""
+    return [
+        e
+        for e in result["body"]["elements"]
+        if e.get("tag") == "button"
+    ]
+
+
 def test_card_actions_present():
     card = _make_card(
         actions=[
@@ -323,7 +332,9 @@ def test_card_actions_present():
         ]
     )
     result = outbound_card_to_feishu(card)
-    assert "actions" in result
+    # Schema 2.0: buttons live inside body.elements, NOT a top-level "actions".
+    assert "actions" not in result
+    assert len(_buttons(result)) == 2
 
 
 def test_card_action_count():
@@ -334,11 +345,7 @@ def test_card_action_count():
         ]
     )
     result = outbound_card_to_feishu(card)
-    # actions is a list of action-group elements; flatten to get individual buttons
-    all_buttons = []
-    for action_group in result["actions"]:
-        all_buttons.extend(action_group.get("actions", []))
-    assert len(all_buttons) == 2
+    assert len(_buttons(result)) == 2
 
 
 def test_card_action_label():
@@ -346,25 +353,21 @@ def test_card_action_label():
         actions=[CardAction(label="Approve", style="primary", token="tok_approve")]
     )
     result = outbound_card_to_feishu(card)
-    all_buttons = []
-    for action_group in result["actions"]:
-        all_buttons.extend(action_group.get("actions", []))
-    btn = all_buttons[0]
+    btn = _buttons(result)[0]
     assert btn["text"]["content"] == "Approve"
 
 
 def test_card_action_value_only_token():
-    """Each button value dict must contain only the token key."""
+    """Each button's callback behavior value dict must contain only the token."""
     card = _make_card(
         actions=[CardAction(label="Go", style="default", token="tok_go")]
     )
     result = outbound_card_to_feishu(card)
-    all_buttons = []
-    for action_group in result["actions"]:
-        all_buttons.extend(action_group.get("actions", []))
-    btn = all_buttons[0]
-    assert set(btn["value"].keys()) == {"token"}
-    assert btn["value"]["token"] == "tok_go"
+    btn = _buttons(result)[0]
+    callback = btn["behaviors"][0]
+    assert callback["type"] == "callback"
+    assert set(callback["value"].keys()) == {"token"}
+    assert callback["value"]["token"] == "tok_go"
 
 
 def test_card_action_style():
@@ -372,22 +375,16 @@ def test_card_action_style():
         actions=[CardAction(label="Do it", style="danger", token="tok_danger")]
     )
     result = outbound_card_to_feishu(card)
-    all_buttons = []
-    for action_group in result["actions"]:
-        all_buttons.extend(action_group.get("actions", []))
-    btn = all_buttons[0]
+    btn = _buttons(result)[0]
     assert btn["type"] == "danger"
 
 
 def test_card_no_actions():
     card = _make_card(actions=[])
     result = outbound_card_to_feishu(card)
-    # Should not have actions key or it should be empty list
-    actions = result.get("actions", [])
-    all_buttons = []
-    for action_group in actions:
-        all_buttons.extend(action_group.get("actions", []))
-    assert len(all_buttons) == 0
+    # No buttons in body, and no stray top-level "actions" property.
+    assert "actions" not in result
+    assert _buttons(result) == []
 
 
 def test_card_with_section():
@@ -397,3 +394,65 @@ def test_card_with_section():
     result = outbound_card_to_feishu(card)
     body_str = json.dumps(result["body"])
     assert "section body text" in body_str
+
+
+# ---------------------------------------------------------------------------
+# Reply-option buttons (pickable replies rendered as a card)
+# ---------------------------------------------------------------------------
+
+
+def test_reply_button_value_carries_reply_and_label():
+    """A reply-option button's callback value carries the reply text + label,
+    NOT a token (so the pick can be replayed as a message and its card locked)."""
+    card = _make_card(
+        actions=[CardAction(label="Price it", style="default", reply="price the option")]
+    )
+    result = outbound_card_to_feishu(card)
+    btn = next(e for e in result["body"]["elements"] if e.get("tag") == "button")
+    value = btn["behaviors"][0]["value"]
+    assert value == {"reply": "price the option", "label": "Price it"}
+    assert "token" not in value
+
+
+_REPLY_PICK_EVENT = {
+    "schema": "2.0",
+    "header": {
+        "event_id": "evt_reply_001",
+        "tenant_key": "TENANT_01",
+        "app_id": "cli_abc",
+        "token": "VTOKEN",
+    },
+    "event": {
+        "operator": {"open_id": "ou_user_001"},
+        "action": {
+            "value": {"reply": "price the option", "label": "Price it"},
+            "tag": "button",
+        },
+        "context": {
+            "open_message_id": "om_reply_src_001",
+            "open_chat_id": "oc_chat_001",
+            "app_id": "cli_abc",
+        },
+    },
+}
+
+
+def test_reply_pick_becomes_message_inbound():
+    """A reply-option pick translates to a kind='message' inbound whose text is
+    the option value, carrying the source card ref + label for locking."""
+    msg = feishu_card_action_to_inbound(_REPLY_PICK_EVENT)
+    assert msg.kind == "message"
+    assert msg.text == "price the option"
+    assert msg.action is None
+    assert msg.card_lock_ref is not None
+    assert msg.card_lock_ref.message_id == "om_reply_src_001"
+    assert msg.card_lock_label == "Price it"
+
+
+def test_token_pick_still_card_action():
+    """An approval (token) pick remains a card_action inbound (regression)."""
+    msg = feishu_card_action_to_inbound(CARD_ACTION)
+    assert msg.kind == "card_action"
+    assert msg.action is not None
+    assert msg.action.token == "card_token_abc"
+    assert msg.card_lock_ref is None

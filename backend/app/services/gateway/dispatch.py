@@ -25,6 +25,7 @@ Backpressure (Task 12d):
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
 import time as _time_module
 from dataclasses import dataclass, field
@@ -39,7 +40,9 @@ from app.models import GatewayBinding, GatewayCardAction, GatewayInboundSeen
 from app.services.gateway import actions
 from app.services.gateway import identity as identity_svc
 from app.services.gateway.coalescer import ResumeOk, ResumeRaised
-from app.services.gateway.types import InboundMessage, OutboundMessage
+from app.services.gateway.types import InboundMessage, OutboundCard, OutboundMessage
+
+_log = logging.getLogger(__name__)
 
 _HELP_TEXT = "I can only read text messages."
 
@@ -424,6 +427,26 @@ class Dispatcher:
         # ------------------------------------------------------------------
         # 6. Turn — bound + valid text
         # ------------------------------------------------------------------
+        # If this turn came from a reply-option button tap, lock the originating
+        # card so it cannot be re-picked (best-effort — a lock failure must not
+        # block the turn itself).
+        if inbound.card_lock_ref is not None:
+            chosen = inbound.card_lock_label or inbound.text.strip()
+            try:
+                await connector.update_card(
+                    inbound.card_lock_ref,
+                    OutboundCard(
+                        title="Choose a reply",
+                        body=f"You chose: **{chosen}**",
+                        sections=[],
+                        actions=[],
+                        resolved=True,
+                        footer=None,
+                    ),
+                )
+            except Exception:
+                _log.debug("failed to lock reply-options card", exc_info=True)
+
         with self._sessionmaker() as session:
             thread = self._bridge.thread_for(session, binding, inbound.chat)
             session.commit()

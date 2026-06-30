@@ -82,6 +82,34 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {_json.dumps(data, ensure_ascii=False, default=str)}\n\n"
 
 
+def _done_payload(message_id: int | None, thread_id: int | None) -> dict:
+    """Build a ``done`` SSE payload, enriched with ``thread_id`` and the
+    persisted message's ``pending_actions``.
+
+    The web UI re-fetches the message and ignores these extra fields, but IM
+    connectors (the gateway StreamRenderer) consume the SSE stream directly and
+    need ``thread_id`` + ``pending_actions`` in the terminal event to render
+    HITL approval cards.
+    """
+    payload: dict[str, Any] = {"message_id": message_id}
+    if message_id is None or thread_id is None:
+        return payload
+    payload["thread_id"] = thread_id
+    try:
+        with _database.SessionLocal() as session:
+            msg = session.get(AgentMessage, message_id)
+            meta = (msg.meta or {}) if msg else {}
+        pending = meta.get("pending_actions")
+        if pending:
+            payload["pending_actions"] = pending
+        reply_options = meta.get("reply_options")
+        if reply_options:
+            payload["reply_options"] = reply_options
+    except Exception:
+        logger.debug("failed to enrich done payload", exc_info=True)
+    return payload
+
+
 def _extract_tool_error(data: dict, output: Any) -> str | None:
     """Detect tool errors from a LangGraph on_tool_end event payload."""
     if isinstance(data, dict):
@@ -2552,7 +2580,7 @@ class AgentService:
                         actor=actor,
                     )
                     persisted = True
-                    yield _sse("done", {"message_id": message_id})
+                    yield _sse("done", _done_payload(message_id, thread_id))
                 except Exception as exc:
                     logger.exception(
                         "Workflow-routed stream failed for thread %s", thread_id
@@ -2716,7 +2744,7 @@ class AgentService:
                     actor,
                 )
                 persisted = True
-                yield _sse("done", {"message_id": message_id})
+                yield _sse("done", _done_payload(message_id, thread_id))
             finally:
                 # Cancelled path (GeneratorExit from client disconnect): still
                 # persist for disconnect resilience, but DO NOT yield — yielding
