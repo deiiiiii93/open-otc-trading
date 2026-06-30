@@ -53,6 +53,16 @@
   justify-content: flex-end;
 }
 
+/* Default button height (~1.5em + padding) exceeds --row-height, so the
+   frames clip inside the table row. Constrain to fit the row across densities. */
+.wl-memory__row-actions .wl-button {
+  height: calc(var(--row-height) - var(--gap-1) * 2);
+  min-height: 0;
+  padding-block: 0;
+  padding-inline: var(--gap-2);
+  line-height: 1;
+}
+
 .wl-memory__source {
   display: flex;
   align-items: center;
