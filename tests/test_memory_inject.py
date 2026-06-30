@@ -11,7 +11,7 @@ def _fact(i, content, conf=0.9, scope_type="user", source_error=False):
                 confidence=conf, status="active", category=None,
                 source_error=source_error, pinned=False,
                 created_at=datetime(2026, 1, 1), updated_at=datetime(2026, 1, i + 1),
-                mutable=True)
+                mutable=True, created_by="extractor", meta={})
 
 
 def test_render_bullet_escapes_tags_then_json():
