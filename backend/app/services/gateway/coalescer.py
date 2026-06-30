@@ -44,6 +44,8 @@ from app.services.gateway.identity import active_binding
 from app.services.audit import record_audit
 from app.services.gateway.types import (
     AgentEvent,
+    CardAction,
+    CardSection,
     ChatRef,
     MessageRef,
     OutboundCard,
@@ -353,25 +355,33 @@ class StreamRenderer:
                 if event.type == "token":
                     content = ""
                     if isinstance(event.data, dict):
-                        content = event.data.get("content", "")
+                        # The live agent SSE emits token text under "text"
+                        # (agents.py _sse("token", {"text": ...})); accept
+                        # "content" as a fallback for synthetic event sources.
+                        content = (
+                            event.data.get("text")
+                            or event.data.get("content")
+                            or ""
+                        )
                     elif isinstance(event.data, str):
                         content = event.data
                     buffer.append(content)
 
                     now = self._monotonic()
                     elapsed = now - last_flush_time
-                    should_flush = (
+                    # Cumulative streaming: edit the SAME message in place with the
+                    # FULL text so far (the buffer is never reset within a turn), so
+                    # the displayed reply grows instead of being overwritten by each
+                    # delta. Throttle by the flush interval to avoid an edit per token.
+                    if (
                         elapsed >= self._flush_interval_s()
-                        or len("".join(buffer)) >= self._flush_chars()
-                    )
-                    if should_flush and self._supports_edit() and buffer:
-                        text = "".join(buffer)
+                        and self._supports_edit()
+                        and "".join(buffer).strip()
+                    ):
                         last_ref = await self._emit_text(
-                            session, binding, chat, text, last_ref,
+                            session, binding, chat, "".join(buffer), last_ref,
                             idempotency_key, revoked_state,
                         )
-                        buffer = []
-                        idempotency_key = str(uuid.uuid4())
                         last_flush_time = self._monotonic()
 
                 elif event.type == "action_required":
@@ -390,16 +400,20 @@ class StreamRenderer:
                     )
 
                 elif event.type == "done":
-                    if buffer:
-                        text = "".join(buffer)
+                    # Final flush: render the COMPLETE accumulated reply in place so
+                    # the full answer remains visible after streaming ends.
+                    text = "".join(buffer)
+                    if text.strip():
                         last_ref = await self._emit_text(
                             session, binding, chat, text, last_ref,
                             idempotency_key, revoked_state,
                         )
-                        buffer = []
                     await self._handle_card_event(
                         session, binding, chat, event, cards_sent,
                         last_ref, revoked_state, require_actions=True,
+                    )
+                    await self._handle_reply_options_event(
+                        session, binding, chat, event, last_ref, revoked_state,
                     )
 
                 elif event.type == "error":
@@ -510,6 +524,62 @@ class StreamRenderer:
                 session, binding, chat, thread_id, message_id, pending_action,
                 last_ref=last_ref, revoked_state=revoked_state,
             )
+
+    async def _handle_reply_options_event(
+        self,
+        session,
+        binding,
+        chat: ChatRef,
+        event: AgentEvent,
+        last_ref: MessageRef | None,
+        revoked_state: dict,
+    ) -> None:
+        """Render proposed reply options as a pickable card.
+
+        Each option becomes a button whose callback carries the option's
+        ``value`` (the message replayed on click) rather than a token — see
+        ``feishu_card_action_to_inbound``. Descriptions are shown as card
+        sections so the user has context before choosing.
+        """
+        if not isinstance(event.data, dict):
+            return
+        options = event.data.get("reply_options") or []
+        if not options:
+            return
+
+        sections: list[CardSection] = []
+        actions: list[CardAction] = []
+        for opt in options:
+            if not isinstance(opt, dict):
+                continue
+            label = opt.get("label")
+            if not label:
+                continue
+            value = opt.get("value") or label
+            description = opt.get("description")
+            if description:
+                sections.append(CardSection(title=label, body=description))
+            actions.append(CardAction(label=label, style="default", reply=value))
+        if not actions:
+            return
+
+        card = OutboundCard(
+            title="Choose a reply",
+            body="",
+            sections=sections,
+            actions=actions,
+            resolved=False,
+            footer=None,
+        )
+        message_id = event.data.get("message_id")
+        idempotency_key = f"{message_id}:reply-options"
+        send = lambda: self._connector.send_card(
+            chat, card, idempotency_key=idempotency_key
+        )
+        await self._guarded_send(
+            session, binding, chat, send,
+            last_ref=last_ref, revoked_state=revoked_state,
+        )
 
     async def _handle_error(
         self,

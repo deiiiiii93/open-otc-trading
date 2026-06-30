@@ -18,6 +18,8 @@ and is NOT forwarded into the async generator.
 """
 from __future__ import annotations
 
+import logging
+import os
 from typing import TYPE_CHECKING, AsyncIterator
 
 from sqlalchemy import text
@@ -30,6 +32,30 @@ from app.services.gateway.types import AgentEvent, ChatRef
 if TYPE_CHECKING:
     from app.models import AgentMessage
     from app.services.agents import AgentService
+
+_log = logging.getLogger(__name__)
+
+
+def _parse_model_selection(raw: str | None) -> dict[str, str] | None:
+    """Parse a ``channel:provider:model`` string into a model selection dict,
+    or return ``None`` to use the registry default.
+
+    The model id itself may contain ``/`` (e.g. ``deepseek/deepseek-v4-flash``)
+    so only the first two ``:`` separators are significant.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    parts = raw.split(":", 2)
+    if len(parts) != 3 or not all(parts):
+        _log.warning(
+            "gateway agent model must be 'channel:provider:model'; got %r — "
+            "falling back to the registry default.",
+            raw,
+        )
+        return None
+    channel, provider, model = parts
+    return {"channel": channel, "provider": provider, "model": model}
 
 
 class AgentBridge:
@@ -44,8 +70,24 @@ class AgentBridge:
         for structural tests that spy on the service methods.
     """
 
-    def __init__(self, agent_service: "AgentService") -> None:
+    def __init__(
+        self,
+        agent_service: "AgentService",
+        *,
+        model_selection: dict[str, str] | None = None,
+    ) -> None:
         self._svc = agent_service
+        # Resolution order: explicit arg > Settings.gateway_agent_model (loaded
+        # from .env) > GATEWAY_AGENT_MODEL process env > registry default
+        # (resolved per-turn in submit_turn).
+        if model_selection is not None:
+            self._model_selection: dict[str, str] | None = model_selection
+        else:
+            settings = getattr(agent_service, "settings", None)
+            raw = getattr(settings, "gateway_agent_model", None) if settings else None
+            if not raw:
+                raw = os.environ.get("GATEWAY_AGENT_MODEL")
+            self._model_selection = _parse_model_selection(raw)
 
     # ------------------------------------------------------------------
     # Public API
@@ -170,7 +212,7 @@ class AgentBridge:
             page_context=None,
             context_usage=None,
             accounting_date=None,
-            model_selection=self._svc.normalize_model_selection(None),
+            model_selection=self._svc.normalize_model_selection(self._model_selection),
             yolo_mode=False,
             envelope="DESK_WORKFLOW",
             confirmed_cost_preview=False,

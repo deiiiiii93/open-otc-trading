@@ -53,6 +53,7 @@ The product walkthrough tells it as one continuous flow:
 - **Portfolio risk** — Aggregated Greeks, scenario analysis, and position monitoring in a single run, sliced by underlying.
 - **Hedging** — A MILP solver that proposes and sizes Δ-neutral hedge strategies, with lifecycle backtesting.
 - **RFQ workflow** — Client portal for quote requests with an internal approval pipeline.
+- **Instant-messaging desk (Feishu/Lark)** — Drive the full agent from IM with web-desk parity: streaming **markdown** replies, human-in-the-loop Approve/Reject **cards** for bookings, pickable reply-option cards, and linking-code enrollment. Runs as a dedicated single-worker gateway behind a `MessageConnector` abstraction (Feishu first), so the same orchestrator, data, and audit trail back both the web desk and chat.
 - **Market data** — AKShare adapter with caching and fallback for A-share / HK markets.
 - **Long-term memory** — A cross-session memory layer distills durable facts — desk preferences, per-book context, and corrections — from closed sessions and injects the relevant ones into later conversations. Facts are scoped (`user` / `book` / `domain` / `correction`), with a propose→approve gate for shared domain knowledge and a dedicated **Memory** console to review, pin, edit, and approve them.
 - **Reproducible & audited** — Every pricing run, risk run, and agent trace is persisted; QuantArk keeps the math deterministic.
@@ -100,12 +101,14 @@ placed. Three of nine couldn't operate the desk at all.
 ## Architecture
 
 ```
+┌──────────────────────────────┐   ┌──────────────────────────────┐
+│  Frontend (React 19 / Vite)  │   │  IM gateway (Feishu / Lark)  │
+│  Radix UI · Recharts         │   │  WebSocket · HITL cards      │
+└───────────────┬──────────────┘   └───────────────┬──────────────┘
+                │ REST + SSE                        │ MessageConnector
+                └────────────────┬──────────────────┘
+                                 ▼
 ┌─────────────────────────────────────────────────────┐
-│  Frontend (React 19 / Vite / TypeScript)            │
-│  Radix UI · Recharts · "Warm Ledger" design system  │
-└────────────────────────┬────────────────────────────┘
-                         │ REST + SSE
-┌────────────────────────▼────────────────────────────┐
 │  Backend (FastAPI / Uvicorn)                         │
 │  LangGraph agents · SQLAlchemy · Alembic migrations  │
 └───┬────────────────┬───────────────────┬────────────┘
@@ -160,6 +163,24 @@ npm run dev
 
 Open http://localhost:5173
 
+### Instant-messaging gateway (Feishu)
+
+The IM gateway runs as a **dedicated worker process — not the `--reload` dev server**.
+The Feishu WebSocket client drives its own blocking event loop on a background
+thread, which does not survive uvicorn hot-reloads (a reload wedges the worker).
+Keep `GATEWAY_ENABLED_CONNECTORS` empty in `.env` so reloading servers stay inert,
+and enable the connector via a launch-time override on a stable worker:
+
+```bash
+# Configure the Feishu app for "long connection" (WebSocket) event mode and put
+# FEISHU_APP_ID / FEISHU_APP_SECRET in .env, then:
+GATEWAY_ENABLED_CONNECTORS=feishu .venv/bin/uvicorn app.main:app --app-dir backend --port 8001
+```
+
+A single-row DB lease ensures only one worker drives Feishu; every other backend
+stays in standby. Enroll a desk user by POSTing to `/api/gateway/linking-codes`
+and sending the returned code to the bot in a Feishu DM. Health: `GET /api/gateway/health`.
+
 ### CLI
 
 ```bash
@@ -186,6 +207,11 @@ mkdir -p data artifacts
 | `OPEN_OTC_TRACING` | Tracing mode: `local` \| `langsmith` \| `both` \| `off` | No |
 | `OPEN_OTC_MEMORY` | Long-term memory capture: `on` (default) \| `off` | No |
 | `OPEN_OTC_MEMORY_RECONCILE_SINCE` | ISO-8601 cutoff — when first enabling memory on an existing DB, only extract sessions closed at/after this instant (avoids mass-extracting the historical backlog) | No |
+| `GATEWAY_ENABLED_CONNECTORS` | Comma-separated IM connectors to run (e.g. `feishu`); empty = gateway off | No |
+| `GATEWAY_AGENT_MODEL` | Model for IM-originated turns, `channel:provider:model` (e.g. `zenmux:openai:deepseek/deepseek-v4-flash`); unset = registry default | No |
+| `GATEWAY_WEB_BASE_URL` | Base URL for card deep-links back to the web desk (e.g. `http://localhost:5173`) | No |
+| `GATEWAY_DEFAULT_DESK_USER` | Desk actor identity recorded for IM-originated turns | No |
+| `FEISHU_APP_ID` / `FEISHU_APP_SECRET` | Feishu app credentials (WebSocket long-connection mode) | No |
 
 The platform works without LLM API keys — agents fall back to deterministic persona responses and QuantArk-backed tool outputs. The local `config/agent_channels.yaml` file is gitignored; keep provider keys in `.env` and adjust channel/model entries there when needed.
 

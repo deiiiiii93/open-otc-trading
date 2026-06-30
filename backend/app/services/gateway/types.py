@@ -27,7 +27,11 @@ class OutboundMessage:
 class CardAction:
     label: str
     style: Literal["primary", "danger", "default"]
-    token: str
+    # Approval buttons carry a one-time ``token`` (resolved via resume). Reply-
+    # option buttons instead carry ``reply`` — the message text sent on click,
+    # which flows through the normal message path as a fresh turn.
+    token: Optional[str] = None
+    reply: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -63,6 +67,10 @@ class InboundMessage:
     text: Optional[str]
     action: Optional[CardActionInbound]
     raw: Any
+    # Set when this message originated from a reply-option button tap: the card
+    # to lock ("You chose: …") and the chosen option's label.
+    card_lock_ref: Optional[MessageRef] = None
+    card_lock_label: Optional[str] = None
 
 
 @dataclass(frozen=True)
