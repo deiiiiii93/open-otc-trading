@@ -88,7 +88,7 @@ git commit -m "feat(memory): expose created_by + meta on Fact for provenance"
 ## Task 2: Backend — `set_pinned` + server-enforced archived read-only
 
 **Files:**
-- Modify: `backend/app/services/deep_agent/memory/store.py` (`update`/`_update_row`, `set_status`, add `set_pinned`)
+- Modify: `backend/app/services/deep_agent/memory/store.py` (guard in the public `update` and `set_status` methods; add `set_pinned`). Note: `apply_diff`/`_update_row` is the extractor path and only touches non-archived rows (`load_existing` excludes archived), so the guard lives in the public API methods the router uses — not in `_update_row`.
 - Test: `tests/test_memory_store_crud.py`
 
 **Interfaces:**
@@ -133,6 +133,14 @@ def test_archived_is_read_only(session):
         s.update(session, f.id, content="new content")
     # archive() on an already-archived row is an idempotent success
     assert s.archive(session, f.id) is True
+
+def test_set_status_on_archived_raises(session):
+    s = _store()
+    f = s.create(session, scope_type="domain", scope_id="global", content="dom fact",
+                 confidence=0.9, category=None, created_by="api")
+    s.archive(session, f.id)
+    with pytest.raises(MemoryConflictError):
+        s.set_status(session, f.id, "approved")
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -341,6 +349,39 @@ describe('errorMessage', () => {
     expect(errorMessage('boom')).toBe('boom');
   });
 });
+
+describe('memory client fns (mocked fetch)', () => {
+  beforeEach(() => { vi.restoreAllMocks(); });
+
+  it('listMemoryFacts builds the query string', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ items: [], total: 0 }), { status: 200 }));
+    await listMemoryFacts({ scope_type: 'book', scope_id: '7', status: 'proposed', limit: 100, offset: 100 });
+    const url = (fetchMock.mock.calls[0][0] as string);
+    expect(url).toContain('scope_type=book'); expect(url).toContain('scope_id=7');
+    expect(url).toContain('status=proposed'); expect(url).toContain('limit=100'); expect(url).toContain('offset=100');
+  });
+
+  it('createMemoryFact POSTs the body', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ id: 1 }), { status: 201 }));
+    await createMemoryFact({ scope_type: 'book', scope_id: '7', content: 'x', confidence: 0.9 });
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toMatchObject({ scope_type: 'book', scope_id: '7', content: 'x' });
+  });
+
+  it('api<T> throws Error whose message is the raw response body', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"detail":"duplicate"}', { status: 409 }));
+    await expect(getMemoryStatus()).rejects.toThrow('{"detail":"duplicate"}');
+  });
+});
+```
+
+Add the imports at the top of the test file:
+```ts
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { errorMessage, listMemoryFacts, createMemoryFact, getMemoryStatus } from './client';
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -433,10 +474,10 @@ export const listPortfoliosWithIds = () =>
     .then((rows) => rows.map((r) => ({ id: r.id, name: r.name })));
 ```
 
-- [ ] **Step 5: Run to verify it passes**
+- [ ] **Step 5: Run to verify it passes + typecheck**
 
-Run: `cd frontend && npx vitest run src/api/client.memory.test.ts`
-Expected: PASS
+Run: `cd frontend && npx vitest run src/api/client.memory.test.ts && npx tsc --noEmit`
+Expected: PASS, no type errors (the new fns/types compile against `MemoryFact`/`MemoryStatus`).
 
 - [ ] **Step 6: Commit**
 
@@ -456,7 +497,7 @@ git commit -m "feat(memory): frontend types, API client fns, errorMessage helper
 
 **Interfaces:**
 - Consumes: client fns + types (Task 4).
-- Produces: `MemoryLive` default-exported container; reachable at route `'memory'`.
+- Produces: **named export** `export function MemoryLive(...)` (matches the test's `{ MemoryLive }` import and `main.tsx`'s named import); reachable at route `'memory'`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -501,7 +542,7 @@ Expected: FAIL (`Memory.live` does not exist).
 `frontend/src/routes/Memory.live.tsx`:
 ```tsx
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { listMemoryFacts, getMemoryStatus } from '../api/client';
+import { listMemoryFacts, getMemoryStatus, errorMessage } from '../api/client';
 import type { MemoryFact, MemoryStatus } from '../types';
 import { Memory } from './Memory';
 
@@ -522,7 +563,7 @@ export function MemoryLive({ onPageContextChange }: { onPageContextChange: (c: u
       setFacts(list.items); setTotal(list.total); setStatus(st); setError(null);
     } catch (e) {
       if (token !== reqSeq.current) return;
-      setError(String(e));
+      setError(errorMessage(e));
     } finally {
       if (token === reqSeq.current) setLoading(false);
     }
@@ -611,6 +652,13 @@ interface MemoryProps {
   portfolios: Array<{id:number;name:string}>; portfoliosError: string | null;
   selectedPortfolio: number | null;
   rowBusy: Set<number>; confidenceFloor: number;
+  // modal contract (discriminated union; null = closed)
+  modal:
+    | { kind: 'create'; draft: MemoryDraft }
+    | { kind: 'edit'; fact: MemoryFact; draft: MemoryDraft }
+    | { kind: 'delete'; fact: MemoryFact }
+    | null;
+  modalSaving: boolean; modalError: string | null;
   onScope: (s: MemoryProps['activeScope']) => void;
   onStatusFilter: (s: MemoryProps['statusFilter']) => void;
   onSearch: (q: string) => void;
@@ -619,6 +667,19 @@ interface MemoryProps {
   onApprove: (f: MemoryFact) => void; onPin: (f: MemoryFact) => void;
   onEdit: (f: MemoryFact) => void; onDelete: (f: MemoryFact) => void;
   onNew: () => void;
+  onModalChange: (draft: MemoryDraft) => void;   // create/edit field edits
+  onModalSave: () => void;                        // submit create or edit
+  onModalCancel: () => void;                      // close create/edit/delete modal
+  onConfirmDelete: () => void;                    // confirm in the delete modal
+}
+
+// Draft shape for the create/edit modal (scope_type/portfolio only used on create)
+export interface MemoryDraft {
+  scope_type: 'user' | 'book' | 'domain' | 'correction';
+  portfolioId: number | null;
+  content: string;
+  confidence: number;
+  category: string;   // '' means "no category" (cleared)
 }
 ```
 
@@ -664,20 +725,25 @@ describe('Memory presentational', () => {
 Run: `cd frontend && npx vitest run src/routes/Memory.test.tsx`
 Expected: FAIL (skeleton `Memory` lacks chips/actions/load-more).
 
-- [ ] **Step 3: Implement the full presentational component**
+- [ ] **Step 3a: Header — chips, config caption, disabled banner**
 
-Replace `Memory.tsx` with the full console. Key pieces (use the real prop names from the component files; structure is the contract):
-- Compute chips from `status.counts`: per-scope non-archived sum `scopeCount(s) = (c=>c?Object.entries(c).filter(([k])=>k!=='archived').reduce((a,[,v])=>a+v,0):0)(status.counts[s])`; `proposedCount = Object.values(status.counts).reduce((a,c)=>a+(c.proposed||0),0)`. Render `enabled` chip, four scope chips, and a `proposed N` chip only when `proposedCount>0`. Config caption: `floor {config.confidence_floor} · budget {injection_token_budget}/corr {correction_token_budget} · cap {max_facts_per_scope}/corr {max_correction_facts}`. When `status` is null, hide chips+caption.
+In `Memory.tsx`, compute and render the header (use the real `Badge`/`PageScaffold` prop names):
+- `scopeCount(s) = (c => c ? Object.entries(c).filter(([k]) => k !== 'archived').reduce((a, [, v]) => a + v, 0) : 0)(status?.counts[s])`.
+- `proposedCount = status ? Object.values(status.counts).reduce((a, c) => a + (c.proposed || 0), 0) : 0`.
+- When `status` non-null: an `enabled` chip (`pos`/`ink`), four scope chips (`user`/`book`/`domain`/`correction`), and a `warn` `proposed N` chip only when `proposedCount > 0`. Config caption: `floor {config.confidence_floor} · budget {injection_token_budget}/corr {correction_token_budget} · cap {max_facts_per_scope}/corr {max_correction_facts}`. When `status` is null, hide chips+caption.
 - Disabled banner when `status && !status.enabled`: "Memory capture is off (OPEN_OTC_MEMORY) — existing facts are still editable here."
-- `Tabs` (User/Book/Domain/Correction/All) → `onScope`.
-- Toolbar: status `select` (Current/Proposed/Approved/Active/Archived/All) → `onStatusFilter`; search input → `onSearch`; portfolio `select` only when `activeScope==='book'` (options from `portfolios`, value `selectedPortfolio`, disabled "No portfolios" when empty, error text when `portfoliosError`); `[Refresh]` → `onRefresh`; `[+ New]` → `onNew`.
-- Client search filter applied to rows: `visible = facts.filter(x => !search.trim() || x.content.toLowerCase().includes(search.trim().toLowerCase()) || (x.category?.toLowerCase().includes(search.trim().toLowerCase())))`.
-- `Table` columns: Scope (only when `activeScope==='all'`), Status (`Badge`), Content, Confidence (`--font-numeric`), Category (or `—`), Source (`Badge` per rule + caption `extractor_model` + `session #{source_session_id}` or `—`), Actions.
-- Actions per row (gated by status): Approve iff `status==='proposed'`; Pin/Unpin (label from `pinned`), Edit, Delete iff `status!=='archived'`; all disabled when `rowBusy.has(f.id)`.
-- Below table: count note `Showing {visible.length} of {facts.length} loaded · {total} total`; `[Load more]` button when `facts.length < total` → `onLoadMore`.
-- `feedback` rendered in the `PageScaffold` feedback zone.
 
-Provenance badge helper:
+- [ ] **Step 3b: Tabs + toolbar (filters, portfolio, refresh, new)**
+
+- `Tabs` (User/Book/Domain/Correction/All) → `onScope`.
+- Toolbar: status `select` (Current/Proposed/Approved/Active/Archived/All) → `onStatusFilter`; search input → `onSearch`; portfolio `select` only when `activeScope==='book'` (options from `portfolios`, value `selectedPortfolio`, disabled "No portfolios" when empty, `portfoliosError` text when set); `[Refresh]` → `onRefresh`; `[+ New]` → `onNew`.
+
+- [ ] **Step 3c: Table — columns, provenance, action matrix**
+
+- Client search filter: `visible = facts.filter(x => !search.trim() || x.content.toLowerCase().includes(search.trim().toLowerCase()) || (x.category ?? '').toLowerCase().includes(search.trim().toLowerCase()))`.
+- `Table` columns: Scope (only when `activeScope==='all'`), Status (`Badge`: proposed=warn, active/approved=pos, archived=ink), Content, Confidence (`--font-numeric`), Category (or `—`), Source (badge per helper below + visible caption `{extractor_model}` + `session #{source_session_id}`, or `—`), Actions.
+- Actions per row, gated by status: Approve iff `status==='proposed'`; Pin/Unpin (label from `pinned`), Edit, Delete iff `status!=='archived'`; all disabled when `rowBusy.has(f.id)`. Delete calls `onDelete(f)` (opens the confirm modal — it does not delete directly).
+- Provenance helper:
 ```tsx
 function sourceBadge(createdBy: string) {
   const v = (createdBy || '').trim();
@@ -687,15 +753,28 @@ function sourceBadge(createdBy: string) {
 }
 ```
 
+- [ ] **Step 3d: Load-more note + modals (create/edit + delete confirm)**
+
+- Below table: count note `Showing {visible.length} of {facts.length} loaded · {total} total`; `[Load more]` button when `facts.length < total` → `onLoadMore`. `feedback` in the `PageScaffold` feedback zone.
+- Create/Edit `Modal` driven by `modal` (`kind==='create'|'edit'`): fields bound to `modal.draft` via `onModalChange`; on create show `scope_type` select and (when `draft.scope_type==='book'`) a portfolio select; confidence input `min={confidenceFloor} max={1} step={0.01}`; `modalError` shown inline. **Save disabled** unless `draft.content.trim()` and `confidenceFloor <= draft.confidence <= 1` and (`draft.scope_type!=='book'` or `draft.portfolioId!=null`), and not `modalSaving`. Save → `onModalSave`; Cancel → `onModalCancel`.
+- Delete `Modal` (`kind==='delete'`): "Archive this fact? It will no longer be injected and cannot be restored from this page." Confirm → `onConfirmDelete`; Cancel → `onModalCancel`.
+
+- [ ] **Step 3e: Keep `Memory.live` compiling (stub the new props)**
+
+Update the Task-5 `Memory.live.tsx` to pass the expanded props so the page renders during Task 6 (real wiring lands in Task 7): add local `useState` for `activeScope='all'`, `statusFilter='current'`, `search=''`, `selectedPortfolio=null`, `modal=null`; pass `portfolios={[]} portfoliosError={null} rowBusy={new Set()} confidenceFloor={status?.config.confidence_floor ?? 0.7} modalSaving={false} modalError={null}`; pass **no-op** handlers (`onScope=setActiveScope`, `onStatusFilter=setStatusFilter`, `onSearch=setSearch`, `onSelectPortfolio=setSelectedPortfolio`, `onRefresh={() => void loadView()}`, and `() => {}` for `onLoadMore/onApprove/onPin/onEdit/onDelete/onNew/onModalChange/onModalSave/onModalCancel/onConfirmDelete`). This keeps `tsc` green; Task 7 replaces the stubs with real behavior.
+
 - [ ] **Step 4: Run to verify they pass**
 
-Run: `cd frontend && npx vitest run src/routes/Memory.test.tsx`
-Expected: PASS
+Run: `cd frontend && npx vitest run src/routes/Memory.test.tsx && npx tsc --noEmit`
+Expected: PASS, no type errors (the stubbed `Memory.live` satisfies the expanded `MemoryProps`).
 
 - [ ] **Step 5: Token-purity + theme check**
 
-Run: `cd frontend && npx tsc --noEmit` and visually confirm `Memory.css` uses only tokens (grep for hex/`px`): `! grep -nE "#[0-9a-fA-F]{3,6}|[0-9]+px" frontend/src/routes/Memory.css`
-Expected: no matches (command exits nonzero on a match).
+Run (from repo root, correct path + broader patterns):
+```bash
+! grep -nE "#[0-9a-fA-F]{3,6}|[0-9]+px|rgba?\(|var\(--[a-z0-9-]+, *#" frontend/src/routes/Memory.css
+```
+Expected: no matches (nonzero exit on any match). **Manual checklist:** load `/memory` and confirm readable rendering in **light**, **dark**, and **compact density** (toggle theme/density controls); numbers use `--font-numeric`; rows wrap with no horizontal scrollbar; action buttons show `:focus-visible`.
 
 - [ ] **Step 6: Commit**
 
@@ -736,6 +815,27 @@ it('approve calls approveMemoryFact then refetches', async () => {
   await waitFor(() => screen.getByText('vol skew steepens'));
   fireEvent.click(screen.getByRole('button', { name: /approve/i }));
   await waitFor(() => expect(client.approveMemoryFact).toHaveBeenCalledWith(1));
+});
+
+it('pin toggle calls setMemoryFactPinned with the negated flag', async () => {
+  vi.spyOn(client, 'setMemoryFactPinned').mockResolvedValue({} as any);
+  vi.spyOn(client, 'listMemoryFacts').mockResolvedValue({ items: [fact({ status: 'active', pinned: false })], total: 1 } as any);
+  render(<MemoryLive onPageContextChange={() => {}} />);
+  await waitFor(() => screen.getByText('vol skew steepens'));
+  fireEvent.click(screen.getByRole('button', { name: /^pin$/i }));
+  await waitFor(() => expect(client.setMemoryFactPinned).toHaveBeenCalledWith(1, true));
+});
+
+it('edit submits patchMemoryFact with changed fields incl. category clear', async () => {
+  vi.spyOn(client, 'patchMemoryFact').mockResolvedValue({} as any);
+  vi.spyOn(client, 'listMemoryFacts').mockResolvedValue({ items: [fact({ status: 'active', category: 'pref' })], total: 1 } as any);
+  render(<MemoryLive onPageContextChange={() => {}} />);
+  await waitFor(() => screen.getByText('vol skew steepens'));
+  fireEvent.click(screen.getByRole('button', { name: /edit/i }));
+  fireEvent.change(screen.getByLabelText(/content/i), { target: { value: 'updated' } });
+  fireEvent.change(screen.getByLabelText(/category/i), { target: { value: '' } });   // clear
+  fireEvent.click(screen.getByRole('button', { name: /save/i }));
+  await waitFor(() => expect(client.patchMemoryFact).toHaveBeenCalledWith(1, expect.objectContaining({ content: 'updated', category: '' })));
 });
 
 it('create from All tab with book scope sends scope_id=String(id)', async () => {
@@ -784,16 +884,28 @@ it('load more appends the next page', async () => {
 Run: `cd frontend && npx vitest run src/routes/Memory.live.test.tsx`
 Expected: FAIL (skeleton container lacks tabs/mutations/modal/load-more).
 
-- [ ] **Step 3: Implement the full container + modals**
+Container state per spec §F2: `facts, total, nextOffset, status, loading, error, feedback, activeScope='all', statusFilter='current', search, portfolios, portfoliosError, selectedPortfolio=null, modal, modalSaving, modalError, rowBusy(Set), reqSeq`.
 
-Container state per spec §F2: `facts, total, nextOffset, status, loading, error, feedback, activeScope='all', statusFilter='current', search, portfolios, portfoliosError, selectedPortfolio=null, modal, modalSaving, rowBusy(Set), reqSeq`.
-- `loadView(reset)`: `token=++reqSeq`; build params: `scope_type = activeScope==='all'?undefined:activeScope`; `status = statusFilter==='current'?undefined:statusFilter`; `scope_id = activeScope==='book' && selectedPortfolio!=null ? String(selectedPortfolio) : undefined`; `offset = reset?0:nextOffset`. Run `Promise.allSettled([listMemoryFacts(params), reset?getMemoryStatus():Promise.resolve(null)])`. If `token!==reqSeq` bail. On facts success: `reset` → replace + `setNextOffset(items.length)`; else append + `setNextOffset(n+items.length)`; set `total`. On facts failure: if `reset && facts.length===0` set `error` (full empty-error) else set `feedback=errorMessage(...)`. On status settled: success → setStatus; failure on initial → leave status null (chips hidden, floor fallback 0.7).
+- [ ] **Step 3a: `loadView` + stale-guard + offset + partial-failure**
+
+- `loadView(reset)`: `token=++reqSeq`; build params: `scope_type = activeScope==='all'?undefined:activeScope`; `status = statusFilter==='current'?undefined:statusFilter`; `scope_id = activeScope==='book' && selectedPortfolio!=null ? String(selectedPortfolio) : undefined`; `offset = reset?0:nextOffset`. Run `Promise.allSettled([listMemoryFacts({...params, limit:100, offset}), reset?getMemoryStatus():Promise.resolve(null)])`. If `token!==reqSeq` bail. On facts success: `reset` → replace + `setNextOffset(items.length)`; else append + `setNextOffset(prev+items.length)`; set `total`. On facts failure: if `reset && facts.length===0` set `error=errorMessage(...)` (full empty-error) else `setFeedback(errorMessage(...))`. On status settled: success → setStatus; failure on initial → leave status null (chips hidden, floor fallback 0.7).
 - Load portfolios on mount: `listPortfoliosWithIds().then(setPortfolios).catch(e=>setPortfoliosError(errorMessage(e)))`.
-- Effects: `loadView(true)` on mount and whenever `activeScope/statusFilter/selectedPortfolio` change.
-- Mutations: `withRow(id, fn)` adds id to `rowBusy`, `await fn()` then `loadView(true)`, catch → `setFeedback(errorMessage(e))`, finally remove id. `onApprove=f=>withRow(f.id,()=>approveMemoryFact(f.id))`; `onPin=f=>withRow(f.id,()=>setMemoryFactPinned(f.id,!f.pinned))`; `onDelete` opens confirm modal then `withRow(f.id,()=>deleteMemoryFact(f.id))`.
-- Create/Edit submit: `modalSaving=true`; create→`createMemoryFact(body)`, edit→`patchMemoryFact(id, body)` (send `category:''` when cleared); on success close modal + `loadView(true)`; on error keep modal open + show `errorMessage`; finally `modalSaving=false`.
-- `confidenceFloor = status?.config.confidence_floor ?? 0.7`.
-Pass all state + callbacks to `<Memory .../>`. Add the Create/Edit `Modal` and Delete-confirm `Modal` in `Memory.tsx` (Save disabled per Validation: content non-empty, confidence in `[floor,1]`, and book requires `selectedPortfolio`; Save disabled while `modalSaving`).
+- Effects: `loadView(true)` on mount and whenever `activeScope/statusFilter/selectedPortfolio` change. `onRefresh=()=>loadView(true)`, `onLoadMore=()=>loadView(false)`.
+
+- [ ] **Step 3b: Row mutations (approve/pin/delete) with `rowBusy`**
+
+- `withRow(id, fn)`: add id to `rowBusy`, `await fn()`, then `loadView(true)`; catch → `setFeedback(errorMessage(e))`; finally remove id.
+- `onApprove=f=>withRow(f.id,()=>approveMemoryFact(f.id))`; `onPin=f=>withRow(f.id,()=>setMemoryFactPinned(f.id,!f.pinned))`.
+- `onDelete=f=>setModal({kind:'delete', fact:f})`; `onConfirmDelete=()=>{ const f=modal.fact; withRow(f.id,()=>deleteMemoryFact(f.id)).then(()=>setModal(null)); }`.
+
+- [ ] **Step 3c: Create/Edit modal wiring (`modalSaving`, validation, category clear)**
+
+- `onNew=()=>setModal({kind:'create', draft:{scope_type:'user', portfolioId:null, content:'', confidence:1, category:''}})`.
+- `onEdit=f=>setModal({kind:'edit', fact:f, draft:{scope_type:f.scope_type, portfolioId:null, content:f.content, confidence:f.confidence, category:f.category ?? ''}})`.
+- `onModalChange=draft=>setModal(m=>m && m.kind!=='delete' ? {...m, draft} : m)`.
+- `onModalSave`: set `modalSaving=true`, `modalError=null`; for `create` call `createMemoryFact({scope_type:d.scope_type, scope_id: d.scope_type==='book'?String(d.portfolioId):undefined, content:d.content, confidence:d.confidence, category: d.category===''?undefined:d.category})`; for `edit` call `patchMemoryFact(fact.id, {content:d.content, confidence:d.confidence, category:d.category})` (sends `''` to clear). On success `setModal(null)` + `loadView(true)`; on error `setModalError(errorMessage(e))` (keep modal open); finally `modalSaving=false`.
+- `onModalCancel=()=>setModal(null)`. `confidenceFloor = status?.config.confidence_floor ?? 0.7`.
+- Pass all state + callbacks to `<Memory .../>` (replacing the Task-6 stubs).
 
 - [ ] **Step 4: Run to verify they pass**
 
