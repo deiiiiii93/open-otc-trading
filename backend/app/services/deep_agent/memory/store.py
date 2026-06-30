@@ -72,6 +72,8 @@ class Fact:
     created_at: datetime
     updated_at: datetime
     mutable: bool
+    created_by: str
+    meta: dict
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,7 @@ def _to_fact(row: MemoryEntry) -> Fact:
         content=row.content, confidence=row.confidence, status=row.status,
         category=row.category, source_error=row.source_error, pinned=row.pinned,
         created_at=row.created_at, updated_at=row.updated_at, mutable=not row.pinned,
+        created_by=row.created_by, meta=row.meta if isinstance(row.meta, dict) else {},
     )
 
 
@@ -241,6 +244,8 @@ class MemoryStore:
         row = session.get(MemoryEntry, fact_id)
         if row is None:
             raise MemoryNotFound(str(fact_id))
+        if row.status == "archived":
+            raise MemoryConflictError("archived is read-only")
         sp = session.begin_nested()
         try:
             self._update_row(session, row, content=content, confidence=confidence,
@@ -251,10 +256,23 @@ class MemoryStore:
             raise MemoryConflictError("duplicate") from exc
         return _to_fact(row)
 
+    def set_pinned(self, session, fact_id, pinned: bool) -> Fact:
+        row = session.get(MemoryEntry, fact_id)
+        if row is None:
+            raise MemoryNotFound(str(fact_id))
+        if row.status == "archived":
+            raise MemoryConflictError("archived is read-only")
+        row.pinned = bool(pinned)
+        _normalize_source_error(row)
+        session.flush()
+        return _to_fact(row)
+
     def set_status(self, session, fact_id, new_status) -> Fact:
         row = session.get(MemoryEntry, fact_id)
         if row is None:
             raise MemoryNotFound(str(fact_id))
+        if row.status == "archived":
+            raise MemoryConflictError("archived is read-only")
         if new_status not in _VALID_STATUS.get(row.scope_type, set()):
             raise MemoryConflictError("invalid (scope, status)")
         if (row.status, new_status) not in _ALLOWED_TRANSITIONS:

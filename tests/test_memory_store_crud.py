@@ -168,3 +168,49 @@ def test_cap_evicts_non_pinned_when_pinned_count_equals_cap(session):
     assert {p1.id, p2.id} <= active_ids
     assert n1.id not in active_ids and n2.id not in active_ids
     assert store.counters["memory_cap_pinned_overflow"] == 0
+
+
+# --- Memory Console additions (provenance + set_pinned + archived read-only) ---
+
+def test_to_fact_exposes_created_by_and_meta(session):
+    from app.models import MemoryEntry
+    from app.services.deep_agent.memory.store import _to_fact
+    row = MemoryEntry(scope_type="user", scope_id="desk", content="x",
+                      normalized_content="x", confidence=0.9, status="active",
+                      created_by="extractor",
+                      meta={"extractor_model": "deepseek/deepseek-v4-flash", "session_id": 318})
+    session.add(row); session.flush()
+    fact = _to_fact(row)
+    assert fact.created_by == "extractor"
+    assert fact.meta == {"extractor_model": "deepseek/deepseek-v4-flash", "session_id": 318}
+
+
+def test_set_pinned_round_trip(session, store):
+    f = store.create(session, scope_type="user", scope_id="desk", content="pin me",
+                     confidence=0.9, category=None, created_by="api")
+    assert store.set_pinned(session, f.id, False).pinned is False
+    assert store.set_pinned(session, f.id, True).pinned is True
+
+
+def test_set_pinned_missing_raises(session, store):
+    with pytest.raises(MemoryNotFound):
+        store.set_pinned(session, 999999, True)
+
+
+def test_archived_is_read_only(session, store):
+    f = store.create(session, scope_type="user", scope_id="desk", content="archive me",
+                     confidence=0.9, category=None, created_by="api")
+    store.archive(session, f.id)
+    with pytest.raises(MemoryConflictError):
+        store.set_pinned(session, f.id, True)
+    with pytest.raises(MemoryConflictError):
+        store.update(session, f.id, content="new content")
+    assert store.archive(session, f.id) is True
+
+
+def test_set_status_on_archived_raises(session, store):
+    f = store.create(session, scope_type="domain", scope_id="global", content="dom fact",
+                     confidence=0.9, category=None, created_by="api")
+    store.archive(session, f.id)
+    with pytest.raises(MemoryConflictError):
+        store.set_status(session, f.id, "approved")
