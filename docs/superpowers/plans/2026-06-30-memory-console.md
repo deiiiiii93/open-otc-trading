@@ -22,6 +22,29 @@
 
 ---
 
+## Task 0: Frontend component-API preflight (read-only)
+
+**Files:** none modified — this records the exact shared-component contracts the frontend tasks compile against, so Tasks 5–7 use real prop names rather than guesses.
+
+- [ ] **Step 1: Read each component and record its public props**
+
+Read and note the exact import path, prop names, and supported variant strings for each (open the file; copy the prop interface):
+- `frontend/src/components/templates/PageScaffold.tsx` (title, chips/feedback/children prop names)
+- `frontend/src/components/Table.tsx` (`Column<T>` shape — `key`/`header`/`render`/`numeric`? — and the rows/getRowKey prop names)
+- `frontend/src/components/Tabs.tsx` (Tabs/TabsList/TabsTrigger API; whether triggers expose `role="tab"`)
+- `frontend/src/components/Badge.tsx` (variant union: confirm `pos|neg|warn|info|ink`; `solid` flag)
+- `frontend/src/components/Button.tsx` (variant union: `primary|default|danger|ghost`; `iconOnly`)
+- `frontend/src/components/Modal.tsx` (open/onClose/title/children prop names)
+- `frontend/src/components/Empty.tsx` (`message`/`variant`/`hint`/`action` names; `variant` values)
+- `frontend/src/components/PageToolbar.tsx` (+ `PageToolbarSearch` if present)
+- `frontend/src/routes/Skills.tsx` + `Skills.live.tsx` as the end-to-end usage reference
+
+- [ ] **Step 2: Reconcile the plan's snippets with the real names**
+
+Where a later task's snippet uses a prop/variant that differs from the real component, prefer the **real** name (the component is the source of truth; the plan's structure is the contract). Record any rename in a scratch note so Tasks 5–7 are consistent. No commit (nothing changed).
+
+---
+
 ## Task 1: Backend — thread provenance (`created_by`, `meta`) through `Fact`
 
 **Files:**
@@ -145,7 +168,7 @@ def test_set_status_on_archived_raises(session):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `python -m pytest tests/test_memory_store_crud.py -k "set_pinned or archived_is_read_only" -q`
+Run: `python -m pytest tests/test_memory_store_crud.py -k "set_pinned or archived_is_read_only or set_status_on_archived" -q`
 Expected: FAIL (`AttributeError: 'MemoryStore' object has no attribute 'set_pinned'`, and `update` does not yet raise on archived).
 
 - [ ] **Step 3: Implement the guards and `set_pinned`**
@@ -177,7 +200,7 @@ Add a new method next to `set_status`:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `python -m pytest tests/test_memory_store_crud.py -k "set_pinned or archived_is_read_only" -q`
+Run: `python -m pytest tests/test_memory_store_crud.py -k "set_pinned or archived_is_read_only or set_status_on_archived" -q`
 Expected: PASS
 
 - [ ] **Step 5: Regression — full memory store/api suite**
@@ -307,10 +330,27 @@ def test_patch_archived_returns_409(client):
     fid = client.post("/api/memory/facts", json={"scope_type": "user", "content": "edit archived", "confidence": 0.9}).json()["id"]
     client.delete(f"/api/memory/facts/{fid}")
     assert client.patch(f"/api/memory/facts/{fid}", json={"content": "nope"}).status_code == 409
+
+def test_approve_archived_returns_409(client):
+    fid = client.post("/api/memory/facts", json={"scope_type": "domain", "content": "dom approve archived", "confidence": 0.9}).json()["id"]
+    client.delete(f"/api/memory/facts/{fid}")
+    assert client.post(f"/api/memory/facts/{fid}/approve").status_code == 409
+
+def test_list_status_semantics(client):
+    # omitted status => non-archived; status=all => includes archived; exact filters normally
+    active = client.post("/api/memory/facts", json={"scope_type": "user", "content": "active one", "confidence": 0.9}).json()["id"]
+    arch = client.post("/api/memory/facts", json={"scope_type": "user", "content": "to archive", "confidence": 0.9}).json()["id"]
+    client.delete(f"/api/memory/facts/{arch}")
+    current = [x["id"] for x in client.get("/api/memory/facts", params={"scope_type": "user"}).json()["items"]]
+    assert active in current and arch not in current               # omitted => non-archived
+    all_ids = [x["id"] for x in client.get("/api/memory/facts", params={"scope_type": "user", "status": "all"}).json()["items"]]
+    assert active in all_ids and arch in all_ids                   # all => includes archived
+    only_arch = [x["id"] for x in client.get("/api/memory/facts", params={"scope_type": "user", "status": "archived"}).json()["items"]]
+    assert only_arch == [arch]                                     # exact filter
 ```
 
-Run: `python -m pytest tests/test_memory_api.py -k "category_clear or patch_archived" -q`
-Expected: PASS (`_clean_category("")` already returns `None`; `update` now raises on archived from Task 2, and `patch_fact` already maps `MemoryConflictError`→409).
+Run: `python -m pytest tests/test_memory_api.py -k "category_clear or patch_archived or approve_archived or list_status_semantics" -q`
+Expected: PASS (`_clean_category("")` already returns `None`; `update`/`set_status` raise on archived from Task 2, and `patch_fact`/`approve_fact` already map `MemoryConflictError`→409; `status=all` is already in the router's `_VALID_STATUS` and the list handler treats it as "no status filter").
 
 - [ ] **Step 6: Commit**
 
@@ -473,6 +513,8 @@ export const listPortfoliosWithIds = () =>
   api<Array<{ id: number; name: string }>>('/api/portfolios')
     .then((rows) => rows.map((r) => ({ id: r.id, name: r.name })));
 ```
+
+**Do not modify `api<T>()`** — it already satisfies the contract: `if (!response.ok) throw new Error(await response.text())` (raw body → `errorMessage` parses it) and `if (response.status === 204) return undefined` (so `deleteMemoryFact`'s `api<void>` resolves on the 204 delete). The Step-1 test `api<T> throws Error whose message is the raw response body` proves the error path; no change needed for 204.
 
 - [ ] **Step 5: Run to verify it passes + typecheck**
 
@@ -717,6 +759,12 @@ describe('Memory presentational', () => {
     render(<Memory {...base} facts={[f()]} total={50} />);
     expect(screen.getByRole('button', { name: /load more/i })).toBeInTheDocument();
   });
+  it('book row in the All tab shows the portfolio name', () => {
+    render(<Memory {...base} activeScope="all"
+      portfolios={[{ id: 7, name: 'Macro' }]}
+      facts={[f({ id: 3, scope_type: 'book', scope_id: '7', content: 'book fact' })]} />);
+    expect(screen.getByText('Macro')).toBeInTheDocument();
+  });
 });
 ```
 
@@ -741,7 +789,7 @@ In `Memory.tsx`, compute and render the header (use the real `Badge`/`PageScaffo
 - [ ] **Step 3c: Table — columns, provenance, action matrix**
 
 - Client search filter: `visible = facts.filter(x => !search.trim() || x.content.toLowerCase().includes(search.trim().toLowerCase()) || (x.category ?? '').toLowerCase().includes(search.trim().toLowerCase()))`.
-- `Table` columns: Scope (only when `activeScope==='all'`), Status (`Badge`: proposed=warn, active/approved=pos, archived=ink), Content, Confidence (`--font-numeric`), Category (or `—`), Source (badge per helper below + visible caption `{extractor_model}` + `session #{source_session_id}`, or `—`), Actions.
+- `Table` columns: **Scope** (only when `activeScope==='all'`): for `book` rows render the matching portfolio **name** via `portfolios.find(p => String(p.id) === f.scope_id)?.name ?? \`Book #${f.scope_id}\``; for other scopes render `f.scope_type`. Then Status (`Badge`: proposed=warn, active/approved=pos, archived=ink), Content, Confidence (`--font-numeric`), Category (or `—`), Source (badge per helper below + visible caption `{extractor_model}` + `session #{source_session_id}`, or `—`), Actions.
 - Actions per row, gated by status: Approve iff `status==='proposed'`; Pin/Unpin (label from `pinned`), Edit, Delete iff `status!=='archived'`; all disabled when `rowBusy.has(f.id)`. Delete calls `onDelete(f)` (opens the confirm modal — it does not delete directly).
 - Provenance helper:
 ```tsx
@@ -779,7 +827,7 @@ Expected: no matches (nonzero exit on any match). **Manual checklist:** load `/m
 - [ ] **Step 6: Commit**
 
 ```bash
-git add frontend/src/routes/Memory.tsx frontend/src/routes/Memory.css frontend/src/routes/Memory.test.tsx
+git add frontend/src/routes/Memory.tsx frontend/src/routes/Memory.css frontend/src/routes/Memory.test.tsx frontend/src/routes/Memory.live.tsx
 git commit -m "feat(memory): presentational console (chips, tabs, table, actions, load-more)"
 ```
 
@@ -896,7 +944,7 @@ Container state per spec §F2: `facts, total, nextOffset, status, loading, error
 
 - `withRow(id, fn)`: add id to `rowBusy`, `await fn()`, then `loadView(true)`; catch → `setFeedback(errorMessage(e))`; finally remove id.
 - `onApprove=f=>withRow(f.id,()=>approveMemoryFact(f.id))`; `onPin=f=>withRow(f.id,()=>setMemoryFactPinned(f.id,!f.pinned))`.
-- `onDelete=f=>setModal({kind:'delete', fact:f})`; `onConfirmDelete=()=>{ const f=modal.fact; withRow(f.id,()=>deleteMemoryFact(f.id)).then(()=>setModal(null)); }`.
+- `onDelete=f=>setModal({kind:'delete', fact:f})`; `onConfirmDelete=()=>{ if(!modal||modal.kind!=='delete')return; const f=modal.fact; withRow(f.id,()=>deleteMemoryFact(f.id)).then(()=>setModal(null)); }`.
 
 - [ ] **Step 3c: Create/Edit modal wiring (`modalSaving`, validation, category clear)**
 
