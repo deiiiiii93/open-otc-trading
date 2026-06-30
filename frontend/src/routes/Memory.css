@@ -1,0 +1,102 @@
+.wl-memory__banner {
+  padding: var(--gap-2) var(--panel-padding);
+  background: var(--paper-3);
+  color: var(--ink-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-1);
+  margin-bottom: var(--gap-2);
+}
+
+.wl-memory__config {
+  font-family: var(--font-numeric);
+  font-size: var(--type-caps-size);
+  color: var(--ink-2);
+  margin-bottom: var(--gap-3);
+}
+
+.wl-memory__field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-1);
+  color: var(--ink-2);
+  font-size: var(--type-caps-size);
+}
+
+.wl-memory__select,
+.wl-memory__input {
+  background: var(--paper-2);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-1);
+  padding: var(--input-padding-y) var(--input-padding-x);
+  font: inherit;
+}
+
+.wl-memory__input::placeholder {
+  color: var(--ink-2);
+}
+
+.wl-memory__select:focus-visible,
+.wl-memory__input:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 1px;
+}
+
+.wl-memory__select:disabled,
+.wl-memory__input:disabled {
+  opacity: 0.6;
+}
+
+.wl-memory__row-actions {
+  display: flex;
+  gap: var(--gap-1);
+  justify-content: flex-end;
+}
+
+.wl-memory__source {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+}
+
+.wl-memory__source-detail {
+  font-family: var(--font-numeric);
+  font-size: var(--type-caps-size);
+  color: var(--ink-2);
+}
+
+.wl-memory__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  margin-top: var(--gap-2);
+}
+
+.wl-memory__count {
+  font-family: var(--font-numeric);
+  font-size: var(--type-caps-size);
+  color: var(--ink-2);
+}
+
+.wl-memory__error {
+  color: var(--neg);
+  font-size: var(--type-caps-size);
+}
+
+.wl-memory__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+
+.wl-memory__form .wl-memory__field {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.wl-memory__form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--gap-2);
+}

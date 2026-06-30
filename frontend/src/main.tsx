@@ -37,6 +37,7 @@ import { BacktestLive } from './routes/Backtest';
 import { TracingLive } from './routes/Tracing.live';
 import { ArenaLive } from './routes/Arena.live';
 import { WorkflowsLive } from './routes/Workflows.live';
+import { MemoryLive } from './routes/Memory.live';
 import { fetchTracingConfig } from './api/client';
 import { openTraceTarget } from './lib/tracing';
 import type { TracingConfig } from './types';
@@ -62,6 +63,7 @@ const navItems = [
   { route: 'tracing' as const,   label: 'Tracing' },
   { route: 'arena' as const,     label: 'Arena' },
   { route: 'workflows' as const, label: 'Workflows' },
+  { route: 'memory' as const,    label: 'Memory' },
   { route: 'client' as const,    label: 'Client RFQ' },
 ];
 
@@ -190,6 +192,7 @@ function App() {
     { id: 'jump-try-solve', group: 'Jump To', label: 'Try to Solve',  shortcut: '↵' },
     { id: 'jump-instruments', group: 'Jump To', label: 'Instruments',  shortcut: '↵' },
     { id: 'jump-hedging',   group: 'Jump To', label: 'Hedging',       shortcut: '↵' },
+    { id: 'jump-memory',    group: 'Jump To', label: 'Memory',        shortcut: '↵' },
     { id: 'jump-risk',      group: 'Jump To', label: 'Risk',          shortcut: '↵' },
     { id: 'jump-greeks-landscape', group: 'Jump To', label: 'Greeks Landscape', shortcut: '↵' },
     { id: 'jump-scenario-test', group: 'Jump To', label: 'Scenario Test', shortcut: '↵' },
@@ -318,6 +321,7 @@ function App() {
         {route === 'tracing'   && <TracingLive threadId={traceThreadId} />}
         {route === 'arena'     && <ArenaLive />}
         {route === 'workflows' && <WorkflowsLive />}
+        {route === 'memory'    && <MemoryLive onPageContextChange={handlePageContextChange} />}
         {route === 'client'    && <ClientRfqLive onPageContextChange={handlePageContextChange} />}
       </AppShell>
       <CommandPalette
