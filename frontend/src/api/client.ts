@@ -27,6 +27,8 @@ import type {
   TraceRunNode,
   TraceSummary,
   TracingConfig,
+  MemoryFact,
+  MemoryStatus,
 } from '../types';
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -279,3 +281,61 @@ export const validateWorkflow = (script: string) =>
     method: 'POST',
     body: JSON.stringify({ script }),
   });
+
+// --- Memory Console ---------------------------------------------------------
+
+export function errorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.detail === 'string') return parsed.detail;
+  } catch {
+    /* not JSON */
+  }
+  return raw || 'request failed';
+}
+
+export const listMemoryFacts = (params: {
+  scope_type?: string;
+  scope_id?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}) => {
+  const q = new URLSearchParams();
+  if (params.scope_type) q.set('scope_type', params.scope_type);
+  if (params.scope_id) q.set('scope_id', params.scope_id);
+  if (params.status) q.set('status', params.status);
+  q.set('limit', String(params.limit ?? 100));
+  q.set('offset', String(params.offset ?? 0));
+  return api<{ items: MemoryFact[]; total: number }>(`/api/memory/facts?${q.toString()}`);
+};
+
+export const createMemoryFact = (body: {
+  scope_type: string;
+  scope_id?: string;
+  content: string;
+  confidence: number;
+  category?: string | null;
+}) => api<MemoryFact>('/api/memory/facts', { method: 'POST', body: JSON.stringify(body) });
+
+export const patchMemoryFact = (
+  id: number,
+  body: { content?: string; confidence?: number; category?: string | null },
+) => api<MemoryFact>(`/api/memory/facts/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+
+export const approveMemoryFact = (id: number) =>
+  api<MemoryFact>(`/api/memory/facts/${id}/approve`, { method: 'POST' });
+
+export const setMemoryFactPinned = (id: number, pinned: boolean) =>
+  api<MemoryFact>(`/api/memory/facts/${id}/pin`, { method: 'PATCH', body: JSON.stringify({ pinned }) });
+
+export const deleteMemoryFact = (id: number) =>
+  api<void>(`/api/memory/facts/${id}`, { method: 'DELETE' });
+
+export const getMemoryStatus = () => api<MemoryStatus>('/api/memory/status');
+
+export const listPortfoliosWithIds = () =>
+  api<Array<{ id: number; name: string }>>('/api/portfolios').then((rows) =>
+    rows.map((r) => ({ id: r.id, name: r.name })),
+  );

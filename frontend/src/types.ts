@@ -21,7 +21,37 @@ export type Route =
   | 'skills'
   | 'tracing'
   | 'arena'
-  | 'workflows';
+  | 'workflows'
+  | 'memory';
+
+export interface MemoryFact {
+  id: number;
+  scope_type: 'user' | 'book' | 'domain' | 'correction';
+  scope_id: string;
+  content: string;
+  confidence: number;
+  status: 'proposed' | 'approved' | 'active' | 'archived';
+  category: string | null;
+  source_error: boolean;
+  pinned: boolean;
+  created_by: string;
+  extractor_model: string | null;
+  source_session_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MemoryStatus {
+  enabled: boolean;
+  config: {
+    confidence_floor: number;
+    max_facts_per_scope: number;
+    max_correction_facts: number;
+    injection_token_budget: number;
+    correction_token_budget: number;
+  };
+  counts: Record<string, Record<string, number>>;
+}
 
 export type WorkflowParam = {
   name: string;

@@ -6,6 +6,7 @@ export type NavRoute = Exclude<Route, 'client-rfq'>;
 
 // User-facing page concepts — NOT backend API endpoint names.
 export const ROUTE_PATHS: Record<NavRoute, string> = {
+  memory: '/memory',
   positions: '/positions',
   booking: '/booking',
   'pricing-parameters': '/pricing-parameters',
