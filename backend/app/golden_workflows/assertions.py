@@ -115,6 +115,11 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
             return (isinstance(val, (int, float)) and not isinstance(val, bool) and val >= a.gte, f"{a.path} !>= {a.gte}")
         if a.lte is not None:
             return (isinstance(val, (int, float)) and not isinstance(val, bool) and val <= a.lte, f"{a.path} !<= {a.lte}")
+    if t == "tool_not_called":
+        from app.golden_workflows.schema import normalize_tool_name
+        want = normalize_tool_name(a.name)
+        called = any(normalize_tool_name(c.get("name", "")) == want for c in ctx.tool_calls)
+        return (not called, f"tool {a.name} was called but must not be")
     return False, f"unknown assertion {t}"
 
 def resolve_seed_refs(obj: Any, seed_map: dict[str, Any]) -> Any:

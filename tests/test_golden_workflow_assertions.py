@@ -39,3 +39,30 @@ def test_resolve_seed_refs_preserves_type():
     out = resolve_seed_refs({"portfolio_id": "$seed.portfolios.control.id"},
                             {"$seed.portfolios.control.id": 6})
     assert out == {"portfolio_id": 6} and isinstance(out["portfolio_id"], int)
+
+
+def test_tool_not_called_passes_when_absent():
+    from app.golden_workflows.schema import _ToolNotCalled
+    a = _ToolNotCalled(type="tool_not_called", name="create_report")
+    ok, _ = evaluate_assertion(a, ctx(tool_calls=[{"name": "write_report_artifact"}]))
+    assert ok is True
+
+
+def test_tool_not_called_fails_when_present_normalized():
+    from app.golden_workflows.schema import _ToolNotCalled
+    a = _ToolNotCalled(type="tool_not_called", name="create_report")
+    # normalize_tool_name strips a trailing _tool suffix on the observed call
+    ok, msg = evaluate_assertion(a, ctx(tool_calls=[{"name": "create_report_tool"}]))
+    assert ok is False
+    assert "create_report" in msg
+
+
+def test_high_board_is_a_valid_persona():
+    from app.golden_workflows.schema import parse_workflow
+    wf = parse_workflow({
+        "id": "x", "schema_version": 1, "persona": "high_board",
+        "title": "t", "objective": "o", "fixtures": "x.fixtures.json",
+        "steps": [{"user": "u", "expected_skill": "s", "outcome": "o", "replay": "r"}],
+        "success": {"assertions": [], "rubric": []},
+    })
+    assert wf.persona == "high_board"
