@@ -29,6 +29,10 @@ class FactOut(BaseModel):
     status: str
     category: str | None
     source_error: bool
+    pinned: bool
+    created_by: str
+    extractor_model: str | None
+    source_session_id: int | None
     created_at: Any
     updated_at: Any
 
@@ -47,10 +51,20 @@ class FactPatch(BaseModel):
     category: str | None = None
 
 
+class FactPin(BaseModel):
+    pinned: bool
+
+
 def _out(fact) -> dict:
+    meta = fact.meta if isinstance(fact.meta, dict) else {}
+    em = meta.get("extractor_model")
+    sid = meta.get("session_id")
     return FactOut(id=fact.id, scope_type=fact.scope_type, scope_id=fact.scope_id,
                    content=fact.content, confidence=fact.confidence, status=fact.status,
                    category=fact.category, source_error=fact.source_error,
+                   pinned=fact.pinned, created_by=fact.created_by,
+                   extractor_model=em if isinstance(em, str) else None,
+                   source_session_id=sid if isinstance(sid, int) else None,
                    created_at=fact.created_at, updated_at=fact.updated_at).model_dump()
 
 
@@ -127,6 +141,18 @@ def build_memory_router() -> APIRouter:
         with database.SessionLocal() as session:
             try:
                 fact = get_memory_store().set_status(session, fact_id, "approved")
+                session.commit()
+            except MemoryNotFound as exc:
+                raise HTTPException(404, "not found") from exc
+            except MemoryConflictError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            return _out(fact)
+
+    @router.patch("/facts/{fact_id}/pin")
+    def pin_fact(fact_id: int, body: FactPin):
+        with database.SessionLocal() as session:
+            try:
+                fact = get_memory_store().set_pinned(session, fact_id, body.pinned)
                 session.commit()
             except MemoryNotFound as exc:
                 raise HTTPException(404, "not found") from exc

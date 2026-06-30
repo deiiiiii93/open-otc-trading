@@ -104,3 +104,69 @@ def test_runtime_reset_changes_api_behavior(mem_client, monkeypatch):
         "scope_type": "user", "content": "hedges by underlying net", "confidence": 0.8})
     assert r.status_code == 400  # below the new floor -> proves no stale store
     rt.reset_memory_runtime()
+
+
+# --- Memory Console additions (provenance, pin, archived 409, list semantics) ---
+
+def test_factout_includes_provenance(mem_client):
+    body = mem_client.post("/api/memory/facts", json={"scope_type": "user", "content": "usd books", "confidence": 0.9}).json()
+    assert body["pinned"] is True            # api+user create is auto-pinned
+    assert body["created_by"] == "api"
+    assert body["extractor_model"] is None
+    assert body["source_session_id"] is None
+
+
+def test_pin_endpoint_round_trip_and_404(mem_client):
+    fid = mem_client.post("/api/memory/facts", json={"scope_type": "user", "content": "pin target", "confidence": 0.9}).json()["id"]
+    assert mem_client.patch(f"/api/memory/facts/{fid}/pin", json={"pinned": False}).json()["pinned"] is False
+    assert mem_client.patch(f"/api/memory/facts/{fid}/pin", json={"pinned": True}).json()["pinned"] is True
+    assert mem_client.patch("/api/memory/facts/999999/pin", json={"pinned": True}).status_code == 404
+
+
+def test_pin_archived_returns_409(mem_client):
+    fid = mem_client.post("/api/memory/facts", json={"scope_type": "user", "content": "to archive", "confidence": 0.9}).json()["id"]
+    assert mem_client.delete(f"/api/memory/facts/{fid}").status_code == 204
+    assert mem_client.patch(f"/api/memory/facts/{fid}/pin", json={"pinned": True}).status_code == 409
+
+
+def test_provenance_coerces_malformed_meta(mem_client, session):
+    from app.models import MemoryEntry
+    from app import database
+    with database.SessionLocal() as s:
+        s.add(MemoryEntry(scope_type="user", scope_id="desk", content="legacy meta",
+                          normalized_content="legacy meta", confidence=0.9, status="active",
+                          created_by="extractor", meta={"extractor_model": 123, "session_id": "not-int"}))
+        s.commit()
+    rows = mem_client.get("/api/memory/facts", params={"scope_type": "user"}).json()["items"]
+    legacy = [x for x in rows if x["content"] == "legacy meta"][0]
+    assert legacy["extractor_model"] is None and legacy["source_session_id"] is None
+
+
+def test_patch_category_clear_and_unchanged(mem_client):
+    fid = mem_client.post("/api/memory/facts", json={"scope_type": "user", "content": "cat fact", "confidence": 0.9, "category": "pref"}).json()["id"]
+    assert mem_client.patch(f"/api/memory/facts/{fid}", json={"confidence": 0.95}).json()["category"] == "pref"
+    assert mem_client.patch(f"/api/memory/facts/{fid}", json={"category": ""}).json()["category"] is None
+
+
+def test_patch_archived_returns_409(mem_client):
+    fid = mem_client.post("/api/memory/facts", json={"scope_type": "user", "content": "edit archived", "confidence": 0.9}).json()["id"]
+    mem_client.delete(f"/api/memory/facts/{fid}")
+    assert mem_client.patch(f"/api/memory/facts/{fid}", json={"content": "nope"}).status_code == 409
+
+
+def test_approve_archived_returns_409(mem_client):
+    fid = mem_client.post("/api/memory/facts", json={"scope_type": "domain", "content": "dom approve archived", "confidence": 0.9}).json()["id"]
+    mem_client.delete(f"/api/memory/facts/{fid}")
+    assert mem_client.post(f"/api/memory/facts/{fid}/approve").status_code == 409
+
+
+def test_list_status_semantics(mem_client):
+    active = mem_client.post("/api/memory/facts", json={"scope_type": "user", "content": "active one", "confidence": 0.9}).json()["id"]
+    arch = mem_client.post("/api/memory/facts", json={"scope_type": "user", "content": "to archive 2", "confidence": 0.9}).json()["id"]
+    mem_client.delete(f"/api/memory/facts/{arch}")
+    current = [x["id"] for x in mem_client.get("/api/memory/facts", params={"scope_type": "user"}).json()["items"]]
+    assert active in current and arch not in current
+    all_ids = [x["id"] for x in mem_client.get("/api/memory/facts", params={"scope_type": "user", "status": "all"}).json()["items"]]
+    assert active in all_ids and arch in all_ids
+    only_arch = [x["id"] for x in mem_client.get("/api/memory/facts", params={"scope_type": "user", "status": "archived"}).json()["items"]]
+    assert only_arch == [arch]
