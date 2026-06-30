@@ -40,9 +40,11 @@ from app.golden_workflows.schema import parse_workflow  # noqa: F401 (ensures pk
 
 
 def _ctx(tool_calls):
+    # AssertionContext fields: response_text, tool_calls, tool_results,
+    # skills_routed, artifacts, task_ids (all required).
     return AssertionContext(
-        skills_routed=[], tool_calls=tool_calls, tool_results=[],
-        artifacts=[], response_text="",
+        response_text="", tool_calls=tool_calls, tool_results=[],
+        skills_routed=[], artifacts=[], task_ids=[],
     )
 
 
@@ -137,12 +139,13 @@ from app.golden_workflows.fixtures import FixtureBundle, apply_seed
 
 
 def _bundle():
+    # FixtureBundle is a dataclass with fields: seed, replay, seed_map (no schema_version).
     return FixtureBundle(
-        schema_version=1,
         seed={
             "reports": [
                 {"alias": "q3", "report_type": "arena_high_board_governance",
                  "status": "completed",
+                 "request_payload": {"arena_seed": True},
                  "result_payload": {"summary": "prior governance"},
                  "artifact_paths": {"markdown": "reports/q3.md"}},
             ]
@@ -161,6 +164,9 @@ def test_reports_namespace_inserts_reportjob_and_records_id():
         assert row.report_type == "arena_high_board_governance"
         assert row.status == "completed"
         assert row.result_payload == {"summary": "prior governance"}
+        # request_payload is an allowlisted seedable column — assert it flows
+        # through so a future allowlist regression can't silently drop it.
+        assert row.request_payload == {"arena_seed": True}
         # cleanup so repeated test runs stay isolated
         session.delete(row)
         session.commit()
@@ -299,9 +305,11 @@ def test_persona_maps_high_board_to_high_board():
     assert runner._persona_to_character("high_board") == "high_board"
 
 
-def test_purge_seeded_reports_removes_marker_rows_only():
+def test_purge_seeded_reports_removes_reserved_marker_only():
     with database.SessionLocal() as session:
+        # Non-marker report_type — must SURVIVE (reserved-marker purge never touches it)
         keep = models.ReportJob(report_type="portfolio_governance", status="completed")
+        # Reserved arena marker report_type — must be PURGED
         marker = models.ReportJob(report_type=runner.ARENA_REPORT_MARKER, status="completed")
         session.add_all([keep, marker])
         session.commit()
@@ -312,8 +320,8 @@ def test_purge_seeded_reports_removes_marker_rows_only():
         session.commit()
 
     with database.SessionLocal() as session:
-        assert session.get(models.ReportJob, marker_id) is None
-        assert session.get(models.ReportJob, keep_id) is not None
+        assert session.get(models.ReportJob, marker_id) is None     # reserved marker purged
+        assert session.get(models.ReportJob, keep_id) is not None   # production type survives
         # cleanup
         session.delete(session.get(models.ReportJob, keep_id))
         session.commit()
@@ -346,19 +354,30 @@ Add the purge helper near `_purge_seeded_portfolios`:
 
 ```python
 def _purge_seeded_reports(session) -> None:
-    """Recovery purge: delete any ReportJob carrying the arena-private marker
-    report_type. Safe under the sequential-matches invariant — a leftover marker
-    row can only be a prior crashed match's orphan, never a live concurrent one.
-    No production/user report uses this report_type."""
+    """Recovery purge: delete EVERY ReportJob carrying the reserved arena-private
+    marker report_type, so a freshly seeded match starts from a clean slate and
+    the display-report step can only find the report this match just seeded.
+
+    Safe because ARENA_REPORT_MARKER is a RESERVED report_type — an arena-private
+    string that no production, user, or normal report path emits (the same
+    convention the codebase already uses for ARENA_PORTFOLIO_TAG / ARENA_PROFILE_MARKER
+    on seeded portfolios/profiles). Race-free under the documented sequential-matches
+    invariant: the arena serialises matches on the shared async-checkpointer SQLite
+    ("Known constraint — sequential matches"), so no concurrent match owns a live
+    marker row when this runs. (Enabling multi-worker arena execution would require
+    revisiting ALL arena seeding holistically — out of this workflow's scope.)"""
     from sqlalchemy import delete
 
     from app import models
     session.execute(
-        delete(models.ReportJob).where(
-            models.ReportJob.report_type == ARENA_REPORT_MARKER
-        )
+        delete(models.ReportJob).where(models.ReportJob.report_type == ARENA_REPORT_MARKER)
     )
+    session.commit()   # commit NOW (mirrors _purge_seeded_portfolios): the recovery
+                       # delete must be durable even if the subsequent apply_seed
+                       # raises — otherwise it would roll back in the shared transaction.
 ```
+
+> Call ordering in `run_match`: `_purge_seeded_portfolios(session, ...)` → `_purge_seeded_reports(session)` → `apply_seed(...)`. Each recovery purge commits independently before seeding.
 
 - [ ] **Step 4: Wire the two cleanup paths into `run_match`**
 
@@ -585,8 +604,13 @@ persisted artifact.
 ## Step 5 — Pull prior governance report
 
 The overseer asks for the prior governance report. The agent routes to
-`display-report`, calls `list_reports` then `get_report`, and summarizes the seeded
-report.
+`display-report`, calls `list_reports` (filtered by `status="completed"` — NOT by
+`report_type`, whose tool filter only accepts `portfolio`/`risk`/`rfq`; the seeded
+report's arena marker is a free `report_type` column value, valid for seeding,
+reading, the Step-5 assertion, and cleanup, but **not** a valid `list_reports`
+filter value), then `get_report`, and summarizes the seeded report. The clean-slate
+recovery purge guarantees the freshly seeded marker report is the governance report
+the agent finds.
 
 ## Step 6 — Generate the board governance report
 
@@ -616,6 +640,7 @@ Create `backend/app/golden_workflows/definitions/high-board-portfolio-review-day
     ],
     "reports": [
       { "alias": "q3", "report_type": "arena_high_board_governance", "status": "completed",
+        "request_payload": { "arena_seed": true },
         "result_payload": { "summary": "Prior-quarter board governance review." },
         "artifact_paths": { "markdown": "reports/q3-governance.md" } }
     ]
@@ -661,14 +686,15 @@ Create `backend/app/golden_workflows/definitions/high-board-portfolio-review-day
     },
     "step-5-display": {
       "ai": { "tool_calls": [
-        { "id": "tc5a", "name": "list_reports", "args": {} },
+        { "id": "tc5a", "name": "list_reports", "args": { "status": "completed" } },
         { "id": "tc5b", "name": "get_report", "args": { "report_id": 10 } } ] },
       "tool_results": [
         { "name": "list_reports", "tool_call_id": "tc5a",
-          "content": { "reports": [ { "id": 10, "report_type": "arena_high_board_governance", "status": "completed" } ], "total": 1 } },
+          "content": { "reports": [ { "report_id": 10, "report_type": "arena_high_board_governance", "status": "completed", "title": null, "portfolio_id": null } ], "total": 1 } },
         { "name": "get_report", "tool_call_id": "tc5b",
-          "content": { "id": 10, "report_type": "arena_high_board_governance", "status": "completed",
-            "result_payload": { "summary": "Prior-quarter board governance review." } } } ],
+          "content": { "report_id": 10, "report_type": "arena_high_board_governance", "status": "completed",
+            "request_payload": { "arena_seed": true }, "result_payload": { "summary": "Prior-quarter board governance review." },
+            "summary": "Prior-quarter board governance review." } } ],
       "skills_routed": ["display-report"],
       "artifacts": [],
       "response_text": "Pulled the prior governance report (arena_high_board_governance) for context."
@@ -762,7 +788,7 @@ import copy
 
 from app.golden_workflows.registry import get_workflow_bundle
 from app.golden_workflows.transcript import transcript_from_replay
-from app.golden_workflows.assertions import objective_score
+from app.services.arena.scoring import objective_score  # NOTE: lives in arena.scoring
 
 
 def _loaded():
@@ -772,7 +798,8 @@ def _loaded():
 def test_baseline_replay_passes():
     loaded = _loaded()
     tx = transcript_from_replay(loaded)
-    score, passed, total = objective_score(loaded.workflow, tx)
+    # objective_score signature is (transcript, loaded) -> (score, passed, total)
+    _score, passed, total = objective_score(tx, loaded)
     assert passed == total  # all objective assertions pass on the honest replay
 
 
@@ -783,7 +810,7 @@ def test_leaking_view_fails_scope_discriminator():
     loaded = copy.deepcopy(loaded)
     loaded.fixtures.replay["step-3-count"]["tool_results"][0]["content"]["portfolio_total_count"] = 6
     tx = transcript_from_replay(loaded)
-    _, passed, total = objective_score(loaded.workflow, tx)
+    _, passed, total = objective_score(tx, loaded)
     assert passed < total  # portfolio_total_count == 5 assertion now fails
 
 
@@ -798,8 +825,34 @@ def test_calling_create_report_fails_tool_not_called():
         0, {"name": "create_report", "tool_call_id": "tc6x", "content": {"id": 77}}
     )
     tx = transcript_from_replay(loaded)
-    _, passed, total = objective_score(loaded.workflow, tx)
+    _, passed, total = objective_score(tx, loaded)
     assert passed < total  # tool_not_called create_report now fails
+
+
+def test_planned_list_reports_args_validate_against_real_tool():
+    """Replay scoring does not prove the live tool accepts the args. Invoke the
+    REAL list_reports tool with the workflow's planned Step-5 args to prove they
+    pass the tool's input schema (report_type marker is NOT used as a filter)."""
+    from app.tools.reporting import list_reports_tool
+    # Must not raise a pydantic/LangChain validation error:
+    out = list_reports_tool.invoke({"status": "completed"})
+    assert "reports" in out
+
+
+def test_wrong_report_selection_fails_step5_discriminator():
+    """The marker report_type is the SELECTION enforcer: list_reports filters only
+    by status (the marker is not a valid tool filter), so if the agent fetches the
+    wrong completed report, get_report's report_type != marker and Step 5 fails.
+    This proves wrong selection cannot score green, even though list ordering is
+    not tool-deterministic in the shared live DB."""
+    loaded = _loaded()
+    loaded = copy.deepcopy(loaded)
+    # Agent fetched an unrelated completed report instead of the seeded marker one.
+    gr = loaded.fixtures.replay["step-5-display"]["tool_results"][1]["content"]
+    gr["report_type"] = "portfolio"  # not the arena marker
+    tx = transcript_from_replay(loaded)
+    _, passed, total = objective_score(tx, loaded)
+    assert passed < total  # tool_result_path get_report report_type == marker now fails
 ```
 
 > Confirm `objective_score`'s return shape and `transcript_from_replay`'s argument by reading `tests/test_golden_workflow_regression.py`; adapt the deepcopy mutation if `loaded.fixtures.replay` is immutable (rebuild the bundle from a mutated dict instead).
