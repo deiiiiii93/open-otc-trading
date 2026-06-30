@@ -97,6 +97,69 @@ def test_registry_default_selection_returns_dict():
     }
 
 
+# ---------------------------------------------------------------------------
+# select_by_tag: tier-selection API powering MemoryConfig.extractor_model
+# routing (cheap "fast"-tagged extractor model instead of the agent default).
+# ---------------------------------------------------------------------------
+
+def _md(id_, *, provider="openai", tags=()):
+    return ModelDescriptor(id=id_, provider=provider, label=id_, tags=tags)
+
+
+def _ch(name, models, *, healthy=True):
+    return ChannelDescriptor(
+        name=name, label=name.upper(), type="openai_compatible",
+        api_key="k", base_url="https://x", anthropic_base_url=None,
+        models=tuple(models), healthy=healthy,
+    )
+
+
+def test_select_by_tag_returns_first_healthy_match():
+    reg = ChannelRegistry(
+        channels=(_ch("flashc", (_md("slow", tags=("reasoning",)),
+                                 _md("quick", tags=("fast", "tool-use")))),),
+        default=("flashc", "openai", "slow"),
+    )
+    assert reg.select_by_tag("fast") == {
+        "channel": "flashc", "provider": "openai", "model": "quick",
+    }
+
+
+def test_select_by_tag_declaration_order_is_tiebreak():
+    reg = ChannelRegistry(
+        channels=(_ch("c", (_md("first", tags=("fast",)),
+                            _md("second", tags=("fast",)))),),
+        default=("c", "openai", "first"),
+    )
+    assert reg.select_by_tag("fast")["model"] == "first"
+
+
+def test_select_by_tag_skips_unhealthy_channels():
+    reg = ChannelRegistry(
+        channels=(_ch("dead", (_md("dead-fast", tags=("fast",)),), healthy=False),
+                  _ch("live", (_md("live-fast", tags=("fast",)),))),
+        default=("live", "openai", "live-fast"),
+    )
+    sel = reg.select_by_tag("fast")
+    assert sel["channel"] == "live" and sel["model"] == "live-fast"
+
+
+def test_select_by_tag_returns_none_when_no_match():
+    reg = ChannelRegistry(
+        channels=(_ch("c", (_md("m", tags=("reasoning",)),)),),
+        default=("c", "openai", "m"),
+    )
+    assert reg.select_by_tag("fast") is None
+
+
+def test_select_by_tag_returns_none_when_only_unhealthy_has_tag():
+    reg = ChannelRegistry(
+        channels=(_ch("dead", (_md("m", tags=("fast",)),), healthy=False),),
+        default=("dead", "openai", "m"),
+    )
+    assert reg.select_by_tag("fast") is None
+
+
 YAML_FIXTURE = """
 default:
   channel: zenmux

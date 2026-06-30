@@ -61,6 +61,26 @@ class ChannelRegistry:
         channel, provider, model = self.default
         return {"channel": channel, "provider": provider, "model": model}
 
+    def select_by_tag(self, tag: str) -> dict[str, str] | None:
+        """Return the first HEALTHY channel's first model bearing ``tag`` as a
+        ``{channel, provider, model}`` selection, or ``None`` when no healthy
+        channel declares a model with that tag.
+
+        This is the tier-selection seam behind ``MemoryConfig.extractor_model``:
+        it lets the extractor route to a cheap "fast"-tagged model instead of
+        the agent's default. Declaration order (channels, then models) is the
+        deterministic tie-break. Unhealthy channels are skipped so the returned
+        selection always builds — ``None`` signals the caller to fall back to
+        ``default_selection()``.
+        """
+        for ch in self.channels:
+            if not ch.healthy:
+                continue
+            for md in ch.models:
+                if tag in md.tags:
+                    return {"channel": ch.name, "provider": md.provider, "model": md.id}
+        return None
+
 
 _VALID_TYPES = {"zenmux", "openai_compatible"}
 

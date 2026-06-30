@@ -21,17 +21,29 @@ _QUEUE: MemoryWriteQueue | None = None
 _MIDDLEWARE: MemoryMiddleware | None = None
 
 
+def resolve_extractor_selection(registry, config: MemoryConfig) -> dict:
+    """Resolve the configured extractor tier to a concrete model selection.
+
+    Prefer a healthy model tagged ``config.extractor_model`` (e.g. "fast"), so
+    extraction routes to the cheap flash tier rather than the agent default.
+    Falls back to ``registry.default_selection()`` when no healthy channel
+    declares a model with that tag. Both the build path (_extractor_llm) and the
+    provenance path (_extractor_model_id) go through this single resolver, so the
+    model we record can never drift from the model we run.
+    """
+    selection = registry.select_by_tag(config.extractor_model)
+    if selection is not None:
+        return selection
+    return registry.default_selection()
+
+
 def _extractor_llm(prompt: str) -> str:
     from ..channel_registry import get_registry
     from ..model_factory import build_agent_model
 
-    # NOTE: MemoryConfig.extractor_model is a tier concept ("flash") but
-    # ChannelRegistry has no find_by_tag API — it only accepts exact
-    # (channel, provider, model) triples.  Until a tag-selection API is added,
-    # we fall back to the registry default.  Provenance is recorded via
-    # _extractor_model_id() so meta.extractor_model reflects the real model
-    # rather than the tier string.  See task-15-report.md §API-limitation.
-    model = build_agent_model(get_registry())
+    registry = get_registry()
+    selection = resolve_extractor_selection(registry, get_memory_config())
+    model = build_agent_model(registry, selection)
     if model is None:
         raise RuntimeError("extractor model unavailable")
     content = model.invoke(prompt).content
@@ -44,13 +56,14 @@ def _extractor_llm(prompt: str) -> str:
 
 
 def _extractor_model_id() -> str:
-    """Return the ACTUAL model id resolved by the registry for extraction.
+    """Return the ACTUAL model id resolved for extraction (flash-tier when
+    available, else the registry default).
 
     Called at job-run time so meta.extractor_model records the real model,
     not the tier-concept string from MemoryConfig.extractor_model.
     """
     from ..channel_registry import get_registry
-    return get_registry().default_selection()["model"]
+    return resolve_extractor_selection(get_registry(), get_memory_config())["model"]
 
 
 def _window_loader(session_id, after_message_id, config: MemoryConfig):

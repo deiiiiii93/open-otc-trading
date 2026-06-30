@@ -38,7 +38,11 @@ class MemoryConfig:
     content_max_chars: int = 2000
     category_max_chars: int = 64
     tiktoken_encoder: str = "cl100k_base"
-    extractor_model: str = "flash"
+    # Registry TAG identifying the cheap extraction tier. Resolved against
+    # ChannelRegistry.select_by_tag() at run time; falls back to the registry
+    # default model when no healthy channel declares a model with this tag.
+    # "fast" matches the tag the flash-tier models carry in agent_channels.yaml.
+    extractor_model: str = "fast"
     shutdown_grace_seconds: float = 5.0
     correction_phrases: tuple[str, ...] = field(default_factory=lambda: DEFAULT_CORRECTION_PHRASES)
     denylist: tuple[str, ...] = field(default_factory=lambda: DEFAULT_DENYLIST)
