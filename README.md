@@ -54,6 +54,7 @@ The product walkthrough tells it as one continuous flow:
 - **Hedging** — A MILP solver that proposes and sizes Δ-neutral hedge strategies, with lifecycle backtesting.
 - **RFQ workflow** — Client portal for quote requests with an internal approval pipeline.
 - **Market data** — AKShare adapter with caching and fallback for A-share / HK markets.
+- **Long-term memory** — A cross-session memory layer distills durable facts — desk preferences, per-book context, and corrections — from closed sessions and injects the relevant ones into later conversations. Facts are scoped (`user` / `book` / `domain` / `correction`), with a propose→approve gate for shared domain knowledge and a dedicated **Memory** console to review, pin, edit, and approve them.
 - **Reproducible & audited** — Every pricing run, risk run, and agent trace is persisted; QuantArk keeps the math deterministic.
 
 ---
@@ -183,6 +184,8 @@ mkdir -p data artifacts
 | `DEEPSEEK_API_KEY` | DeepSeek API key | No |
 | `LANGSMITH_API_KEY` | LangSmith observability | No |
 | `OPEN_OTC_TRACING` | Tracing mode: `local` \| `langsmith` \| `both` \| `off` | No |
+| `OPEN_OTC_MEMORY` | Long-term memory capture: `on` (default) \| `off` | No |
+| `OPEN_OTC_MEMORY_RECONCILE_SINCE` | ISO-8601 cutoff — when first enabling memory on an existing DB, only extract sessions closed at/after this instant (avoids mass-extracting the historical backlog) | No |
 
 The platform works without LLM API keys — agents fall back to deterministic persona responses and QuantArk-backed tool outputs. The local `config/agent_channels.yaml` file is gitignored; keep provider keys in `.env` and adjust channel/model entries there when needed.
 
