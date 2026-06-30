@@ -39,9 +39,13 @@ Read and note the exact import path, prop names, and supported variant strings f
 - `frontend/src/components/PageToolbar.tsx` (+ `PageToolbarSearch` if present)
 - `frontend/src/routes/Skills.tsx` + `Skills.live.tsx` as the end-to-end usage reference
 
-- [ ] **Step 2: Reconcile the plan's snippets with the real names**
+- [ ] **Step 2: Write the contracts artifact and commit it**
 
-Where a later task's snippet uses a prop/variant that differs from the real component, prefer the **real** name (the component is the source of truth; the plan's structure is the contract). Record any rename in a scratch note so Tasks 5–7 are consistent. No commit (nothing changed).
+Write the discovered contracts to `docs/memory-component-contracts.md` (import path + prop names + variant strings per component, one short section each). Tasks 5–7 read this file and use the **real** names (the component is the source of truth; the plan's structure is the contract). Commit:
+```bash
+git add docs/memory-component-contracts.md
+git commit -m "docs(memory): shared frontend component contracts (preflight)"
+```
 
 ---
 
@@ -375,8 +379,10 @@ git commit -m "feat(memory): FactOut provenance fields + pin endpoint + archived
 
 ```ts
 // frontend/src/api/client.memory.test.ts
-import { describe, it, expect } from 'vitest';
-import { errorMessage } from './client';
+// NOTE: this single import block is the whole file's header — do not add a second
+// import of the same vitest bindings later (the Step-4 block below reuses these).
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { errorMessage, listMemoryFacts, createMemoryFact, getMemoryStatus } from './client';
 
 describe('errorMessage', () => {
   it('extracts FastAPI detail', () => {
@@ -417,12 +423,7 @@ describe('memory client fns (mocked fetch)', () => {
   });
 });
 ```
-
-Add the imports at the top of the test file:
-```ts
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { errorMessage, listMemoryFacts, createMemoryFact, getMemoryStatus } from './client';
-```
+(All imports are already in the consolidated header block above — do not re-import.)
 
 - [ ] **Step 2: Run to verify it fails**
 
@@ -805,7 +806,7 @@ function sourceBadge(createdBy: string) {
 
 - Below table: count note `Showing {visible.length} of {facts.length} loaded · {total} total`; `[Load more]` button when `facts.length < total` → `onLoadMore`. `feedback` in the `PageScaffold` feedback zone.
 - Create/Edit `Modal` driven by `modal` (`kind==='create'|'edit'`): fields bound to `modal.draft` via `onModalChange`; on create show `scope_type` select and (when `draft.scope_type==='book'`) a portfolio select; confidence input `min={confidenceFloor} max={1} step={0.01}`; `modalError` shown inline. **Save disabled** unless `draft.content.trim()` and `confidenceFloor <= draft.confidence <= 1` and (`draft.scope_type!=='book'` or `draft.portfolioId!=null`), and not `modalSaving`. Save → `onModalSave`; Cancel → `onModalCancel`.
-- Delete `Modal` (`kind==='delete'`): "Archive this fact? It will no longer be injected and cannot be restored from this page." Confirm → `onConfirmDelete`; Cancel → `onModalCancel`.
+- Delete `Modal` (`kind==='delete'`): body "Archive this fact? It will no longer be injected and cannot be restored from this page." The confirm button's accessible label is exactly **"Archive this fact"** (the Task-7 behavior test matches `/archive this fact/i`) → `onConfirmDelete`; Cancel → `onModalCancel`.
 
 - [ ] **Step 3e: Keep `Memory.live` compiling (stub the new props)**
 
@@ -936,7 +937,10 @@ Container state per spec §F2: `facts, total, nextOffset, status, loading, error
 
 - [ ] **Step 3a: `loadView` + stale-guard + offset + partial-failure**
 
-- `loadView(reset)`: `token=++reqSeq`; build params: `scope_type = activeScope==='all'?undefined:activeScope`; `status = statusFilter==='current'?undefined:statusFilter`; `scope_id = activeScope==='book' && selectedPortfolio!=null ? String(selectedPortfolio) : undefined`; `offset = reset?0:nextOffset`. Run `Promise.allSettled([listMemoryFacts({...params, limit:100, offset}), reset?getMemoryStatus():Promise.resolve(null)])`. If `token!==reqSeq` bail. On facts success: `reset` → replace + `setNextOffset(items.length)`; else append + `setNextOffset(prev+items.length)`; set `total`. On facts failure: if `reset && facts.length===0` set `error=errorMessage(...)` (full empty-error) else `setFeedback(errorMessage(...))`. On status settled: success → setStatus; failure on initial → leave status null (chips hidden, floor fallback 0.7).
+- `loadView(reset)`: `token=++reqSeq`; build params: `scope_type = activeScope==='all'?undefined:activeScope`; `status = statusFilter==='current'?undefined:statusFilter`; `scope_id = activeScope==='book' && selectedPortfolio!=null ? String(selectedPortfolio) : undefined`; `offset = reset?0:nextOffset`. Fetch facts always; fetch status **only on reset**: `const [factsR, statusR] = await Promise.allSettled([listMemoryFacts({...params, limit:100, offset}), reset ? getMemoryStatus() : Promise.resolve(undefined)])`. If `token!==reqSeq` bail.
+  - **Facts success:** if `reset` → replace `facts` + `setNextOffset(items.length)`; else append + `setNextOffset(prev+items.length)`; `setTotal(total)`; **`setError(null)`** (clear any prior full-page error); on an explicit refresh also clear stale `feedback`.
+  - **Facts failure:** if `reset && facts.length===0` → `setError(errorMessage(...))` (full empty-error); else `setFeedback(errorMessage(...))`.
+  - **Status (reset only):** `if (reset && statusR.status==='fulfilled') setStatus(statusR.value)`. **Never call `setStatus` on a load-more** (it would null out chips/config). A status failure on the initial load leaves `status` null → chips hidden, floor falls back to `0.7`.
 - Load portfolios on mount: `listPortfoliosWithIds().then(setPortfolios).catch(e=>setPortfoliosError(errorMessage(e)))`.
 - Effects: `loadView(true)` on mount and whenever `activeScope/statusFilter/selectedPortfolio` change. `onRefresh=()=>loadView(true)`, `onLoadMore=()=>loadView(false)`.
 
@@ -982,7 +986,7 @@ git commit -m "feat(memory): container behaviors — mutations, modal, portfolio
 
 - [ ] **Step 1: Find any route/nav snapshot test the new route trips**
 
-Run: `cd frontend && grep -rln "ROUTE_PATHS\|navItems\|'memory'\|route ===" src/**/*.test.tsx src/lib/*.test.ts 2>/dev/null; npx vitest run 2>&1 | tail -30`
+Run: `cd frontend && grep -rln "ROUTE_PATHS\|navItems\|'memory'\|route ===" src 2>/dev/null; npx vitest run` (run vitest WITHOUT piping so its exit status is visible — a pipe to `tail` would mask a non-zero exit).
 Expected: identify any failing "exact route set" assertion.
 
 - [ ] **Step 2: Update the snapshot/assertion to include `'memory'`**
@@ -999,12 +1003,14 @@ Expected: PASS, no type errors.
 Run: `python -m pytest tests/test_memory_api.py tests/test_memory_store_crud.py tests/test_memory_apply_diff.py tests/test_memory_queue_runjob.py -q`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Commit (only if Step 2 changed a file)**
 
 ```bash
+# Only needed if Step 2 actually modified a route/nav snapshot test.
 git add -A
-git commit -m "test(memory): route-guard update + full-suite green"
+git diff --cached --quiet || git commit -m "test(memory): route-guard update + full-suite green"
 ```
+If nothing changed, there is no commit for this task (the page is fully delivered by Tasks 0–7).
 
 ---
 
