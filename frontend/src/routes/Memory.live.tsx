@@ -107,11 +107,28 @@ export function MemoryLive(_props: Props) {
 
   const onApprove = (f: MemoryFact) => void withRow(f.id, () => approveMemoryFact(f.id));
   const onPin = (f: MemoryFact) => void withRow(f.id, () => setMemoryFactPinned(f.id, !f.pinned));
-  const onDelete = (f: MemoryFact) => setModal({ kind: 'delete', fact: f });
-  const onConfirmDelete = () => {
+  const onDelete = (f: MemoryFact) => { setModalError(null); setModal({ kind: 'delete', fact: f }); };
+  const onConfirmDelete = async () => {
     if (!modal || modal.kind !== 'delete') return;
-    const f = modal.fact;
-    void withRow(f.id, () => deleteMemoryFact(f.id)).then(() => setModal(null));
+    const id = modal.fact.id;
+    setModalSaving(true);
+    setModalError(null);
+    setRowBusy((prev) => new Set(prev).add(id));
+    try {
+      await deleteMemoryFact(id);
+      setModal(null);
+      await loadView(true);
+    } catch (e) {
+      // Keep the confirm modal open so the destructive action is not lost.
+      setModalError(errorMessage(e));
+    } finally {
+      setModalSaving(false);
+      setRowBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
   };
 
   const onNew = () =>
@@ -120,7 +137,15 @@ export function MemoryLive(_props: Props) {
     setModal({
       kind: 'edit',
       fact: f,
-      draft: { scope_type: f.scope_type, portfolioId: null, content: f.content, confidence: f.confidence, category: f.category ?? '' },
+      draft: {
+        scope_type: f.scope_type,
+        // Book scope_id is the stringified portfolio id; preserve it so the edit
+        // form is saveable (scope/portfolio is fixed on edit and not re-sent).
+        portfolioId: f.scope_type === 'book' && /^\d+$/.test(f.scope_id) ? Number(f.scope_id) : null,
+        content: f.content,
+        confidence: f.confidence,
+        category: f.category ?? '',
+      },
     });
   const onModalChange = (draft: MemoryDraft) =>
     setModal((m) => (m && m.kind !== 'delete' ? { ...m, draft } : m));

@@ -352,6 +352,7 @@ export function Memory(props: MemoryProps) {
       >
         <div className="wl-memory__form">
           <p>Archive this fact? It will no longer be injected and cannot be restored from this page.</p>
+          {modalError && <span className="wl-memory__error">{modalError}</span>}
           <div className="wl-memory__form-actions">
             <Button variant="default" onClick={onModalCancel}>Cancel</Button>
             <Button variant="danger" disabled={modalSaving} onClick={onConfirmDelete}>Archive this fact</Button>

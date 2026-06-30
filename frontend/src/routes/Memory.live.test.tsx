@@ -73,6 +73,21 @@ describe('MemoryLive', () => {
     );
   });
 
+  it('editing a book fact preserves the portfolio and stays saveable', async () => {
+    vi.spyOn(client, 'patchMemoryFact').mockResolvedValue({} as never);
+    vi.spyOn(client, 'listMemoryFacts').mockResolvedValue({ items: [fact({ status: 'active', scope_type: 'book', scope_id: '7' })], total: 1 } as never);
+    render(<MemoryLive />);
+    await waitFor(() => screen.getByText('vol skew steepens'));
+    fireEvent.click(screen.getByRole('button', { name: /edit/i }));
+    fireEvent.change(screen.getByLabelText(/content/i), { target: { value: 'updated book' } });
+    const save = screen.getByRole('button', { name: /save/i });
+    expect(save).not.toBeDisabled();
+    fireEvent.click(save);
+    await waitFor(() =>
+      expect(client.patchMemoryFact).toHaveBeenCalledWith(1, expect.objectContaining({ content: 'updated book' })),
+    );
+  });
+
   it('create from All tab with book scope sends scope_id=String(id)', async () => {
     vi.spyOn(client, 'createMemoryFact').mockResolvedValue({} as never);
     render(<MemoryLive />);
