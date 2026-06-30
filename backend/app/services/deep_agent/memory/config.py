@@ -1,8 +1,12 @@
 """Static configuration for long-term memory (see spec §Config)."""
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CORRECTION_PHRASES: tuple[str, ...] = (
     "that's wrong", "that is wrong", "that's incorrect", "that is incorrect",
@@ -44,10 +48,38 @@ class MemoryConfig:
     # "fast" matches the tag the flash-tier models carry in agent_channels.yaml.
     extractor_model: str = "fast"
     shutdown_grace_seconds: float = 5.0
+    # First-enable cutoff: the reconciliation sweep only DISCOVERS closed sessions
+    # whose closed_at >= this instant. None => no cutoff (reconcile all closed
+    # sessions, the original behaviour — fine for fresh DBs). Set it (via
+    # OPEN_OTC_MEMORY_RECONCILE_SINCE) when first enabling memory on an existing
+    # DB so the sweep does not mass-extract the entire historical backlog.
+    reconcile_since: datetime | None = None
     correction_phrases: tuple[str, ...] = field(default_factory=lambda: DEFAULT_CORRECTION_PHRASES)
     denylist: tuple[str, ...] = field(default_factory=lambda: DEFAULT_DENYLIST)
 
 
+def _parse_reconcile_since(raw: str | None) -> datetime | None:
+    """Parse an ISO-8601 instant from the env, or None when unset/malformed.
+
+    A malformed value fails OPEN (None => reconcile everything) rather than
+    silently disabling reconciliation; a warning is logged so the typo is
+    visible. 'Z' (UTC) suffixes are accepted (datetime.fromisoformat, 3.11+).
+    """
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except (ValueError, TypeError):
+        logger.warning(
+            "OPEN_OTC_MEMORY_RECONCILE_SINCE=%r is not a valid ISO-8601 instant; "
+            "ignoring (reconciliation cutoff disabled)", raw)
+        return None
+
+
 def get_memory_config() -> MemoryConfig:
     raw = os.environ.get("OPEN_OTC_MEMORY", "on").lower()
-    return MemoryConfig(enabled=raw not in {"off", "0", "false"})
+    return MemoryConfig(
+        enabled=raw not in {"off", "0", "false"},
+        reconcile_since=_parse_reconcile_since(
+            os.environ.get("OPEN_OTC_MEMORY_RECONCILE_SINCE")),
+    )

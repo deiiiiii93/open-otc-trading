@@ -75,8 +75,14 @@ class MemoryWriteQueue:
                 trigger_message_id=run.trigger_message_id),
                 "high" if run.kind == "correction" else "normal"))
             count += 1
-        closed = (session.query(AgentSession)
-                  .filter(AgentSession.status.in_(("closed", "archived"))).all())
+        closed_q = (session.query(AgentSession)
+                    .filter(AgentSession.status.in_(("closed", "archived"))))
+        cutoff = self.config.reconcile_since
+        if cutoff is not None:
+            # closed_at >= cutoff is NULL-false in SQL, so legacy closed sessions
+            # with no closed_at are conservatively excluded from mass-extraction.
+            closed_q = closed_q.filter(AgentSession.closed_at >= cutoff)
+        closed = closed_q.all()
         for s in closed:
             key = session_run_key(s.id)
             run = session.get(MemoryExtractionRun, key)
@@ -113,6 +119,9 @@ class MemoryWriteQueue:
             self._writer.start()
 
     def _loop(self) -> None:
+        if self.config.reconcile_since is not None:
+            logger.info("memory reconcile cutoff active: only sessions closed >= %s",
+                        self.config.reconcile_since)
         self._run_sweep()  # initial reconciliation sweep on start
         last_sweep = time.monotonic()
         while not self._stop.is_set():
