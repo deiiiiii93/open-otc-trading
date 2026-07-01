@@ -197,8 +197,9 @@ def all_personas(
         # crashing the subagent — and thus the whole orchestrator resume.
         middleware.insert(0, ToolErrorBoundaryMiddleware())
         # Just inside the error boundary: block writes when this persona runs as a
-        # fanned-out subagent of an authorized Case-3 dynamic-subagents run.
-        middleware.insert(1, FanoutReadOnlyMiddleware())
+        # fanned-out subagent of an authorized Case-3 dynamic-subagents run. Pass the
+        # tool set so writes are classified by capability group (allow reads).
+        middleware.insert(1, FanoutReadOnlyMiddleware(tools=tools))
         if yolo_mode:
             middleware.append(LongRunningCostHITLMiddleware(tools=tools))
         middleware.append(EnvelopeSkillsMiddleware(backend=skills_backend, sources=sources))
