@@ -130,6 +130,39 @@ def _backfill_missing_position_products(active_engine: Engine) -> None:
         session.commit()
 
 
+def seed_desk_workflows(active_engine: Engine) -> None:
+    """Idempotently seed the server-owned desk workflows (``source='seed'``).
+
+    One ``INSERT … SELECT … WHERE NOT EXISTS`` per entry, plus an ``UPDATE`` that
+    refreshes an already-seeded row only when its canonical script changed and it is
+    still ``source='seed'`` (so a user-authored slug collision is never clobbered).
+    """
+    from .desk_workflow_seed import SEED_WORKFLOWS
+
+    with active_engine.begin() as connection:
+        for wf in SEED_WORKFLOWS:
+            connection.execute(
+                text(
+                    "INSERT INTO desk_workflows "
+                    "(slug, title, persona, description, scope, default_mode, script, source, created_at, updated_at) "
+                    "SELECT :slug, :title, :persona, :description, :scope, :default_mode, :script, 'seed', "
+                    "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP "
+                    "WHERE NOT EXISTS (SELECT 1 FROM desk_workflows WHERE slug = :slug)"
+                ),
+                wf,
+            )
+            connection.execute(
+                text(
+                    "UPDATE desk_workflows "
+                    "SET title = :title, persona = :persona, description = :description, "
+                    "scope = :scope, default_mode = :default_mode, script = :script, "
+                    "updated_at = CURRENT_TIMESTAMP "
+                    "WHERE slug = :slug AND source = 'seed' AND script != :script"
+                ),
+                wf,
+            )
+
+
 def _ensure_incremental_schema(active_engine: Engine) -> None:
     """Apply additive schema repairs for local DBs created via create_all().
 
@@ -280,50 +313,7 @@ def _ensure_incremental_schema(active_engine: Engine) -> None:
     # DBs that never ran Alembic. Idempotent; the table itself comes from
     # metadata.create_all.
     if "desk_workflows" in tables:
-        from .desk_workflow_seed import (
-            FLAGSHIP_DESCRIPTION,
-            FLAGSHIP_MODE,
-            FLAGSHIP_PERSONA,
-            FLAGSHIP_SCOPE,
-            FLAGSHIP_SCRIPT,
-            FLAGSHIP_SLUG,
-            FLAGSHIP_TITLE,
-        )
-
-        seed_params = {
-            "slug": FLAGSHIP_SLUG,
-            "title": FLAGSHIP_TITLE,
-            "persona": FLAGSHIP_PERSONA,
-            "description": FLAGSHIP_DESCRIPTION,
-            "scope": FLAGSHIP_SCOPE,
-            "default_mode": FLAGSHIP_MODE,
-            "script": FLAGSHIP_SCRIPT,
-        }
-        with active_engine.begin() as connection:
-            connection.execute(
-                text(
-                    "INSERT INTO desk_workflows "
-                    "(slug, title, persona, description, scope, default_mode, script, source, created_at, updated_at) "
-                    "SELECT :slug, :title, :persona, :description, :scope, :default_mode, :script, 'seed', "
-                    "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP "
-                    "WHERE NOT EXISTS (SELECT 1 FROM desk_workflows WHERE slug = :slug)"
-                ),
-                seed_params,
-            )
-            # Refresh an already-seeded flagship so existing DBs pick up changes to
-            # the canonical script (e.g. new launch params). Scoped to source='seed'
-            # so a user-authored workflow with the same slug is never clobbered;
-            # no-op when the row already matches.
-            connection.execute(
-                text(
-                    "UPDATE desk_workflows "
-                    "SET title = :title, persona = :persona, description = :description, "
-                    "scope = :scope, default_mode = :default_mode, script = :script, "
-                    "updated_at = CURRENT_TIMESTAMP "
-                    "WHERE slug = :slug AND source = 'seed' AND script != :script"
-                ),
-                seed_params,
-            )
+        seed_desk_workflows(active_engine)
 
     if "positions" not in tables:
         return
