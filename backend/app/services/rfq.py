@@ -28,6 +28,7 @@ from .audit import record_audit
 from .currency_codes import ISO_4217_CODES, normalize_currency
 from .domains.booking import BookingRequest, ProductBookingSpec, book_position
 from .domains.products import product_spec_from_executable_terms
+from .underlyings import resolve_underlying_currency
 from .quantark import (
     _ensure_sharkfin_registry_support,
     ensure_quantark_path,
@@ -1138,7 +1139,15 @@ def _normalize_draft_currency(draft: RFQRequestDraft) -> RFQRequestDraft:
         or product.get("currency")
         or draft.product_kwargs.get("currency")
     )
-    currency = normalize_currency(str(explicit or "CNY"))
+    symbol = (
+        draft.underlying
+        or product.get("underlying")
+        or draft.product_kwargs.get("underlying")
+        or "CSI500"
+    )
+    currency = normalize_currency(
+        str(explicit or resolve_underlying_currency(symbol))
+    )
     if currency not in ISO_4217_CODES:
         raise ValueError(f"Invalid RFQ currency: {explicit!r}")
     next_product = dict(product) if product else None

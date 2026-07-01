@@ -177,10 +177,96 @@ def test_product_spec_layers_default_to_cny():
         quantark_class="EuropeanVanillaOption",
         underlying="000300.SH",
     ).currency == "CNY"
-    assert ProductSpecIn().currency == "CNY"
+    assert ProductSpecIn(underlying="000300.SH").currency == "CNY"
     assert product_spec_from_position_payload({"underlying": "000300.SH"}).currency == "CNY"
     assert product_spec_from_executable_terms({"underlying": "000300.SH"}).currency == "CNY"
+    # Non-CN underlyings should inherit USD when no currency is supplied.
+    assert ProductSpec(
+        asset_class="equity",
+        product_family="option",
+        quantark_class="EuropeanVanillaOption",
+        underlying="AAPL",
+    ).currency == "USD"
+    assert ProductSpecIn(underlying="AAPL").currency == "USD"
+    assert product_spec_from_position_payload({"underlying": "AAPL"}).currency == "USD"
+    assert product_spec_from_executable_terms({"underlying": "AAPL"}).currency == "USD"
     # Explicit values still win at every layer.
     assert product_spec_from_position_payload(
         {"underlying": "000300.SH", "currency": "USD"}
     ).currency == "USD"
+
+
+def test_repair_position_currencies_to_underlying():
+    """repair_position_currencies fixes legacy positions stamped with a hardcoded
+    default and preserves explicitly set non-default currencies."""
+    from app import database
+    from app.models import Instrument, Portfolio, Position
+    from app.services.domains.booking import repair_position_currencies
+
+    with database.SessionLocal() as session:
+        pf = Portfolio(name="Repair PF", base_currency="CNY", kind="container")
+        session.add(pf)
+        aapl = Instrument(
+            symbol="AAPL", kind="stock", currency="USD", status="active"
+        )
+        csi = Instrument(
+            symbol="000300.SH", kind="index", currency="CNY", status="active"
+        )
+        session.add_all([aapl, csi])
+        session.flush()
+
+        # Wrong hardcoded default (CNY) for a US underlying.
+        wrong_us = Position(
+            portfolio_id=pf.id,
+            underlying_id=aapl.id,
+            underlying="AAPL",
+            product_type="EuropeanVanillaOption",
+            currency="CNY",
+            quantity=1.0,
+            status="open",
+        )
+        # Wrong hardcoded default (USD) for a CN underlying.
+        wrong_cn = Position(
+            portfolio_id=pf.id,
+            underlying_id=csi.id,
+            underlying="000300.SH",
+            product_type="EuropeanVanillaOption",
+            currency="USD",
+            quantity=1.0,
+            status="open",
+        )
+        # Already correct; should not be touched.
+        ok_cn = Position(
+            portfolio_id=pf.id,
+            underlying_id=csi.id,
+            underlying="000300.SH",
+            product_type="EuropeanVanillaOption",
+            currency="CNY",
+            quantity=1.0,
+            status="open",
+        )
+        # Unlinked position with wrong currency; repair should link it first.
+        unlinked = Position(
+            portfolio_id=pf.id,
+            underlying_id=None,
+            underlying="AAPL",
+            product_type="EuropeanVanillaOption",
+            currency="CNY",
+            quantity=1.0,
+            status="open",
+        )
+        session.add_all([wrong_us, wrong_cn, ok_cn, unlinked])
+        session.commit()
+
+    with database.SessionLocal() as session:
+        repaired = repair_position_currencies(session)
+        session.commit()
+        assert repaired == 3  # wrong_us, wrong_cn, unlinked
+
+    with database.SessionLocal() as session:
+        rows = {p.id: p for p in session.query(Position).all()}
+        assert rows[wrong_us.id].currency == "USD"
+        assert rows[wrong_cn.id].currency == "CNY"
+        assert rows[ok_cn.id].currency == "CNY"
+        assert rows[unlinked.id].currency == "USD"
+        assert rows[unlinked.id].underlying_id == aapl.id

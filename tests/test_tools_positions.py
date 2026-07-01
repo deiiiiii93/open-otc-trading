@@ -382,6 +382,45 @@ def test_book_position_tool_creates_product_and_position():
     assert audit.payload["source"] == "agent_tool"
 
 
+@pytest.mark.parametrize(
+    "underlying, expected_currency",
+    [
+        ("AAPL", "USD"),
+        ("000300.SH", "CNY"),
+    ],
+)
+def test_book_position_tool_defaults_currency_to_underlying(
+    underlying, expected_currency
+):
+    """When the agent omits currency, the position should inherit the underlying's
+    currency instead of a hardcoded default."""
+    pid = _make_portfolio()
+
+    result = book_position_tool.invoke(
+        {
+            "portfolio_id": pid,
+            "quantity": 1.0,
+            "source_trade_id": f"CCY-{underlying}",
+            "product": {
+                "product_family": "option",
+                "quantark_class": "EuropeanVanillaOption",
+                "underlying": underlying,
+                "terms": {
+                    "strike": 100.0,
+                    "option_type": "CALL",
+                    "maturity": 1.0,
+                },
+            },
+        }
+    )
+
+    assert result["ok"] is True
+    assert result["product"]["currency"] == expected_currency
+    with database.SessionLocal() as session:
+        position = session.get(Position, result["position"]["id"])
+        assert position.currency == expected_currency
+
+
 def test_product_booking_input_derives_family_from_quantark_class():
     """The model routinely puts the quantark class (or 'snowball') in the
     product_family slot. Derive the canonical stored family from quantark_class

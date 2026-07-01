@@ -22,6 +22,7 @@ from app.services.domains import booking as booking_svc
 from app.services.domains import position_terms as terms_svc
 from app.services.domains import positions as positions_svc
 from app.services.domains import products as products_svc
+from app.services.underlyings import resolve_underlying_currency
 
 from ._shaping import (
     shape_position,
@@ -132,10 +133,17 @@ class ProductBookingInput(BaseModel):
     product_family: str
     quantark_class: str | None = None
     underlying: str
-    currency: str = "USD"
+    currency: str | None = None
     terms: dict[str, Any] = Field(default_factory=dict)
     components: list[dict[str, Any]] = Field(default_factory=list)
     display_name: str | None = None
+
+    @model_validator(mode="after")
+    def _resolve_currency(self):
+        self.currency = resolve_underlying_currency(
+            self.underlying, self.currency
+        )
+        return self
 
     @model_validator(mode="after")
     def _validate_family(self):
