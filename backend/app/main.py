@@ -183,6 +183,7 @@ from .services.domains.booking import (
     book_position,
     prepare_booking_product_spec,
     repair_invalid_snowball_booking_terms,
+    repair_position_currencies,
     set_position_currency,
 )
 from .services.domains.position_terms import (
@@ -675,13 +676,16 @@ def create_app(
             stale_count = mark_stale_tasks_failed(startup_session)
             repaired_rfq_positions = rfq_service.repair_legacy_rfq_booked_positions(startup_session)
             repaired_snowball_bookings = repair_invalid_snowball_booking_terms(startup_session)
+            repaired_currencies = repair_position_currencies(startup_session)
             if stale_count:
                 logger.info("Marked %s stale async task(s) as failed", stale_count)
             if repaired_rfq_positions:
                 logger.info("Repaired %s RFQ-booked position(s)", repaired_rfq_positions)
             if repaired_snowball_bookings:
                 logger.info("Repaired %s Snowball booking term set(s)", repaired_snowball_bookings)
-            if stale_count or repaired_rfq_positions or repaired_snowball_bookings:
+            if repaired_currencies:
+                logger.info("Repaired currency on %s position(s)", repaired_currencies)
+            if stale_count or repaired_rfq_positions or repaired_snowball_bookings or repaired_currencies:
                 startup_session.commit()
         except Exception:
             startup_session.rollback()

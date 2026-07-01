@@ -162,3 +162,63 @@ normal `message` turn that also locks their card (`InboundMessage.card_lock_ref`
   `Settings()` and fail the "defaults are None/empty" assertions in
   `test_config.py` / one `test_identity.py` case — validate those in a no-`.env`
   environment. All other gateway tests are connector-agnostic (FakeConnector).
+
+---
+
+## Dynamic subagents (governed QuickJS fan-out)
+
+An opt-in execution substrate for **recurring desk workflows that fan out per work
+item** — e.g. one read-only commentary per breached position. The orchestrator writes a
+QuickJS script that calls the deepagents `task()` global (via `CodeInterpreterMiddleware`,
+`subagents=True` — **not** `ptc=["task"]`, which raises at model-call time) to dispatch one
+persona subagent per item, then reconciles the results deterministically. **Gated off by
+default** (`OPEN_OTC_AGENT_CODE_INTERPRETER=false`).
+
+**Package:** `backend/app/services/deep_agent/` — `dynamic_subagents.py` (allowlist +
+attribution helpers + `reconcile_fanout_coverage`), `eval_gate.py`
+(`EvalAttributionGateMiddleware`), `fanout_readonly.py` (`FanoutReadOnlyMiddleware`). Tool:
+`backend/app/tools/assemble_breach_report.py`; scope: `services/risk_limits.py`. Seed
+workflow `morning-risk-breach-commentary`; migrations `0040` (seed) + `0041` (finalize
+prompt).
+
+### Governance (all server-owned — the model can never self-authorize)
+
+- **Eval gate.** Enabling the code interpreter exposes a general `eval` tool;
+  `EvalAttributionGateMiddleware` rejects **every** `eval` unless `configurable` carries
+  server-stamped Case-3 attribution (`fanout_attribution_extra`) for an **allowlisted**
+  (`DYNAMIC_SUBAGENTS_ALLOWLIST`) workflow persisted with `source='seed'`. Attribution is
+  threaded via `main.py::_desk_workflow_drive_factory` →
+  `stream_and_persist(desk_workflow_slug/source/launch_args)` — never from model/tool input.
+- **Read-only fan-out.** `FanoutReadOnlyMiddleware` blocks writes inside fanned-out
+  subagents (`ls_agent_type=='subagent'` + Case-3 attr). Classification is **by capability
+  group** (`__capability_group__`): block `DOMAIN_WRITE`/`PAGE_ACTION`/`ASYNC_DISPATCH` +
+  deepagents FS/shell writes (`write_file`/`edit_file`/`execute`) +
+  `run_python(writes_artifacts=True)`; **allow everything else**. This is
+  **allow-by-default on purpose** — deny-by-default against the HITL write-map blocks the
+  reads the investigator needs (incl. ungated tools like `get_position_summaries`). Why
+  writes matter: resume/retry re-runs the whole `eval` and **re-dispatches every subagent**,
+  so a write would repeat non-idempotently.
+- **Server-authoritative coverage.** `assemble_breach_report` re-derives scope server-side
+  from the launch `portfolio_id` (`configurable['fanout_launch_args']`, not the model arg)
+  via `enumerate_limit_breaches`, then `reconcile_fanout_coverage` guarantees exactly one
+  terminal record per scoped item (uncovered → `failed`). The model can't shrink coverage
+  by omitting ids.
+
+### Gotchas
+
+- **A tool the model must call has to be in `DEEP_AGENT_TOOL_NAMES`** (the allowlist
+  `select_deep_agent_tools()` filters `QUANT_AGENT_TOOLS` by), not merely registered in
+  `QUANT_AGENT_TOOLS` — otherwise it is silently dropped from every persona's toolset.
+  `assemble_breach_report` hit exactly this: registered but not allowlisted, so the model
+  finalized via `write_report_artifact` instead. **When a model *never* calls a specific
+  tool across models and prompts, suspect availability before capability.**
+- **Stronger models loop more:** `deepseek-v4-pro` blows past the default
+  `agent_recursion_limit` of 100 on the fan-out — raise it (≥300) for pro-tier runs.
+- **Subagent stream events don't surface as SSE frames:** deepagents `task()` runs each
+  subagent via a nested `subagent.invoke()`, so its internal events never reach the parent
+  `astream_events` — inside-fan-out observability is a library limitation (follow-up).
+- **The `metrics['limit_breaches']` producer is not built yet:** `enumerate_limit_breaches`
+  returns `[]` (honest-empty) until a risk producer populates that key; real runs surface
+  no breaches until then.
+- Live smokes on the **direct** DeepSeek channel: `api.deepseek.com` exposes both
+  `deepseek-v4-flash` and `deepseek-v4-pro` (the registry only declares flash).

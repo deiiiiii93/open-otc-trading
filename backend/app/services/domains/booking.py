@@ -7,6 +7,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ...models import Portfolio, PortfolioKind, Position
@@ -211,13 +212,17 @@ def repair_invalid_snowball_booking_terms(session: Session) -> int:
 
 def set_position_currency(position) -> None:
     """Copy the booked product's currency onto the position (source of truth = the
-    booked trade). Soft-warn (never block) when the linked underlying disagrees —
-    that only happens for quanto products, which are not yet supported."""
+    booked trade). When the product carries no explicit currency, fall back to the
+    linked underlying's currency so positions default to their underlying rather
+    than a hardcoded CNY. Soft-warn (never block) when the linked underlying
+    disagrees — that only happens for quanto products, which are not yet supported."""
     product = getattr(position, "product", None)
-    currency = getattr(product, "currency", None) or "CNY"
-    position.currency = currency
+    currency = getattr(product, "currency", None)
     underlying = getattr(position, "underlying_record", None)
     underlying_ccy = getattr(underlying, "currency", None)
+    if not currency and underlying_ccy:
+        currency = underlying_ccy
+    position.currency = currency or "CNY"
     if underlying_ccy and underlying_ccy != currency:
         logger.warning(
             "Position and Underlying should have same currency for non-quanto "
@@ -314,3 +319,47 @@ def _number_or_none(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def repair_position_currencies(session: Session) -> int:
+    """Repair position currencies that were stamped with a hardcoded default
+    (CNY/USD) instead of the linked underlying's currency.
+
+    Only touches positions whose current currency is one of the old hardcoded
+    defaults and whose linked underlying has a different currency, so explicitly
+    set non-default currencies are preserved.
+    """
+    linked = 0
+    unlinked = (
+        session.query(Position)
+        .filter(Position.underlying_id.is_(None))
+        .all()
+    )
+    for position in unlinked:
+        row = link_position_underlying(session, position, source="repair")
+        if row is not None:
+            linked += 1
+    if linked:
+        session.flush()
+
+    result = session.execute(
+        text(
+            """
+            UPDATE positions
+            SET currency = (
+                SELECT i.currency FROM instruments i WHERE i.id = positions.underlying_id
+            )
+            WHERE underlying_id IS NOT NULL
+              AND currency IN ('CNY', 'USD')
+              AND currency != (
+                  SELECT i.currency FROM instruments i WHERE i.id = positions.underlying_id
+              )
+            """
+        )
+    )
+    repaired = result.rowcount or 0
+    if linked:
+        logger.info("Linked %s position(s) to underlying during currency repair", linked)
+    if repaired:
+        logger.info("Repaired currency on %s position(s)", repaired)
+    return repaired

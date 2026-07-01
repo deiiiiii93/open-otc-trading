@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Dynamic subagents (governed QuickJS fan-out) — pilot.** An opt-in execution
+  substrate that lets the orchestrator fan a recurring desk workflow out to one
+  read-only persona subagent per work item — via the deepagents `task()` global in a
+  QuickJS sandbox (`CodeInterpreterMiddleware`, `subagents=True`) — then reconcile the
+  results deterministically. Fan-out is **server-gated, never model-authorized**: an
+  eval attribution gate (`EvalAttributionGateMiddleware`) rejects every `eval` unless
+  the run carries server-stamped Case-3 attribution for an allowlisted `source='seed'`
+  workflow; fanned-out subagents are **read-only** (writes/bookings/FS-writes blocked by
+  capability group, so a non-idempotent re-dispatch on resume can't mutate); and coverage
+  is **server-authoritative** — `assemble_breach_report` reconciles the fan-out records
+  against a scope derived server-side from the launch args (every item gets exactly one
+  record, uncovered → `failed`). Ships the seeded `morning-risk-breach-commentary`
+  workflow, migrations `0040`/`0041`, and is **gated off by default**
+  (`OPEN_OTC_AGENT_CODE_INTERPRETER=false`). Live-validated end-to-end on the direct
+  DeepSeek channel — gate authorizes → `task()` fans out → subagents read → coverage
+  reconciles.
 - **Instant-messaging gateway (Feishu/Lark).** Drive the full desk agent from IM
   with web-desk parity — streaming **markdown** replies, human-in-the-loop
   Approve/Reject **cards** for bookings, pickable **reply-option** cards, and

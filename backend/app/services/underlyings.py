@@ -7,6 +7,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from ..models import MarketDataProfile, Position, Product, Underlying
+from .currency_codes import normalize_currency
 from .fx import parse_fx_pair_symbol
 from .import_schema import is_knocked_out
 
@@ -77,12 +78,39 @@ def infer_market(symbol: str) -> str | None:
     return exchange
 
 
+_CSI_INDEX_CODES = {
+    "000016",
+    "000300",
+    "000852",
+    "000905",
+    "931059",
+}
+
+
 def infer_currency(symbol: str) -> str:
     pair = parse_fx_pair_symbol(symbol)
     if pair:
         return pair[1]
     market = infer_market(symbol)
-    return "CNY" if market in {None, "CN"} else "USD"
+    if market == "CN":
+        return "CNY"
+    if market is not None:
+        return "USD"
+    code = normalize_underlying_symbol(symbol)
+    # Bare A-share / CSI identifiers default to CNY; everything else defaults to USD
+    # so US underlyings without an exchange suffix still get a reasonable currency.
+    if code.isdigit() and len(code) == 6:
+        return "CNY"
+    if code.startswith("CSI") or code in _CSI_INDEX_CODES:
+        return "CNY"
+    return "USD"
+
+
+def resolve_underlying_currency(symbol: str, explicit: str | None = None) -> str:
+    """Return the explicitly supplied currency, or infer it from the underlying symbol."""
+    if explicit:
+        return normalize_currency(explicit)
+    return infer_currency(symbol)
 
 
 def ensure_underlying(

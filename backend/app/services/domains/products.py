@@ -27,7 +27,7 @@ from app.models import (
     Product,
     utcnow,
 )
-from app.services.underlyings import link_product_underlying
+from app.services.underlyings import link_product_underlying, resolve_underlying_currency
 
 
 @dataclass(frozen=True)
@@ -36,11 +36,19 @@ class ProductSpec:
     product_family: str
     quantark_class: str | None
     underlying: str
-    currency: str = "CNY"
+    currency: str | None = None
     terms: dict[str, Any] = field(default_factory=dict)
     components: list[dict[str, Any]] = field(default_factory=list)
     display_name: str | None = None
     source_payload: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        if not self.currency:
+            object.__setattr__(
+                self,
+                "currency",
+                resolve_underlying_currency(self.underlying, self.currency),
+            )
 
 
 _OPTION_CLASSES = {
@@ -338,7 +346,11 @@ def product_spec_from_position_payload(payload: dict[str, Any]) -> ProductSpec:
         product_family=family,
         quantark_class=product_type,
         underlying=underlying,
-        currency=str(kwargs.get("currency") or payload.get("currency") or "CNY"),
+        currency=str(
+            kwargs.get("currency")
+            or payload.get("currency")
+            or resolve_underlying_currency(underlying)
+        ),
         terms=kwargs,
         components=components,
         display_name=payload.get("display_name"),
@@ -366,7 +378,11 @@ def product_spec_from_executable_terms(terms: Any) -> ProductSpec:
         ),
         quantark_class=product_type,
         underlying=underlying,
-        currency=str(kwargs.get("currency") or market.get("currency") or "CNY"),
+        currency=str(
+            kwargs.get("currency")
+            or market.get("currency")
+            or resolve_underlying_currency(underlying)
+        ),
         terms=kwargs,
         components=components,
         display_name=payload.get("display_name"),

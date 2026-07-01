@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.services.currency_codes import ISO_4217_CODES, normalize_currency
+from app.services.underlyings import resolve_underlying_currency
 
 
 class AgentThreadCreate(BaseModel):
@@ -584,11 +585,18 @@ class ProductSpecIn(BaseModel):
     product_family: str = "option"
     quantark_class: str | None = "EuropeanVanillaOption"
     underlying: str = "CSI500"
-    currency: str = "CNY"
+    currency: str | None = None
     terms: dict[str, Any] = Field(default_factory=dict)
     components: list[dict[str, Any]] = Field(default_factory=list)
     display_name: str | None = None
     source_payload: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def _resolve_currency(self) -> "ProductSpecIn":
+        self.currency = resolve_underlying_currency(
+            self.underlying, self.currency
+        )
+        return self
 
 
 class ProductOut(ProductSpecIn):

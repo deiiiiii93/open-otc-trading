@@ -405,6 +405,11 @@ DEEP_AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         "build_assumption_set",
         "get_latest_position_valuations",
         "get_latest_risk_run",
+        # Dynamic-subagents pilot: the deterministic coverage-reconciliation tool the
+        # morning-risk-breach workflow's finalize step calls. Registered in
+        # QUANT_AGENT_TOOLS but was missing here, so select_deep_agent_tools() dropped
+        # it — the model could never call it and fell back to write_report_artifact.
+        "assemble_breach_report",
         "import_otc_positions",
         "close_position",
         "settle_position",

@@ -103,6 +103,50 @@ def test_load_returns_task_id_and_rejects_concurrent(client, session, monkeypatc
     assert second.json()["detail"]["in_flight_task_id"] == task_id
 
 
+def test_instruments_endpoint_returns_stock_self_candidate(client, session):
+    u = Instrument(symbol="AAPL", kind="stock", status="active", source="manual")
+    session.add(u)
+    session.flush()
+    record_quote(session, instrument_id=u.id, price=150.0,
+                 as_of=datetime.utcnow(), source="manual")
+    session.commit()
+    resp = client.get(f"/api/hedging/instruments?underlying_id={u.id}")
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert len(rows) == 1
+    assert rows[0]["contract_code"] == "AAPL"
+    assert rows[0]["family"] == "stock"
+    assert rows[0]["instrument_type"] == "spot"
+    assert rows[0]["allowed"] is True
+
+
+def test_underlyings_endpoint_lists_stock(client, session):
+    u = Instrument(symbol="AAPL", kind="stock", status="active", source="manual")
+    session.add(u)
+    pf = Portfolio(name="pf_stock", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    session.add(Position(
+        portfolio_id=pf.id, underlying_id=u.id, underlying=u.symbol,
+        product_type="SnowballOption", quantity=1.0, entry_price=0.0, status="open",
+    ))
+    session.commit()
+    resp = client.get("/api/hedging/underlyings")
+    assert resp.status_code == 200
+    body = resp.json()
+    row = next(r for r in body if r["symbol"] == "AAPL")
+    assert row["families"] == [{"family": "stock", "total": 1, "allowed": 1}]
+
+
+def test_instruments_endpoint_maps_legacy_live_status(client, session):
+    u = _seed(session)
+    resp = client.get(f"/api/hedging/instruments?underlying_id={u.id}&family=index_future&status=live")
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert len(rows) == 1
+    assert rows[0]["status"] == "active"
+
+
 def test_load_status_endpoint(client, session, monkeypatch):
     _seed(session)
     # Suppress actual background work so the task stays QUEUED.
