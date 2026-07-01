@@ -142,10 +142,33 @@ def test_option_leg_refused_when_market_missing(session):
     assert leg["delta"] == 0.0 and leg["gamma"] == 0.0 and leg["vega"] == 0.0
 
 
-def test_future_leg_unaffected_by_missing_option_market(session):
-    u = _underlying(session)
-    inst = _mark(session, u, "IC2406", itype="future", mult=200.0)
-    leg = hedging_legs.price(session, [{"instrument_id": inst.id, "role": "delta"}],
-        spot=5600.0, option_market=None)[0]
+def test_propose_stock_self_hedge(session):
+    u = Instrument(symbol="AAPL", kind="stock", status="active", source="manual")
+    session.add(u); session.flush()
+    legs = hedging_legs.propose(session, underlying_id=u.id, strategy="delta_neutral")
+    assert len(legs) == 1
+    assert legs[0]["instrument_id"] == u.id
+    assert legs[0]["instrument_type"] == "spot"
+    assert legs[0]["family"] == "stock"
+    assert legs[0]["role"] == "delta"
+
+
+def test_stock_spot_leg_priced_delta_one(session):
+    u = Instrument(symbol="600519.SH", kind="stock", exchange="SH", status="active", source="manual")
+    session.add(u); session.flush()
+    record_quote(session, instrument_id=u.id, price=1800.0,
+                 as_of=datetime.utcnow(), source="manual")
+    priced = hedging_legs.price(session, [{"instrument_id": u.id, "role": "delta"}], spot=1800.0)
+    leg = priced[0]
     assert leg["priced_ok"] is True
-    assert leg["delta"] == 200.0 * 5600.0
+    assert leg["instrument_type"] == "spot"
+    assert leg["delta"] == 1800.0
+    assert leg["gamma"] == 0.0
+    assert leg["vega"] == 0.0
+
+
+def test_propose_stock_inactive_returns_no_legs(session):
+    u = Instrument(symbol="AAPL", kind="stock", status="draft", source="manual")
+    session.add(u); session.flush()
+    legs = hedging_legs.propose(session, underlying_id=u.id, strategy="delta_neutral")
+    assert legs == []

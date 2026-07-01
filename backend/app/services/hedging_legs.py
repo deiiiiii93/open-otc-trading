@@ -43,6 +43,8 @@ def _family_for(inst: Instrument) -> str:
     keyed on series_root + kind; the legacy label is purely descriptive (the
     solver keys on greeks, not family).
     """
+    if inst.kind == "stock":
+        return "stock"
     if inst.option_type is not None:
         return "etf_option" if (inst.exchange or "") in {"SSE", "SZSE"} else (
             "index_option" if inst.exchange == "CFFEX" else "commodity_option"
@@ -73,10 +75,15 @@ def _active_instruments(session: Session, underlying_id: int) -> list[Instrument
     Instrument rows whose series_root is one of those spec roots. We then keep
     only those carried by an active map entry for X — preserving the
     marked-universe gate the old code applied via HedgeMapEntry.
+
+    For stocks, the hedge candidate is the underlying itself (a delta-one spot
+    leg) and is allowed by default.
     """
     row = session.get(Instrument, underlying_id)
     if row is None:
         return []
+    if row.kind == "stock":
+        return [row] if row.status == "active" else []
     specs = resolve_families(row.symbol, row.kind)
     spec_roots = {s.series_root for s in specs}
     if not spec_roots:
@@ -137,10 +144,15 @@ def propose(session: Session, *, underlying_id: int, strategy: str,
 
 
 def _leg_dict(inst: Instrument, *, role: str) -> dict[str, Any]:
-    itype = "option" if _is_option(inst) else "future"
+    if _is_option(inst):
+        itype = "option"
+    elif inst.kind == "stock":
+        itype = "spot"
+    else:
+        itype = "future"
     return {
         "instrument_id": inst.id, "role": role, "exchange": inst.exchange,
-        "contract_code": inst.contract_code, "instrument_type": itype,
+        "contract_code": inst.contract_code or inst.symbol, "instrument_type": itype,
         "option_type": inst.option_type, "strike": inst.strike,
         "expiry": inst.expiry.isoformat() if inst.expiry else None,
         "multiplier": _effective_multiplier(inst), "family": _family_for(inst),
@@ -177,7 +189,7 @@ def price(session: Session, legs: list[dict[str, Any]], *, spot: float,
             g = per["gamma"] * mult * s * s / 100.0
             v = per["vega"] * mult
         out.append({**_leg_dict(inst, role=leg.get("role", "delta")),
-                    "key": f"{inst.exchange}:{inst.contract_code}",
+                    "key": f"{inst.exchange or ''}:{inst.contract_code or inst.symbol}",
                     "delta": d, "gamma": g, "vega": v,
                     "priced_ok": ok, "price_error": error})
     return out

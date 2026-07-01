@@ -281,6 +281,91 @@ def test_unmark_by_map_entry_id(session):
     assert session.query(HedgeMapEntry).count() == 0
 
 
+def _stock(session, symbol="AAPL", status="active"):
+    row = Instrument(
+        symbol=symbol, kind="stock", exchange=None,
+        status=status, source="manual",
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def test_list_instruments_stock_self_hedge(session):
+    u = _stock(session)
+    record_quote(session, instrument_id=u.id, price=150.0,
+                 as_of=datetime.utcnow(), source="manual")
+    rows = hedging_domain.list_instruments(session, underlying_id=u.id)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["id"] == u.id
+    assert row["family"] == "stock"
+    assert row["instrument_type"] == "spot"
+    assert row["contract_code"] == "AAPL"
+    assert row["allowed"] is True
+    assert row["last_price"] == 150.0
+
+
+def test_list_instruments_stock_filters_by_family(session):
+    u = _stock(session)
+    rows = hedging_domain.list_instruments(session, underlying_id=u.id, family="index_future")
+    assert rows == []
+    rows = hedging_domain.list_instruments(session, underlying_id=u.id, family="stock")
+    assert len(rows) == 1
+
+
+def test_list_instruments_stock_status_live_alias(session):
+    u = _stock(session)
+    rows = hedging_domain.list_instruments(session, underlying_id=u.id, status="live")
+    assert len(rows) == 1
+    assert rows[0]["status"] == "active"
+
+
+def test_list_instruments_stock_allowed_only_inactive_excluded(session):
+    u = _stock(session, status="draft")
+    rows = hedging_domain.list_instruments(session, underlying_id=u.id, allowed_only=True)
+    assert rows == []
+
+
+def test_underlyings_overview_stock(session):
+    u = _stock(session)
+    pf = Portfolio(name="pf_stock", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    session.add(Position(
+        portfolio_id=pf.id, underlying_id=u.id, underlying=u.symbol,
+        product_type="SnowballOption", quantity=1.0, entry_price=0.0, status="open",
+        position_kind="otc",
+    ))
+    session.flush()
+    overview = hedging_domain.underlyings_overview(session)
+    row = next(r for r in overview if r["symbol"] == u.symbol)
+    assert row["unresolvable"] is False
+    assert row["families"] == [{"family": "stock", "total": 1, "allowed": 1}]
+
+
+def test_get_map_stock_includes_self_entry(session):
+    u = _stock(session, symbol="600519.SH")
+    pf = Portfolio(name="pf_map_stock", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    session.add(Position(
+        portfolio_id=pf.id, underlying_id=u.id, underlying=u.symbol,
+        product_type="SnowballOption", quantity=1.0, entry_price=0.0, status="open",
+        position_kind="otc",
+    ))
+    session.flush()
+    grouped = hedging_domain.get_map(session)
+    bucket = next(g for g in grouped if g["underlying_id"] == u.id)
+    assert bucket["underlying_symbol"] == "600519.SH"
+    assert len(bucket["entries"]) == 1
+    entry = bucket["entries"][0]
+    assert entry["family"] == "stock"
+    assert entry["instrument_type"] == "spot"
+    assert entry["instrument_id"] == u.id
+    assert entry["reconcile_status"] == "active"
+
+
 def test_underlyings_overview_last_loaded_at_includes_expired_instruments(session):
     """An underlying whose entire catalog has rolled to 'expired' must still
     report a non-null last_loaded_at (computed over all rows, not live only)."""
