@@ -48,6 +48,14 @@ def test_records_for_unscoped_ids_ignored():
     assert {r["position_id"] for r in out["records"]} == {"p1"}
 
 
+def test_int_and_str_ids_match_after_normalization():
+    # scope ids are ints (from the DB); a subagent echoes int 1 and str "2".
+    out = reconcile_fanout_coverage([1, 2], [{"position_id": 1, "commentary": "x"},
+                                             {"position_id": "2", "commentary": "y"}])
+    assert out["failed_ids"] == []
+    assert out["covered"] == 2 and out["total"] == 2
+
+
 # --- server-authoritative scope enumeration ---
 
 def _session_returning(run):
@@ -76,6 +84,23 @@ def test_enumerate_empty_when_no_run_or_no_breaches():
 
     assert enumerate_limit_breaches(_session_returning(None), "1") == []
     assert enumerate_limit_breaches(_session_returning(SimpleNamespace(metrics={})), "1") == []
+
+
+def test_enumerate_from_a_persisted_riskrun(session):
+    """Integration: against a real persisted RiskRun with breach metrics, the latest
+    run's breach ids are returned as strings (and the newest run wins)."""
+    from app.models import Portfolio, RiskRun
+    from app.services.risk_limits import enumerate_limit_breaches
+
+    pf = Portfolio(name="breach-pf", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    session.add(RiskRun(portfolio_id=pf.id, metrics={"limit_breaches": [{"position_id": 3}]}))
+    session.add(
+        RiskRun(portfolio_id=pf.id, metrics={"limit_breaches": [{"position_id": 7}, {"position_id": 9}]})
+    )
+    session.flush()
+    assert enumerate_limit_breaches(session, str(pf.id)) == ["7", "9"]  # newest run
 
 
 def test_tool_uses_server_scope_not_model_records(session, monkeypatch):

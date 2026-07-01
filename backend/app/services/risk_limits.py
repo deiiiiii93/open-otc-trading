@@ -19,6 +19,12 @@ def enumerate_limit_breaches(session: Session, portfolio_id) -> list[str]:
     Reads ``RiskRun.metrics['limit_breaches']`` (or ``['breaches']``), tolerating both
     a list of ids and a list of ``{"position_id": ...}`` dicts. Returns ``[]`` when
     there is no run or no recorded breaches.
+
+    NOTE (pilot follow-up): the batch-pricing producer does not yet persist a
+    ``limit_breaches`` artifact (a portfolio risk-limits system is out of scope for the
+    pilot). Until it does, this returns ``[]`` for real runs — an *honest empty* report,
+    never false coverage. Populating ``metrics['limit_breaches']`` in the risk producer
+    is the required follow-up to make the pilot surface breaches end-to-end.
     """
     try:
         pid = int(portfolio_id)

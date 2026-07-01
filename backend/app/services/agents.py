@@ -3826,6 +3826,11 @@ class AgentService:
         name = ev.get("name", "")
         data = ev.get("data") or {}
 
+        if kind == "on_custom_event" and isinstance(data, dict) and data.get("type") == "subagent":
+            # Dynamic-subagents fan-out lifecycle events on the v2 stream (e.g. a
+            # DeepSeek-forced-v2 run), mirroring the v3 custom branch.
+            return _subagent_sse_line(data, collector)
+
         if kind == "on_tool_start":
             args = data.get("input") or {}
             if name == "propose_reply_options" and isinstance(args, dict):

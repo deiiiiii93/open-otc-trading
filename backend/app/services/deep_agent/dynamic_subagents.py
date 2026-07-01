@@ -51,11 +51,15 @@ def reconcile_fanout_coverage(
     truncated by ``max_ptc_calls`` or hit by subagent errors can never silently drop a
     scoped breach; it surfaces as ``failed`` instead.
     """
+    # Normalize ids to str on BOTH sides: scope ids come from the DB (often ints)
+    # while subagents may echo int or str position ids — mismatched types would
+    # wrongly mark a covered breach as failed.
     seen: dict[str, dict] = {}
-    scoped = list(dict.fromkeys(scoped_ids))  # de-dupe, preserve order
+    scoped = list(dict.fromkeys(str(s) for s in scoped_ids))  # de-dupe, preserve order
     scoped_set = set(scoped)
     for rec in records:
-        pid = rec.get("position_id")
+        raw = rec.get("position_id")
+        pid = str(raw) if raw is not None else None
         if pid in scoped_set and pid not in seen:
             seen[pid] = rec
     out_records: list[dict] = []
