@@ -612,13 +612,17 @@ def _delete_thread_rows(session: Session, thread: AgentThread) -> set[str]:
     return checkpoint_keys
 
 
-def _desk_workflow_drive_factory(agent_service, character: str = "auto"):
+def _desk_workflow_drive_factory(agent_service, character: str = "auto", *, desk_workflow=None):
     """Return an injectable per-step driver that forwards SSE frames.
 
     Monkeypatched in tests; in production it persists the step prompt as a user
     turn then streams one ``stream_and_persist`` turn for that prompt, bound to
-    the workflow's persona-derived ``character``.
+    the workflow's persona-derived ``character``. The workflow's ``slug`` and
+    ``source`` are threaded into the run so the server (not the model) can stamp
+    fan-out attribution for allowlisted seed workflows.
     """
+    slug = getattr(desk_workflow, "slug", None)
+    source = getattr(desk_workflow, "source", None)
 
     async def drive(thread_id: int, prompt: str, mode: str):
         with database.SessionLocal() as s:
@@ -634,6 +638,8 @@ def _desk_workflow_drive_factory(agent_service, character: str = "auto"):
             requested_character=character,
             mode=mode,
             confirmed_cost_preview=True,
+            desk_workflow_slug=slug,
+            desk_workflow_source=source,
         ):
             yield frame
 
@@ -1020,7 +1026,7 @@ def create_app(
         session.commit()
         mode = (payload or {}).get("mode") or wf.default_mode
         drive = _desk_workflow_drive_factory(
-            active_agent_service, persona_to_character(wf.persona)
+            active_agent_service, persona_to_character(wf.persona), desk_workflow=wf
         )
         settle = _desk_workflow_settle_factory()
         return StreamingResponse(

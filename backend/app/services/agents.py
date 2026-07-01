@@ -2068,6 +2068,8 @@ class AgentService:
         envelope: Envelope | str | None,
         requested_character: str,
         confirmed_cost_preview: bool = False,
+        desk_workflow_slug: str | None = None,
+        desk_workflow_source: str | None = None,
     ) -> _WorkflowStreamTurn:
         with _database.SessionLocal() as session:
             thread = session.get(AgentThread, thread_id)
@@ -2139,6 +2141,12 @@ class AgentService:
             }
             if confirmed_cost_preview:
                 configurable_extra["confirmed_cost_preview"] = True
+            from .deep_agent.dynamic_subagents import fanout_attribution_extra
+            configurable_extra.update(
+                fanout_attribution_extra(
+                    slug=desk_workflow_slug, source=desk_workflow_source
+                )
+            )
             config = graph_run_config(
                 self.settings,
                 thread_id=agent_session.checkpointer_key,
@@ -2422,6 +2430,8 @@ class AgentService:
         envelope: str | None = None,
         confirmed_cost_preview: bool = False,
         actor: str = "desk_user",
+        desk_workflow_slug: str | None = None,
+        desk_workflow_source: str | None = None,
     ):
         """Stream live LangGraph events for one agent turn, then persist.
 
@@ -2488,6 +2498,8 @@ class AgentService:
                         envelope=resolved_envelope,
                         requested_character=requested_character,
                         confirmed_cost_preview=confirmed_cost_preview,
+                        desk_workflow_slug=desk_workflow_slug,
+                        desk_workflow_source=desk_workflow_source,
                     )
                     if prepared.router_message_id is not None:
                         if prepared.router_response_text:
@@ -2640,6 +2652,10 @@ class AgentService:
         }
         if confirmed_cost_preview:
             configurable_extra["confirmed_cost_preview"] = True
+        from .deep_agent.dynamic_subagents import fanout_attribution_extra
+        configurable_extra.update(
+            fanout_attribution_extra(slug=desk_workflow_slug, source=desk_workflow_source)
+        )
         config = graph_run_config(
             self.settings,
             thread_id=thread_id,
