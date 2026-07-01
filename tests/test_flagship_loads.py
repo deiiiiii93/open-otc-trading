@@ -22,13 +22,13 @@ def test_flagship_exact_ordered_manifest():
     skills = [s.expected_skill for s in wf.steps]
     assert skills == ["read-risk-result", "run-risk", "read-risk-result",
                       "run-greeks-landscape", "run-scenario-test", "run-backtest",
-                      "create-risk-report"]
+                      "generate-report"]
     tools_per_step = [[t.name for t in s.expected_tools] for s in wf.steps]
     assert tools_per_step == [
         ["get_latest_risk_run"], ["run_batch_pricing"], ["get_latest_risk_run"],
         ["run_greeks_landscape", "get_greeks_landscape_run"],
         ["run_scenario_test", "get_scenario_test_run"],
-        ["run_backtest", "get_backtest_run"], ["create_report"]]
+        ["run_backtest", "get_backtest_run"], ["write_report_artifact"]]
     replays = [s.replay for s in wf.steps]
     assert len(set(replays)) == 7  # all distinct
     success_types = sorted(a.type for a in wf.success.assertions)

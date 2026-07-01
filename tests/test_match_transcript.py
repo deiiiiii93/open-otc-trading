@@ -397,11 +397,12 @@ class TestTranscriptFromReplay:
         assert "read-risk-result" in step3.skills_routed
 
     def test_step7_artifact_present(self):
-        """Step 7 (index 6) creates a report artifact."""
+        """Step 7 (index 6) creates a report artifact via write_report_artifact,
+        which emits a "text" artifact (markdown), not a "report" kind."""
         loaded = get_workflow_bundle("risk-manager-control-day")
         mt = transcript_from_replay(loaded)
         step7 = mt.steps[6]
-        assert any(a.get("kind") == "report" for a in step7.artifacts)
+        assert any(a.get("kind") == "text" for a in step7.artifacts)
 
     def test_all_steps_model_dump_feeds_extract_assertion_context(self):
         """Round-trip: each step's model_dump() is valid input for extract_assertion_context.
