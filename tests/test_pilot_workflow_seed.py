@@ -19,6 +19,17 @@ def test_flagship_still_in_seed_list():
     assert any(w["slug"] == "risk-manager-control-day" for w in SEED_WORKFLOWS)
 
 
+def test_assemble_breach_report_reachable_by_agent():
+    """The finalize tool MUST be in the deep-agent toolset. It is registered in
+    QUANT_AGENT_TOOLS but was missing from DEEP_AGENT_TOOL_NAMES, so
+    select_deep_agent_tools() dropped it — the model could never call it and fell
+    back to write_report_artifact (the live smoke's assemble gap)."""
+    from app.services.agents import DEEP_AGENT_TOOL_NAMES, select_deep_agent_tools
+
+    assert "assemble_breach_report" in DEEP_AGENT_TOOL_NAMES
+    assert "assemble_breach_report" in {t.name for t in select_deep_agent_tools()}
+
+
 def test_boot_seed_creates_pilot_row(tmp_path):
     from app import database
     from app.models import Base

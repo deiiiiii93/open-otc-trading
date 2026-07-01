@@ -67,11 +67,18 @@ MORNING_COMMENTARY_SCRIPT = '''meta = {
 await step("Run batch risk pricing for portfolio " + args.portfolio_id +
            " and list EVERY position that breaches a risk limit today.")
 await step("For EVERY breached position, use the code interpreter to fan out one "
-           "read-only risk_manager subagent per breach and collect "
-           "{position_id, severity, commentary} for each.")
-await step("Call assemble_breach_report with portfolio_id=" + args.portfolio_id +
-           " and the collected records to produce the morning report; surface any "
-           "position marked 'failed' in a 'needs manual review' section.")
+           "read-only risk_manager subagent per breach. Each subagent must ONLY READ "
+           "(existing risk run, greeks, position details) and RETURN a "
+           "{position_id, severity, commentary} record — it must NOT run pricing, book, "
+           "or write any artifact. Collect the record for every breach.")
+await step("Finalize by calling the assemble_breach_report tool with portfolio_id=" +
+           args.portfolio_id + " and the collected {position_id, severity, commentary} "
+           "records. You MUST use assemble_breach_report to produce the morning report — "
+           "do NOT use write_report_artifact, write_file, or run_python to build it "
+           "yourself. assemble_breach_report is the ONLY authorized way to finalize: it "
+           "reconciles your records against the authoritative breach list server-side and "
+           "marks any uncovered breach 'failed'. Present its result, surfacing any 'failed' "
+           "position in a 'needs manual review' section.")
 '''
 
 
