@@ -159,14 +159,21 @@ def _agent_middleware(
         _append_goal_grader(middleware, goal_grader)
         return middleware
 
+    from .dynamic_subagents import MAX_PTC_CALLS
+    from .eval_gate import EvalAttributionGateMiddleware
     from langchain_quickjs import (  # pyright: ignore[reportMissingImports]
         CodeInterpreterMiddleware,
     )
 
+    # Pre-eval gate (outer to the interpreter): reject every `eval` unless the run
+    # carries server-set Case-3 attribution for an allowlisted workflow.
+    middleware.append(EvalAttributionGateMiddleware())
+
+    # `task()` is exposed as a top-level subagent global via subagents=True (the
+    # default) — NOT through `ptc` (the lib rejects `ptc=["task"]` at model-call time).
     middleware.append(
         CodeInterpreterMiddleware(
-            ptc=["task"],
-            max_ptc_calls=64,
+            max_ptc_calls=MAX_PTC_CALLS,  # per-eval backstop (lowered from 64)
             timeout=5.0,
         )
     )

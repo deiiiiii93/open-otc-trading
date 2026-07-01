@@ -23,6 +23,7 @@ from app.services.reply_options.tool import ProposeReplyOptionsTool
 from app.services.term_form.tool import ProposeTermFormTool
 from app.services.sandbox_tool import run_python_tool
 
+from .assemble_breach_report import build_assemble_breach_report_tool
 from .desk_workflows import save_desk_workflow_tool
 from .market_data import fetch_market_snapshot_tool, list_market_data_profiles_tool
 from .portfolios import (
@@ -242,6 +243,9 @@ QUANT_AGENT_TOOLS = [
     capability_gated(group=ToolGroup.PAGE_ACTION)(ProposeReplyOptionsTool()),
     capability_gated(group=ToolGroup.PAGE_ACTION)(ProposeTermFormTool()),
     save_desk_workflow_tool,
+    # Deterministic reconciler for the dynamic-subagents pilot: read-only (no side
+    # effects), so it is allowed inside the read-only fan-out assemble step.
+    capability_gated(group=ToolGroup.DOMAIN_READ)(build_assemble_breach_report_tool()),
 ]
 
 

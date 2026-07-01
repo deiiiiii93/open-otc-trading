@@ -28,6 +28,9 @@ class StreamCollector:
     tool_events: dict[str, dict] = field(default_factory=dict)  # keyed by run_id
     interrupts: list = field(default_factory=list)
     personas_invoked: list[str] = field(default_factory=list)
+    # Dynamic-subagents fan-out lifecycle events (type="subagent") emitted on the
+    # LangGraph custom stream, grouped by their parent js_eval via ``eval_id``.
+    subagent_events: list[dict] = field(default_factory=list)
     error: str | None = None
     drained: bool = False
     drain_reason: str | None = None
@@ -110,6 +113,9 @@ class StreamCollector:
     def note_persona(self, name: str) -> None:
         if name and name not in self.personas_invoked:
             self.personas_invoked.append(name)
+
+    def on_subagent(self, event: dict) -> None:
+        self.subagent_events.append(event)
 
     def set_todos(self, todos: list[dict[str, str]] | None) -> None:
         if todos is not None:

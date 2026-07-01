@@ -82,6 +82,12 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {_json.dumps(data, ensure_ascii=False, default=str)}\n\n"
 
 
+def _subagent_sse_line(event: dict, collector) -> str:
+    """Record + serialize a dynamic-subagents fan-out lifecycle event to the web SSE."""
+    collector.on_subagent(event)
+    return _sse("subagent", event)
+
+
 def _done_payload(message_id: int | None, thread_id: int | None) -> dict:
     """Build a ``done`` SSE payload, enriched with ``thread_id`` and the
     persisted message's ``pending_actions``.
@@ -2068,6 +2074,9 @@ class AgentService:
         envelope: Envelope | str | None,
         requested_character: str,
         confirmed_cost_preview: bool = False,
+        desk_workflow_slug: str | None = None,
+        desk_workflow_source: str | None = None,
+        desk_workflow_launch_args: dict | None = None,
     ) -> _WorkflowStreamTurn:
         with _database.SessionLocal() as session:
             thread = session.get(AgentThread, thread_id)
@@ -2139,6 +2148,13 @@ class AgentService:
             }
             if confirmed_cost_preview:
                 configurable_extra["confirmed_cost_preview"] = True
+            from .deep_agent.dynamic_subagents import fanout_attribution_extra
+            configurable_extra.update(
+                fanout_attribution_extra(
+                    slug=desk_workflow_slug, source=desk_workflow_source,
+                    launch_args=desk_workflow_launch_args,
+                )
+            )
             config = graph_run_config(
                 self.settings,
                 thread_id=agent_session.checkpointer_key,
@@ -2422,6 +2438,9 @@ class AgentService:
         envelope: str | None = None,
         confirmed_cost_preview: bool = False,
         actor: str = "desk_user",
+        desk_workflow_slug: str | None = None,
+        desk_workflow_source: str | None = None,
+        desk_workflow_launch_args: dict | None = None,
     ):
         """Stream live LangGraph events for one agent turn, then persist.
 
@@ -2488,6 +2507,9 @@ class AgentService:
                         envelope=resolved_envelope,
                         requested_character=requested_character,
                         confirmed_cost_preview=confirmed_cost_preview,
+                        desk_workflow_slug=desk_workflow_slug,
+                        desk_workflow_source=desk_workflow_source,
+                        desk_workflow_launch_args=desk_workflow_launch_args,
                     )
                     if prepared.router_message_id is not None:
                         if prepared.router_response_text:
@@ -2640,6 +2662,13 @@ class AgentService:
         }
         if confirmed_cost_preview:
             configurable_extra["confirmed_cost_preview"] = True
+        from .deep_agent.dynamic_subagents import fanout_attribution_extra
+        configurable_extra.update(
+            fanout_attribution_extra(
+                slug=desk_workflow_slug, source=desk_workflow_source,
+                launch_args=desk_workflow_launch_args,
+            )
+        )
         config = graph_run_config(
             self.settings,
             thread_id=thread_id,
@@ -3804,6 +3833,11 @@ class AgentService:
         name = ev.get("name", "")
         data = ev.get("data") or {}
 
+        if kind == "on_custom_event" and isinstance(data, dict) and data.get("type") == "subagent":
+            # Dynamic-subagents fan-out lifecycle events on the v2 stream (e.g. a
+            # DeepSeek-forced-v2 run), mirroring the v3 custom branch.
+            return _subagent_sse_line(data, collector)
+
         if kind == "on_tool_start":
             args = data.get("input") or {}
             if name == "propose_reply_options" and isinstance(args, dict):
@@ -3861,6 +3895,14 @@ class AgentService:
         method = ev.get("method")
         params = ev.get("params") or {}
         data = params.get("data")
+
+        if method == "custom":
+            # Dynamic-subagents fan-out lifecycle events ride the LangGraph custom
+            # stream. The payload is the event dict (start/complete/error).
+            payload = data if isinstance(data, dict) else params
+            if isinstance(payload, dict) and payload.get("type") == "subagent":
+                return _subagent_sse_line(payload, collector)
+            return None
 
         if method == "messages":
             payload = data[0] if isinstance(data, (tuple, list)) and data else data

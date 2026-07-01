@@ -10,8 +10,15 @@ from .desk_workflows_script import WorkflowScriptError, validate_script
 def upsert_desk_workflow(
     session: Session, *, slug: str, script: str, source: str = "user"
 ) -> DeskWorkflow:
-    meta = validate_script(script, slug=slug)
     wf = session.query(DeskWorkflow).filter_by(slug=slug).one_or_none()
+    # Seed workflows are server-owned and immutable through the user/API save
+    # path — otherwise a user could overwrite an allowlisted seed row's script
+    # while it keeps source='seed' and still receive fan-out attribution.
+    if wf is not None and wf.source == "seed" and source != "seed":
+        raise WorkflowScriptError(
+            f"workflow {slug!r} is seeded and cannot be modified"
+        )
+    meta = validate_script(script, slug=slug, source=source)
     if wf is None:
         wf = DeskWorkflow(slug=slug, source=source)
         session.add(wf)

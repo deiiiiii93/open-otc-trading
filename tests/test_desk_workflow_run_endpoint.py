@@ -46,7 +46,7 @@ def test_run_streams_workflow_events(client, monkeypatch):
         yield 'event: token\ndata: {"text": "ok"}\n\n'
 
     monkeypatch.setattr(
-        main_mod, "_desk_workflow_drive_factory", lambda svc, character="auto": fake_drive
+        main_mod, "_desk_workflow_drive_factory", lambda svc, character="auto", **_kw: fake_drive
     )
     monkeypatch.setattr(main_mod, "_desk_workflow_settle_factory", lambda: (lambda: None))
 
@@ -93,7 +93,7 @@ def test_run_with_valid_args_streams(client, monkeypatch):
         yield 'event: token\ndata: {"text": "ok"}\n\n'
 
     monkeypatch.setattr(
-        main_mod, "_desk_workflow_drive_factory", lambda svc, character="auto": fake_drive
+        main_mod, "_desk_workflow_drive_factory", lambda svc, character="auto", **_kw: fake_drive
     )
     monkeypatch.setattr(main_mod, "_desk_workflow_settle_factory", lambda: (lambda: None))
 
