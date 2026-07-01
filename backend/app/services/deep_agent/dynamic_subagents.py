@@ -22,3 +22,17 @@ FANOUT_WORKFLOW_ID_KEY = "fanout_workflow_slug"
 def is_allowlisted(slug: str | None) -> bool:
     """True iff ``slug`` is a server-owned dynamic-subagents workflow."""
     return bool(slug) and slug in DYNAMIC_SUBAGENTS_ALLOWLIST
+
+
+def fanout_attribution_extra(*, slug: str | None, source: str | None) -> dict[str, str]:
+    """Server-derived attribution for ``configurable``.
+
+    Stamps ONLY when the run is an allowlisted slug persisted with ``source == 'seed'``.
+    Never trusts the model or the runtime router id (``Workflow.id`` is an int, not a slug).
+    """
+    if source == "seed" and is_allowlisted(slug):
+        return {
+            FANOUT_ATTRIBUTION_KEY: FANOUT_ATTRIBUTION_CASE3,
+            FANOUT_WORKFLOW_ID_KEY: slug,  # type: ignore[dict-item]  # slug is truthy here
+        }
+    return {}
