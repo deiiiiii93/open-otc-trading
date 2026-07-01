@@ -36,3 +36,38 @@ def fanout_attribution_extra(*, slug: str | None, source: str | None) -> dict[st
             FANOUT_WORKFLOW_ID_KEY: slug,  # type: ignore[dict-item]  # slug is truthy here
         }
     return {}
+
+
+def reconcile_fanout_coverage(
+    scoped_ids: list[str], records: list[dict]
+) -> dict:
+    """Guarantee exactly one terminal record per scoped id.
+
+    - first record per id wins (duplicates collapse);
+    - records for ids not in scope are ignored;
+    - any scoped id with no record becomes ``{"position_id": id, "status": "failed"}``.
+
+    Coverage is thus independent of how many dispatches actually returned — a fan-out
+    truncated by ``max_ptc_calls`` or hit by subagent errors can never silently drop a
+    scoped breach; it surfaces as ``failed`` instead.
+    """
+    seen: dict[str, dict] = {}
+    scoped = list(dict.fromkeys(scoped_ids))  # de-dupe, preserve order
+    scoped_set = set(scoped)
+    for rec in records:
+        pid = rec.get("position_id")
+        if pid in scoped_set and pid not in seen:
+            seen[pid] = rec
+    out_records: list[dict] = []
+    failed: list[str] = []
+    for pid in scoped:
+        rec = seen.get(pid) or {"position_id": pid, "status": "failed"}
+        if rec.get("status") == "failed":
+            failed.append(pid)
+        out_records.append(rec)
+    return {
+        "records": out_records,
+        "failed_ids": failed,
+        "covered": len(seen),
+        "total": len(scoped),
+    }

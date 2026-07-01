@@ -1,0 +1,91 @@
+"""Task 8: deterministic coverage reconciliation (the real guarantee)."""
+from app.services.deep_agent.dynamic_subagents import MAX_PTC_CALLS, reconcile_fanout_coverage
+
+
+def _rec(pid, **kw):
+    return {"position_id": pid, **kw}
+
+
+def test_every_scoped_id_gets_exactly_one_record():
+    out = reconcile_fanout_coverage(
+        ["p1", "p2"],
+        [_rec("p1", severity="high", commentary="x"), _rec("p2", severity="low", commentary="y")],
+    )
+    assert {r["position_id"] for r in out["records"]} == {"p1", "p2"}
+    assert len(out["records"]) == 2 and out["covered"] == 2 and out["total"] == 2
+    assert out["failed_ids"] == []
+
+
+def test_missing_id_becomes_failed_not_dropped():
+    out = reconcile_fanout_coverage(["p1", "p2", "p3"], [_rec("p1", severity="high", commentary="x")])
+    by_id = {r["position_id"]: r for r in out["records"]}
+    assert set(by_id) == {"p1", "p2", "p3"}  # coverage preserved
+    assert by_id["p2"]["status"] == "failed" and by_id["p3"]["status"] == "failed"
+    assert set(out["failed_ids"]) == {"p2", "p3"}
+
+
+def test_explicit_failed_record_is_kept():
+    out = reconcile_fanout_coverage(["p1"], [_rec("p1", status="failed")])
+    assert out["records"][0]["status"] == "failed" and out["failed_ids"] == ["p1"]
+
+
+def test_overflow_all_covered_even_beyond_ptc_budget():
+    scoped = [f"p{i}" for i in range(MAX_PTC_CALLS + 40)]  # 64 > 24
+    records = [_rec(f"p{i}", severity="low", commentary="c") for i in range(MAX_PTC_CALLS)]
+    out = reconcile_fanout_coverage(scoped, records)
+    assert len(out["records"]) == len(scoped)  # ALL covered
+    assert out["covered"] == MAX_PTC_CALLS
+    assert len(out["failed_ids"]) == 40  # truncated tail -> failed
+
+
+def test_duplicate_records_collapse_to_one():
+    out = reconcile_fanout_coverage(["p1"], [_rec("p1", commentary="a"), _rec("p1", commentary="b")])
+    assert len([r for r in out["records"] if r["position_id"] == "p1"]) == 1
+
+
+def test_records_for_unscoped_ids_ignored():
+    out = reconcile_fanout_coverage(["p1"], [_rec("p1", commentary="a"), _rec("ghost", commentary="z")])
+    assert {r["position_id"] for r in out["records"]} == {"p1"}
+
+
+# --- server-authoritative scope enumeration ---
+
+def _session_returning(run):
+    from types import SimpleNamespace
+
+    class _Result:
+        def scalar_one_or_none(self):
+            return run
+
+    return SimpleNamespace(execute=lambda *a, **k: _Result())
+
+
+def test_enumerate_reads_breaches_from_latest_riskrun():
+    from types import SimpleNamespace
+
+    from app.services.risk_limits import enumerate_limit_breaches
+
+    run = SimpleNamespace(metrics={"limit_breaches": [{"position_id": 7}, {"position_id": 9}, 9]})
+    assert enumerate_limit_breaches(_session_returning(run), "1") == ["7", "9"]
+
+
+def test_enumerate_empty_when_no_run_or_no_breaches():
+    from types import SimpleNamespace
+
+    from app.services.risk_limits import enumerate_limit_breaches
+
+    assert enumerate_limit_breaches(_session_returning(None), "1") == []
+    assert enumerate_limit_breaches(_session_returning(SimpleNamespace(metrics={})), "1") == []
+
+
+def test_tool_uses_server_scope_not_model_records(session, monkeypatch):
+    """Model-supplied records cannot shrink coverage: scope is server-derived, so
+    omitted breaches surface as failed."""
+    import app.tools.assemble_breach_report as t
+
+    scoped = [f"p{i}" for i in range(MAX_PTC_CALLS + 40)]
+    monkeypatch.setattr(t, "enumerate_limit_breaches", lambda *a, **k: scoped)
+    records = [{"position_id": f"p{i}", "severity": "low", "commentary": "c"} for i in range(MAX_PTC_CALLS)]
+    out = t._assemble("ptf-1", records)
+    assert len(out["records"]) == len(scoped)
+    assert len(out["failed_ids"]) == 40
