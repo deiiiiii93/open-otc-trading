@@ -255,6 +255,8 @@ def _leg_terms(leg: dict[str, Any], spot: float) -> dict[str, Any]:
             terms["instrument_code"] = leg["instrument_code"]
         if leg.get("exchange"):
             terms["exchange"] = leg["exchange"]
+        if leg.get("family") == "stock":
+            terms["deltaone_type"] = "STOCK"
         return terms
     # option: synthesize a complete EuropeanVanillaOption termsheet so the gate's
     # prebuilt validate-and-wrap accepts it (raw expiry/initial_price would not).

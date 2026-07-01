@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ...models import HedgeMapEntry, Instrument, Position
 from ..hedging_legs import _family_for, _is_option
 from ..hedging_loader import list_in_scope_underlyings
-from ..hedging_universe import resolve_families
+from ..hedging_universe import _code, resolve_families
 from ..quotes import latest_quotes
 
 
@@ -69,10 +69,25 @@ def list_instruments(
     underlying's resolved family roots (from ``resolve_families``) select the
     Instrument rows the loader created for it. ``family`` filters by the
     derived (kind, series_root) — the new catalog has no family column.
+
+    For stocks, the hedging candidate is the underlying itself (delta-one spot
+    leg) and is allowed by default.
     """
+    underlying = session.get(Instrument, underlying_id)
+    if underlying is None:
+        return []
+    if underlying.kind == "stock":
+        return _list_stock_candidates(
+            session, underlying, family=family, search=search,
+            status=status, allowed_only=allowed_only,
+        )
+
     spec_roots = _spec_roots(session, underlying_id)
     if not spec_roots:
         return []
+
+    # Legacy UI may still ask for status='live' (old HedgeInstrument status).
+    effective_status = _canonical_status(status)
     q = session.query(Instrument).filter(
         Instrument.kind.in_(("futures", "listed_option")),
         Instrument.series_root.in_(spec_roots),
@@ -91,8 +106,8 @@ def list_instruments(
         q = q.filter(Instrument.strike >= strike_min)
     if strike_max is not None:
         q = q.filter(Instrument.strike <= strike_max)
-    if status:
-        q = q.filter(Instrument.status == status)
+    if effective_status:
+        q = q.filter(Instrument.status == effective_status)
     if search:
         q = q.filter(Instrument.contract_code.ilike(f"%{search}%"))
     if allowed_only:
@@ -108,6 +123,62 @@ def list_instruments(
     allowed = _allowed_keys(session, underlying_id)
     quotes = latest_quotes(session, [r.id for r in rows], as_of=datetime.utcnow())
     return [_instrument_dict(r, underlying_id, allowed, quotes) for r in rows]
+
+
+def _canonical_status(status: str | None) -> str | None:
+    if status is None:
+        return None
+    if status.lower() == "live":
+        return "active"
+    return status
+
+
+def _list_stock_candidates(
+    session: Session,
+    underlying: Instrument,
+    *,
+    family: str | None,
+    search: str | None,
+    status: str | None,
+    allowed_only: bool,
+) -> list[dict[str, Any]]:
+    """A stock's only hedge candidate is itself; it is allowed by default."""
+    if family and family != "stock":
+        return []
+    if allowed_only and underlying.status != "active":
+        return []
+    effective_status = _canonical_status(status)
+    if effective_status and underlying.status != effective_status:
+        return []
+    if search:
+        needle = search.strip().lower()
+        haystack = " ".join(
+            x for x in (underlying.symbol, underlying.display_name or "") if x
+        ).lower()
+        if needle not in haystack:
+            return []
+    quotes = latest_quotes(session, [underlying.id], as_of=datetime.utcnow())
+    return [_stock_candidate_dict(underlying, quotes)]
+
+
+def _stock_candidate_dict(underlying: Instrument, quotes: dict) -> dict[str, Any]:
+    q = quotes.get(underlying.id)
+    return {
+        "id": underlying.id,
+        "underlying_id": underlying.id,
+        "family": "stock",
+        "series_root": "",
+        "exchange": underlying.exchange or "",
+        "contract_code": _code(underlying.symbol),
+        "instrument_type": "spot",
+        "option_type": None,
+        "strike": None,
+        "expiry": None,
+        "multiplier": 1.0,
+        "last_price": q.price if q is not None else None,
+        "status": underlying.status,
+        "allowed": True,
+    }
 
 
 def _instrument_dict(
@@ -301,14 +372,31 @@ def get_map(session: Session, *, underlying_id: int | None = None) -> list[dict[
     # Resolve underlying_symbol in a single query (no N+1).
     all_uids = list(grouped.keys())
     if all_uids:
-        symbol_map: dict[int, str] = {
-            row.id: row.symbol
-            for row in session.query(Instrument.id, Instrument.symbol)
+        meta_map: dict[int, tuple[str, str]] = {
+            row.id: (row.symbol, row.kind)
+            for row in session.query(Instrument.id, Instrument.symbol, Instrument.kind)
             .filter(Instrument.id.in_(all_uids))
             .all()
         }
         for uid, bucket in grouped.items():
-            bucket["underlying_symbol"] = symbol_map.get(uid, "")
+            symbol, kind = meta_map.get(uid, ("", ""))
+            bucket["underlying_symbol"] = symbol
+            if kind == "stock":
+                # A stock is its own allowed hedge by default; surface it in the
+                # map so the left rail shows the self-candidate.
+                bucket["entries"].append({
+                    "id": -uid,
+                    "instrument_id": uid,
+                    "exchange": "",
+                    "contract_code": _code(symbol),
+                    "family": "stock",
+                    "series_root": "",
+                    "instrument_type": "spot",
+                    "option_type": None,
+                    "strike": None,
+                    "expiry": None,
+                    "reconcile_status": "active",
+                })
 
     return list(grouped.values())
 
@@ -330,6 +418,23 @@ def underlyings_overview(session: Session) -> list[dict[str, Any]]:
     underlyings = list_in_scope_underlyings(session)
     out: list[dict[str, Any]] = []
     for u in underlyings:
+        # Stocks are their own hedge candidate (delta-one spot leg) and are
+        # allowed by default.
+        if u.asset_class == "stock":
+            out.append({
+                "underlying_id": u.id,
+                "symbol": u.symbol,
+                "display_name": u.display_name,
+                "asset_class": u.asset_class,
+                "unresolvable": False,
+                "last_loaded_at": None,
+                "stale_count": 0,
+                "families": [
+                    {"family": "stock", "total": 1, "allowed": 1}
+                ] if u.status not in {"expired", "retired"} else [],
+            })
+            continue
+
         spec_roots = {s.series_root for s in resolve_families(u.symbol, u.asset_class)}
         # Counts reflect the live, markable universe; stale marks (expired
         # contracts) are surfaced separately via stale_count.
