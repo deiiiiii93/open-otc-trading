@@ -73,6 +73,10 @@ def test_run_match_seeds_creates_arena_thread_and_drives_each_step(tmp_path, mon
         def commit(self):
             pass
 
+        def execute(self, *a, **k):
+            # No-op for the seeded-ReportJob recovery purge (Core delete).
+            return None
+
         def query(self, *a, **k):
             return _Q()
 
@@ -399,6 +403,10 @@ def test_run_match_cleans_rfqs_even_when_harvest_raises(tmp_path, monkeypatch):
 
         def commit(self):
             pass
+
+        def execute(self, *a, **k):
+            # No-op for the seeded-ReportJob recovery purge (Core delete).
+            return None
 
         def query(self, *a, **k):
             return _Q()

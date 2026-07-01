@@ -29,6 +29,7 @@ _NAMESPACES: dict[str, set[str]] = {
     "pricing_parameter_rows": {"alias", "profile", "symbol"},
     "risk_runs": {"alias", "portfolio"},
     "rfqs": {"alias", "status"},
+    "reports": {"alias", "report_type"},
 }
 
 # FK edges: {child_ns: {field_in_row: parent_ns}}. The positions.rfq edge is
@@ -42,7 +43,7 @@ _FK: dict[str, dict[str, str]] = {
 
 # Insertion order so FK parents exist before children (rfqs before positions).
 _INSERT_ORDER = [
-    "portfolios", "pricing_profiles", "pricing_parameter_rows", "rfqs", "positions", "risk_runs",
+    "portfolios", "reports", "pricing_profiles", "pricing_parameter_rows", "rfqs", "positions", "risk_runs",
 ]
 
 # Column allowlist for the risk_runs seed namespace.  Only keys in this set
@@ -62,6 +63,11 @@ _RISK_RUN_COLS: frozenset[str] = frozenset({
 _RFQ_COLS: frozenset[str] = frozenset({
     "client_name", "channel", "status", "request_payload",
     "quote_payload", "approved_response",
+})
+
+# Column allowlist for the reports seed namespace (beyond the always-excluded "alias").
+_REPORT_COLS: frozenset[str] = frozenset({
+    "report_type", "status", "request_payload", "result_payload", "artifact_paths",
 })
 
 
@@ -256,6 +262,13 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
                         else datetime.fromisoformat(ca)
                     )
                 obj = models.RiskRun(portfolio_id=portfolio_id, **extra)
+
+            elif ns == "reports":
+                extra = {
+                    k: v for k, v in row.items()
+                    if k != "alias" and k in _REPORT_COLS
+                }
+                obj = models.ReportJob(**extra)
 
             else:  # pragma: no cover
                 raise WorkflowError(f"apply_seed: unhandled namespace {ns!r}")

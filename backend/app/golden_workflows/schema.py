@@ -79,9 +79,14 @@ class _ToolResultPath(BaseModel):
         return self
 
 
+class _ToolNotCalled(BaseModel):
+    type: Literal["tool_not_called"]
+    name: str
+
+
 Assertion = Annotated[
     Union[_SkillRouted, _SkillsRoutedSequence, _ToolCalled, _TaskReturnedId,
-          _ArtifactExists, _ResponseContains, _ToolResultPath],
+          _ArtifactExists, _ResponseContains, _ToolResultPath, _ToolNotCalled],
     Field(discriminator="type"),
 ]
 
@@ -109,7 +114,7 @@ class Step(BaseModel):
 class GoldenWorkflow(BaseModel):
     id: str
     schema_version: Literal[1]
-    persona: Literal["trader", "risk_manager", "sales", "quant"]
+    persona: Literal["trader", "risk_manager", "sales", "quant", "high_board"]
     title: str = Field(min_length=1)
     objective: str = Field(min_length=1)
     fixtures: str

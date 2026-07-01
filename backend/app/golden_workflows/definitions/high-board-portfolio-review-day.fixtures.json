@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "seed": {
+    "portfolios": [
+      { "alias": "desk", "name": "Desk Control Book" },
+      { "alias": "other", "name": "Other Desk Book" }
+    ],
+    "positions": [
+      { "alias": "d1", "portfolio": "desk", "underlying": "AAPL", "product_type": "Snowball", "quantity": 100 },
+      { "alias": "d2", "portfolio": "desk", "underlying": "MSFT", "product_type": "Snowball", "quantity": 50 },
+      { "alias": "d3", "portfolio": "desk", "underlying": "AAPL", "product_type": "EuropeanVanillaOption", "quantity": 10 },
+      { "alias": "d4", "portfolio": "desk", "underlying": "TSLA", "product_type": "BarrierOption", "quantity": 20 },
+      { "alias": "d5", "portfolio": "desk", "underlying": "NVDA", "product_type": "EuropeanVanillaOption", "quantity": 30 },
+      { "alias": "o1", "portfolio": "other", "underlying": "AAPL", "product_type": "Snowball", "quantity": 5 }
+    ],
+    "reports": [
+      { "alias": "q3", "report_type": "arena_high_board_governance", "status": "completed",
+        "request_payload": { "arena_seed": true },
+        "result_payload": { "summary": "Prior-quarter board governance review." },
+        "artifact_paths": { "markdown": "reports/q3-governance.md" } }
+    ]
+  },
+  "replay": {
+    "step-1-membership": {
+      "ai": { "tool_calls": [ { "id": "tc1", "name": "get_portfolio", "args": { "portfolio_id": 1 } } ] },
+      "tool_results": [ { "name": "get_portfolio", "tool_call_id": "tc1",
+        "content": { "id": 1, "name": "Desk Control Book", "kind": "container" } } ],
+      "skills_routed": ["portfolio-membership"],
+      "artifacts": [],
+      "response_text": "The Desk Control Book (id 1) is a Container with explicit membership."
+    },
+    "step-2-create-view": {
+      "ai": { "tool_calls": [ { "id": "tc2", "name": "create_portfolio",
+        "args": { "name": "Board Review View", "kind": "view", "source_portfolio_ids": [1] } } ] },
+      "tool_results": [ { "name": "create_portfolio", "tool_call_id": "tc2",
+        "content": { "id": 2, "name": "Board Review View", "kind": "view" } } ],
+      "skills_routed": ["portfolio-maintenance"],
+      "artifacts": [],
+      "response_text": "Created the board-review view (id 2) sourced from the desk book."
+    },
+    "step-3-count": {
+      "ai": { "tool_calls": [ { "id": "tc3", "name": "get_positions",
+        "args": { "portfolio_id": 2, "product_type": "Snowball" } } ] },
+      "tool_results": [ { "name": "get_positions", "tool_call_id": "tc3",
+        "content": { "positions": [ { "underlying": "AAPL" }, { "underlying": "MSFT" } ],
+          "total_count": 2, "portfolio_total_count": 5 } } ],
+      "skills_routed": ["portfolio-view-counting"],
+      "artifacts": [],
+      "response_text": "2 Snowballs out of 5 positions in the board-review view."
+    },
+    "step-4-batch": {
+      "ai": { "tool_calls": [ { "id": "tc4", "name": "run_report_batch",
+        "args": { "title": "Board Review Composition", "report_type": "composition",
+          "portfolio": { "positions": [], "market": {} } } } ] },
+      "tool_results": [ { "name": "run_report_batch", "tool_call_id": "tc4",
+        "content": { "summary": { "position_count": 5, "by_product_type": { "Snowball": 2 } },
+          "risk_summary": {} } } ],
+      "skills_routed": ["batch-run-reports"],
+      "artifacts": [],
+      "response_text": "Composition summary: 5 positions; breakdown shows 2 Snowballs."
+    },
+    "step-5-display": {
+      "ai": { "tool_calls": [
+        { "id": "tc5a", "name": "list_reports", "args": { "status": "completed" } },
+        { "id": "tc5b", "name": "get_report", "args": { "report_id": 10 } } ] },
+      "tool_results": [
+        { "name": "list_reports", "tool_call_id": "tc5a",
+          "content": { "reports": [ { "report_id": 10, "report_type": "arena_high_board_governance", "status": "completed", "title": null, "portfolio_id": null } ], "total": 1 } },
+        { "name": "get_report", "tool_call_id": "tc5b",
+          "content": { "report_id": 10, "report_type": "arena_high_board_governance", "status": "completed",
+            "request_payload": { "arena_seed": true }, "result_payload": { "summary": "Prior-quarter board governance review." },
+            "summary": "Prior-quarter board governance review." } } ],
+      "skills_routed": ["display-report"],
+      "artifacts": [],
+      "response_text": "Pulled the prior governance report (arena_high_board_governance) for context."
+    },
+    "step-6-generate": {
+      "ai": { "tool_calls": [ { "id": "tc6", "name": "write_report_artifact",
+        "args": { "title": "Board Governance Report", "format": "markdown", "body_markdown": "# Board Governance Report\n..." } } ] },
+      "tool_results": [ { "name": "write_report_artifact", "tool_call_id": "tc6",
+        "content": { "path": "artifacts/board-governance.md", "kind": "text" } } ],
+      "skills_routed": ["generate-report"],
+      "artifacts": [ { "kind": "text", "path": "artifacts/board-governance.md" } ],
+      "response_text": "Drafted the board governance report for the board."
+    }
+  }
+}

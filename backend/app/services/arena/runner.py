@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 _PERSONA_TO_CHARACTER = {
     "trader": "trader",
     "risk_manager": "risk_manager",
+    "high_board": "high_board",
     "sales": "trader",
     "quant": "trader",
 }
@@ -172,6 +173,29 @@ def _default_drive(thread_id: int, content: str, selection: dict) -> None:
 ARENA_PORTFOLIO_TAG = "arena"
 ARENA_PROFILE_MARKER = "arena_owned"  # set in PricingParameterProfile.summary
 ARENA_RFQ_CLIENT_PREFIX = "ARENA"  # the step-1 turn names the client with this prefix
+# Reserved arena-private ReportJob.report_type for seeded governance evidence
+# (high-board workflow). No production/user report path emits this value, so the
+# recovery purge can delete every row of this type safely.
+ARENA_REPORT_MARKER = "arena_high_board_governance"
+
+
+def _purge_seeded_reports(session) -> None:
+    """Recovery purge: delete EVERY ReportJob carrying the reserved arena-private
+    marker report_type, so a freshly seeded match starts from a clean slate and the
+    display-report step can only find the report this match just seeded.
+
+    Safe because ARENA_REPORT_MARKER is a RESERVED report_type — an arena-private
+    string no production/user/normal report path emits (same convention as
+    ARENA_PORTFOLIO_TAG / ARENA_PROFILE_MARKER). Race-free under the documented
+    sequential-matches invariant. Commits NOW (mirrors _purge_seeded_portfolios) so
+    the delete is durable even if the subsequent apply_seed raises."""
+    from sqlalchemy import delete
+
+    from app import models
+    session.execute(
+        delete(models.ReportJob).where(models.ReportJob.report_type == ARENA_REPORT_MARKER)
+    )
+    session.commit()
 
 
 def _purge_arena_rfqs(session, rfq_ids) -> None:
@@ -360,9 +384,12 @@ def run_match(
 
     # Reset any prior same-named seed, then seed fresh (autoincrement IDs) and
     # create the arena-tagged thread.
+    seeded_report_ids: list[int] = []
     with database.SessionLocal() as session:
         _purge_seeded_portfolios(session, loaded.fixtures)
+        _purge_seeded_reports(session)   # recovery: reclaim prior crash orphans (commits)
         seed_ids = apply_seed(loaded.fixtures, session)
+        seeded_report_ids = list(seed_ids.get("reports", {}).values())
         # Mark the seeded fixture rows as arena-owned so the next match's purge
         # only removes arena rows, never a real desk portfolio/profile of the
         # same name.
@@ -415,6 +442,14 @@ def run_match(
         transcript = harvest(thread_id, workflow, model)
     finally:
         _purge_match_rfqs(thread_id, rfq_id_baseline)
+        if seeded_report_ids:
+            # Ownership-precise: delete only THIS match's seeded ReportJob rows.
+            from sqlalchemy import delete
+            with database.SessionLocal() as session:
+                session.execute(
+                    delete(models.ReportJob).where(models.ReportJob.id.in_(seeded_report_ids))
+                )
+                session.commit()
 
     # Copy any harvested artifacts under the run's artifact root.
     copied_steps = []
