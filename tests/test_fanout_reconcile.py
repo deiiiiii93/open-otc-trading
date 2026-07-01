@@ -103,6 +103,21 @@ def test_enumerate_from_a_persisted_riskrun(session):
     assert enumerate_limit_breaches(session, str(pf.id)) == ["7", "9"]  # newest run
 
 
+def test_newer_queued_run_does_not_erase_completed_breaches(session):
+    """A freshly-queued empty run (the workflow's own scope step) must not mask an
+    older completed run's breaches — only terminal-status runs are authoritative."""
+    from app.models import Portfolio, RiskRun
+    from app.services.risk_limits import enumerate_limit_breaches
+
+    pf = Portfolio(name="queued-pf", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    session.add(RiskRun(portfolio_id=pf.id, status="completed", metrics={"limit_breaches": [{"position_id": 5}]}))
+    session.add(RiskRun(portfolio_id=pf.id, status="queued", metrics={}))  # newer, non-terminal
+    session.flush()
+    assert enumerate_limit_breaches(session, str(pf.id)) == ["5"]  # completed run wins
+
+
 def test_tool_uses_server_scope_not_model_records(session, monkeypatch):
     """Model-supplied records cannot shrink coverage: scope is server-derived, so
     omitted breaches surface as failed."""

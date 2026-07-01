@@ -12,6 +12,10 @@ from sqlalchemy.orm import Session
 
 from ..models import RiskRun
 
+# Only trust terminal-success runs. A freshly-queued run (metrics={}) created by the
+# workflow's own scope step must NOT mask an older completed run's breach data.
+_TERMINAL_STATUSES = ("completed", "completed_with_errors")
+
 
 def enumerate_limit_breaches(session: Session, portfolio_id) -> list[str]:
     """Return breached position ids (as strings) from a portfolio's latest RiskRun.
@@ -31,7 +35,11 @@ def enumerate_limit_breaches(session: Session, portfolio_id) -> list[str]:
     except (TypeError, ValueError):
         return []
     run = session.execute(
-        select(RiskRun).where(RiskRun.portfolio_id == pid).order_by(RiskRun.id.desc()).limit(1)
+        select(RiskRun)
+        .where(RiskRun.portfolio_id == pid)
+        .where(RiskRun.status.in_(_TERMINAL_STATUSES))
+        .order_by(RiskRun.id.desc())
+        .limit(1)
     ).scalar_one_or_none()
     if run is None or not isinstance(run.metrics, dict):
         return []
