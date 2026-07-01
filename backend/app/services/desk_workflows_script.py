@@ -148,7 +148,7 @@ def guard_script(script: str) -> None:
             )
 
 
-def validate_script(script: str, *, slug: str) -> dict:
+def validate_script(script: str, *, slug: str, source: str | None = None) -> dict:
     guard_script(script)
     meta = extract_meta(script)
     missing = _REQUIRED_META - set(meta)
@@ -176,4 +176,14 @@ def validate_script(script: str, *, slug: str) -> dict:
     if slug in RESERVED_WORKFLOW_SLUGS:
         raise WorkflowScriptError(f"slug {slug!r} is reserved")
     validate_params(meta)
+    if meta.get("dynamic_subagents"):
+        # Server-owned: only allowlisted, seed-sourced workflows may fan out via
+        # QuickJS. A user/model-authored save that sets the flag is rejected here.
+        from .deep_agent.dynamic_subagents import is_allowlisted
+
+        if source != "seed" or not is_allowlisted(slug):
+            raise WorkflowScriptError(
+                "`dynamic_subagents` is server-owned: only allowlisted seed "
+                "workflows may set it."
+            )
     return meta
