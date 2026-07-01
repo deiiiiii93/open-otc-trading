@@ -623,7 +623,10 @@ def test_stream_and_persist_emits_done_with_message_id(monkeypatch, in_memory_db
         )]
 
     joined = "".join(asyncio.run(run()))
-    m = re.search(r'event: done\ndata: ({"message_id": \d+})', joined)
+    # The done event carries message_id plus other enrichment fields (thread_id,
+    # and for IM connectors pending_actions / reply_options), so match the object
+    # by its message_id rather than pinning the exact field set.
+    m = re.search(r'event: done\ndata: (\{[^}\n]*"message_id":\s*\d+[^}\n]*\})', joined)
     assert m, f"missing done event with message_id: {joined!r}"
 
 
