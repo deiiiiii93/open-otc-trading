@@ -22,6 +22,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.models import HedgeMapEntry, Instrument, MarketDataProfile, MarketQuote
+from app.services.market_data import effective_akshare_asset_class
 from app.services.quotes import record_quote
 
 
@@ -34,6 +35,7 @@ from app.services.quotes import record_quote
 # or short data lags without hammering akshare on every call.
 # ---------------------------------------------------------------------------
 _GAP_TOLERANCE: int = 0
+_FALLBACK_SSE_HOLIDAY_MONTH_DAYS = {(1, 1)}
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +94,7 @@ def expected_trading_days(start: str, end: str) -> list[pd.Timestamp]:
     """Return list of expected SSE trading days in [start, end].
 
     Uses the quant-ark China SSE holiday CSV when available; falls back to
-    ``pandas.bdate_range`` (Mon-Fri, no holiday adjustment) otherwise.
+    ``pandas.bdate_range`` plus fixed-date SSE holidays otherwise.
 
     Args:
         start: ISO date string e.g. "2024-01-02"
@@ -105,8 +107,11 @@ def expected_trading_days(start: str, end: str) -> list[pd.Timestamp]:
 
     bdays = pd.bdate_range(start=start, end=end)
     if not holidays:
-        # Fallback: plain business days (Mon-Fri)
-        return list(bdays)
+        return [
+            d
+            for d in bdays
+            if (d.month, d.day) not in _FALLBACK_SSE_HOLIDAY_MONTH_DAYS
+        ]
 
     return [d for d in bdays if datetime(d.year, d.month, d.day) not in holidays]
 
@@ -301,7 +306,9 @@ def _fetch_akshare_spot(
         raise RuntimeError(f"akshare is not installed: {exc}") from exc
 
     # Canonicalize symbol (strip exchange suffix like "000300.SH")
-    code = symbol.strip()
+    raw_symbol = symbol.strip()
+    asset_class = effective_akshare_asset_class(raw_symbol, asset_class)
+    code = raw_symbol
     if "." in code:
         code = code.split(".", 1)[0]
 
@@ -330,22 +337,33 @@ def _fetch_akshare_spot(
                 )
 
         elif asset_class == "stock":
-            try:
-                raw = ak.stock_zh_a_daily(
-                    symbol=_prefix_stock(code), adjust=adjust_arg or "qfq"
+            if code.isalpha() and len(code) <= 5:
+                raw = ak.stock_us_daily(
+                    symbol=code.upper(), adjust=adjust_arg or "qfq"
                 )
                 if raw is None or raw.empty:
-                    raise ValueError("empty")
+                    raise RuntimeError(
+                        f"akshare stock_us_daily returned no data for {symbol!r}"
+                    )
                 raw["date"] = pd.to_datetime(raw["date"])
                 raw = raw.loc[(raw["date"] >= start) & (raw["date"] <= end)]
-            except Exception:
-                raw = ak.stock_zh_a_hist(
-                    symbol=code,
-                    period="daily",
-                    start_date=start_compact,
-                    end_date=end_compact,
-                    adjust=adjust_arg or "qfq",
-                )
+            else:
+                try:
+                    raw = ak.stock_zh_a_daily(
+                        symbol=_prefix_stock(code), adjust=adjust_arg or "qfq"
+                    )
+                    if raw is None or raw.empty:
+                        raise ValueError("empty")
+                    raw["date"] = pd.to_datetime(raw["date"])
+                    raw = raw.loc[(raw["date"] >= start) & (raw["date"] <= end)]
+                except Exception:
+                    raw = ak.stock_zh_a_hist(
+                        symbol=code,
+                        period="daily",
+                        start_date=start_compact,
+                        end_date=end_compact,
+                        adjust=adjust_arg or "qfq",
+                    )
 
         elif asset_class == "sge_spot":
             sge_map = {

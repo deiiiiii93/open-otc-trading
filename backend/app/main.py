@@ -203,7 +203,7 @@ from .services.deep_agent.channel_registry import (
 from .services.deep_agent.checkpointer import clear_thread_checkpoints
 from .services.deep_agent.model_factory import agent_model_config
 from .services.deep_agent.workflow_state import ensure_thread_workflow_state
-from .services.market_data import fetch_akshare_snapshot
+from .services.market_data import effective_akshare_asset_class, fetch_akshare_snapshot
 from .services.position_adapter import TRADE_SHEET, import_positions_from_xlsx
 from .services.import_templates import (
     positions_template_bytes,
@@ -2083,7 +2083,10 @@ def create_app(
             raise HTTPException(status_code=404, detail="Instrument not found")
         request = AkshareSnapshotRequest(
             symbol=row.akshare_symbol or akshare_symbol(row.symbol),
-            asset_class=(row.akshare_asset_class or akshare_asset_class(row.symbol)),  # type: ignore[arg-type]
+            asset_class=effective_akshare_asset_class(
+                row.symbol,
+                row.akshare_asset_class or akshare_asset_class(row.symbol),
+            ),  # type: ignore[arg-type]
             start_date=datetime.utcnow().strftime("%Y-%m-%d"),
             end_date=datetime.utcnow().strftime("%Y-%m-%d"),
             adjust="qfq",
@@ -2261,7 +2264,10 @@ def create_app(
         for inst in resolvable:
             req = AkshareSnapshotRequest(
                 symbol=inst.akshare_symbol or akshare_symbol(inst.symbol),
-                asset_class=(inst.akshare_asset_class or akshare_asset_class(inst.symbol)),  # type: ignore[arg-type]
+                asset_class=effective_akshare_asset_class(
+                    inst.symbol,
+                    inst.akshare_asset_class or akshare_asset_class(inst.symbol),
+                ),  # type: ignore[arg-type]
                 start_date=(datetime.utcnow() - timedelta(days=365)).strftime("%Y-%m-%d"),
                 end_date=datetime.utcnow().strftime("%Y-%m-%d"),
                 adjust="qfq",
@@ -3702,7 +3708,10 @@ def create_app(
         for underlying in underlyings:
             request = AkshareSnapshotRequest(
                 symbol=underlying.akshare_symbol or akshare_symbol(underlying.symbol),
-                asset_class=(underlying.akshare_asset_class or akshare_asset_class(underlying.symbol)),  # type: ignore[arg-type]
+                asset_class=effective_akshare_asset_class(
+                    underlying.symbol,
+                    underlying.akshare_asset_class or akshare_asset_class(underlying.symbol),
+                ),  # type: ignore[arg-type]
                 start_date=payload.start_date,
                 end_date=payload.end_date,
                 adjust=payload.adjust,

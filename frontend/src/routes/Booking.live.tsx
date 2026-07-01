@@ -488,6 +488,7 @@ export function BookingLive({ onPageContextChange }: Props) {
               <div className="wl-booking__ticket-grid">
                 <Select
                   label="Portfolio"
+                  searchable
                   className="wl-positions__term-field"
                   value={form.portfolioId}
                   onChange={(v) => update('portfolioId', v)}
@@ -498,6 +499,7 @@ export function BookingLive({ onPageContextChange }: Props) {
                 />
                 <Select
                   label="Underlying"
+                  searchable
                   className="wl-positions__term-field"
                   value={activeUnderlyings.some((underlying) => underlying.symbol === form.underlying) ? form.underlying : ''}
                   onChange={(v) => updateUnderlying(v)}
@@ -512,6 +514,7 @@ export function BookingLive({ onPageContextChange }: Props) {
                 />
                 <Select
                   label="Product Type"
+                  searchable
                   className="wl-positions__term-field"
                   value={form.productType}
                   onChange={(v) => updateProductType(v)}
@@ -522,6 +525,7 @@ export function BookingLive({ onPageContextChange }: Props) {
                 />
                 <Select
                   label="Currency"
+                  searchable
                   className="wl-positions__term-field"
                   value={form.currency}
                   onChange={(v) => update('currency', v)}
@@ -544,6 +548,7 @@ export function BookingLive({ onPageContextChange }: Props) {
                 </label>
                 <Select
                   label="Status"
+                  searchable
                   className="wl-positions__term-field"
                   value={form.status}
                   onChange={(v) => update('status', v)}
@@ -563,6 +568,7 @@ export function BookingLive({ onPageContextChange }: Props) {
                 </label>
                 <Select
                   label="Engine"
+                  searchable
                   className="wl-positions__term-field"
                   value={form.engineName}
                   onChange={(v) => update('engineName', v)}

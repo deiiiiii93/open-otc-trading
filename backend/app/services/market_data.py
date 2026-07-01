@@ -4,6 +4,7 @@ import contextlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import threading
@@ -18,6 +19,8 @@ from .fx import fetch_akshare_fx_rate, parse_fx_pair_symbol
 _proxy_lock = threading.Lock()
 _CHILD_RESULT_MARKER = "__OPEN_OTC_AKSHARE_SNAPSHOT__:"
 _AKSHARE_SUBPROCESS_TIMEOUT_SECONDS = 45
+_US_EQUITY_SUFFIXES = {"US", "NASDAQ", "NYSE", "AMEX", "ARCA"}
+_US_TICKER_RE = re.compile(r"^[A-Z]{1,5}$")
 
 
 @contextlib.contextmanager
@@ -89,6 +92,31 @@ def _akshare_code(symbol: str) -> str:
     if "." in code:
         return code.split(".", 1)[0]
     return code
+
+
+def _is_us_stock_symbol(symbol: str, provider_symbol: str) -> bool:
+    code = provider_symbol.strip().upper()
+    if not _US_TICKER_RE.fullmatch(code):
+        return False
+    upper_symbol = symbol.strip().upper()
+    if "." not in upper_symbol:
+        return True
+    suffix = upper_symbol.rsplit(".", 1)[1]
+    return suffix in _US_EQUITY_SUFFIXES
+
+
+def effective_akshare_asset_class(symbol: str, asset_class: str) -> str:
+    """Correct stale stock/index metadata for US equity tickers.
+
+    Existing books may contain plain US tickers such as AAPL with
+    ``akshare_asset_class='index'`` from older seed data. AKShare still expects
+    those to route through ``stock_us_daily``.
+    """
+    if asset_class in {"stock", "index"} and _is_us_stock_symbol(
+        symbol, _akshare_code(symbol)
+    ):
+        return "stock"
+    return asset_class
 
 
 def _sge_symbol(symbol: str) -> str:
@@ -251,10 +279,11 @@ def _fetch_akshare_snapshot_in_process(
 
     source = "AKShare"
     provider_symbol = _akshare_code(request.symbol)
+    asset_class = effective_akshare_asset_class(request.symbol, request.asset_class)
     proxy_ctx = _no_proxy() if not request.use_proxy else contextlib.nullcontext()
     with proxy_ctx:
         try:
-            if request.asset_class == "fx_rate":
+            if asset_class == "fx_rate":
                 base, quote = _fx_pair_symbol(request.symbol)
                 pair_symbol = f"{base}/{quote}"
                 rate = fetch_akshare_fx_rate(base, quote)
@@ -281,7 +310,7 @@ def _fetch_akshare_snapshot_in_process(
                         "quote_currency": quote,
                     },
                 )
-            if request.asset_class == "etf" or _is_etf_code(provider_symbol):
+            if asset_class == "etf" or _is_etf_code(provider_symbol):
                 try:
                     raw = ak.fund_etf_hist_sina(symbol=_prefix_etf(provider_symbol))
                     if raw is None or raw.empty:
@@ -300,7 +329,7 @@ def _fetch_akshare_snapshot_in_process(
                     )
                     rows = _normalize_ohlc(raw)
                     source = "AKShare fund_etf_hist_em"
-            elif request.asset_class == "sge_spot" or _is_sge_symbol(request.symbol):
+            elif asset_class == "sge_spot" or _is_sge_symbol(request.symbol):
                 raw = ak.spot_hist_sge(symbol=_sge_symbol(request.symbol))
                 if raw is None or raw.empty:
                     return _fallback_snapshot(request, f"spot_hist_sge returned no data for {request.symbol!r}")
@@ -308,26 +337,35 @@ def _fetch_akshare_snapshot_in_process(
                 mask = (raw["date"] >= request.start_date) & (raw["date"] <= request.end_date)
                 rows = _normalize_ohlc(raw.loc[mask])
                 source = "AKShare spot_hist_sge"
-            elif request.asset_class == "stock":
-                try:
-                    raw = ak.stock_zh_a_daily(symbol=_prefix_stock(provider_symbol), adjust=request.adjust)
+            elif asset_class == "stock":
+                if _is_us_stock_symbol(request.symbol, provider_symbol):
+                    raw = ak.stock_us_daily(symbol=provider_symbol.upper(), adjust=request.adjust)
                     if raw is None or raw.empty:
-                        raise ValueError(f"stock_zh_a_daily returned no data for {request.symbol!r}")
+                        return _fallback_snapshot(request, f"stock_us_daily returned no data for {request.symbol!r}")
                     raw["date"] = pd.to_datetime(raw["date"])
                     mask = (raw["date"] >= request.start_date) & (raw["date"] <= request.end_date)
                     rows = _normalize_ohlc(raw.loc[mask])
-                    source = "AKShare stock_zh_a_daily"
-                except Exception:
-                    raw = ak.stock_zh_a_hist(
-                        symbol=provider_symbol,
-                        period="daily",
-                        start_date=request.start_date.replace("-", ""),
-                        end_date=request.end_date.replace("-", ""),
-                        adjust=request.adjust,
-                    )
-                    rows = _normalize_ohlc(raw)
-                    source = "AKShare stock_zh_a_hist"
-            elif request.asset_class == "futures":
+                    source = "AKShare stock_us_daily"
+                else:
+                    try:
+                        raw = ak.stock_zh_a_daily(symbol=_prefix_stock(provider_symbol), adjust=request.adjust)
+                        if raw is None or raw.empty:
+                            raise ValueError(f"stock_zh_a_daily returned no data for {request.symbol!r}")
+                        raw["date"] = pd.to_datetime(raw["date"])
+                        mask = (raw["date"] >= request.start_date) & (raw["date"] <= request.end_date)
+                        rows = _normalize_ohlc(raw.loc[mask])
+                        source = "AKShare stock_zh_a_daily"
+                    except Exception:
+                        raw = ak.stock_zh_a_hist(
+                            symbol=provider_symbol,
+                            period="daily",
+                            start_date=request.start_date.replace("-", ""),
+                            end_date=request.end_date.replace("-", ""),
+                            adjust=request.adjust,
+                        )
+                        rows = _normalize_ohlc(raw)
+                        source = "AKShare stock_zh_a_hist"
+            elif asset_class == "futures":
                 raw = ak.futures_zh_daily_sina(symbol=provider_symbol)
                 if raw is None or raw.empty:
                     return _fallback_snapshot(request, f"futures_zh_daily_sina returned no data for {request.symbol!r} — symbol may be expired or invalid")
@@ -368,7 +406,7 @@ def _fetch_akshare_snapshot_in_process(
                 name=request.name or f"{request.symbol} AKShare snapshot",
                 source="akshare",
                 symbol=request.symbol,
-                asset_class=request.asset_class,
+                asset_class=asset_class,
                 valuation_date=datetime.now(timezone.utc),
                 data={"rows": rows, "latest": latest, "spot": latest.get("close")},
                 source_metadata={"source_name": source, "fallback": False},
