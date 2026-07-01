@@ -82,6 +82,12 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {_json.dumps(data, ensure_ascii=False, default=str)}\n\n"
 
 
+def _subagent_sse_line(event: dict, collector) -> str:
+    """Record + serialize a dynamic-subagents fan-out lifecycle event to the web SSE."""
+    collector.on_subagent(event)
+    return _sse("subagent", event)
+
+
 def _done_payload(message_id: int | None, thread_id: int | None) -> dict:
     """Build a ``done`` SSE payload, enriched with ``thread_id`` and the
     persisted message's ``pending_actions``.
@@ -3877,6 +3883,14 @@ class AgentService:
         method = ev.get("method")
         params = ev.get("params") or {}
         data = params.get("data")
+
+        if method == "custom":
+            # Dynamic-subagents fan-out lifecycle events ride the LangGraph custom
+            # stream. The payload is the event dict (start/complete/error).
+            payload = data if isinstance(data, dict) else params
+            if isinstance(payload, dict) and payload.get("type") == "subagent":
+                return _subagent_sse_line(payload, collector)
+            return None
 
         if method == "messages":
             payload = data[0] if isinstance(data, (tuple, list)) and data else data
