@@ -17,6 +17,9 @@ MAX_PTC_CALLS: int = 24
 FANOUT_ATTRIBUTION_KEY = "fanout_attribution"
 FANOUT_ATTRIBUTION_CASE3 = "case3_workflow"
 FANOUT_WORKFLOW_ID_KEY = "fanout_workflow_slug"
+# Server-stamped, validated workflow launch args (e.g. portfolio_id). Tools read
+# scope selectors from here rather than trusting model-supplied tool arguments.
+FANOUT_LAUNCH_ARGS_KEY = "fanout_launch_args"
 
 
 def is_allowlisted(slug: str | None) -> bool:
@@ -24,17 +27,24 @@ def is_allowlisted(slug: str | None) -> bool:
     return bool(slug) and slug in DYNAMIC_SUBAGENTS_ALLOWLIST
 
 
-def fanout_attribution_extra(*, slug: str | None, source: str | None) -> dict[str, str]:
-    """Server-derived attribution for ``configurable``.
+def fanout_attribution_extra(
+    *, slug: str | None, source: str | None, launch_args: dict | None = None
+) -> dict:
+    """Server-derived attribution (+ validated launch args) for ``configurable``.
 
     Stamps ONLY when the run is an allowlisted slug persisted with ``source == 'seed'``.
     Never trusts the model or the runtime router id (``Workflow.id`` is an int, not a slug).
+    ``launch_args`` are the *validated* workflow launch params; tools read scope
+    selectors (e.g. ``portfolio_id``) from here instead of model-supplied arguments.
     """
     if source == "seed" and is_allowlisted(slug):
-        return {
+        out: dict = {
             FANOUT_ATTRIBUTION_KEY: FANOUT_ATTRIBUTION_CASE3,
-            FANOUT_WORKFLOW_ID_KEY: slug,  # type: ignore[dict-item]  # slug is truthy here
+            FANOUT_WORKFLOW_ID_KEY: slug,
         }
+        if launch_args:
+            out[FANOUT_LAUNCH_ARGS_KEY] = dict(launch_args)
+        return out
     return {}
 
 
@@ -65,13 +75,24 @@ def reconcile_fanout_coverage(
     out_records: list[dict] = []
     failed: list[str] = []
     for pid in scoped:
-        rec = seen.get(pid) or {"position_id": pid, "status": "failed"}
-        if rec.get("status") == "failed":
+        rec = seen.get(pid)
+        if rec is not None and _is_success_record(rec):
+            out_records.append(rec)
+        else:
+            # Missing, malformed, or non-terminal-success -> explicit failed record.
             failed.append(pid)
-        out_records.append(rec)
+            out_records.append({"position_id": pid, "status": "failed"})
     return {
         "records": out_records,
         "failed_ids": failed,
-        "covered": len(seen),
+        "covered": len(scoped) - len(failed),
         "total": len(scoped),
     }
+
+
+def _is_success_record(rec: dict) -> bool:
+    """A valid per-breach success carries a severity + commentary and is not a
+    failed/error terminal. Anything else is treated as failed (never silently covered)."""
+    if rec.get("status") in ("failed", "error"):
+        return False
+    return bool(rec.get("severity")) and bool(rec.get("commentary"))

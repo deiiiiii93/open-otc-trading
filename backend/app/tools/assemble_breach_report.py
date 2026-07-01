@@ -23,11 +23,28 @@ class AssembleBreachReportInput(BaseModel):
     )
 
 
+def _server_portfolio_id(model_arg: str) -> str:
+    """Prefer the server-stamped launch arg over the model-supplied tool argument,
+    so scope selection is server-authoritative (a hallucinated/injected portfolio_id
+    from the model cannot redirect the report to the wrong book)."""
+    try:
+        from langgraph.config import get_config
+
+        from ..services.deep_agent.dynamic_subagents import FANOUT_LAUNCH_ARGS_KEY
+
+        cfg = get_config().get("configurable") or {}
+        server = (cfg.get(FANOUT_LAUNCH_ARGS_KEY) or {}).get("portfolio_id")
+    except Exception:
+        server = None
+    return str(server) if server is not None else model_arg
+
+
 def _assemble(portfolio_id: str, records: list[dict]) -> dict:
     from ..database import SessionLocal
 
+    resolved = _server_portfolio_id(portfolio_id)
     with SessionLocal() as session:
-        scoped = enumerate_limit_breaches(session, portfolio_id)
+        scoped = enumerate_limit_breaches(session, resolved)
     return reconcile_fanout_coverage(scoped, records)
 
 

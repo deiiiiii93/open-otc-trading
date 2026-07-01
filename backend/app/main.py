@@ -612,7 +612,9 @@ def _delete_thread_rows(session: Session, thread: AgentThread) -> set[str]:
     return checkpoint_keys
 
 
-def _desk_workflow_drive_factory(agent_service, character: str = "auto", *, desk_workflow=None):
+def _desk_workflow_drive_factory(
+    agent_service, character: str = "auto", *, desk_workflow=None, launch_args=None
+):
     """Return an injectable per-step driver that forwards SSE frames.
 
     Monkeypatched in tests; in production it persists the step prompt as a user
@@ -640,6 +642,7 @@ def _desk_workflow_drive_factory(agent_service, character: str = "auto", *, desk
             confirmed_cost_preview=True,
             desk_workflow_slug=slug,
             desk_workflow_source=source,
+            desk_workflow_launch_args=launch_args,
         ):
             yield frame
 
@@ -1026,7 +1029,8 @@ def create_app(
         session.commit()
         mode = (payload or {}).get("mode") or wf.default_mode
         drive = _desk_workflow_drive_factory(
-            active_agent_service, persona_to_character(wf.persona), desk_workflow=wf
+            active_agent_service, persona_to_character(wf.persona),
+            desk_workflow=wf, launch_args=validated_args,
         )
         settle = _desk_workflow_settle_factory()
         return StreamingResponse(

@@ -39,21 +39,43 @@ def test_overflow_all_covered_even_beyond_ptc_budget():
 
 
 def test_duplicate_records_collapse_to_one():
-    out = reconcile_fanout_coverage(["p1"], [_rec("p1", commentary="a"), _rec("p1", commentary="b")])
+    out = reconcile_fanout_coverage(
+        ["p1"], [_rec("p1", severity="low", commentary="a"), _rec("p1", severity="low", commentary="b")]
+    )
     assert len([r for r in out["records"] if r["position_id"] == "p1"]) == 1
+    assert out["failed_ids"] == []
 
 
 def test_records_for_unscoped_ids_ignored():
-    out = reconcile_fanout_coverage(["p1"], [_rec("p1", commentary="a"), _rec("ghost", commentary="z")])
+    out = reconcile_fanout_coverage(
+        ["p1"], [_rec("p1", severity="low", commentary="a"), _rec("ghost", severity="low", commentary="z")]
+    )
     assert {r["position_id"] for r in out["records"]} == {"p1"}
 
 
 def test_int_and_str_ids_match_after_normalization():
     # scope ids are ints (from the DB); a subagent echoes int 1 and str "2".
-    out = reconcile_fanout_coverage([1, 2], [{"position_id": 1, "commentary": "x"},
-                                             {"position_id": "2", "commentary": "y"}])
+    out = reconcile_fanout_coverage(
+        [1, 2],
+        [{"position_id": 1, "severity": "low", "commentary": "x"},
+         {"position_id": "2", "severity": "low", "commentary": "y"}],
+    )
     assert out["failed_ids"] == []
     assert out["covered"] == 2 and out["total"] == 2
+
+
+def test_malformed_or_error_records_become_failed():
+    # missing severity/commentary, or an error status -> failed, never silently covered.
+    out = reconcile_fanout_coverage(
+        ["p1", "p2", "p3"],
+        [
+            {"position_id": "p1"},  # missing severity+commentary
+            {"position_id": "p2", "severity": "high", "status": "error"},  # error status
+            _rec("p3", severity="low", commentary="ok"),  # valid success
+        ],
+    )
+    assert set(out["failed_ids"]) == {"p1", "p2"}
+    assert out["covered"] == 1  # only p3
 
 
 # --- server-authoritative scope enumeration ---
@@ -129,3 +151,26 @@ def test_tool_uses_server_scope_not_model_records(session, monkeypatch):
     out = t._assemble("ptf-1", records)
     assert len(out["records"]) == len(scoped)
     assert len(out["failed_ids"]) == 40
+
+
+def test_server_launch_arg_overrides_model_portfolio_id(session, monkeypatch):
+    """A hallucinated/injected model portfolio_id cannot redirect the report: the
+    server-stamped launch arg wins."""
+    import langgraph.config as lgc
+
+    import app.tools.assemble_breach_report as t
+    from app.services.deep_agent.dynamic_subagents import FANOUT_LAUNCH_ARGS_KEY
+
+    captured: dict = {}
+
+    def _fake_enum(_session, pid):
+        captured["pid"] = pid
+        return []
+
+    monkeypatch.setattr(t, "enumerate_limit_breaches", _fake_enum)
+    monkeypatch.setattr(
+        lgc, "get_config",
+        lambda: {"configurable": {FANOUT_LAUNCH_ARGS_KEY: {"portfolio_id": "SERVER-9"}}},
+    )
+    t._assemble("MODEL-1", [])
+    assert captured["pid"] == "SERVER-9"  # server launch arg, not the model's "MODEL-1"
