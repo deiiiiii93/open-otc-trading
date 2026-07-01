@@ -447,6 +447,43 @@ class TestFetchSpot:
         resp = client.post("/api/instruments/99999/fetch-spot")
         assert resp.status_code == 404
 
+    def test_fetch_spot_repairs_stale_us_stock_asset_class(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        client = _make_client(tmp_path)
+        iid = _add_instrument(
+            tmp_path,
+            symbol="AAPL",
+            kind="index",
+            akshare_symbol="AAPL",
+            akshare_asset_class="index",
+            status="draft",
+        )
+        seen: list[tuple[str, str]] = []
+
+        def fake_snapshot(payload):
+            from app.schemas import MarketDataSnapshot
+
+            seen.append((payload.symbol, payload.asset_class))
+            return MarketDataSnapshot(
+                name=f"{payload.symbol} spot fake",
+                source="akshare",
+                symbol=payload.symbol,
+                asset_class=payload.asset_class,
+                data={
+                    "latest": {"date": "2026-06-05", "close": 202.0},
+                    "spot": 202.0,
+                },
+                source_metadata={"source_name": "fake", "fallback": False},
+            )
+
+        monkeypatch.setattr(app_main_module, "fetch_akshare_snapshot", fake_snapshot)
+
+        resp = client.post(f"/api/instruments/{iid}/fetch-spot")
+        assert resp.status_code == 200
+        assert seen == [("AAPL", "stock")]
+        assert resp.json()["asset_class"] == "stock"
+
 
 # ---------------------------------------------------------------------------
 # GET /api/market-data/quotes?latest=1
@@ -776,3 +813,40 @@ class TestQuoteRefresh:
                 AuditEvent.event_type == "market_data.quotes.refreshed"
             ).all()
         assert len(events) == 1
+
+    def test_refresh_repairs_stale_us_stock_asset_class(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        client = _make_client(tmp_path)
+        _add_instrument(
+            tmp_path,
+            symbol="NVDA",
+            kind="index",
+            akshare_symbol="NVDA",
+            akshare_asset_class="index",
+            status="draft",
+        )
+        seen: list[tuple[str, str]] = []
+
+        def fake_snapshot(payload):
+            from app.schemas import MarketDataSnapshot
+
+            seen.append((payload.symbol, payload.asset_class))
+            return MarketDataSnapshot(
+                name=f"{payload.symbol} fake",
+                source="akshare",
+                symbol=payload.symbol,
+                asset_class=payload.asset_class,
+                data={
+                    "latest": {"date": "2026-06-05", "close": 144.5},
+                    "spot": 144.5,
+                },
+                source_metadata={"source_name": "fake", "fallback": False},
+            )
+
+        monkeypatch.setattr(app_main_module, "fetch_akshare_snapshot", fake_snapshot)
+
+        resp = client.post("/api/market-data/quotes/refresh", json={})
+        assert resp.status_code == 200
+        assert seen == [("NVDA", "stock")]
+        assert resp.json()["fetched"] == 1

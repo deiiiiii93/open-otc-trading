@@ -5,6 +5,9 @@ Run with:
 """
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+
 import pandas as pd
 import pytest
 
@@ -157,6 +160,41 @@ def test_profile_to_frame():
     assert len(df) == 4
     assert df["spot"].iloc[1] == 3820.5
     assert pd.api.types.is_datetime64_any_dtype(df["date"])
+
+
+def test_fetch_akshare_spot_us_stock_uses_stock_us_daily(monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    def stock_us_daily(symbol: str, adjust: str = ""):
+        calls.append((symbol, adjust))
+        return pd.DataFrame(
+            [
+                {
+                    "date": "2026-05-12",
+                    "open": 132.0,
+                    "high": 135.0,
+                    "low": 131.0,
+                    "close": 134.5,
+                    "volume": 100,
+                },
+                {
+                    "date": "2026-05-13",
+                    "open": 134.5,
+                    "high": 138.0,
+                    "low": 134.0,
+                    "close": 137.25,
+                    "volume": 120,
+                },
+            ]
+        )
+
+    monkeypatch.setitem(sys.modules, "akshare", SimpleNamespace(stock_us_daily=stock_us_daily))
+
+    df = mh._fetch_akshare_spot("NVDA", "index", "2026-05-12", "2026-05-13", "qfq")
+
+    assert calls == [("NVDA", "qfq")]
+    assert list(df.columns) == ["date", "spot"]
+    assert df["spot"].tolist() == [134.5, 137.25]
 
 
 # ---------------------------------------------------------------------------

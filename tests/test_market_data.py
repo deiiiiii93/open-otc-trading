@@ -258,6 +258,105 @@ def test_fetch_akshare_fx_rate_builds_spot_snapshot(monkeypatch):
     assert snapshot.data["latest"]["close"] == 7.2
 
 
+def test_fetch_akshare_us_stock_uses_stock_us_daily(monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    def stock_us_daily(symbol: str, adjust: str = ""):
+        calls.append((symbol, adjust))
+        return pd.DataFrame(
+            [
+                {
+                    "date": "2026-05-12",
+                    "open": 190.1,
+                    "high": 192.0,
+                    "low": 189.4,
+                    "close": 191.5,
+                    "volume": 1000,
+                },
+                {
+                    "date": "2026-05-13",
+                    "open": 191.5,
+                    "high": 194.2,
+                    "low": 190.8,
+                    "close": 193.7,
+                    "volume": 1200,
+                },
+            ]
+        )
+
+    monkeypatch.setitem(sys.modules, "akshare", SimpleNamespace(stock_us_daily=stock_us_daily))
+
+    snapshot = fetch_akshare_snapshot(
+        AkshareSnapshotRequest(
+            symbol="AAPL",
+            asset_class="stock",
+            start_date="2026-05-12",
+            end_date="2026-05-13",
+            adjust="qfq",
+        )
+    )
+
+    assert calls == [("AAPL", "qfq")]
+    assert snapshot.symbol == "AAPL"
+    assert snapshot.asset_class == "stock"
+    assert snapshot.source_metadata == {
+        "source_name": "AKShare stock_us_daily",
+        "fallback": False,
+    }
+    assert snapshot.data["spot"] == 193.7
+
+
+def test_fetch_akshare_us_stock_repairs_stale_index_asset_class(monkeypatch):
+    calls: list[str] = []
+
+    def stock_us_daily(symbol: str, adjust: str = ""):
+        calls.append(symbol)
+        return pd.DataFrame(
+            [
+                {
+                    "date": "2026-05-13",
+                    "open": 177.0,
+                    "high": 179.0,
+                    "low": 176.0,
+                    "close": 178.25,
+                    "volume": 900,
+                }
+            ]
+        )
+
+    def stock_zh_index_daily(**_kwargs):
+        raise AssertionError("US tickers must not route through China index quotes")
+
+    def index_zh_a_hist(**_kwargs):
+        raise AssertionError("US tickers must not route through China index history")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "akshare",
+        SimpleNamespace(
+            stock_us_daily=stock_us_daily,
+            stock_zh_index_daily=stock_zh_index_daily,
+            index_zh_a_hist=index_zh_a_hist,
+        ),
+    )
+
+    snapshot = fetch_akshare_snapshot(
+        AkshareSnapshotRequest(
+            symbol="TSLA",
+            asset_class="index",
+            start_date="2026-05-13",
+            end_date="2026-05-13",
+            adjust="qfq",
+        )
+    )
+
+    assert calls == ["TSLA"]
+    assert snapshot.symbol == "TSLA"
+    assert snapshot.asset_class == "stock"
+    assert snapshot.source_metadata["source_name"] == "AKShare stock_us_daily"
+    assert snapshot.data["spot"] == 178.25
+
+
 def test_fetch_akshare_sge_spot_maps_au9999_to_sge_symbol(monkeypatch):
     calls: list[str] = []
 
