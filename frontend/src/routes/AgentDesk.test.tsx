@@ -46,25 +46,6 @@ describe('AgentDesk', () => {
     expect(screen.getByText('Done.')).toBeInTheDocument();
   });
 
-  it('renders the compact/detailed view mode toggle', () => {
-    renderDesk({ viewMode: 'detailed' });
-    expect(screen.getByRole('button', { name: 'Compact' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
-    expect(screen.getByRole('button', { name: 'Detailed' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-  });
-
-  it('calls onChangeViewMode from the header toggle', async () => {
-    const onChangeViewMode = vi.fn();
-    renderDesk({ onChangeViewMode });
-    await userEvent.click(screen.getByRole('button', { name: 'Detailed' }));
-    expect(onChangeViewMode).toHaveBeenCalledWith('detailed');
-  });
-
   it('passes streaming item into the message list', () => {
     renderDesk({
       streaming: true,

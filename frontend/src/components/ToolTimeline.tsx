@@ -9,6 +9,11 @@ type Props = {
   defaultOpen?: boolean;
 };
 
+type EventGroup = {
+  name: string;
+  events: ToolEvent[];
+};
+
 export function ToolTimeline({ events, mode, defaultOpen = true }: Props) {
   if (!events || events.length === 0) return null;
 
@@ -34,6 +39,7 @@ export function ToolTimeline({ events, mode, defaultOpen = true }: Props) {
   }
 
   const typedEvents = events as ToolEvent[];
+  const groups = groupConsecutiveEvents(typedEvents);
   const running = typedEvents.filter((ev) => ev.status === 'running').length;
   const errors = typedEvents.filter((ev) => ev.status === 'error').length;
   const durationMs = typedEvents.reduce(
@@ -53,11 +59,37 @@ export function ToolTimeline({ events, mode, defaultOpen = true }: Props) {
         />
       </summary>
       <ol className="wl-tool-timeline">
-        {typedEvents.map((ev) => (
-          <ToolEventRow key={ev.id} event={ev} mode={mode} />
+        {groups.map((group) => (
+          <ToolEventGroup key={group.events.map((ev) => ev.id).join('-')} group={group} mode={mode} />
         ))}
       </ol>
     </details>
+  );
+}
+
+function groupConsecutiveEvents(events: ToolEvent[]): EventGroup[] {
+  const groups: EventGroup[] = [];
+  for (const ev of events) {
+    const last = groups[groups.length - 1];
+    if (last && last.name === ev.name) {
+      last.events.push(ev);
+    } else {
+      groups.push({ name: ev.name, events: [ev] });
+    }
+  }
+  return groups;
+}
+
+function groupStatus(events: ToolEvent[]): 'running' | 'error' | 'done' {
+  if (events.some((ev) => ev.status === 'running')) return 'running';
+  if (events.some((ev) => ev.status === 'error')) return 'error';
+  return 'done';
+}
+
+function groupDurationMs(events: ToolEvent[]): number {
+  return events.reduce(
+    (sum, ev) => sum + (ev.status === 'running' ? 0 : (ev.duration_ms ?? 0)),
+    0,
   );
 }
 
@@ -87,14 +119,74 @@ function ToolTimelineSummary({
   );
 }
 
+function ToolEventGroup({ group, mode }: { group: EventGroup; mode: Mode }) {
+  const count = group.events.length;
+  if (count === 1) {
+    return <ToolEventRow event={group.events[0]} mode={mode} />;
+  }
+
+  const status = groupStatus(group.events);
+  const durationMs = groupDurationMs(group.events);
+  const icon = status === 'running' ? '↻' : status === 'error' ? '✕' : '✓';
+  const summary = (
+    <span className="wl-tool-timeline__summary">
+      <span className={`wl-tool-timeline__icon wl-tool-timeline__icon--${status}`}>
+        {icon}
+      </span>
+      <span className="wl-tool-timeline__name">{group.name}</span>
+      <span className="wl-tool-timeline__count">×{count}</span>
+      {status === 'running' ? (
+        <span className="wl-tool-timeline__timing">running...</span>
+      ) : (
+        <span className="wl-tool-timeline__timing">{formatDuration(durationMs)}</span>
+      )}
+    </span>
+  );
+
+  if (mode === 'compact') {
+    return <li data-status={status}>{summary}</li>;
+  }
+
+  return (
+    <li data-status={status}>
+      <details open>
+        <summary>{summary}</summary>
+        <ol className="wl-tool-timeline wl-tool-timeline--nested">
+          {group.events.map((ev) => (
+            <li key={ev.id} data-status={ev.status}>
+              <ToolEventRowContent event={ev} mode="detailed" showName={false} />
+            </li>
+          ))}
+        </ol>
+      </details>
+    </li>
+  );
+}
+
 function ToolEventRow({ event, mode }: { event: ToolEvent; mode: Mode }) {
+  return (
+    <li data-status={event.status}>
+      <ToolEventRowContent event={event} mode={mode} />
+    </li>
+  );
+}
+
+function ToolEventRowContent({
+  event,
+  mode,
+  showName = true,
+}: {
+  event: ToolEvent;
+  mode: Mode;
+  showName?: boolean;
+}) {
   const icon = event.status === 'running' ? '↻' : event.status === 'error' ? '✕' : '✓';
   const summary = (
     <span className="wl-tool-timeline__summary">
       <span className={`wl-tool-timeline__icon wl-tool-timeline__icon--${event.status}`}>
         {icon}
       </span>
-      <span className="wl-tool-timeline__name">{event.name}</span>
+      {showName && <span className="wl-tool-timeline__name">{event.name}</span>}
       {event.status === 'running' ? (
         <span className="wl-tool-timeline__timing">running...</span>
       ) : (
@@ -105,31 +197,29 @@ function ToolEventRow({ event, mode }: { event: ToolEvent; mode: Mode }) {
   );
 
   if (mode === 'compact' || (event.args == null && event.output == null && !event.error)) {
-    return <li data-status={event.status}>{summary}</li>;
+    return summary;
   }
 
   return (
-    <li data-status={event.status}>
-      <details open>
-        <summary>{summary}</summary>
-        {event.args != null && (
-          <div className="wl-tool-timeline__detail">
-            <span className="wl-tool-timeline__detail-label">args</span>
-            <pre className="wl-tool-timeline__detail-body">
-              {JSON.stringify(event.args, null, 2)}
-            </pre>
-          </div>
-        )}
-        {event.output != null && (
-          <div className="wl-tool-timeline__detail">
-            <span className="wl-tool-timeline__detail-label">-&gt;</span>
-            <pre className="wl-tool-timeline__detail-body">
-              {JSON.stringify(event.output, null, 2)}
-            </pre>
-          </div>
-        )}
-      </details>
-    </li>
+    <details open>
+      <summary>{summary}</summary>
+      {event.args != null && (
+        <div className="wl-tool-timeline__detail">
+          <span className="wl-tool-timeline__detail-label">args</span>
+          <pre className="wl-tool-timeline__detail-body">
+            {JSON.stringify(event.args, null, 2)}
+          </pre>
+        </div>
+      )}
+      {event.output != null && (
+        <div className="wl-tool-timeline__detail">
+          <span className="wl-tool-timeline__detail-label">-&gt;</span>
+          <pre className="wl-tool-timeline__detail-body">
+            {JSON.stringify(event.output, null, 2)}
+          </pre>
+        </div>
+      )}
+    </details>
   );
 }
 

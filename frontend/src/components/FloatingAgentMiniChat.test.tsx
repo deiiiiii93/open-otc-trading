@@ -150,10 +150,9 @@ describe('FloatingAgentMiniChat', () => {
       />,
     );
 
-    const yolo = screen.getByRole('button', { name: /yolo/i });
-    expect(yolo).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('Mode')).toHaveValue('yolo');
 
-    await userEvent.click(screen.getByRole('button', { name: /interactive/i }));
+    await userEvent.selectOptions(screen.getByLabelText('Mode'), 'interactive');
 
     expect(setExecutionMode).toHaveBeenCalledWith('interactive');
   });

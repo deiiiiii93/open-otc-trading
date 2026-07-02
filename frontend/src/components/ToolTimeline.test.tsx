@@ -57,16 +57,52 @@ describe('ToolTimeline', () => {
     expect(screen.getByText(/2 calls/)).toBeInTheDocument();
   });
 
-  it('keeps two events with the same name distinct via id', () => {
+  it('groups consecutive events with the same name into one row', () => {
     const dup: ToolEvent[] = [
       { id: 'r1', name: 'price_product', status: 'done', duration_ms: 50 },
       { id: 'r2', name: 'price_product', status: 'done', duration_ms: 80 },
     ];
     render(<ToolTimeline events={dup} mode="compact" />);
     const items = screen.getAllByRole('listitem');
-    expect(items).toHaveLength(2);
-    expect(items[0]).toHaveTextContent(/50/);
-    expect(items[1]).toHaveTextContent(/80/);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toHaveTextContent(/price_product/);
+    expect(items[0]).toHaveTextContent(/×2/);
+    expect(items[0]).toHaveTextContent(/130ms/);
+  });
+
+  it('keeps non-consecutive same-name events as separate rows', () => {
+    const mixed: ToolEvent[] = [
+      { id: 'r1', name: 'read_file', status: 'done', duration_ms: 10 },
+      { id: 'r2', name: 'price_product', status: 'done', duration_ms: 50 },
+      { id: 'r3', name: 'read_file', status: 'done', duration_ms: 20 },
+    ];
+    render(<ToolTimeline events={mixed} mode="compact" />);
+    const items = screen.getAllByRole('listitem');
+    expect(items).toHaveLength(3);
+    expect(items[0]).toHaveTextContent(/read_file/);
+    expect(items[1]).toHaveTextContent(/price_product/);
+    expect(items[2]).toHaveTextContent(/read_file/);
+  });
+
+  it('expands grouped events individually in detailed mode', () => {
+    const dup: ToolEvent[] = [
+      { id: 'r1', name: 'price_product', status: 'done', duration_ms: 50, args: { a: 1 } },
+      { id: 'r2', name: 'price_product', status: 'done', duration_ms: 80, args: { a: 2 } },
+    ];
+    render(<ToolTimeline events={dup} mode="detailed" />);
+    expect(screen.getByText(/×2/)).toBeInTheDocument();
+    expect(screen.getByText(/"a": 1/)).toBeInTheDocument();
+    expect(screen.getByText(/"a": 2/)).toBeInTheDocument();
+  });
+
+  it('shows error status on a group if any event errored', () => {
+    const groupWithError: ToolEvent[] = [
+      { id: 'r1', name: 'read_file', status: 'done', duration_ms: 10 },
+      { id: 'r2', name: 'read_file', status: 'error', duration_ms: 5, error: 'boom' },
+    ];
+    render(<ToolTimeline events={groupWithError} mode="compact" />);
+    const item = screen.getByText('read_file').closest('li');
+    expect(item).toHaveAttribute('data-status', 'error');
   });
 
   it('renders nothing when events is empty', () => {

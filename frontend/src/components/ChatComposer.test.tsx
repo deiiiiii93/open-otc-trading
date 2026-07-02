@@ -89,7 +89,7 @@ describe('ChatComposer', () => {
     expect(onStopStreaming).toHaveBeenCalledTimes(1);
   });
 
-  it('renders the three execution modes with AUTO active by default', () => {
+  it('renders the execution mode picker with AUTO active by default', () => {
     render(
       <ChatComposer
         onSend={() => {}}
@@ -98,14 +98,12 @@ describe('ChatComposer', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: /interactive/i })).toBeInTheDocument();
-    const auto = screen.getByRole('button', { name: /^auto$/i });
-    const yolo = screen.getByRole('button', { name: /yolo/i });
-    expect(auto).toHaveAttribute('aria-pressed', 'true');
-    expect(yolo).toHaveAttribute('aria-pressed', 'false');
+    const modeSelect = screen.getByLabelText('Mode') as HTMLSelectElement;
+    expect(modeSelect).toBeInTheDocument();
+    expect(modeSelect).toHaveValue('auto');
   });
 
-  it('marks the supplied executionMode as active', () => {
+  it('marks the supplied executionMode as selected', () => {
     render(
       <ChatComposer
         onSend={() => {}}
@@ -115,8 +113,7 @@ describe('ChatComposer', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: /yolo/i })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: /^auto$/i })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByLabelText('Mode')).toHaveValue('yolo');
   });
 
   it('calls onChangeMode with the selected mode', async () => {
@@ -130,14 +127,14 @@ describe('ChatComposer', () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole('button', { name: /interactive/i }));
+    await userEvent.selectOptions(screen.getByLabelText('Mode'), 'interactive');
     expect(onChangeMode).toHaveBeenCalledWith('interactive');
 
-    await userEvent.click(screen.getByRole('button', { name: /yolo/i }));
+    await userEvent.selectOptions(screen.getByLabelText('Mode'), 'yolo');
     expect(onChangeMode).toHaveBeenCalledWith('yolo');
   });
 
-  it('disables the mode control while streaming', () => {
+  it('disables the mode picker while streaming', () => {
     render(
       <ChatComposer
         onSend={() => {}}
@@ -148,8 +145,38 @@ describe('ChatComposer', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: /yolo/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /^auto$/i })).toBeDisabled();
+    expect(screen.getByLabelText('Mode')).toBeDisabled();
+  });
+
+  it('does not render the view mode picker when viewMode props are absent', () => {
+    render(<ChatComposer onSend={() => {}} sending={false} />);
+    expect(screen.queryByLabelText('Detail')).not.toBeInTheDocument();
+  });
+
+  it('renders the view mode picker when props are provided', () => {
+    render(
+      <ChatComposer
+        onSend={() => {}}
+        sending={false}
+        viewMode="detailed"
+        onChangeViewMode={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText('Detail')).toHaveValue('detailed');
+  });
+
+  it('calls onChangeViewMode from the picker', async () => {
+    const onChangeViewMode = vi.fn();
+    render(
+      <ChatComposer
+        onSend={() => {}}
+        sending={false}
+        viewMode="compact"
+        onChangeViewMode={onChangeViewMode}
+      />,
+    );
+    await userEvent.selectOptions(screen.getByLabelText('Detail'), 'detailed');
+    expect(onChangeViewMode).toHaveBeenCalledWith('detailed');
   });
 
   describe('slash-command discovery', () => {
