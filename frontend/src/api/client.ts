@@ -29,6 +29,9 @@ import type {
   TracingConfig,
   MemoryFact,
   MemoryStatus,
+  AuditAction,
+  AuditActionDetail,
+  AuditSummary,
 } from '../types';
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -72,6 +75,35 @@ export function fetchTraceTree(
 
 export function fetchTraceRun(runId: string): Promise<TraceRunDetail> {
   return api(`/api/tracing/runs/${runId}`);
+}
+
+export interface AuditListParams {
+  status?: string;
+  kind?: string;
+  tool_name?: string;
+  tool_class?: string;
+  mode?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function listAuditActions(
+  params: AuditListParams = {},
+): Promise<{ items: AuditAction[]; total: number }> {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '') search.set(key, String(value));
+  }
+  const qs = search.toString();
+  return api(`/api/audit/actions${qs ? `?${qs}` : ''}`);
+}
+
+export function getAuditAction(id: number): Promise<AuditActionDetail> {
+  return api(`/api/audit/actions/${id}`);
+}
+
+export function fetchAuditSummary(): Promise<AuditSummary> {
+  return api('/api/audit/summary');
 }
 
 export const listFxRates = () => api<FxRate[]>('/api/market-data/fx-rates');

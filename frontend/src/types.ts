@@ -22,7 +22,8 @@ export type Route =
   | 'tracing'
   | 'arena'
   | 'workflows'
-  | 'memory';
+  | 'memory'
+  | 'audit';
 
 export interface MemoryFact {
   id: number;
@@ -1365,3 +1366,44 @@ export type PricingPreviewOut = {
   ok: boolean; price: number; engine: string; product_type: string;
   greeks?: PricingGreeks | null; greeks_error?: string | null; error?: string | null;
 };
+
+export interface AuditAction {
+  id: number;
+  kind: 'execution' | 'hitl_proposal' | 'hitl_decision';
+  status:
+    | 'attempted' | 'ok' | 'error' | 'denied' | 'interrupted' | 'refused'
+    | 'proposed' | 'approved' | 'rejected';
+  deny_reason: string | null;
+  tool_name: string;
+  tool_class: 'domain_write' | 'async_dispatch' | 'fs_write' | 'artifact_write';
+  tool_call_id: string | null;
+  audit_ref: string | null;
+  mode: string | null;
+  envelope: string | null;
+  actor: string;
+  model: string | null;
+  persona: string | null;
+  thread_id: number | null;
+  workflow_id: number | null;
+  session_id: number | null;
+  task_id: number | null;
+  message_id: number | null;
+  desk_workflow_slug: string | null;
+  args_json: Record<string, unknown>;
+  redacted: boolean;
+  result_preview: string | null;
+  error: string | null;
+  occurred_at: string;
+  completed_at: string | null;
+}
+
+export interface AuditActionDetail extends AuditAction {
+  related: AuditAction[];
+}
+
+export interface AuditSummary {
+  by_status: Record<string, number>;
+  by_class: Record<string, number>;
+  by_mode: Record<string, number>;
+  fail_closed_refusals: { persisted: number; unpersisted: number };
+}
