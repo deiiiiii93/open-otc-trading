@@ -22,6 +22,7 @@ __all__ = [
     "list_instruments",
     "resolvable_market_data_instruments",
     "validate_instrument_terms",
+    "set_instrument_tags",
 ]
 
 _UNRESOLVABLE_STATUSES = {"expired", "retired"}
@@ -63,6 +64,7 @@ def list_instruments(
     parent_id: int | None = None,
     series_root: str | None = None,
     search: str | None = None,
+    tag: str | None = None,
     limit: int = 1000,
     offset: int = 0,
 ) -> list[Instrument]:
@@ -78,4 +80,40 @@ def list_instruments(
     if search:
         like = f"%{search.strip()}%"
         q = q.filter(Instrument.symbol.ilike(like))
-    return q.order_by(Instrument.symbol.asc()).offset(offset).limit(limit).all()
+    q = q.order_by(Instrument.symbol.asc())
+    if tag is None:
+        return q.offset(offset).limit(limit).all()
+    # Tag filtering happens in Python (JSON column, no portable SQL
+    # containment query — matches list_portfolios(tags=...)). It MUST run
+    # before offset/limit, or a tagged row sorted past the unfiltered page
+    # would be silently dropped.
+    wanted = tag.strip().lower()
+    matched = [row for row in q.all() if wanted in {t.lower() for t in (row.tags or [])}]
+    return matched[offset : offset + limit]
+
+
+def _normalize_tags(tags: list[str]) -> list[str]:
+    """Mirrors services/portfolio_service.py's _normalize_tags (private,
+    duplicated rather than shared — it's a 10-line pure function, not worth a
+    cross-module dependency for)."""
+    seen: list[str] = []
+    for t in tags or []:
+        if not isinstance(t, str):
+            raise ValueError(f"Tag must be a string, got {type(t).__name__}")
+        s = t.strip().lower()
+        if not s:
+            continue
+        if len(s) > 40:
+            raise ValueError(f"Tag too long (>40 chars): {t!r}")
+        if s not in seen:
+            seen.append(s)
+    return seen
+
+
+def set_instrument_tags(session: Session, instrument_id: int, tags: list[str]) -> Instrument:
+    row = session.get(Instrument, instrument_id)
+    if row is None:
+        raise LookupError(f"Instrument {instrument_id} not found")
+    row.tags = _normalize_tags(tags)
+    session.flush()
+    return row

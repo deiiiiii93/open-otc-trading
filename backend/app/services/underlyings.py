@@ -194,6 +194,18 @@ def update_underlying(session: Session, symbol: str, fields: dict[str, Any]) -> 
     return row
 
 
+def is_registered_underlying(session: Session, symbol: str) -> bool:
+    """True when the symbol resolves to an Instrument tagged "underlying" —
+    the gate book_position/book_hedge check before booking."""
+    cleaned = normalize_underlying_symbol(symbol)
+    if not cleaned:
+        return False
+    row = session.query(Underlying).filter(Underlying.symbol == cleaned).one_or_none()
+    if row is None:
+        return False
+    return "underlying" in (row.tags or [])
+
+
 def link_position_underlying(
     session: Session,
     position: Position,
