@@ -70,6 +70,8 @@ hedge, write the governance report — with **no human in the loop**, then score
 whether the model actually did it. Unlike a frozen-prompt benchmark, it runs the
 production agent and reads each model's work back out of the system's own trace log.
 
+For an easy public view of the leaderboards and reports, visit [Artena](https://www.artena.one/arena/).
+
 **Run #9 (latest)** evaluated **nine flash-tier models over five trials each** — with
 **exact, measured token & cost** per match:
 
