@@ -4,9 +4,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from app.services.deep_agent.reference_docs import (
     VALID_REFERENCE_TYPES,
     parse_reference_doc,
+    resolve_product_reference,
+    validate_product_reference_tree,
     validate_reference_doc_file,
     validate_reference_doc_tree,
 )
@@ -106,3 +110,133 @@ def test_rfq_lifecycle_reference_matches_runtime_status_contract() -> None:
         assert f"`{status}`" in doc.body
     assert "`quoted`" not in doc.body
     assert "submitted for approval" not in doc.body.lower()
+
+
+# --- product-reference tree validation (semantic-layer completion) ---
+
+
+def _write_doc(root: Path, rel: str, front: str, body: str = "## Product Definition\n\nx.\n\n## Pricing Inputs\n\ny.\n") -> None:
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"---\n{front}---\n\n{body}", encoding="utf-8")
+
+
+def _products_tree(tmp_path: Path) -> Path:
+    root = tmp_path / "references"
+    _write_doc(
+        root, "products/base.md",
+        "name: base\ndescription: Base.\nreference_type: product\nquantark_classes: [SnowballOption]\n",
+    )
+    return root
+
+
+def test_product_tree_resolves_claims(tmp_path: Path) -> None:
+    root = _products_tree(tmp_path)
+    claims = validate_product_reference_tree(root)
+    assert claims["SnowballOption"].frontmatter["name"] == "base"
+
+
+def test_product_tree_rejects_duplicate_claim(tmp_path: Path) -> None:
+    root = _products_tree(tmp_path)
+    _write_doc(
+        root, "products/dup.md",
+        "name: dup\ndescription: Dup.\nreference_type: product\nquantark_classes: [SnowballOption]\n",
+    )
+    with pytest.raises(ValueError, match="claimed by more than one"):
+        validate_product_reference_tree(root)
+
+
+def test_product_tree_rejects_unknown_extends(tmp_path: Path) -> None:
+    root = _products_tree(tmp_path)
+    _write_doc(
+        root, "products/child.md",
+        "name: child\ndescription: C.\nreference_type: product\nextends: nope\n",
+    )
+    with pytest.raises(ValueError, match="unknown extends target"):
+        validate_product_reference_tree(root)
+
+
+def test_product_tree_rejects_deep_chain(tmp_path: Path) -> None:
+    root = _products_tree(tmp_path)
+    _write_doc(root, "products/mid.md", "name: mid\ndescription: M.\nreference_type: product\nextends: base\n")
+    _write_doc(root, "products/leaf.md", "name: leaf\ndescription: L.\nreference_type: product\nextends: mid\n")
+    with pytest.raises(ValueError, match="extends chain deeper than one"):
+        validate_product_reference_tree(root)
+
+
+def test_product_tree_region_inheritance_guard(tmp_path: Path) -> None:
+    root = _products_tree(tmp_path)
+    _write_doc(
+        root, "products/cn-base.md",
+        "name: cn-base\ndescription: CN.\nreference_type: product\nregion: CN\n",
+    )
+    _write_doc(
+        root, "products/neutral-child.md",
+        "name: neutral-child\ndescription: N.\nreference_type: product\nextends: cn-base\n",
+    )
+    with pytest.raises(ValueError, match="region-marked base"):
+        validate_product_reference_tree(root)
+
+
+def test_frontmatter_key_shapes_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "references"
+    _write_doc(
+        root, "products/bad.md",
+        "name: bad\ndescription: B.\nreference_type: product\nquantark_classes: notalist\n",
+    )
+    with pytest.raises(ValueError, match="quantark_classes must be a non-empty list"):
+        validate_product_reference_tree(root)
+
+
+# --- resolver (semantic-layer completion) ---
+
+
+def _inheritance_tree(tmp_path: Path) -> Path:
+    root = tmp_path / "references"
+    _write_doc(
+        root, "products/base.md",
+        "name: base\ndescription: Base.\nreference_type: product\nquantark_classes: [SnowballOption]\n",
+        "## Product Definition\n\nAutocallable payoff.\n\n## Pricing Inputs\n\nKO barrier, KI barrier.\n",
+    )
+    _write_doc(
+        root, "products/variants.md",
+        "name: variants\ndescription: V.\nreference_type: product\n"
+        "quantark_classes: [PhoenixOption]\nextends: base\n",
+        "## Pricing Inputs\n\nCoupon barrier, coupon rate.\n",
+    )
+    _write_doc(
+        root, "products/base-cn.md",
+        "name: base-cn\ndescription: CN overlay.\nreference_type: product\n"
+        "region: CN\nextends: base\n",
+        "## Observation Conventions\n\nLocal-market business days (overlay).\n",
+    )
+    return root
+
+
+def test_resolver_plain_class(tmp_path: Path) -> None:
+    resolved = resolve_product_reference("SnowballOption", root=_inheritance_tree(tmp_path))
+    assert "Autocallable payoff" in resolved.content
+    assert "overlay" not in resolved.content  # no region requested
+
+
+def test_resolver_merges_base_before_child(tmp_path: Path) -> None:
+    resolved = resolve_product_reference("PhoenixOption", root=_inheritance_tree(tmp_path))
+    assert resolved.content.index("KO barrier") < resolved.content.index("Coupon barrier")
+    assert len(resolved.source_paths) == 2
+    # Per-heading merge: base + child Pricing Inputs fold into ONE section —
+    # a flat body concat would leave two "## Pricing Inputs" headings and the
+    # coherence net's single-match section regex would drop the child's text.
+    assert resolved.content.count("## Pricing Inputs") == 1
+
+
+def test_resolver_appends_region_overlay(tmp_path: Path) -> None:
+    resolved = resolve_product_reference(
+        "SnowballOption", region="CN", root=_inheritance_tree(tmp_path)
+    )
+    assert "## Regional Conventions (CN)" in resolved.content
+    assert resolved.content.index("Autocallable payoff") < resolved.content.index("overlay")
+
+
+def test_resolver_unknown_class(tmp_path: Path) -> None:
+    with pytest.raises(KeyError):
+        resolve_product_reference("NopeOption", root=_inheritance_tree(tmp_path))
