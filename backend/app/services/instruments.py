@@ -116,7 +116,17 @@ def set_instrument_tags(session: Session, instrument_id: int, tags: list[str]) -
     row = session.get(Instrument, instrument_id)
     if row is None:
         raise LookupError(f"Instrument {instrument_id} not found")
-    row.tags = _normalize_tags(tags)
+    # "hedge" is server-derived (see sync_hedge_tag) — strip any client-
+    # supplied value before saving, then re-derive it from ground truth in
+    # the same call so it can never be hand-added or hand-removed. A
+    # non-string element is left in place (not filtered here) so
+    # _normalize_tags still raises its proper ValueError for it below,
+    # instead of this filter crashing on `.strip()` first.
+    row.tags = _normalize_tags(
+        [t for t in tags if not (isinstance(t, str) and t.strip().lower() == "hedge")]
+    )
+    session.flush()
+    sync_hedge_tag(session, instrument_id)
     session.flush()
     return row
 

@@ -127,7 +127,44 @@ def test_set_instrument_tags_replaces_and_normalizes():
         session.commit()
 
         updated = set_instrument_tags(session, row.id, ["Underlying", " underlying ", "Hedge"])
-        assert updated.tags == ["underlying", "hedge"]
+        # "Hedge" is client-supplied and stripped; ground truth (no active
+        # HedgeMapEntry, not a self-hedging stock) says it shouldn't be re-added.
+        assert updated.tags == ["underlying"]
+
+
+def test_set_instrument_tags_ignores_client_supplied_hedge_removal():
+    """A client can't remove a true-derived "hedge" tag by omitting it either
+    -- set_instrument_tags re-derives from ground truth after stripping."""
+    from app import database
+    from app.models import HedgeMapEntry
+    from app.services.instruments import set_instrument_tags
+
+    with database.SessionLocal() as session:
+        underlying = _mk(session, symbol="000905.SH")
+        inst = _mk(session, symbol="IC2406.CFFEX", kind="futures", exchange="CFFEX",
+                   contract_code="IC2406", tags=["hedge"])
+        session.add(HedgeMapEntry(
+            underlying_id=underlying.id, instrument_id=inst.id,
+            exchange="CFFEX", contract_code="IC2406", reconcile_status="active",
+            family="index_future", series_root="IC", instrument_type="future",
+        ))
+        session.commit()
+
+        # Client PUTs a tag list with "hedge" dropped, trying to remove it by hand.
+        updated = set_instrument_tags(session, inst.id, ["underlying"])
+        assert set(updated.tags) == {"underlying", "hedge"}
+
+
+def test_set_instrument_tags_client_supplied_hedge_has_no_effect_when_untrue():
+    from app import database
+    from app.services.instruments import set_instrument_tags
+
+    with database.SessionLocal() as session:
+        row = _mk(session, symbol="NOTHEDGE.SH")
+        session.commit()
+
+        updated = set_instrument_tags(session, row.id, ["hedge", "custom"])
+        assert updated.tags == ["custom"]
 
 
 def test_set_instrument_tags_raises_lookup_error_for_missing_instrument():
