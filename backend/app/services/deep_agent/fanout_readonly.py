@@ -35,21 +35,12 @@ from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool
 
 from . import dynamic_subagents as ds
-from .envelopes import ToolGroup
+from .write_actions import classify_write_action, write_names_by_class
 
 _DENY = (
     "Fanned-out subagents are read-only: `{name}` writes (or dispatches async work), "
     "so it is blocked in a dynamic-subagents fan-out. Read tools are allowed."
 )
-
-# Mutating capability groups: any tool gated into one of these is a write.
-_WRITE_GROUPS = frozenset(
-    {ToolGroup.DOMAIN_WRITE, ToolGroup.PAGE_ACTION, ToolGroup.ASYNC_DISPATCH}
-)
-
-# deepagents filesystem/shell built-ins are NOT capability-gated, so classify by name.
-# Reads (read_file/ls/glob/grep) are allowed; these mutate the workspace or shell out.
-_FS_WRITE_TOOLS = frozenset({"write_file", "edit_file", "execute"})
 
 
 def _read_configurable() -> dict[str, Any]:
@@ -73,20 +64,15 @@ def _in_fanout_subagent(cfg: dict[str, Any]) -> bool:
 class FanoutReadOnlyMiddleware(AgentMiddleware):
     def __init__(self, tools: Sequence[BaseTool] = ()) -> None:
         super().__init__()
-        # Build the write-name set from the persona's capability-gated tools. Reads
-        # (and ungated tools) are intentionally absent -> allowed.
-        self._write_names = frozenset(
-            t.name
-            for t in tools
-            if getattr(t, "__capability_group__", None) in _WRITE_GROUPS
-        )
+        # Write-name map from the persona's capability-gated tools (shared
+        # taxonomy — write_actions). Reads and ungated tools are absent -> allowed.
+        self._gated = write_names_by_class(tools)
 
     def _is_fanout_write(self, name: str, args: dict[str, Any] | None) -> bool:
-        if name == "run_python":
-            return bool((args or {}).get("writes_artifacts"))
-        if name in _FS_WRITE_TOOLS:
-            return True
-        return name in self._write_names
+        return (
+            classify_write_action(name, args, self._gated, include_page_action=True)
+            is not None
+        )
 
     def _maybe_deny(self, request: ToolCallRequest) -> ToolMessage | None:
         name = request.tool_call.get("name", "")
