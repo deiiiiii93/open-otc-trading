@@ -161,10 +161,11 @@ def test_orchestrator_can_enable_quickjs_code_interpreter_middleware(monkeypatch
         "AuditTrailMiddleware",
         "RunPythonArtifactHITLMiddleware",
         "LedgerScopedCompactionMiddleware",
+        "TermGroundingMiddleware",
         "EvalAttributionGateMiddleware",
         "CodeInterpreterMiddleware",
     ]
-    ci = middleware[5]
+    ci = middleware[6]
     # task() is exposed via subagents=True (default), NOT ptc=["task"] (which the
     # lib rejects); the per-eval backstop is lowered to 24.
     assert not getattr(ci, "_ptc")
@@ -204,6 +205,7 @@ def test_orchestrator_installs_ledger_scoped_compaction_middleware(monkeypatch):
         "AuditTrailMiddleware",
         "RunPythonArtifactHITLMiddleware",
         "LedgerScopedCompactionMiddleware",
+        "TermGroundingMiddleware",
     ]
 
 
