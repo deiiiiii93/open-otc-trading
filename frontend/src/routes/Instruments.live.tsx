@@ -597,12 +597,16 @@ export function InstrumentsLive({ onPageContextChange: _onPageContextChange }: P
   };
 
   const onSetInstrumentTags = async (id: number, tags: string[]) => {
-    const updated = await api<Instrument>(`/api/instruments/${id}/tags`, {
-      method: 'PUT',
-      body: JSON.stringify({ tags }),
-    });
-    if (!cancelledRef.current) {
-      setRows((current) => current.map((row) => (row.id === id ? updated : row)));
+    try {
+      const updated = await api<Instrument>(`/api/instruments/${id}/tags`, {
+        method: 'PUT',
+        body: JSON.stringify({ tags }),
+      });
+      if (!cancelledRef.current) {
+        setRows((current) => current.map((row) => (row.id === id ? updated : row)));
+      }
+    } catch (err) {
+      if (!cancelledRef.current) setFeedback({ tone: 'error', message: errorMessage(err) });
     }
   };
 
