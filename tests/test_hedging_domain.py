@@ -71,6 +71,107 @@ def test_unmark_deletes_by_instrument_id(session):
     assert session.query(HedgeMapEntry).count() == 0
 
 
+def test_mark_adds_hedge_tag(session):
+    u = _underlying(session)
+    inst = _instrument(session, u)
+    hedging_domain.mark(session, [inst.id], actor="desk_user")
+    session.flush()
+    session.refresh(inst)
+    assert "hedge" in inst.tags
+
+
+def test_mark_expired_instrument_does_not_add_hedge_tag(session):
+    u = _underlying(session)
+    inst = _instrument(session, u, code="IC2403", status="expired")
+    hedging_domain.mark(session, [inst.id], actor="a")
+    session.flush()
+    session.refresh(inst)
+    assert "hedge" not in inst.tags
+
+
+def test_unmark_by_instrument_id_removes_hedge_tag(session):
+    u = _underlying(session)
+    inst = _instrument(session, u)
+    hedging_domain.mark(session, [inst.id], actor="a")
+    session.flush()
+    assert "hedge" in inst.tags
+
+    hedging_domain.unmark(session, instrument_ids=[inst.id])
+    session.flush()
+    session.refresh(inst)
+    assert "hedge" not in inst.tags
+
+
+def test_unmark_by_map_entry_id_removes_hedge_tag(session):
+    from app.models import HedgeMapEntry
+
+    u = _underlying(session)
+    inst = _instrument(session, u)
+    hedging_domain.mark(session, [inst.id], actor="a")
+    session.flush()
+    entry_id = session.query(HedgeMapEntry).one().id
+
+    hedging_domain.unmark(session, map_entry_ids=[entry_id])
+    session.flush()
+    session.refresh(inst)
+    assert "hedge" not in inst.tags
+
+
+def test_unmark_keeps_hedge_tag_when_another_active_entry_remains(session):
+    """An instrument marked as an allowed hedge for two different underlyings
+    keeps the tag after being unmarked from only one of them."""
+    u1 = _underlying(session, symbol="000905.SH")
+    u2 = _underlying(session, symbol="000300.SH")
+    inst = _instrument(session, u1, code="IC2406")
+    hedging_domain.mark(session, [inst.id], actor="a")
+    session.flush()
+    # Second entry for the same instrument under a different underlying.
+    from app.models import HedgeMapEntry
+    session.add(HedgeMapEntry(
+        underlying_id=u2.id, instrument_id=inst.id,
+        exchange="CFFEX", contract_code="IC2406", reconcile_status="active",
+        family="index_future", series_root="IC", instrument_type="future",
+    ))
+    session.flush()
+
+    first_entry_id = (
+        session.query(HedgeMapEntry.id)
+        .filter(HedgeMapEntry.underlying_id == u1.id).scalar()
+    )
+    hedging_domain.unmark(session, map_entry_ids=[first_entry_id])
+    session.flush()
+    session.refresh(inst)
+    assert "hedge" in inst.tags
+
+
+def test_unmark_by_map_entry_id_removes_hedge_tag_for_legacy_null_instrument_entry(session):
+    """A legacy HedgeMapEntry with instrument_id=NULL is still real ground
+    truth for sync_hedge_tag (matched via exchange/contract_code) — deleting
+    it by map_entry_id must resync the matching instrument's tag, not skip
+    it just because the row's own instrument_id column is NULL."""
+    from app.models import HedgeMapEntry
+
+    u = _underlying(session)
+    inst = _instrument(session, u)
+    session.add(HedgeMapEntry(
+        underlying_id=u.id, instrument_id=None,
+        exchange=inst.exchange, contract_code=inst.contract_code, reconcile_status="active",
+        family="index_future", series_root="IC", instrument_type="future",
+    ))
+    session.flush()
+    from app.services.instruments import sync_hedge_tag
+    sync_hedge_tag(session, inst.id)
+    session.flush()
+    session.refresh(inst)
+    assert "hedge" in inst.tags
+
+    entry_id = session.query(HedgeMapEntry).one().id
+    hedging_domain.unmark(session, map_entry_ids=[entry_id])
+    session.flush()
+    session.refresh(inst)
+    assert "hedge" not in inst.tags
+
+
 def test_list_instruments_annotates_allowed(session):
     u = _underlying(session)
     a = _instrument(session, u, code="IC2406")
