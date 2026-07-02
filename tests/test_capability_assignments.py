@@ -24,7 +24,8 @@ def test_quant_agent_tools_count_unchanged():
     # +1 desk-workflow authoring tool (save_desk_workflow).
     # +1 dynamic-subagents reconciler (assemble_breach_report).
     # +1 underlying-tag registration tool (register_underlying).
-    assert len(QUANT_AGENT_TOOLS) == 95
+    # +1 product-semantics reader (get_product_reference_doc).
+    assert len(QUANT_AGENT_TOOLS) == 96
 
 
 def test_every_tool_has_capability_group():
