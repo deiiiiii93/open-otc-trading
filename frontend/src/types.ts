@@ -903,6 +903,7 @@ export type Instrument = {
   dividend_yield: number | null;
   volatility: number | null;
   notes: string | null;
+  tags: string[];
   created_at: string;
   updated_at: string;
 };

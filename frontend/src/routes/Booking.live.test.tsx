@@ -67,6 +67,7 @@ const activeUnderlying = {
   dividend_yield: 0.01,
   volatility: 0.2,
   notes: null,
+  tags: ['underlying'],
   created_at: '2026-05-28T00:00:00',
   updated_at: '2026-05-28T00:00:00',
 };
