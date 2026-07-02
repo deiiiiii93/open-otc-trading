@@ -274,6 +274,15 @@ def _ensure_incremental_schema(active_engine: Engine) -> None:
             )
     _ensure_underlying_schema(active_engine, inspector, tables)
 
+    if "instruments" in tables:
+        instrument_cols = {c["name"] for c in inspector.get_columns("instruments")}
+        if "tags" not in instrument_cols:
+            with active_engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE instruments ADD COLUMN tags JSON NOT NULL DEFAULT '[]'")
+                )
+            _backfill_instrument_underlying_tags(active_engine, tables, inspector)
+
     from .services.engine_configs import DEFAULT_ENGINE_CONFIG_RULES
 
     with active_engine.begin() as connection:
@@ -499,6 +508,82 @@ def _ensure_incremental_schema(active_engine: Engine) -> None:
             )
 
     _ensure_structured_position_terms_schema(active_engine, inspector, tables)
+
+
+_KNOCKED_OUT_STATES = {"Knocked Out", "敲出"}
+
+
+def _backfill_instrument_underlying_tags(active_engine: Engine, tables: set[str], inspector: Any) -> None:
+    """Mirrors migration 0042_instrument_tags' backfill loop — duplicated
+    intentionally, not imported (migrations aren't reusable modules; this
+    function's caller already follows the duplicate-not-import convention
+    every other entry in _ensure_incremental_schema uses). Keep the two in
+    sync if either changes."""
+    tagged: set[str] = set()
+    with active_engine.begin() as connection:
+        positions_cols = (
+            {c["name"] for c in inspector.get_columns("positions")}
+            if "positions" in tables
+            else set()
+        )
+        if {"underlying", "status", "position_kind", "source_payload"} <= positions_cols:
+            rows = connection.execute(
+                text(
+                    "SELECT underlying, status, source_payload FROM positions "
+                    "WHERE underlying IS NOT NULL AND status = 'open' "
+                    "AND position_kind = 'otc'"
+                )
+            ).fetchall()
+            for underlying, status, payload_raw in rows:
+                if status == "closed":
+                    continue
+                payload = {}
+                if payload_raw:
+                    try:
+                        payload = json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
+                    except (TypeError, ValueError):
+                        payload = {}
+                state = payload.get("trade_state") if isinstance(payload, dict) else None
+                if state in _KNOCKED_OUT_STATES:
+                    continue
+                symbol = (underlying or "").strip()
+                if symbol:
+                    tagged.add(symbol)
+
+        active_root_rows = connection.execute(
+            text(
+                "SELECT symbol FROM instruments WHERE status = 'active' "
+                "AND kind != 'listed_option' AND expiry IS NULL AND contract_code IS NULL"
+            )
+        ).fetchall()
+        for (symbol,) in active_root_rows:
+            if symbol:
+                tagged.add(symbol)
+
+        for symbol in sorted(tagged):
+            row = connection.execute(
+                text("SELECT id, tags FROM instruments WHERE symbol = :symbol"),
+                {"symbol": symbol},
+            ).fetchone()
+            if row is None:
+                connection.execute(
+                    text(
+                        "INSERT INTO instruments "
+                        "(symbol, kind, currency, status, source, tags, created_at, updated_at) "
+                        "VALUES (:symbol, 'index', 'CNY', 'active', 'migration_backfill', :tags, "
+                        "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                    ),
+                    {"symbol": symbol, "tags": json.dumps(["underlying"])},
+                )
+                continue
+            instrument_id, tags_raw = row
+            current = json.loads(tags_raw) if tags_raw else []
+            if "underlying" not in current:
+                current.append("underlying")
+                connection.execute(
+                    text("UPDATE instruments SET tags = :tags WHERE id = :id"),
+                    {"tags": json.dumps(current), "id": instrument_id},
+                )
 
 
 def _ensure_underlying_schema(

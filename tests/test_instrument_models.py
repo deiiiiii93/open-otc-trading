@@ -92,3 +92,26 @@ def test_asset_class_synonym_is_writable():
         session.add(row)
         session.commit()
         assert row.kind == "etf"
+
+
+def test_instrument_tags_defaults_to_empty_list():
+    from app import database
+    from app.models import Instrument
+
+    with database.SessionLocal() as session:
+        row = Instrument(symbol="TAGTEST.SH", kind="index")
+        session.add(row)
+        session.flush()
+        assert row.tags == []
+
+
+def test_instrument_tags_round_trips_a_list():
+    from app import database
+    from app.models import Instrument
+
+    with database.SessionLocal() as session:
+        row = Instrument(symbol="TAGTEST2.SH", kind="index", tags=["underlying"])
+        session.add(row)
+        session.flush()
+        session.expire(row)
+        assert row.tags == ["underlying"]
