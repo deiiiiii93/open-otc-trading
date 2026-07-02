@@ -54,8 +54,22 @@ Location: `backend/app/skills/references/products/`. Each follows the
 `snowball-cn.md` section schema — `## Product Definition`,
 `## Observation Conventions` (path-dependent families only),
 `## Pricing Inputs`, `## Diagnostics` — bounded to roughly the same length
-(~40 lines), CN-desk conventions (ACT/365, China Mainland calendars) stated
-explicitly.
+(~40 lines).
+
+**Design principle — region neutrality.** Family docs describe product
+semantics only: payoff structure, what an observation convention *means*,
+which inputs pricing needs, and diagnostics. They must not assert
+region-specific market facts (exchange calendars, index universes,
+jurisdiction norms). Values like ACT/365 or a holiday calendar are
+*configurable desk defaults*, not market invariants — where a doc mentions
+one, it says "desk default, configurable" rather than presenting it as a
+property of the product or a market. Region-specific market knowledge, when
+genuinely needed, lives in a separate region-overlay doc (the existing
+`snowball-cn.md` is retroactively classified as one: the CN overlay for
+SnowballOption, which it claims until a region-neutral `snowball.md` base
+doc is warranted). This mirrors the concept-vs-jurisdiction separation
+formal ontologies use, and keeps the semantic layer portable if the desk
+adds markets.
 
 Grouping (thin families share a doc; one doc claims 1–3 QuantArk classes):
 
@@ -83,12 +97,14 @@ quantark_classes:
 ---
 ```
 
-`snowball-cn.md` is retrofitted with `quantark_classes: [SnowballOption]`.
+`snowball-cn.md` is retrofitted with `quantark_classes: [SnowballOption]`
+and `region: CN` (see the region-neutrality principle above).
 `build-contract.md` (not family-specific) carries no `quantark_classes` and
 is exempt from the per-family checks.
 
 Precondition: verify `reference_docs.py::validate_reference_doc_file`
-tolerates the extra frontmatter key; extend its schema if it is strict.
+tolerates the extra frontmatter keys (`quantark_classes`, `region`); extend
+its schema if it is strict.
 
 ### D2 — Term glossary as Python data
 
@@ -115,6 +131,12 @@ is "contract as data".
 3. **Glossary hygiene:** every glossary key is a leaf of some contract's
    `required_bound`/`defaulted` (no dead entries); canonical phrases are
    unique.
+4. **Region neutrality:** family docs (any product doc that is not an
+   explicit region overlay) contain none of a small denylist of
+   region-market tokens (e.g. "SSE", "China Mainland", "CSI", "A-share");
+   region overlays are identified by a `region:` frontmatter key (added to
+   `snowball-cn.md` as `region: CN`). The denylist lives beside the
+   glossary so extending it is one edit.
 
 Failure messages name the doc, the class, and the missing key so the fix is
 mechanical.
@@ -171,6 +193,8 @@ non-snowball family (e.g. sharkfin).
 ## Success criteria
 
 - All 15 `FAMILY_CONTRACTS` classes are claimed by a product reference doc.
+- Family docs are region-neutral (D3 check 4 green); desk defaults are
+  labelled as configurable defaults, never as market facts.
 - `test_semantic_coherence.py` fails when a contract key is added without a
   doc update (verified by mutation during implementation).
 - Agent can answer "what does this sharkfin knock-out mean?" by loading the
