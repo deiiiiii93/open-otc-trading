@@ -32,7 +32,7 @@ routing:
 
 ## Required inputs
 
-Use position terms, imported row fields, or explicit user text. Read `/skills/references/products/snowball-cn.md` for payoff invariants and market conventions.
+Use position terms, imported row fields, or explicit user text. Call `get_product_reference_doc` with `SnowballOption` for payoff invariants and conventions (resolved base + regional overlay); do not read raw files under `/skills/references/products/`.
 
 ## Procedure
 
@@ -51,7 +51,7 @@ Return interpretation first, then normalized terms, missing fields, lifecycle ca
 
 ## References
 
-- `/skills/references/products/snowball-cn.md`
+- `get_product_reference_doc(SnowballOption)`
 
 ## Example
 
