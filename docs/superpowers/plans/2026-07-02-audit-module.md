@@ -496,16 +496,54 @@ def downgrade() -> None:
         op.drop_table("agent_action_audits")
 ```
 
-- [ ] **Step 3: Write the migration test**
+- [ ] **Step 3: Write the migration test** — an **isolated Alembic upgrade** against a temp SQLite DB (the ORM `Base.metadata` fixture would not exercise the revision at all), plus an ORM round-trip:
 
 ```python
 # tests/test_migration_0042.py
+"""Real Alembic upgrade/downgrade of 0042 against an isolated temp DB.
+
+Follow the invocation pattern of the existing migration tests (e.g.
+tests/test_arena_migration.py) for building the alembic Config; the assertions
+below are the contract."""
 import sqlalchemy as sa
+from alembic import command
+from alembic.config import Config
 
 
-def test_agent_action_audits_table_exists(session):
-    # conftest's DB fixture creates schema from Base metadata; assert the ORM
-    # table round-trips a row with defaults.
+def _alembic_config(db_url: str) -> Config:
+    cfg = Config("backend/alembic.ini")  # match the existing migration tests' path
+    cfg.set_main_option("sqlalchemy.url", db_url)
+    return cfg
+
+
+def test_upgrade_creates_table_columns_and_indexes(tmp_path):
+    url = f"sqlite:///{tmp_path / 'mig.sqlite3'}"
+    command.upgrade(_alembic_config(url), "0042_agent_action_audits")
+    insp = sa.inspect(sa.create_engine(url))
+    cols = {c["name"] for c in insp.get_columns("agent_action_audits")}
+    assert {
+        "id", "kind", "status", "deny_reason", "tool_name", "tool_class",
+        "tool_call_id", "audit_ref", "mode", "envelope", "actor", "model",
+        "persona", "thread_id", "workflow_id", "session_id", "task_id",
+        "message_id", "desk_workflow_slug", "args_json", "redacted",
+        "result_preview", "error", "occurred_at", "completed_at",
+    } <= cols
+    index_names = {i["name"] for i in insp.get_indexes("agent_action_audits")}
+    assert "ix_agent_action_audits_tool_occurred" in index_names
+    assert "ix_agent_action_audits_thread_occurred" in index_names
+    assert "ix_agent_action_audits_audit_ref" in index_names
+
+
+def test_downgrade_drops_table(tmp_path):
+    url = f"sqlite:///{tmp_path / 'mig.sqlite3'}"
+    cfg = _alembic_config(url)
+    command.upgrade(cfg, "0042_agent_action_audits")
+    command.downgrade(cfg, "0041_morning_breach_assemble_prompt")
+    insp = sa.inspect(sa.create_engine(url))
+    assert "agent_action_audits" not in insp.get_table_names()
+
+
+def test_orm_row_roundtrip_with_defaults(session):
     from app.models import AgentActionAudit
 
     row = AgentActionAudit(
@@ -521,13 +559,12 @@ def test_agent_action_audits_table_exists(session):
     assert row.completed_at is None
 ```
 
-(If the repo's conftest exposes a differently named session fixture, use that one — check `tests/conftest.py` before writing.)
-
-- [ ] **Step 4: Run test + upgrade dry-run**
+- [ ] **Step 4: Run tests; then upgrade the live DB**
 
 Run: `.venv/bin/python -m pytest tests/test_migration_0042.py -v`
-Expected: PASS
-Run: `.venv/bin/python -m alembic upgrade head` (against the live `data/open_otc.sqlite3`)
+Expected: PASS (the Alembic revision itself is exercised in CI)
+Then apply to the live DB (a real upgrade, not a dry run — the live DB may lag head per CLAUDE.md):
+Run: `.venv/bin/python -m alembic upgrade head`
 Expected: `Running upgrade 0041_... -> 0042_agent_action_audits`
 
 - [ ] **Step 5: Commit**
@@ -1463,7 +1500,7 @@ Then merge `**self._audit_context_extra(...)` into the `configurable_extra` dict
 
 - [ ] **Step 5: Insert proposal rows at the five persistence sites**
 
-At each site where `"pending_actions": [a.model_dump(mode="json") for a in pending]` (or the re-projected list) is written into a message `meta` inside an open session (`agents.py` ~2033, ~2358, ~3075, ~4046, ~4230), add immediately before the message-meta assignment/commit:
+At each site where `"pending_actions": [a.model_dump(mode="json") for a in pending]` (or the re-projected list) is written into a message `meta` inside an open session — the `agents.py` sites (~2033, ~2358, ~3075, ~4046, ~4230) **plus the async projection path in `backend/app/services/async_agents/bubble_up.py`**, which calls `pending_actions_from_interrupts(...)` and persists `meta['pending_actions']` directly (insert the proposal rows in that same transaction, before its flush/commit) — add immediately before the message-meta assignment/commit:
 
 ```python
             from .audit_trail import record_hitl_proposal
@@ -1492,12 +1529,20 @@ using the session/thread/actor variables in scope at each site (names differ per
 ```python
     # inside _mark_pending_action_resolved, after the action's status flips:
     from .audit_trail import record_hitl_decision
+    from .deep_agent.write_actions import classify_write_action, write_names_by_class
 
+    tool_class = classify_write_action(
+        entry.get("tool_name") or "",
+        entry.get("payload") or {},
+        write_names_by_class(self.tools),
+        include_page_action=False,
+    ) or "domain_write"
     record_hitl_decision(
         session,
         action=entry,
         decision="approved" if status == "confirmed" else "rejected",
         actor=actor,
+        tool_class=tool_class,
         context={
             "thread_id": thread_id,
             "workflow_id": workflow_id,
@@ -1506,6 +1551,10 @@ using the session/thread/actor variables in scope at each site (names differ per
         },
     )
 ```
+
+(The decision row must carry the same class as its proposal/execution — a
+`run_python(writes_artifacts=True)` approval is `artifact_write`, not the
+`domain_write` default; asserted by the three-row chain test below.)
 
 Match the helper's real signature/local names when editing (it iterates `pending_actions` and flips `status`; `session`, `actor`, and the source message's thread/workflow identifiers are in scope at `resume_pending_action` — thread them into `_mark_pending_action_resolved` as parameters if it doesn't already receive them). Add to the Task 7 tests: after a decision row is recorded with a `thread_id`, `GET /api/audit/actions?thread_id=N` (or the equivalent query) returns proposal, decision, and execution rows sharing one `audit_ref`.
 
@@ -1529,6 +1578,22 @@ def test_proposal_and_decision_rows_roundtrip(session):
     dec_row = session.query(AgentActionAudit).filter_by(kind="hitl_decision").one()
     assert dec_row.audit_ref == prop_row.audit_ref  # the chain correlates
     assert dec_row.tool_call_id == prop_row.tool_call_id == "call_9"
+```
+
+- [ ] **Step 7b: Async bubble-up proposal test**
+
+```python
+# append to tests/test_audit_hitl_capture.py — exact fixture shape depends on
+# bubble_up.py's entry function; drive it with a stub interrupt the way its own
+# existing tests do (see tests/ for the bubble_up test file) and assert:
+def test_async_bubble_up_records_proposal_rows(session):
+    """The async projection path must insert hitl_proposal rows in the same
+    transaction that persists meta['pending_actions'] (plan-review-2 finding #1)."""
+    from app.models import AgentActionAudit
+    # ... drive bubble_up projection with one write-tool interrupt ...
+    rows = session.query(AgentActionAudit).filter_by(kind="hitl_proposal").all()
+    assert len(rows) == 1
+    assert rows[0].audit_ref  # minted despite persona=None / no source_meta
 ```
 
 - [ ] **Step 8: Run the new tests + the full agents/hitl test files**
@@ -1902,7 +1967,11 @@ export function fetchAuditSummary(): Promise<AuditSummary> {
 
 (with `AuditAction, AuditActionDetail, AuditSummary` added to the existing type-import block).
 
-- [ ] **Step 3: Register the route** — `routing.ts` `ROUTE_PATHS`: add `audit: '/audit',`. `main.tsx`: add `{ route: 'audit' as const, label: 'Audit' }` to `navItems` (after `tracing` for adjacency), `import { AuditLive } from './routes/Audit.live';`, and `{route === 'audit' && <AuditLive />}` in the route switch.
+- [ ] **Step 3: Register the route on EVERY navigation surface** —
+  - `routing.ts` `ROUTE_PATHS`: add `audit: '/audit',`.
+  - `main.tsx`: add `{ route: 'audit' as const, label: 'Audit' }` to `navItems` (after `tracing` for adjacency), `import { AuditLive } from './routes/Audit.live';`, and `{route === 'audit' && <AuditLive />}` in the route switch.
+  - **Command palette**: `main.tsx` (or wherever the hardcoded jump items live — grep `jump-`) gains a `jump-audit` item mirroring `jump-tracing`.
+  - **Routing tests**: `frontend/src/lib/routing.test.ts` asserts the exact navigable-route count/path set — update it for `audit: '/audit'` (otherwise the existing suite fails even though `tsc` passes).
 
 - [ ] **Step 4: Type-check** (Audit.live doesn't exist yet — create a placeholder in Task 10 order, or do Tasks 9+10 in one working session and type-check at the end; the commit lands with Task 10)
 
@@ -2302,9 +2371,9 @@ describe('Audit', () => {
 });
 ```
 
-- [ ] **Step 5: Run frontend tests + typecheck**
+- [ ] **Step 5: Run the FULL frontend suite + typecheck** (not just the Audit tests — routing.test.ts and any nav-surface tests must pass with the new route)
 
-Run: `cd frontend && npm test -- Audit && npx tsc --noEmit`
+Run: `cd frontend && npm test -- --run && npx tsc --noEmit`
 Expected: PASS / clean
 
 - [ ] **Step 6: Commit** (includes Task 9 files)
