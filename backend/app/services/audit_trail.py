@@ -188,6 +188,34 @@ def record_hitl_proposal(
     )
 
 
+def record_hitl_proposals(
+    session: Any,
+    pending: list[dict[str, Any]],
+    *,
+    tools: Any = (),
+    context: dict[str, Any] | None = None,
+) -> None:
+    """Insert one proposal row per projected pending action (spec §5.4).
+
+    Joins the caller's transaction (atomic with the pending-action card).
+    Classification runs through the shared taxonomy so e.g. a
+    run_python(writes_artifacts=True) proposal lands as artifact_write.
+    """
+    from .deep_agent.write_actions import classify_write_action, write_names_by_class
+
+    gated = write_names_by_class(tools)
+    for entry in pending:
+        tool_class = classify_write_action(
+            str(entry.get("tool_name") or ""),
+            entry.get("payload") or {},
+            gated,
+            include_page_action=False,
+        ) or "domain_write"
+        record_hitl_proposal(
+            session, proposal=entry, tool_class=tool_class, context=context
+        )
+
+
 def record_hitl_decision(
     session: Any,
     *,

@@ -49,7 +49,7 @@ def test_resume_endpoint_routes_to_async_when_action_has_task_id(
 
     called: dict = {}
 
-    def fake_resume(self, task_id, decision, message):
+    def fake_resume(self, task_id, decision, message, audit_ref=None):
         called["task_id"] = task_id
         called["decision"] = decision
         called["message"] = message

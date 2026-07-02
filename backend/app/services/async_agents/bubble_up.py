@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from ...models import AgentMessage, AgentThread, TaskRun
 from ..audit import record_audit
+from ..audit_trail import record_hitl_proposals
 from ..deep_agent.hitl import pending_actions_from_interrupts
 
 
@@ -58,6 +59,18 @@ def handle(
     if thread is not None:
         thread.updated_at = datetime.utcnow()
     session.flush()
+    # Audit spec §5.4: async proposals get audit rows too, in the same
+    # transaction as the card (the projection helper minted audit_ref even
+    # though this path has no source_meta).
+    record_hitl_proposals(
+        session,
+        pending_dicts,
+        context={
+            "thread_id": task.parent_thread_id,
+            "actor": "async_agent",
+            "message_id": msg.id,
+        },
+    )
 
     record_audit(
         session,

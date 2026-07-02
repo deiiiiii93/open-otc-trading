@@ -94,7 +94,7 @@ def test_web_confirm_still_uses_desk_user_actor(session, settings, monkeypatch):
     # Stub resume_async_agent so we don't need a real TaskRun row or worker
     resume_calls = []
 
-    def _fake_resume(task_id, decision, message):
+    def _fake_resume(task_id, decision, message, audit_ref=None):
         resume_calls.append({"task_id": task_id, "decision": decision})
 
     monkeypatch.setattr(svc, "resume_async_agent", _fake_resume)
@@ -133,7 +133,7 @@ def test_web_dismiss_still_uses_desk_user_actor(session, settings, monkeypatch):
 
     resume_calls = []
 
-    def _fake_resume(task_id, decision, message):
+    def _fake_resume(task_id, decision, message, audit_ref=None):
         resume_calls.append({"task_id": task_id, "decision": decision})
 
     monkeypatch.setattr(svc, "resume_async_agent", _fake_resume)
@@ -177,7 +177,7 @@ def test_resume_pending_action_uses_provided_actor(session, settings, monkeypatc
     # Stub resume_async_agent on the service instance
     resume_calls = []
 
-    def _fake_resume(task_id, decision, message):
+    def _fake_resume(task_id, decision, message, audit_ref=None):
         resume_calls.append({"task_id": task_id, "decision": decision})
 
     monkeypatch.setattr(svc, "resume_async_agent", _fake_resume)

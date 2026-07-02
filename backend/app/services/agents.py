@@ -19,6 +19,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.errors import GraphDrained
 from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -36,6 +37,11 @@ from ..models import (
 )
 from ..schemas import AgentAssetOut, AgentContextUsage, AgentPageContext
 from .audit import record_audit
+from .audit_trail import (
+    AUDIT_CONTEXT_KEY,
+    record_hitl_decision,
+    record_hitl_proposals,
+)
 from .deep_agent.channel_registry import ChannelRegistry, get_registry
 from .deep_agent.checkpointer import build_async_checkpointer, build_checkpointer
 from .deep_agent.hitl import (
@@ -2050,6 +2056,20 @@ class AgentService:
         session.add(assistant_msg)
         thread.character = last_persona or thread.character
         session.flush()
+        if pending:
+            # Audit spec §5.4: proposal rows commit atomically with the card.
+            record_hitl_proposals(
+                session,
+                assistant_msg.meta["pending_actions"],
+                tools=self.tools,
+                context={
+                    "thread_id": thread.id,
+                    "actor": actor,
+                    "workflow_id": route.workflow_id,
+                    "session_id": route.session_id,
+                    "message_id": assistant_msg.id,
+                },
+            )
         record_audit(
             session,
             event_type="chat.message",
@@ -2082,6 +2102,8 @@ class AgentService:
         desk_workflow_slug: str | None = None,
         desk_workflow_source: str | None = None,
         desk_workflow_launch_args: dict | None = None,
+        actor: str = "desk_user",
+        mode: str | None = None,
     ) -> _WorkflowStreamTurn:
         with _database.SessionLocal() as session:
             thread = session.get(AgentThread, thread_id)
@@ -2150,6 +2172,18 @@ class AgentService:
                 # Mutable sink the capability gate writes denials into, even from
                 # inside a persona subagent (configurable is forwarded by deepagents).
                 RUNTIME_SIGNAL_SINK_KEY: [],
+                # Turn identity for the dangerous-action audit trail (spec §5.3);
+                # read by AuditTrailMiddleware inside every stack.
+                AUDIT_CONTEXT_KEY: {
+                    "actor": actor,
+                    "mode": mode or ("auto" if yolo_mode else "interactive"),
+                    "envelope": resolved_envelope.value,
+                    "model": model_selection.get("model"),
+                    "thread_id": thread_id,
+                    "workflow_id": route.workflow_id,
+                    "session_id": route.session_id,
+                    "desk_workflow_slug": desk_workflow_slug,
+                },
             }
             if confirmed_cost_preview:
                 configurable_extra["confirmed_cost_preview"] = True
@@ -2389,6 +2423,20 @@ class AgentService:
             session.add(assistant_msg)
             thread.character = last_persona or thread.character
             session.flush()
+            if pending:
+                # Audit spec §5.4: proposal rows commit atomically with the card.
+                record_hitl_proposals(
+                    session,
+                    assistant_msg.meta["pending_actions"],
+                    tools=self.tools,
+                    context={
+                        "thread_id": thread_id,
+                        "actor": actor,
+                        "workflow_id": route.workflow_id,
+                        "session_id": route.session_id,
+                        "message_id": assistant_msg.id,
+                    },
+                )
             record_audit(
                 session,
                 event_type="chat.message",
@@ -2515,6 +2563,8 @@ class AgentService:
                         desk_workflow_slug=desk_workflow_slug,
                         desk_workflow_source=desk_workflow_source,
                         desk_workflow_launch_args=desk_workflow_launch_args,
+                        actor=actor,
+                        mode=mode,
                     )
                     if prepared.router_message_id is not None:
                         if prepared.router_response_text:
@@ -2664,6 +2714,14 @@ class AgentService:
             "envelope": resolved_envelope.value,
             # Mutable sink the capability gate writes denials into (see routing path).
             RUNTIME_SIGNAL_SINK_KEY: [],
+            # Turn identity for the dangerous-action audit trail (spec §5.3).
+            AUDIT_CONTEXT_KEY: {
+                "actor": actor,
+                "mode": mode,
+                "envelope": resolved_envelope.value,
+                "model": resolved.get("model") if isinstance(resolved, dict) else None,
+                "thread_id": thread_id,
+            },
         }
         if confirmed_cost_preview:
             configurable_extra["confirmed_cost_preview"] = True
@@ -2888,13 +2946,27 @@ class AgentService:
         task_id: int,
         decision: str,
         message: str | None,
+        audit_ref: str | None = None,
     ) -> None:
         """Resume an async-agent run after a HITL decision on the parent thread."""
         from .async_agents.resume import resume_async_agent_interrupt
 
         resume_async_agent_interrupt(
-            task_id=task_id, decision=decision, message=message
+            task_id=task_id, decision=decision, message=message,
+            audit_ref=audit_ref,
         )
+
+    def _classify_action_tool(self, action: dict[str, Any]) -> str:
+        """Write class for a pending action's tool (audit spec §5.4) — a
+        run_python(writes_artifacts=True) approval must land as artifact_write."""
+        from .deep_agent.write_actions import classify_write_action, write_names_by_class
+
+        return classify_write_action(
+            str(action.get("tool_name") or ""),
+            action.get("payload") or {},
+            write_names_by_class(self.tools),
+            include_page_action=False,
+        ) or "domain_write"
 
     def resume_pending_action(
         self,
@@ -2932,6 +3004,26 @@ class AgentService:
         if action.get("status") != "pending":
             raise ResumeConflictError(f"Action already {action.get('status')}")
 
+        # Audit spec §5.4: record the human decision BEFORE any resume/graph
+        # invocation, in its own committed transaction — several resume
+        # branches roll back on failure, and a failed approved-write must not
+        # erase the approval that triggered it.
+        try:
+            with _database.SessionLocal() as decision_session:
+                record_hitl_decision(
+                    decision_session,
+                    action=action,
+                    decision="approved" if decision == "confirm" else "rejected",
+                    actor=actor,
+                    tool_class=self._classify_action_tool(action),
+                    context={"thread_id": thread_id, "message_id": message_id},
+                )
+                decision_session.commit()
+        except SQLAlchemyError:
+            logger.exception(
+                "audit decision row could not be persisted for action %s", action_id
+            )
+
         # Async-agent bubble-up: the pending action's async_task_id field
         # tells us this came from a background subagent; route the resume to
         # the subagent's checkpointer thread_id instead of the parent thread.
@@ -2944,6 +3036,9 @@ class AgentService:
                     async_task_id,
                     "approve" if decision == "confirm" else "reject",
                     "User dismissed the action." if decision == "dismiss" else None,
+                    audit_ref=(
+                        (action.get("source_meta") or {}).get("audit") or {}
+                    ).get("audit_ref"),
                 )
             except TaskNotResumableError as exc:
                 raise ResumeConflictError(str(exc)) from exc
@@ -3090,6 +3185,22 @@ class AgentService:
             thread = session.query(AgentThread).filter(AgentThread.id == thread_id).one()
             thread.character = persona or thread.character
             session.flush()
+            if pending:
+                # Audit spec §5.4: re-projected proposals get rows too, in the
+                # same transaction as the card.
+                record_hitl_proposals(
+                    session,
+                    new_msg.meta["pending_actions"],
+                    tools=self.tools,
+                    context={
+                        "thread_id": thread_id,
+                        "actor": actor,
+                        "workflow_id": execution.workflow_id,
+                        "session_id": execution.session_id,
+                        "task_id": execution.task_id,
+                        "message_id": new_msg.id,
+                    },
+                )
 
             record_audit(
                 session,
@@ -3161,6 +3272,18 @@ class AgentService:
                 "workflow_id": action_source_meta["workflow_id"],
                 "session_id": action_source_meta["session_id"],
                 "agent_runtime": "deepagents_orchestrator",
+                # Audit spec §5.4: the approved execution row must carry the
+                # proposal's audit_ref so the chain correlates.
+                AUDIT_CONTEXT_KEY: {
+                    "actor": actor,
+                    "thread_id": thread_id,
+                    "workflow_id": action_source_meta.get("workflow_id"),
+                    "session_id": action_source_meta.get("session_id"),
+                    "message_id": message_id,
+                    "audit_ref": (action_source_meta.get("audit") or {}).get(
+                        "audit_ref"
+                    ),
+                },
             }
             checkpointer_key = str(action_source_meta["checkpointer_key"])
 
@@ -3315,6 +3438,16 @@ class AgentService:
         resume_extras = {
             "envelope": resume_envelope,
             "confirmed_cost_preview": True,
+            # Audit spec §5.4: the approved execution row must carry the
+            # proposal's audit_ref so the chain correlates.
+            AUDIT_CONTEXT_KEY: {
+                "actor": actor,
+                "thread_id": thread_id,
+                "message_id": message_id,
+                "audit_ref": (
+                    (action.get("source_meta") or {}).get("audit") or {}
+                ).get("audit_ref"),
+            },
         }
         try:
             result = agent.invoke(
@@ -4152,6 +4285,19 @@ class AgentService:
                 )
             session.add(assistant_msg)
             thread.character = last_persona or thread.character
+            session.flush()
+            if collector.interrupts:
+                # Audit spec §5.4: proposal rows commit atomically with the card.
+                record_hitl_proposals(
+                    session,
+                    assistant_msg.meta["pending_actions"],
+                    tools=self.tools,
+                    context={
+                        "thread_id": thread_id,
+                        "actor": actor,
+                        "message_id": assistant_msg.id,
+                    },
+                )
             session.commit()
             record_audit(
                 session,
@@ -4246,6 +4392,16 @@ class AgentService:
             session.add(assistant_msg)
             thread.character = last_persona or thread.character
             session.flush()
+            # Audit spec §5.4: proposal rows commit atomically with the card.
+            record_hitl_proposals(
+                session,
+                assistant_msg.meta["pending_actions"],
+                tools=self.tools,
+                context={
+                    "thread_id": thread.id,
+                    "message_id": assistant_msg.id,
+                },
+            )
             return assistant_msg
 
         final_text = _extract_final_ai_text(result) or "(no response)"

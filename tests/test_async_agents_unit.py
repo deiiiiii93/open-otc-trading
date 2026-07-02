@@ -635,7 +635,7 @@ def test_resume_async_agent_interrupt_submits_run(
     )
     assert "fn" in captured
     # fn is _resume_run, args are (task_id, decision, message)
-    assert captured["args"] == (row.id, "approve", None)
+    assert captured["args"] == (row.id, "approve", None, None)
 
 
 def test_resume_async_agent_interrupt_refuses_cancelled_task(

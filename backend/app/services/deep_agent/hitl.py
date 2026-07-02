@@ -301,8 +301,11 @@ def _source_meta_for_action(
     persona: str | None,
     tool_name: str,
 ) -> dict[str, Any]:
-    if not source_meta:
-        return {}
+    """Always returns an audit block — audit_ref minting is unconditional
+    (audit spec §5.4): async projections pass source_meta=None and previously
+    got {} here, which broke proposal/decision/execution correlation."""
+    from uuid import uuid4
+
     emitted_at = (
         datetime.now(timezone.utc)
         .replace(microsecond=0)
@@ -314,16 +317,20 @@ def _source_meta_for_action(
         or action_request.get("tool_call_id")
         or interrupt_id
     )
-    return {
-        **dict(source_meta),
-        "audit": {
-            **dict(source_meta.get("audit") or {}),
+    base = dict(source_meta or {})
+    audit = dict(base.get("audit") or {})
+    audit.setdefault("audit_ref", str(uuid4()))
+    audit.update(
+        {
             "tool_call_id": str(tool_call_id),
             "tool_name": tool_name,
             "persona": persona,
             "emitted_at": emitted_at,
-        },
-    }
+            "interrupt_id": interrupt_id,
+        }
+    )
+    base["audit"] = audit
+    return base
 
 
 def build_resume_command(decision: str, *, message: str | None = None) -> Command:
