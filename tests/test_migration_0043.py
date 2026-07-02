@@ -1,4 +1,4 @@
-"""Round-trip test for migration 0042_agent_action_audits.
+"""Round-trip test for migration 0043_agent_action_audits.
 
 Direct module invocation against an isolated temp SQLite (the repo's
 migration-test style — see test_arena_migration.py): the revision body itself
@@ -37,7 +37,7 @@ def _run_migration(module, method: str, engine: sa.Engine) -> None:
 
 def _migration():
     return importlib.import_module(
-        "backend.alembic.versions.0042_agent_action_audits"
+        "backend.alembic.versions.0043_agent_action_audits"
     )
 
 

@@ -4,8 +4,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0042_agent_action_audits"
-down_revision = "0041_morning_breach_assemble_prompt"
+revision = "0043_agent_action_audits"
+down_revision = "0042_instrument_tags"
 branch_labels = None
 depends_on = None
 
