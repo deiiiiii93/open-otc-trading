@@ -510,15 +510,26 @@ from alembic import command
 from alembic.config import Config
 
 
-def _alembic_config(db_url: str) -> Config:
-    cfg = Config("backend/alembic.ini")  # match the existing migration tests' path
+def _alembic_config(db_url: str, monkeypatch) -> Config:
+    # The Alembic config lives at the REPO ROOT, and backend/alembic/env.py
+    # overwrites sqlalchemy.url from app.config.get_settings() — so the
+    # settings, not the ini option, must be patched or the migration runs
+    # against the configured app DB. Mirror the existing migration tests
+    # (tests/test_arena_migration.py) exactly.
+    import app.config as app_config
+
+    monkeypatch.setattr(
+        app_config, "get_settings",
+        lambda: app_config.Settings(database_url=db_url),
+    )
+    cfg = Config("alembic.ini")
     cfg.set_main_option("sqlalchemy.url", db_url)
     return cfg
 
 
-def test_upgrade_creates_table_columns_and_indexes(tmp_path):
+def test_upgrade_creates_table_columns_and_indexes(tmp_path, monkeypatch):
     url = f"sqlite:///{tmp_path / 'mig.sqlite3'}"
-    command.upgrade(_alembic_config(url), "0042_agent_action_audits")
+    command.upgrade(_alembic_config(url, monkeypatch), "0042_agent_action_audits")
     insp = sa.inspect(sa.create_engine(url))
     cols = {c["name"] for c in insp.get_columns("agent_action_audits")}
     assert {
@@ -534,9 +545,9 @@ def test_upgrade_creates_table_columns_and_indexes(tmp_path):
     assert "ix_agent_action_audits_audit_ref" in index_names
 
 
-def test_downgrade_drops_table(tmp_path):
+def test_downgrade_drops_table(tmp_path, monkeypatch):
     url = f"sqlite:///{tmp_path / 'mig.sqlite3'}"
-    cfg = _alembic_config(url)
+    cfg = _alembic_config(url, monkeypatch)
     command.upgrade(cfg, "0042_agent_action_audits")
     command.downgrade(cfg, "0041_morning_breach_assemble_prompt")
     insp = sa.inspect(sa.create_engine(url))
@@ -1524,10 +1535,22 @@ At each site where `"pending_actions": [a.model_dump(mode="json") for a in pendi
 
 using the session/thread/actor variables in scope at each site (names differ per site — match locals). The insert joins the same transaction as the message persist (atomicity, spec §5.4). If `self.tools` is not the attribute name, use the AgentService tool list attribute found at implementation time. **Classification goes through `classify_write_action` with the proposal's `payload` as the args so a `run_python(writes_artifacts=True)` HITL proposal lands as `artifact_write`, matching its later execution row** (the `RunPythonArtifactHITLMiddleware` interrupt path); the `"domain_write"` fallback covers every remaining `INTERRUPT_TOOL_NAMES` member. Add to the Task 7 tests: a `run_python` proposal with `payload={"writes_artifacts": True}` produces `tool_class == "artifact_write"` on proposal, decision, and execution rows.
 
-- [ ] **Step 6: Insert decision rows in `_mark_pending_action_resolved`** (agents.py:930 — the single helper all three resume paths call):
+- [ ] **Step 6: Insert decision rows AT THE RESUME BOUNDARY, before the agent resumes**
+
+Do **not** rely solely on `_mark_pending_action_resolved` — several resume branches
+invoke the agent first and roll back on failure, so an approved write that fails
+during resume would leave no decision row (plan-review-3 finding #2). Record the
+decision in `resume_pending_action` **immediately after the action is validated as
+`pending` and before any graph invocation**, in its own committed transaction that
+survives a subsequent resume failure. The status flip in
+`_mark_pending_action_resolved` remains the card-state mechanism; the audit row is
+written earlier:
 
 ```python
-    # inside _mark_pending_action_resolved, after the action's status flips:
+    # in resume_pending_action, right after the ResumeConflictError pending-status
+    # guard passes and BEFORE routing to any resume path / graph invocation —
+    # committed in its own short transaction (SessionLocal) so a later resume
+    # failure cannot roll it back:
     from .audit_trail import record_hitl_decision
     from .deep_agent.write_actions import classify_write_action, write_names_by_class
 
@@ -1556,7 +1579,7 @@ using the session/thread/actor variables in scope at each site (names differ per
 `run_python(writes_artifacts=True)` approval is `artifact_write`, not the
 `domain_write` default; asserted by the three-row chain test below.)
 
-Match the helper's real signature/local names when editing (it iterates `pending_actions` and flips `status`; `session`, `actor`, and the source message's thread/workflow identifiers are in scope at `resume_pending_action` — thread them into `_mark_pending_action_resolved` as parameters if it doesn't already receive them). Add to the Task 7 tests: after a decision row is recorded with a `thread_id`, `GET /api/audit/actions?thread_id=N` (or the equivalent query) returns proposal, decision, and execution rows sharing one `audit_ref`.
+`resume_pending_action` has the source message, thread/workflow identifiers, and the resolved action dict in scope at that point — use a dedicated `with database.SessionLocal() as s: ...; s.commit()` block. Add to the Task 7 tests: (a) after a decision row is recorded with a `thread_id`, `GET /api/audit/actions?thread_id=N` (or the equivalent query) returns proposal, decision, and execution rows sharing one `audit_ref`; (b) **failure-path test** — a resume whose graph invocation raises still leaves the `hitl_decision` row persisted (`approved`), with the execution row `attempted`/`error` telling the rest of the story.
 
 - [ ] **Step 7: Write integration-style tests for proposal + decision rows**
 
