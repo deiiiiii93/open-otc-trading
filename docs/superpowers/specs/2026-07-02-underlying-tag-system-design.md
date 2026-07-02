@@ -101,6 +101,22 @@ New Alembic migration (next number after `0041`):
   Python, and apply `offset`/`limit` to *that* filtered list before
   returning.
 
+  **Accepted trade-off — full-replace concurrency**: like
+  `PUT /api/portfolios/{id}/tags`, this is a full-list replace, not an
+  additive/removal op. A stale client snapshot (e.g. two open Instruments-page
+  tabs, or the agent's `register_underlying` tool adding the tag between the
+  drawer loading and a human clicking save) could in principle overwrite a
+  concurrently-added tag. This is higher-consequence here than for Portfolio
+  tags, since losing `"underlying"` breaks Booking/TrySolve eligibility and
+  `book_position`/`book_hedge`, not just cosmetic grouping — but this codebase
+  has no ETag/optimistic-concurrency infrastructure anywhere else, and adding
+  one exclusively for this endpoint would be new machinery this feature
+  doesn't otherwise need. Mitigation instead of new infra: the Instruments
+  page tag editor (Section 3) always loads the row's current `tags` as its
+  editing baseline immediately before save, bounding the race to the same
+  narrow window `Portfolio.tags` already accepts in production today, not a
+  new or wider one.
+
 ### 3. Frontend
 
 - **Instruments.tsx / Instruments.live.tsx**: add a small tags chip-editor to
@@ -155,11 +171,35 @@ New file `backend/app/tools/underlyings.py`.
   `"irreversible"` describes the risk *category* LangGraph gates on here, not
   a literal claim that tags can't be removed — they can, via the tags PUT
   endpoint.)
-- **Accepted simplification**: LangGraph's interrupt fires *before* the tool
+- **Approval card preflight**: LangGraph's interrupt fires *before* the tool
   body runs (interrupt is at tool-call granularity, gated on tool name +
-  args), so the pre-approval card can only show the symbol being registered —
-  it cannot yet say "create new" vs. "tag existing." That distinction only
-  appears in the tool's result *after* approval, in the next assistant turn.
+  args), so the default per-tool summary would only be able to show the raw
+  `symbol` arg — not enough for a human to meaningfully approve "create a new
+  instrument" vs. "tag an existing one." Add a dedicated summary builder
+  (`_summarize_register_underlying`, alongside the existing
+  `_summarize_book_position` at hitl.py:204) registered in
+  `_SUMMARY_BUILDERS` (hitl.py:231). Unlike the existing builders, this one
+  needs a **read-only** DB lookup on the symbol to classify the action before
+  rendering the card, so `_summary_for`/`pending_actions_from_interrupts`
+  (hitl.py:236, 251) gain an optional `session` parameter threaded from their
+  call site in `agents.py`. The resulting card summary distinguishes the
+  three cases and previews the inferred metadata for the create case, e.g.:
+  - *"Register NEW underlying 000905.SH — inferred kind=index, currency=CNY,
+    market=CN"* (does not exist yet)
+  - *"Add 'underlying' tag to existing instrument 000905.SH (kind=index,
+    status=draft)"* (exists, untagged)
+  - *(already valid — in practice `book_position`/`book_hedge` would not have
+    signaled `underlying_not_registered` for this symbol, so the model has no
+    reason to call the tool; this case is a no-op safety net, not a card a
+    human should normally see)*
+
+  **Explicitly out of scope**: rejecting unresolvable/unrecognized symbols by
+  default. The whole point of this feature is that a legitimate new
+  underlying *can* be created through this path — refusing unknown symbols
+  would contradict the goal, not harden it. The human (interactive/auto) or
+  the desk's own YOLO-mode trust boundary (yolo) is the actual approval gate;
+  the preview above gives that approval something concrete to evaluate, but
+  doesn't second-guess it with a denylist.
 
 ### 5. `book_position` / `book_hedge` validation
 
