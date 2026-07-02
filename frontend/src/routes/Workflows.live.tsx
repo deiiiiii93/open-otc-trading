@@ -3,6 +3,7 @@ import { Workflows } from './Workflows';
 import { WorkflowBuilder } from './WorkflowBuilder';
 import { WorkflowBuilderChat } from './WorkflowBuilderChat';
 import { Button } from '../components/Button';
+import { PageScaffold } from '../components/templates/PageScaffold';
 import { useAgentChatController } from '../hooks/useAgentChatController';
 import {
   createWorkflow,
@@ -86,22 +87,30 @@ export function WorkflowsLive() {
     await refresh();
   };
 
+  const tabs = (
+    <div className="wl-workflows-page__tabs" role="tablist">
+      <Button
+        variant={mode === 'manage' ? 'primary' : 'ghost'}
+        onClick={() => setMode('manage')}
+      >
+        Manage
+      </Button>
+      <Button
+        variant={mode === 'create' ? 'primary' : 'ghost'}
+        onClick={() => setMode('create')}
+      >
+        Create with AI
+      </Button>
+    </div>
+  );
+
   return (
-    <div className="wl-workflows-page">
-      <div className="wl-workflows-page__tabs" role="tablist">
-        <Button
-          variant={mode === 'manage' ? 'primary' : 'ghost'}
-          onClick={() => setMode('manage')}
-        >
-          Manage
-        </Button>
-        <Button
-          variant={mode === 'create' ? 'primary' : 'ghost'}
-          onClick={() => setMode('create')}
-        >
-          Create with AI
-        </Button>
-      </div>
+    <PageScaffold
+      className="wl-workflows-page"
+      title="WORKFLOWS"
+      chips={[`${items.length} workflow${items.length === 1 ? '' : 's'}`]}
+      actions={tabs}
+    >
       {mode === 'manage' ? (
         <Workflows
           items={items}
@@ -122,7 +131,7 @@ export function WorkflowsLive() {
           }}
         />
       )}
-    </div>
+    </PageScaffold>
   );
 }
 

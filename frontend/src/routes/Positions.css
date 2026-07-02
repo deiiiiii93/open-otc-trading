@@ -24,20 +24,6 @@
   line-height: 1.5;
   white-space: nowrap;
 }
-.wl-pageheader:has(.wl-positions__actions) {
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--gap-3);
-}
-.wl-pageheader:has(.wl-positions__actions) .wl-pageheader__action {
-  width: 100%;
-  justify-content: stretch;
-  border-top: 1px solid var(--hairline);
-  padding-top: var(--gap-2);
-}
-.wl-pageheader:has(.wl-positions__actions) .wl-pageheader__title {
-  overflow-wrap: anywhere;
-}
 .wl-positions__file {
   position: absolute;
   width: 1px;

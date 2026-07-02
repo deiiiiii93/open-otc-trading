@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../components/Button';
 import { Empty } from '../components/Empty';
+import { PageScaffold } from '../components/templates/PageScaffold';
 import {
   getArenaLeaderboard,
   getArenaRun,
@@ -191,175 +192,184 @@ export function ArenaLive() {
       .finally(() => setLoadingTranscript(false));
   }, []);
 
+  const chips = [
+    `${runs.length} run${runs.length === 1 ? '' : 's'}`,
+    `${leaderboard.length} model${leaderboard.length === 1 ? '' : 's'}`,
+  ];
+
   return (
-    <div className="wl-arena__workspace">
-      {error && (
-        <div role="alert" style={{ color: 'var(--neg)', padding: 'var(--gap-2) var(--gap-3)' }}>
+    <PageScaffold
+      title="ARENA"
+      chips={chips}
+      actions={<Button variant="ghost" onClick={refresh}>Refresh</Button>}
+      feedback={error && (
+        <div role="alert" style={{ color: 'var(--neg)' }}>
           {error}
         </div>
       )}
-
-      {/* Leaderboard */}
-      <div className="wl-arena__panel">
-        <div className="wl-arena__section-head">
-          <span className="wl-arena__eyebrow">Leaderboard</span>
-          <Button variant="ghost" onClick={refresh}>Refresh</Button>
-        </div>
-        {leaderboard.length === 0 ? (
-          <Empty message="No leaderboard data yet — run an arena evaluation to populate scores." />
-        ) : (
-          <table className="wl-arena__table" aria-label="Arena leaderboard">
-            <thead>
-              <tr>
-                <th>Model</th>
-                <th>Avg Total</th>
-                <th>Avg Objective</th>
-                <th>Matches</th>
-              </tr>
-            </thead>
-            <tbody>
-              {leaderboard.map((row) => (
-                <tr key={row.model_id}>
-                  <td>{modelDisplayName(row.model_id, models)}</td>
-                  <td>{fmtScore(row.avg_total)}</td>
-                  <td>{fmtScore(row.avg_objective)}</td>
-                  <td>{row.matches}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* Run picker + detail */}
-      <div className="wl-arena__two-col">
+    >
+      <div className="wl-arena__workspace">
+        {/* Leaderboard */}
         <div className="wl-arena__panel">
           <div className="wl-arena__section-head">
-            <span className="wl-arena__eyebrow">Runs</span>
+            <span className="wl-arena__eyebrow">Leaderboard</span>
           </div>
-          {runs.length === 0 ? (
-            <Empty message="No arena runs yet." />
+          {leaderboard.length === 0 ? (
+            <Empty message="No leaderboard data yet — run an arena evaluation to populate scores." />
           ) : (
-            <div className="wl-arena__run-list">
-              {runs.map((run) => (
-                <button
-                  key={run.id}
-                  type="button"
-                  className={`wl-arena__run-item${run.id === selectedRunId ? ' is-active' : ''}`}
-                  onClick={() => selectRun(run.id)}
-                >
-                  <span className="wl-arena__run-id">{String(run.id).slice(0, 8)}</span>
-                  <span className={`wl-arena__status ${statusClass(run.status)}`}>
-                    {run.status}
-                  </span>
-                  <span className="wl-arena__run-meta">{fmtDate(run.created_at)}</span>
-                </button>
-              ))}
-            </div>
+            <table className="wl-arena__table" aria-label="Arena leaderboard">
+              <thead>
+                <tr>
+                  <th>Model</th>
+                  <th>Avg Total</th>
+                  <th>Avg Objective</th>
+                  <th>Matches</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leaderboard.map((row) => (
+                  <tr key={row.model_id}>
+                    <td>{modelDisplayName(row.model_id, models)}</td>
+                    <td>{fmtScore(row.avg_total)}</td>
+                    <td>{fmtScore(row.avg_objective)}</td>
+                    <td>{row.matches}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
 
-        {/* Run detail: match grid */}
-        <div>
-          {runDetail ? (
-            <div className="wl-arena__panel">
-              <div className="wl-arena__section-head">
-                <span className="wl-arena__eyebrow">
-                  Matches — run {selectedRunId != null ? String(selectedRunId).slice(0, 8) : ''}
-                </span>
-                <span className={`wl-arena__status ${statusClass(runDetail.run.status)}`}>
-                  {runDetail.run.status}
-                </span>
+        {/* Run picker + detail */}
+        <div className="wl-arena__two-col">
+          <div className="wl-arena__panel">
+            <div className="wl-arena__section-head">
+              <span className="wl-arena__eyebrow">Runs</span>
+            </div>
+            {runs.length === 0 ? (
+              <Empty message="No arena runs yet." />
+            ) : (
+              <div className="wl-arena__run-list">
+                {runs.map((run) => (
+                  <button
+                    key={run.id}
+                    type="button"
+                    className={`wl-arena__run-item${run.id === selectedRunId ? ' is-active' : ''}`}
+                    onClick={() => selectRun(run.id)}
+                  >
+                    <span className="wl-arena__run-id">{String(run.id).slice(0, 8)}</span>
+                    <span className={`wl-arena__status ${statusClass(run.status)}`}>
+                      {run.status}
+                    </span>
+                    <span className="wl-arena__run-meta">{fmtDate(run.created_at)}</span>
+                  </button>
+                ))}
               </div>
-              {runDetail.matches.length === 0 ? (
-                <Empty message="No matches in this run." />
-              ) : (
-                <div
-                  className="wl-arena__match-grid"
-                  style={{
-                    gridTemplateColumns: `repeat(auto-fill, minmax(200px, 1fr))`,
-                  }}
-                >
-                  {runDetail.matches.map((match) => (
-                    <button
-                      key={match.id}
-                      type="button"
-                      className={`wl-arena__match-cell${match.id === selectedMatchId ? ' is-active' : ''}`}
-                      onClick={() => selectMatch(match)}
-                    >
-                      <span className="wl-arena__match-title">
-                        {modelDisplayName(match.model_id, models)}
-                      </span>
-                      <span className="wl-arena__match-title" style={{ fontWeight: 'normal', color: 'var(--ink-2)' }}>
-                        {match.workflow_id}
-                      </span>
-                      <span className={`wl-arena__status ${statusClass(match.status)}`}>
-                        {match.status}
-                      </span>
-                      <span className="wl-arena__match-score">
-                        Total: {fmtScore(match.total_score)}
-                        {' · '}
-                        Obj: {fmtScore(match.objective_score)}
-                      </span>
-                      {match.score_breakdown?.diagnosis?.analysis && (
-                        <span className="wl-arena__match-diagnosis">
-                          {match.score_breakdown.diagnosis.analysis}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : selectedRunId ? (
-            <div className="wl-arena__panel" style={{ padding: 'var(--gap-3)' }}>
-              <span style={{ color: 'var(--ink-2)', fontSize: 'var(--type-small-size)' }}>
-                Loading run detail…
-              </span>
-            </div>
-          ) : null}
+            )}
+          </div>
 
-          {/* Match drill-down: score breakdown + transcript */}
-          {selectedMatchId && (
-            <div className="wl-arena__transcript" style={{ marginTop: 'var(--gap-3)' }}>
-              <div className="wl-arena__transcript-head">
-                <span className="wl-arena__transcript-title">Match detail</span>
-                <Button variant="ghost" onClick={() => { setSelectedMatchId(null); setTranscript(null); }}>
-                  Close
-                </Button>
-              </div>
-              {(() => {
-                const selectedMatch = runDetail?.matches.find((m) => m.id === selectedMatchId);
-                return selectedMatch?.score_breakdown ? (
-                  <ScoreBreakdownView breakdown={selectedMatch.score_breakdown} />
-                ) : selectedMatch ? (
-                  <span style={{ color: 'var(--ink-2)', fontSize: 'var(--type-small-size)' }}>
-                    No score breakdown for this match (older run or failed match).
+          {/* Run detail: match grid */}
+          <div>
+            {runDetail ? (
+              <div className="wl-arena__panel">
+                <div className="wl-arena__section-head">
+                  <span className="wl-arena__eyebrow">
+                    Matches — run {selectedRunId != null ? String(selectedRunId).slice(0, 8) : ''}
                   </span>
-                ) : null;
-              })()}
-              <div className="wl-arena__transcript-head" style={{ marginTop: 'var(--gap-3)' }}>
-                <span className="wl-arena__transcript-title">Transcript</span>
-              </div>
-              {loadingTranscript && (
-                <span style={{ color: 'var(--ink-2)', fontSize: 'var(--type-small-size)' }}>
-                  Loading transcript…
-                </span>
-              )}
-              {transcriptError && (
-                <div role="alert" style={{ color: 'var(--neg)', fontSize: 'var(--type-small-size)' }}>
-                  {transcriptError}
+                  <span className={`wl-arena__status ${statusClass(runDetail.run.status)}`}>
+                    {runDetail.run.status}
+                  </span>
                 </div>
-              )}
-              {transcript != null && !loadingTranscript && (
-                <pre className="wl-arena__transcript-body">
-                  {JSON.stringify(transcript, null, 2)}
-                </pre>
-              )}
-            </div>
-          )}
+                {runDetail.matches.length === 0 ? (
+                  <Empty message="No matches in this run." />
+                ) : (
+                  <div
+                    className="wl-arena__match-grid"
+                    style={{
+                      gridTemplateColumns: `repeat(auto-fill, minmax(200px, 1fr))`,
+                    }}
+                  >
+                    {runDetail.matches.map((match) => (
+                      <button
+                        key={match.id}
+                        type="button"
+                        className={`wl-arena__match-cell${match.id === selectedMatchId ? ' is-active' : ''}`}
+                        onClick={() => selectMatch(match)}
+                      >
+                        <span className="wl-arena__match-title">
+                          {modelDisplayName(match.model_id, models)}
+                        </span>
+                        <span className="wl-arena__match-title" style={{ fontWeight: 'normal', color: 'var(--ink-2)' }}>
+                          {match.workflow_id}
+                        </span>
+                        <span className={`wl-arena__status ${statusClass(match.status)}`}>
+                          {match.status}
+                        </span>
+                        <span className="wl-arena__match-score">
+                          Total: {fmtScore(match.total_score)}
+                          {' · '}
+                          Obj: {fmtScore(match.objective_score)}
+                        </span>
+                        {match.score_breakdown?.diagnosis?.analysis && (
+                          <span className="wl-arena__match-diagnosis">
+                            {match.score_breakdown.diagnosis.analysis}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : selectedRunId ? (
+              <div className="wl-arena__panel" style={{ padding: 'var(--gap-3)' }}>
+                <span style={{ color: 'var(--ink-2)', fontSize: 'var(--type-small-size)' }}>
+                  Loading run detail…
+                </span>
+              </div>
+            ) : null}
+
+            {/* Match drill-down: score breakdown + transcript */}
+            {selectedMatchId && (
+              <div className="wl-arena__transcript" style={{ marginTop: 'var(--gap-3)' }}>
+                <div className="wl-arena__transcript-head">
+                  <span className="wl-arena__transcript-title">Match detail</span>
+                  <Button variant="ghost" onClick={() => { setSelectedMatchId(null); setTranscript(null); }}>
+                    Close
+                  </Button>
+                </div>
+                {(() => {
+                  const selectedMatch = runDetail?.matches.find((m) => m.id === selectedMatchId);
+                  return selectedMatch?.score_breakdown ? (
+                    <ScoreBreakdownView breakdown={selectedMatch.score_breakdown} />
+                  ) : selectedMatch ? (
+                    <span style={{ color: 'var(--ink-2)', fontSize: 'var(--type-small-size)' }}>
+                      No score breakdown for this match (older run or failed match).
+                    </span>
+                  ) : null;
+                })()}
+                <div className="wl-arena__transcript-head" style={{ marginTop: 'var(--gap-3)' }}>
+                  <span className="wl-arena__transcript-title">Transcript</span>
+                </div>
+                {loadingTranscript && (
+                  <span style={{ color: 'var(--ink-2)', fontSize: 'var(--type-small-size)' }}>
+                    Loading transcript…
+                  </span>
+                )}
+                {transcriptError && (
+                  <div role="alert" style={{ color: 'var(--neg)', fontSize: 'var(--type-small-size)' }}>
+                    {transcriptError}
+                  </div>
+                )}
+                {transcript != null && !loadingTranscript && (
+                  <pre className="wl-arena__transcript-body">
+                    {JSON.stringify(transcript, null, 2)}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </PageScaffold>
   );
 }

@@ -1,11 +1,21 @@
 .wl-pageheader {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: var(--gap-4);
-  margin-bottom: var(--gap-4);
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--gap-3);
+  border: 1px solid var(--hairline-2);
+  border-top: var(--rail-accent-width) solid var(--ink);
+  background: color-mix(in oklab, var(--paper) 82%, var(--paper-2));
+  padding: var(--gap-3);
+  margin-bottom: var(--gap-3);
 }
-.wl-pageheader__main { flex: 1; min-width: 0; }
+.wl-pageheader__main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gap-3);
+  min-width: 0;
+}
 .wl-pageheader__title {
   margin: 0;
   font-size: var(--type-h1-size);
@@ -14,12 +24,29 @@
   letter-spacing: -0.01em;
   color: var(--ink);
   line-height: 1.1;
+  overflow-wrap: anywhere;
 }
 .wl-pageheader__action {
   display: flex;
   gap: var(--gap-2);
-  justify-content: flex-end;
   flex-wrap: wrap;
   min-width: 0;
   max-width: 100%;
+  width: 100%;
+  justify-content: flex-end;
+  padding-top: var(--gap-3);
+  border-top: 1px solid var(--hairline);
+}
+/* HeaderControls used as the page action stretches full-width to fill the row
+   (the compact inline layout is right elsewhere, but cramped next to a title). */
+.wl-pageheader__action .wl-header-controls {
+  width: 100%;
+  justify-content: stretch;
+  align-items: stretch;
+}
+
+@media (max-width: 640px) {
+  .wl-pageheader__main {
+    flex-direction: column;
+  }
 }
