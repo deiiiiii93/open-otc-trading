@@ -79,7 +79,7 @@ New model in `backend/app/models.py`, shaped on the `DomainEvent` precedent
 |---|---|---|
 | `id` | int PK autoincrement | |
 | `kind` | str, indexed | `execution` \| `hitl_proposal` \| `hitl_decision` |
-| `status` | str, indexed | `execution`: `attempted` → `ok` \| `error` \| `denied` \| `interrupted`; `hitl_proposal`: `proposed`; `hitl_decision`: `approved` \| `rejected` |
+| `status` | str, indexed | `execution`: `attempted` → `ok` \| `error` \| `denied` \| `interrupted`, plus `refused` (fail-closed refusal record, §5.2); `hitl_proposal`: `proposed`; `hitl_decision`: `approved` \| `rejected` |
 | `deny_reason` | str, nullable | `capability` \| `cost_preview` \| `tool_scope` \| `fanout_readonly` |
 | `tool_name` | str, indexed | |
 | `tool_class` | str, indexed | `domain_write` \| `async_dispatch` \| `fs_write` \| `artifact_write` |
