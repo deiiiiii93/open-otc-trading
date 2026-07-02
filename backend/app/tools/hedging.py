@@ -13,6 +13,7 @@ from app.services.deep_agent.capability_gate import capability_gated
 from app.services.deep_agent.envelopes import ToolGroup
 from app.services import hedging_greeks
 from app.services.domains import hedging_strategy as hs
+from app.services.underlyings import is_registered_underlying
 
 
 class HedgeableInput(BaseModel):
@@ -92,8 +93,16 @@ def book_hedge_tool(portfolio_id: int, underlying: str, risk_run_id: int,
                     strategy: str, spot: float, legs: list[dict[str, Any]]) -> dict[str, Any]:
     """Atomically book hedge legs into the portfolio, hedge-tagged (is_hedge,
     risk_run_id, strategy, leg_role) and visible on the Hedging page. HITL —
-    requires confirmation. Never book hedge legs via book_position."""
+    requires confirmation. Never book hedge legs via book_position. If this
+    returns error=underlying_not_registered, call register_underlying(symbol)
+    then retry."""
     with database.SessionLocal() as session:
+        if not is_registered_underlying(session, underlying):
+            return {
+                "ok": False,
+                "error": "underlying_not_registered",
+                "detail": {"symbol": underlying},
+            }
         out = hs.book_hedge(session, portfolio_id=portfolio_id, underlying=underlying,
                             risk_run_id=risk_run_id, strategy=strategy, legs=legs,
                             spot=spot, actor="agent")

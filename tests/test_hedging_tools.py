@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 from app.models import (HedgeMapEntry, Instrument, Portfolio, RiskRun, Underlying)
 from app.services.quotes import record_quote
-from app.tools.hedging import (get_hedgeable_underlyings_tool, propose_hedge_tool)
+from app.tools.hedging import (book_hedge_tool, get_hedgeable_underlyings_tool, propose_hedge_tool)
 
 
 def _seed(session):
@@ -40,3 +40,18 @@ def test_propose_hedge_tool(session):
         {"portfolio_id": pf.id, "underlying": "000905.SH", "strategy": "delta_neutral"})
     assert out["status"] == "feasible"
     assert out["legs"][0]["quantity"] == -1
+
+
+def test_book_hedge_rejects_unregistered_underlying(session):
+    pf = _seed(session)  # seeds 000905.SH WITHOUT the "underlying" tag
+    result = book_hedge_tool.invoke({
+        "portfolio_id": pf.id,
+        "underlying": "000905.SH",
+        "risk_run_id": 1,
+        "strategy": "delta_neutral",
+        "spot": 5600.0,
+        "legs": [],
+    })
+    assert result["ok"] is False
+    assert result["error"] == "underlying_not_registered"
+    assert result["detail"]["symbol"] == "000905.SH"
