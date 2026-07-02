@@ -354,6 +354,67 @@ class TestPatchInstrument:
 
 
 # ---------------------------------------------------------------------------
+# PUT /api/instruments/{id}/tags, GET /api/instruments?tag=
+# ---------------------------------------------------------------------------
+
+class TestInstrumentTags:
+    def test_get_instruments_filters_by_tag(self, tmp_path: Path):
+        client = _make_client(tmp_path)
+        iid = _add_instrument(tmp_path, symbol="APITAG.SH", status="active")
+        client.put(f"/api/instruments/{iid}/tags", json={"tags": ["underlying"]})
+
+        resp = client.get("/api/instruments", params={"tag": "underlying"})
+        assert resp.status_code == 200
+        symbols = {row["symbol"] for row in resp.json()}
+        assert "APITAG.SH" in symbols
+
+    def test_put_instrument_tags_replaces_full_list(self, tmp_path: Path):
+        client = _make_client(tmp_path)
+        iid = _add_instrument(tmp_path, symbol="APITAG2.SH")
+
+        resp = client.put(f"/api/instruments/{iid}/tags", json={"tags": ["underlying", "watchlist"]})
+        assert resp.status_code == 200
+        assert resp.json()["tags"] == ["underlying", "watchlist"]
+
+        resp2 = client.put(f"/api/instruments/{iid}/tags", json={"tags": ["underlying"]})
+        assert resp2.status_code == 200
+        assert resp2.json()["tags"] == ["underlying"]
+
+    def test_put_instrument_tags_404_for_missing_instrument(self, tmp_path: Path):
+        client = _make_client(tmp_path)
+        resp = client.put("/api/instruments/999999/tags", json={"tags": ["underlying"]})
+        assert resp.status_code == 404
+
+    def test_put_instrument_tags_422_for_non_string_tag(self, tmp_path: Path):
+        # Pydantic's `tags: list[str]` schema rejects a non-string element
+        # before the request body reaches set_instrument_tags' own ValueError
+        # check -- 422 (schema validation), not 400 (domain validation).
+        client = _make_client(tmp_path)
+        iid = _add_instrument(tmp_path, symbol="APITAG3.SH")
+        resp = client.put(f"/api/instruments/{iid}/tags", json={"tags": [123]})
+        assert resp.status_code == 422
+
+    def test_instrument_out_includes_tags(self, tmp_path: Path):
+        client = _make_client(tmp_path)
+        iid = _add_instrument(tmp_path, symbol="APITAG4.SH")
+        resp = client.get(f"/api/instruments/{iid}")
+        assert resp.json()["tags"] == []
+
+    def test_put_instrument_tags_emits_audit_event(self, tmp_path: Path):
+        from app.models import AuditEvent
+
+        client = _make_client(tmp_path)
+        iid = _add_instrument(tmp_path, symbol="APITAG5.SH")
+        client.put(f"/api/instruments/{iid}/tags", json={"tags": ["underlying"]})
+        with database.SessionLocal() as s:
+            events = s.query(AuditEvent).filter(
+                AuditEvent.event_type == "instrument.tags_changed"
+            ).all()
+        assert len(events) == 1
+        assert int(events[0].subject_id) == iid
+
+
+# ---------------------------------------------------------------------------
 # POST /api/instruments/sync-from-positions
 # ---------------------------------------------------------------------------
 
