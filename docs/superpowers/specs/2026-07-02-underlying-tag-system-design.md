@@ -101,6 +101,16 @@ New Alembic migration (next number after `0041`):
   Python, and apply `offset`/`limit` to *that* filtered list before
   returning.
 
+  **Declined**: replacing the JSON `tags` column with a join table (or a
+  SQLite `json_each` containment query) purely for `tag=` scan performance.
+  In practice every caller of `tag=` filters to a small eligible set (a
+  desk's active underlyings, at most low hundreds of rows, not the full
+  instrument-plus-every-dated-contract catalog), and Booking.live.tsx already
+  does an equivalent full unfiltered fetch (`limit=1000`, no `tag`/`status`
+  params) in production today with no observed scale problem. Revisit only if
+  the instrument catalog or this endpoint's usage pattern actually grows
+  large enough to matter.
+
   **Accepted trade-off — full-replace concurrency**: like
   `PUT /api/portfolios/{id}/tags`, this is a full-list replace, not an
   additive/removal op. A stale client snapshot (e.g. two open Instruments-page
@@ -115,7 +125,21 @@ New Alembic migration (next number after `0041`):
   page tag editor (Section 3) always loads the row's current `tags` as its
   editing baseline immediately before save, bounding the race to the same
   narrow window `Portfolio.tags` already accepts in production today, not a
-  new or wider one.
+  new or wider one. Separately, `register_underlying` (Section 4) does **not**
+  go through this PUT endpoint at all — it's a direct read-modify-write on the
+  `Instrument` row inside its own DB transaction, so it's atomic with respect
+  to itself regardless of what the PUT endpoint does. The only remaining race
+  is human-PUT-vs-human-PUT or human-PUT-vs-agent-write, both covered by the
+  mitigation above.
+
+  **Declined**: adding an ETag/`updated_at`-precondition mechanism or
+  converting this endpoint to atomic add/remove ops. Raised twice by the
+  Tier-1 reviewer without new information the second time — this app has a
+  single-desk operator model with no existing optimistic-concurrency
+  infrastructure anywhere (`Portfolio.tags` accepts the identical risk), and
+  building bespoke versioning for one endpoint would be new machinery the
+  rest of the codebase doesn't have or need. Revisit if real multi-user
+  concurrent editing is ever added.
 
 ### 3. Frontend
 
@@ -124,11 +148,26 @@ New Alembic migration (next number after `0041`):
   the primary "real tag system" surface — a human can pre-register an
   underlying without going through the agent at all. It sits alongside, not
   in place of, the existing `ROLES` column.
-- **Booking.live.tsx `activeUnderlyingSymbols()`** (line 665): change from
-  `status === 'active'` to `status === 'active' && (tags ?? []).includes('underlying')`.
-- **TrySolve.tsx** underlying field filter (line 930): same change.
+- **Fetch server-filtered, not client-filtered**: Booking.live.tsx currently
+  fetches `/api/instruments` with **no query params at all**
+  (Booking.live.tsx:160), relying on the backend's default `limit=1000` and
+  filtering client-side in `activeUnderlyingSymbols()` (line 665). That
+  pattern reproduces the exact pagination-loss bug from Section 2 the moment
+  the instrument catalog exceeds 1000 rows: valid tagged underlyings sorted
+  past the unfiltered page would silently vanish from the picker. Both
+  Booking.live.tsx and TrySolve.tsx's data-loading effect must instead call
+  `/api/instruments?status=active&tag=underlying` (the new, correctly-ordered
+  server-side filter from Section 2) and use the response directly — no
+  client-side re-filtering by tag needed, since the server already returns
+  exactly the eligible set.
+- `activeUnderlyingSymbols()` (Booking.live.tsx:665) and TrySolve.tsx's
+  underlying field (line 930) simplify accordingly: with the fetch already
+  scoped to `status=active&tag=underlying`, they just map/list the returned
+  rows directly rather than re-applying the `status`/`tags` predicate.
 - `Instrument`/`Underlying` frontend type (`frontend/src/types.ts`) gets a
-  `tags?: string[]` field.
+  `tags?: string[]` field (still needed for the Instruments admin page tag
+  editor and display, even though the picker no longer filters on it
+  client-side).
 
 #### Tags vs. roles
 
