@@ -42,7 +42,8 @@ required.
 Optional: `strike` (default = initial fixing),
 `ki_convention` (`DAILY` default | `EUROPEAN` | `NONE`), `ko_rate_annualized`.
 Synthesized from the above: a KO observation schedule at the requested
-frequency (from `trade_start_date` + `lockup_months` on the SSE calendar) and
+frequency (from `trade_start_date` + `lockup_months` on the desk's exchange
+calendar - a desk default, configurable) and
 a daily (or European) KI observation schedule.
 
 **KnockOutResetSnowballOption** — all SnowballOption terms PLUS required
