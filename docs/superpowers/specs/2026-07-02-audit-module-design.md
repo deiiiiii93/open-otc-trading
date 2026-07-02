@@ -78,12 +78,13 @@ New model in `backend/app/models.py`, shaped on the `DomainEvent` precedent
 | Column | Type | Notes |
 |---|---|---|
 | `id` | int PK autoincrement | |
-| `kind` | str, indexed | `execution` \| `hitl_decision` |
-| `status` | str, indexed | `attempted` → `ok` \| `error` \| `denied` \| `pending_approval`; for `hitl_decision` rows: `approved` \| `rejected` |
+| `kind` | str, indexed | `execution` \| `hitl_proposal` \| `hitl_decision` |
+| `status` | str, indexed | `execution`: `attempted` → `ok` \| `error` \| `denied` \| `interrupted`; `hitl_proposal`: `proposed`; `hitl_decision`: `approved` \| `rejected` |
 | `deny_reason` | str, nullable | `capability` \| `cost_preview` \| `tool_scope` \| `fanout_readonly` |
 | `tool_name` | str, indexed | |
 | `tool_class` | str, indexed | `domain_write` \| `async_dispatch` \| `fs_write` \| `artifact_write` |
-| `tool_call_id` | str, indexed | correlation key across HITL propose → decide → execute |
+| `tool_call_id` | str, indexed | model-assigned call id; correlation is always **scoped** `(thread_id, tool_call_id)` — never global |
+| `audit_ref` | str (UUID), nullable, indexed | server-generated at HITL projection time, carried in `source_meta.audit` through resume; links proposal → decision → execution rows exactly |
 | `mode` | str | `interactive` \| `auto` \| `yolo` (resolved execution mode) |
 | `envelope` | str, nullable | envelope at call time |
 | `actor` | str | turn actor (e.g. `desk_user`, gateway binding user); `hitl_decision` rows use the human decider |
@@ -104,8 +105,15 @@ Indexes: `(occurred_at)`, `(tool_name, occurred_at)`, `(thread_id, occurred_at)`
 (idempotent `_has_table` guard, migration-local table, `down_revision =
 "0041_morning_breach_assemble_prompt"`).
 
-Append-only by policy: no update/delete endpoints; only the capture path mutates rows
-(phase-2 outcome update).
+**Append-only correlation, not cross-row mutation.** Rows are immutable once terminal;
+the *only* in-place update is the phase-1 → phase-2 outcome transition on an
+`execution` row, performed by the same middleware frame that inserted it, addressed by
+its in-memory primary key (never a lookup). HITL chains are represented as *separate*
+rows (`hitl_proposal` → `hitl_decision` → `execution`) grouped by `audit_ref` (or by
+scoped `(thread_id, tool_call_id)` when `audit_ref` is absent). A checkpointer replay
+that re-executes the same tool call therefore appends a new `execution` row rather
+than corrupting an old one — duplicates are visible and honest, which is the
+audit-grade behavior. No update/delete API endpoints exist.
 
 ## 5. Capture design
 
@@ -124,42 +132,57 @@ reason `__capability_group__` exists at all.
 
 1. Classify via §5.1; **non-writes pass through untouched** (zero overhead beyond one
    set lookup).
-2. **Phase 1 — attempt record.** Open a short-lived `SessionLocal` (never the tool's
-   own session), insert `status='attempted'` with args + full context, **commit
-   immediately**. This guarantees an irreversible side effect (a booking) cannot run
-   without a durable record already existing, even if the process dies mid-tool.
+2. **Phase 1 — attempt record (fail-closed).** Open a short-lived `SessionLocal`
+   (never the tool's own session), insert `status='attempted'` with args + full
+   context, **commit immediately**. If the insert/commit fails, the dangerous action
+   is **refused**: the middleware returns an error `ToolMessage`
+   ("audit trail unavailable; write action blocked") without calling the handler.
+   The agent turn survives (reads still work, the model sees the refusal and can
+   report it), but no classified write may ever execute unaudited — that guarantee is
+   the point of the module and is not softened by an availability trade-off.
 3. Call `handler(request)`.
-4. **Phase 2 — outcome update** (lookup by row id from phase 1):
+4. **Phase 2 — outcome update.** Addressed by the primary key returned from phase 1
+   (held in the local frame — never a lookup):
    - normal return → `ok`; a returned `ToolMessage.status == "error"` → `error`,
      except when the content matches the fan-out deny template, which is recorded as
      `denied` + `deny_reason='fanout_readonly'`; store `result_preview`,
      `completed_at`;
    - `CapabilityDeniedError` / `CostPreviewRequiredError` / `ToolScopeDeniedError` →
      `denied` + `deny_reason`, **re-raise** (escalation must keep working);
-   - `GraphBubbleUp` (HITL interrupt in flight) → `pending_approval`, re-raise. On
-     approve-resume the tool re-enters this middleware; the phase-1 step first looks
-     up an existing `pending_approval` row with the same `tool_call_id` and **updates
-     it back to `attempted`** instead of inserting a duplicate (upsert keyed on
-     `tool_call_id`). *Exact interrupt ordering relative to `wrap_tool_call` must be
-     verified during implementation; the tool_call_id upsert makes both orderings
-     produce one final row.*
+   - `GraphBubbleUp` (interrupt in flight mid-call) → `interrupted`, re-raise. This
+     is **belt-and-braces only**: HITL proposals are durably captured at projection
+     time (§5.4), so nothing depends on whether LangGraph raises the interrupt before
+     or after `wrap_tool_call`. If an approve-resume re-executes the tool, the
+     middleware simply appends a fresh `execution` row — correlated to the proposal
+     by `audit_ref` / scoped `tool_call_id`, never by mutating prior rows;
    - any other exception → `error` + `error` text, re-raise (the outer
      `ToolErrorBoundaryMiddleware` still converts it to an error ToolMessage — audit
      sees the raw exception before conversion).
+   A phase-2 failure leaves the row at `attempted` and logs `ERROR`: the durable
+   record exists, only the outcome is unknown — degraded but never silent.
 
-**Failure policy *(default — overridable)*:** best-effort with loud `ERROR` logging —
-an audit-write failure must not take down an agent turn (SQLite transient lock, etc.).
-The fail-closed alternative (refuse the tool call if unauditable) is a deliberate
-one-line change point, isolated in one `try/except`.
+**Failure policy:** **fail-closed on phase 1** (above), log-and-continue on phase 2.
+SQLite transient-lock pressure is bounded: write tools are rare (a few per turn) and
+the audit transactions are single-row and short.
 
-**Registration:**
+### 5.2a Registration — mandatory integration points
+
+Every factory/runner that can execute agent tool calls MUST carry the middleware; this
+is a requirement, not a follow-up:
+
 - `orchestrator.py::_agent_middleware` — insert at index 1 (just inside the error
   boundary).
 - `personas.py::all_personas` — insert at index 1 per spec (error boundary stays 0,
   `FanoutReadOnlyMiddleware` shifts to 2).
-- Verify during implementation whether `async_agents/runner.py` assembles a separate
-  middleware stack; if so, insert there too. (It reuses `graph_run_config`, so context
-  enrichment in §5.3 covers it either way.)
+- `async_agents/runner.py` (and its resume path) — background async agents can run
+  write tools and bubble up HITL; whatever middleware stack they assemble gets the
+  audit middleware at the same position. Covered by a required integration test (§8).
+- The desk-workflow executor path, if its stack differs from the orchestrator's.
+
+Implementation includes a coverage assertion test: enumerate the middleware stacks
+built by each factory and assert `AuditTrailMiddleware` is present in all of them, so
+a future factory that forgets the middleware fails CI rather than silently
+under-auditing.
 
 No feature flag: audit capture is **always on** (unlike memory/tracing). That is the
 point of the module.
@@ -184,15 +207,27 @@ configurable["__audit_context__"] = {
 All fields nullable; the middleware stamps whatever is present. This mirrors (and can
 share plumbing with) the existing `trace_meta` threading.
 
-### 5.4 HITL decision rows
+### 5.4 HITL proposal + decision rows (projection-time capture)
 
-In `AgentService.resume_pending_action` — at the three resume paths where
-`record_audit("agent.action.confirmed"/"dismissed")` already fires — also insert an
-`AgentActionAudit` row with `kind='hitl_decision'`, `status='approved'|'rejected'`,
-`actor` = the human decider, and `tool_call_id` taken from the action's
-`source_meta.audit`. Rejected proposals therefore appear in the audit trail even
-though the tool never executed; approved ones correlate with their subsequent
-`execution` row by `tool_call_id`.
+HITL proposals are captured where they become durable today — the projection path
+(`pending_actions_from_interrupts` → persistence into `AgentMessage.meta`, both
+finalize paths) — **not** in the middleware, whose view of interrupts depends on
+unverified ordering:
+
+- **Proposal.** When a pending action for a classified write tool is projected and
+  persisted, mint a server-generated `audit_ref` (UUID), store it in the action's
+  `source_meta.audit`, and insert an `AgentActionAudit` row `kind='hitl_proposal'`,
+  `status='proposed'`, with the tool name/args and full turn context. Abandoned
+  proposals (never approved or rejected) therefore remain visible in the trail.
+- **Decision.** In `AgentService.resume_pending_action` — at the three resume paths
+  where `record_audit("agent.action.confirmed"/"dismissed")` already fires — insert
+  `kind='hitl_decision'`, `status='approved'|'rejected'`, `actor` = the human decider,
+  carrying the `audit_ref` read back from `source_meta.audit`.
+- **Execution.** The approved tool run is captured by the middleware as a normal
+  `execution` row (§5.2); it inherits `audit_ref` when the resume path threads it into
+  `__audit_context__`, and falls back to scoped `(thread_id, tool_call_id)` grouping
+  otherwise (some async approval projections lack `source_meta` today — the UI groups
+  on the scoped key precisely so those still correlate).
 
 The existing `audit_events` writes stay untouched (non-goal to migrate them).
 
@@ -227,14 +262,15 @@ Layout: `PageScaffold` with header chips from `/summary` (e.g. `writes 24h`, `de
 tool-class / mode; shared `Table` beneath.
 
 Columns: time, tool (+ persona), class badge, status badge (`ok` normal, `denied` +
-`error` in danger tone, `pending_approval` warning, `rejected` muted — token colors
-only), mode badge (YOLO visually distinct), actor, thread link, args summary
+`error` in danger tone, `proposed`/`interrupted` warning, `rejected` muted — token
+colors only), mode badge (YOLO visually distinct), actor, thread link, args summary
 (first-line truncation). **Table alignment gotcha:** fixed widths for time/badges,
 `minmax(0, fr)` for tool/args — the shared `Table` renders each row as an independent
 grid (the Memory-page lesson).
 
 Row click → detail `Modal`: full args JSON (pre block), result preview, error, all
-identifiers, HITL-decision sibling rows for the same `tool_call_id`, and a deep link
+identifiers, the correlated HITL proposal/decision/execution chain (grouped by
+`audit_ref`, falling back to scoped `(thread_id, tool_call_id)`), and a deep link
 to the thread in `/tracing` for the full transcript.
 
 Pagination: `limit/offset` "load more"; no live polling in v1 (manual refresh button)
@@ -246,8 +282,18 @@ Pagination: `limit/offset` "load more"; no live polling in v1 (manual refresh bu
   `run_python` arg-awareness, PAGE_ACTION excluded for audit but retained for fan-out.
 - **Middleware tests**: fake handler; phase-1 row exists before handler runs
   (assert via side-effect ordering); outcome transitions for ok / error ToolMessage /
-  raised exception / each denial type; `tool_call_id` upsert (no duplicate rows across
-  interrupt → resume); audit-write failure does not break the tool call.
+  raised exception / each denial type; **fail-closed**: a phase-1 insert failure
+  blocks the handler (write never executes) and returns an error ToolMessage while
+  leaving the turn alive; phase-2 failure leaves `attempted` + logs, does not raise.
+- **HITL chain tests**: proposal row inserted at projection with `audit_ref` in
+  `source_meta.audit`; decision row on confirm/dismiss carries the same `audit_ref`;
+  approve → execution row correlates; abandoned proposal stays `proposed`.
+- **Registration coverage assertion**: every middleware-stack factory (orchestrator,
+  personas, async runner/resume, workflow executor) contains `AuditTrailMiddleware`
+  — a new factory missing it fails CI.
+- **Async integration test**: a background async-agent task attempts a classified
+  write and produces attempt/outcome (and, on the HITL path,
+  proposal/decision/execution) rows sharing one correlation key.
   *Conftest trap:* `_bypass_capability_gate` masks the gate outside `_GATE_TEST_FILES`
   — tests that need real `CapabilityDeniedError` must be registered there or construct
   the gate directly.
@@ -276,5 +322,6 @@ Pagination: `limit/offset` "load more"; no live polling in v1 (manual refresh bu
 2. **Denials and rejections are recorded**, not just executions (capability/scope/cost-preview denials, fan-out blocks, HITL rejections).
 3. **New typed table** rather than extending generic `audit_events`.
 4. **Two-phase write** (attempt-then-outcome) so irreversible actions can never execute without a durable record.
-5. **Best-effort failure policy** with ERROR logging (fail-closed noted as the one-line alternative).
+5. **Fail-closed on phase 1** — a classified write is refused if its attempt record cannot be committed; phase-2 outcome failures degrade to `attempted` + ERROR log. *(Revised from best-effort after adversarial review.)*
 6. **Always-on** — no env flag to disable capture.
+7. **Append-only correlation** — HITL chains are separate rows linked by a server-generated `audit_ref` (+ scoped `(thread_id, tool_call_id)` fallback); no cross-row upserts. Proposals are captured at projection time, not in the middleware. Async runner/workflow executor stacks are mandatory integration points with a CI coverage assertion. *(All three revised after adversarial review.)*
