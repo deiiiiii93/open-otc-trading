@@ -15,7 +15,7 @@ Never call more than one persisted (HITL-gated) tool in a single assistant
 turn. The persisted tools are: `run_batch_pricing`, `create_report`,
 `create_or_update_rfq_draft`, `quote_rfq`, `submit_rfq_for_approval`,
 `approve_rfq`, `reject_rfq`, `release_rfq`, `mark_rfq_client_accepted`,
-`book_rfq_to_position`, `import_otc_positions`,
+`book_rfq_to_position`, `register_underlying`, `import_otc_positions`,
 and `run_python` only when
 `writes_artifacts=true`. Each requires user confirmation unless YOLO mode has
 auto-approved ordinary writes. If multiple persisted operations are needed, do

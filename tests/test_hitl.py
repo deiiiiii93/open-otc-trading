@@ -22,6 +22,7 @@ def test_interrupt_tool_names_covers_all_state_mutating_tools():
         "book_rfq_to_position",
         "book_position",
         "book_hedge",
+        "register_underlying",
         "set_hedge_bands",
         "import_otc_positions",
         "close_position",
@@ -114,6 +115,7 @@ def test_yolo_mode_uses_langchain_auto_approval_for_write_tools():
         "release_rfq",
         "book_rfq_to_position",
         "book_hedge",
+        "register_underlying",
         "cancel_lifecycle_event",
         "delete_portfolio",
         "remove_positions_from_portfolio",
@@ -394,3 +396,35 @@ def test_summary_compacts_nested_dict_args_generically():
     )
     assert "{" not in summary and "}" not in summary
     assert "n=3" in summary
+
+
+def test_register_underlying_is_irreversible_risk_not_write():
+    from app.services.deep_agent.hitl import _RISK_LEVEL_BY_TOOL
+
+    # "write" risk bypasses confirmation under BOTH auto and yolo mode
+    # (interrupt_on_config's yolo_mode flag) -- that would let auto mode
+    # silently persist an unvetted underlying, contradicting the requirement
+    # that only yolo auto-adds. "irreversible" stays gated under auto.
+    assert _RISK_LEVEL_BY_TOOL["register_underlying"] == "irreversible"
+
+
+def test_summarize_register_underlying_distinguishes_create_vs_tag(session):
+    """Uses the shared `session` fixture from tests/conftest.py:63, which
+    already calls database.configure_database()+init_db() against a temp
+    SQLite file — _summarize_register_underlying's own internal
+    database.SessionLocal() call transparently hits that same temp DB, no
+    monkeypatching needed (this file otherwise has no DB fixtures, unlike
+    test_tools_positions.py's autouse `_db`, so `session` must be requested
+    as an explicit test parameter here to trigger that configuration)."""
+    from app.models import Instrument
+    from app.services.deep_agent import hitl
+
+    new_summary = hitl._summarize_register_underlying({"symbol": "BRANDNEW.SH"})
+    assert "NEW" in new_summary
+    assert "BRANDNEW.SH" in new_summary
+
+    session.add(Instrument(symbol="UNTAGGED.SH", kind="index", status="draft", tags=[]))
+    session.commit()
+    tag_summary = hitl._summarize_register_underlying({"symbol": "UNTAGGED.SH"})
+    assert "UNTAGGED.SH" in tag_summary
+    assert "underlying" in tag_summary.lower()

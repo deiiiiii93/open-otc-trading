@@ -108,6 +108,7 @@ from .hedging import (
     propose_hedge_tool,
     set_hedge_bands_tool,
 )
+from .underlyings import register_underlying_tool
 from .risk import (
     calculate_risk_tool,
     convert_currency_tool,
@@ -203,6 +204,7 @@ QUANT_AGENT_TOOLS = [
     # hedging writes (persisted / HITL-gated):
     book_hedge_tool,
     set_hedge_bands_tool,
+    register_underlying_tool,
     create_report_tool,
     # Pricing parameter writes (persisted / HITL-gated):
     create_pricing_parameter_profile_tool,
