@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from .. import database
 from ..models import HedgeMapEntry, Instrument, Position, TaskKind, TaskRun, TaskStatus, Underlying
 from .hedging_universe import ENUMERATORS, EnumeratedContract, FamilySpec, resolve_families
+from .instruments import sync_hedge_tag
 from .quotes import record_quote
 from .task_runner import (
     ACTIVE_TASK_STATUSES,
@@ -242,12 +243,32 @@ def reconcile_map(session: Session) -> None:
             Instrument.exchange, Instrument.contract_code
         ).filter(Instrument.status == "active")
     }
+    # Every instrument reachable by (exchange, contract_code) — not just
+    # active ones — so a legacy entry flipping stale still resolves to the
+    # instrument whose tag needs to come back off.
+    key_to_instrument_ids: dict[tuple[str, str], list[int]] = {}
+    for iid, exch, code in session.query(Instrument.id, Instrument.exchange, Instrument.contract_code):
+        if exch and code:
+            key_to_instrument_ids.setdefault((exch, code), []).append(iid)
+
+    touched_instrument_ids: set[int] = set()
     for entry in session.query(HedgeMapEntry).all():
         if entry.instrument_id is not None:
             is_active = entry.instrument_id in active_ids
+            touched_instrument_ids.add(entry.instrument_id)
         else:
             is_active = (entry.exchange, entry.contract_code) in active_keys
+            # Legacy row (never backfilled with a durable instrument_id) —
+            # sync_hedge_tag treats this match as real ground truth too
+            # (Task 1), so its instrument(s) must be resynced here just like
+            # the direct-link case above.
+            touched_instrument_ids.update(
+                key_to_instrument_ids.get((entry.exchange, entry.contract_code), [])
+            )
         entry.reconcile_status = "active" if is_active else "stale"
+    session.flush()
+    for instrument_id in touched_instrument_ids:
+        sync_hedge_tag(session, instrument_id)
 
 
 class HedgeLoadInProgress(Exception):
