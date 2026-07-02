@@ -87,21 +87,6 @@
 }
 .wl-portfolios__newmenu-list button:hover { background: var(--paper-2); }
 
-.wl-pageheader:has(.wl-portfolios__actions) {
-  align-items: stretch;
-  border-bottom: 1px solid var(--hairline);
-  padding-bottom: var(--gap-3);
-  margin-bottom: var(--gap-3);
-}
-.wl-pageheader:has(.wl-portfolios__actions) .wl-pageheader__main {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-2);
-}
-.wl-pageheader:has(.wl-portfolios__actions) .wl-pageheader__action {
-  align-items: flex-start;
-}
-
 .wl-portfolios__twopane {
   display: grid;
   grid-template-columns: minmax(360px, 0.92fr) minmax(460px, 1.08fr);
@@ -204,9 +189,6 @@
   .wl-portfolios__twopane { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
-  .wl-pageheader:has(.wl-portfolios__actions) {
-    flex-direction: column;
-  }
   .wl-portfolios__actions { justify-content: stretch; }
   .wl-portfolios__actions .wl-button,
   .wl-portfolios__newmenu,
