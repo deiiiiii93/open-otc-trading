@@ -72,13 +72,16 @@ def build_audit_router() -> APIRouter:
             for column, value in (
                 (AgentActionAudit.status, status),
                 (AgentActionAudit.kind, kind),
-                (AgentActionAudit.tool_name, tool_name),
                 (AgentActionAudit.tool_class, tool_class),
                 (AgentActionAudit.mode, mode),
                 (AgentActionAudit.thread_id, thread_id),
             ):
                 if value is not None:
                     q = q.filter(column == value)
+            if tool_name is not None:
+                # Substring match: the UI exposes this as a search box, and the
+                # list is server-paginated so the filter must be server-side.
+                q = q.filter(AgentActionAudit.tool_name.ilike(f"%{tool_name}%"))
             if since is not None:
                 q = q.filter(AgentActionAudit.occurred_at >= since)
             if until is not None:

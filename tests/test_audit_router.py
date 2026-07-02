@@ -49,6 +49,10 @@ def test_list_filters_and_pagination(audit_client, session):
         audit_client.get("/api/audit/actions?tool_name=book_position").json()["total"]
         == 2
     )
+    # tool_name is a SEARCH filter (substring, case-insensitive) — the UI
+    # exposes it as a search box (code-review finding).
+    assert audit_client.get("/api/audit/actions?tool_name=book").json()["total"] == 2
+    assert audit_client.get("/api/audit/actions?tool_name=POSITION").json()["total"] == 3
     assert len(audit_client.get("/api/audit/actions?limit=2").json()["items"]) == 2
     assert audit_client.get("/api/audit/actions?limit=500").status_code == 422  # cap
 
