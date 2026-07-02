@@ -67,11 +67,6 @@ export type Instrument = {
   updated_at: string;
 };
 
-export type InstrumentRoles = {
-  underlying?: boolean;
-  hedge?: boolean;
-};
-
 export type Tab = 'registry' | 'allowed-hedges' | 'market-data' | 'assumptions';
 
 type Feedback = {
@@ -101,8 +96,6 @@ type Props = {
   onCreateInstrument: (fields: InstrumentCreateFormData) => Promise<void>;
   activeTab: Tab;
   onTabChange: (tab: Tab) => void;
-  /** Map from instrument_id to role flags. */
-  rolesByInstrumentId: Record<number, InstrumentRoles>;
   // Allowed Hedges tab props
   hedgeGroups: HedgeMapGroup[];
   selectedHedgeUnderlyingId: number | null;
@@ -282,16 +275,6 @@ function AkshareCell({ row }: { row: Instrument }) {
   );
 }
 
-function RolesBadges({ roles }: { roles: InstrumentRoles | undefined }) {
-  if (!roles) return null;
-  return (
-    <span className="wl-instruments__roles">
-      {roles.underlying && <span className="wl-instruments__role-badge is-underlying">underlying</span>}
-      {roles.hedge && <span className="wl-instruments__role-badge is-hedge">hedge</span>}
-    </span>
-  );
-}
-
 const REGISTRY_KIND_OPTIONS = ['futures', 'index', 'etf', 'stock', 'listed_option', 'sge_spot'];
 
 // ---------------------------------------------------------------------------
@@ -304,8 +287,7 @@ function RegistryTab({
   loading,
   onSaveInstrument,
   onSetInstrumentTags,
-  rolesByInstrumentId,
-}: Pick<Props, 'rows' | 'loading' | 'onSaveInstrument' | 'onSetInstrumentTags' | 'rolesByInstrumentId'> & {
+}: Pick<Props, 'rows' | 'loading' | 'onSaveInstrument' | 'onSetInstrumentTags'> & {
   pagedRows: Instrument[];
 }) {
   const [editing, setEditing] = useState<number | null>(null);
@@ -355,7 +337,6 @@ function RegistryTab({
                 <th>KIND</th>
                 <th>PARENT</th>
                 <th>STATUS</th>
-                <th>ROLES</th>
                 <th>TAGS</th>
                 <th>TERMS</th>
                 <th>AKSHARE</th>
@@ -447,16 +428,21 @@ function RegistryTab({
                       )}
                     </td>
 
-                    {/* ROLES */}
-                    <td>
-                      <RolesBadges roles={rolesByInstrumentId[row.id]} />
-                    </td>
-
                     {/* TAGS */}
                     <td>
+                      {row.tags.includes('hedge') && (
+                        <span
+                          className="wl-tageditor__chip wl-tageditor__chip--readonly"
+                          title="Auto-managed from Allowed Hedges"
+                        >
+                          hedge
+                        </span>
+                      )}
                       <TagEditor
-                        tags={row.tags}
-                        onChange={(next) => { void onSetInstrumentTags(row.id, next); }}
+                        tags={row.tags.filter((t) => t !== 'hedge')}
+                        onChange={(next) => {
+                          void onSetInstrumentTags(row.id, row.tags.includes('hedge') ? [...next, 'hedge'] : next);
+                        }}
                       />
                     </td>
 
@@ -622,7 +608,6 @@ export function Instruments({
   onCreateInstrument,
   activeTab,
   onTabChange,
-  rolesByInstrumentId,
   hedgeGroups,
   selectedHedgeUnderlyingId,
   onSelectHedgeUnderlying,
@@ -1075,7 +1060,6 @@ export function Instruments({
           loading={loading}
           onSaveInstrument={onSaveInstrument}
           onSetInstrumentTags={onSetInstrumentTags}
-          rolesByInstrumentId={rolesByInstrumentId}
         />
       ) : activeTab === 'allowed-hedges' ? (
         <InstrumentsAllowedHedges

@@ -62,7 +62,6 @@ const defaultProps = {
   onCreateInstrument: vi.fn(async () => {}),
   activeTab: 'registry' as const,
   onTabChange: vi.fn(),
-  rolesByInstrumentId: {},
   hedgeGroups: [],
   selectedHedgeUnderlyingId: null,
   onSelectHedgeUnderlying: vi.fn(),
@@ -277,16 +276,34 @@ describe('Instruments', () => {
     });
   });
 
-  it('renders ROLES badges from rolesByInstrumentId', () => {
-    const roles = { 1: { underlying: true, hedge: false } };
-    render(<Instruments {...defaultProps} rolesByInstrumentId={roles} />);
-    expect(screen.getByText('underlying')).toBeInTheDocument();
+  it('does not render a ROLES column', () => {
+    render(<Instruments {...defaultProps} rows={[instrument({ tags: ['underlying', 'hedge'] })]} />);
+    expect(screen.queryByText('ROLES')).not.toBeInTheDocument();
   });
 
-  it('renders hedge badge when rolesByInstrumentId marks hedge=true', () => {
-    const roles = { 1: { underlying: false, hedge: true } };
-    render(<Instruments {...defaultProps} rolesByInstrumentId={roles} />);
-    expect(screen.getByText('hedge')).toBeInTheDocument();
+  it('renders hedge as a non-removable chip in the TAGS cell', () => {
+    render(<Instruments {...defaultProps} rows={[instrument({ tags: ['underlying', 'hedge'] })]} />);
+    // The readonly hedge chip has no remove button inside it.
+    const hedgeChip = screen.getByText('hedge');
+    expect(hedgeChip.querySelector('button')).toBeNull();
+    // "underlying" is still editable via TagEditor's chip-with-remove-button.
+    const underlyingChip = screen.getByText('underlying');
+    expect(underlyingChip.querySelector('button')).not.toBeNull();
+  });
+
+  it('preserves the hedge tag when removing another tag', async () => {
+    const onSetInstrumentTags = vi.fn().mockResolvedValue(undefined);
+    render(
+      <Instruments
+        {...defaultProps}
+        rows={[instrument({ id: 1, tags: ['underlying', 'hedge'] })]}
+        onSetInstrumentTags={onSetInstrumentTags}
+      />,
+    );
+    const user = userEvent.setup();
+    const underlyingChip = screen.getByText('underlying');
+    await user.click(underlyingChip.querySelector('button')!);
+    expect(onSetInstrumentTags).toHaveBeenCalledWith(1, ['hedge']);
   });
 
   it('renders a TAGS column with an editable tag list per row', async () => {
