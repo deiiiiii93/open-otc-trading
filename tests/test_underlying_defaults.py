@@ -108,6 +108,23 @@ def test_underlying_pricing_default_persists_and_round_trips(session: Session) -
     assert isinstance(fetched.updated_at, datetime)
 
 
+def test_delete_underlying_default_syncs_hedge_tag_for_stock(session: Session) -> None:
+    from app.services.underlying_defaults import delete_underlying_default
+
+    stock = UnderlyingPricingDefault(
+        underlying="600519.SH", kind="stock", status="active", tags=["hedge"],
+    )
+    session.add(stock)
+    session.commit()
+
+    delete_underlying_default(session, underlying="600519.SH")
+    session.commit()
+
+    session.refresh(stock)
+    assert stock.status == "inactive"
+    assert "hedge" not in stock.tags
+
+
 def test_underlying_unique(session: Session) -> None:
     session.add(UnderlyingPricingDefault(underlying="000300.SH"))
     session.commit()

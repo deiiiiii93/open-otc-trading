@@ -11,6 +11,7 @@ from app.models import Instrument
 from app.services.audit import record_audit
 from app.services.deep_agent.capability_gate import capability_gated
 from app.services.deep_agent.envelopes import ToolGroup
+from app.services.instruments import sync_hedge_tag
 from app.services.underlyings import ensure_underlying, normalize_underlying_symbol
 
 
@@ -46,6 +47,7 @@ def register_underlying_tool(symbol: str) -> dict[str, Any]:
             instrument.tags = tags
             if action == "already_registered":
                 action = "tagged_existing"
+        sync_hedge_tag(session, instrument.id)
         session.flush()
         # This tool is risk_level="irreversible" and can auto-run headlessly
         # under yolo mode with no human in the loop — a durable, searchable
