@@ -239,8 +239,21 @@ async def _run_async(task_id: int) -> None:
                 accounting_date=accounting_date
                 or datetime.utcnow().date().isoformat(),
             )
+            from ..audit_trail import AUDIT_CONTEXT_KEY
+
             config = graph_run_config(
-                settings, thread_id=f"async:{parent_thread_id}:{task_id}"
+                settings,
+                thread_id=f"async:{parent_thread_id}:{task_id}",
+                # Audit spec §5.2a/§5.3: background async agents run write
+                # tools too; stamp turn identity for AuditTrailMiddleware.
+                configurable_extra={
+                    AUDIT_CONTEXT_KEY: {
+                        "actor": "async_agent",
+                        "mode": "auto",
+                        "thread_id": parent_thread_id,
+                        "task_id": task_id,
+                    }
+                },
             )
             with register_async_task_control(task_id, control):
                 try:

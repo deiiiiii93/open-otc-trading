@@ -480,6 +480,62 @@ class DomainEvent(Base):
     )
 
 
+class AgentActionAudit(Base):
+    """Append-only dangerous-action audit trail (audit spec §4).
+
+    kind: execution | hitl_proposal | hitl_decision.
+    The only permitted mutation is the phase-1 -> phase-2 outcome update on an
+    execution row, addressed by in-memory PK; everything else is append-only.
+    """
+
+    __tablename__ = "agent_action_audits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), index=True, default="execution")
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    deny_reason: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    tool_name: Mapped[str] = mapped_column(String(120), index=True)
+    tool_class: Mapped[str] = mapped_column(String(30), index=True)
+    tool_call_id: Mapped[str | None] = mapped_column(
+        String(120), nullable=True, index=True
+    )
+    audit_ref: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True
+    )
+    mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    envelope: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    actor: Mapped[str] = mapped_column(String(80), default="agent")
+    model: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    persona: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    thread_id: Mapped[int | None] = mapped_column(
+        ForeignKey("agent_threads.id"), nullable=True, index=True
+    )
+    workflow_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workflows.id"), nullable=True
+    )
+    session_id: Mapped[int | None] = mapped_column(
+        ForeignKey("agent_sessions.id"), nullable=True
+    )
+    task_id: Mapped[int | None] = mapped_column(
+        ForeignKey("agent_tasks.id"), nullable=True
+    )
+    message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    desk_workflow_slug: Mapped[str | None] = mapped_column(
+        String(120), nullable=True
+    )
+    args_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    redacted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    result_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_agent_action_audits_tool_occurred", "tool_name", "occurred_at"),
+        Index("ix_agent_action_audits_thread_occurred", "thread_id", "occurred_at"),
+    )
+
+
 class Portfolio(Base):
     __tablename__ = "portfolios"
 

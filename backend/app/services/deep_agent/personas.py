@@ -180,6 +180,7 @@ def all_personas(
     if skills_backend is None:
         return specs
 
+    from .audit_trail_middleware import AuditTrailMiddleware
     from .cost_preview_hitl import LongRunningCostHITLMiddleware
     from .fanout_readonly import FanoutReadOnlyMiddleware
     from .tool_error_boundary import ToolErrorBoundaryMiddleware
@@ -196,10 +197,13 @@ def all_personas(
         # ToolMessages here so a domain ValueError reaches the LLM instead of
         # crashing the subagent — and thus the whole orchestrator resume.
         middleware.insert(0, ToolErrorBoundaryMiddleware())
-        # Just inside the error boundary: block writes when this persona runs as a
+        # Just inside the boundary: always-on dangerous-action audit (audit spec
+        # §5.2a) — must see every persona tool call in every mode.
+        middleware.insert(1, AuditTrailMiddleware(tools=tools))
+        # Just inside the audit trail: block writes when this persona runs as a
         # fanned-out subagent of an authorized Case-3 dynamic-subagents run. Pass the
         # tool set so writes are classified by capability group (allow reads).
-        middleware.insert(1, FanoutReadOnlyMiddleware(tools=tools))
+        middleware.insert(2, FanoutReadOnlyMiddleware(tools=tools))
         if yolo_mode:
             middleware.append(LongRunningCostHITLMiddleware(tools=tools))
         middleware.append(EnvelopeSkillsMiddleware(backend=skills_backend, sources=sources))

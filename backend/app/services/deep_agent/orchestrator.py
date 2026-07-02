@@ -134,6 +134,7 @@ def _agent_middleware(
     yolo_mode: bool = False,
     goal_grader: Any = None,
 ) -> list[Any]:
+    from .audit_trail_middleware import AuditTrailMiddleware
     from .compaction import LedgerScopedCompactionMiddleware
     from .cost_preview_hitl import LongRunningCostHITLMiddleware
     from .run_python_hitl import RunPythonArtifactHITLMiddleware
@@ -142,7 +143,11 @@ def _agent_middleware(
     # Outermost (first = outermost): convert any tool-body exception into an error
     # ToolMessage so the agent recovers instead of crashing the run. Interrupts
     # (GraphBubbleUp) still propagate. See tool_error_boundary for the rationale.
-    middleware: list[Any] = [ToolErrorBoundaryMiddleware()]
+    # Just inside the boundary: always-on dangerous-action audit (audit spec §5.2a).
+    middleware: list[Any] = [
+        ToolErrorBoundaryMiddleware(),
+        AuditTrailMiddleware(tools=tools),
+    ]
     if yolo_mode:
         middleware.append(LongRunningCostHITLMiddleware(tools=tools))
     middleware.extend(

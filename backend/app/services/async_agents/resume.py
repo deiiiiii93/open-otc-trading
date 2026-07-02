@@ -28,6 +28,7 @@ def resume_async_agent_interrupt(
     task_id: int,
     decision: str,
     message: str | None,
+    audit_ref: str | None = None,
 ) -> None:
     """Submit `_resume_run` to the thread pool with the resume decision."""
     from ... import database
@@ -48,7 +49,7 @@ def resume_async_agent_interrupt(
             raise TaskNotResumableError(
                 task_id, task.status, bool(task.cancel_requested)
             )
-    _submit(_resume_run, task_id, decision, message)
+    _submit(_resume_run, task_id, decision, message, audit_ref)
 
 
 def _build_agent_for_resume(
@@ -62,15 +63,23 @@ def _build_agent_for_resume(
     )
 
 
-def _resume_run(task_id: int, decision: str, message: str | None) -> None:
+def _resume_run(
+    task_id: int,
+    decision: str,
+    message: str | None,
+    audit_ref: str | None = None,
+) -> None:
     """Worker entry: re-build the async agent and ainvoke with the resume command."""
     import asyncio
 
-    asyncio.run(_resume_run_async(task_id, decision, message))
+    asyncio.run(_resume_run_async(task_id, decision, message, audit_ref))
 
 
 async def _resume_run_async(
-    task_id: int, decision: str, message: str | None
+    task_id: int,
+    decision: str,
+    message: str | None,
+    audit_ref: str | None = None,
 ) -> None:
     from langgraph.errors import GraphDrained
 
@@ -138,9 +147,22 @@ async def _resume_run_async(
                 checkpointer=checkpointer,
                 task_id=task_id,
             )
+            from ..audit_trail import AUDIT_CONTEXT_KEY
+
             config = graph_run_config(
                 settings,
                 thread_id=f"async:{parent_thread_id}:{task_id}",
+                # Audit spec §5.4: the approved execution row carries the
+                # proposal's audit_ref so the async chain correlates.
+                configurable_extra={
+                    AUDIT_CONTEXT_KEY: {
+                        "actor": "async_agent",
+                        "mode": "auto",
+                        "thread_id": parent_thread_id,
+                        "task_id": task_id,
+                        "audit_ref": audit_ref,
+                    }
+                },
                 trace_meta={"thread_id": parent_thread_id, "task_id": task_id},
             )
             with register_async_task_control(task_id, control):
