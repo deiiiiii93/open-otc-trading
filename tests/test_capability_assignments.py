@@ -25,7 +25,8 @@ def test_quant_agent_tools_count_unchanged():
     # +1 dynamic-subagents reconciler (assemble_breach_report).
     # +1 underlying-tag registration tool (register_underlying).
     # +1 product-semantics reader (get_product_reference_doc).
-    assert len(QUANT_AGENT_TOOLS) == 96
+    # +1 contract-grounded completeness checker (check_term_completeness).
+    assert len(QUANT_AGENT_TOOLS) == 97
 
 
 def test_every_tool_has_capability_group():

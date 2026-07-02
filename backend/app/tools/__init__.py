@@ -134,11 +134,13 @@ from .greeks_landscape import (
     run_greeks_landscape_tool,
 )
 from .product_reference import get_product_reference_doc
+from .term_completeness import check_term_completeness
 
 
 QUANT_AGENT_TOOLS = [
     price_product_tool,
     get_product_reference_doc,
+    check_term_completeness,
     solve_rfq_tool,
     get_rfq_catalog_tool,
     build_product_tool,
