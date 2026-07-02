@@ -79,7 +79,7 @@ export function TrySolveLive({ onPageContextChange, navigate = (url) => window.l
       api<TrySolveCatalog>(`${TRY_SOLVE_API}/catalog`),
       api<PricingParameterProfile[]>('/api/pricing-parameter-profiles'),
       api<MarketDataProfile[]>('/api/market-data/profiles'),
-      api<Instrument[]>('/api/instruments'),
+      api<Instrument[]>('/api/instruments?status=active&tag=underlying'),
     ])
       .then(([nextCatalog, nextPricingProfiles, nextMarketDataProfiles, nextUnderlyings]) => {
         if (!cancelled) {

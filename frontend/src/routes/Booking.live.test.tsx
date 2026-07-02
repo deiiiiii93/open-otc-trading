@@ -112,7 +112,7 @@ describe('BookingLive', () => {
       const url = requestUrl(input);
       if (url === '/api/portfolios' && !init?.method) return response([portfolio, viewPortfolio]);
       if (url === '/api/market-data/profiles' && !init?.method) return response([]);
-      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      if (url === '/api/instruments?status=active&tag=underlying' && !init?.method) return response([activeUnderlying]);
       if (url === '/api/portfolios/1/positions' && init?.method === 'POST') {
         const body = JSON.parse(String(init.body));
         expect(body).toEqual(expect.objectContaining({
@@ -172,7 +172,7 @@ describe('BookingLive', () => {
       const url = requestUrl(input);
       if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
       if (url === '/api/market-data/profiles' && !init?.method) return response([]);
-      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      if (url === '/api/instruments?status=active&tag=underlying' && !init?.method) return response([activeUnderlying]);
       throw new Error(`Unexpected request: ${url}`);
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -194,7 +194,7 @@ describe('BookingLive', () => {
       const url = requestUrl(input);
       if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
       if (url === '/api/market-data/profiles' && !init?.method) return response([]);
-      if (url === '/api/instruments' && !init?.method) return response([inactiveUnderlying, secondActiveUnderlying]);
+      if (url === '/api/instruments?status=active&tag=underlying' && !init?.method) return response([inactiveUnderlying, secondActiveUnderlying]);
       throw new Error(`Unexpected request: ${url}`);
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -213,7 +213,7 @@ describe('BookingLive', () => {
       const url = requestUrl(input);
       if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
       if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile]);
-      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      if (url === '/api/instruments?status=active&tag=underlying' && !init?.method) return response([activeUnderlying]);
       throw new Error(`Unexpected request: ${url}`);
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -229,7 +229,7 @@ describe('BookingLive', () => {
       const url = requestUrl(input);
       if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
       if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile, secondMarketDataProfile]);
-      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying, secondActiveUnderlying]);
+      if (url === '/api/instruments?status=active&tag=underlying' && !init?.method) return response([activeUnderlying, secondActiveUnderlying]);
       if (url === '/api/portfolios/1/positions' && init?.method === 'POST') {
         const body = JSON.parse(String(init.body));
         const barrierConfig = (body.product_kwargs.barrier_config as Record<string, unknown>) || {};
@@ -284,7 +284,7 @@ describe('BookingLive', () => {
       const url = requestUrl(input);
       if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
       if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile]);
-      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      if (url === '/api/instruments?status=active&tag=underlying' && !init?.method) return response([activeUnderlying]);
       if (url === '/api/portfolios/1/positions' && init?.method === 'POST') {
         const body = JSON.parse(String(init.body));
         const couponConfig = (body.product_kwargs.coupon_config as Record<string, unknown>) || {};
@@ -335,7 +335,7 @@ describe('BookingLive', () => {
       const url = requestUrl(input);
       if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
       if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile]);
-      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      if (url === '/api/instruments?status=active&tag=underlying' && !init?.method) return response([activeUnderlying]);
       throw new Error(`Unexpected request: ${url}`);
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -351,7 +351,7 @@ describe('BookingLive', () => {
       const url = requestUrl(input);
       if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
       if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile]);
-      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      if (url === '/api/instruments?status=active&tag=underlying' && !init?.method) return response([activeUnderlying]);
       throw new Error(`Unexpected request: ${url}`);
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -369,7 +369,7 @@ describe('BookingLive', () => {
       const url = requestUrl(input);
       if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
       if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile]);
-      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      if (url === '/api/instruments?status=active&tag=underlying' && !init?.method) return response([activeUnderlying]);
       throw new Error(`Unexpected request: ${url}`);
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -394,7 +394,7 @@ describe('BookingLive', () => {
       const url = requestUrl(input);
       if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
       if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile]);
-      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      if (url === '/api/instruments?status=active&tag=underlying' && !init?.method) return response([activeUnderlying]);
       if (url === '/api/portfolios/1/positions' && init?.method === 'POST') {
         const body = JSON.parse(String(init.body));
         expect(body.product_type).toBe('EuropeanVanillaOption');
@@ -457,7 +457,7 @@ describe('BookingLive', () => {
       const url = requestUrl(input);
       if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
       if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile]);
-      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      if (url === '/api/instruments?status=active&tag=underlying' && !init?.method) return response([activeUnderlying]);
       throw new Error(`Unexpected request: ${url}`);
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -476,7 +476,7 @@ describe('BookingLive', () => {
       const url = requestUrl(input);
       if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
       if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile, secondMarketDataProfile]);
-      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying, secondActiveUnderlying]);
+      if (url === '/api/instruments?status=active&tag=underlying' && !init?.method) return response([activeUnderlying, secondActiveUnderlying]);
       throw new Error(`Unexpected request: ${url}`);
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -495,7 +495,7 @@ describe('BookingLive', () => {
       const url = requestUrl(input);
       if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
       if (url === '/api/market-data/profiles' && !init?.method) return response([]);
-      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      if (url === '/api/instruments?status=active&tag=underlying' && !init?.method) return response([activeUnderlying]);
       if (url === '/api/portfolios/1/positions' && init?.method === 'POST') {
         const body = JSON.parse(String(init.body));
         expect(body.product.product_family).toBe('package');
@@ -523,7 +523,7 @@ describe('BookingLive', () => {
       const url = requestUrl(input);
       if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
       if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile]);
-      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      if (url === '/api/instruments?status=active&tag=underlying' && !init?.method) return response([activeUnderlying]);
       if (url === '/api/underlying-pricing-defaults' && !init?.method) {
         return response([{ underlying: '000300.SH', rate: 0.025, dividend_yield: 0.01, volatility: 0.2 }]);
       }
@@ -548,7 +548,7 @@ describe('BookingLive', () => {
       const url = requestUrl(input);
       if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
       if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile]);
-      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      if (url === '/api/instruments?status=active&tag=underlying' && !init?.method) return response([activeUnderlying]);
       if (url === '/api/underlying-pricing-defaults' && !init?.method) {
         return response([{ underlying: '000300.SH', rate: 0.025, dividend_yield: 0.01, volatility: 0.2 }]);
       }
@@ -580,7 +580,7 @@ describe('BookingLive', () => {
       const url = requestUrl(input);
       if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
       if (url === '/api/market-data/profiles' && !init?.method) return response([marketDataProfile]);
-      if (url === '/api/instruments' && !init?.method) return response([activeUnderlying]);
+      if (url === '/api/instruments?status=active&tag=underlying' && !init?.method) return response([activeUnderlying]);
       if (url === '/api/underlying-pricing-defaults' && !init?.method) {
         return response([{ underlying: '000300.SH', rate: 0.025, dividend_yield: 0.01, volatility: 0.2 }]);
       }

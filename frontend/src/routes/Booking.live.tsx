@@ -157,7 +157,7 @@ export function BookingLive({ onPageContextChange }: Props) {
     Promise.all([
       api<Portfolio[]>('/api/portfolios'),
       api<MarketDataProfile[]>('/api/market-data/profiles'),
-      api<Instrument[]>('/api/instruments'),
+      api<Instrument[]>('/api/instruments?status=active&tag=underlying'),
     ])
       .then(([rows, profiles, underlyingRows]) => {
         if (!alive) return;
@@ -663,9 +663,7 @@ export function BookingLive({ onPageContextChange }: Props) {
 }
 
 function activeUnderlyingSymbols(rows: Instrument[]): string[] {
-  return rows
-    .filter((underlying) => underlying.status === 'active')
-    .map((underlying) => underlying.symbol);
+  return rows.map((underlying) => underlying.symbol);
 }
 
 const PRODUCTS_WITH_INITIAL_PRICE = new Set([

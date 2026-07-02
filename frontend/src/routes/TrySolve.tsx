@@ -927,7 +927,7 @@ function FieldControl({
   onChange: (value: unknown) => void;
 }) {
   if (fieldItem.key === 'underlying') {
-    const activeUnderlyings = underlyings.filter((underlying) => underlying.status === 'active');
+    const activeUnderlyings = underlyings;
     const stringValue = String(value ?? '');
     const hasCurrentValue = activeUnderlyings.some((underlying) => underlying.symbol === stringValue);
     const options: { value: string; label: string; disabled?: boolean }[] = [];
