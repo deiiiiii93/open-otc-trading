@@ -249,3 +249,15 @@ def test_resolver_appends_region_overlay(tmp_path: Path) -> None:
 def test_resolver_unknown_class(tmp_path: Path) -> None:
     with pytest.raises(KeyError):
         resolve_product_reference("NopeOption", root=_inheritance_tree(tmp_path))
+
+
+def test_resolver_region_overlay_reaches_inherited_family(tmp_path: Path) -> None:
+    # PhoenixOption's claiming doc extends base; the CN overlay also extends
+    # base. Region resolution must attach the overlay through the chain, or
+    # inherited families silently lose regional conventions.
+    resolved = resolve_product_reference(
+        "PhoenixOption", region="CN", root=_inheritance_tree(tmp_path)
+    )
+    assert "## Regional Conventions (CN)" in resolved.content
+    assert "overlay" in resolved.content
+    assert len(resolved.source_paths) == 3

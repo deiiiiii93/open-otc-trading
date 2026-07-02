@@ -163,10 +163,15 @@ def resolve_product_reference(
     paths = [p.path for p in parts]
 
     if region is not None:
+        # An overlay attaches if it extends ANY doc in the resolved chain —
+        # inherited families (claiming doc extends a base) must still pick up
+        # the base's regional overlay, or CN conventions silently vanish for
+        # KO-reset/Phoenix while plain snowballs keep them.
+        chain_names = {p.frontmatter["name"] for p in parts}
         for doc in products.values():
             if (
                 doc.frontmatter.get("region") == region
-                and doc.frontmatter.get("extends") == claiming.frontmatter["name"]
+                and doc.frontmatter.get("extends") in chain_names
             ):
                 content += f"\n\n## Regional Conventions ({region})\n\n{doc.body}"
                 paths.append(doc.path)
