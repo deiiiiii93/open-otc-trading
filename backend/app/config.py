@@ -176,6 +176,10 @@ class _EnvironmentSettings(BaseSettings):
         None,
         validation_alias="GATEWAY_AGENT_MODEL",
     )
+    desk_region: str | None = Field(
+        None,
+        validation_alias="OPEN_OTC_DESK_REGION",
+    )
 
 
 def _read_environment_settings() -> _EnvironmentSettings:
@@ -280,6 +284,9 @@ class Settings:
     )
     gateway_agent_model: str | None = field(
         default_factory=lambda: _env_value("gateway_agent_model")
+    )
+    desk_region: str | None = field(
+        default_factory=lambda: _env_value("desk_region")
     )
 
     def __post_init__(self) -> None:

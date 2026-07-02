@@ -100,9 +100,12 @@ def test_read_position_workflow(skills_backend: FilesystemBackend):
 
 def test_read_product_reference(skills_backend: FilesystemBackend):
     """Read a durable reference document and assert content."""
-    text = _read(skills_backend, "/references/products/snowball-cn.md")
-    assert "name: snowball-cn" in text
+    text = _read(skills_backend, "/references/products/snowball.md")
+    assert "name: snowball" in text
     assert "## Product Definition" in text
+    overlay = _read(skills_backend, "/references/products/snowball-cn.md")
+    assert "region: CN" in overlay
+    assert "extends: snowball" in overlay
 
 
 def test_workflow_skills_use_agent_visible_reference_paths():

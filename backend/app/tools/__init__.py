@@ -133,10 +133,12 @@ from .greeks_landscape import (
     get_latest_greeks_landscape_run_tool,
     run_greeks_landscape_tool,
 )
+from .product_reference import get_product_reference_doc
 
 
 QUANT_AGENT_TOOLS = [
     price_product_tool,
+    get_product_reference_doc,
     solve_rfq_tool,
     get_rfq_catalog_tool,
     build_product_tool,

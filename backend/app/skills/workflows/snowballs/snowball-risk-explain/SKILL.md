@@ -32,7 +32,7 @@ routing:
 
 ## Required inputs
 
-Use `position_id` for single-position questions and `portfolio_id` for book-wide scans. If the user gave a portfolio name, resolve it with `list_portfolios` first. Read `/skills/references/products/snowball-cn.md` for KI/KO conventions.
+Use `position_id` for single-position questions and `portfolio_id` for book-wide scans. If the user gave a portfolio name, resolve it with `list_portfolios` first. Call `get_product_reference_doc` with `SnowballOption` for KI/KO conventions.
 
 ## Procedure
 
@@ -56,7 +56,7 @@ recommended next workflow (`hedge-portfolio` for actionable hedges).
 
 ## References
 
-- `/skills/references/products/snowball-cn.md`
+- `get_product_reference_doc(SnowballOption)`
 
 ## Example
 

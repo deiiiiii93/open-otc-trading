@@ -50,7 +50,7 @@ Return created or blocked first, then row id, product, missing fields or queue i
 
 ## References
 
-- `/skills/references/products/snowball-cn.md`
+- `get_product_reference_doc(<quantark_class>)` for product semantics
 - `/skills/references/pricing/engines.md`
 
 ## Example

@@ -33,7 +33,7 @@ routing:
 
 ## Required inputs
 
-Use `position_id` or explicit Snowball terms. Read `/skills/references/products/snowball-cn.md` and `/skills/references/pricing/engines.md`.
+Use `position_id` or explicit Snowball terms. Call `get_product_reference_doc` with `SnowballOption` for payoff and conventions; read `/skills/references/pricing/engines.md`.
 
 ## Procedure
 
@@ -52,7 +52,7 @@ Return pricing verdict, key drivers, lifecycle state, market-input caveats, late
 
 ## References
 
-- `/skills/references/products/snowball-cn.md`
+- `get_product_reference_doc(SnowballOption)`
 - `/skills/references/pricing/engines.md`
 
 ## Example
