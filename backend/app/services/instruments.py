@@ -140,6 +140,13 @@ def sync_hedge_tag(session: Session, instrument_id: int) -> None:
     hedging_legs.py::_active_instruments and
     services/domains/hedging.py::get_map's synthetic stock entry.
     """
+    # This app's SessionLocal is configured with autoflush=False (house
+    # convention — see database.py), so a caller that just mutated a
+    # *different* row (e.g. backfilling a HedgeMapEntry.instrument_id) has
+    # not necessarily flushed that change yet. The query below must see it,
+    # so flush defensively rather than relying on every call site to
+    # remember to do so first.
+    session.flush()
     row = session.get(Instrument, instrument_id)
     if row is None:
         return

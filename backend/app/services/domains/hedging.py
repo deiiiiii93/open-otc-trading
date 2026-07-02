@@ -229,9 +229,31 @@ def mark(session: Session, instrument_ids: list[int], *, actor: str | None = Non
         )
         if existing is not None:
             # Backfill the durable instrument link on a pre-existing entry.
+            # Instrument has no uniqueness constraint on (exchange,
+            # contract_code), so other instrument rows may have been
+            # matching this legacy (instrument_id IS NULL) entry via
+            # sync_hedge_tag's fallback — once it's bound to this specific
+            # inst.id, that fallback no longer applies to them, so they must
+            # be resynced too or they can keep a stale "hedge" tag.
+            other_matching_ids: set[int] = set()
             if existing.instrument_id is None:
+                other_matching_ids = {
+                    iid for (iid,) in session.query(Instrument.id)
+                    .filter(
+                        Instrument.exchange == existing.exchange,
+                        Instrument.contract_code == existing.contract_code,
+                        Instrument.id != inst.id,
+                    )
+                }
                 existing.instrument_id = inst.id
+                # sync_hedge_tag flushes internally, but flush explicitly
+                # here too — this session is autoflush=False, and without
+                # this the resync loop below would still see the pre-backfill
+                # (instrument_id IS NULL) state for `existing`.
+                session.flush()
             sync_hedge_tag(session, inst.id)
+            for other_id in other_matching_ids:
+                sync_hedge_tag(session, other_id)
             continue
         entry = HedgeMapEntry(
             underlying_id=underlying_id,
@@ -303,6 +325,17 @@ def unmark(
             .all()
         ]
         for exch, code in keys:
+            if exch and code:
+                # Instrument has no uniqueness constraint on (exchange,
+                # contract_code) — other instrument rows besides the ones in
+                # instrument_ids may also be matching this legacy row via
+                # sync_hedge_tag's fallback. Deleting it can drop their
+                # eligibility too, so resync all of them, not just the
+                # requested ids.
+                affected.update(
+                    iid for (iid,) in session.query(Instrument.id)
+                    .filter(Instrument.exchange == exch, Instrument.contract_code == code)
+                )
             removed += (
                 session.query(HedgeMapEntry)
                 .filter(

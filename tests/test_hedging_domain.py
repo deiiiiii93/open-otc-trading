@@ -172,6 +172,82 @@ def test_unmark_by_map_entry_id_removes_hedge_tag_for_legacy_null_instrument_ent
     assert "hedge" not in inst.tags
 
 
+def test_mark_backfilling_legacy_row_resyncs_other_instruments_sharing_the_key(session):
+    """Instrument has no uniqueness constraint on (exchange, contract_code) —
+    a second instrument row can share the same key as a legacy (instrument_id
+    IS NULL) HedgeMapEntry and pick up "hedge" via sync_hedge_tag's fallback.
+    Once mark() backfills that entry to one specific instrument_id, the OTHER
+    instrument no longer matches the legacy fallback and must lose the tag."""
+    from app.models import HedgeMapEntry, Instrument
+    from app.services.instruments import sync_hedge_tag
+
+    u = _underlying(session)
+    inst_a = _instrument(session, u, code="IC2406")
+    # A second, distinct instrument row sharing the same (exchange, contract_code).
+    inst_b = Instrument(
+        symbol="IC2406-DUP.CFFEX", kind="futures", series_root="IC", exchange="CFFEX",
+        contract_code="IC2406", parent_id=u.id, status="active", source="hedge_load",
+    )
+    session.add(inst_b)
+    session.flush()
+
+    session.add(HedgeMapEntry(
+        underlying_id=u.id, instrument_id=None,
+        exchange="CFFEX", contract_code="IC2406", reconcile_status="active",
+        family="index_future", series_root="IC", instrument_type="future",
+    ))
+    session.flush()
+    sync_hedge_tag(session, inst_b.id)
+    session.flush()
+    session.refresh(inst_b)
+    assert "hedge" in inst_b.tags  # picked up via legacy fallback before mark()
+
+    hedging_domain.mark(session, [inst_a.id], actor="a")
+    session.flush()
+    session.refresh(inst_a)
+    session.refresh(inst_b)
+    assert "hedge" in inst_a.tags
+    assert "hedge" not in inst_b.tags  # no longer matches the now-durably-linked entry
+
+
+def test_unmark_by_instrument_id_for_legacy_entry_resyncs_other_instruments_sharing_the_key(session):
+    """Deleting a legacy entry via unmark(instrument_ids=...) must resync
+    every instrument sharing its (exchange, contract_code), not just the
+    requested id — same no-uniqueness-constraint gap as mark() above."""
+    from app.models import HedgeMapEntry, Instrument
+    from app.services.instruments import sync_hedge_tag
+
+    u = _underlying(session)
+    inst_a = _instrument(session, u, code="IC2406")
+    inst_b = Instrument(
+        symbol="IC2406-DUP.CFFEX", kind="futures", series_root="IC", exchange="CFFEX",
+        contract_code="IC2406", parent_id=u.id, status="active", source="hedge_load",
+    )
+    session.add(inst_b)
+    session.flush()
+
+    session.add(HedgeMapEntry(
+        underlying_id=u.id, instrument_id=None,
+        exchange="CFFEX", contract_code="IC2406", reconcile_status="active",
+        family="index_future", series_root="IC", instrument_type="future",
+    ))
+    session.flush()
+    sync_hedge_tag(session, inst_a.id)
+    sync_hedge_tag(session, inst_b.id)
+    session.flush()
+    session.refresh(inst_a)
+    session.refresh(inst_b)
+    assert "hedge" in inst_a.tags
+    assert "hedge" in inst_b.tags
+
+    hedging_domain.unmark(session, instrument_ids=[inst_a.id])
+    session.flush()
+    session.refresh(inst_a)
+    session.refresh(inst_b)
+    assert "hedge" not in inst_a.tags
+    assert "hedge" not in inst_b.tags
+
+
 def test_list_instruments_annotates_allowed(session):
     u = _underlying(session)
     a = _instrument(session, u, code="IC2406")
