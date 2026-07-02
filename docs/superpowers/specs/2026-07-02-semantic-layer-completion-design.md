@@ -48,7 +48,7 @@ skill will declare a term-set complete that `build_product` then rejects.
 
 ## Design
 
-### D1 — Per-family product reference docs (8 new docs, 14 classes)
+### D1 — Per-family product reference docs (9 new docs; all 15 classes claimed)
 
 Location: `backend/app/skills/references/products/`. Each follows the
 `snowball-cn.md` section schema — `## Product Definition`,
@@ -75,13 +75,14 @@ Grouping (thin families share a doc; one doc claims 1–3 QuantArk classes):
 
 | Doc | QuantArk classes claimed |
 |---|---|
+| `snowball.md` | SnowballOption (**new region-neutral base**: payoff semantics extracted from `snowball-cn.md`; the CN doc becomes a pure region overlay extending it) |
 | `vanilla.md` | EuropeanVanillaOption, AmericanOption |
 | `asian.md` | AsianOption |
 | `digital-touch.md` | CashOrNothingDigitalOption, OneTouchOption, DoubleOneTouchOption |
 | `barrier.md` | BarrierOption |
 | `sharkfin.md` | SingleSharkfinOption, DoubleSharkfinOption |
 | `range-accrual.md` | RangeAccrualOption |
-| `autocallable-variants.md` | KnockOutResetSnowballOption, PhoenixOption (builds on `snowball-cn.md`, documents only the deltas: post-KI reset leg, memory coupon leg) |
+| `autocallable-variants.md` | KnockOutResetSnowballOption, PhoenixOption (declares `extends: snowball`; documents only the deltas: post-KI reset leg, memory coupon leg — inherited snowball semantics are resolved through the base doc, see D3) |
 | `delta-one.md` | Futures, SpotInstrument |
 
 Frontmatter gains one new key that is the mechanical doc↔contract link:
@@ -97,14 +98,62 @@ quantark_classes:
 ---
 ```
 
-`snowball-cn.md` is retrofitted with `quantark_classes: [SnowballOption]`
-and `region: CN` (see the region-neutrality principle above).
+`snowball-cn.md` is reworked, not just retrofitted: its region-neutral
+payoff semantics move into the new `snowball.md` base (which claims
+`SnowballOption`), and `snowball-cn.md` keeps only the CN market content
+(SSE calendars, index universe, CN diagnostics) with `region: CN` and
+`extends: snowball`. It claims no classes — it is a pure overlay.
+
+**Doc inheritance.** A doc may declare `extends: <base-doc-name>` in
+frontmatter (single base; one level is enough for the current families —
+the validator rejects chains deeper than one to keep resolution trivial).
+Semantics: the extending doc documents only its deltas; anything it does
+not restate is inherited from the base. `autocallable-variants.md` extends
+`snowball` because KO-reset and Phoenix contracts carry the full snowball
+`required_bound` plus their variant keys — without inheritance, D3 would
+force wholesale duplication of snowball prose into the variant doc, which
+is exactly the stale-copy drift this design exists to prevent.
+
+**Region-inheritance guard.** `extends` may only target a region-neutral
+doc, unless the child declares the *same* `region`. A neutral doc extending
+a region overlay would silently inherit region market facts past the lint;
+the frontmatter validator rejects it. (This is why `snowball.md` must exist
+as the base rather than `autocallable-variants.md` extending the CN doc.)
+
+**Shared resolver — one contract for CI and runtime.**
+`resolve_product_reference(quantark_class, region=None)` (in
+`reference_docs.py`, beside the existing parse/validate helpers) returns
+the claiming doc's content merged along both axes:
+
+- *upward*: the claiming doc's `extends` base, base sections first, child
+  sections appended under the same headings (child never silently
+  overrides; both texts are present);
+- *downward*: if `region` is given and a region overlay with that `region`
+  extends the claiming doc (e.g. `snowball-cn.md` extending `snowball.md`),
+  its content is appended last, clearly delimited as regional conventions.
+
+The desk's region comes from a new `Settings` field `desk_region`
+(default `None` = neutral; this deployment sets `CN` in `.env`) — the code
+stays region-neutral, the deployment opts in. D3's coherence checks run
+with `region=None` (neutral resolution: base docs must be self-sufficient
+and lint-clean without overlays); the runtime passes the configured desk
+region so CN workflows keep their market conventions.
+
+**Runtime surface — a tool, not a file path.** Skills are markdown; they
+cannot call Python. The resolver is exposed as a read-only agent tool
+`get_product_reference_doc(quantark_class)` (capability group: read),
+registered in `QUANT_AGENT_TOOLS` **and added to `DEEP_AGENT_TOOL_NAMES`**
+— a tool absent from that allowlist is silently dropped from every
+persona's toolset (established gotcha; `assemble_breach_report` shipped
+with exactly this bug). The tool applies the configured `desk_region`
+internally. D4's skill (and the migrated snowball skills, see ripple)
+instruct the agent to call this tool instead of reading raw doc paths.
 `build-contract.md` (not family-specific) carries no `quantark_classes` and
 is exempt from the per-family checks.
 
 Precondition: verify `reference_docs.py::validate_reference_doc_file`
-tolerates the extra frontmatter keys (`quantark_classes`, `region`); extend
-its schema if it is strict.
+tolerates the extra frontmatter keys (`quantark_classes`, `region`,
+`extends`); extend its schema if it is strict.
 
 ### D2 — Term glossary as Python data
 
@@ -126,17 +175,22 @@ is "contract as data".
    exists — no dead claims).
 2. **Required-bound explanation:** for each contract, every `required_bound`
    leaf key resolves through the glossary to at least one phrase present in
-   the claiming doc's `## Pricing Inputs` section. This is the check that
-   fails CI when a contract gains a key and the doc lags.
+   the `## Pricing Inputs` section of the *resolved* doc — i.e. the output
+   of `resolve_product_reference`, which merges the claiming doc with its
+   `extends` base (D1). This is the check that fails CI when a contract
+   gains a key and the doc lags.
 3. **Glossary hygiene:** every glossary key is a leaf of some contract's
    `required_bound`/`defaulted` (no dead entries); canonical phrases are
    unique.
 4. **Region neutrality:** family docs (any product doc that is not an
    explicit region overlay) contain none of a small denylist of
    region-market tokens (e.g. "SSE", "China Mainland", "CSI", "A-share");
-   region overlays are identified by a `region:` frontmatter key (added to
+   region overlays are identified by a `region:` frontmatter key (kept on
    `snowball-cn.md` as `region: CN`). The denylist lives beside the
-   glossary so extending it is one edit.
+   glossary so extending it is one edit. The lint applies to *resolved*
+   docs too: since the region-inheritance guard (D1) forbids a neutral doc
+   extending a region overlay, a resolved neutral doc is neutral by
+   construction — the test asserts this explicitly for every claiming doc.
 
 Failure messages name the doc, the class, and the missing key so the fix is
 mechanical.
@@ -145,9 +199,10 @@ mechanical.
 
 `backend/app/skills/workflows/products/product-term-interpretation/SKILL.md`
 mirrors `snowball-term-interpretation` but is family-agnostic: identify the
-family (from position terms, `product_key`, or user text), load the claiming
-reference doc, explain terms, flag missing `required_bound` economics, route
-to the pricing workflow. Same stop condition: never infer missing barriers
+family (from position terms, `product_key`, or user text), call
+`get_product_reference_doc` for the **resolved** doc (never a raw file
+path — CI and runtime must read the same merged content), explain terms,
+flag missing `required_bound` economics, route to the pricing workflow. Same stop condition: never infer missing barriers
 or lifecycle state from the product name; ask for the missing term.
 Snowballs keep their dedicated skill (richer lifecycle content); the generic
 skill's frontmatter routing excludes the snowball domain to avoid dispatch
@@ -156,7 +211,7 @@ ambiguity. ≤500-token SKILL.md cap applies.
 ### Ripple updates (known blast radius)
 
 - `EXPECTED_REFERENCE_FILES` exact set in `tests/test_reference_docs.py`
-  (+8 files).
+  (+9 files).
 - Skill-catalog exact-set/count assertions in six files
   (`test_skills_catalog{,_v2}`, `{remaining_,}workflow_skills_phase3`,
   `reference_docs`, `routing_table`) for the one new workflow skill.
@@ -164,6 +219,14 @@ ambiguity. ≤500-token SKILL.md cap applies.
   `product-term-interpretation` (established lesson: a skill without a
   routing line is never dispatched).
 - Read-smoke test (`test_skills_read_smoke_v2.py`) if it enumerates docs.
+- **Snowball skill migration:** the three existing snowball skills
+  (`snowball-term-interpretation`, `snowball-pricing`,
+  `snowball-risk-explain`) currently reference
+  `/skills/references/products/snowball-cn.md` directly. After the
+  base/overlay split that file no longer contains payoff/pricing-input
+  semantics, so all three are updated in this change to call
+  `get_product_reference_doc(SnowballOption)` instead — they must not ship
+  pointing at a hollowed-out overlay.
 
 ### Error handling
 
@@ -175,9 +238,19 @@ ambiguity. ≤500-token SKILL.md cap applies.
 ### Testing
 
 D3 is itself the primary deliverable test. Beyond it: frontmatter-schema
-test for `quantark_classes`, catalog/routing updates above, and one smoke
-asserting the generic skill resolves the right doc for a representative
-non-snowball family (e.g. sharkfin).
+tests for `quantark_classes`/`region`/`extends` (including the
+region-inheritance guard rejection and the depth>1 rejection), resolver
+unit tests (merge shape, missing base, region-overlay append), catalog/
+routing updates above, and three smokes at the **tool** level (calling
+`get_product_reference_doc`, not just the resolver function):
+
+1. a plain family (e.g. sharkfin) returns its own doc;
+2. an inherited family (KnockOutResetSnowballOption or PhoenixOption)
+   returns content containing inherited snowball pricing-input terms — the
+   exact CI-pass/runtime-miss gap the resolver exists to close;
+3. `SnowballOption` with `desk_region=CN` returns base payoff terms *and*
+   CN overlay conventions — proving the snowball skills lose nothing from
+   the base/overlay split.
 
 ## Non-goals / follow-ups
 
