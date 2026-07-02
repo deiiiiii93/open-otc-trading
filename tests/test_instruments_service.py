@@ -163,3 +163,169 @@ def test_is_registered_underlying():
         assert is_registered_underlying(session, "REG.SH") is True
         assert is_registered_underlying(session, "UNREG.SH") is False
         assert is_registered_underlying(session, "DOES_NOT_EXIST.SH") is False
+
+
+def test_sync_hedge_tag_adds_tag_for_active_map_entry():
+    from app import database
+    from app.models import HedgeMapEntry
+    from app.services.instruments import sync_hedge_tag
+
+    with database.SessionLocal() as session:
+        underlying = _mk(session, symbol="000905.SH")
+        inst = _mk(session, symbol="IC2406.CFFEX", kind="futures", exchange="CFFEX", contract_code="IC2406")
+        session.add(HedgeMapEntry(
+            underlying_id=underlying.id, instrument_id=inst.id,
+            exchange="CFFEX", contract_code="IC2406", reconcile_status="active",
+            family="index_future", series_root="IC", instrument_type="future",
+        ))
+        session.commit()
+
+        sync_hedge_tag(session, inst.id)
+        session.commit()
+
+        session.refresh(inst)
+        assert "hedge" in inst.tags
+
+
+def test_sync_hedge_tag_removes_tag_when_no_active_entry_remains():
+    from app import database
+    from app.services.instruments import sync_hedge_tag
+
+    with database.SessionLocal() as session:
+        inst = _mk(session, symbol="IC2406.CFFEX", kind="futures", tags=["hedge", "underlying"])
+        session.commit()
+
+        sync_hedge_tag(session, inst.id)
+        session.commit()
+
+        session.refresh(inst)
+        assert inst.tags == ["underlying"]
+
+
+def test_sync_hedge_tag_matches_legacy_entry_with_null_instrument_id():
+    """A HedgeMapEntry never backfilled with a durable instrument_id link is
+    still real ground truth — reconcile_map/_active_instruments both fall
+    back to matching (exchange, contract_code). sync_hedge_tag must too."""
+    from app import database
+    from app.models import HedgeMapEntry
+    from app.services.instruments import sync_hedge_tag
+
+    with database.SessionLocal() as session:
+        underlying = _mk(session, symbol="000905.SH")
+        inst = _mk(session, symbol="IC2406.CFFEX", kind="futures", exchange="CFFEX", contract_code="IC2406")
+        session.add(HedgeMapEntry(
+            underlying_id=underlying.id, instrument_id=None,
+            exchange="CFFEX", contract_code="IC2406", reconcile_status="active",
+            family="index_future", series_root="IC", instrument_type="future",
+        ))
+        session.commit()
+
+        sync_hedge_tag(session, inst.id)
+        session.commit()
+
+        session.refresh(inst)
+        assert "hedge" in inst.tags
+
+
+def test_sync_hedge_tag_ignores_stale_entry():
+    from app import database
+    from app.models import HedgeMapEntry
+    from app.services.instruments import sync_hedge_tag
+
+    with database.SessionLocal() as session:
+        underlying = _mk(session, symbol="000905.SH")
+        inst = _mk(session, symbol="IC2403.CFFEX", kind="futures", exchange="CFFEX", contract_code="IC2403")
+        session.add(HedgeMapEntry(
+            underlying_id=underlying.id, instrument_id=inst.id,
+            exchange="CFFEX", contract_code="IC2403", reconcile_status="stale",
+            family="index_future", series_root="IC", instrument_type="future",
+        ))
+        session.commit()
+
+        sync_hedge_tag(session, inst.id)
+        session.commit()
+
+        session.refresh(inst)
+        assert "hedge" not in inst.tags
+
+
+def test_sync_hedge_tag_requires_instrument_itself_active_even_with_active_map_entry():
+    """reconcile_status is only refreshed by mark/unmark/reconcile_map — a
+    direct Instrument.status edit (e.g. via PATCH) doesn't touch it, so it
+    can be stale "active" data. The real MILP eligibility query
+    (_active_instruments) always filters Instrument.status == "active" too;
+    sync_hedge_tag must not grant "hedge" off a stale-active map entry when
+    the instrument itself is no longer active."""
+    from app import database
+    from app.models import HedgeMapEntry
+    from app.services.instruments import sync_hedge_tag
+
+    with database.SessionLocal() as session:
+        underlying = _mk(session, symbol="000905.SH")
+        inst = _mk(session, symbol="IC2406.CFFEX", kind="futures", exchange="CFFEX",
+                   contract_code="IC2406", status="expired")
+        session.add(HedgeMapEntry(
+            underlying_id=underlying.id, instrument_id=inst.id,
+            exchange="CFFEX", contract_code="IC2406", reconcile_status="active",
+            family="index_future", series_root="IC", instrument_type="future",
+        ))
+        session.commit()
+
+        sync_hedge_tag(session, inst.id)
+        session.commit()
+
+        session.refresh(inst)
+        assert "hedge" not in inst.tags
+
+
+def test_sync_hedge_tag_active_stock_is_self_hedging():
+    from app import database
+    from app.services.instruments import sync_hedge_tag
+
+    with database.SessionLocal() as session:
+        stock = _mk(session, symbol="600519.SH", kind="stock", status="active")
+        session.commit()
+
+        sync_hedge_tag(session, stock.id)
+        session.commit()
+
+        session.refresh(stock)
+        assert "hedge" in stock.tags
+
+
+def test_sync_hedge_tag_inactive_stock_is_not_self_hedging():
+    from app import database
+    from app.services.instruments import sync_hedge_tag
+
+    with database.SessionLocal() as session:
+        stock = _mk(session, symbol="600519.SH", kind="stock", status="draft", tags=["hedge"])
+        session.commit()
+
+        sync_hedge_tag(session, stock.id)
+        session.commit()
+
+        session.refresh(stock)
+        assert "hedge" not in stock.tags
+
+
+def test_sync_hedge_tag_preserves_other_tags():
+    from app import database
+    from app.models import HedgeMapEntry
+    from app.services.instruments import sync_hedge_tag
+
+    with database.SessionLocal() as session:
+        underlying = _mk(session, symbol="000905.SH")
+        inst = _mk(session, symbol="IC2406.CFFEX", kind="futures", exchange="CFFEX",
+                   contract_code="IC2406", tags=["underlying", "custom"])
+        session.add(HedgeMapEntry(
+            underlying_id=underlying.id, instrument_id=inst.id,
+            exchange="CFFEX", contract_code="IC2406", reconcile_status="active",
+            family="index_future", series_root="IC", instrument_type="future",
+        ))
+        session.commit()
+
+        sync_hedge_tag(session, inst.id)
+        session.commit()
+
+        session.refresh(inst)
+        assert set(inst.tags) == {"underlying", "custom", "hedge"}
