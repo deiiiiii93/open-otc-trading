@@ -94,8 +94,9 @@ New model in `backend/app/models.py`, shaped on the `DomainEvent` precedent
 | `workflow_id` / `session_id` / `task_id` | nullable FKs | same pattern as `DomainEvent` |
 | `message_id` | int, nullable | assistant turn message when known |
 | `desk_workflow_slug` | str, nullable | for desk-workflow / fan-out attribution |
-| `args_json` | JSON | tool args, size-capped (truncate serialized > 8 KB with marker) |
-| `result_preview` | Text, nullable | truncated str of result content |
+| `args_json` | JSON | tool args after **redaction** (§5.1b), then size-capped (truncate serialized > 8 KB with marker) |
+| `redacted` | bool, default false | true when the redaction layer altered `args_json` |
+| `result_preview` | Text, nullable | truncated str of result content, redaction-passed |
 | `error` | Text, nullable | repr of exception / error ToolMessage content |
 | `occurred_at` | DateTime, indexed | phase-1 insert time |
 | `completed_at` | DateTime, nullable | phase-2 outcome time |
@@ -125,6 +126,29 @@ module: `classify_write_action(name, args, write_names_by_group) -> WriteClass |
 `FanoutReadOnlyMiddleware` is refactored to consume it (its group set includes
 `PAGE_ACTION`; the audit consumer's does not). One taxonomy, two policies — the same
 reason `__capability_group__` exists at all.
+
+### 5.1b Redaction before persistence
+
+The audit trail must not become a durable secret/PII sink: `execute` / `write_file` /
+`edit_file` / `run_python` arguments can carry credentials, file contents, code
+bodies, or customer data, and v1 is append-only with no deletion UI. Before phase-1
+persistence (and before `result_preview`/`error` storage) a redaction pass runs:
+
+- **Recursive key-pattern redaction** on `args_json`: values under keys matching
+  `token|password|secret|api[_-]?key|credential|authorization` (case-insensitive)
+  are replaced with `"[REDACTED]"`.
+- **Content-body elision** for FS/artifact tools: `write_file`/`edit_file` `content`
+  and `run_python`/`execute` code/command bodies are stored as
+  `{sha256, byte_len, head: first 256 chars (redaction-passed)}` instead of the full
+  payload — the audit answers *what was written where and how big*, not the full
+  content (the artifact itself remains the source of truth).
+- Any alteration sets `redacted=true` on the row so the UI can show the marker.
+- Required tests (§8): secret-bearing `execute`/`run_python`/`write_file` args are
+  not persisted verbatim and not rendered by the API.
+
+No access gating in v1: the desk is single-operator with a constant identity and the
+app has no auth layer anywhere; per-role visibility of raw fields becomes relevant
+only if multi-user lands (documented follow-up, not scope).
 
 ### 5.2 `AuditTrailMiddleware` — `deep_agent/audit_trail.py` (new)
 
@@ -361,3 +385,4 @@ Pagination: `limit/offset` "load more"; no live polling in v1 (manual refresh bu
 6. **Always-on** — no env flag to disable capture.
 7. **Append-only correlation** — HITL chains are separate rows linked by a server-generated `audit_ref`, minted **unconditionally inside the projection helper** (async paths lack source metadata today); scoped `(thread_id, tool_call_id)` is display-only for legacy rows; no cross-row upserts. Proposals are captured at projection time, atomically with the pending-action card. Async runner/workflow executor stacks are mandatory integration points with a CI coverage assertion. *(Revised after adversarial review iterations 1–2.)*
 8. **Fail-closed is contention-hardened** — busy-timeout + bounded retry before refusal, restart-surviving refusal counter in `/api/audit/summary`, lock-contention test required. *(Added after review iteration 2.)*
+9. **Redaction before persistence** — key-pattern redaction + content-body elision (sha256/len/head) for FS/artifact tools, `redacted` marker, no raw secret persistence; no access gating in v1 (no auth layer exists in this single-operator app). *(Added after review iteration 3.)*
