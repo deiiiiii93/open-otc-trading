@@ -162,8 +162,22 @@ reason `__capability_group__` exists at all.
    record exists, only the outcome is unknown — degraded but never silent.
 
 **Failure policy:** **fail-closed on phase 1** (above), log-and-continue on phase 2.
-SQLite transient-lock pressure is bounded: write tools are rare (a few per turn) and
-the audit transactions are single-row and short.
+
+**Lock handling under fail-closed** (SQLite is single-writer; an unmitigated
+transient lock would turn ordinary contention into a desk-wide write outage):
+- The audit session sets an explicit `busy_timeout` and the phase-1 commit retries
+  with bounded backoff (3 attempts, ~100/300/900 ms) before declaring failure —
+  a refusal requires sustained, not momentary, contention. (Note the domain write
+  that follows targets the *same* SQLite file, so an audit-blocking lock would very
+  likely block the business write too; the retry window just keeps audit from being
+  the *more* fragile of the two.)
+- Fail-closed refusals are operator-visible, not just logged: the refusal
+  `ToolMessage` is distinct ("audit trail unavailable"), and `/api/audit/summary`
+  reports a `fail_closed_refusals` counter (derived from ERROR-log-backed rows or a
+  lightweight counter table — implementation's choice, but it must survive restart).
+- Required test (§8): hold a write lock on the DB while a classified write is
+  attempted; assert retry-then-refusal, the business tool never executed, and the
+  turn survived.
 
 ### 5.2a Registration — mandatory integration points
 
@@ -215,19 +229,34 @@ finalize paths) — **not** in the middleware, whose view of interrupts depends 
 unverified ordering:
 
 - **Proposal.** When a pending action for a classified write tool is projected and
-  persisted, mint a server-generated `audit_ref` (UUID), store it in the action's
-  `source_meta.audit`, and insert an `AgentActionAudit` row `kind='hitl_proposal'`,
-  `status='proposed'`, with the tool name/args and full turn context. Abandoned
-  proposals (never approved or rejected) therefore remain visible in the trail.
+  persisted, mint a server-generated `audit_ref` (UUID) and insert an
+  `AgentActionAudit` row `kind='hitl_proposal'`, `status='proposed'`, with the tool
+  name/args and full turn context. **`audit_ref` minting is mandatory and lives
+  inside the projection helper itself** (`pending_actions_from_interrupts`), not in
+  callers: the async projection path calls the helper with `persona=None` and no
+  source metadata today, and `_source_meta_for_action` returns `{}` when
+  `source_meta` is absent — so any caller-side minting would silently skip exactly
+  the async proposals that made coverage mandatory. The helper stamps
+  `source_meta.audit = {audit_ref, tool_call_id, tool_name, interrupt_id, task_id?}`
+  unconditionally. Abandoned proposals (never approved or rejected) remain visible in
+  the trail.
+- **Atomicity.** The `hitl_proposal` row insert and the `AgentMessage.meta`
+  (`pending_actions`) persistence commit **in the same DB transaction** — the
+  projection-persistence code paths already hold a session writing the message row;
+  the audit insert joins it. No card may exist without its proposal row, and no
+  proposal row without its card; failure of either rolls back both (the turn then
+  surfaces the persistence error as it does today).
 - **Decision.** In `AgentService.resume_pending_action` — at the three resume paths
   where `record_audit("agent.action.confirmed"/"dismissed")` already fires — insert
   `kind='hitl_decision'`, `status='approved'|'rejected'`, `actor` = the human decider,
   carrying the `audit_ref` read back from `source_meta.audit`.
 - **Execution.** The approved tool run is captured by the middleware as a normal
-  `execution` row (§5.2); it inherits `audit_ref` when the resume path threads it into
-  `__audit_context__`, and falls back to scoped `(thread_id, tool_call_id)` grouping
-  otherwise (some async approval projections lack `source_meta` today — the UI groups
-  on the scoped key precisely so those still correlate).
+  `execution` row (§5.2). Every resume path (orchestrator, workflow-routed, async
+  bubble-up) reads `audit_ref` from the action's `source_meta.audit` — mandatory as
+  of this spec — and threads it into `__audit_context__`, so the execution row
+  carries the same ref. Scoped `(thread_id, tool_call_id)` grouping is **display-only
+  best effort for legacy rows** (actions projected before this feature ships); it is
+  not a correctness mechanism for new rows.
 
 The existing `audit_events` writes stay untouched (non-goal to migrate them).
 
@@ -286,8 +315,14 @@ Pagination: `limit/offset` "load more"; no live polling in v1 (manual refresh bu
   blocks the handler (write never executes) and returns an error ToolMessage while
   leaving the turn alive; phase-2 failure leaves `attempted` + logs, does not raise.
 - **HITL chain tests**: proposal row inserted at projection with `audit_ref` in
-  `source_meta.audit`; decision row on confirm/dismiss carries the same `audit_ref`;
-  approve → execution row correlates; abandoned proposal stays `proposed`.
+  `source_meta.audit` — **including the async projection path with `persona=None`
+  and no source metadata**; decision row on confirm/dismiss carries the same
+  `audit_ref`; approve → execution row correlates; abandoned proposal stays
+  `proposed`; proposal row + message-meta persistence are atomic (inject a failure
+  on either side, assert no card-without-proposal or proposal-without-card state).
+- **Contention test**: hold a SQLite write lock while a classified write is
+  attempted; assert bounded retry then fail-closed refusal, business tool not
+  executed, turn alive, refusal counted in `/api/audit/summary`.
 - **Registration coverage assertion**: every middleware-stack factory (orchestrator,
   personas, async runner/resume, workflow executor) contains `AuditTrailMiddleware`
   — a new factory missing it fails CI.
@@ -324,4 +359,5 @@ Pagination: `limit/offset` "load more"; no live polling in v1 (manual refresh bu
 4. **Two-phase write** (attempt-then-outcome) so irreversible actions can never execute without a durable record.
 5. **Fail-closed on phase 1** — a classified write is refused if its attempt record cannot be committed; phase-2 outcome failures degrade to `attempted` + ERROR log. *(Revised from best-effort after adversarial review.)*
 6. **Always-on** — no env flag to disable capture.
-7. **Append-only correlation** — HITL chains are separate rows linked by a server-generated `audit_ref` (+ scoped `(thread_id, tool_call_id)` fallback); no cross-row upserts. Proposals are captured at projection time, not in the middleware. Async runner/workflow executor stacks are mandatory integration points with a CI coverage assertion. *(All three revised after adversarial review.)*
+7. **Append-only correlation** — HITL chains are separate rows linked by a server-generated `audit_ref`, minted **unconditionally inside the projection helper** (async paths lack source metadata today); scoped `(thread_id, tool_call_id)` is display-only for legacy rows; no cross-row upserts. Proposals are captured at projection time, atomically with the pending-action card. Async runner/workflow executor stacks are mandatory integration points with a CI coverage assertion. *(Revised after adversarial review iterations 1–2.)*
+8. **Fail-closed is contention-hardened** — busy-timeout + bounded retry before refusal, restart-surviving refusal counter in `/api/audit/summary`, lock-contention test required. *(Added after review iteration 2.)*
