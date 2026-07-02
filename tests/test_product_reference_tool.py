@@ -52,3 +52,21 @@ def test_unknown_class_lists_known() -> None:
     result = _invoke("NopeOption")
     assert "error" in result
     assert "SnowballOption" in result["known_classes"]
+
+
+def test_neutral_region_omits_overlay_by_design() -> None:
+    # DELIBERATE: the code default for desk_region is None (region-neutral) -
+    # region conventions are a per-deployment opt-in via OPEN_OTC_DESK_REGION,
+    # never a code fact. CN deployments set OPEN_OTC_DESK_REGION=CN in .env to
+    # keep the CN overlay the legacy snowball-cn.md used to provide.
+    import dataclasses
+
+    from app.config import configure_settings, get_settings
+
+    configure_settings(dataclasses.replace(get_settings(), desk_region=None))
+    try:
+        result = _invoke("SnowballOption")
+        assert "## Regional Conventions" not in result["content"]
+        assert "SSE" not in result["content"]
+    finally:
+        configure_settings(None)
