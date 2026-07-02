@@ -226,7 +226,19 @@ def main() -> int:
             f"(tool_called={without_arm['tool_called']}, "
             f"{len(without_arm['tool_calls'])} tool calls)"
         )
-        if not with_arm["tool_called"] or with_arm["score"] < without_arm["score"]:
+        # Per-probe pass rule. Two advantage modes:
+        # - correctness: strictly better score (phantom penalties make the
+        #   ungrounded arm go negative);
+        # - efficiency: on content-saturated probes the without-arm can reach
+        #   marker parity by raw-reading the layer's own docs - there the
+        #   advantage is grounding at materially fewer tool calls (alias
+        #   markers make +/-1 score noise).
+        correctness_win = with_arm["score"] > without_arm["score"]
+        efficiency_win = (
+            with_arm["score"] >= without_arm["score"] - 1
+            and len(with_arm["tool_calls"]) < len(without_arm["tool_calls"])
+        )
+        if not with_arm["tool_called"] or not (correctness_win or efficiency_win):
             advantage_shown = False
     print(f"transcripts: {out_path}")
     print("ADVANTAGE DEMONSTRATED" if advantage_shown else "INCONCLUSIVE - read transcripts")
