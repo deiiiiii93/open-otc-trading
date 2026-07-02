@@ -116,8 +116,12 @@ def build_async_agent(
     """
     from deepagents import create_deep_agent
 
+    from ..deep_agent.audit_trail_middleware import AuditTrailMiddleware
+
     backend = _build_backend()
-    middleware = []
+    # Head of the stack: always-on dangerous-action audit (audit spec §5.2a) —
+    # background async agents run write tools too.
+    middleware: list[Any] = [AuditTrailMiddleware(tools=tools)]
     if yolo_mode:
         middleware.append(LongRunningCostHITLMiddleware(tools=tools))
     middleware.extend(
