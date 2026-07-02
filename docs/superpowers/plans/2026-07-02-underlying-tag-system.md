@@ -411,9 +411,11 @@ def downgrade() -> None:
 Run: `.venv/bin/python -m pytest tests/test_migration_0042.py -v`
 Expected: 6 of 7 pass; `test_init_db_incremental_repair_adds_tags_column` still FAILs (Step 9 fixes it).
 
-- [ ] **Step 9: Add the incremental-schema-repair mirror**
+- [ ] **Step 9: Add the incremental-schema-repair mirror — column AND backfill**
 
-In `backend/app/database.py`, inside `_ensure_incremental_schema` (after the `if "agent_messages" in tables:` block, before the function's closing lines — match the existing `if "<table>" in tables: ... ALTER TABLE ... ADD COLUMN` style used for `arena_match`/`agent_threads` above it):
+`_ensure_incremental_schema` is a real, separate boot path from Alembic: local dev DBs that boot via `create_all()` and never run `alembic upgrade head` get repaired here instead. Adding only the column here (and not the backfill) would leave such a DB with an empty `tags` everywhere — Task 5's booking gate and Task 7's server-filtered pickers would then reject every real underlying and show empty pickers for anyone on that path. The backfill logic must be mirrored here too, not just the column — duplicated as raw SQL (not imported from the migration file; migrations aren't meant to be reusable modules, and this function's existing entries for `agent_threads`/`arena_match` already follow the same duplicate-not-import convention).
+
+In `backend/app/database.py`, inside `_ensure_incremental_schema` (after the `if "agent_messages" in tables:` block, before the function's closing lines — match the existing `if "<table>" in tables: ... ALTER TABLE ... ADD COLUMN` style used for `arena_match`/`agent_threads` above it). This needs `import json` available at module scope in `database.py` — check the top of the file first and add it if missing:
 
 ```python
     if "instruments" in tables:
@@ -423,14 +425,112 @@ In `backend/app/database.py`, inside `_ensure_incremental_schema` (after the `if
                 connection.execute(
                     text("ALTER TABLE instruments ADD COLUMN tags JSON NOT NULL DEFAULT '[]'")
                 )
+            _backfill_instrument_underlying_tags(active_engine, tables)
 ```
 
-- [ ] **Step 10: Run the full migration test file to verify it passes**
+Add the backfill helper as a module-level function in `database.py` (this is the exact same logic as migration 0042's backfill loop — duplicated intentionally, see the note above; keep the two in sync if either changes):
+
+```python
+_KNOCKED_OUT_STATES = {"Knocked Out", "敲出"}
+
+
+def _backfill_instrument_underlying_tags(active_engine: Engine, tables: set[str]) -> None:
+    tagged: set[str] = set()
+    with active_engine.begin() as connection:
+        if "positions" in tables:
+            rows = connection.execute(
+                text(
+                    "SELECT underlying, status, source_payload FROM positions "
+                    "WHERE underlying IS NOT NULL AND status = 'open' "
+                    "AND position_kind = 'otc'"
+                )
+            ).fetchall()
+            for underlying, status, payload_raw in rows:
+                if status == "closed":
+                    continue
+                payload = {}
+                if payload_raw:
+                    try:
+                        payload = json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
+                    except (TypeError, ValueError):
+                        payload = {}
+                state = payload.get("trade_state") if isinstance(payload, dict) else None
+                if state in _KNOCKED_OUT_STATES:
+                    continue
+                symbol = (underlying or "").strip()
+                if symbol:
+                    tagged.add(symbol)
+
+        active_root_rows = connection.execute(
+            text(
+                "SELECT symbol FROM instruments WHERE status = 'active' "
+                "AND kind != 'listed_option' AND expiry IS NULL AND contract_code IS NULL"
+            )
+        ).fetchall()
+        for (symbol,) in active_root_rows:
+            if symbol:
+                tagged.add(symbol)
+
+        for symbol in sorted(tagged):
+            row = connection.execute(
+                text("SELECT id, tags FROM instruments WHERE symbol = :symbol"),
+                {"symbol": symbol},
+            ).fetchone()
+            if row is None:
+                connection.execute(
+                    text(
+                        "INSERT INTO instruments "
+                        "(symbol, kind, currency, status, source, tags, created_at, updated_at) "
+                        "VALUES (:symbol, 'index', 'CNY', 'active', 'migration_backfill', :tags, "
+                        "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                    ),
+                    {"symbol": symbol, "tags": json.dumps(["underlying"])},
+                )
+                continue
+            instrument_id, tags_raw = row
+            current = json.loads(tags_raw) if tags_raw else []
+            if "underlying" not in current:
+                current.append("underlying")
+                connection.execute(
+                    text("UPDATE instruments SET tags = :tags WHERE id = :id"),
+                    {"tags": json.dumps(current), "id": instrument_id},
+                )
+```
+
+- [ ] **Step 10: Write the failing incremental-repair backfill test**
+
+Add to `tests/test_migration_0042.py` (extends `test_init_db_incremental_repair_adds_tags_column` from Step 5 — this is the gap that test alone didn't catch):
+
+```python
+def test_init_db_incremental_repair_also_backfills_underlying_tags(tmp_path: Path) -> None:
+    """Adding the column is not enough: an old local DB with an open OTC
+    position must actually get "underlying" backfilled by the incremental
+    repair path too, not just by Alembic."""
+    from app import database
+
+    engine = _engine_with_instruments_and_positions(tmp_path, "old_backfill.sqlite3")
+    with engine.begin() as conn:
+        conn.execute(sa.text(
+            "INSERT INTO instruments (symbol, kind, status) VALUES ('000300.SH', 'index', 'draft')"
+        ))
+        conn.execute(sa.text(
+            "INSERT INTO positions (underlying, status, position_kind, source_payload) "
+            "VALUES ('000300.SH', 'open', 'otc', '{}')"
+        ))
+    database._ensure_incremental_schema(engine)
+
+    with engine.begin() as conn:
+        row = conn.execute(sa.text("SELECT tags FROM instruments WHERE symbol='000300.SH'")).fetchone()
+    import json
+    assert "underlying" in json.loads(row[0])
+```
+
+- [ ] **Step 11: Run tests to verify they pass**
 
 Run: `.venv/bin/python -m pytest tests/test_migration_0042.py tests/test_instrument_models.py -v`
-Expected: PASS (all tests)
+Expected: PASS (all tests, including the new incremental-repair backfill test)
 
-- [ ] **Step 11: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
 git add backend/app/models.py backend/app/database.py backend/alembic/versions/0042_instrument_tags.py tests/test_migration_0042.py tests/test_instrument_models.py
@@ -819,6 +919,8 @@ Add a new endpoint right after `patch_instrument_endpoint` (find its closing `re
         session.refresh(row)
         return row
 ```
+
+Note — full-replace semantics are intentional, not an oversight: this is the same accepted trade-off `docs/superpowers/specs/2026-07-02-underlying-tag-system-design.md` documents under "Accepted trade-off — full-replace concurrency" (raised and explicitly declined twice during spec review: no ETag/optimistic-concurrency infrastructure exists anywhere else in this codebase, `Portfolio.tags` accepts the identical risk, and `register_underlying` doesn't go through this endpoint at all — it's a direct atomic row mutation in its own transaction, so the only real race is human-PUT-vs-human-PUT, mitigated by the Instruments page editor always loading fresh tags immediately before save (Task 6)). Do not add ETag/`updated_at`-precondition handling here — that decision was made deliberately, not missed.
 
 - [ ] **Step 5: Run tests to verify they pass**
 
