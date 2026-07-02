@@ -38,7 +38,7 @@ Use position terms, imported row fields, or explicit user text. Call `get_produc
 
 1. Identify underlying, notional, tenor, strike, KI, KO, coupon, and observation schedules.
 2. Explain KI convention, KO observation timing, and lifecycle state.
-3. Flag missing or inconsistent fields that block pricing or risk interpretation.
+3. Verify completeness with `check_term_completeness` (never from memory); flag its `missing_required` set and inconsistent fields.
 4. Route to `snowball-pricing` or `snowball-risk-explain` when the user asks for numbers.
 
 ## Stop conditions

@@ -160,6 +160,11 @@ def _agent_middleware(
     if get_memory_config().enabled:
         from .memory.runtime import get_memory_middleware
         middleware.append(get_memory_middleware())
+    # Ungrounded term-completeness verdicts bounce back once. The orchestrator
+    # holds no domain tools, so its nudge resolves by delegating to a persona
+    # (see term_grounding.py NUDGE_TEXT).
+    from .term_grounding import TermGroundingMiddleware
+    middleware.append(TermGroundingMiddleware())
     if not enable_code_interpreter:
         _append_goal_grader(middleware, goal_grader)
         return middleware

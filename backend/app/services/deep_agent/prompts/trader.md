@@ -67,3 +67,11 @@ For portfolio maintenance (create/update/delete portfolios, view rules,
 membership, sources), read
 `/skills/workflows/portfolios/portfolio-maintenance/SKILL.md` — all its
 writes are HITL-gated, and removal-vs-lifecycle semantics live there.
+
+## Term-completeness grounding
+
+Before stating that a product's terms are complete/incomplete or listing
+missing terms, ALWAYS call `check_term_completeness` with the QuantArk class
+and the known terms; use `get_product_reference_doc` for what each term
+means. Report ONLY the returned `missing_required` set - never add terms
+from memory.

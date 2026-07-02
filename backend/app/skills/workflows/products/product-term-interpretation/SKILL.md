@@ -41,7 +41,7 @@ diagnostics). Do not read raw files under `/skills/references/products/`.
 
 1. Identify the family and its economic fields from terms or the source row.
 2. Call `get_product_reference_doc`; explain each term against it.
-3. Flag missing or inconsistent required inputs that block pricing.
+3. Verify completeness with `check_term_completeness` (never from memory); flag its `missing_required` set and any inconsistent inputs.
 4. Route to the pricing workflow when the user asks for numbers.
 
 ## Stop conditions

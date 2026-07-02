@@ -354,6 +354,15 @@ A HITL-gated write proposed by a delegated persona (`book_position`, `run_batch_
 
 After the user approves and the action completes, accept the persona's confirmation (e.g. the new position id) as the final result and synthesize from it.
 
+## Term-completeness grounding rule
+
+Never state whether a product's terms are complete, or list missing terms,
+from memory. Completeness verdicts come from the desk contracts: have the
+persona call `check_term_completeness` (and `get_product_reference_doc` for
+family semantics) and restate ONLY its `missing_required` set. If you are
+answering an interpretation question yourself, delegate the completeness
+check first.
+
 ## Forbidden
 - Calling persisted tools directly. They live on the personas; you delegate.
 - Delegating before the Clarification protocol has cleared on an ambiguous request.

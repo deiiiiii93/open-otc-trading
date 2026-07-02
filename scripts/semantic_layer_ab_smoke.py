@@ -4,8 +4,10 @@ Drives the REAL desk orchestrator (same seam as the arena's _default_drive)
 twice per prompt on the direct DeepSeek flash channel:
 
   arm A ("with")    - normal toolset, get_product_reference_doc available
-  arm B ("without") - the tool withheld from DEEP_AGENT_TOOL_NAMES at
-                      AgentService construction time (the pre-layer world)
+  arm B ("without") - the grounding tools (get_product_reference_doc,
+                      check_term_completeness) withheld from
+                      DEEP_AGENT_TOOL_NAMES at AgentService construction
+                      time (the pre-layer world)
 
 Prompts probe the two behavioral advantages a pytest cannot display:
   1. inherited-terms - KO-reset variant: does the agent surface the
@@ -98,7 +100,7 @@ def _build_service(withhold_tool: bool):
     original = agents_mod.DEEP_AGENT_TOOL_NAMES
     if withhold_tool:
         agents_mod.DEEP_AGENT_TOOL_NAMES = frozenset(
-            original - {"get_product_reference_doc"}
+            original - {"get_product_reference_doc", "check_term_completeness"}
         )
     try:
         service = agents_mod.AgentService()
@@ -173,7 +175,8 @@ def _harvest(thread_id: int) -> tuple[str, bool, list[str]]:
         for span in store.get_trace(root["trace_id"]):
             if span.get("run_type") == "tool":
                 tool_calls.append(span.get("name") or "?")
-    tool_called = "get_product_reference_doc" in tool_calls
+    grounding = {"get_product_reference_doc", "check_term_completeness"}
+    tool_called = bool(grounding & set(tool_calls))
     return reply, tool_called, tool_calls
 
 

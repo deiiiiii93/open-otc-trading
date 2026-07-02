@@ -182,6 +182,7 @@ def all_personas(
 
     from .audit_trail_middleware import AuditTrailMiddleware
     from .cost_preview_hitl import LongRunningCostHITLMiddleware
+    from .term_grounding import TermGroundingMiddleware
     from .fanout_readonly import FanoutReadOnlyMiddleware
     from .tool_error_boundary import ToolErrorBoundaryMiddleware
 
@@ -206,6 +207,9 @@ def all_personas(
         middleware.insert(2, FanoutReadOnlyMiddleware(tools=tools))
         if yolo_mode:
             middleware.append(LongRunningCostHITLMiddleware(tools=tools))
+        # Ungrounded term-completeness verdicts bounce back once (see
+        # term_grounding.py) - personas hold the grounding tools.
+        middleware.append(TermGroundingMiddleware())
         middleware.append(EnvelopeSkillsMiddleware(backend=skills_backend, sources=sources))
         spec["middleware"] = middleware  # pyright: ignore[reportGeneralTypeIssues]
     return specs
