@@ -84,3 +84,19 @@ def test_resolved_neutral_docs_are_region_neutral() -> None:
             assert token not in resolved.content, (
                 f"{quantark_class}: neutral resolution leaks region token {token!r}"
             )
+
+
+def test_no_workflow_skill_reads_raw_product_docs() -> None:
+    """Workflow skills must load product semantics via get_product_reference_doc.
+
+    A raw read of products/snowball-cn.md now returns an overlay-only doc
+    (no payoff/pricing-input semantics) - any skill still pointing there
+    silently loses the base content the resolver would have merged in."""
+    from app.services.deep_agent.skills_paths import WORKFLOWS_DIR
+
+    offenders = [
+        path.relative_to(WORKFLOWS_DIR).as_posix()
+        for path in WORKFLOWS_DIR.rglob("SKILL.md")
+        if "references/products/snowball-cn.md" in path.read_text(encoding="utf-8")
+    ]
+    assert not offenders, f"skills reading the raw snowball-cn overlay: {offenders}"
