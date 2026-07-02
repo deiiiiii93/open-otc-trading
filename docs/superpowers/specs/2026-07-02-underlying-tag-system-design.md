@@ -31,7 +31,8 @@ instrument is a valid underlying to structure a product against":
    set.
 3. Gate the agent's booking tools so an unregistered underlying can't be
    silently used: in `interactive`/`auto` mode, surface a HITL approval card
-   to create-or-tag it; in `yolo` mode, add it automatically.
+   to create-or-tag it; **only** in `yolo` mode, add it automatically. `auto`
+   mode must still pause — it is not a synonym for `yolo` here.
 
 ## Non-goals
 
@@ -60,12 +61,24 @@ tags: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 New Alembic migration (next number after `0041`):
 
 - Adds the `tags` column (JSON, default `[]`, not null).
-- Backfill: for every symbol returned by `open_position_underlying_symbols()`
-  (services/underlyings.py:239 — the existing canonical "has an open OTC
-  position" query), append `"underlying"` to that instrument's `tags` if not
-  already present. Without this, every real underlying currently in
-  production would vanish from the Booking/Try to Solve pickers the moment
-  this ships, since the pickers will now require the explicit tag.
+- Backfill: append `"underlying"` to `tags` (if not already present) for any
+  `Instrument` row matching **either**:
+  - referenced by `open_position_underlying_symbols()`
+    (services/underlyings.py:239 — the existing canonical "has an open OTC
+    position" query), **or**
+  - `status == "active"` **and** it's a root instrument, not a derivative
+    contract instance: `kind != "listed_option"` and `expiry IS NULL` and
+    `contract_code IS NULL`.
+
+  The second clause is required, not optional: the problem this feature
+  exists to solve is precisely the instrument that's already been curated
+  (`status="active"`) but has no open position yet — e.g. `000905.SH` in the
+  screenshot that motivated this spec. Backfilling only the open-position
+  clause would silently drop every pre-registered, not-yet-traded underlying
+  from the Booking/Try to Solve pickers the moment this ships — the exact
+  failure mode the feature is meant to prevent, just moved to migration day.
+  Without either clause, every real underlying currently in production would
+  vanish from the pickers, since they now require the explicit tag.
 
 ### 2. Backend API
 
@@ -75,11 +88,18 @@ New Alembic migration (next number after `0041`):
   (main.py:1646) exactly.
 - `GET /api/instruments?tag=underlying` — extend `list_instruments()`
   (services/instruments.py:58) with an optional `tag: str | None` param.
-  Filtering happens **in Python, post-query**, the same way
-  `list_portfolios(tags=...)` already does it
-  (services/portfolio_service.py:51-53: `wanted.issubset(set(p.tags or []))`),
-  not a SQL JSON-containment query — keeps the two tag-filtering code paths
-  consistent.
+  Tag filtering happens **in Python** (matching `list_portfolios(tags=...)`,
+  services/portfolio_service.py:51-53: `wanted.issubset(set(p.tags or []))`),
+  not a SQL JSON-containment query. **Ordering relative to pagination
+  matters**: `list_portfolios` never paginates, but `list_instruments`
+  already applies `.offset(offset).limit(limit)` in SQL
+  (services/instruments.py:81) — filtering by tag *after* that would only
+  ever see the current page and silently drop tagged rows sorted beyond it.
+  So when `tag` is given, apply every other filter (`kind`, `status`,
+  `parent_id`, `series_root`, `search`) in SQL as today but **skip the SQL
+  `.offset().limit()`**, filter the full matching result set by tag in
+  Python, and apply `offset`/`limit` to *that* filtered list before
+  returning.
 
 ### 3. Frontend
 
@@ -122,12 +142,19 @@ New file `backend/app/tools/underlyings.py`.
   - Instrument exists and already tagged → no-op, returns ok.
 - **Gating**: `@capability_gated(group=ToolGroup.DOMAIN_WRITE)`, added to
   `INTERRUPT_TOOL_NAMES` (services/deep_agent/hitl.py:23) with
-  `risk_level="write"` (`_RISK_LEVEL_BY_TOOL`) and a label in
-  `_LABEL_BY_TOOL` (e.g. `"Register/tag underlying"`). Per `interrupt_on_config()`
-  (hitl.py:148-173), `"write"`-risk tools auto-execute with no prompt under
-  `yolo`/`auto` mode and render an approve/reject `AgentActionProposal` card
-  under `interactive` mode — reusing the existing HITL mechanism verbatim, no
-  new plumbing needed.
+  `risk_level="irreversible"` (`_RISK_LEVEL_BY_TOOL`) — **not** `"write"` —
+  and a label in `_LABEL_BY_TOOL` (e.g. `"Register/tag underlying"`). This
+  distinction is load-bearing: per `interrupt_on_config()` (hitl.py:148-173),
+  `"write"`-risk tools bypass confirmation under **both** `auto` and `yolo`
+  mode (`resolve_execution_mode()` sets `clear_hitl=True` for `auto` too),
+  which would let the model silently persist an unvetted underlying under
+  `auto` mode — contradicting the explicit requirement that only `yolo`
+  auto-adds. `"irreversible"`-risk tools stay gated under `auto` and only
+  bypass under `yolo`/headless, which is exactly the interactive-and-auto-warn,
+  yolo-only-auto-add behavior this feature requires. (The name
+  `"irreversible"` describes the risk *category* LangGraph gates on here, not
+  a literal claim that tags can't be removed — they can, via the tags PUT
+  endpoint.)
 - **Accepted simplification**: LangGraph's interrupt fires *before* the tool
   body runs (interrupt is at tool-call granularity, gated on tool name +
   args), so the pre-approval card can only show the symbol being registered —
@@ -157,10 +184,14 @@ the primary path.
 
 ## Testing
 
-- Backend: migration backfill (existing open-position underlyings get
-  tagged), `PUT .../tags` endpoint, `GET ?tag=` filter, `register_underlying`
-  tool (create-new / tag-existing / no-op cases), `book_position`/`book_hedge`
-  rejecting an unregistered underlying, HITL card rendering for
-  `register_underlying` under `interactive` mode, auto-execute under `yolo`.
+- Backend: migration backfill (open-position underlyings *and*
+  active/no-position root instruments both get tagged), `PUT .../tags`
+  endpoint, `GET ?tag=` filter (including a regression where a tagged
+  underlying sorts beyond the unfiltered page size, to catch the
+  filter-before-pagination ordering), `register_underlying` tool (create-new
+  / tag-existing / no-op cases), `book_position`/`book_hedge` rejecting an
+  unregistered underlying, HITL card rendering for `register_underlying`
+  under **both** `interactive` and `auto` mode, auto-execute (no card) only
+  under `yolo`.
 - Frontend: Booking and TrySolve pickers only list tagged+active instruments;
   Instruments page tag editor round-trips through the new endpoint.
