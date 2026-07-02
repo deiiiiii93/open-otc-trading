@@ -205,6 +205,15 @@ class AgentBridge:
         AgentEvent
             Typed events parsed from the SSE stream produced by the agent.
         """
+        resolved_selection = self._svc.normalize_model_selection(self._model_selection)
+        # Persist the inbound user turn BEFORE streaming. ``stream_and_persist``
+        # only persists the *assistant* reply and assumes the caller already
+        # inserted the user message (the HTTP /chat endpoint and the arena
+        # runner both do). Without this, IM-originated user turns never land in
+        # ``agent_messages`` — the chat panel shows only assistant replies and
+        # the routed-stream turn cannot attach its route to the latest user row.
+        self._persist_user_turn(thread.id, text, resolved_selection)
+
         sse_iter = self._svc.stream_and_persist(
             thread_id=thread.id,
             content=text,
@@ -212,7 +221,7 @@ class AgentBridge:
             page_context=None,
             context_usage=None,
             accounting_date=None,
-            model_selection=self._svc.normalize_model_selection(self._model_selection),
+            model_selection=resolved_selection,
             yolo_mode=False,
             envelope="DESK_WORKFLOW",
             confirmed_cost_preview=False,
@@ -220,6 +229,37 @@ class AgentBridge:
         )
         async for event in parse_sse_stream(sse_iter):
             yield event
+
+    @staticmethod
+    def _persist_user_turn(
+        thread_id: int, content: str, model_selection: dict[str, str] | None
+    ) -> None:
+        """Insert the inbound user ``AgentMessage`` in its own committed
+        transaction, mirroring the HTTP /chat endpoint and the arena runner.
+
+        A short-lived ``SessionLocal`` (not the caller's gateway session) is
+        used deliberately: the row must be **committed** before
+        ``stream_and_persist`` runs, because ``_prepare_workflow_routed_stream_turn``
+        opens its own session to read the latest user turn and attach the route.
+        """
+        from app import database
+        from app.models import AgentMessage
+
+        with database.SessionLocal() as session:
+            session.add(
+                AgentMessage(
+                    thread_id=thread_id,
+                    role="user",
+                    character=None,
+                    content=content,
+                    meta={
+                        "model_selection": model_selection,
+                        "yolo_mode": False,
+                        "source": "gateway",
+                    },
+                )
+            )
+            session.commit()
 
     def resume(
         self,
