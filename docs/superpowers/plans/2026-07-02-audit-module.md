@@ -28,7 +28,7 @@
 **Files:**
 - Create: `backend/app/services/deep_agent/write_actions.py`
 - Modify: `backend/app/services/deep_agent/fanout_readonly.py`
-- Test: `backend/tests/deep_agent/test_write_actions.py`
+- Test: `tests/test_write_actions.py`
 
 **Interfaces:**
 - Produces: `FS_WRITE_TOOLS: frozenset[str]`, `write_names_by_class(tools: Sequence[BaseTool]) -> dict[str, str]`, `classify_write_action(name: str, args: dict | None, gated: dict[str, str], *, include_page_action: bool) -> str | None` (returns `'domain_write' | 'async_dispatch' | 'page_action' | 'fs_write' | 'artifact_write' | None`).
@@ -36,7 +36,7 @@
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-# backend/tests/deep_agent/test_write_actions.py
+# tests/test_write_actions.py
 from app.services.deep_agent.envelopes import ToolGroup
 from app.services.deep_agent.write_actions import (
     classify_write_action,
@@ -85,7 +85,7 @@ def test_page_action_included_only_for_fanout_consumer():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `.venv/bin/python -m pytest backend/tests/deep_agent/test_write_actions.py -v`
+Run: `.venv/bin/python -m pytest tests/test_write_actions.py -v`
 Expected: FAIL with `ModuleNotFoundError: ... write_actions`
 
 - [ ] **Step 3: Implement the classifier**
@@ -169,13 +169,13 @@ Delete the now-unused `_WRITE_GROUPS`, `_FS_WRITE_TOOLS`, and the `ToolGroup` im
 
 - [ ] **Step 5: Run new tests + existing fan-out tests**
 
-Run: `.venv/bin/python -m pytest backend/tests/deep_agent/test_write_actions.py backend/tests/deep_agent/ -k "fanout or write_actions" -v`
+Run: `.venv/bin/python -m pytest tests/test_write_actions.py tests/ -k "fanout or write_actions" -v`
 Expected: PASS (fan-out behavior regression-free)
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add backend/app/services/deep_agent/write_actions.py backend/app/services/deep_agent/fanout_readonly.py backend/tests/deep_agent/test_write_actions.py
+git add backend/app/services/deep_agent/write_actions.py backend/app/services/deep_agent/fanout_readonly.py tests/test_write_actions.py
 git commit -m "feat(audit): shared write-action classifier; fanout guard consumes it"
 ```
 
@@ -185,7 +185,7 @@ git commit -m "feat(audit): shared write-action classifier; fanout guard consume
 
 **Files:**
 - Create: `backend/app/services/deep_agent/audit_redaction.py`
-- Test: `backend/tests/deep_agent/test_audit_redaction.py`
+- Test: `tests/test_audit_redaction.py`
 
 **Interfaces:**
 - Produces: `redact_args(tool_name: str, args: dict | None) -> tuple[dict, bool]` (returns `(payload, redacted_flag)`), `redact_text(text: str | None, cap: int = 2000) -> str | None`.
@@ -193,7 +193,7 @@ git commit -m "feat(audit): shared write-action classifier; fanout guard consume
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-# backend/tests/deep_agent/test_audit_redaction.py
+# tests/test_audit_redaction.py
 import hashlib
 
 from app.services.deep_agent.audit_redaction import redact_args, redact_text
@@ -246,7 +246,7 @@ def test_redact_text_caps_and_none():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `.venv/bin/python -m pytest backend/tests/deep_agent/test_audit_redaction.py -v`
+Run: `.venv/bin/python -m pytest tests/test_audit_redaction.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
 - [ ] **Step 3: Implement**
@@ -350,13 +350,13 @@ def redact_text(text: str | None, cap: int = _TEXT_CAP) -> str | None:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `.venv/bin/python -m pytest backend/tests/deep_agent/test_audit_redaction.py -v`
+Run: `.venv/bin/python -m pytest tests/test_audit_redaction.py -v`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/services/deep_agent/audit_redaction.py backend/tests/deep_agent/test_audit_redaction.py
+git add backend/app/services/deep_agent/audit_redaction.py tests/test_audit_redaction.py
 git commit -m "feat(audit): redaction layer (key-pattern masking, body elision, size caps)"
 ```
 
@@ -367,7 +367,7 @@ git commit -m "feat(audit): redaction layer (key-pattern masking, body elision, 
 **Files:**
 - Modify: `backend/app/models.py` (add class after `DomainEvent`, ~line 481)
 - Create: `backend/alembic/versions/0042_agent_action_audits.py`
-- Test: `backend/tests/test_migration_0042.py`
+- Test: `tests/test_migration_0042.py`
 
 **Interfaces:**
 - Produces: `AgentActionAudit` ORM model, table `agent_action_audits` (columns per spec §4: `id, kind, status, deny_reason, tool_name, tool_class, tool_call_id, audit_ref, mode, envelope, actor, model, persona, thread_id, workflow_id, session_id, task_id, message_id, desk_workflow_slug, args_json, redacted, result_preview, error, occurred_at, completed_at`).
@@ -499,11 +499,11 @@ def downgrade() -> None:
 - [ ] **Step 3: Write the migration test**
 
 ```python
-# backend/tests/test_migration_0042.py
+# tests/test_migration_0042.py
 import sqlalchemy as sa
 
 
-def test_agent_action_audits_table_exists(db_session):
+def test_agent_action_audits_table_exists(session):
     # conftest's DB fixture creates schema from Base metadata; assert the ORM
     # table round-trips a row with defaults.
     from app.models import AgentActionAudit
@@ -512,8 +512,8 @@ def test_agent_action_audits_table_exists(db_session):
         status="attempted", tool_name="book_position", tool_class="domain_write",
         args_json={"underlying": "AAPL"},
     )
-    db_session.add(row)
-    db_session.commit()
+    session.add(row)
+    session.commit()
     assert row.id is not None
     assert row.kind == "execution"
     assert row.redacted is False
@@ -521,11 +521,11 @@ def test_agent_action_audits_table_exists(db_session):
     assert row.completed_at is None
 ```
 
-(If the repo's conftest exposes a differently named session fixture, use that one — check `backend/tests/conftest.py` before writing.)
+(If the repo's conftest exposes a differently named session fixture, use that one — check `tests/conftest.py` before writing.)
 
 - [ ] **Step 4: Run test + upgrade dry-run**
 
-Run: `.venv/bin/python -m pytest backend/tests/test_migration_0042.py -v`
+Run: `.venv/bin/python -m pytest tests/test_migration_0042.py -v`
 Expected: PASS
 Run: `.venv/bin/python -m alembic upgrade head` (against the live `data/open_otc.sqlite3`)
 Expected: `Running upgrade 0041_... -> 0042_agent_action_audits`
@@ -533,7 +533,7 @@ Expected: `Running upgrade 0041_... -> 0042_agent_action_audits`
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/models.py backend/alembic/versions/0042_agent_action_audits.py backend/tests/test_migration_0042.py
+git add backend/app/models.py backend/alembic/versions/0042_agent_action_audits.py tests/test_migration_0042.py
 git commit -m "feat(audit): AgentActionAudit model + migration 0042"
 ```
 
@@ -543,7 +543,7 @@ git commit -m "feat(audit): AgentActionAudit model + migration 0042"
 
 **Files:**
 - Create: `backend/app/services/audit_trail.py`
-- Test: `backend/tests/test_audit_trail_recorder.py`
+- Test: `tests/test_audit_trail_recorder.py`
 
 **Interfaces:**
 - Produces:
@@ -560,7 +560,7 @@ git commit -m "feat(audit): AgentActionAudit model + migration 0042"
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-# backend/tests/test_audit_trail_recorder.py
+# tests/test_audit_trail_recorder.py
 import pytest
 from sqlalchemy.exc import OperationalError
 
@@ -583,19 +583,19 @@ CTX = {
 }
 
 
-def test_attempt_then_outcome(db_session):
+def test_attempt_then_outcome(session):
     row_id = record_attempt(
         tool_name="book_position", tool_class="domain_write",
         tool_call_id="call_1", args={"qty": 1, "api_key": "sk"}, context=CTX,
     )
-    row = db_session.get(AgentActionAudit, row_id)
+    row = session.get(AgentActionAudit, row_id)
     assert row.status == "attempted"
     assert row.args_json["api_key"] == "[REDACTED]"
     assert row.redacted is True
     assert row.mode == "yolo"
     record_outcome(row_id, status="ok", result_preview="booked #7")
-    db_session.expire_all()
-    row = db_session.get(AgentActionAudit, row_id)
+    session.expire_all()
+    row = session.get(AgentActionAudit, row_id)
     assert row.status == "ok"
     assert row.completed_at is not None
 
@@ -615,10 +615,10 @@ def test_attempt_fail_closed_after_bounded_retry(monkeypatch):
     assert len(calls) == 4  # 1 try + 3 retries
 
 
-def test_refusal_row_and_unpersisted_counter(db_session, monkeypatch):
+def test_refusal_row_and_unpersisted_counter(session, monkeypatch):
     record_refusal(tool_name="book_position", tool_class="domain_write",
                    tool_call_id="c9", context=CTX)
-    row = db_session.query(AgentActionAudit).filter_by(status="refused").one()
+    row = session.query(AgentActionAudit).filter_by(status="refused").one()
     assert row.deny_reason == "audit_unavailable"
     # When even the refusal row cannot persist, the in-memory counter grows.
     before = audit_trail.unpersisted_refusals()
@@ -628,30 +628,30 @@ def test_refusal_row_and_unpersisted_counter(db_session, monkeypatch):
     assert audit_trail.unpersisted_refusals() == before + 1
 
 
-def test_hitl_proposal_joins_caller_session(db_session):
+def test_hitl_proposal_joins_caller_session(session):
     proposal = {
         "id": "int1:0", "tool_name": "book_position",
         "payload": {"qty": 2},
         "source_meta": {"audit": {"audit_ref": "ref-1", "tool_call_id": "call_2"}},
     }
-    record_hitl_proposal(db_session, proposal=proposal, tool_class="domain_write", context=CTX)
+    record_hitl_proposal(session, proposal=proposal, tool_class="domain_write", context=CTX)
     # NOT committed yet — atomicity is the caller's transaction.
-    db_session.rollback()
-    assert db_session.query(AgentActionAudit).filter_by(kind="hitl_proposal").count() == 0
-    record_hitl_proposal(db_session, proposal=proposal, tool_class="domain_write", context=CTX)
-    db_session.commit()
-    row = db_session.query(AgentActionAudit).filter_by(kind="hitl_proposal").one()
+    session.rollback()
+    assert session.query(AgentActionAudit).filter_by(kind="hitl_proposal").count() == 0
+    record_hitl_proposal(session, proposal=proposal, tool_class="domain_write", context=CTX)
+    session.commit()
+    row = session.query(AgentActionAudit).filter_by(kind="hitl_proposal").one()
     assert row.status == "proposed"
     assert row.audit_ref == "ref-1"
     assert row.tool_call_id == "call_2"
 
 
-def test_hitl_decision_row(db_session):
+def test_hitl_decision_row(session):
     action = {"id": "int1:0", "tool_name": "book_position",
               "source_meta": {"audit": {"audit_ref": "ref-2", "tool_call_id": "c3"}}}
-    record_hitl_decision(db_session, action=action, decision="approved", actor="desk_user")
-    db_session.commit()
-    row = db_session.query(AgentActionAudit).filter_by(kind="hitl_decision").one()
+    record_hitl_decision(session, action=action, decision="approved", actor="desk_user")
+    session.commit()
+    row = session.query(AgentActionAudit).filter_by(kind="hitl_decision").one()
     assert row.status == "approved"
     assert row.audit_ref == "ref-2"
     assert row.actor == "desk_user"
@@ -659,7 +659,7 @@ def test_hitl_decision_row(db_session):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `.venv/bin/python -m pytest backend/tests/test_audit_trail_recorder.py -v`
+Run: `.venv/bin/python -m pytest tests/test_audit_trail_recorder.py -v`
 Expected: FAIL with `ModuleNotFoundError: ... audit_trail`
 
 - [ ] **Step 3: Implement the recorder**
@@ -837,14 +837,29 @@ def record_hitl_decision(
     action: dict[str, Any],
     decision: str,
     actor: str,
+    context: dict[str, Any] | None = None,
+    tool_class: str = "domain_write",
 ) -> None:
-    """Insert an approved/rejected decision row into the caller's session."""
+    """Insert an approved/rejected decision row into the caller's session.
+
+    Join keys (thread/workflow/session/task) come from `context` when the call
+    site has them, falling back to the action's own source_meta — decision rows
+    must be reachable from thread-scoped audit views (plan-review finding #3).
+    """
     audit = _audit_block(action)
-    ctx = _context_columns(None)
+    meta = action.get("source_meta") or {}
+    merged = {
+        "thread_id": meta.get("thread_id"),
+        "workflow_id": meta.get("workflow_id"),
+        "session_id": meta.get("session_id"),
+        "task_id": meta.get("task_id"),
+        **{k: v for k, v in (context or {}).items() if v is not None},
+    }
+    ctx = _context_columns(merged)
     ctx["actor"] = actor
     session.add(AgentActionAudit(
         kind="hitl_decision", status=decision,
-        tool_name=str(action.get("tool_name") or ""), tool_class="domain_write",
+        tool_name=str(action.get("tool_name") or ""), tool_class=tool_class,
         tool_call_id=audit.get("tool_call_id"), audit_ref=audit.get("audit_ref"),
         args_json={}, **ctx,
     ))
@@ -854,13 +869,13 @@ Note: `record_hitl_decision` sets `tool_class="domain_write"` as a safe default 
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `.venv/bin/python -m pytest backend/tests/test_audit_trail_recorder.py -v`
+Run: `.venv/bin/python -m pytest tests/test_audit_trail_recorder.py -v`
 Expected: PASS
 
 - [ ] **Step 5: Add the real lock-contention test** (spec §8)
 
 ```python
-# append to backend/tests/test_audit_trail_recorder.py
+# append to tests/test_audit_trail_recorder.py
 def test_contention_fail_closed_with_real_lock(tmp_path, monkeypatch):
     """Hold a real SQLite write lock; record_attempt must retry then refuse."""
     import sqlite3
@@ -884,13 +899,13 @@ def test_contention_fail_closed_with_real_lock(tmp_path, monkeypatch):
         locker.rollback(); locker.close()
 ```
 
-Run: `.venv/bin/python -m pytest backend/tests/test_audit_trail_recorder.py -v`
+Run: `.venv/bin/python -m pytest tests/test_audit_trail_recorder.py -v`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add backend/app/services/audit_trail.py backend/tests/test_audit_trail_recorder.py
+git add backend/app/services/audit_trail.py tests/test_audit_trail_recorder.py
 git commit -m "feat(audit): fail-closed recorder with bounded retry, refusal counter, HITL row helpers"
 ```
 
@@ -900,7 +915,7 @@ git commit -m "feat(audit): fail-closed recorder with bounded retry, refusal cou
 
 **Files:**
 - Create: `backend/app/services/deep_agent/audit_trail_middleware.py`
-- Test: `backend/tests/deep_agent/test_audit_trail_middleware.py`
+- Test: `tests/test_audit_trail_middleware.py`
 
 **Interfaces:**
 - Produces: `AuditTrailMiddleware(tools: Sequence[BaseTool])` with `wrap_tool_call` / `awrap_tool_call`.
@@ -909,7 +924,7 @@ git commit -m "feat(audit): fail-closed recorder with bounded retry, refusal cou
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-# backend/tests/deep_agent/test_audit_trail_middleware.py
+# tests/test_audit_trail_middleware.py
 import pytest
 from langchain_core.messages import ToolMessage
 from langgraph.errors import GraphInterrupt
@@ -940,59 +955,59 @@ def _mw():
     return AuditTrailMiddleware(tools=TOOLS)
 
 
-def test_read_tool_passes_through_no_rows(db_session):
+def test_read_tool_passes_through_no_rows(session):
     called = []
     result = _mw().wrap_tool_call(_Req("list_positions"), lambda r: called.append(r) or "ok")
     assert result == "ok" and called
-    assert db_session.query(AgentActionAudit).count() == 0
+    assert session.query(AgentActionAudit).count() == 0
 
 
-def test_write_tool_attempt_before_handler_then_ok(db_session):
+def test_write_tool_attempt_before_handler_then_ok(session):
     order = []
 
     def handler(request):
-        order.append(db_session.query(AgentActionAudit).filter_by(status="attempted").count())
+        order.append(session.query(AgentActionAudit).filter_by(status="attempted").count())
         return ToolMessage(content="booked", tool_call_id="tc1", name="book_position")
 
     _mw().wrap_tool_call(_Req("book_position", {"qty": 1}), handler)
     assert order == [1]  # attempted row visible BEFORE the handler ran
-    row = db_session.query(AgentActionAudit).one()
+    row = session.query(AgentActionAudit).one()
     assert row.status == "ok" and row.tool_class == "domain_write"
 
 
-def test_error_toolmessage_recorded_as_error(db_session):
+def test_error_toolmessage_recorded_as_error(session):
     msg = ToolMessage(content="Error: boom", tool_call_id="tc1", name="book_position", status="error")
     _mw().wrap_tool_call(_Req("book_position"), lambda r: msg)
-    assert db_session.query(AgentActionAudit).one().status == "error"
+    assert session.query(AgentActionAudit).one().status == "error"
 
 
-def test_capability_denied_recorded_and_reraised(db_session):
+def test_capability_denied_recorded_and_reraised(session):
     def handler(request):
         raise CapabilityDeniedError(envelope=Envelope.PET_PAGE, group=ToolGroup.DOMAIN_WRITE, tool_name="book_position")
 
     with pytest.raises(CapabilityDeniedError):
         _mw().wrap_tool_call(_Req("book_position"), handler)
-    row = db_session.query(AgentActionAudit).one()
+    row = session.query(AgentActionAudit).one()
     assert row.status == "denied" and row.deny_reason == "capability"
 
 
-def test_interrupt_recorded_and_reraised(db_session):
+def test_interrupt_recorded_and_reraised(session):
     def handler(request):
         raise GraphInterrupt(())
 
     with pytest.raises(GraphInterrupt):
         _mw().wrap_tool_call(_Req("book_position"), handler)
-    assert db_session.query(AgentActionAudit).one().status == "interrupted"
+    assert session.query(AgentActionAudit).one().status == "interrupted"
 
 
-def test_raw_exception_recorded_and_reraised(db_session):
+def test_raw_exception_recorded_and_reraised(session):
     with pytest.raises(ValueError):
         _mw().wrap_tool_call(_Req("book_position"), lambda r: (_ for _ in ()).throw(ValueError("bad terms")))
-    row = db_session.query(AgentActionAudit).one()
+    row = session.query(AgentActionAudit).one()
     assert row.status == "error" and "bad terms" in row.error
 
 
-def test_fail_closed_refusal_blocks_handler(db_session, monkeypatch):
+def test_fail_closed_refusal_blocks_handler(session, monkeypatch):
     monkeypatch.setattr(
         audit_trail, "record_attempt",
         lambda **kw: (_ for _ in ()).throw(audit_trail.AuditUnavailableError("down")),
@@ -1005,17 +1020,17 @@ def test_fail_closed_refusal_blocks_handler(db_session, monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_awrap_tool_call_ok(db_session):
+async def test_awrap_tool_call_ok(session):
     async def handler(request):
         return ToolMessage(content="ok", tool_call_id="tc1", name="book_position")
 
     await _mw().awrap_tool_call(_Req("book_position"), handler)
-    assert db_session.query(AgentActionAudit).one().status == "ok"
+    assert session.query(AgentActionAudit).one().status == "ok"
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `.venv/bin/python -m pytest backend/tests/deep_agent/test_audit_trail_middleware.py -v`
+Run: `.venv/bin/python -m pytest tests/test_audit_trail_middleware.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
 - [ ] **Step 3: Implement**
@@ -1181,13 +1196,13 @@ class AuditTrailMiddleware(AgentMiddleware):
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `.venv/bin/python -m pytest backend/tests/deep_agent/test_audit_trail_middleware.py -v`
+Run: `.venv/bin/python -m pytest tests/test_audit_trail_middleware.py -v`
 Expected: PASS. If `CapabilityDeniedError` behavior is masked by conftest's `_bypass_capability_gate`, these tests don't invoke the gate (they raise the exception directly from the fake handler), so no `_GATE_TEST_FILES` registration is needed — verify this holds.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/services/deep_agent/audit_trail_middleware.py backend/tests/deep_agent/test_audit_trail_middleware.py
+git add backend/app/services/deep_agent/audit_trail_middleware.py tests/test_audit_trail_middleware.py
 git commit -m "feat(audit): AuditTrailMiddleware — fail-closed capture at wrap_tool_call"
 ```
 
@@ -1199,7 +1214,7 @@ git commit -m "feat(audit): AuditTrailMiddleware — fail-closed capture at wrap
 - Modify: `backend/app/services/deep_agent/orchestrator.py:145` (`_agent_middleware`)
 - Modify: `backend/app/services/deep_agent/personas.py:193-206` (`all_personas`)
 - Modify: `backend/app/services/async_agents/agent.py:120-132` (`build_async_agent`)
-- Test: `backend/tests/deep_agent/test_audit_registration.py`
+- Test: `tests/test_audit_registration.py`
 
 **Interfaces:**
 - Consumes: `AuditTrailMiddleware` (Task 5).
@@ -1207,7 +1222,7 @@ git commit -m "feat(audit): AuditTrailMiddleware — fail-closed capture at wrap
 - [ ] **Step 1: Write the failing coverage-assertion test** (spec §5.2a: a factory missing the middleware must fail CI)
 
 ```python
-# backend/tests/deep_agent/test_audit_registration.py
+# tests/test_audit_registration.py
 """Every agent middleware stack must carry AuditTrailMiddleware (spec §5.2a)."""
 from app.services.deep_agent.audit_trail_middleware import AuditTrailMiddleware
 
@@ -1260,7 +1275,7 @@ def test_async_agent_stack_has_audit(monkeypatch):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `.venv/bin/python -m pytest backend/tests/deep_agent/test_audit_registration.py -v`
+Run: `.venv/bin/python -m pytest tests/test_audit_registration.py -v`
 Expected: FAIL (middleware not registered yet)
 
 - [ ] **Step 3: Register in `orchestrator.py::_agent_middleware`** — after line 145:
@@ -1298,13 +1313,13 @@ with the import added next to the existing middleware imports:
 
 - [ ] **Step 6: Run the registration test + existing orchestrator/persona tests**
 
-Run: `.venv/bin/python -m pytest backend/tests/deep_agent/test_audit_registration.py backend/tests/deep_agent/ -v`
+Run: `.venv/bin/python -m pytest tests/test_audit_registration.py tests/ -v`
 Expected: PASS
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add backend/app/services/deep_agent/orchestrator.py backend/app/services/deep_agent/personas.py backend/app/services/async_agents/agent.py backend/tests/deep_agent/test_audit_registration.py
+git add backend/app/services/deep_agent/orchestrator.py backend/app/services/deep_agent/personas.py backend/app/services/async_agents/agent.py tests/test_audit_registration.py
 git commit -m "feat(audit): register AuditTrailMiddleware in orchestrator, personas, async agent + CI coverage assertion"
 ```
 
@@ -1316,7 +1331,7 @@ git commit -m "feat(audit): register AuditTrailMiddleware in orchestrator, perso
 - Modify: `backend/app/services/deep_agent/hitl.py:296-326` (`_source_meta_for_action`)
 - Modify: `backend/app/services/agents.py` — audit-context injection at the `graph_run_config` call sites (`configurable_extra`), proposal-row insertion at the five `pending_actions` persistence sites (~2033, ~2358, ~3075, ~4046, ~4230), decision rows in `_mark_pending_action_resolved` (~930)
 - Modify: `backend/app/services/async_agents/runner.py:242` and `backend/app/services/async_agents/resume.py:141` (audit context in `configurable_extra`)
-- Test: `backend/tests/deep_agent/test_audit_hitl_capture.py`
+- Test: `tests/test_audit_hitl_capture.py`
 
 **Interfaces:**
 - Consumes: `record_hitl_proposal` / `record_hitl_decision` / `AUDIT_CONTEXT_KEY` (Task 4).
@@ -1325,7 +1340,7 @@ git commit -m "feat(audit): register AuditTrailMiddleware in orchestrator, perso
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-# backend/tests/deep_agent/test_audit_hitl_capture.py
+# tests/test_audit_hitl_capture.py
 """audit_ref minting is UNCONDITIONAL — the async projection path passes
 persona=None and source_meta=None and must still produce the audit block
 (spec §5.4; this was review finding #1 of iteration 2)."""
@@ -1364,7 +1379,7 @@ def test_audit_ref_preserved_when_source_meta_present():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `.venv/bin/python -m pytest backend/tests/deep_agent/test_audit_hitl_capture.py -v`
+Run: `.venv/bin/python -m pytest tests/test_audit_hitl_capture.py -v`
 Expected: FAIL (`source_meta` is `{}` on the no-meta path)
 
 - [ ] **Step 3: Rewrite `_source_meta_for_action`** (drop the `if not source_meta: return {}` early exit):
@@ -1452,19 +1467,25 @@ At each site where `"pending_actions": [a.model_dump(mode="json") for a in pendi
 
 ```python
             from .audit_trail import record_hitl_proposal
-            from .deep_agent.write_actions import write_names_by_class
+            from .deep_agent.write_actions import classify_write_action, write_names_by_class
 
             gated = write_names_by_class(self.tools)
             for entry in (a.model_dump(mode="json") for a in pending):
+                tool_class = classify_write_action(
+                    entry.get("tool_name") or "",
+                    entry.get("payload") or {},
+                    gated,
+                    include_page_action=False,
+                ) or "domain_write"
                 record_hitl_proposal(
                     session,
                     proposal=entry,
-                    tool_class=gated.get(entry.get("tool_name"), "domain_write"),
+                    tool_class=tool_class,
                     context={"thread_id": thread_id, "actor": actor},
                 )
 ```
 
-using the session/thread/actor variables in scope at each site (names differ per site — match locals). The insert joins the same transaction as the message persist (atomicity, spec §5.4). If `self.tools` is not the attribute name, use the AgentService tool list attribute found at implementation time; fall back `"domain_write"` covers every `INTERRUPT_TOOL_NAMES` member.
+using the session/thread/actor variables in scope at each site (names differ per site — match locals). The insert joins the same transaction as the message persist (atomicity, spec §5.4). If `self.tools` is not the attribute name, use the AgentService tool list attribute found at implementation time. **Classification goes through `classify_write_action` with the proposal's `payload` as the args so a `run_python(writes_artifacts=True)` HITL proposal lands as `artifact_write`, matching its later execution row** (the `RunPythonArtifactHITLMiddleware` interrupt path); the `"domain_write"` fallback covers every remaining `INTERRUPT_TOOL_NAMES` member. Add to the Task 7 tests: a `run_python` proposal with `payload={"writes_artifacts": True}` produces `tool_class == "artifact_write"` on proposal, decision, and execution rows.
 
 - [ ] **Step 6: Insert decision rows in `_mark_pending_action_resolved`** (agents.py:930 — the single helper all three resume paths call):
 
@@ -1477,42 +1498,48 @@ using the session/thread/actor variables in scope at each site (names differ per
         action=entry,
         decision="approved" if status == "confirmed" else "rejected",
         actor=actor,
+        context={
+            "thread_id": thread_id,
+            "workflow_id": workflow_id,
+            "session_id": agent_session_id,
+            "message_id": source_message_id,
+        },
     )
 ```
 
-Match the helper's real signature/local names when editing (it iterates `pending_actions` and flips `status`; `session` and `actor` are threaded from `resume_pending_action` — pass them in if not already parameters).
+Match the helper's real signature/local names when editing (it iterates `pending_actions` and flips `status`; `session`, `actor`, and the source message's thread/workflow identifiers are in scope at `resume_pending_action` — thread them into `_mark_pending_action_resolved` as parameters if it doesn't already receive them). Add to the Task 7 tests: after a decision row is recorded with a `thread_id`, `GET /api/audit/actions?thread_id=N` (or the equivalent query) returns proposal, decision, and execution rows sharing one `audit_ref`.
 
 - [ ] **Step 7: Write integration-style tests for proposal + decision rows**
 
 ```python
-# append to backend/tests/deep_agent/test_audit_hitl_capture.py
-def test_proposal_and_decision_rows_roundtrip(db_session):
+# append to tests/test_audit_hitl_capture.py
+def test_proposal_and_decision_rows_roundtrip(session):
     from app.models import AgentActionAudit
     from app.services.audit_trail import record_hitl_decision, record_hitl_proposal
 
     [proposal] = pending_actions_from_interrupts([_interrupt()], persona=None, source_meta=None)
     entry = proposal.model_dump(mode="json")
-    record_hitl_proposal(db_session, proposal=entry, tool_class="domain_write",
+    record_hitl_proposal(session, proposal=entry, tool_class="domain_write",
                          context={"actor": "desk_user"})
-    db_session.commit()
-    prop_row = db_session.query(AgentActionAudit).filter_by(kind="hitl_proposal").one()
+    session.commit()
+    prop_row = session.query(AgentActionAudit).filter_by(kind="hitl_proposal").one()
 
-    record_hitl_decision(db_session, action=entry, decision="approved", actor="desk_user")
-    db_session.commit()
-    dec_row = db_session.query(AgentActionAudit).filter_by(kind="hitl_decision").one()
+    record_hitl_decision(session, action=entry, decision="approved", actor="desk_user")
+    session.commit()
+    dec_row = session.query(AgentActionAudit).filter_by(kind="hitl_decision").one()
     assert dec_row.audit_ref == prop_row.audit_ref  # the chain correlates
     assert dec_row.tool_call_id == prop_row.tool_call_id == "call_9"
 ```
 
 - [ ] **Step 8: Run the new tests + the full agents/hitl test files**
 
-Run: `.venv/bin/python -m pytest backend/tests/deep_agent/test_audit_hitl_capture.py backend/tests/ -k "hitl or pending" -v`
+Run: `.venv/bin/python -m pytest tests/test_audit_hitl_capture.py tests/ -k "hitl or pending" -v`
 Expected: PASS, including all pre-existing HITL tests (the `_source_meta_for_action` change now returns a non-empty dict where `{}` was returned — if an existing test asserts `source_meta == {}`, update that assertion to check the new unconditional audit block instead; that behavior change is the point of the spec).
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add backend/app/services/deep_agent/hitl.py backend/app/services/agents.py backend/app/services/async_agents/runner.py backend/app/services/async_agents/resume.py backend/tests/deep_agent/test_audit_hitl_capture.py
+git add backend/app/services/deep_agent/hitl.py backend/app/services/agents.py backend/app/services/async_agents/runner.py backend/app/services/async_agents/resume.py tests/test_audit_hitl_capture.py
 git commit -m "feat(audit): unconditional audit_ref minting, audit context threading, proposal/decision rows"
 ```
 
@@ -1523,7 +1550,7 @@ git commit -m "feat(audit): unconditional audit_ref minting, audit context threa
 **Files:**
 - Create: `backend/app/routers/audit.py`
 - Modify: `backend/app/main.py` (import ~line 252-257, `include_router` ~line 4045-4061)
-- Test: `backend/tests/test_audit_router.py`
+- Test: `tests/test_audit_router.py`
 
 **Interfaces:**
 - Produces: `build_audit_router() -> APIRouter` with `GET /api/audit/actions`, `GET /api/audit/actions/{id}`, `GET /api/audit/summary`.
@@ -1531,7 +1558,7 @@ git commit -m "feat(audit): unconditional audit_ref minting, audit context threa
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-# backend/tests/test_audit_router.py
+# tests/test_audit_router.py
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -1541,13 +1568,13 @@ from app.routers.audit import build_audit_router
 
 
 @pytest.fixture()
-def client(db_session):
+def client(session):
     app = FastAPI()
     app.include_router(build_audit_router())
     return TestClient(app)
 
 
-def _seed(db_session):
+def _seed(session):
     rows = [
         AgentActionAudit(kind="execution", status="ok", tool_name="book_position",
                          tool_class="domain_write", mode="yolo", tool_call_id="c1"),
@@ -1556,13 +1583,13 @@ def _seed(db_session):
         AgentActionAudit(kind="hitl_decision", status="rejected", tool_name="book_position",
                          tool_class="domain_write", actor="desk_user", audit_ref="r1"),
     ]
-    db_session.add_all(rows)
-    db_session.commit()
+    session.add_all(rows)
+    session.commit()
     return rows
 
 
-def test_list_filters_and_pagination(client, db_session):
-    _seed(db_session)
+def test_list_filters_and_pagination(client, session):
+    _seed(session)
     body = client.get("/api/audit/actions").json()
     assert body["total"] == 3
     assert body["items"][0]["id"] > body["items"][-1]["id"]  # newest first
@@ -1574,15 +1601,15 @@ def test_list_filters_and_pagination(client, db_session):
     assert client.get("/api/audit/actions?limit=500").status_code == 422  # cap 200
 
 
-def test_detail_and_404(client, db_session):
-    rows = _seed(db_session)
+def test_detail_and_404(client, session):
+    rows = _seed(session)
     detail = client.get(f"/api/audit/actions/{rows[0].id}").json()
     assert detail["tool_name"] == "book_position"
     assert client.get("/api/audit/actions/99999").status_code == 404
 
 
-def test_summary_counts(client, db_session):
-    _seed(db_session)
+def test_summary_counts(client, session):
+    _seed(session)
     body = client.get("/api/audit/summary").json()
     assert body["by_status"]["ok"] == 1
     assert body["by_status"]["denied"] == 1
@@ -1598,7 +1625,7 @@ def test_read_only_surface(client):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `.venv/bin/python -m pytest backend/tests/test_audit_router.py -v`
+Run: `.venv/bin/python -m pytest tests/test_audit_router.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
 - [ ] **Step 3: Implement the router**
@@ -1769,13 +1796,13 @@ from .routers.audit import build_audit_router
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `.venv/bin/python -m pytest backend/tests/test_audit_router.py -v`
+Run: `.venv/bin/python -m pytest tests/test_audit_router.py -v`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add backend/app/routers/audit.py backend/app/main.py backend/tests/test_audit_router.py
+git add backend/app/routers/audit.py backend/app/main.py tests/test_audit_router.py
 git commit -m "feat(audit): read-only /api/audit router (actions, detail+related, summary)"
 ```
 
