@@ -372,6 +372,11 @@ logger = logging.getLogger("agent.deep")
 DEEP_AGENT_TOOL_NAMES: frozenset[str] = frozenset(
     {
         "price_product",
+        # product semantics (semantic-layer completion): resolved reference
+        # docs for term interpretation — registered here AND in
+        # QUANT_AGENT_TOOLS; absent from this allowlist a tool is silently
+        # dropped from every persona.
+        "get_product_reference_doc",
         "solve_rfq",
         "get_rfq_catalog",
         "build_product",
