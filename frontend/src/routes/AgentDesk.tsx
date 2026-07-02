@@ -316,38 +316,40 @@ function ThreadRail({
 
   return (
     <aside className="wl-agent-desk__threads" aria-label="Threads">
-      <div className="wl-agent-desk__threads-head">
-        <div>
-          <div className="wl-agent-desk__eyebrow">Threads</div>
-          <div className="wl-agent-desk__threads-count">
-            {searchQuery.trim() ? `${filteredThreads.length} of ${threads.length}` : `${threads.length} total`}
+      <div className="wl-agent-desk__threads-controls">
+        <div className="wl-agent-desk__threads-head">
+          <div>
+            <div className="wl-agent-desk__eyebrow">Threads</div>
+            <div className="wl-agent-desk__threads-count">
+              {searchQuery.trim() ? `${filteredThreads.length} of ${threads.length}` : `${threads.length} total`}
+            </div>
           </div>
+          <Button variant="ghost" iconOnly onClick={onNewThread} aria-label="New thread">
+            <Plus size={16} aria-hidden="true" />
+          </Button>
         </div>
-        <Button variant="ghost" iconOnly onClick={onNewThread} aria-label="New thread">
-          <Plus size={16} aria-hidden="true" />
-        </Button>
+
+        <label className="wl-agent-desk__thread-search" htmlFor={searchInputId}>
+          <Search size={14} aria-hidden="true" />
+          <input
+            id={searchInputId}
+            type="search"
+            value={searchQuery}
+            placeholder="Search threads..."
+            onChange={(event) => setSearchQuery(event.target.value)}
+            aria-label="Search threads by name or content"
+          />
+        </label>
+
+        <label className="wl-agent-desk__arena-toggle">
+          <input
+            type="checkbox"
+            checked={showArena}
+            onChange={(event) => setShowArena(event.target.checked)}
+          />
+          Show arena threads
+        </label>
       </div>
-
-      <label className="wl-agent-desk__thread-search" htmlFor={searchInputId}>
-        <Search size={14} aria-hidden="true" />
-        <input
-          id={searchInputId}
-          type="search"
-          value={searchQuery}
-          placeholder="Search threads..."
-          onChange={(event) => setSearchQuery(event.target.value)}
-          aria-label="Search threads by name or content"
-        />
-      </label>
-
-      <label className="wl-agent-desk__arena-toggle">
-        <input
-          type="checkbox"
-          checked={showArena}
-          onChange={(event) => setShowArena(event.target.checked)}
-        />
-        Show arena threads
-      </label>
 
       <div className="wl-agent-desk__thread-list">
         {threads.length === 0 ? (
