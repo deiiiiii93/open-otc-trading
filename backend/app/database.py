@@ -282,6 +282,12 @@ def _ensure_incremental_schema(active_engine: Engine) -> None:
                     text("ALTER TABLE instruments ADD COLUMN tags JSON NOT NULL DEFAULT '[]'")
                 )
             _backfill_instrument_underlying_tags(active_engine, tables, inspector)
+        # Unlike the underlying-tag backfill above, this runs every boot, not
+        # just once at column-add time: "hedge" must track hedge_map_entries
+        # ground truth even on a DB that already has the `tags` column (past
+        # 0042) but hasn't run migration 0044 yet, and the recompute is cheap
+        # and idempotent by construction (see sync_hedge_tag).
+        _backfill_instrument_hedge_tags(active_engine, tables, inspector)
 
     from .services.engine_configs import DEFAULT_ENGINE_CONFIG_RULES
 
@@ -580,6 +586,75 @@ def _backfill_instrument_underlying_tags(active_engine: Engine, tables: set[str]
             current = json.loads(tags_raw) if tags_raw else []
             if "underlying" not in current:
                 current.append("underlying")
+                connection.execute(
+                    text("UPDATE instruments SET tags = :tags WHERE id = :id"),
+                    {"tags": json.dumps(current), "id": instrument_id},
+                )
+
+
+def _backfill_instrument_hedge_tags(active_engine: Engine, tables: set[str], inspector: Any) -> None:
+    """Mirrors migration 0044_hedge_tag's full-recompute backfill —
+    duplicated intentionally, not imported (migrations aren't reusable
+    modules; same duplicate-not-import convention as
+    _backfill_instrument_underlying_tags). Keep the two in sync if either
+    changes. Only requires `instruments` — the active-stock self-hedge rule
+    is derivable from `instruments` alone, so a DB without `hedge_map_entries`
+    yet must still get that half of the recompute, not skip the function
+    entirely."""
+    with active_engine.begin() as connection:
+        hedge_ids: set[int] = set()
+
+        if "hedge_map_entries" in tables:
+            # Both queries also require the Instrument row itself to be
+            # status='active' — see the matching comment in migration
+            # 0044_hedge_tag.upgrade(); reconcile_status can be stale
+            # relative to the instrument's current status.
+            for (instrument_id,) in connection.execute(
+                text(
+                    "SELECT DISTINCT h.instrument_id FROM hedge_map_entries h "
+                    "JOIN instruments i ON i.id = h.instrument_id "
+                    "WHERE h.reconcile_status = 'active' AND i.status = 'active'"
+                )
+            ).fetchall():
+                hedge_ids.add(instrument_id)
+
+            for (instrument_id,) in connection.execute(
+                text(
+                    "SELECT DISTINCT i.id FROM instruments i "
+                    "JOIN hedge_map_entries h ON h.instrument_id IS NULL "
+                    "AND h.exchange = i.exchange AND h.contract_code = i.contract_code "
+                    "WHERE h.reconcile_status = 'active' AND i.status = 'active' "
+                    "AND i.exchange IS NOT NULL AND i.contract_code IS NOT NULL"
+                )
+            ).fetchall():
+                hedge_ids.add(instrument_id)
+
+        for (instrument_id,) in connection.execute(
+            text("SELECT id FROM instruments WHERE kind = 'stock' AND status = 'active'")
+        ).fetchall():
+            hedge_ids.add(instrument_id)
+
+        for (instrument_id, tags_raw) in connection.execute(
+            text("SELECT id, tags FROM instruments WHERE tags LIKE '%\"hedge\"%'")
+        ).fetchall():
+            current = json.loads(tags_raw) if tags_raw else []
+            if "hedge" in current and instrument_id not in hedge_ids:
+                current = [t for t in current if t != "hedge"]
+                connection.execute(
+                    text("UPDATE instruments SET tags = :tags WHERE id = :id"),
+                    {"tags": json.dumps(current), "id": instrument_id},
+                )
+
+        for instrument_id in sorted(hedge_ids):
+            row = connection.execute(
+                text("SELECT tags FROM instruments WHERE id = :id"),
+                {"id": instrument_id},
+            ).fetchone()
+            if row is None:
+                continue
+            current = json.loads(row[0]) if row[0] else []
+            if "hedge" not in current:
+                current.append("hedge")
                 connection.execute(
                     text("UPDATE instruments SET tags = :tags WHERE id = :id"),
                     {"tags": json.dumps(current), "id": instrument_id},
