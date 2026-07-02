@@ -88,7 +88,9 @@ def build_audit_router() -> APIRouter:
                 q = q.filter(AgentActionAudit.occurred_at <= until)
             total = q.count()
             rows = (
-                q.order_by(AgentActionAudit.id.desc())
+                q.order_by(
+                    AgentActionAudit.occurred_at.desc(), AgentActionAudit.id.desc()
+                )
                 .offset(offset)
                 .limit(limit)
                 .all()

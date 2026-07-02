@@ -35,6 +35,8 @@ function props(overrides: Partial<AuditProps> = {}): AuditProps {
   return {
     items: [ROW],
     total: 1,
+    page: 0,
+    pageSize: 25,
     summary: null,
     loading: false,
     error: null,
@@ -49,7 +51,8 @@ function props(overrides: Partial<AuditProps> = {}): AuditProps {
     onModeFilter: vi.fn(),
     onRowClick: vi.fn(),
     onCloseDetail: vi.fn(),
-    onLoadMore: vi.fn(),
+    onPage: vi.fn(),
+    onPageSize: vi.fn(),
     onRefresh: vi.fn(),
     ...overrides,
   };
@@ -115,8 +118,20 @@ describe('Audit', () => {
     expect(approvedBadges).toHaveLength(1);
   });
 
-  it('shows load-more when items < total', () => {
+  it('renders a rows-per-page pager with prev/next controls', () => {
     render(<Audit {...props({ total: 5 })} />);
-    expect(screen.getByText('Load more')).toBeInTheDocument();
+    expect(screen.getByText('1-5 of 5')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Previous page' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled();
+  });
+
+  it('enables next page when more rows exist beyond the current page', () => {
+    const onPage = vi.fn();
+    render(<Audit {...props({ total: 60, page: 0, pageSize: 25, onPage })} />);
+    expect(screen.getByText('1-25 of 60')).toBeInTheDocument();
+    const next = screen.getByRole('button', { name: 'Next page' });
+    expect(next).not.toBeDisabled();
+    next.click();
+    expect(onPage).toHaveBeenCalledWith(1);
   });
 });

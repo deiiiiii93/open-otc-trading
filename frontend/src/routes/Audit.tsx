@@ -1,12 +1,7 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import type { AuditAction, AuditActionDetail, AuditSummary } from '../types';
-import { PageScaffold } from '../components/templates/PageScaffold';
-import {
-  PageToolbar,
-  PageToolbarSearch,
-  PageToolbarSpacer,
-} from '../components/PageToolbar';
-import { Table, type Column } from '../components/Table';
+import { DataTablePage } from '../components/templates/DataTablePage';
+import type { Column } from '../components/Table';
 import { Badge, type BadgeVariant } from '../components/Badge';
 import { Select } from '../components/Select';
 import { Modal } from '../components/Modal';
@@ -17,6 +12,8 @@ import './Audit.css';
 export interface AuditProps {
   items: AuditAction[];
   total: number;
+  page: number;
+  pageSize: number;
   summary: AuditSummary | null;
   loading: boolean;
   error: string | null;
@@ -31,7 +28,8 @@ export interface AuditProps {
   onModeFilter: (value: string) => void;
   onRowClick: (row: AuditAction) => void;
   onCloseDetail: () => void;
-  onLoadMore: () => void;
+  onPage: (page: number) => void;
+  onPageSize: (pageSize: number) => void;
   onRefresh: () => void;
 }
 
@@ -89,7 +87,7 @@ function argsSummary(row: AuditAction): string {
 
 export function Audit(props: AuditProps) {
   const {
-    items, total, summary, loading, error, search,
+    items, total, page, pageSize, summary, loading, error, search,
     statusFilter, classFilter, modeFilter, detail,
   } = props;
 
@@ -158,129 +156,137 @@ export function Audit(props: AuditProps) {
       ]
     : [`${total} records`];
 
+  const filters = (
+    <>
+      <Select
+        value={statusFilter}
+        onChange={props.onStatusFilter}
+        options={STATUS_OPTIONS}
+        placeholder="Status"
+        variant="inline"
+      />
+      <Select
+        value={classFilter}
+        onChange={props.onClassFilter}
+        options={CLASS_OPTIONS}
+        placeholder="Class"
+        variant="inline"
+      />
+      <Select
+        value={modeFilter}
+        onChange={props.onModeFilter}
+        options={MODE_OPTIONS}
+        placeholder="Mode"
+        variant="inline"
+      />
+    </>
+  );
+
   return (
-    <PageScaffold title="Audit" chips={chips} feedback={error}>
-      <PageToolbar aria-label="Audit filters">
-        <PageToolbarSearch
-          value={search}
-          onChange={props.onSearch}
-          placeholder="Filter by tool name…"
-          aria-label="Filter by tool name"
-        />
-        <Select
-          value={statusFilter}
-          onChange={props.onStatusFilter}
-          options={STATUS_OPTIONS}
-          placeholder="Status"
-          variant="inline"
-        />
-        <Select
-          value={classFilter}
-          onChange={props.onClassFilter}
-          options={CLASS_OPTIONS}
-          placeholder="Class"
-          variant="inline"
-        />
-        <Select
-          value={modeFilter}
-          onChange={props.onModeFilter}
-          options={MODE_OPTIONS}
-          placeholder="Mode"
-          variant="inline"
-        />
-        <PageToolbarSpacer />
+    <DataTablePage<AuditAction>
+      title="Audit"
+      chips={chips}
+      feedback={error}
+      actions={
         <Button onClick={props.onRefresh} disabled={loading}>
           Refresh
         </Button>
-      </PageToolbar>
-      {items.length === 0 && !loading ? (
+      }
+      toolbar={{
+        search: {
+          value: search,
+          onChange: props.onSearch,
+          placeholder: 'Filter by tool name…',
+        },
+        filters,
+        pager: {
+          page,
+          pageSize,
+          total,
+          onPage: props.onPage,
+          onPageSize: props.onPageSize,
+        },
+      }}
+      table={{
+        columns,
+        rows: items,
+        rowKey: (row) => row.id,
+        selectedKey: detail?.id ?? null,
+        onRowClick: props.onRowClick,
+      }}
+      empty={
         <Empty
           message="No audit records"
           hint="Dangerous agent actions (bookings, writes, deletes, dispatches) will appear here."
         />
-      ) : (
-        <>
-          <Table
-            columns={columns}
-            rows={items}
-            rowKey={(row) => row.id}
-            selectedKey={detail?.id ?? null}
-            onRowClick={props.onRowClick}
-          />
-          {items.length < total && (
-            <div className="audit__more">
-              <Button onClick={props.onLoadMore} disabled={loading}>
-                Load more
-              </Button>
+      }
+      overlays={
+        <Modal
+          open={detail != null}
+          onOpenChange={(open) => {
+            if (!open) props.onCloseDetail();
+          }}
+          title={detail ? `${detail.tool_name} — ${detail.status}` : 'Audit record'}
+          layoutKey="audit-detail"
+          defaultWidth={640}
+          defaultHeight={520}
+        >
+          {detail && (
+            <div className="audit__detail">
+              <dl className="audit__meta">
+                <dt>Kind</dt>
+                <dd>{detail.kind}</dd>
+                <dt>Actor</dt>
+                <dd>{detail.actor}</dd>
+                <dt>Mode</dt>
+                <dd>{detail.mode ?? '—'}</dd>
+                <dt>Model</dt>
+                <dd>{detail.model ?? '—'}</dd>
+                <dt>Persona</dt>
+                <dd>{detail.persona ?? '—'}</dd>
+                <dt>Thread</dt>
+                <dd>{detail.thread_id != null ? `#${detail.thread_id}` : '—'}</dd>
+                <dt>Workflow</dt>
+                <dd>{detail.desk_workflow_slug ?? detail.workflow_id ?? '—'}</dd>
+                <dt>Deny reason</dt>
+                <dd>{detail.deny_reason ?? '—'}</dd>
+                <dt>Redacted</dt>
+                <dd>{detail.redacted ? 'yes' : 'no'}</dd>
+                <dt>Completed</dt>
+                <dd>{detail.completed_at ? formatTime(detail.completed_at) : '—'}</dd>
+              </dl>
+              <h4 className="audit__section-title">Args</h4>
+              <pre className="audit__json">{JSON.stringify(detail.args_json, null, 2)}</pre>
+              {detail.result_preview && (
+                <>
+                  <h4 className="audit__section-title">Result</h4>
+                  <pre className="audit__json">{detail.result_preview}</pre>
+                </>
+              )}
+              {detail.error && (
+                <>
+                  <h4 className="audit__section-title">Error</h4>
+                  <pre className="audit__json audit__json--error">{detail.error}</pre>
+                </>
+              )}
+              {detail.related.length > 0 && (
+                <>
+                  <h4 className="audit__section-title">Action chain</h4>
+                  <ul className="audit__related">
+                    {detail.related.map((entry) => (
+                      <li key={entry.id} className="audit__related-item">
+                        <span className="audit__related-kind">{entry.kind}</span>
+                        {statusBadge(entry.status)}
+                        <span className="audit__time">{formatTime(entry.occurred_at)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
             </div>
           )}
-        </>
-      )}
-      <Modal
-        open={detail != null}
-        onOpenChange={(open) => {
-          if (!open) props.onCloseDetail();
-        }}
-        title={detail ? `${detail.tool_name} — ${detail.status}` : 'Audit record'}
-        layoutKey="audit-detail"
-        defaultWidth={640}
-        defaultHeight={520}
-      >
-        {detail && (
-          <div className="audit__detail">
-            <dl className="audit__meta">
-              <dt>Kind</dt>
-              <dd>{detail.kind}</dd>
-              <dt>Actor</dt>
-              <dd>{detail.actor}</dd>
-              <dt>Mode</dt>
-              <dd>{detail.mode ?? '—'}</dd>
-              <dt>Model</dt>
-              <dd>{detail.model ?? '—'}</dd>
-              <dt>Persona</dt>
-              <dd>{detail.persona ?? '—'}</dd>
-              <dt>Thread</dt>
-              <dd>{detail.thread_id != null ? `#${detail.thread_id}` : '—'}</dd>
-              <dt>Workflow</dt>
-              <dd>{detail.desk_workflow_slug ?? detail.workflow_id ?? '—'}</dd>
-              <dt>Deny reason</dt>
-              <dd>{detail.deny_reason ?? '—'}</dd>
-              <dt>Redacted</dt>
-              <dd>{detail.redacted ? 'yes' : 'no'}</dd>
-              <dt>Completed</dt>
-              <dd>{detail.completed_at ? formatTime(detail.completed_at) : '—'}</dd>
-            </dl>
-            <h4 className="audit__section-title">Args</h4>
-            <pre className="audit__json">{JSON.stringify(detail.args_json, null, 2)}</pre>
-            {detail.result_preview && (
-              <>
-                <h4 className="audit__section-title">Result</h4>
-                <pre className="audit__json">{detail.result_preview}</pre>
-              </>
-            )}
-            {detail.error && (
-              <>
-                <h4 className="audit__section-title">Error</h4>
-                <pre className="audit__json audit__json--error">{detail.error}</pre>
-              </>
-            )}
-            {detail.related.length > 0 && (
-              <>
-                <h4 className="audit__section-title">Action chain</h4>
-                <ul className="audit__related">
-                  {detail.related.map((entry) => (
-                    <li key={entry.id} className="audit__related-item">
-                      <span className="audit__related-kind">{entry.kind}</span>
-                      {statusBadge(entry.status)}
-                      <span className="audit__time">{formatTime(entry.occurred_at)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </div>
-        )}
-      </Modal>
-    </PageScaffold>
+        </Modal>
+      }
+    />
   );
 }

@@ -1,4 +1,6 @@
 """Read-only /api/audit router (audit spec §6)."""
+from datetime import datetime, timedelta
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -55,6 +57,29 @@ def test_list_filters_and_pagination(audit_client, session):
     assert audit_client.get("/api/audit/actions?tool_name=POSITION").json()["total"] == 3
     assert len(audit_client.get("/api/audit/actions?limit=2").json()["items"]) == 2
     assert audit_client.get("/api/audit/actions?limit=500").status_code == 422  # cap
+
+
+def test_list_sorted_by_occurred_at_not_id(audit_client, session):
+    # Insertion (id) order deliberately contradicts occurred_at order — a
+    # backfill or async write can land an older-timestamped row with a
+    # higher id. The list must sort by time, not by id.
+    base = datetime(2026, 6, 1, 12, 0, 0)
+    older = AgentActionAudit(
+        kind="execution", status="ok", tool_name="book_position",
+        tool_class="domain_write", args_json={}, occurred_at=base,
+    )
+    newer = AgentActionAudit(
+        kind="execution", status="ok", tool_name="close_position",
+        tool_class="domain_write", args_json={},
+        occurred_at=base + timedelta(days=5),
+    )
+    session.add_all([older, newer])
+    session.commit()
+    assert older.id < newer.id  # older row got the lower id, as inserted
+
+    body = audit_client.get("/api/audit/actions").json()
+    ids = [row["id"] for row in body["items"]]
+    assert ids.index(newer.id) < ids.index(older.id)  # newer timestamp first
 
 
 def test_detail_related_and_404(audit_client, session):

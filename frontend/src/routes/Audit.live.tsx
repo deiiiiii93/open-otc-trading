@@ -3,11 +3,13 @@ import type { AuditAction, AuditActionDetail, AuditSummary } from '../types';
 import { fetchAuditSummary, getAuditAction, listAuditActions } from '../api/client';
 import { Audit } from './Audit';
 
-const PAGE = 50;
+const DEFAULT_PAGE_SIZE = 25;
 
 export function AuditLive() {
   const [items, setItems] = useState<AuditAction[]>([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [summary, setSummary] = useState<AuditSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,24 +19,30 @@ export function AuditLive() {
   const [modeFilter, setModeFilter] = useState('');
   const [detail, setDetail] = useState<AuditActionDetail | null>(null);
 
+  // Filters/page-size changes invalidate the current page — jump back to
+  // page 0 rather than showing an out-of-range offset.
+  useEffect(() => {
+    setPage(0);
+  }, [search, statusFilter, classFilter, modeFilter, pageSize]);
+
   const load = useCallback(
-    async (offset = 0) => {
+    async () => {
       setLoading(true);
       setError(null);
       try {
-        const [page, sum] = await Promise.all([
+        const [result, sum] = await Promise.all([
           listAuditActions({
             tool_name: search || undefined,
             status: statusFilter || undefined,
             tool_class: classFilter || undefined,
             mode: modeFilter || undefined,
-            limit: PAGE,
-            offset,
+            limit: pageSize,
+            offset: page * pageSize,
           }),
           fetchAuditSummary(),
         ]);
-        setItems((prev) => (offset === 0 ? page.items : [...prev, ...page.items]));
-        setTotal(page.total);
+        setItems(result.items);
+        setTotal(result.total);
         setSummary(sum);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -42,11 +50,11 @@ export function AuditLive() {
         setLoading(false);
       }
     },
-    [search, statusFilter, classFilter, modeFilter],
+    [search, statusFilter, classFilter, modeFilter, page, pageSize],
   );
 
   useEffect(() => {
-    void load(0);
+    void load();
   }, [load]);
 
   const onRowClick = useCallback(async (row: AuditAction) => {
@@ -61,6 +69,8 @@ export function AuditLive() {
     <Audit
       items={items}
       total={total}
+      page={page}
+      pageSize={pageSize}
       summary={summary}
       loading={loading}
       error={error}
@@ -75,8 +85,9 @@ export function AuditLive() {
       onModeFilter={setModeFilter}
       onRowClick={onRowClick}
       onCloseDetail={() => setDetail(null)}
-      onLoadMore={() => void load(items.length)}
-      onRefresh={() => void load(0)}
+      onPage={setPage}
+      onPageSize={setPageSize}
+      onRefresh={() => void load()}
     />
   );
 }

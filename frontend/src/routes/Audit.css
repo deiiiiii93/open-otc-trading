@@ -25,12 +25,6 @@
   font-size: var(--type-small-size);
 }
 
-.audit__more {
-  display: flex;
-  justify-content: center;
-  padding: var(--gap-3) 0;
-}
-
 .audit__detail {
   display: flex;
   flex-direction: column;
