@@ -243,6 +243,7 @@ from .services.instruments import (
     list_instruments,
     resolvable_market_data_instruments,
     set_instrument_tags,
+    sync_hedge_tag,
     sync_instruments_from_positions,
     validate_instrument_terms,
 )
@@ -2012,6 +2013,7 @@ def create_app(
         )
         session.add(row)
         session.flush()
+        sync_hedge_tag(session, row.id)
         record_audit(
             session,
             event_type="instrument.created",
@@ -2058,6 +2060,7 @@ def create_app(
         for key, value in fields.items():
             setattr(row, key, value)
         session.flush()
+        sync_hedge_tag(session, row.id)
         record_audit(
             session,
             event_type="instrument.updated",
