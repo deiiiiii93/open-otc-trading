@@ -22,7 +22,7 @@ from app.services.domains import booking as booking_svc
 from app.services.domains import position_terms as terms_svc
 from app.services.domains import positions as positions_svc
 from app.services.domains import products as products_svc
-from app.services.underlyings import resolve_underlying_currency
+from app.services.underlyings import is_registered_underlying, resolve_underlying_currency
 
 from ._shaping import (
     shape_position,
@@ -608,7 +608,9 @@ def book_position_tool(
     trade_effective_date: datetime | date | str | None = None,
     engine_name: str = "BlackScholesEngine",
 ) -> dict[str, Any]:
-    """Create a normalized product and book a position against it."""
+    """Create a normalized product and book a position against it. If this
+    returns error=underlying_not_registered, call register_underlying(symbol)
+    then retry."""
     if isinstance(product, dict):
         product = ProductBookingInput.model_validate(product)
 
@@ -652,6 +654,12 @@ def book_position_tool(
     )
     database.init_db()
     with database.SessionLocal() as session:
+        if not is_registered_underlying(session, product.underlying):
+            return {
+                "ok": False,
+                "error": "underlying_not_registered",
+                "detail": {"symbol": product.underlying},
+            }
         position = booking_svc.book_position(
             session,
             request,

@@ -328,7 +328,7 @@ describe('TrySolveLive', () => {
       if (url === '/api/rfq/try-solve/catalog') return response(catalog);
       if (url === '/api/pricing-parameter-profiles') return response(pricingProfiles);
       if (url === '/api/market-data/profiles') return response(marketDataProfiles);
-      if (url === '/api/instruments') return response(underlyings);
+      if (url === '/api/instruments?status=active&tag=underlying') return response(underlyings.filter((u) => u.status === 'active'));
       return response({});
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -374,7 +374,7 @@ describe('TrySolveLive', () => {
       if (url === '/api/rfq/try-solve/catalog') return response(catalog);
       if (url === '/api/pricing-parameter-profiles') return response(pricingProfiles);
       if (url === '/api/market-data/profiles') return response(marketDataProfiles);
-      if (url === '/api/instruments') return response(underlyings);
+      if (url === '/api/instruments?status=active&tag=underlying') return response(underlyings.filter((u) => u.status === 'active'));
       return response({});
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -396,7 +396,7 @@ describe('TrySolveLive', () => {
       if (url === '/api/rfq/try-solve/catalog') return response(catalog);
       if (url === '/api/pricing-parameter-profiles') return response(pricingProfiles);
       if (url === '/api/market-data/profiles') return response(marketDataProfiles);
-      if (url === '/api/instruments') return response(underlyings);
+      if (url === '/api/instruments?status=active&tag=underlying') return response(underlyings.filter((u) => u.status === 'active'));
       return response({});
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -416,7 +416,7 @@ describe('TrySolveLive', () => {
       if (url === '/api/rfq/try-solve/catalog') return response(catalog);
       if (url === '/api/pricing-parameter-profiles') return response(pricingProfiles);
       if (url === '/api/market-data/profiles') return response(marketDataProfiles);
-      if (url === '/api/instruments') return response(underlyings);
+      if (url === '/api/instruments?status=active&tag=underlying') return response(underlyings.filter((u) => u.status === 'active'));
       return response({});
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -626,6 +626,7 @@ function underlying(overrides: Pick<Instrument, 'symbol' | 'display_name' | 'sta
     dividend_yield: 0.01,
     volatility: 0.2,
     notes: null,
+    tags: ['underlying'],
     created_at: '2026-05-13T00:00:00',
     updated_at: '2026-05-13T00:00:00',
   };

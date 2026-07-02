@@ -83,3 +83,83 @@ def test_list_instruments_filters_kind_and_parent():
         assert [r.symbol for r in futs] == ["IC2606.CFFEX"]
         children = list_instruments(session, parent_id=idx.id)
         assert [r.symbol for r in children] == ["IC2606.CFFEX"]
+
+
+def test_list_instruments_filters_by_tag():
+    from app import database
+    from app.services.instruments import list_instruments
+
+    with database.SessionLocal() as session:
+        _mk(session, symbol="TAGFILT.SH", tags=["underlying"])
+        _mk(session, symbol="NOTAG.SH", tags=[])
+        session.commit()
+
+        rows = list_instruments(session, tag="underlying")
+        symbols = {r.symbol for r in rows}
+        assert "TAGFILT.SH" in symbols
+        assert "NOTAG.SH" not in symbols
+
+
+def test_list_instruments_tag_filter_applies_before_pagination():
+    """A tagged row sorted past the unfiltered limit must still be returned —
+    regression for filtering-after-SQL-pagination silently dropping rows."""
+    from app import database
+    from app.services.instruments import list_instruments
+
+    with database.SessionLocal() as session:
+        # Symbols sort alphabetically; put the tagged one last so a naive
+        # SQL-then-filter implementation with a small limit would miss it.
+        for i in range(5):
+            _mk(session, symbol=f"AAA{i}.SH", tags=[])
+        _mk(session, symbol="ZZZ_TAGGED.SH", tags=["underlying"])
+        session.commit()
+
+        rows = list_instruments(session, tag="underlying", limit=2)
+        assert [r.symbol for r in rows] == ["ZZZ_TAGGED.SH"]
+
+
+def test_set_instrument_tags_replaces_and_normalizes():
+    from app import database
+    from app.services.instruments import set_instrument_tags
+
+    with database.SessionLocal() as session:
+        row = _mk(session, symbol="SETTAGS.SH")
+        session.commit()
+
+        updated = set_instrument_tags(session, row.id, ["Underlying", " underlying ", "Hedge"])
+        assert updated.tags == ["underlying", "hedge"]
+
+
+def test_set_instrument_tags_raises_lookup_error_for_missing_instrument():
+    from app import database
+    from app.services.instruments import set_instrument_tags
+
+    with database.SessionLocal() as session:
+        with pytest.raises(LookupError):
+            set_instrument_tags(session, 999999, ["underlying"])
+
+
+def test_set_instrument_tags_rejects_non_string_tag():
+    from app import database
+    from app.services.instruments import set_instrument_tags
+
+    with database.SessionLocal() as session:
+        row = _mk(session, symbol="BADTAG.SH")
+        session.commit()
+
+        with pytest.raises(ValueError):
+            set_instrument_tags(session, row.id, [123])
+
+
+def test_is_registered_underlying():
+    from app import database
+    from app.services.underlyings import is_registered_underlying
+
+    with database.SessionLocal() as session:
+        _mk(session, symbol="REG.SH", tags=["underlying"])
+        _mk(session, symbol="UNREG.SH", tags=[])
+        session.commit()
+
+        assert is_registered_underlying(session, "REG.SH") is True
+        assert is_registered_underlying(session, "UNREG.SH") is False
+        assert is_registered_underlying(session, "DOES_NOT_EXIST.SH") is False

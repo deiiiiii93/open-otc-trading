@@ -50,6 +50,18 @@ def _make_portfolio(name: str = "Book", kind: str = "container") -> int:
         return p.id
 
 
+def _tag_underlying(symbol: str) -> None:
+    from app.models import Instrument
+
+    with database.SessionLocal() as session:
+        row = session.query(Instrument).filter_by(symbol=symbol).one_or_none()
+        if row is None:
+            row = Instrument(symbol=symbol, kind="index")
+            session.add(row)
+        row.tags = list({*(row.tags or []), "underlying"})
+        session.commit()
+
+
 def _make_position(portfolio_id: int, **kwargs) -> int:
     defaults = {
         "underlying": "000300.SH",
@@ -317,6 +329,7 @@ def test_query_product_tools_read_normalized_product_tables_without_product_kwar
 
 def test_book_position_tool_creates_product_and_position():
     pid = _make_portfolio()
+    _tag_underlying("000300.SH")
 
     result = book_position_tool.invoke(
         {
@@ -395,6 +408,7 @@ def test_book_position_tool_defaults_currency_to_underlying(
     """When the agent omits currency, the position should inherit the underlying's
     currency instead of a hardcoded default."""
     pid = _make_portfolio()
+    _tag_underlying(underlying)
 
     result = book_position_tool.invoke(
         {
@@ -419,6 +433,22 @@ def test_book_position_tool_defaults_currency_to_underlying(
     with database.SessionLocal() as session:
         position = session.get(Position, result["position"]["id"])
         assert position.currency == expected_currency
+
+
+def test_book_position_rejects_unregistered_underlying():
+    result = book_position_tool.invoke({
+        "portfolio_id": _make_portfolio(),
+        "product": {
+            "product_family": "spot",
+            "quantark_class": "Spot",
+            "underlying": "UNREGISTERED_SYMBOL.SH",
+            "terms": {},
+        },
+        "quantity": 1,
+    })
+    assert result["ok"] is False
+    assert result["error"] == "underlying_not_registered"
+    assert result["detail"]["symbol"] == "UNREGISTERED_SYMBOL.SH"
 
 
 def test_product_booking_input_derives_family_from_quantark_class():

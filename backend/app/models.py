@@ -572,6 +572,7 @@ class Instrument(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, onupdate=utcnow
     )
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 
     underlying = synonym("symbol")
     asset_class = synonym("kind")

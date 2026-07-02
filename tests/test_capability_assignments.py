@@ -23,7 +23,8 @@ def test_quant_agent_tools_count_unchanged():
     # +2 Asian fixing tools (generate_asian_fixing_schedule, capture_asian_fixings).
     # +1 desk-workflow authoring tool (save_desk_workflow).
     # +1 dynamic-subagents reconciler (assemble_breach_report).
-    assert len(QUANT_AGENT_TOOLS) == 94
+    # +1 underlying-tag registration tool (register_underlying).
+    assert len(QUANT_AGENT_TOOLS) == 95
 
 
 def test_every_tool_has_capability_group():

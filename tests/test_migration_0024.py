@@ -670,8 +670,18 @@ def _assert_schema_matches_orm(migrated_insp) -> None:
         database.init_db()
         orm_insp = inspect(database.engine)
 
+        # Columns added by migrations strictly AFTER 0024 that this test's
+        # migration-local reconstruction (0024's upgrade() only, not the full
+        # chain — see the module docstring) never produces. This test asserts
+        # 0024 finalizes the schema to match the CURRENT ORM, which held
+        # trivially true until a later migration first touched a table 0024
+        # also touches. `instruments.tags` (migration 0042) is the first such
+        # case — 0024 predates the tags column by design, so exclude it here
+        # rather than extend this narrowly-scoped 0024 test to also run 0042.
+        POST_0024_COLUMNS = {"instruments": {"tags"}}
+
         def cols(insp, t):
-            return {c["name"] for c in insp.get_columns(t)}
+            return {c["name"] for c in insp.get_columns(t)} - POST_0024_COLUMNS.get(t, set())
 
         def fks(insp, t):
             return {

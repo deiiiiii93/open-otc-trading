@@ -386,6 +386,7 @@ DEEP_AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         "get_hedge_bands",
         "book_hedge",
         "set_hedge_bands",
+        "register_underlying",
         "run_report_batch",
         "write_report_artifact",
         "fetch_market_snapshot",

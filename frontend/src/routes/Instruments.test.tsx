@@ -34,6 +34,7 @@ function instrument(overrides: Partial<Instrument> = {}): Instrument {
     dividend_yield: null,
     volatility: null,
     notes: null,
+    tags: [],
     created_at: '2026-06-01T00:00:00',
     updated_at: '2026-06-01T00:00:00',
     ...overrides,
@@ -57,6 +58,7 @@ const defaultProps = {
   onSync: vi.fn(async () => {}),
   onLoad: vi.fn(async () => {}),
   onSaveInstrument: vi.fn(async () => {}),
+  onSetInstrumentTags: vi.fn(async () => {}),
   onCreateInstrument: vi.fn(async () => {}),
   activeTab: 'registry' as const,
   onTabChange: vi.fn(),
@@ -285,6 +287,22 @@ describe('Instruments', () => {
     const roles = { 1: { underlying: false, hedge: true } };
     render(<Instruments {...defaultProps} rolesByInstrumentId={roles} />);
     expect(screen.getByText('hedge')).toBeInTheDocument();
+  });
+
+  it('renders a TAGS column with an editable tag list per row', async () => {
+    const onSetInstrumentTags = vi.fn().mockResolvedValue(undefined);
+    render(
+      <Instruments
+        {...defaultProps}
+        rows={[instrument({ tags: ['desk-priority'] })]}
+        onSetInstrumentTags={onSetInstrumentTags}
+      />,
+    );
+    expect(screen.getByText('desk-priority')).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.type(screen.getByPlaceholderText('Add tag...'), 'watchlist{enter}');
+    expect(onSetInstrumentTags).toHaveBeenCalledWith(1, ['desk-priority', 'watchlist']);
   });
 
   it('new instrument button opens the create dialog', async () => {

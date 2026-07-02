@@ -32,6 +32,7 @@ import {
 import type { AssumptionSet, DefaultsFilters } from './InstrumentsAssumptions';
 import { InstrumentsPager, usePagination } from './InstrumentsPager';
 import type { FxRate, MarketDataProfile, UnderlyingPricingDefault } from '../types';
+import { TagEditor } from '../components/TagEditor';
 import './Instruments.css';
 
 // ---------------------------------------------------------------------------
@@ -61,6 +62,7 @@ export type Instrument = {
   dividend_yield: number | null;
   volatility: number | null;
   notes: string | null;
+  tags: string[];
   created_at: string;
   updated_at: string;
 };
@@ -95,6 +97,7 @@ type Props = {
   onSync: () => Promise<void>;
   onLoad: () => Promise<void>;
   onSaveInstrument: (id: number, fields: Partial<Instrument>) => Promise<void>;
+  onSetInstrumentTags: (id: number, tags: string[]) => Promise<void>;
   onCreateInstrument: (fields: InstrumentCreateFormData) => Promise<void>;
   activeTab: Tab;
   onTabChange: (tab: Tab) => void;
@@ -300,8 +303,9 @@ function RegistryTab({
   pagedRows,
   loading,
   onSaveInstrument,
+  onSetInstrumentTags,
   rolesByInstrumentId,
-}: Pick<Props, 'rows' | 'loading' | 'onSaveInstrument' | 'rolesByInstrumentId'> & {
+}: Pick<Props, 'rows' | 'loading' | 'onSaveInstrument' | 'onSetInstrumentTags' | 'rolesByInstrumentId'> & {
   pagedRows: Instrument[];
 }) {
   const [editing, setEditing] = useState<number | null>(null);
@@ -352,6 +356,7 @@ function RegistryTab({
                 <th>PARENT</th>
                 <th>STATUS</th>
                 <th>ROLES</th>
+                <th>TAGS</th>
                 <th>TERMS</th>
                 <th>AKSHARE</th>
                 <th>NOTES</th>
@@ -445,6 +450,14 @@ function RegistryTab({
                     {/* ROLES */}
                     <td>
                       <RolesBadges roles={rolesByInstrumentId[row.id]} />
+                    </td>
+
+                    {/* TAGS */}
+                    <td>
+                      <TagEditor
+                        tags={row.tags}
+                        onChange={(next) => { void onSetInstrumentTags(row.id, next); }}
+                      />
                     </td>
 
                     {/* TERMS */}
@@ -605,6 +618,7 @@ export function Instruments({
   onSync,
   onLoad,
   onSaveInstrument,
+  onSetInstrumentTags,
   onCreateInstrument,
   activeTab,
   onTabChange,
@@ -1060,6 +1074,7 @@ export function Instruments({
           pagedRows={registryPagination.pagedRows}
           loading={loading}
           onSaveInstrument={onSaveInstrument}
+          onSetInstrumentTags={onSetInstrumentTags}
           rolesByInstrumentId={rolesByInstrumentId}
         />
       ) : activeTab === 'allowed-hedges' ? (

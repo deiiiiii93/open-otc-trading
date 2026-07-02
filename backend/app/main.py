@@ -78,6 +78,7 @@ from .schemas import (
     InstrumentCreate,
     InstrumentOut,
     InstrumentSyncResultOut,
+    InstrumentTagsBody,
     InstrumentUpdate,
     MarketDataProfileOut,
     MarketDataSnapshot,
@@ -241,6 +242,7 @@ from .services.underlyings import (
 from .services.instruments import (
     list_instruments,
     resolvable_market_data_instruments,
+    set_instrument_tags,
     sync_instruments_from_positions,
     validate_instrument_terms,
 )
@@ -1938,6 +1940,7 @@ def create_app(
         parent_id: int | None = None,
         series_root: str | None = None,
         search: str | None = None,
+        tag: str | None = None,
         limit: int = 1000,
         offset: int = 0,
         session: Session = Depends(get_db),
@@ -1949,6 +1952,7 @@ def create_app(
             parent_id=parent_id,
             series_root=series_root,
             search=search,
+            tag=tag,
             limit=limit,
             offset=offset,
         )
@@ -2060,6 +2064,30 @@ def create_app(
             subject_type="instrument",
             subject_id=row.id,
             payload=payload.model_dump(exclude_unset=True, mode='json'),
+        )
+        session.commit()
+        session.refresh(row)
+        return row
+
+    @app.put("/api/instruments/{instrument_id}/tags", response_model=InstrumentOut)
+    def put_instrument_tags(
+        instrument_id: int,
+        payload: InstrumentTagsBody,
+        session: Session = Depends(get_db),
+    ):
+        try:
+            row = set_instrument_tags(session, instrument_id, payload.tags)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        record_audit(
+            session,
+            event_type="instrument.tags_changed",
+            actor="desk_user",
+            subject_type="instrument",
+            subject_id=row.id,
+            payload={"tags": row.tags},
         )
         session.commit()
         session.refresh(row)

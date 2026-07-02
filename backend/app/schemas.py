@@ -1030,6 +1030,7 @@ class InstrumentOut(BaseModel):
     dividend_yield: float | None = None
     volatility: float | None = None
     notes: str | None = None
+    tags: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -1079,6 +1080,10 @@ class InstrumentCreate(BaseModel):
     rate: float | None = None
     dividend_yield: float | None = None
     volatility: float | None = None
+
+
+class InstrumentTagsBody(BaseModel):
+    tags: list[str] = Field(default_factory=list)
 
 
 class InstrumentSyncResultOut(BaseModel):

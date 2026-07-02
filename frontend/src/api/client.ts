@@ -112,7 +112,7 @@ export const createPricingParameterProfile = (body: PricingParameterProfileCreat
 
 export type InstrumentCreateInput = Omit<
   Instrument,
-  'id' | 'created_at' | 'updated_at' | 'source' | 'loaded_at' | 'contract_code'
+  'id' | 'created_at' | 'updated_at' | 'source' | 'loaded_at' | 'contract_code' | 'tags'
 >;
 
 export const createInstrument = (body: InstrumentCreateInput) =>

@@ -34,6 +34,7 @@ INTERRUPT_TOOL_NAMES: tuple[str, ...] = (
     "book_rfq_to_position",
     "book_position",
     "book_hedge",
+    "register_underlying",
     "import_otc_positions",
     "close_position",
     "settle_position",
@@ -73,6 +74,11 @@ _RISK_LEVEL_BY_TOOL: dict[str, str] = {
     "book_rfq_to_position": "irreversible",
     "book_position": "irreversible",
     "book_hedge": "irreversible",
+    # "irreversible", NOT "write": "write"-risk tools bypass confirmation
+    # under BOTH auto and yolo mode (interrupt_on_config's yolo_mode flag),
+    # which would let auto mode silently persist an unvetted underlying —
+    # contradicting the requirement that only yolo auto-adds.
+    "register_underlying": "irreversible",
     "import_otc_positions": "write",
     "close_position": "write",
     "settle_position": "write",
@@ -117,6 +123,7 @@ _LABEL_BY_TOOL: dict[str, str] = {
     "mark_rfq_client_accepted": "Mark RFQ accepted",
     "book_rfq_to_position": "Book RFQ",
     "book_position": "Book position",
+    "register_underlying": "Register/tag underlying",
     "book_hedge": "Book hedge",
     "import_otc_positions": "Import OTC positions",
     "close_position": "Close position",
@@ -228,8 +235,45 @@ def _summarize_book_position(args: dict[str, Any]) -> str:
     return text
 
 
+def _summarize_register_underlying(args: dict[str, Any]) -> str:
+    """Preflight-aware: LangGraph's interrupt fires before the tool body
+    runs, so without this the card could only show the raw symbol. Opens its
+    own short-lived read-only session (self-contained in this module, no
+    signature change needed on pending_actions_from_interrupts/_summary_for
+    or their 5 call sites in agents.py)."""
+    symbol = args.get("symbol")
+    if not isinstance(symbol, str) or not symbol.strip():
+        return "Register underlying"
+    symbol = symbol.strip()
+
+    from app import database
+    from app.models import Instrument
+    from app.services.underlyings import akshare_asset_class, infer_currency, infer_market
+
+    try:
+        database.init_db()
+        with database.SessionLocal() as session:
+            row = session.query(Instrument).filter(Instrument.symbol == symbol).one_or_none()
+            if row is None:
+                return (
+                    f"Register NEW underlying {symbol} — inferred kind="
+                    f"{akshare_asset_class(symbol)}, currency={infer_currency(symbol)}, "
+                    f"market={infer_market(symbol) or 'n/a'}"
+                )
+            if "underlying" not in (row.tags or []):
+                return (
+                    f"Add 'underlying' tag to existing instrument {symbol} "
+                    f"(kind={row.kind}, status={row.status})"
+                )
+            return f"Register underlying {symbol} (already valid)"
+    except Exception:
+        # Card rendering must never 500 the turn over a preview lookup.
+        return f"Register underlying {symbol}"
+
+
 _SUMMARY_BUILDERS: dict[str, Callable[[dict[str, Any]], str]] = {
     "book_position": _summarize_book_position,
+    "register_underlying": _summarize_register_underlying,
 }
 
 
