@@ -133,6 +133,7 @@ OLD_TABLE_ROWS: set[tuple[str, str, str]] = {
     ("Create or edit a reusable desk workflow", "risk_manager", "build-workflow"),
     ("Build a slash-command workflow playbook", "trader", "build-workflow"),
     ("Snowball terms or payoff interpretation", "trader", "snowball-term-interpretation"),
+    ("Non-snowball product terms or payoff interpretation", "trader", "product-term-interpretation"),
     ("Snowball pricing or valuation drivers", "trader", "snowball-pricing"),
     ("Snowball risk, hedge feasibility, gamma near KI", "risk_manager", "snowball-risk-explain"),
     ("Unexpected position value, Greek, PnL, or contribution", "trader", "position-diagnosis"),
