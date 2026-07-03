@@ -129,7 +129,6 @@ function BandEditor(props: { bands: HedgeGreeks; onSave: (b: HedgeGreeks) => voi
   if (!editing) {
     return (
       <div className="hedge-strategy__bands">
-        <span className="hedge-strategy__label">Bands</span>
         {GREEKS.map((g) => (
           <span key={g} className="hedge-strategy__band">
             {GREEK_SYMBOLS[g]} ±{fmt(bands[g])}
@@ -141,7 +140,6 @@ function BandEditor(props: { bands: HedgeGreeks; onSave: (b: HedgeGreeks) => voi
   }
   return (
     <div className="hedge-strategy__bands hedge-strategy__bands--editing">
-      <span className="hedge-strategy__label">Bands</span>
       {GREEKS.map((g) => (
         <label key={g} className="hedge-strategy__band">
           {GREEK_SYMBOLS[g]} ±
@@ -279,9 +277,13 @@ export function HedgeStrategy(props: {
       {targets && <KpiTiles targets={targets} proposal={proposal} bands={bands} />}
 
       <PanelGrid columns={1}>
-      <Panel title="Hedge legs" meta={panelMeta} className="hedge-strategy__panel">
-        {bands && <BandEditor bands={bands} onSave={onSaveBands} />}
+      {bands && (
+        <Panel title="Bands" className="hedge-strategy__panel hedge-strategy__panel--bands">
+          <BandEditor bands={bands} onSave={onSaveBands} />
+        </Panel>
+      )}
 
+      <Panel title="Hedge legs" meta={panelMeta} className="hedge-strategy__panel">
         {legs.length > 0 && (
           <table className="hedge-strategy__legs">
             <thead>
@@ -333,7 +335,6 @@ export function HedgeStrategy(props: {
               ]}
             />
           )}
-          <Button variant="default" onClick={onSolve} disabled={loading || portfolioId == null}>Solve</Button>
         </div>
       </Panel>
       </PanelGrid>
@@ -381,6 +382,7 @@ export function HedgeStrategy(props: {
       )}
 
       <div className="hedge-strategy__bookbar">
+        <Button variant="default" onClick={onSolve} disabled={loading || portfolioId == null}>Solve</Button>
         <Button variant="primary" onClick={onBook} disabled={!feasible || loading}>Book hedge</Button>
       </div>
     </div>

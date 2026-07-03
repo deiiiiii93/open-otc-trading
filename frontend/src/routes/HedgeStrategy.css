@@ -268,7 +268,7 @@
 
 .hedge-strategy__legs { border: 0; } /* Panel already draws the frame */
 
-.hedge-strategy__bookbar { display: flex; justify-content: flex-end; }
+.hedge-strategy__bookbar { display: flex; justify-content: flex-end; gap: var(--gap-2); }
 
 @media (max-width: 1100px) {
   .hedge-strategy__bar {

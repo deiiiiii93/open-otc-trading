@@ -250,7 +250,6 @@ export function HedgeStrategyLive(props: {
 
   return (
     <>
-      {warnMessage && <p className="hedge-strategy__warn">{warnMessage}</p>}
       <HedgeStrategy
         portfolios={portfolios} portfolioId={portfolioId} onPortfolioChange={onPortfolioChange}
         pricingProfiles={pricingProfiles} pricingProfileId={pricingProfileId}
@@ -266,6 +265,7 @@ export function HedgeStrategyLive(props: {
         onDismissBookingResult={() => setBookingResult(null)}
         onViewPositions={onViewPositions}
       />
+      {warnMessage && <p className="hedge-strategy__note">{warnMessage}</p>}
     </>
   )
 }
