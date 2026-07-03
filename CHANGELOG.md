@@ -87,6 +87,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   next to Send, and both were converted into compact inline pickers.
 
 ### Fixed
+- **Hedging page button bar sat flush against the bottom warning banner.**
+  Wrapped `HedgeStrategyLive` in a flex column with `gap: var(--gap-3)` so the
+  Solve/Book hedge buttons are separated from the risk-run exposure message.
 - **IM gateway dropped every inbound user turn from the transcript.**
   `AgentBridge.submit_turn` called `AgentService.stream_and_persist` — which only
   persists the *assistant* reply and assumes the caller already inserted the

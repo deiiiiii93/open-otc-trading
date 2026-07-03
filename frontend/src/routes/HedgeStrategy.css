@@ -7,6 +7,13 @@
   min-width: 0;
 }
 
+.hedge-strategy-live {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  min-width: 0;
+}
+
 /* ── top bar: portfolio / strategy selects + risk-run banner ── */
 
 .hedge-strategy__bar {

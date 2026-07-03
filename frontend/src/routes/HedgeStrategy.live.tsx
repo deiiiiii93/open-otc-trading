@@ -249,7 +249,7 @@ export function HedgeStrategyLive(props: {
   const warnMessage = riskError ?? otherMessage
 
   return (
-    <>
+    <div className="hedge-strategy-live">
       <HedgeStrategy
         portfolios={portfolios} portfolioId={portfolioId} onPortfolioChange={onPortfolioChange}
         pricingProfiles={pricingProfiles} pricingProfileId={pricingProfileId}
@@ -266,7 +266,7 @@ export function HedgeStrategyLive(props: {
         onViewPositions={onViewPositions}
       />
       {warnMessage && <p className="hedge-strategy__note">{warnMessage}</p>}
-    </>
+    </div>
   )
 }
 
