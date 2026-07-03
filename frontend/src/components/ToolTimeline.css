@@ -129,6 +129,37 @@
   margin-right: 4px;
 }
 
+.wl-tool-timeline__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25em;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: var(--hairline);
+  color: var(--ink-2);
+  font-size: 0.85em;
+  font-weight: 700;
+}
+
+.wl-tool-timeline--nested {
+  margin: 4px 0 0 0;
+  padding-left: var(--gap-2);
+  border-left: 2px solid var(--hairline);
+}
+
+.wl-tool-timeline--nested > li {
+  margin: 0 0 var(--gap-1);
+}
+
+.wl-tool-timeline--nested > li:last-child {
+  margin-bottom: 0;
+}
+
+.wl-tool-timeline--nested .wl-tool-timeline__summary {
+  gap: 4px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .wl-tool-timeline__icon--running {
     animation: none;

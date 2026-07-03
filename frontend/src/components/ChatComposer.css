@@ -84,50 +84,11 @@
 .wl-composer__actions {
   display: flex;
   justify-content: flex-end;
-  align-items: center;
+  align-items: stretch;
   gap: var(--gap-1);
   flex-wrap: wrap;
   min-width: 0;
   position: relative;
-}
-.wl-composer__mode {
-  display: inline-flex;
-  align-items: stretch;
-  height: calc(var(--button-padding-y) * 2 + var(--type-body-size) * 1.5 + 2px);
-  border: 1px solid var(--hairline-2);
-}
-.wl-composer__mode-btn {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 var(--gap-2);
-  border: none;
-  border-left: 1px solid var(--hairline-2);
-  font-family: var(--font-ui);
-  font-size: var(--type-caps-size);
-  font-weight: var(--type-caps-weight);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--ink-2);
-  background: var(--paper);
-  cursor: pointer;
-}
-.wl-composer__mode-btn:first-child {
-  border-left: none;
-}
-.wl-composer__mode-btn:hover:not(:disabled) {
-  color: var(--ink);
-}
-.wl-composer__mode-btn.is-active {
-  color: var(--ink);
-  background: color-mix(in oklab, var(--ink) 10%, var(--paper));
-}
-.wl-composer__mode-btn:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: -2px;
-}
-.wl-composer__mode-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
 }
 
 .wl-composer__slash {

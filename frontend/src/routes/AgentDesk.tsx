@@ -126,29 +126,6 @@ export function AgentDesk({
     chips.push(`${activeThread.messages.length} messages`);
   }
 
-  const actions = (
-    <div className="wl-agent-desk__actions">
-      <fieldset className="wl-agent-desk__view-mode" aria-label="Tool detail level">
-        <button
-          type="button"
-          aria-pressed={viewMode === 'detailed'}
-          className={`wl-agent-desk__view-mode-btn${viewMode === 'detailed' ? ' is-active' : ''}`}
-          onClick={() => onChangeViewMode('detailed')}
-        >
-          Detailed
-        </button>
-        <button
-          type="button"
-          aria-pressed={viewMode === 'compact'}
-          className={`wl-agent-desk__view-mode-btn${viewMode === 'compact' ? ' is-active' : ''}`}
-          onClick={() => onChangeViewMode('compact')}
-        >
-          Compact
-        </button>
-      </fieldset>
-    </div>
-  );
-
   const messages = (
     <div className="wl-agent-desk__messages">
       {!activeThread ? (
@@ -215,6 +192,8 @@ export function AgentDesk({
         onChangeMode={onChangeMode}
         onStopStreaming={onStopStreaming}
         onRefreshModels={onRefreshModels}
+        viewMode={viewMode}
+        onChangeViewMode={onChangeViewMode}
         workflows={workflows}
         onLaunchWorkflow={onLaunchWorkflow}
         onRequestParams={onRequestParams}
@@ -226,7 +205,6 @@ export function AgentDesk({
     <ConversationalWorkspace
       title="AGENT DESK"
       chips={chips}
-      actions={actions}
       rail={
         <ThreadRail
           threads={threads}

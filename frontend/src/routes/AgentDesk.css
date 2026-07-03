@@ -190,35 +190,6 @@
   flex-direction: column;
   box-sizing: border-box;
 }
-.wl-agent-desk__view-mode {
-  display: inline-flex;
-  border: 1px solid var(--hairline);
-  background: transparent;
-  padding: 2px;
-  margin: 0;
-  gap: 0;
-  border-radius: 0;
-}
-.wl-agent-desk__view-mode-btn {
-  border: 0;
-  background: transparent;
-  padding: 4px 10px;
-  font-family: var(--font-numeric);
-  font-size: var(--type-small-size);
-  text-transform: none;
-  letter-spacing: normal;
-  text-wrap: nowrap;
-  color: var(--ink-2);
-  cursor: pointer;
-}
-.wl-agent-desk__view-mode-btn.is-active {
-  background: var(--ink);
-  color: var(--paper);
-}
-.wl-agent-desk__view-mode-btn:focus-visible {
-  outline: 2px solid var(--info);
-  outline-offset: 1px;
-}
 @media (max-width: 900px) {
   .wl-agent-desk__threads {
     max-height: 280px;

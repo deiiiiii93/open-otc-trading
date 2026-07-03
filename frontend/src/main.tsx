@@ -234,7 +234,6 @@ function App() {
           <>
             <div className="wl-shell__toolbar-group wl-shell__toolbar-group--left">
               <DatePicker
-                label="Accounting"
                 id="accounting-date"
                 value={accountingDate}
                 onChange={(v) => setAccountingDate(v)}

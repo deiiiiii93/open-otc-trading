@@ -6,8 +6,10 @@ import type {
   AgentModelSelection,
   DeskWorkflowSummary,
 } from '../types';
+import type { ViewMode } from '../hooks/useViewMode';
 import { Button } from './Button';
 import { ModelPicker } from './ModelPicker';
+import { Select } from './Select';
 import { RESERVED_COMPOSER_COMMANDS } from '../lib/reservedCommands';
 import './ChatComposer.css';
 
@@ -23,6 +25,8 @@ type Props = {
   onStopStreaming?: () => void;
   onRefreshModels?: () => void | Promise<void>;
   compactModelPicker?: boolean;
+  viewMode?: ViewMode;
+  onChangeViewMode?: (mode: ViewMode) => void;
   workflows?: DeskWorkflowSummary[];
   onLaunchWorkflow?: (slug: string, mode: 'auto' | 'yolo') => void;
   onRequestParams?: (workflow: DeskWorkflowSummary) => void;
@@ -61,6 +65,7 @@ export function ChatComposer({
   onSend, sending, streaming,
   channels, selectedModel, executionMode = 'auto',
   onChangeModel, onChangeMode, onStopStreaming, onRefreshModels, compactModelPicker = false,
+  viewMode, onChangeViewMode,
   workflows, onLaunchWorkflow, onRequestParams,
 }: Props) {
   const [text, setText] = useState('');
@@ -261,24 +266,26 @@ export function ChatComposer({
           />
         )}
         {onChangeMode && (
-          <div className="wl-composer__mode" role="group" aria-label="Execution mode">
-            {MODE_OPTIONS.map((option) => {
-              const active = executionMode === option.value;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`wl-composer__mode-btn${active ? ' is-active' : ''}`}
-                  title={option.title}
-                  aria-pressed={active}
-                  disabled={sending || !!streaming}
-                  onClick={() => onChangeMode(option.value)}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
+          <Select
+            variant="inline"
+            label="Mode"
+            value={executionMode}
+            options={MODE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            onChange={(v) => onChangeMode(v as AgentExecutionMode)}
+            disabled={sending || !!streaming}
+          />
+        )}
+        {viewMode && onChangeViewMode && (
+          <Select
+            variant="inline"
+            label="Detail"
+            value={viewMode}
+            options={[
+              { value: 'detailed', label: 'Detailed' },
+              { value: 'compact', label: 'Compact' },
+            ]}
+            onChange={(v) => onChangeViewMode(v as ViewMode)}
+          />
         )}
         {streaming && onStopStreaming ? (
           <Button type="button" variant="danger" onClick={onStopStreaming}>

@@ -148,3 +148,78 @@ def test_resume_passes_binding_desk_user_as_actor(db_session, monkeypatch):
     assert captured.get("actor") == "trader_alice", (
         f"Expected actor='trader_alice', got {captured.get('actor')!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# (c) submit_turn persists the inbound user message BEFORE streaming
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_submit_turn_persists_user_message(db_session, monkeypatch):
+    """submit_turn must insert a role='user' AgentMessage for the inbound text
+    before it streams the assistant turn.
+
+    ``AgentService.stream_and_persist`` only persists the *assistant* reply and
+    assumes the caller already inserted the user turn (the HTTP /chat endpoint
+    and the arena runner both do). The gateway is the third caller and must
+    honor the same contract — otherwise IM-originated user turns never land in
+    ``agent_messages`` and the chat panel shows only assistant replies.
+    """
+    from app.services.gateway.bridge import AgentBridge
+    from app.services.agents import AgentService
+    from app.models import AgentMessage
+
+    svc = AgentService(settings=None)
+    bridge = AgentBridge(svc)
+
+    binding = _make_binding(db_session)
+    chat = _make_chat_ref()
+    thread = bridge.thread_for(db_session, binding, chat)
+    db_session.commit()
+
+    captured: dict = {}
+
+    async def fake_stream_and_persist(**kwargs):
+        # Record that streaming was invoked and prove the user row already
+        # exists at stream time (mirrors the real ordering guarantee).
+        captured["content"] = kwargs.get("content")
+        from app import database
+
+        with database.SessionLocal() as s:
+            captured["user_rows_at_stream"] = (
+                s.query(AgentMessage)
+                .filter(
+                    AgentMessage.thread_id == thread.id,
+                    AgentMessage.role == "user",
+                )
+                .count()
+            )
+        return
+        yield  # pragma: no cover — makes this an async generator
+
+    monkeypatch.setattr(svc, "stream_and_persist", fake_stream_and_persist)
+
+    async for _event in bridge.submit_turn(
+        db_session, binding, thread, "list my portfolios"
+    ):
+        pass
+
+    rows = (
+        db_session.query(AgentMessage)
+        .filter(
+            AgentMessage.thread_id == thread.id,
+            AgentMessage.role == "user",
+        )
+        .all()
+    )
+    assert len(rows) == 1, (
+        f"Expected exactly one persisted user message, found {len(rows)}"
+    )
+    assert rows[0].content == "list my portfolios"
+    # The user row must be committed BEFORE stream_and_persist runs (the routed
+    # stream turn reads it in its own session to attach the route).
+    assert captured.get("user_rows_at_stream") == 1, (
+        "User message must be committed before stream_and_persist is called; "
+        f"saw {captured.get('user_rows_at_stream')} rows at stream time"
+    )

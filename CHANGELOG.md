@@ -65,6 +65,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   *functional* score in the field (65.3) on just 2/5 completed trials — a dark
   horse, flagged and not placed.
 
+### Changed
+- **Agent Desk composer chrome cleanup.** Removed the "Accounting" label from the
+  global date picker to reclaim header space. Consecutive same-name tool calls in
+  the chat tool timeline now collapse into one grouped row (`read_file ×14`). The
+  `Detailed | Compact` view-mode toggle and the `Interactive | AUTO | YOLO`
+  execution-mode buttons moved from the page header into the composer actions row
+  next to Send, and both were converted into compact inline pickers.
+
+### Fixed
+- **IM gateway dropped every inbound user turn from the transcript.**
+  `AgentBridge.submit_turn` called `AgentService.stream_and_persist` — which only
+  persists the *assistant* reply and assumes the caller already inserted the
+  `role="user"` message (as the HTTP `/chat` endpoint and the arena runner both
+  do) — but the bridge skipped that step. IM-originated user messages therefore
+  never landed in `agent_messages`: the chat panel showed only assistant replies,
+  and the routed-stream turn could not attach its route to the latest user row.
+  The bridge now persists the user turn in its own committed transaction before
+  streaming, mirroring the other two callers.
+
 ### In progress
 - Additional **long-workflow match designs** for the Agent Arena.
 
