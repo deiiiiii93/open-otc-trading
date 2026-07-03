@@ -27,37 +27,10 @@
   border-radius: 2px;
 }
 
-/* Leaderboard table */
-.wl-arena__table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--type-body-size);
-}
-
-.wl-arena__table th {
-  text-align: left;
-  font-size: var(--type-caps-size);
-  font-weight: var(--type-caps-weight);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ink-2);
-  padding: var(--gap-2) var(--gap-3);
-  border-bottom: 1px solid var(--hairline);
-}
-
-.wl-arena__table td {
-  padding: var(--gap-2) var(--gap-3);
-  border-bottom: 1px solid var(--hairline);
-  color: var(--ink);
-  font-family: var(--font-numeric);
-}
-
-.wl-arena__table tr:last-child td {
-  border-bottom: none;
-}
-
-.wl-arena__table tr:hover td {
-  background: var(--paper-2);
+.wl-arena__panel--leaderboard {
+  border: 0;
+  background: transparent;
+  border-radius: 0;
 }
 
 /* Run picker */

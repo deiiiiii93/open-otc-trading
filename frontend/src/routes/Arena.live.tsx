@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { Empty } from '../components/Empty';
 import { PageScaffold } from '../components/templates/PageScaffold';
+import { Table, type Column } from '../components/Table';
 import {
   getArenaLeaderboard,
   getArenaRun,
@@ -197,6 +198,39 @@ export function ArenaLive() {
     `${leaderboard.length} model${leaderboard.length === 1 ? '' : 's'}`,
   ];
 
+  const leaderboardColumns: Column<ArenaLeaderboardRow>[] = useMemo(
+    () => [
+      {
+        key: 'model',
+        header: 'Model',
+        width: 'minmax(0, 2fr)',
+        render: (row) => modelDisplayName(row.model_id, models),
+      },
+      {
+        key: 'avg_total',
+        header: 'Avg Total',
+        numeric: true,
+        width: 'minmax(0, 1fr)',
+        render: (row) => fmtScore(row.avg_total),
+      },
+      {
+        key: 'avg_objective',
+        header: 'Avg Objective',
+        numeric: true,
+        width: 'minmax(0, 1fr)',
+        render: (row) => fmtScore(row.avg_objective),
+      },
+      {
+        key: 'matches',
+        header: 'Matches',
+        numeric: true,
+        width: 'minmax(0, 1fr)',
+        render: (row) => row.matches,
+      },
+    ],
+    [models],
+  );
+
   return (
     <PageScaffold
       title="ARENA"
@@ -210,7 +244,7 @@ export function ArenaLive() {
     >
       <div className="wl-arena__workspace">
         {/* Leaderboard */}
-        <div className="wl-arena__panel">
+        <div className="wl-arena__panel wl-arena__panel--leaderboard">
           <div className="wl-arena__section-head">
             <span className="wl-arena__eyebrow">
               Leaderboard{selectedRunId != null ? ` — run ${String(selectedRunId).slice(0, 8)}` : ' — all runs'}
@@ -219,26 +253,7 @@ export function ArenaLive() {
           {leaderboard.length === 0 ? (
             <Empty message="No leaderboard data yet — run an arena evaluation to populate scores." />
           ) : (
-            <table className="wl-arena__table" aria-label="Arena leaderboard">
-              <thead>
-                <tr>
-                  <th>Model</th>
-                  <th>Avg Total</th>
-                  <th>Avg Objective</th>
-                  <th>Matches</th>
-                </tr>
-              </thead>
-              <tbody>
-                {leaderboard.map((row) => (
-                  <tr key={row.model_id}>
-                    <td>{modelDisplayName(row.model_id, models)}</td>
-                    <td>{fmtScore(row.avg_total)}</td>
-                    <td>{fmtScore(row.avg_objective)}</td>
-                    <td>{row.matches}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <Table columns={leaderboardColumns} rows={leaderboard} rowKey={(r) => r.model_id} />
           )}
         </div>
 

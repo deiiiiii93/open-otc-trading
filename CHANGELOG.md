@@ -91,7 +91,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Arena leaderboard is scoped to the selected run.** Choosing a run now
   fetches `GET /api/arena/leaderboard?run_id={id}` and updates the leaderboard
   panel title to show the active run; the global leaderboard remains shown when
-  no run is selected.
+  no run is selected. The leaderboard is now rendered with the shared `Table`
+  primitive so borders, row height, header styling, and numeric alignment match
+  the rest of the desk.
 
 ### Fixed
 - **Arena objective scoring dropped every async task id and text artifact.** The
