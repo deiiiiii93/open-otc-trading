@@ -10,6 +10,7 @@ from ...models import HedgeMapEntry, Instrument, Position
 from ..hedging_legs import _family_for, _is_option
 from ..hedging_loader import list_in_scope_underlyings
 from ..hedging_universe import _code, resolve_families
+from ..instruments import sync_hedge_tag
 from ..quotes import latest_quotes
 
 
@@ -228,26 +229,43 @@ def mark(session: Session, instrument_ids: list[int], *, actor: str | None = Non
         )
         if existing is not None:
             # Backfill the durable instrument link on a pre-existing entry.
+            # instrument_id is bookkeeping only (see sync_hedge_tag) — it
+            # plays no part in hedge-tag eligibility, so this backfill alone
+            # never changes anyone's tag. Still fall through to the shared
+            # resync below in case this call is otherwise reactivating the
+            # entry's key for the first time.
             if existing.instrument_id is None:
                 existing.instrument_id = inst.id
-            continue
-        entry = HedgeMapEntry(
-            underlying_id=underlying_id,
-            instrument_id=inst.id,
-            exchange=inst.exchange,
-            contract_code=inst.contract_code,
-            family=_family_for(inst),
-            series_root=inst.series_root,
-            instrument_type="option" if _is_option(inst) else "future",
-            option_type=inst.option_type,
-            strike=inst.strike,
-            expiry=inst.expiry,
-            reconcile_status="active" if inst.status == "active" else "stale",
-            marked_by=actor,
-            marked_at=now,
-        )
-        session.add(entry)
-        created.append(entry)
+        else:
+            entry = HedgeMapEntry(
+                underlying_id=underlying_id,
+                instrument_id=inst.id,
+                exchange=inst.exchange,
+                contract_code=inst.contract_code,
+                family=_family_for(inst),
+                series_root=inst.series_root,
+                instrument_type="option" if _is_option(inst) else "future",
+                option_type=inst.option_type,
+                strike=inst.strike,
+                expiry=inst.expiry,
+                reconcile_status="active" if inst.status == "active" else "stale",
+                marked_by=actor,
+                marked_at=now,
+            )
+            session.add(entry)
+            created.append(entry)
+        session.flush()
+        # Instrument has no uniqueness constraint on (exchange,
+        # contract_code), and sync_hedge_tag's truth condition (mirroring
+        # _active_instruments) is purely key-based — so upserting an active
+        # entry for this key can newly grant "hedge" to every instrument
+        # sharing it, not just the one explicitly marked.
+        matching_ids = {
+            iid for (iid,) in session.query(Instrument.id)
+            .filter(Instrument.exchange == inst.exchange, Instrument.contract_code == inst.contract_code)
+        }
+        for matching_id in matching_ids:
+            sync_hedge_tag(session, matching_id)
     return created
 
 
@@ -257,8 +275,21 @@ def unmark(
     instrument_ids: list[int] | None = None,
     map_entry_ids: list[int] | None = None,
 ) -> int:
+    # sync_hedge_tag's truth condition (mirroring _active_instruments) is
+    # purely (exchange, contract_code)-keyed — instrument_id on a
+    # HedgeMapEntry row is bookkeeping only, not part of eligibility. So
+    # deleting a row can drop eligibility for every instrument sharing its
+    # key, not just whichever instrument happened to identify the row being
+    # deleted. Collect every affected key up front, resolve to instrument
+    # ids once after the deletes are flushed, and resync all of them.
+    affected_keys: set[tuple[str, str]] = set()
     removed = 0
     if map_entry_ids:
+        for exchange, contract_code in (
+            session.query(HedgeMapEntry.exchange, HedgeMapEntry.contract_code)
+            .filter(HedgeMapEntry.id.in_(map_entry_ids))
+        ):
+            affected_keys.add((exchange, contract_code))
         removed += (
             session.query(HedgeMapEntry)
             .filter(HedgeMapEntry.id.in_(map_entry_ids))
@@ -267,17 +298,18 @@ def unmark(
     if instrument_ids:
         # Prefer the durable instrument link; fall back to (exchange,
         # contract_code) display columns for entries not yet backfilled.
-        removed += (
-            session.query(HedgeMapEntry)
-            .filter(HedgeMapEntry.instrument_id.in_(instrument_ids))
-            .delete(synchronize_session=False)
-        )
         keys = [
             (i.exchange, i.contract_code)
             for i in session.query(Instrument)
             .filter(Instrument.id.in_(instrument_ids))
             .all()
         ]
+        affected_keys.update((exch, code) for exch, code in keys if exch and code)
+        removed += (
+            session.query(HedgeMapEntry)
+            .filter(HedgeMapEntry.instrument_id.in_(instrument_ids))
+            .delete(synchronize_session=False)
+        )
         for exch, code in keys:
             removed += (
                 session.query(HedgeMapEntry)
@@ -288,6 +320,16 @@ def unmark(
                 )
                 .delete(synchronize_session=False)
             )
+    session.flush()
+    affected_instrument_ids: set[int] = set()
+    for exch, code in affected_keys:
+        if exch and code:
+            affected_instrument_ids.update(
+                iid for (iid,) in session.query(Instrument.id)
+                .filter(Instrument.exchange == exch, Instrument.contract_code == code)
+            )
+    for instrument_id in affected_instrument_ids:
+        sync_hedge_tag(session, instrument_id)
     return removed
 
 

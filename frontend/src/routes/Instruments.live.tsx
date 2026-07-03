@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, listFxRates, createFxRate, fetchFxRateAkshare, deleteFxRate, createInstrument } from '../api/client';
 import type { FxRate, MarketDataProfile, PageContextReporter, UnderlyingPricingDefault } from '../types';
 import { Instruments } from './Instruments';
-import type { Instrument, InstrumentRoles, Tab } from './Instruments';
+import type { Instrument, Tab } from './Instruments';
 import type { HedgeMapGroup, HedgeCandidate, CandidateFilters, QuoteInfo } from './InstrumentsAllowedHedges';
 import { EMPTY_CANDIDATE_FILTERS } from './InstrumentsAllowedHedges';
 import type { MarketQuote, ManualQuotePayload, RefreshResult } from './InstrumentsMarketData';
@@ -68,23 +68,6 @@ export function InstrumentsLive({ onPageContextChange: _onPageContextChange }: P
   const [assumptionBuildFeedback, setAssumptionBuildFeedback] = useState<string | null>(null);
   const [assumptionBuildUnfilled, setAssumptionBuildUnfilled] = useState<string[] | null>(null);
 
-  /** Roles are computed, never stored: an instrument is an "underlying"
-   * because open positions reference it (exposure groups in the hedge map),
-   * and an "allowed hedge" because a map entry points at it. */
-  const rolesByInstrumentId: Record<number, InstrumentRoles> = useMemo(() => {
-    const roles: Record<number, InstrumentRoles> = {};
-    for (const group of hedgeGroups) {
-      if ((group.open_position_count ?? 0) > 0) {
-        roles[group.underlying_id] = { ...roles[group.underlying_id], underlying: true };
-      }
-      for (const entry of group.entries ?? []) {
-        if (entry.instrument_id != null) {
-          roles[entry.instrument_id] = { ...roles[entry.instrument_id], hedge: true };
-        }
-      }
-    }
-    return roles;
-  }, [hedgeGroups]);
   const assumptionUnderlyingRoleSymbols = useMemo(
     () =>
       hedgeGroups
@@ -215,6 +198,11 @@ export function InstrumentsLive({ onPageContextChange: _onPageContextChange }: P
     if (selectedHedgeUnderlyingId !== null) {
       await loadCandidates(selectedHedgeUnderlyingId, hedgeCandidateFilters);
     }
+    // Marking/unmarking/purging changes the server-derived "hedge" tag
+    // (Tasks 1-2) — the Registry tab's TAGS cell now reads that tag from
+    // `rows`, not from `hedgeGroups`, so it must be reloaded here too or it
+    // goes stale until an unrelated filter change happens to refetch it.
+    await load();
   };
 
   // ---------------------------------------------------------------------------
@@ -640,7 +628,6 @@ export function InstrumentsLive({ onPageContextChange: _onPageContextChange }: P
       onCreateInstrument={onCreateInstrument}
       activeTab={activeTab}
       onTabChange={setActiveTab}
-      rolesByInstrumentId={rolesByInstrumentId}
       hedgeGroups={hedgeGroups}
       selectedHedgeUnderlyingId={selectedHedgeUnderlyingId}
       onSelectHedgeUnderlying={onSelectHedgeUnderlying}

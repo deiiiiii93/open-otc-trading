@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from ..models import UnderlyingPricingDefault
+from .instruments import sync_hedge_tag
 from .underlyings import (
     latest_akshare_close_by_symbol,
     list_underlyings,
@@ -49,6 +50,8 @@ def delete_underlying_default(session: Session, *, underlying: str) -> None:
     if row is None:
         raise LookupError(f"underlying not found: {cleaned}")
     row.status = "inactive"
+    session.flush()
+    sync_hedge_tag(session, row.id)
     session.flush()
 
 

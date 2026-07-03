@@ -271,6 +271,24 @@ class TestCreateInstrument:
         assert len(events) == 1
         assert int(events[0].subject_id) == iid
 
+    def test_creates_active_stock_gets_hedge_tag(self, tmp_path: Path):
+        client = _make_client(tmp_path)
+        resp = client.post(
+            "/api/instruments",
+            json={"symbol": "600519.SH", "kind": "stock", "status": "active"},
+        )
+        assert resp.status_code == 201
+        assert "hedge" in resp.json()["tags"]
+
+    def test_creates_draft_stock_has_no_hedge_tag(self, tmp_path: Path):
+        client = _make_client(tmp_path)
+        resp = client.post(
+            "/api/instruments",
+            json={"symbol": "600519.SH", "kind": "stock", "status": "draft"},
+        )
+        assert resp.status_code == 201
+        assert "hedge" not in resp.json()["tags"]
+
 
 # ---------------------------------------------------------------------------
 # PATCH /api/instruments/{id} — partial update (PATCH-not-PUT contract)
@@ -351,6 +369,65 @@ class TestPatchInstrument:
             ).all()
         assert len(events) == 1
         assert int(events[0].subject_id) == iid
+
+    def test_patch_stock_to_active_adds_hedge_tag(self, tmp_path: Path):
+        client = _make_client(tmp_path)
+        iid = _add_instrument(tmp_path, symbol="600519.SH", kind="stock", status="draft")
+        resp = client.patch(f"/api/instruments/{iid}", json={"status": "active"})
+        assert resp.status_code == 200
+        assert "hedge" in resp.json()["tags"]
+
+    def test_patch_active_stock_to_inactive_removes_hedge_tag(self, tmp_path: Path):
+        client = _make_client(tmp_path)
+        iid = _add_instrument(tmp_path, symbol="600519.SH", kind="stock", status="active")
+        with database.SessionLocal() as s:
+            from app.services.instruments import sync_hedge_tag
+            sync_hedge_tag(s, iid)
+            s.commit()
+        resp = client.patch(f"/api/instruments/{iid}", json={"status": "inactive"})
+        assert resp.status_code == 200
+        assert "hedge" not in resp.json()["tags"]
+
+    def test_patch_stock_to_non_stock_kind_removes_hedge_tag(self, tmp_path: Path):
+        client = _make_client(tmp_path)
+        iid = _add_instrument(tmp_path, symbol="600519.SH", kind="stock", status="active")
+        with database.SessionLocal() as s:
+            from app.services.instruments import sync_hedge_tag
+            sync_hedge_tag(s, iid)
+            s.commit()
+        resp = client.patch(f"/api/instruments/{iid}", json={"kind": "index"})
+        assert resp.status_code == 200
+        assert "hedge" not in resp.json()["tags"]
+
+    def test_patch_active_futures_to_expired_removes_hedge_tag_despite_stale_active_map_entry(self, tmp_path: Path):
+        """The real gap this regression pins down: reconcile_status on the
+        HedgeMapEntry row is only refreshed by mark/unmark/reconcile_map, not
+        by this PATCH endpoint. sync_hedge_tag must not be fooled by that
+        stale-active map entry once the instrument's own status changes —
+        it must also check Instrument.status itself, matching what
+        _active_instruments (the real MILP query) actually filters on."""
+        from app.models import HedgeMapEntry
+
+        client = _make_client(tmp_path)
+        iid = _add_instrument(
+            tmp_path, symbol="IC2406.CFFEX", kind="futures",
+            exchange="CFFEX", contract_code="IC2406",
+        )
+        underlying_id = _add_instrument(tmp_path, symbol="000905.SH", kind="index")
+        with database.SessionLocal() as s:
+            from app.services.instruments import sync_hedge_tag
+            s.add(HedgeMapEntry(
+                underlying_id=underlying_id, instrument_id=iid,
+                exchange="CFFEX", contract_code="IC2406", reconcile_status="active",
+                family="index_future", series_root="IC", instrument_type="future",
+            ))
+            s.commit()
+            sync_hedge_tag(s, iid)
+            s.commit()
+
+        resp = client.patch(f"/api/instruments/{iid}", json={"status": "expired"})
+        assert resp.status_code == 200
+        assert "hedge" not in resp.json()["tags"]
 
 
 # ---------------------------------------------------------------------------

@@ -35,6 +35,26 @@ def test_register_underlying_creates_new_instrument():
         assert audit.payload["symbol"] == "NEWUL.SH"
 
 
+def test_register_underlying_reactivating_a_stock_syncs_hedge_tag():
+    """Reactivating an inactive stock instrument is the one non-hedge-map
+    write path that can flip its self-hedge eligibility — the tool must
+    sync the hedge tag, not just the underlying tag."""
+    from app.tools.underlyings import register_underlying_tool
+
+    with database.SessionLocal() as session:
+        stock = Instrument(symbol="600519.SH", kind="stock", status="draft", currency="CNY")
+        session.add(stock)
+        session.commit()
+        stock_id = stock.id
+
+    register_underlying_tool.invoke({"symbol": "600519.SH"})
+
+    with database.SessionLocal() as session:
+        row = session.get(Instrument, stock_id)
+        assert row.status == "active"
+        assert "hedge" in row.tags
+
+
 def test_register_underlying_tags_existing_instrument():
     from app.tools.underlyings import register_underlying_tool
 

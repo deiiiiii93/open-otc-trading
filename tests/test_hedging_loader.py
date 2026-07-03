@@ -120,6 +120,62 @@ def test_reconcile_map_sets_active_and_stale(session):
     assert by_code == {"IC2406": "active", "IC2403": "stale"}
 
 
+def test_reconcile_map_syncs_hedge_tag_on_status_flip(session):
+    u = _underlying(session)
+    hedging_loader._upsert_catalog(session, [_contract("IC2406")], u.id)
+    inst = session.query(Instrument).filter(Instrument.kind == "futures").one()
+    session.add(HedgeMapEntry(
+        underlying_id=u.id, instrument_id=inst.id,
+        exchange="CFFEX", contract_code="IC2406",
+        family="index_future", series_root="IC", instrument_type="future",
+        reconcile_status="active",
+    ))
+    session.flush()
+
+    hedging_loader.reconcile_map(session)
+    session.flush()
+    session.refresh(inst)
+    assert "hedge" in inst.tags
+
+    # Now the instrument goes inactive (e.g. delisted) — reconcile should
+    # flip reconcile_status to "stale" and the tag should follow.
+    inst.status = "expired"
+    session.flush()
+    hedging_loader.reconcile_map(session)
+    session.flush()
+    session.refresh(inst)
+    assert "hedge" not in inst.tags
+
+
+def test_reconcile_map_syncs_hedge_tag_for_legacy_null_instrument_entry(session):
+    """A legacy HedgeMapEntry with instrument_id=NULL, matched only via
+    (exchange, contract_code), must still resync its matching instrument's
+    tag when reconcile_map flips its status — not just entries with a
+    durable instrument_id link."""
+    u = _underlying(session)
+    hedging_loader._upsert_catalog(session, [_contract("IC2409")], u.id)
+    inst = session.query(Instrument).filter(Instrument.kind == "futures").one()
+    session.add(HedgeMapEntry(
+        underlying_id=u.id, instrument_id=None,
+        exchange="CFFEX", contract_code="IC2409",
+        family="index_future", series_root="IC", instrument_type="future",
+        reconcile_status="stale",
+    ))
+    session.flush()
+
+    hedging_loader.reconcile_map(session)
+    session.flush()
+    session.refresh(inst)
+    assert "hedge" in inst.tags  # instrument is active -> entry flips to active
+
+    inst.status = "expired"
+    session.flush()
+    hedging_loader.reconcile_map(session)
+    session.flush()
+    session.refresh(inst)
+    assert "hedge" not in inst.tags
+
+
 def _open_position(session, underlying):
     pf = Portfolio(name=f"pf-{underlying.symbol}", base_currency="CNY")
     session.add(pf)
