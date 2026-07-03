@@ -102,6 +102,9 @@ describe('ArenaLive', () => {
     // Scores should be formatted
     expect(screen.getByText('0.850')).toBeInTheDocument();
     expect(screen.getByText('0.900')).toBeInTheDocument();
+
+    // Initial load requests the global leaderboard
+    expect(arenaApi.getArenaLeaderboard).toHaveBeenCalledWith(undefined);
   });
 
   it('renders the runs list', async () => {
@@ -123,6 +126,7 @@ describe('ArenaLive', () => {
     expect(await screen.findByText('workflow-a')).toBeInTheDocument();
     expect(await screen.findByText(/Total:/)).toBeInTheDocument();
     expect(arenaApi.getArenaRun).toHaveBeenCalledWith(1);
+    expect(arenaApi.getArenaLeaderboard).toHaveBeenCalledWith(1);
   });
 
   it('clicking a match fetches the transcript and renders transcript content', async () => {

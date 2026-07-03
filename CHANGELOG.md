@@ -85,9 +85,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Detailed | Compact` view-mode toggle and the `Interactive | AUTO | YOLO`
   execution-mode buttons moved from the page header into the composer actions row
   next to Send, and both were converted into compact inline pickers.
+- **App shell scrolling.** The sidebar and main content area now scroll
+  independently; the shell is locked to the viewport height so long menu or page
+  content no longer scrolls the entire window.
+- **Arena leaderboard is scoped to the selected run.** Choosing a run now
+  fetches `GET /api/arena/leaderboard?run_id={id}` and updates the leaderboard
+  panel title to show the active run; the global leaderboard remains shown when
+  no run is selected.
 
 ### Fixed
-- **Hedging page button bar sat flush against the bottom warning banner.**
+- **Arena objective scoring dropped every async task id and text artifact.** The
+  pre-fix trace harvester stored each tool result as the raw LangChain v3
+  lc-constructor `ToolMessage` envelope (`{lc,type,id,kwargs}`); the real payload
+  (with `task_id` / embedded artifacts) is a JSON string at `kwargs.content`, so the
+  assertion engine's `content.get("task_id")` always read `None`. Every
+  `task_returned_id` and `artifact_exists` check failed **identically across all
+  models** even though the tools returned the ids. The unwrap fix already landed in
+  the harvester (`_parse_tool_output`); this re-scores the affected historical
+  `risk-manager-control-day` matches (runs 1–9) from their persisted transcripts —
+  no LLM re-run — recovering ~5 checks per faithful run.
+- **Arena `skills_routed_sequence` was blind to repeat-routing.** `skills_routed` is
+  harvested only from `read_file`-on-`SKILL.md` spans, and the agent runtime never
+  re-opens an already-loaded file — so a legitimate second `read-risk-result` step
+  (or any description-only routing) was invisible, failing the ordering check on
+  noise uncorrelated with ability (same model passed/failed across reruns). Added a
+  `tools_routed_sequence` assertion that measures the same designed step order on the
+  fully-captured tool-call sequence (each skill → its signature tool) via the
+  existing `match_tools_subsequence`; switched `risk-manager-control-day` to it. Same
+  strict bar (skip/reorder still fails — genuine non-followers stay failing), minus
+  the dedup blind spot.
   Wrapped `HedgeStrategyLive` in a flex column with `gap: var(--gap-3)` so the
   Solve/Book hedge buttons are separated from the risk-run exposure message.
 - **IM gateway dropped every inbound user turn from the transcript.**

@@ -157,7 +157,7 @@ export function ArenaLive() {
     setError(null);
     Promise.all([
       listArenaRuns(),
-      getArenaLeaderboard(),
+      getArenaLeaderboard(selectedRunId ?? undefined),
       listArenaModels(),
     ])
       .then(([runsResp, lbResp, modelsResp]) => {
@@ -166,7 +166,7 @@ export function ArenaLive() {
         setModels(modelsResp.models);
       })
       .catch((e: unknown) => setError(String(e)));
-  }, []);
+  }, [selectedRunId]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -212,7 +212,9 @@ export function ArenaLive() {
         {/* Leaderboard */}
         <div className="wl-arena__panel">
           <div className="wl-arena__section-head">
-            <span className="wl-arena__eyebrow">Leaderboard</span>
+            <span className="wl-arena__eyebrow">
+              Leaderboard{selectedRunId != null ? ` — run ${String(selectedRunId).slice(0, 8)}` : ' — all runs'}
+            </span>
           </div>
           {leaderboard.length === 0 ? (
             <Empty message="No leaderboard data yet — run an arena evaluation to populate scores." />
