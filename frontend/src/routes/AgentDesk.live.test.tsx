@@ -132,7 +132,7 @@ describe('AgentDeskLive SSE parsing', () => {
 
     render(<AgentDeskLive pageContext={pageContext} />);
     await waitFor(() => screen.getByLabelText(/ask anything/i));
-    await userEvent.click(screen.getByRole('button', { name: /yolo/i }));
+    await userEvent.selectOptions(screen.getByLabelText('Mode'), 'yolo');
     await userEvent.type(screen.getByLabelText(/ask anything/i), 'hi');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
 
