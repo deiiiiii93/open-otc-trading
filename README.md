@@ -57,6 +57,7 @@ The product walkthrough tells it as one continuous flow:
 - **Instant-messaging desk (Feishu/Lark)** — Drive the full agent from IM with web-desk parity: streaming **markdown** replies, human-in-the-loop Approve/Reject **cards** for bookings, pickable reply-option cards, and linking-code enrollment. Runs as a dedicated single-worker gateway behind a `MessageConnector` abstraction (Feishu first), so the same orchestrator, data, and audit trail back both the web desk and chat.
 - **Market data** — AKShare adapter with caching and fallback for A-share / HK markets.
 - **Long-term memory** — A cross-session memory layer distills durable facts — desk preferences, per-book context, and corrections — from closed sessions and injects the relevant ones into later conversations. Facts are scoped (`user` / `book` / `domain` / `correction`), with a propose→approve gate for shared domain knowledge and a dedicated **Memory** console to review, pin, edit, and approve them.
+- **Audit trail** — An always-on, append-only log of every dangerous action an agent takes — bookings, writes, deletes, async dispatches, artifact writes — **including actions taken in headless YOLO mode**. Distinct from the full `/tracing` transcript viewer, the **Audit** console surfaces just the write-class actions with their outcome, human-in-the-loop approval chain, and redacted arguments.
 - **Reproducible & audited** — Every pricing run, risk run, and agent trace is persisted; QuantArk keeps the math deterministic.
 
 ---
@@ -262,6 +263,18 @@ open-otc-trading/
 # Frontend
 cd frontend && npm test
 ```
+
+### Docs-updated hook
+
+A `pre-push` hook blocks pushing a branch with backend/frontend changes unless
+`CHANGELOG.md` is also updated (it reminds, but doesn't block, if `README.md` /
+`CLAUDE.md` look relevant too). Enable it once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Bypass for doc-only follow-ups or hotfixes: `SKIP_DOCS_HOOK=1 git push`.
 
 ## Tech Stack
 

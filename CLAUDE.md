@@ -15,6 +15,65 @@ work** (token-only styling is non-negotiable there).
 - **LLM channels** — `config/agent_channels.yaml` is **gitignored** (per-env); the
   tracked template is `config/agent_channels.example.yml`. Tag/model edits must go
   to **both**.
+- **Before opening a PR / merging** — update `CHANGELOG.md` (Keep a Changelog,
+  under `[Unreleased]`); update `README.md` if the change is user-facing, and this
+  file if it introduces a new subsystem or a gotcha future agents need. A `pre-push`
+  hook (`.githooks/pre-push`, enable via `git config core.hooksPath .githooks`)
+  blocks pushing backend/frontend changes without a `CHANGELOG.md` update and
+  reminds (non-blocking) about `README.md`/`CLAUDE.md`.
+
+---
+
+## Audit trail (dangerous-action log)
+
+An always-on, append-only record of every write-class action an LLM agent takes —
+distinct from `/tracing` (which records every transcript detail, disableable).
+Captures bookings, portfolio/RFQ writes, deletes, memory writes, async dispatches,
+and file/artifact writes, **including actions taken in headless YOLO mode** — YOLO
+only empties the HITL interrupt map, it never bypasses middleware, which is where
+capture lives.
+
+**Package:** `backend/app/services/deep_agent/write_actions.py` (shared write-class
+taxonomy off `__capability_group__`, also consumed by `fanout_readonly.py`),
+`audit_redaction.py` (secret-key masking + content elision to sha256/len/head),
+`services/audit_trail.py` (recorder), `deep_agent/audit_trail_middleware.py`
+(`AuditTrailMiddleware`). Model: `AgentActionAudit` (`models.py`). Migration `0043`.
+Read-only API: `backend/app/routers/audit.py` (`/api/audit`). Frontend:
+`frontend/src/routes/Audit.{tsx,live.tsx,css}` (the **Audit** nav page).
+
+### Capture points
+
+`AuditTrailMiddleware` sits at the `wrap_tool_call` seam, just inside
+`ToolErrorBoundaryMiddleware`, in **all three** agent stacks — orchestrator
+(`_agent_middleware`), per-persona (`all_personas`), and `build_async_agent`.
+`tests/test_audit_registration.py` asserts middleware presence in all three so a new
+stack can't silently skip it.
+
+- **Fail-closed phase-1.** An `attempted` row must commit *before* the tool executes
+  (bounded retry 0.1/0.3/0.9s); if it can't, the write is refused with a ToolMessage
+  rather than executed unaudited. Phase-2 (`ok`/`denied`/`error`/`interrupted`) is a
+  best-effort outcome update by in-memory PK — on failure the row honestly stays
+  `attempted` rather than lying about the outcome.
+- **HITL chains.** `hitl_proposal` → `hitl_decision` → `execution` rows are linked by
+  a server-minted `audit_ref` (UUID), minted unconditionally inside
+  `_source_meta_for_action` so it survives async resume paths. Decision rows are
+  recorded at the resume boundary **before** the graph invocation, in their own
+  transaction, so a failed approved-write can't erase the human approval.
+- **Redaction.** Secret-key regex masking
+  (`token|password|secret|api[_-]?key|credential|authorization`) plus content-body
+  elision (`write_file`/`edit_file`/`run_python`/`execute` bodies →
+  `{sha256, byte_len, head}`) before any row is persisted.
+
+### Gotchas
+
+- List sort key is `occurred_at`, not `id` — insertion order only approximates
+  chronological order for organic same-process writes; a backfilled or
+  out-of-order-committed row breaks that assumption.
+- The Audit page pager reuses the shared `TableToolbar` / `DataTablePage`
+  primitives (rows-range label + rows-per-page select + prev/next) — same control
+  as Positions/Portfolios/Reports/Tasks, not a bespoke "Load more" button.
+- `fail_closed_refusals.unpersisted` (surfaced in `/api/audit/summary`) is an
+  in-memory counter — it resets per process.
 
 ---
 

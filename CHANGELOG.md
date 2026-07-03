@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Audit trail (dangerous-action log).** An always-on, append-only record of every
+  write-class action an LLM agent takes — bookings, portfolio/RFQ writes, deletes,
+  memory writes, async dispatches, file/artifact writes — **including actions taken
+  in headless YOLO mode**, previously invisible outside the full trace log. Captured
+  via `AuditTrailMiddleware` at the `wrap_tool_call` seam in all three agent stacks
+  (orchestrator, personas, async agent); phase-1 (the attempt row) is **fail-closed**
+  — it must commit before the tool executes, or the write is refused; secret-key and
+  content-body redaction happens before any row is persisted. Human-in-the-loop
+  actions form append-only proposal → decision → execution chains linked by a
+  server-minted `audit_ref`. Read-only `/api/audit` API plus an **Audit** console
+  page — search, status/class/mode filters, a detail view with the full action
+  chain, and time-sorted, rows-per-page pagination (`TableToolbar`, matching
+  Positions/Portfolios/Reports/Tasks). Migration `0043`.
 - **Dynamic subagents (governed QuickJS fan-out) — pilot.** An opt-in execution
   substrate that lets the orchestrator fan a recurring desk workflow out to one
   read-only persona subagent per work item — via the deepagents `task()` global in a

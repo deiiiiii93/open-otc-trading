@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Blocks pushing a feature branch with substantive backend/frontend changes
+# unless CHANGELOG.md is part of the diff (Keep a Changelog is the project's
+# release-notes convention — see CHANGELOG.md). README.md / CLAUDE.md updates
+# are reminded, not hard-gated: only a human/agent can judge whether a change
+# is user-facing (README) or a new subsystem/gotcha future agents need
+# (CLAUDE.md).
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+# Bypass (rare — doc-only follow-up, hotfix, etc.): SKIP_DOCS_HOOK=1 git push
+set -euo pipefail
+
+if [ "${SKIP_DOCS_HOOK:-}" = "1" ]; then
+  exit 0
+fi
+
+current_branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+case "$current_branch" in
+  main|master|"")
+    exit 0
+    ;;
+esac
+
+base_ref="origin/main"
+git fetch -q origin main 2>/dev/null || true
+if ! git rev-parse --verify -q "$base_ref" >/dev/null 2>&1; then
+  base_ref="main"
+fi
+if ! git rev-parse --verify -q "$base_ref" >/dev/null 2>&1; then
+  exit 0
+fi
+
+merge_base=$(git merge-base "$base_ref" HEAD 2>/dev/null || echo "")
+if [ -z "$merge_base" ]; then
+  exit 0
+fi
+
+changed=$(git diff --name-only "$merge_base" HEAD)
+if [ -z "$changed" ]; then
+  exit 0
+fi
+
+code_changed=$(printf '%s\n' "$changed" | grep -E '^(backend/app/|frontend/src/)' \
+  | grep -vE '\.(test|spec)\.(ts|tsx|py)$' || true)
+if [ -z "$code_changed" ]; then
+  exit 0
+fi
+
+if ! printf '%s\n' "$changed" | grep -qx "CHANGELOG.md"; then
+  cat >&2 <<'EOF'
+✗ pre-push blocked: this branch changes backend/frontend code but CHANGELOG.md
+  is untouched.
+
+  Update CHANGELOG.md (Keep a Changelog format, under [Unreleased]) to describe
+  the change before opening a PR. Also update README.md if it's a user-facing
+  feature, or CLAUDE.md if it introduces a new subsystem or a gotcha future
+  agents need to know about.
+
+  Bypass (rare — doc-only follow-up, hotfix, etc.): SKIP_DOCS_HOOK=1 git push
+EOF
+  exit 1
+fi
+
+if ! printf '%s\n' "$changed" | grep -qE '^(README\.md|CLAUDE\.md)$'; then
+  cat >&2 <<'EOF'
+ⓘ pre-push reminder: CHANGELOG.md is updated, but neither README.md nor
+  CLAUDE.md changed. If this is a new user-facing feature or subsystem,
+  update those too. (Not blocking — proceeding.)
+EOF
+fi
+
+exit 0
