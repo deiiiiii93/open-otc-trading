@@ -605,24 +605,16 @@ def _backfill_instrument_hedge_tags(active_engine: Engine, tables: set[str], ins
         hedge_ids: set[int] = set()
 
         if "hedge_map_entries" in tables:
-            # Both queries also require the Instrument row itself to be
-            # status='active' — see the matching comment in migration
-            # 0044_hedge_tag.upgrade(); reconcile_status can be stale
-            # relative to the instrument's current status.
-            for (instrument_id,) in connection.execute(
-                text(
-                    "SELECT DISTINCT h.instrument_id FROM hedge_map_entries h "
-                    "JOIN instruments i ON i.id = h.instrument_id "
-                    "WHERE h.reconcile_status = 'active' AND i.status = 'active'"
-                )
-            ).fetchall():
-                hedge_ids.add(instrument_id)
-
+            # Purely key-based join, matching _active_instruments exactly —
+            # see the matching comment in migration 0044_hedge_tag.upgrade().
+            # Also requires the Instrument row itself to be status='active';
+            # reconcile_status can be stale relative to the instrument's
+            # current status.
             for (instrument_id,) in connection.execute(
                 text(
                     "SELECT DISTINCT i.id FROM instruments i "
-                    "JOIN hedge_map_entries h ON h.instrument_id IS NULL "
-                    "AND h.exchange = i.exchange AND h.contract_code = i.contract_code "
+                    "JOIN hedge_map_entries h "
+                    "ON h.exchange = i.exchange AND h.contract_code = i.contract_code "
                     "WHERE h.reconcile_status = 'active' AND i.status = 'active' "
                     "AND i.exchange IS NOT NULL AND i.contract_code IS NOT NULL"
                 )

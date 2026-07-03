@@ -251,21 +251,22 @@ def reconcile_map(session: Session) -> None:
         if exch and code:
             key_to_instrument_ids.setdefault((exch, code), []).append(iid)
 
+    # sync_hedge_tag's truth condition (mirroring _active_instruments) is
+    # purely (exchange, contract_code)-keyed — instrument_id on a
+    # HedgeMapEntry row is bookkeeping only, not part of eligibility. Every
+    # entry's key must resolve to every instrument sharing it, not just the
+    # entry's own linked instrument_id (if any) — a duplicate instrument row
+    # sharing that key is equally affected by this entry's status flip.
     touched_instrument_ids: set[int] = set()
     for entry in session.query(HedgeMapEntry).all():
         if entry.instrument_id is not None:
             is_active = entry.instrument_id in active_ids
-            touched_instrument_ids.add(entry.instrument_id)
         else:
             is_active = (entry.exchange, entry.contract_code) in active_keys
-            # Legacy row (never backfilled with a durable instrument_id) —
-            # sync_hedge_tag treats this match as real ground truth too
-            # (Task 1), so its instrument(s) must be resynced here just like
-            # the direct-link case above.
-            touched_instrument_ids.update(
-                key_to_instrument_ids.get((entry.exchange, entry.contract_code), [])
-            )
         entry.reconcile_status = "active" if is_active else "stale"
+        touched_instrument_ids.update(
+            key_to_instrument_ids.get((entry.exchange, entry.contract_code), [])
+        )
     session.flush()
     for instrument_id in touched_instrument_ids:
         sync_hedge_tag(session, instrument_id)

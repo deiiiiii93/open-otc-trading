@@ -5,14 +5,15 @@ Revises: 0043_agent_action_audits
 Create Date: 2026-07-02
 
 Recomputes (not appends) "hedge" on every instrument's `tags` column:
-tagged iff it's referenced by a `hedge_map_entries` row with
-reconcile_status='active' (directly via instrument_id, or via legacy
-(exchange, contract_code) matching for rows never backfilled with a durable
-link), OR kind='stock' AND status='active' (the pre-existing stock
-self-hedge default). Must be a full recomputation, not an append-only
-backfill: the tags PUT endpoint accepted arbitrary tags before this feature
-shipped its "hedge"-stripping, so a pre-existing hand-typed "hedge" tag that
-doesn't satisfy either truth condition must be scrubbed, not left in place.
+tagged iff it's matched by (exchange, contract_code) to a `hedge_map_entries`
+row with reconcile_status='active' — this mirrors _active_instruments (the
+real MILP eligibility query, hedging_legs.py), which is purely key-based and
+never reads HedgeMapEntry.instrument_id at all — OR kind='stock' AND
+status='active' (the pre-existing stock self-hedge default). Must be a full
+recomputation, not an append-only backfill: the tags PUT endpoint accepted
+arbitrary tags before this feature shipped its "hedge"-stripping, so a
+pre-existing hand-typed "hedge" tag that doesn't satisfy either truth
+condition must be scrubbed, not left in place.
 
 HOUSE RULE: migration-local Core SQL / sa.Table on a fresh MetaData only —
 never import app models/services (they drift to the future schema).
@@ -48,26 +49,20 @@ def upgrade() -> None:
     hedge_ids: set[int] = set()
 
     if "hedge_map_entries" in _tables():
-        # Both queries also require the Instrument row itself to be
-        # status='active' — mirrors sync_hedge_tag's truth condition (Task
-        # 1), which must check this because reconcile_status can be stale
-        # relative to the instrument's current status. A one-time backfill
-        # is exactly the place that stale data is most likely to already
-        # exist, so this isn't optional here either.
-        for (instrument_id,) in bind.execute(
-            text(
-                "SELECT DISTINCT h.instrument_id FROM hedge_map_entries h "
-                "JOIN instruments i ON i.id = h.instrument_id "
-                "WHERE h.reconcile_status = 'active' AND i.status = 'active'"
-            )
-        ).fetchall():
-            hedge_ids.add(instrument_id)
-
+        # Purely key-based join, matching _active_instruments exactly — it
+        # never reads HedgeMapEntry.instrument_id, so this must not either
+        # (a duplicate Instrument row sharing a key with a durably-linked
+        # active entry is just as eligible as the linked one). Also
+        # requires the Instrument row itself to be status='active' — mirrors
+        # sync_hedge_tag's truth condition (Task 1), which must check this
+        # because reconcile_status can be stale relative to the
+        # instrument's current status. A one-time backfill is exactly the
+        # place that stale data is most likely to already exist.
         for (instrument_id,) in bind.execute(
             text(
                 "SELECT DISTINCT i.id FROM instruments i "
-                "JOIN hedge_map_entries h ON h.instrument_id IS NULL "
-                "AND h.exchange = i.exchange AND h.contract_code = i.contract_code "
+                "JOIN hedge_map_entries h "
+                "ON h.exchange = i.exchange AND h.contract_code = i.contract_code "
                 "WHERE h.reconcile_status = 'active' AND i.status = 'active' "
                 "AND i.exchange IS NOT NULL AND i.contract_code IS NOT NULL"
             )

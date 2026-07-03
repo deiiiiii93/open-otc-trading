@@ -6,7 +6,6 @@ import from here.
 """
 from __future__ import annotations
 
-from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from ..models import HedgeMapEntry, Instrument
@@ -150,31 +149,30 @@ def sync_hedge_tag(session: Session, instrument_id: int) -> None:
     row = session.get(Instrument, instrument_id)
     if row is None:
         return
-    match_conditions = [HedgeMapEntry.instrument_id == instrument_id]
-    if row.exchange and row.contract_code:
-        # Legacy entries never backfilled with a durable instrument_id are
-        # still real ground truth — reconcile_map/_active_instruments both
-        # fall back to (exchange, contract_code) for exactly these rows.
-        # Guarded on both columns being non-null so two different NULL/NULL
-        # rows never falsely match each other.
-        match_conditions.append(
-            and_(
-                HedgeMapEntry.instrument_id.is_(None),
-                HedgeMapEntry.exchange == row.exchange,
-                HedgeMapEntry.contract_code == row.contract_code,
-            )
-        )
-    # reconcile_status is only refreshed by mark()/unmark()/reconcile_map() —
-    # a direct status edit on the Instrument itself (e.g. via PATCH) doesn't
-    # touch it, so it can be stale "active" data at the moment this runs.
-    # _active_instruments (the real MILP eligibility query) always filters
-    # Instrument.status == "active" in addition to the map entry, so this
-    # must too, or an instrument PATCHed to expired/inactive would keep
-    # advertising "hedge" until some later reconcile_map() call happens to
-    # catch up.
-    has_active_entry = row.status == "active" and (
+    # _active_instruments (the real MILP eligibility query,
+    # hedging_legs.py::_active_instruments) builds its allowed-hedge set
+    # PURELY from (exchange, contract_code) — it never reads
+    # HedgeMapEntry.instrument_id at all. instrument_id is only a durable
+    # bookkeeping reference (used by unmark's delete-by-id path); it is not
+    # part of the real eligibility invariant. So this must match on key
+    # alone too, not "direct instrument_id match OR legacy key fallback" —
+    # a real duplicate Instrument row sharing a key with a *durably-linked*
+    # active entry is just as eligible to the engine as the linked one.
+    #
+    # reconcile_status is only refreshed by mark()/unmark()/reconcile_map()
+    # — a direct status edit on the Instrument itself (e.g. via PATCH)
+    # doesn't touch it, so it can be stale "active" data at the moment this
+    # runs. _active_instruments also always filters Instrument.status ==
+    # "active" in addition to the map entry, so this must too, or an
+    # instrument PATCHed to expired/inactive would keep advertising "hedge"
+    # until some later reconcile_map() call happens to catch up.
+    has_active_entry = bool(row.exchange and row.contract_code and row.status == "active") and (
         session.query(HedgeMapEntry.id)
-        .filter(or_(*match_conditions), HedgeMapEntry.reconcile_status == "active")
+        .filter(
+            HedgeMapEntry.exchange == row.exchange,
+            HedgeMapEntry.contract_code == row.contract_code,
+            HedgeMapEntry.reconcile_status == "active",
+        )
         .first()
         is not None
     )

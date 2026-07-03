@@ -79,8 +79,13 @@ def _engine_with_instruments_and_hedge_map(tmp_path: Path, name: str) -> sa.Engi
 def test_upgrade_tags_instrument_with_active_map_entry(tmp_path: Path) -> None:
     engine = _engine_with_instruments_and_hedge_map(tmp_path, "map.sqlite3")
     with engine.begin() as conn:
+        # exchange/contract_code must be set on the instrument row itself —
+        # matching is purely key-based (mirrors _active_instruments), not
+        # via instrument_id, even though instrument_id is also populated
+        # here as it would be by a real mark() call.
         conn.execute(sa.text(
-            "INSERT INTO instruments (id, symbol, kind, status) VALUES (1, 'IC2406.CFFEX', 'futures', 'active')"
+            "INSERT INTO instruments (id, symbol, kind, status, exchange, contract_code) "
+            "VALUES (1, 'IC2406.CFFEX', 'futures', 'active', 'CFFEX', 'IC2406')"
         ))
         conn.execute(sa.text(
             "INSERT INTO hedge_map_entries (underlying_id, instrument_id, exchange, contract_code, reconcile_status) "
@@ -121,7 +126,8 @@ def test_upgrade_ignores_active_map_entry_when_instrument_itself_inactive(tmp_pa
     engine = _engine_with_instruments_and_hedge_map(tmp_path, "inactive_status.sqlite3")
     with engine.begin() as conn:
         conn.execute(sa.text(
-            "INSERT INTO instruments (id, symbol, kind, status) VALUES (1, 'IC2406.CFFEX', 'futures', 'expired')"
+            "INSERT INTO instruments (id, symbol, kind, status, exchange, contract_code) "
+            "VALUES (1, 'IC2406.CFFEX', 'futures', 'expired', 'CFFEX', 'IC2406')"
         ))
         conn.execute(sa.text(
             "INSERT INTO hedge_map_entries (underlying_id, instrument_id, exchange, contract_code, reconcile_status) "
@@ -153,7 +159,8 @@ def test_upgrade_ignores_stale_entry(tmp_path: Path) -> None:
     engine = _engine_with_instruments_and_hedge_map(tmp_path, "stale.sqlite3")
     with engine.begin() as conn:
         conn.execute(sa.text(
-            "INSERT INTO instruments (id, symbol, kind) VALUES (1, 'IC2403.CFFEX', 'futures')"
+            "INSERT INTO instruments (id, symbol, kind, status, exchange, contract_code) "
+            "VALUES (1, 'IC2403.CFFEX', 'futures', 'active', 'CFFEX', 'IC2403')"
         ))
         conn.execute(sa.text(
             "INSERT INTO hedge_map_entries (underlying_id, instrument_id, exchange, contract_code, reconcile_status) "

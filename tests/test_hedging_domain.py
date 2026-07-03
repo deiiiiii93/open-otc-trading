@@ -172,14 +172,13 @@ def test_unmark_by_map_entry_id_removes_hedge_tag_for_legacy_null_instrument_ent
     assert "hedge" not in inst.tags
 
 
-def test_mark_backfilling_legacy_row_resyncs_other_instruments_sharing_the_key(session):
-    """Instrument has no uniqueness constraint on (exchange, contract_code) —
-    a second instrument row can share the same key as a legacy (instrument_id
-    IS NULL) HedgeMapEntry and pick up "hedge" via sync_hedge_tag's fallback.
-    Once mark() backfills that entry to one specific instrument_id, the OTHER
-    instrument no longer matches the legacy fallback and must lose the tag."""
-    from app.models import HedgeMapEntry, Instrument
-    from app.services.instruments import sync_hedge_tag
+def test_mark_resyncs_other_instruments_sharing_the_key(session):
+    """_active_instruments (the real MILP eligibility query) is purely
+    (exchange, contract_code)-keyed and never reads HedgeMapEntry.instrument_id
+    at all. Instrument has no uniqueness constraint on that key, so marking
+    one instrument must grant "hedge" to every OTHER instrument sharing its
+    key too, not just the one explicitly marked."""
+    from app.models import Instrument
 
     u = _underlying(session)
     inst_a = _instrument(session, u, code="IC2406")
@@ -191,23 +190,40 @@ def test_mark_backfilling_legacy_row_resyncs_other_instruments_sharing_the_key(s
     session.add(inst_b)
     session.flush()
 
-    session.add(HedgeMapEntry(
-        underlying_id=u.id, instrument_id=None,
-        exchange="CFFEX", contract_code="IC2406", reconcile_status="active",
-        family="index_future", series_root="IC", instrument_type="future",
-    ))
-    session.flush()
-    sync_hedge_tag(session, inst_b.id)
-    session.flush()
-    session.refresh(inst_b)
-    assert "hedge" in inst_b.tags  # picked up via legacy fallback before mark()
-
     hedging_domain.mark(session, [inst_a.id], actor="a")
     session.flush()
     session.refresh(inst_a)
     session.refresh(inst_b)
     assert "hedge" in inst_a.tags
-    assert "hedge" not in inst_b.tags  # no longer matches the now-durably-linked entry
+    assert "hedge" in inst_b.tags  # shares the key with the newly-marked entry
+
+
+def test_sync_hedge_tag_matches_duplicate_sharing_key_with_durably_linked_entry(session):
+    """A real duplicate Instrument row sharing a key with an ALREADY
+    durably-linked (instrument_id set) active entry is just as eligible to
+    the engine as the linked instrument itself — instrument_id is
+    bookkeeping only, never part of the eligibility invariant."""
+    from app.models import Instrument
+    from app.services.instruments import sync_hedge_tag
+
+    u = _underlying(session)
+    inst_a = _instrument(session, u, code="IC2406")
+    hedging_domain.mark(session, [inst_a.id], actor="a")
+    session.flush()
+    session.refresh(inst_a)
+    assert "hedge" in inst_a.tags
+
+    inst_b = Instrument(
+        symbol="IC2406-DUP.CFFEX", kind="futures", series_root="IC", exchange="CFFEX",
+        contract_code="IC2406", parent_id=u.id, status="active", source="hedge_load",
+    )
+    session.add(inst_b)
+    session.flush()
+
+    sync_hedge_tag(session, inst_b.id)
+    session.flush()
+    session.refresh(inst_b)
+    assert "hedge" in inst_b.tags
 
 
 def test_unmark_by_instrument_id_for_legacy_entry_resyncs_other_instruments_sharing_the_key(session):
