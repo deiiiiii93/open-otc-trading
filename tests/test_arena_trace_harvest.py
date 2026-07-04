@@ -209,3 +209,34 @@ def test_transcript_from_trace_missing_root_records_error():
     assert len(transcript.steps) == 2
 
 
+
+
+# ---------------------------------------------------------------------------
+# Span-error propagation (flagship v2 infra-blank evidence)
+# ---------------------------------------------------------------------------
+
+
+def test_errored_llm_span_propagates_into_turn_errors():
+    """A provider/LLM span that fails with no output must leave error evidence
+    in the turn — the arena infra-blank gate corroborates blankness with it."""
+    from app.services.arena.trace_harvest import _spans_to_turn_events
+
+    spans = [{
+        "run_type": "llm", "name": "ChatOpenAI",
+        "status": "error", "error": "402 quota exceeded",
+        "outputs": None,
+    }]
+    turn = _spans_to_turn_events(0, "user turn", spans)
+    assert turn["tool_calls"] == []
+    assert turn["response_text"] == ""
+    assert turn["errors"] and turn["errors"][0]["error"] == "402 quota exceeded"
+    assert turn["errors"][0]["span"] == "llm"
+
+
+def test_ok_spans_leave_errors_empty():
+    from app.services.arena.trace_harvest import _spans_to_turn_events
+
+    spans = [{"run_type": "llm", "name": "ChatOpenAI", "status": "ok",
+              "outputs": None}]
+    turn = _spans_to_turn_events(0, "user turn", spans)
+    assert turn["errors"] == []

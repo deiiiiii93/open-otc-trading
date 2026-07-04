@@ -107,13 +107,15 @@ steps:
         path: "results.var_cvar.cvar"
         lte: 0
       # Adherence: exactly the instructed scenario set, via either legitimate
-      # calling convention; exclusive_keys blocks mixed-carrier over-execution.
+      # calling convention; exclusive_keys blocks mixed-carrier over-execution
+      # and all_calls blocks a compliant first call masking an extra run.
       - type: tool_called
         name: run_scenario_test
         args_any_of:
           - predefined: ["market_crash"]
           - scenario_set: "market-crash"
         exclusive_keys: ["predefined", "custom", "scenario_set"]
+        all_calls: true
       # Grounding: the reported CVaR must be the computed one (loss language
       # legitimately drops the sign → magnitude match).
       - type: response_quotes_tool_value

@@ -415,3 +415,34 @@ def test_artifact_contains_text_key_fallback():
 def test_artifact_contains_miss_reports_terms():
     ok, msg = evaluate_assertion(_artifact_contains(["backtest"]), ctx(artifacts=_ARTS))
     assert not ok and "backtest" in msg
+
+
+def test_all_calls_extra_substituted_call_fails():
+    """Exact-use mode: a compliant first call must not mask a later
+    over-executing call of the same tool."""
+    a = _scenario_called(all_calls=True)
+    calls = [
+        {"name": "run_scenario_test", "args": {"predefined": ["market_crash"]}},
+        {"name": "run_scenario_test", "args": {"predefined": ["vol_spike"]}},
+    ]
+    ok, msg = evaluate_assertion(a, ctx(tool_calls=calls))
+    assert not ok and "run_scenario_test" in msg
+    # Without all_calls the first compliant call passes (documenting the delta)
+    ok2, _ = evaluate_assertion(_scenario_called(), ctx(tool_calls=calls))
+    assert ok2
+
+
+def test_all_calls_requires_at_least_one_call():
+    a = _scenario_called(all_calls=True)
+    ok, _ = evaluate_assertion(a, ctx(tool_calls=[]))
+    assert not ok
+
+
+def test_all_calls_duplicate_compliant_calls_pass():
+    a = _scenario_called(all_calls=True)
+    calls = [
+        {"name": "run_scenario_test", "args": {"predefined": ["market_crash"]}},
+        {"name": "run_scenario_test", "args": {"scenario_set": "market-crash"}},
+    ]
+    ok, _ = evaluate_assertion(a, ctx(tool_calls=calls))
+    assert ok

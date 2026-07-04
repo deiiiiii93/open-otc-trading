@@ -213,10 +213,7 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
         def _absent(v: Any) -> bool:
             return v is None or v == [] or v == ""
 
-        for c in ctx.tool_calls:
-            if normalize_tool_name(c.get("name", "")) != want:
-                continue
-            call_args = c.get("args", {}) or {}
+        def _call_matches(call_args: dict) -> bool:
             for cand in candidates:
                 if cand is not None:
                     ok, _ = _deep_subset(cand, call_args, a.name)
@@ -226,7 +223,21 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
                 if any(k not in cand_keys and not _absent(call_args.get(k))
                        for k in exclusive):
                     continue
+                return True
+            return False
+
+        matching_name = [c.get("args", {}) or {} for c in ctx.tool_calls
+                         if normalize_tool_name(c.get("name", "")) == want]
+        if getattr(a, "all_calls", False):
+            # Exact-use: at least one call AND every call matches a candidate —
+            # a compliant first call must not mask a later over-execution.
+            if not matching_name:
+                return False, f"tool {a.name} not called"
+            if all(_call_matches(args) for args in matching_name):
                 return True, ""
+            return False, f"a call of {a.name} did not match the allowed args"
+        if any(_call_matches(args) for args in matching_name):
+            return True, ""
         return False, f"tool {a.name} not matched"
     if t == "task_returned_id":
         r = _last_result(ctx, a.tool)

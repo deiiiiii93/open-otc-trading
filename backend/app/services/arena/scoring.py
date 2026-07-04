@@ -121,6 +121,12 @@ def _assertion_label(a) -> str:
         return f"skill routed: {a.name}"
     if t == "tool_called":
         return f"tool called: {a.name}"
+    if t == "tool_not_called":
+        return f"tool NOT called: {a.name}"
+    if t == "artifact_contains":
+        return f"artifact({a.kind}) contains " + " / ".join(a.any_of)
+    if t == "response_quotes_tool_value":
+        return f"response quotes {a.tool} {a.path}"
     return t
 
 

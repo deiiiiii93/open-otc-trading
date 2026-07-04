@@ -51,6 +51,10 @@ class _ToolCalled(BaseModel):
     args: dict | None = None
     args_any_of: list[dict] | None = None
     exclusive_keys: list[str] | None = None
+    # Exact-use mode: EVERY call of `name` must match a candidate (and there
+    # must be at least one call). Without it a compliant first call would mask
+    # a later over-executing/substituted call of the same tool.
+    all_calls: bool = False
 
     @model_validator(mode="after")
     def _args_exclusive(self) -> "_ToolCalled":
