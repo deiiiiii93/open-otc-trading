@@ -141,7 +141,9 @@ def _build_prompt(transcript: MatchTranscript, loaded) -> list[dict]:
     system_msg = (
         "You are an expert evaluator grading an AI assistant's performance on a "
         "multi-step desk workflow. Score each rubric point from 0 to 100 based "
-        "on the transcript provided. Be objective and consistent."
+        "on the transcript provided. Be objective and consistent. "
+        "Each rubric point defines explicit score anchors (0/50/100); pick the "
+        "score matching the closest anchor and use the full 0-100 range."
     )
 
     user_msg = f"""Workflow: {workflow.title}
