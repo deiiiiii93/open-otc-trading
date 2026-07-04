@@ -155,7 +155,7 @@ def test_flagship_backtest_step_asserts_requested_dates():
     from app.golden_workflows.registry import get_workflow
 
     wf = get_workflow("risk-manager-control-day")
-    step = wf.steps[5]  # step 6 (0-indexed): the backtest step
+    step = wf.steps[6]  # step 7 (0-indexed): the backtest step in the v2 manifest
     assert "2026-03-24" in step.user and "2026-06-24" in step.user
     date_checks = [
         a for a in step.assertions

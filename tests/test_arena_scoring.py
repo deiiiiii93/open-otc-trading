@@ -147,7 +147,8 @@ class TestTotalScore:
 
 
 class TestPartialScoring:
-    """A blank transcript (no skills, no tools, no results) scores 0."""
+    """A blank transcript (no skills, no tools, no results) earns only the
+    3 prohibition points (tool_not_called passes on inaction) — the v2 floor."""
 
     def test_blank_transcript_scores_zero(self):
         from app.golden_workflows.transcript import MatchTranscript, MatchStep
@@ -182,8 +183,8 @@ class TestPartialScoring:
         )
         score, passed, total = objective_score(transcript, loaded)
         assert total == 39
-        assert passed == 0
-        assert score == 0.0
+        assert passed == 3  # the three tool_not_called prohibitions
+        assert score == pytest.approx(100.0 * 3 / 39)
 
     def test_missing_steps_counted_in_denominator(self):
         """Fewer steps in transcript → denominator still 39, passes reduced."""
@@ -202,8 +203,8 @@ class TestPartialScoring:
         )
         score, passed, total = objective_score(transcript, loaded)
         assert total == 39
-        assert passed == 0
-        assert score == 0.0
+        assert passed == 3  # prohibition checks pass for absent steps too
+        assert score == pytest.approx(100.0 * 3 / 39)
 
 
 # ---------------------------------------------------------------------------
@@ -269,9 +270,9 @@ class TestDiagnoseHeuristic:
         diag = diagnose_heuristic(empty, loaded)
         assert diag["skills_hit"] == 0
         assert diag["tool_calls"] == 0
-        assert diag["checks_passed"] == 0
+        assert diag["checks_passed"] == 3  # the tool_not_called prohibitions
         assert diag["checks_total"] == 39
-        assert diag["summary"].startswith("0/6 expected skills · 0 tool calls · 0/39 checks")
+        assert diag["summary"].startswith("0/6 expected skills · 0 tool calls · 3/39 checks")
 
 
 # ---------------------------------------------------------------------------

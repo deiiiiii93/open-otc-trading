@@ -21,7 +21,7 @@
         "symbol": "AAPL",
         "rate": 0.04,
         "dividend_yield": 0.005,
-        "volatility": 0.30
+        "volatility": 0.3
       },
       {
         "alias": "ppr-tsla",
@@ -37,7 +37,7 @@
         "symbol": "NVDA",
         "rate": 0.04,
         "dividend_yield": 0.0,
-        "volatility": 0.40
+        "volatility": 0.4
       }
     ],
     "positions": [
@@ -516,10 +516,58 @@
           "kind": "text",
           "path": "/trading_desk/reports/rpt-20260624-control.md",
           "title": "Control Day Risk Report — 2026-06-24",
-          "url": "/trading_desk/reports/rpt-20260624-control"
+          "url": "/trading_desk/reports/rpt-20260624-control",
+          "content": "# Control Day Risk Report — 2026-06-24\n\n## Risk run\nHotspot: AAPL, net delta -148,000, gamma -7,200. Total portfolio delta -248,500.\n\n## Greeks landscape\nGamma at +10% spot -9,600; delta at -20% spot -310,000.\n\n## Scenario stress (market_crash)\nWorst-case P&L -1,850,000 (2008 financial-crisis analog); CVaR at 95% confidence -2,100,000.\n\n## Backtest\nDelta-hedge historical replay 2026-03-24 → 2026-06-24: cumulative hedge P&L summarised; no autocallable lifecycle events."
         }
       ],
       "response_text": "The governance risk report has been created. Report ID: `rpt-20260624-control`. The report bundles today's risk run (hotspot: AAPL), Greeks landscape, market-crash scenario results (worst-case P&L: -1,850,000), and quarterly backtest summary (Sharpe 1.12). It is now available as a durable artifact for the governance record."
+    },
+    "step-grid-comprehension": {
+      "ai": {
+        "content": "Reading the completed landscape grid for the answer.",
+        "tool_calls": []
+      },
+      "tool_results": [],
+      "skills_routed": [],
+      "artifacts": [],
+      "response_text": "From the completed Greeks landscape: gamma at a +10% spot shift is -9,600, and at a -20% shift the portfolio delta becomes -310,000. Gamma decay flattens as spot rises; the short-delta position deepens on the downside."
+    },
+    "step-trap-missing-scenario-set": {
+      "ai": {
+        "content": "Checking the scenario library before running anything.",
+        "tool_calls": [
+          {
+            "id": "call_s8_001",
+            "name": "list_scenario_library_tool",
+            "args": {}
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "call_s8_001",
+          "name": "list_scenario_library_tool",
+          "content": {
+            "predefined": [
+              "market_crash",
+              "market_rally",
+              "vol_spike",
+              "vol_crush",
+              "rate_hike",
+              "rate_cut",
+              "severe_downturn",
+              "inflation_shock",
+              "black_monday_1987",
+              "financial_crisis_2008",
+              "covid_crash_2020"
+            ],
+            "custom": []
+          }
+        }
+      ],
+      "skills_routed": [],
+      "artifacts": [],
+      "response_text": "There is no scenario set named 'liquidity-crunch' — it is not in the scenario library and not available as a predefined set. The closest predefined alternatives are market_crash and severe_downturn; say the word and I'll run one of those with the Control Profile instead."
     }
   }
 }
