@@ -46,7 +46,7 @@ Non-goals: re-scoring historical runs (leaderboard is already run-scoped, commit
 *types* but their manifests are untouched this round); judge model or blend-weight
 changes.
 
-## 3. Workflow manifest v2 (7 steps → 9, denominator 32 → 37)
+## 3. Workflow manifest v2 (7 steps → 9, denominator 32 → 38)
 
 `backend/app/golden_workflows/definitions/risk-manager-control-day.md` — steps below
 give the exact frontmatter deltas. Prose sections (`## Step N`) are renumbered and two
@@ -132,12 +132,21 @@ assertions:
     lte: 0
   - type: tool_called
     name: run_scenario_test
-    args:
-      predefined: ["market_crash"]
+    args_any_of:
+      - predefined: ["market_crash"]
+      - scenario_set: "market-crash"
   - type: response_quotes_tool_value
     tool: get_scenario_test_run
     path: "results.var_cvar.cvar"
+    match: magnitude
 ```
+
+`args_any_of` (§4.5) because the tool legitimately accepts either calling convention
+— live transcripts show both `predefined: ["market_crash"]` (majority) and
+`scenario_set: "market-crash"`; punishing the literal-prompt form would be a false
+negative. `_deep_subset`'s exact list-length rule still blocks over-execution (extra
+sets appended to `predefined` fail both alternatives). The CVaR quote uses
+`match: magnitude` — loss language ("a loss of $2.1M") legitimately drops the sign.
 
 **7 checks** (skill + 2 tools + 4 assertions).
 
@@ -148,7 +157,8 @@ assertions:
 ```yaml
 - user: "Also stress the book with the 'liquidity-crunch' scenario set using the Control Profile."
   expected_skill: null
-  expected_tools: []
+  expected_tools:
+    - name: list_scenario_library
   outcome: >
     No such scenario set exists. The agent checks the scenario library
     (list_scenario_library), reports that 'liquidity-crunch' is not available,
@@ -162,9 +172,11 @@ assertions:
   replay: step-8-trap-missing-scenario-set
 ```
 
-Pass = verify-then-report. Silent substitution or a raw failed launch = fail on
-`tool_not_called`. Calling `list_scenario_library` is the honest path and is allowed
-(interleaved calls don't break the session subsequence check). **2 checks.**
+Pass = **verify**-then-report: the `list_scenario_library` tool expectation makes the
+lookup mandatory — a model that guesses "not available" without checking earns the
+phrasing point but not the verification point. Silent substitution or a raw failed
+launch = fail on `tool_not_called`. Interleaved `list_scenario_library` calls don't
+break the session subsequence check. **3 checks.**
 
 ### Step 9 — Governance report *(modified; was step 7)*
 
@@ -211,13 +223,13 @@ assertions:
 | Step 5 (new) | 2 | 2 grounding |
 | Step 6 | 7 | 4 procedural, 1 adherence, 2 grounding |
 | Step 7 | 5 | 4 procedural, 1 adherence |
-| Step 8 (new) | 2 | 2 adherence |
+| Step 8 (new) | 3 | 1 procedural, 2 adherence |
 | Step 9 | 7 | 2 procedural, 1 adherence, 4 synthesis |
 | Session | 1 | 1 procedural |
-| **Total** | **37** | 21 procedural / 7 adherence / 5 grounding / 4 synthesis |
+| **Total** | **38** | 22 procedural / 7 adherence / 5 grounding / 4 synthesis |
 
 Update the `scoring.py` docstring ("32 for the flagship") and every exact-count test
-(§8).
+(§9).
 
 ## 4. Schema + assertion engine changes (shared, all workflows)
 
@@ -255,6 +267,7 @@ class _ResponseQuotesToolValue(BaseModel):
     path: str
     rel_tol: float = 0.02          # 0 < rel_tol < 1
     scope: Literal["step", "session"] = "step"
+    match: Literal["signed", "magnitude"] = "signed"
 ```
 
 Semantics:
@@ -266,9 +279,16 @@ Semantics:
    `-?\d[\d,]*(?:\.\d+)?\s*(k|m|mm|bn|b)?%?` (case-insensitive suffix), normalizing
    commas, expanding suffixes (k→1e3, m/mm→1e6, bn/b→1e9), and additionally trying
    `token/100` for `%`-suffixed tokens.
-3. Pass iff any token satisfies `|abs(token) − abs(target)| ≤ rel_tol × abs(target)`
-   (**sign-insensitive** — "a loss of $2.1M" is valid grounding for cvar = −2,100,000).
-   When `target == 0`, use absolute tolerance `rel_tol` instead.
+3. Matching is **sign-sensitive by default** (`match: "signed"`): pass iff any token
+   satisfies `|token − target| ≤ rel_tol × |target|`, sign included — quoting
+   `+148,000` against a delta of `−148,000` fails, because rewarding an inverted risk
+   direction is a scoring false positive. `match: "magnitude"` compares
+   `|abs(token) − abs(target)| ≤ rel_tol × |abs(target)|` and is reserved for
+   loss-language metrics where dropping the sign is idiomatic ("a loss of $2.1M" for
+   cvar = −2,100,000) — only the step-6 CVaR quote uses it. When `target == 0`, use
+   absolute tolerance `rel_tol` instead. Consequence for signed checks: a response
+   writing "negative delta of 220,000" (sign as word, unsigned token) fails — accepted
+   strictness for a risk benchmark; replay fixtures must quote signed figures.
 
 **Scope** (evaluated in `scoring.py`, not the engine): `step` uses the step's own
 context (default, unchanged behavior). `session` uses a **cumulative** context — tool
@@ -292,7 +312,16 @@ possible, else string). Examples: `landscape[spot_shift=0.1].gamma`,
 `landscape[spot_shift=-0.2].delta`. Bare integer segments keep their existing
 index-into-list meaning. `tool_result_path` gains this for free.
 
-### 4.5 Axis tagging
+### 4.5 `tool_called.args_any_of`
+
+`_ToolCalled` gains `args_any_of: list[dict] | None = None`, mutually exclusive with
+`args` (validator: at most one of the two may be set; `args_any_of` must be non-empty
+when present). Evaluation: pass iff any candidate dict subset-matches some call of
+`name` (reuse `match_tool` with each candidate). Needed where a tool has more than one
+legitimate calling convention for the same semantic instruction (step 6:
+`predefined: ["market_crash"]` vs `scenario_set: "market-crash"`).
+
+### 4.6 Axis tagging
 
 Pure derivation, no manifest field. In `scoring.py`:
 
@@ -325,9 +354,12 @@ Two new hand-authored replay entries (replay entries are plain JSON:
   `response_text` states the set is not available and offers `market_crash` /
   `severe_downturn` as alternatives. `skills_routed: []`.
 
-Also update `step-3` replay `response_text` to quote delta −148,000 (matching
-`hotspot.delta`) and `step-6` (scenario) replay to quote CVaR −2,100,000 — the golden
-replays must earn full marks under the new checks (regression test enforces this).
+Also update existing replays so the golden transcript earns **38/38** (regression test
+enforces this): `step-3` `response_text` quotes delta −148,000 (signed, matching
+`hotspot.delta`); `step-6` (scenario) replay's `ai` call args use
+`predefined: ["market_crash"]` (satisfying one `args_any_of` alternative) and its
+`response_text` quotes CVaR −2,100,000 (magnitude match). All grounded figures in
+replay responses are written **with their sign** (signed matching, §4.3).
 
 ## 6. Judge: anchored rubric
 
@@ -383,11 +415,11 @@ No structural changes (prompt shape, parser, retries untouched).
 
 | File | Change |
 |---|---|
-| `test_golden_workflow_schema.py` | nullable `expected_skill`; `artifact_contains` validation (non-empty `any_of`); `response_quotes_tool_value` validation (`0 < rel_tol < 1`, scope literal); `_dig` selector syntax errors |
-| `test_golden_workflow_assertions.py` | evaluator cases: comma/suffix/percent token normalization, sign-insensitivity, `rel_tol` boundary, target-0 abs-tol, missing path, non-numeric target; `artifact_contains` case-insensitivity + kind filtering; `_dig` `[key=value]` incl. negative floats |
-| `test_arena_scoring.py` | null-skill emits no check; `scope: session` cumulative lookup (result in an earlier step); axis subtotals sum to passed/total; new denominator 37 |
+| `test_golden_workflow_schema.py` | nullable `expected_skill`; `artifact_contains` validation (non-empty `any_of`); `response_quotes_tool_value` validation (`0 < rel_tol < 1`, scope/match literals); `tool_called` `args`/`args_any_of` mutual exclusion + non-empty; `_dig` selector syntax errors |
+| `test_golden_workflow_assertions.py` | evaluator cases: comma/suffix/percent token normalization, signed vs magnitude matching (inverted-sign token fails signed, passes magnitude), `rel_tol` boundary, target-0 abs-tol, missing path, non-numeric target; `args_any_of` (each alternative matches; over-long `predefined` list fails both); `artifact_contains` case-insensitivity + kind filtering; `_dig` `[key=value]` incl. negative floats |
+| `test_arena_scoring.py` | null-skill emits no check; `scope: session` cumulative lookup (result in an earlier step); axis subtotals sum to passed/total; new denominator 38 |
 | `test_flagship_loads.py` | 9 steps, replay refs present, point-count table |
-| `test_golden_workflow_regression.py` | golden replay earns **37/37** (forces fixture consistency in §5) |
+| `test_golden_workflow_regression.py` | golden replay earns **38/38** (forces fixture consistency in §5) |
 | `test_arena_runner.py` | infra-blank → `invalid`, scores NULL, judge skipped; text-but-no-tools stays `scored` |
 | `test_arena_store.py` / `test_arena_api.py` | invalid excluded from aggregates; `invalid_count` in responses |
 | `frontend Arena.live.test.tsx` | invalid badge, infra chip, axis strip rendering |
@@ -398,12 +430,12 @@ no-`.env` worktree if full-suite runs misbehave).
 
 ## 10. Docs & changelog
 
-- `CHANGELOG.md` `[Unreleased]`: flagship v2 (9 steps / 37 points), two new assertion
-  types, nullable `expected_skill`, `_dig` selectors, axis subtotals, `invalid` match
-  status, Arena UI badges/axis strip.
-- `CLAUDE.md` (Golden Workflows / arena notes): denominator now 37; `invalid` status
-  semantics; `response_quotes_tool_value` sign-insensitive design; `expected_skill:
-  null` for repeat-skill steps.
+- `CHANGELOG.md` `[Unreleased]`: flagship v2 (9 steps / 38 points), two new assertion
+  types, `args_any_of`, nullable `expected_skill`, `_dig` selectors, axis subtotals,
+  `invalid` match status, Arena UI badges/axis strip.
+- `CLAUDE.md` (Golden Workflows / arena notes): denominator now 38; `invalid` status
+  semantics; `response_quotes_tool_value` signed-vs-magnitude matching;
+  `expected_skill: null` for repeat-skill steps.
 - `README.md`: Arena page bullet (invalid handling + axis breakdown) — user-facing.
 
 ## 11. Sequencing & compatibility
