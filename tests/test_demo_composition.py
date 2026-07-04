@@ -34,7 +34,7 @@ from app.services.demo.composition import (
 
 
 FLAGSHIP_ID = "risk-manager-control-day"
-FLAGSHIP_STEP_COUNT = 7
+FLAGSHIP_STEP_COUNT = 9
 
 
 # ---------------------------------------------------------------------------
