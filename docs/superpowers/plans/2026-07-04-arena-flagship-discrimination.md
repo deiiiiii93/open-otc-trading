@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Rebuild `risk-manager-control-day` as a 9-step / 38-point benchmark with grounding, adherence and synthesis checks that separate frontier models, plus infra-invalid match handling and per-axis score reporting end-to-end (engine → manifest → arena task/store/API → Arena UI).
+**Goal:** Rebuild `risk-manager-control-day` as a 9-step / 39-point benchmark with grounding, adherence and synthesis checks that separate frontier models, plus infra-invalid match handling and per-axis score reporting end-to-end (engine → manifest → arena task/store/API → Arena UI).
 
 **Architecture:** Extend the pure assertion engine (`assertions.py` + `schema.py`) with two new assertion types and two `tool_called` fields; teach `scoring.py` nullable skill checks, session-scope grounding lookups, and axis subtotals; rewrite the flagship manifest/fixtures; add infra-blank detection at the arena task boundary with store/API/UI exposure. Spec: `docs/superpowers/specs/2026-07-04-arena-flagship-discrimination-design.md`.
 
@@ -15,7 +15,7 @@
 - Other workflow manifests (`trader-rfq-booking-day`, `high-board-portfolio-review-day`) are untouched; all schema additions must be optional/additive so they load unchanged.
 - Frontend: token-only styling (`var(--token)`), BEM `wl-` classes, reuse `Table`/`Chip` primitives (see `frontend/CLAUDE.md`).
 - Numeric grounding: `match: "signed"` default, `rel_tol=0.02`, `near` window = 160 chars after anchor start, suffix expansion k/m/mm/bn/b, `%` also tried ÷100, target 0 → abs tol.
-- New denominator: **38** = 22 procedural + 7 adherence + 5 grounding + 4 synthesis (6 skills + 11 tool expectations + 20 step assertions + 1 success assertion).
+- New denominator: **39** = 22 procedural + 8 adherence + 5 grounding + 4 synthesis (6 skills + 11 tool expectations + 21 step assertions + 1 success assertion).
 - Infra-blank = every step has no tool_calls AND empty response_text AND ≥1 step has non-empty `errors`. Status `invalid`, error `infra_blank`, scores NULL, judge skipped, **no retry**.
 
 ---
@@ -642,7 +642,7 @@ Write these fully against the file's existing `MatchTranscript`/workflow builder
 (read the top of `tests/test_arena_scoring.py` and mirror `test_flagship_replay_scores_100_32_32`'s
 setup — `transcript_from_replay(loaded)` + `get_workflow_bundle`). Also update the
 three hard `== 32` pins (lines ~31-67) and the two `total == 32` cases (~184, 204) to
-**38** — they will fail until Task 5 lands; that is expected mid-sequence (run them
+**39** — they will fail until Task 5 lands; that is expected mid-sequence (run them
 at Task 5 Step 4).
 
 - [ ] **Step 2: Run, verify fail** — `.venv/bin/python -m pytest tests/test_arena_scoring.py -q -k "Axis or scope"` → FAIL.
@@ -694,8 +694,8 @@ In `objective_breakdown`, aggregate:
             "success": success, "axes": axes}
 ```
 
-Update the module docstring: `total == fixed denominator (38 for the flagship)` and
-the `objective_score` docstring arithmetic to `(6+11+20+1=38)`.
+Update the module docstring: `total == fixed denominator (39 for the flagship)` and
+the `objective_score` docstring arithmetic to `(6+11+21+1=39)`.
 
 - [ ] **Step 4: Run, verify targeted pass** — `.venv/bin/python -m pytest tests/test_arena_scoring.py -q -k "Axis or scope or breakdown"` → new tests PASS (the 38-pins still red until Task 5).
 
@@ -726,14 +726,14 @@ def test_flagship_has_nine_steps_and_narration():
     assert len(wf.narration) == 9
     assert wf.steps[1].expected_tools[0].name == "run_batch_pricing"
 
-def test_flagship_objective_point_manifest_is_38():
+def test_flagship_objective_point_manifest_is_39():
     wf = get_workflow("risk-manager-control-day")
     skills = sum(1 for s in wf.steps if s.expected_skill is not None)
     tools = sum(len(s.expected_tools) for s in wf.steps)
     step_assertions = sum(len(s.assertions) for s in wf.steps)
     success_assertions = len(wf.success.assertions)
-    assert (skills, tools, step_assertions, success_assertions) == (6, 11, 20, 1)
-    assert skills + tools + step_assertions + success_assertions == 38
+    assert (skills, tools, step_assertions, success_assertions) == (6, 11, 21, 1)
+    assert skills + tools + step_assertions + success_assertions == 39
 
 def test_flagship_exact_ordered_manifest():
     wf = get_workflow("risk-manager-control-day")
@@ -777,8 +777,13 @@ def test_flagship_exact_ordered_manifest():
      ```
   4. *(step-4-greeks-landscape — unchanged)*
   5. **NEW** grid comprehension (spec §3 step 5 verbatim — user text, `expected_skill: null`,
-     `expected_tools: []`, the two `scope: session` + `near` grounding assertions,
-     `replay: step-grid-comprehension`).
+     `expected_tools: []`, the two `scope: session` + `near` grounding assertions
+     **plus `tool_not_called: run_greeks_landscape`** — re-*dispatching* the
+     landscape is the recomputation escape hatch and must fail; re-fetching via
+     `get_greeks_landscape_run` stays allowed — `replay: step-grid-comprehension`).
+     Regression coverage: add a scoring test where a transcript's step-5 calls
+     `run_greeks_landscape` again → that check fails, while a variant that only
+     calls `get_greeks_landscape_run` passes all three step-5 checks.
   6. *(step-5-scenario-test key kept)* — assertions gain the `args_any_of`/`exclusive_keys`
      `tool_called` and the `match: magnitude` CVaR quote (spec §3 step 6 verbatim).
   7. *(step-6-backtest key kept — unchanged, keeps the dates `tool_called`)*
@@ -859,7 +864,7 @@ def test_flagship_exact_ordered_manifest():
 
 - [ ] **Step 6: Run the full golden suite** —
   `.venv/bin/python -m pytest tests/test_flagship_loads.py tests/test_golden_workflow_regression.py tests/test_arena_scoring.py tests/test_golden_workflow_assertions.py tests/test_golden_workflow_schema.py tests/test_golden_workflow_registry.py -q`
-  → ALL PASS, including the regression suite proving the golden replay earns 38/38
+  → ALL PASS, including the regression suite proving the golden replay earns 39/39
   (the regression file asserts every step + success assertion passes on
   `transcript_from_replay`; if any new check fails there, fix the **fixture**, not
   the check).
@@ -979,6 +984,14 @@ def test_leaderboard_response_carries_invalid(client_with_seeded_matches):
     resp = client.get("/api/arena/leaderboard")
     row = resp.json()["rows"][0]
     assert "invalid" in row
+
+
+def test_run_detail_exposes_match_error(client_with_seeded_matches):
+    """The corroborating invalid reason must be auditable via the API."""
+    # seed one match with status="invalid", error="infra_blank"
+    resp = client.get(f"/api/arena/runs/{run_id}")
+    inv = [m for m in resp.json()["matches"] if m["status"] == "invalid"][0]
+    assert inv["error"] == "infra_blank"
 ```
 
 Adapt each to the fixture/builder helpers already in those files (they all have
@@ -1082,6 +1095,17 @@ and use it in both paths (DRY).
             }
 ```
 
+`routers/arena.py::MatchSummary` — expose the invalid reason (store's
+`_match_to_dict` already carries `error`; the API model currently drops it):
+
+```python
+class MatchSummary(BaseModel):
+    ...existing fields...
+    error: str | None = None
+```
+
+and in `get_run`'s `MatchSummary(...)` construction add `error=m.get("error")`.
+
 - [ ] **Step 4: Run, verify pass** — same command → PASS. Also run the untouched
   neighbors: `.venv/bin/python -m pytest tests/test_arena_runner_high_board.py tests/test_arena_task* -q 2>/dev/null; .venv/bin/python -m pytest tests/ -q -k "arena"` → no regressions.
 
@@ -1110,14 +1134,15 @@ it('renders invalid count chip on leaderboard rows', async () => {
   expect(screen.getByText(/1 infra/)).toBeInTheDocument();
 });
 
-it('renders invalid match status badge', async () => {
-  // run detail containing a match with status 'invalid'
+it('renders invalid match status badge with its reason', async () => {
+  // run detail containing a match with status 'invalid', error 'infra_blank'
   expect(await screen.findByText('invalid')).toBeInTheDocument();
+  expect(screen.getByText(/infra_blank/)).toBeInTheDocument();
 });
 
 it('renders axis strip when breakdown carries axes', async () => {
   // score_breakdown.objective.axes = { procedural: {passed: 20, total: 22},
-  //   adherence: {passed: 5, total: 7}, grounding: {passed: 4, total: 5},
+  //   adherence: {passed: 6, total: 8}, grounding: {passed: 4, total: 5},
   //   synthesis: {passed: 4, total: 4} }
   ...select match...
   expect(screen.getByText('procedural')).toBeInTheDocument();
@@ -1135,10 +1160,18 @@ it('renders axis strip when breakdown carries axes', async () => {
 export type ArenaAxisTally = { passed: number; total: number };
 // in ArenaScoreBreakdown.objective:  axes?: Record<string, ArenaAxisTally>;
 // in ArenaLeaderboardRow:            invalid?: number;
+// in ArenaMatchSummary:              error?: string | null;
 ```
 
 `Arena.live.tsx`:
 - `statusClass`: add `if (status === 'invalid') return 'wl-arena__status--invalid';`
+- Match cell: under the status span, render the reason for invalid matches:
+  ```tsx
+  {match.status === 'invalid' && match.error && (
+    <span className="wl-arena__match-invalid-reason">{match.error}</span>
+  )}
+  ```
+  with token-only CSS `.wl-arena__match-invalid-reason { color: var(--ink-2); font-size: var(--type-small-size); }`
 - Leaderboard `matches` column render:
   ```tsx
   render: (row) => (
@@ -1230,7 +1263,7 @@ names differ. Never invent a token.
 
 ```markdown
 - Arena flagship `risk-manager-control-day` rebuilt for discrimination: 9 steps /
-  38 objective points (was 7/32) — numeric-grounding checks (`response_quotes_tool_value`,
+  39 objective points (was 7/32) — numeric-grounding checks (`response_quotes_tool_value`,
   signed + label-anchored), report-synthesis checks (`artifact_contains`), a
   nonexistent-scenario-set trap step, exact-args adherence (`args_any_of` +
   `exclusive_keys`), and duplicate session checks removed. Anchored judge rubric.
@@ -1269,7 +1302,7 @@ names differ. Never invent a token.
   + 6 (prompt line); §7 (invalid) → Task 7; §8 (frontend) → Task 8; §9 (tests)
   distributed per task; §10 (docs) → Task 9. No spec section unowned.
 - Denominator cross-check: skills 6 (steps 1,2,4,6,7,9) + tools 11
-  (1+1+1+2+0+2+2+1+1) + step assertions 20 (1+1+2+1+2+4+2+2+5) + success 1 = **38**. ✓
+  (1+1+1+2+0+2+2+1+1) + step assertions 21 (1+1+2+1+3+4+2+2+5) + success 1 = **39**. ✓
 - Type-consistency: `args_any_of`/`exclusive_keys`/`near`/`match`/`scope` names
   identical across schema (Task 2), evaluator (Task 1), manifest (Task 5), tests.
 - The `== 32` pins in `test_arena_scoring.py` are updated in Task 4 Step 1 but only

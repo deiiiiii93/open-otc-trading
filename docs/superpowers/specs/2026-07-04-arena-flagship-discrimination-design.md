@@ -46,7 +46,7 @@ Non-goals: re-scoring historical runs (leaderboard is already run-scoped, commit
 *types* but their manifests are untouched this round); judge model or blend-weight
 changes.
 
-## 3. Workflow manifest v2 (7 steps → 9, denominator 32 → 38)
+## 3. Workflow manifest v2 (7 steps → 9, denominator 32 → 39)
 
 `backend/app/golden_workflows/definitions/risk-manager-control-day.md` — steps below
 give the exact frontmatter deltas. Prose sections (`## Step N`) are renumbered and two
@@ -114,11 +114,18 @@ assertions:
       path: "landscape[spot_shift=-0.2].delta"
       scope: session
       near: ["delta"]
+    - type: tool_not_called
+      name: run_greeks_landscape
   replay: step-5-grid-comprehension
 ```
 
 `scope: session` because the landscape result lives in step 4's context (§4.3 defines
-cumulative lookup). Tests reading returned data, not just dispatching. **2 checks.**
+cumulative lookup). The `tool_not_called` closes the recomputation escape hatch:
+without it a model could re-dispatch `run_greeks_landscape` in this step, read the
+fresh result, and pass the grounding checks without demonstrating it can read data
+it already has (re-fetching via `get_greeks_landscape_run` remains allowed — only
+re-*dispatch* is forbidden). Tests reading returned data, not just dispatching.
+**3 checks.**
 
 ### Step 6 — Scenario test *(modified; was step 5)*
 
@@ -234,13 +241,13 @@ reports — hiding exactly the missing-CVaR evidence this check exists to expose
 | Step 2 | 3 | 3 procedural |
 | Step 3 | 3 | 1 procedural, 1 adherence, 1 grounding |
 | Step 4 | 4 | 4 procedural |
-| Step 5 (new) | 2 | 2 grounding |
+| Step 5 (new) | 3 | 2 grounding, 1 adherence |
 | Step 6 | 7 | 4 procedural, 1 adherence, 2 grounding |
 | Step 7 | 5 | 4 procedural, 1 adherence |
 | Step 8 (new) | 3 | 1 procedural, 2 adherence |
 | Step 9 | 7 | 2 procedural, 1 adherence, 4 synthesis |
 | Session | 1 | 1 procedural |
-| **Total** | **38** | 22 procedural / 7 adherence / 5 grounding / 4 synthesis |
+| **Total** | **39** | 22 procedural / 8 adherence / 5 grounding / 4 synthesis |
 
 Update the `scoring.py` docstring ("32 for the flagship") and every exact-count test
 (§9).
@@ -390,7 +397,7 @@ Two new hand-authored replay entries (replay entries are plain JSON:
   `response_text` states the set is not available and offers `market_crash` /
   `severe_downturn` as alternatives. `skills_routed: []`.
 
-Also update existing replays so the golden transcript earns **38/38** (regression test
+Also update existing replays so the golden transcript earns **39/39** (regression test
 enforces this): `step-3` `response_text` quotes delta −148,000 (signed, matching
 `hotspot.delta`); `step-6` (scenario) replay's `ai` call args use
 `predefined: ["market_crash"]` (satisfying one `args_any_of` alternative) and its
@@ -440,6 +447,10 @@ No structural changes (prompt shape, parser, retries untouched).
 - **Store/aggregation** (`store.py` + `/api/arena` endpoints): leaderboard means and
   trial counts consider only `status='scored'` matches; expose `invalid_count` per
   (run, model). No migration needed — `arena_match.status` is a free string column.
+- **Evidence visibility:** the run-detail `MatchSummary` response gains
+  `error: str | null` so the corroborating reason (`infra_blank`) is auditable via
+  the supported API path, and the Arena UI renders that reason on invalid match
+  cells — exclusions must be explainable, not just visible as a count.
 - **Scoring path is untouched** — invalid matches never reach `objective_score`.
 
 ## 8. Frontend (Arena page)
@@ -462,9 +473,9 @@ No structural changes (prompt shape, parser, retries untouched).
 | `test_golden_workflow_schema.py` | nullable `expected_skill`; `artifact_contains` validation (non-empty `any_of`); `response_quotes_tool_value` validation (`0 < rel_tol < 1`, scope/match literals, `near` non-empty when present); `tool_called` `args`/`args_any_of` mutual exclusion + non-empty; `_dig` selector syntax errors |
 | `test_golden_workflow_registry.py` | bundle with an explicit `expected_skill: null` step loads (no skill-existence validation crash) |
 | `test_golden_workflow_assertions.py` | evaluator cases: comma/suffix/percent token normalization, signed vs magnitude matching (inverted-sign token fails signed, passes magnitude), `near` anchoring (swapped gamma/delta answers fail; token outside the 160-char window fails; anchor case-insensitive), `rel_tol` boundary, target-0 abs-tol, missing path, non-numeric target; `args_any_of` (each alternative matches; over-long `predefined` list fails both); `exclusive_keys` (mixed-carrier call fails despite subset match; `custom: []`/`None`/missing counts as absent; composes with plain `args`); `artifact_contains` case-insensitivity + kind filtering; `_dig` `[key=value]` incl. negative floats |
-| `test_arena_scoring.py` | null-skill emits no check; `scope: session` cumulative lookup (result in an earlier step); axis subtotals sum to passed/total; new denominator 38 |
+| `test_arena_scoring.py` | null-skill emits no check; `scope: session` cumulative lookup (result in an earlier step); axis subtotals sum to passed/total; new denominator 39 |
 | `test_flagship_loads.py` | 9 steps, replay refs present, point-count table |
-| `test_golden_workflow_regression.py` | golden replay earns **38/38** (forces fixture consistency in §5) |
+| `test_golden_workflow_regression.py` | golden replay earns **39/39** (forces fixture consistency in §5) |
 | `test_arena_runner.py` / arena task tests | infra-blank (all-blank + step errors) → `invalid`, scores NULL, judge never invoked; all-blank *without* errors stays `scored` 0; text-but-no-tools stays `scored` |
 | `test_arena_store.py` / `test_arena_api.py` | invalid excluded from aggregates; `invalid_count` in responses |
 | `frontend Arena.live.test.tsx` | invalid badge, infra chip, axis strip rendering |
@@ -475,10 +486,10 @@ no-`.env` worktree if full-suite runs misbehave).
 
 ## 10. Docs & changelog
 
-- `CHANGELOG.md` `[Unreleased]`: flagship v2 (9 steps / 38 points), two new assertion
+- `CHANGELOG.md` `[Unreleased]`: flagship v2 (9 steps / 39 points), two new assertion
   types, `args_any_of`, nullable `expected_skill`, `_dig` selectors, axis subtotals,
   `invalid` match status, Arena UI badges/axis strip.
-- `CLAUDE.md` (Golden Workflows / arena notes): denominator now 38; `invalid` status
+- `CLAUDE.md` (Golden Workflows / arena notes): denominator now 39; `invalid` status
   semantics; `response_quotes_tool_value` signed-vs-magnitude matching;
   `expected_skill: null` for repeat-skill steps.
 - `README.md`: Arena page bullet (invalid handling + axis breakdown) — user-facing.
