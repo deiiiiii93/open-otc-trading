@@ -281,3 +281,44 @@ prompt).
   no breaches until then.
 - Live smokes on the **direct** DeepSeek channel: `api.deepseek.com` exposes both
   `deepseek-v4-flash` and `deepseek-v4-pro` (the registry only declares flash).
+
+---
+
+## Golden workflows & arena scoring (flagship v2)
+
+The flagship `risk-manager-control-day` is a **9-step / 39-point** discrimination
+benchmark (was 7/32): grounding + adherence + synthesis checks on top of the
+procedural loop. Package: `backend/app/golden_workflows/` (schema/assertions/
+registry/scoring live here; arena scoring in `services/arena/scoring.py`).
+
+- **`expected_skill: null` steps score no skill point.** Use it for repeat-skill
+  steps: `skills_routed` only records a skill when its SKILL.md is read and the
+  runtime never re-reads a loaded file, so a repeat-skill check can never pass.
+  `registry.py` skips skill-name validation for null steps.
+- **`response_quotes_tool_value`** digs a numeric target from the last matching
+  tool result in the transcript (self-grounding — no fixture values in the
+  manifest) and scans the response for a matching numeric token. **Signed by
+  default** (an inverted risk sign must fail); `match: magnitude` only for
+  loss-language metrics (CVaR). `near: [...]` anchors bind the number to its
+  metric label (160-char window) — without them multi-value questions pass on
+  swapped answers. `scope: session` reads cumulative results from earlier steps.
+- **`tool_called` supports `args_any_of`** (multiple legitimate calling
+  conventions) **and `exclusive_keys`** (multi-carrier tools: keys not in the
+  matched candidate must be absent — blocks `predefined + custom` mixed-carrier
+  over-execution that subset matching alone would pass). `_dig` paths support
+  `[key=value]` list selectors, e.g. `landscape[spot_shift=0.1].gamma`.
+- **Prohibition floor:** blank transcripts still earn the 3 `tool_not_called`
+  points (inaction satisfies prohibition) — the objective floor is ~7.7, not 0.
+- **Axis subtotals:** every check carries a derived axis (procedural / adherence /
+  grounding / synthesis) → `score_breakdown.objective.axes`; aggregate stays flat
+  +1/check. Axis map lives in `scoring.py::_AXIS_BY_TYPE`.
+- **`invalid` match status:** an all-blank transcript **with** step-error evidence
+  (transport/provider failures) is recorded `status="invalid"`, `error="infra_blank"`
+  at the arena-task boundary — judge skipped, excluded from leaderboard means,
+  surfaced as `invalid` counts + `MatchSummary.error`. Blank **without** errors
+  stays a real scored 0. Detection: `services/arena/task.py::_is_infra_blank`.
+- **Exact-count test coupling:** the 39-point denominator is pinned in
+  `test_flagship_loads`, `test_arena_scoring` (several places), and
+  `test_golden_workflow_regression` (replay must earn 39/39); changing the
+  manifest means updating all of them — and the golden replay fixtures must keep
+  earning full marks (fixture-consistency gate).

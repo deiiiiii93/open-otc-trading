@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Arena flagship `risk-manager-control-day` rebuilt for discrimination** — 9 steps /
+  **39 objective points** (was 7/32). New checks target the axes where frontier models
+  actually differ: numeric grounding (`response_quotes_tool_value` — signed by default,
+  label-anchored via `near`, magnitude-mode for loss language), report synthesis
+  (`artifact_contains` coverage of hotspot/backtest/CVaR), a nonexistent-scenario-set
+  **trap step** (verify via `list_scenario_library`, don't silently substitute), a
+  grid-comprehension step answered from already-computed data (re-dispatch forbidden),
+  and exact-args adherence (`tool_called` gains `args_any_of` + `exclusive_keys`;
+  `_dig` gains `[key=value]` list selectors). Dead repeat-skill checks dropped
+  (`expected_skill: null` skips the structurally-blind skills_routed point) and the
+  5 duplicated session checks removed. Judge rubric rewritten with 0/50/100 anchors.
+- **Arena scoring reports per-axis subtotals** — every objective check carries a
+  derived axis (procedural / adherence / grounding / synthesis); `score_breakdown
+  .objective.axes` totals render as a strip in the Arena match drill-down. Aggregate
+  scoring stays flat +1 per check.
+- **Infra-blank arena matches are now `invalid`, not zero** — an all-blank transcript
+  *with* transport-error evidence records `status="invalid"` (`error="infra_blank"`),
+  skips judge/scoring, is excluded from leaderboard means, and surfaces as an
+  "N infra" chip plus per-match reason in the API (`MatchSummary.error`,
+  leaderboard `invalid`) and Arena page. Blankness without error evidence still
+  scores as a real 0 (a silent model is a model failure, not an infra failure).
+
 ### Added
 - **Audit trail (dangerous-action log).** An always-on, append-only record of every
   write-class action an LLM agent takes — bookings, portfolio/RFQ writes, deletes,

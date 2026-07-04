@@ -70,6 +70,11 @@ end-to-end — pull risk, price the book, find the hotspot, stress it, back-test
 hedge, write the governance report — with **no human in the loop**, then scores
 whether the model actually did it. Unlike a frozen-prompt benchmark, it runs the
 production agent and reads each model's work back out of the system's own trace log.
+The flagship workflow is a 9-step / 39-point manifest with anti-ceiling checks —
+numeric grounding against tool results, instruction-adherence arg checks, a
+nonexistent-scenario trap, and report-synthesis coverage — scored with per-axis
+subtotals (procedural / adherence / grounding / synthesis); infra-blank matches are
+marked invalid and excluded from leaderboard means rather than scored 0.
 
 For an easy public view of the leaderboards and reports, visit [Artena](https://www.artena.one/arena/).
 
