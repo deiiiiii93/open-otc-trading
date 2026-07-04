@@ -135,6 +135,7 @@ assertions:
     args_any_of:
       - predefined: ["market_crash"]
       - scenario_set: "market-crash"
+    exclusive_keys: ["predefined", "custom", "scenario_set"]
   - type: response_quotes_tool_value
     tool: get_scenario_test_run
     path: "results.var_cvar.cvar"
@@ -144,9 +145,13 @@ assertions:
 `args_any_of` (§4.5) because the tool legitimately accepts either calling convention
 — live transcripts show both `predefined: ["market_crash"]` (majority) and
 `scenario_set: "market-crash"`; punishing the literal-prompt form would be a false
-negative. `_deep_subset`'s exact list-length rule still blocks over-execution (extra
-sets appended to `predefined` fail both alternatives). The CVaR quote uses
-`match: magnitude` — loss language ("a loss of $2.1M") legitimately drops the sign.
+negative. Over-execution is blocked from two sides: `_deep_subset`'s exact
+list-length rule fails extra sets appended to `predefined`, and `exclusive_keys`
+(§4.5) fails **mixed-carrier** calls — `run_scenario_test` accepts `predefined`,
+`custom`, and `scenario_set` in one request, so without it a call like
+`predefined: ["market_crash"], custom: [...]` would subset-match the first
+alternative while still over-executing. The CVaR quote uses `match: magnitude` —
+loss language ("a loss of $2.1M") legitimately drops the sign.
 
 **7 checks** (skill + 2 tools + 4 assertions).
 
@@ -198,8 +203,13 @@ assertions:
     any_of: ["backtest", "back-test", "historical replay"]
   - type: artifact_contains
     kind: text
-    any_of: ["CVaR", "cvar", "expected shortfall", "VaR"]
+    any_of: ["cvar", "expected shortfall"]
 ```
+
+The CVaR entry deliberately excludes bare `"VaR"`: matching is case-insensitive
+substring, so `"VaR"` would award the point to VaR-only (or even "variance"-only)
+reports — hiding exactly the missing-CVaR evidence this check exists to expose
+(`"cvar"` also covers `"CVaR"` case-insensitively).
 
 **7 checks** (skill + tool + 5 assertions).
 
@@ -314,12 +324,21 @@ index-into-list meaning. `tool_result_path` gains this for free.
 
 ### 4.5 `tool_called.args_any_of`
 
-`_ToolCalled` gains `args_any_of: list[dict] | None = None`, mutually exclusive with
-`args` (validator: at most one of the two may be set; `args_any_of` must be non-empty
-when present). Evaluation: pass iff any candidate dict subset-matches some call of
-`name` (reuse `match_tool` with each candidate). Needed where a tool has more than one
-legitimate calling convention for the same semantic instruction (step 6:
-`predefined: ["market_crash"]` vs `scenario_set: "market-crash"`).
+`_ToolCalled` gains two fields:
+
+- `args_any_of: list[dict] | None = None` — mutually exclusive with `args`
+  (validator: at most one of the two may be set; `args_any_of` must be non-empty when
+  present). Pass iff any candidate dict subset-matches some call of `name` (reuse
+  `match_tool` per candidate). Needed where a tool has more than one legitimate
+  calling convention for the same semantic instruction (step 6:
+  `predefined: ["market_crash"]` vs `scenario_set: "market-crash"`).
+- `exclusive_keys: list[str] | None = None` — closes the subset-matching bypass for
+  multi-carrier tools: for the call/candidate pair that matched, every
+  `exclusive_keys` entry **not** present in the matched candidate (or in `args`) must
+  be *absent* from the call, where absent means missing, `None`, `[]`, or `""`
+  (models legitimately pass `custom: []`). A mixed-carrier call
+  (`predefined: [...], custom: [...]`) therefore fails even though it subset-matches
+  one alternative. Composable with plain `args` too.
 
 ### 4.6 Axis tagging
 
@@ -416,7 +435,7 @@ No structural changes (prompt shape, parser, retries untouched).
 | File | Change |
 |---|---|
 | `test_golden_workflow_schema.py` | nullable `expected_skill`; `artifact_contains` validation (non-empty `any_of`); `response_quotes_tool_value` validation (`0 < rel_tol < 1`, scope/match literals); `tool_called` `args`/`args_any_of` mutual exclusion + non-empty; `_dig` selector syntax errors |
-| `test_golden_workflow_assertions.py` | evaluator cases: comma/suffix/percent token normalization, signed vs magnitude matching (inverted-sign token fails signed, passes magnitude), `rel_tol` boundary, target-0 abs-tol, missing path, non-numeric target; `args_any_of` (each alternative matches; over-long `predefined` list fails both); `artifact_contains` case-insensitivity + kind filtering; `_dig` `[key=value]` incl. negative floats |
+| `test_golden_workflow_assertions.py` | evaluator cases: comma/suffix/percent token normalization, signed vs magnitude matching (inverted-sign token fails signed, passes magnitude), `rel_tol` boundary, target-0 abs-tol, missing path, non-numeric target; `args_any_of` (each alternative matches; over-long `predefined` list fails both); `exclusive_keys` (mixed-carrier call fails despite subset match; `custom: []`/`None`/missing counts as absent; composes with plain `args`); `artifact_contains` case-insensitivity + kind filtering; `_dig` `[key=value]` incl. negative floats |
 | `test_arena_scoring.py` | null-skill emits no check; `scope: session` cumulative lookup (result in an earlier step); axis subtotals sum to passed/total; new denominator 38 |
 | `test_flagship_loads.py` | 9 steps, replay refs present, point-count table |
 | `test_golden_workflow_regression.py` | golden replay earns **38/38** (forces fixture consistency in §5) |
