@@ -697,7 +697,7 @@ In `objective_breakdown`, aggregate:
 Update the module docstring: `total == fixed denominator (39 for the flagship)` and
 the `objective_score` docstring arithmetic to `(6+11+21+1=39)`.
 
-- [ ] **Step 4: Run, verify targeted pass** — `.venv/bin/python -m pytest tests/test_arena_scoring.py -q -k "Axis or scope or breakdown"` → new tests PASS (the 38-pins still red until Task 5).
+- [ ] **Step 4: Run, verify targeted pass** — `.venv/bin/python -m pytest tests/test_arena_scoring.py -q -k "Axis or scope or breakdown"` → new tests PASS (the 39-pins still red until Task 5).
 
 - [ ] **Step 5: Commit** — `git add backend/app/services/arena/scoring.py tests/test_arena_scoring.py && git commit -m "feat(arena): axis subtotals, session-scope grounding, null-skill scoring"`
 
@@ -712,7 +712,7 @@ the `objective_score` docstring arithmetic to `(6+11+21+1=39)`.
 
 **Interfaces:**
 - Consumes: all of Tasks 1–4.
-- Produces: the 9-step / 38-point manifest, replay keys `step-grid-comprehension` and `step-trap-missing-scenario-set`, 6 anchored rubric points.
+- Produces: the 9-step / 39-point manifest, replay keys `step-grid-comprehension` and `step-trap-missing-scenario-set`, 6 anchored rubric points.
 
 - [ ] **Step 1: Rewrite `tests/test_flagship_loads.py`** to pin the v2 manifest:
 
@@ -869,7 +869,7 @@ def test_flagship_exact_ordered_manifest():
   `transcript_from_replay`; if any new check fails there, fix the **fixture**, not
   the check).
 
-- [ ] **Step 7: Commit** — `git add backend/app/golden_workflows/definitions/ tests/test_flagship_loads.py && git commit -m "feat(golden): flagship v2 — 9 steps / 38 points with grounding, trap, synthesis checks"`
+- [ ] **Step 7: Commit** — `git add backend/app/golden_workflows/definitions/ tests/test_flagship_loads.py && git commit -m "feat(golden): flagship v2 — 9 steps / 39 points with grounding, trap, synthesis checks"`
 
 ---
 
@@ -1276,7 +1276,7 @@ names differ. Never invent a token.
 ```
 
 - [ ] **Step 2: CLAUDE.md** — in the arena/golden-workflows notes add: flagship
-  denominator is now **38** (9 steps); `expected_skill: null` steps score no skill
+  denominator is now **39** (9 steps); `expected_skill: null` steps score no skill
   point (use for repeat-skill steps — `skills_routed` never re-records an
   already-read SKILL.md); `response_quotes_tool_value` is signed by default and
   `near`-anchored (matching is per-metric, not whole-response); `invalid` match
