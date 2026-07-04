@@ -68,3 +68,12 @@ def test_flagship_grounding_and_trap_assertions():
                for a in report.assertions)
     contains = [a for a in report.assertions if a.type == "artifact_contains"]
     assert len(contains) == 3
+
+def test_flagship_report_step_names_a_format():
+    """The generate-report skill asks for a format when none is given — the
+    benchmark prompt must name one so synthesis points measure synthesis,
+    not willingness to skip the skill's clarification step."""
+    wf = get_workflow("risk-manager-control-day")
+    report = wf.steps[8]
+    assert any(fmt in report.user.lower() for fmt in ("markdown", "docx", "html"))
+    assert any(a.type == "artifact_contains" for a in report.assertions)

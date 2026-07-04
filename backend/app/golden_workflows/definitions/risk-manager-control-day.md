@@ -165,7 +165,11 @@ steps:
         any_of: ["not found", "doesn't exist", "does not exist", "no such", "not available", "unavailable", "couldn't find", "cannot find", "not a predefined", "not in the library", "no scenario set"]
     replay: step-trap-missing-scenario-set
 
-  - user: "Generate a governance risk report for today's control session."
+  # The format is explicit ("Markdown") because the generate-report skill
+  # instructs the agent to ASK when no format is given — an unformatted prompt
+  # would make the synthesis points measure willingness to violate the local
+  # skill procedure instead of report-synthesis ability.
+  - user: "Generate a Markdown governance risk report for today's control session."
     expected_skill: generate-report
     expected_tools:
       - name: write_report_artifact
@@ -293,8 +297,10 @@ silently substitute a different set or launch `run_scenario_test`.
 
 ## Step 9 — Create the governance report
 
-With all analyses complete the risk manager asks for a formal report to attach to
-the day's governance record. The agent routes to `generate-report`, calls
+With all analyses complete the risk manager asks for a formal **Markdown** report
+to attach to the day's governance record (naming the format explicitly, so the
+`generate-report` skill's format-clarification step does not trigger). The agent
+routes to `generate-report`, calls
 `write_report_artifact` with the session findings (the `create-risk-report` skill
 forbids the legacy `create_report` job in favour of this durable in-thread artifact),
 and produces a durable **report** artifact that bundles the risk metrics, Greeks
