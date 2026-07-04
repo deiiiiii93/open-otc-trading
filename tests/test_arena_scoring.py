@@ -3,7 +3,7 @@
 TDD approach — these tests were written before the implementation.
 
 Test groups:
-  1. Flagship pin: objective_score on a full replay == (100.0, 32, 32)
+  1. Flagship pin: objective_score on a full replay == (100.0, 39, 39)
   2. total_score: judge_missing → returns objective; weight blend; edge cases
   3. Partial scoring: one step missing a skill, one tool miss
   4. Empty workflow (no steps, no success assertions) → (0.0, 0, 0) edge case
@@ -28,31 +28,31 @@ from app.services.arena.scoring import (
 
 
 class TestFlagshipPin:
-    """The fully-passing replay must score exactly (100.0, 32, 32)."""
+    """The fully-passing replay must score exactly (100.0, 39, 39)."""
 
-    def test_flagship_replay_scores_100_32_32(self):
+    def test_flagship_replay_scores_100_39_39(self):
         loaded = get_workflow_bundle("risk-manager-control-day")
         transcript = transcript_from_replay(loaded)
         score, passed, total = objective_score(transcript, loaded)
-        assert total == 32, f"expected denominator 32, got {total}"
-        assert passed == 32, f"expected 32 passed, got {passed}"
+        assert total == 39, f"expected denominator 39, got {total}"
+        assert passed == 39, f"expected 39 passed, got {passed}"
         assert score == 100.0, f"expected 100.0, got {score}"
 
     def test_flagship_denominator_breakdown(self):
-        """Verify point breakdown: 7 skills + 10 tools + 9 step assertions + 6 success."""
+        """Verify point breakdown: 6 skills + 11 tools + 21 step assertions + 1 success."""
         loaded = get_workflow_bundle("risk-manager-control-day")
         wf = loaded.workflow
 
-        skill_points = len(wf.steps)  # one per step
+        skill_points = sum(1 for st in wf.steps if st.expected_skill is not None)
         tool_points = sum(len(s.expected_tools) for s in wf.steps)
         step_assertion_points = sum(len(s.assertions) for s in wf.steps)
         success_points = len(wf.success.assertions)
 
-        assert skill_points == 7
-        assert tool_points == 10
-        assert step_assertion_points == 9
-        assert success_points == 6
-        assert skill_points + tool_points + step_assertion_points + success_points == 32
+        assert skill_points == 6
+        assert tool_points == 11
+        assert step_assertion_points == 21
+        assert success_points == 1
+        assert skill_points + tool_points + step_assertion_points + success_points == 39
 
     def test_breakdown_matches_aggregate_and_shape(self):
         """objective_breakdown's passed/total equal objective_score, and every
@@ -63,15 +63,15 @@ class TestFlagshipPin:
         _score, passed, total = objective_score(transcript, loaded)
         bd = objective_breakdown(transcript, loaded)
 
-        assert bd["passed"] == passed == 32
-        assert bd["total"] == total == 32
+        assert bd["passed"] == passed == 39
+        assert bd["total"] == total == 39
         assert len(bd["steps"]) == len(loaded.workflow.steps)
         assert len(bd["success"]) == len(loaded.workflow.success.assertions)
 
         all_checks = [c for s in bd["steps"] for c in s["checks"]] + bd["success"]
         assert len(all_checks) == total
         for c in all_checks:
-            assert set(c) == {"kind", "label", "passed", "detail"}
+            assert set(c) == {"kind", "label", "passed", "detail", "axis"}
             assert c["kind"] in {"skill", "tool", "assertion"}
             assert c["passed"] is True  # full replay → every check passes
         # First step's first check is its expected skill, labelled readably.
@@ -181,12 +181,12 @@ class TestPartialScoring:
             steps=steps,
         )
         score, passed, total = objective_score(transcript, loaded)
-        assert total == 32
+        assert total == 39
         assert passed == 0
         assert score == 0.0
 
     def test_missing_steps_counted_in_denominator(self):
-        """Fewer steps in transcript → denominator still 32, passes reduced."""
+        """Fewer steps in transcript → denominator still 39, passes reduced."""
         from app.golden_workflows.transcript import MatchTranscript
 
         loaded = get_workflow_bundle("risk-manager-control-day")
@@ -201,7 +201,7 @@ class TestPartialScoring:
             steps=[],
         )
         score, passed, total = objective_score(transcript, loaded)
-        assert total == 32
+        assert total == 39
         assert passed == 0
         assert score == 0.0
 
@@ -249,12 +249,12 @@ class TestDiagnoseHeuristic:
         loaded = get_workflow_bundle("risk-manager-control-day")
         transcript = transcript_from_replay(loaded)
         diag = diagnose_heuristic(transcript, loaded)
-        # A fully-passing replay: every expected skill hit, all 32 checks pass.
-        assert diag["skills_hit"] == diag["skills_total"] == 7
-        assert diag["checks_passed"] == diag["checks_total"] == 32
+        # A fully-passing replay: every expected skill hit, all 39 checks pass.
+        assert diag["skills_hit"] == diag["skills_total"] == 6
+        assert diag["checks_passed"] == diag["checks_total"] == 39
         assert diag["tool_calls"] > 0
-        assert "7/7 expected skills" in diag["summary"]
-        assert "32/32 checks" in diag["summary"]
+        assert "6/6 expected skills" in diag["summary"]
+        assert "39/39 checks" in diag["summary"]
 
     def test_empty_transcript_summary_reports_zero_engagement(self):
         """A model that never engaged: 0 skills, 0 tools, 0 checks — the exact
@@ -270,5 +270,126 @@ class TestDiagnoseHeuristic:
         assert diag["skills_hit"] == 0
         assert diag["tool_calls"] == 0
         assert diag["checks_passed"] == 0
-        assert diag["checks_total"] == 32
-        assert diag["summary"].startswith("0/7 expected skills · 0 tool calls · 0/32 checks")
+        assert diag["checks_total"] == 39
+        assert diag["summary"].startswith("0/6 expected skills · 0 tool calls · 0/39 checks")
+
+
+# ---------------------------------------------------------------------------
+# 5. Flagship v2: axis subtotals, null-skill steps, session-scope grounding
+# ---------------------------------------------------------------------------
+
+
+def _step_dict(index, user="u", **kw):
+    base = dict(index=index, user=user, messages=[], tool_calls=[],
+                tool_results=[], skills_routed=[], artifacts=[], task_ids=[],
+                response_text="", errors=[])
+    base.update(kw)
+    return base
+
+
+def _mini_loaded(steps_spec, success_assertions=()):
+    """Minimal LoadedWorkflow stand-in from parsed pydantic models."""
+    from unittest.mock import MagicMock
+    from app.golden_workflows.schema import parse_workflow
+    wf = parse_workflow({
+        "id": "mini-test",
+        "schema_version": 1,
+        "persona": "risk_manager",
+        "title": "t",
+        "objective": "o",
+        "fixtures": "f.json",
+        "steps": steps_spec,
+        "success": {"assertions": list(success_assertions), "rubric": []},
+    })
+    loaded = MagicMock()
+    loaded.workflow = wf
+    return loaded
+
+
+def _transcript(workflow_id, step_dicts):
+    from app.golden_workflows.transcript import MatchTranscript, MatchStep
+    return MatchTranscript(
+        schema_version=1, run_id=None, workflow_id=workflow_id, model_id="test",
+        started_at=None, finished_at=None,
+        steps=[MatchStep(**d) for d in step_dicts],
+    )
+
+
+_LANDSCAPE_RESULT = {"name": "get_greeks_landscape_run", "tool_call_id": "t1",
+                     "content": {"landscape": [
+                         {"spot_shift": 0.1, "delta": -220000, "gamma": -9600}]}}
+
+
+class TestAxisAndScope:
+    def test_null_skill_emits_no_check(self):
+        loaded = _mini_loaded([
+            {"user": "u", "expected_skill": None, "outcome": "o", "replay": "r"},
+        ])
+        transcript = _transcript("mini-test", [_step_dict(0)])
+        bd = objective_breakdown(transcript, loaded)
+        kinds = [c["kind"] for c in bd["steps"][0]["checks"]]
+        assert "skill" not in kinds
+        assert bd["total"] == 0
+
+    def _scope_fixture(self, scope):
+        assertion = {"type": "response_quotes_tool_value",
+                     "tool": "get_greeks_landscape_run",
+                     "path": "landscape[spot_shift=0.1].gamma",
+                     "near": ["gamma"]}
+        if scope is not None:
+            assertion["scope"] = scope
+        loaded = _mini_loaded([
+            {"user": "run it", "expected_skill": None, "outcome": "o", "replay": "r1"},
+            {"user": "read it", "expected_skill": None, "outcome": "o", "replay": "r2",
+             "assertions": [assertion]},
+        ])
+        transcript = _transcript("mini-test", [
+            _step_dict(0, tool_results=[_LANDSCAPE_RESULT]),
+            _step_dict(1, response_text="gamma at +10% is -9,600"),
+        ])
+        return objective_breakdown(transcript, loaded)
+
+    def test_session_scope_reads_earlier_step_result(self):
+        bd = self._scope_fixture("session")
+        check = bd["steps"][1]["checks"][-1]
+        assert check["kind"] == "assertion"
+        assert check["passed"] is True
+
+    def test_step_scope_does_not_read_earlier_step(self):
+        bd = self._scope_fixture(None)  # default scope: step
+        check = bd["steps"][1]["checks"][-1]
+        assert check["passed"] is False
+
+    def test_axis_subtotals_sum(self):
+        loaded = get_workflow_bundle("risk-manager-control-day")
+        transcript = transcript_from_replay(loaded)
+        bd = objective_breakdown(transcript, loaded)
+        axes = bd["axes"]
+        assert set(axes) <= {"procedural", "adherence", "grounding", "synthesis"}
+        assert sum(v["total"] for v in axes.values()) == bd["total"] == 39
+        assert sum(v["passed"] for v in axes.values()) == bd["passed"]
+        assert axes["procedural"]["total"] == 22
+        assert axes["adherence"]["total"] == 8
+        assert axes["grounding"]["total"] == 5
+        assert axes["synthesis"]["total"] == 4
+
+    def test_step5_recompute_fails_but_refetch_passes(self):
+        """Re-dispatching run_greeks_landscape in the grid step fails its
+        tool_not_called check; a get_greeks_landscape_run re-fetch is allowed."""
+        loaded = get_workflow_bundle("risk-manager-control-day")
+        transcript = transcript_from_replay(loaded)
+        grid_i = 4  # step 5 (0-based)
+
+        recompute = transcript.model_copy(deep=True)
+        recompute.steps[grid_i].tool_calls = [
+            {"id": "x", "name": "run_greeks_landscape_tool", "args": {}}]
+        bd = objective_breakdown(recompute, loaded)
+        not_called = [c for c in bd["steps"][grid_i]["checks"]
+                      if "run_greeks_landscape" in c["label"] and c["kind"] == "assertion"]
+        assert not_called and not_called[0]["passed"] is False
+
+        refetch = transcript.model_copy(deep=True)
+        refetch.steps[grid_i].tool_calls = [
+            {"id": "x", "name": "get_greeks_landscape_run_tool", "args": {"run_id": 101}}]
+        bd2 = objective_breakdown(refetch, loaded)
+        assert all(c["passed"] for c in bd2["steps"][grid_i]["checks"])
