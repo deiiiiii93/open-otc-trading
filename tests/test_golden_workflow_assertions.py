@@ -155,7 +155,7 @@ def test_flagship_backtest_step_asserts_requested_dates():
     from app.golden_workflows.registry import get_workflow
 
     wf = get_workflow("risk-manager-control-day")
-    step = wf.steps[5]  # step 6 (0-indexed): the backtest step
+    step = wf.steps[6]  # step 7 (0-indexed): the backtest step in the v2 manifest
     assert "2026-03-24" in step.user and "2026-06-24" in step.user
     date_checks = [
         a for a in step.assertions
@@ -175,3 +175,280 @@ def test_high_board_is_a_valid_persona():
         "success": {"assertions": [], "rubric": []},
     })
     assert wf.persona == "high_board"
+
+
+# ---------------------------------------------------------------------------
+# _dig list selectors  (flagship v2)
+# ---------------------------------------------------------------------------
+
+from app.golden_workflows.assertions import _dig
+
+_GRID = {"landscape": [
+    {"spot_shift": -0.2, "delta": -310000, "gamma": -16000},
+    {"spot_shift": 0.1, "delta": -220000, "gamma": -9600},
+]}
+
+
+def test_dig_selects_row_by_numeric_key():
+    found, val = _dig(_GRID, "landscape[spot_shift=0.1].gamma")
+    assert found and val == -9600
+
+
+def test_dig_selects_negative_float_key():
+    found, val = _dig(_GRID, "landscape[spot_shift=-0.2].delta")
+    assert found and val == -310000
+
+
+def test_dig_missing_row_not_found():
+    found, _ = _dig(_GRID, "landscape[spot_shift=0.3].gamma")
+    assert not found
+
+
+def test_dig_selector_on_non_list_not_found():
+    found, _ = _dig({"landscape": {"a": 1}}, "landscape[spot_shift=0.1].gamma")
+    assert not found
+
+
+def test_dig_plain_index_still_works():
+    found, val = _dig(_GRID, "landscape.1.gamma")
+    assert found and val == -9600
+
+
+# ---------------------------------------------------------------------------
+# response_quotes_tool_value  (flagship v2)
+# ---------------------------------------------------------------------------
+
+def _quote_assertion(**over):
+    from app.golden_workflows.schema import _ResponseQuotesToolValue
+    d = dict(type="response_quotes_tool_value", tool="get_latest_risk_run",
+             path="hotspot.delta")
+    d.update(over)
+    return _ResponseQuotesToolValue(**d)
+
+
+_RISK_RESULT = [{"name": "get_latest_risk_run", "tool_call_id": "t1",
+                 "content": {"hotspot": {"delta": -148000.0}}}]
+
+
+def test_quotes_signed_exact_passes():
+    ok, _ = evaluate_assertion(
+        _quote_assertion(),
+        ctx(response_text="AAPL delta is -148,000 today", tool_results=_RISK_RESULT))
+    assert ok
+
+
+def test_quotes_inverted_sign_fails_signed():
+    ok, _ = evaluate_assertion(
+        _quote_assertion(),
+        ctx(response_text="AAPL delta is 148,000", tool_results=_RISK_RESULT))
+    assert not ok
+
+
+def test_quotes_inverted_sign_passes_magnitude():
+    ok, _ = evaluate_assertion(
+        _quote_assertion(match="magnitude"),
+        ctx(response_text="a loss of 148,000", tool_results=_RISK_RESULT))
+    assert ok
+
+
+def test_quotes_suffix_expansion():
+    ok, _ = evaluate_assertion(
+        _quote_assertion(),
+        ctx(response_text="delta roughly -148k", tool_results=_RISK_RESULT))
+    assert ok
+
+
+def test_quotes_rel_tol_boundary():
+    ok, _ = evaluate_assertion(
+        _quote_assertion(),
+        ctx(response_text="delta -145,100", tool_results=_RISK_RESULT))
+    assert ok  # |Δ|=2900 <= 2960 = 0.02*148000
+    ok2, _ = evaluate_assertion(
+        _quote_assertion(),
+        ctx(response_text="delta -144,000", tool_results=_RISK_RESULT))
+    assert not ok2  # |Δ|=4000 > 2960
+
+
+def test_quotes_near_anchor_binds_metric():
+    res = [{"name": "get_greeks_landscape_run", "tool_call_id": "t1", "content": {
+        "landscape": [{"spot_shift": 0.1, "delta": -220000, "gamma": -9600}]}}]
+    a = _quote_assertion(tool="get_greeks_landscape_run",
+                         path="landscape[spot_shift=0.1].gamma", near=["gamma"])
+    # Swapped answers with the true gamma value pushed beyond the 160-char window
+    swapped = "gamma at +10% is -220,000." + (" filler" * 30) + " delta is -9,600"
+    ok, _ = evaluate_assertion(a, ctx(response_text=swapped, tool_results=res))
+    assert not ok
+    good = "gamma at +10% is -9,600 and delta is -220,000"
+    ok2, _ = evaluate_assertion(a, ctx(response_text=good, tool_results=res))
+    assert ok2
+
+
+def test_quotes_near_window_cutoff():
+    text = "delta " + ("x" * 170) + " -148,000"
+    ok, _ = evaluate_assertion(
+        _quote_assertion(near=["delta"]),
+        ctx(response_text=text, tool_results=_RISK_RESULT))
+    assert not ok
+
+
+def test_quotes_percent_token_division():
+    res = [{"name": "t", "tool_call_id": "1", "content": {"v": 0.1}}]
+    a = _quote_assertion(tool="t", path="v")
+    ok, _ = evaluate_assertion(a, ctx(response_text="shift of 10%", tool_results=res))
+    assert ok
+
+
+def test_quotes_zero_target_abs_tol():
+    res = [{"name": "t", "tool_call_id": "1", "content": {"v": 0.0}}]
+    a = _quote_assertion(tool="t", path="v")
+    ok, _ = evaluate_assertion(a, ctx(response_text="flat at 0.01", tool_results=res))
+    assert ok  # |0.01 - 0| <= 0.02 abs
+
+
+def test_quotes_missing_path_fails():
+    ok, msg = evaluate_assertion(
+        _quote_assertion(path="hotspot.vega"),
+        ctx(response_text="-148,000", tool_results=_RISK_RESULT))
+    assert not ok and "vega" in msg
+
+
+def test_quotes_non_numeric_target_fails():
+    res = [{"name": "get_latest_risk_run", "tool_call_id": "t1",
+            "content": {"hotspot": {"delta": "big"}}}]
+    ok, _ = evaluate_assertion(
+        _quote_assertion(), ctx(response_text="big", tool_results=res))
+    assert not ok
+
+
+# ---------------------------------------------------------------------------
+# tool_called args_any_of + exclusive_keys  (flagship v2)
+# ---------------------------------------------------------------------------
+
+def _scenario_called(**over):
+    from app.golden_workflows.schema import _ToolCalled
+    d = dict(type="tool_called", name="run_scenario_test",
+             args_any_of=[{"predefined": ["market_crash"]},
+                          {"scenario_set": "market-crash"}],
+             exclusive_keys=["predefined", "custom", "scenario_set"])
+    d.update(over)
+    return _ToolCalled(**d)
+
+
+def test_args_any_of_predefined_alternative_matches():
+    calls = [{"name": "run_scenario_test",
+              "args": {"portfolio_id": 2, "predefined": ["market_crash"]}}]
+    ok, _ = evaluate_assertion(_scenario_called(), ctx(tool_calls=calls))
+    assert ok
+
+
+def test_args_any_of_scenario_set_alternative_matches():
+    calls = [{"name": "run_scenario_test",
+              "args": {"portfolio_id": 2, "scenario_set": "market-crash"}}]
+    ok, _ = evaluate_assertion(_scenario_called(), ctx(tool_calls=calls))
+    assert ok
+
+
+def test_args_any_of_extra_predefined_sets_fail():
+    calls = [{"name": "run_scenario_test",
+              "args": {"predefined": ["market_crash", "vol_spike"]}}]
+    ok, _ = evaluate_assertion(_scenario_called(), ctx(tool_calls=calls))
+    assert not ok
+
+
+def test_exclusive_keys_mixed_carrier_fails():
+    calls = [{"name": "run_scenario_test",
+              "args": {"predefined": ["market_crash"],
+                       "custom": [{"name": "extra"}]}}]
+    ok, _ = evaluate_assertion(_scenario_called(), ctx(tool_calls=calls))
+    assert not ok
+
+
+def test_exclusive_keys_empty_carrier_counts_as_absent():
+    calls = [{"name": "run_scenario_test",
+              "args": {"predefined": ["market_crash"], "custom": [],
+                       "scenario_set": None}}]
+    ok, _ = evaluate_assertion(_scenario_called(), ctx(tool_calls=calls))
+    assert ok
+
+
+def test_exclusive_keys_composes_with_plain_args():
+    from app.golden_workflows.schema import _ToolCalled
+    a = _ToolCalled(type="tool_called", name="run_scenario_test",
+                    args={"predefined": ["market_crash"]},
+                    exclusive_keys=["predefined", "custom"])
+    bad = [{"name": "run_scenario_test",
+            "args": {"predefined": ["market_crash"], "custom": [{"n": 1}]}}]
+    ok, _ = evaluate_assertion(a, ctx(tool_calls=bad))
+    assert not ok
+
+
+# ---------------------------------------------------------------------------
+# artifact_contains  (flagship v2)
+# ---------------------------------------------------------------------------
+
+_ARTS = [{"kind": "text", "content": "Governance report: AAPL hotspot, CVaR -2,100,000"},
+         {"kind": "chart", "content": "backtest"}]
+
+
+def _artifact_contains(any_of, kind="text"):
+    from app.golden_workflows.schema import _ArtifactContains
+    return _ArtifactContains(type="artifact_contains", kind=kind, any_of=any_of)
+
+
+def test_artifact_contains_case_insensitive_substring():
+    ok, _ = evaluate_assertion(_artifact_contains(["cvar"]), ctx(artifacts=_ARTS))
+    assert ok
+
+
+def test_artifact_contains_kind_filtering():
+    ok, _ = evaluate_assertion(_artifact_contains(["backtest"]), ctx(artifacts=_ARTS))
+    assert not ok  # "backtest" only appears in the chart artifact
+
+
+def test_artifact_contains_text_key_fallback():
+    arts = [{"kind": "text", "text": "expected shortfall discussed"}]
+    ok, _ = evaluate_assertion(_artifact_contains(["expected shortfall"]),
+                               ctx(artifacts=arts))
+    assert ok
+
+
+def test_artifact_contains_miss_reports_terms():
+    ok, msg = evaluate_assertion(_artifact_contains(["backtest"]), ctx(artifacts=_ARTS))
+    assert not ok and "backtest" in msg
+
+
+def test_all_calls_extra_substituted_call_fails():
+    """Exact-use mode: a compliant first call must not mask a later
+    over-executing call of the same tool."""
+    a = _scenario_called(all_calls=True)
+    calls = [
+        {"name": "run_scenario_test", "args": {"predefined": ["market_crash"]}},
+        {"name": "run_scenario_test", "args": {"predefined": ["vol_spike"]}},
+    ]
+    ok, msg = evaluate_assertion(a, ctx(tool_calls=calls))
+    assert not ok and "run_scenario_test" in msg
+    # Without all_calls the first compliant call passes (documenting the delta)
+    ok2, _ = evaluate_assertion(_scenario_called(), ctx(tool_calls=calls))
+    assert ok2
+
+
+def test_all_calls_requires_at_least_one_call():
+    a = _scenario_called(all_calls=True)
+    ok, _ = evaluate_assertion(a, ctx(tool_calls=[]))
+    assert not ok
+
+
+def test_max_calls_blocks_duplicate_compliant_dispatch():
+    """Even duplicate COMPLIANT calls of a costly dispatch tool are
+    over-execution when max_calls caps the count."""
+    calls = [
+        {"name": "run_scenario_test", "args": {"predefined": ["market_crash"]}},
+        {"name": "run_scenario_test", "args": {"scenario_set": "market-crash"}},
+    ]
+    capped = _scenario_called(all_calls=True, max_calls=1)
+    ok, msg = evaluate_assertion(capped, ctx(tool_calls=calls))
+    assert not ok and "over-execution" in msg
+    # Without the cap, all-compliant duplicates pass (documenting the delta)
+    uncapped = _scenario_called(all_calls=True)
+    ok2, _ = evaluate_assertion(uncapped, ctx(tool_calls=calls))
+    assert ok2

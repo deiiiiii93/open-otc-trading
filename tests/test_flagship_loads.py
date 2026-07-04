@@ -1,39 +1,79 @@
 from app.golden_workflows.registry import get_workflow
 
-def test_flagship_has_seven_steps_and_narration():
+def test_flagship_has_nine_steps_and_narration():
     wf = get_workflow("risk-manager-control-day")
     assert wf.persona == "risk_manager"
-    assert len(wf.steps) == 7
-    assert len(wf.narration) == 7
+    assert len(wf.steps) == 9
+    assert len(wf.narration) == 9
     assert wf.steps[1].expected_tools[0].name == "run_batch_pricing"
 
-def test_flagship_objective_point_manifest_is_32():
+def test_flagship_objective_point_manifest_is_39():
     wf = get_workflow("risk-manager-control-day")
-    skills = len(wf.steps)
+    skills = sum(1 for s in wf.steps if s.expected_skill is not None)
     tools = sum(len(s.expected_tools) for s in wf.steps)
     step_assertions = sum(len(s.assertions) for s in wf.steps)
     success_assertions = len(wf.success.assertions)
-    assert (skills, tools, step_assertions, success_assertions) == (7, 10, 9, 6)
-    assert skills + tools + step_assertions + success_assertions == 32
+    assert (skills, tools, step_assertions, success_assertions) == (6, 11, 21, 1)
+    assert skills + tools + step_assertions + success_assertions == 39
 
 def test_flagship_exact_ordered_manifest():
-    """Pin the exact spec §4 content, not just counts."""
+    """Pin the exact v2 manifest content, not just counts."""
     wf = get_workflow("risk-manager-control-day")
     skills = [s.expected_skill for s in wf.steps]
-    assert skills == ["read-risk-result", "run-risk", "read-risk-result",
-                      "run-greeks-landscape", "run-scenario-test", "run-backtest",
-                      "generate-report"]
+    # None = repeat-skill / no-skill steps (skills_routed dedup blind spot)
+    assert skills == ["read-risk-result", "run-risk", None,
+                      "run-greeks-landscape", None, "run-scenario-test",
+                      "run-backtest", None, "generate-report"]
     tools_per_step = [[t.name for t in s.expected_tools] for s in wf.steps]
     assert tools_per_step == [
         ["get_latest_risk_run"], ["run_batch_pricing"], ["get_latest_risk_run"],
-        ["run_greeks_landscape", "get_greeks_landscape_run"],
+        ["run_greeks_landscape", "get_greeks_landscape_run"], [],
         ["run_scenario_test", "get_scenario_test_run"],
-        ["run_backtest", "get_backtest_run"], ["write_report_artifact"]]
+        ["run_backtest", "get_backtest_run"], ["list_scenario_library"],
+        ["write_report_artifact"]]
     replays = [s.replay for s in wf.steps]
-    assert len(set(replays)) == 7  # all distinct
+    assert len(set(replays)) == 9  # all distinct
     success_types = sorted(a.type for a in wf.success.assertions)
-    assert success_types == ["artifact_exists",
-                             "task_returned_id", "task_returned_id",
-                             "task_returned_id", "task_returned_id",
-                             "tools_routed_sequence"]
-    assert len(wf.success.rubric) == 4
+    assert success_types == ["tools_routed_sequence"]
+    assert len(wf.success.rubric) == 6
+
+def test_flagship_grounding_and_trap_assertions():
+    """Pin the discrimination-bearing assertion details."""
+    wf = get_workflow("risk-manager-control-day")
+    # Step 5 (grid): two session-scope grounding checks + recompute guard
+    grid = wf.steps[4]
+    quotes = [a for a in grid.assertions if a.type == "response_quotes_tool_value"]
+    assert [q.scope for q in quotes] == ["session", "session"]
+    assert quotes[0].path == "landscape[spot_shift=0.1].gamma"
+    assert quotes[1].path == "landscape[spot_shift=-0.2].delta"
+    assert any(a.type == "tool_not_called" and a.name == "run_greeks_landscape"
+               for a in grid.assertions)
+    # Step 6 (scenario): exact-args with both conventions + exclusive carriers
+    scen = wf.steps[5]
+    called = [a for a in scen.assertions if a.type == "tool_called"][0]
+    assert called.args_any_of == [{"predefined": ["market_crash"]},
+                                  {"scenario_set": "market-crash"}]
+    assert called.exclusive_keys == ["predefined", "custom", "scenario_set"]
+    cvar = [a for a in scen.assertions
+            if a.type == "response_quotes_tool_value"][0]
+    assert cvar.match == "magnitude"
+    # Step 8 (trap): verification is mandatory, launching is forbidden
+    trap = wf.steps[7]
+    assert trap.expected_tools[0].name == "list_scenario_library"
+    assert any(a.type == "tool_not_called" and a.name == "run_scenario_test"
+               for a in trap.assertions)
+    # Step 9 (report): legacy job forbidden, synthesis coverage checked
+    report = wf.steps[8]
+    assert any(a.type == "tool_not_called" and a.name == "create_report"
+               for a in report.assertions)
+    contains = [a for a in report.assertions if a.type == "artifact_contains"]
+    assert len(contains) == 3
+
+def test_flagship_report_step_names_a_format():
+    """The generate-report skill asks for a format when none is given — the
+    benchmark prompt must name one so synthesis points measure synthesis,
+    not willingness to skip the skill's clarification step."""
+    wf = get_workflow("risk-manager-control-day")
+    report = wf.steps[8]
+    assert any(fmt in report.user.lower() for fmt in ("markdown", "docx", "html"))
+    assert any(a.type == "artifact_contains" for a in report.assertions)

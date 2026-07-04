@@ -348,10 +348,10 @@ class TestTranscriptFromReplay:
         mt = transcript_from_replay(loaded)
         assert mt.workflow_id == "risk-manager-control-day"
 
-    def test_flagship_has_seven_steps(self):
+    def test_flagship_has_nine_steps(self):
         loaded = get_workflow_bundle("risk-manager-control-day")
         mt = transcript_from_replay(loaded)
-        assert len(mt.steps) == 7
+        assert len(mt.steps) == 9
 
     def test_step_indices_sequential(self):
         loaded = get_workflow_bundle("risk-manager-control-day")
@@ -397,12 +397,13 @@ class TestTranscriptFromReplay:
         assert "read-risk-result" in step3.skills_routed
 
     def test_step7_artifact_present(self):
-        """Step 7 (index 6) creates a report artifact via write_report_artifact,
-        which emits a "text" artifact (markdown), not a "report" kind."""
+        """The report step (index 8 in the v2 manifest) creates a report artifact
+        via write_report_artifact, which emits a "text" artifact (markdown), not a
+        "report" kind."""
         loaded = get_workflow_bundle("risk-manager-control-day")
         mt = transcript_from_replay(loaded)
-        step7 = mt.steps[6]
-        assert any(a.get("kind") == "text" for a in step7.artifacts)
+        report_step = mt.steps[8]
+        assert any(a.get("kind") == "text" for a in report_step.artifacts)
 
     def test_all_steps_model_dump_feeds_extract_assertion_context(self):
         """Round-trip: each step's model_dump() is valid input for extract_assertion_context.
@@ -421,13 +422,30 @@ class TestTranscriptFromReplay:
 
     def test_replay_assertions_pass_via_transcript(self):
         """All per-step assertions that pass in the regression test must also pass
-        when driven through transcript_from_replay — proving end-to-end parity."""
-        from app.golden_workflows.transcript import evaluate_step
+        when driven through transcript_from_replay — proving end-to-end parity.
+        scope=="session" grounding assertions see cumulative tool_results,
+        mirroring scoring.py's semantics."""
+        from app.golden_workflows.assertions import (
+            AssertionContext, evaluate_assertion,
+        )
 
         loaded = get_workflow_bundle("risk-manager-control-day")
         mt = transcript_from_replay(loaded)
 
+        cumulative_results = []
         for wf_step, ms in zip(loaded.workflow.steps, mt.steps):
             ctx = extract_assertion_context(ms.model_dump())
-            for passed, msg in evaluate_step(wf_step, ctx):
+            cumulative_results.extend(ctx.tool_results)
+            for assertion in wf_step.assertions:
+                a_ctx = ctx
+                if getattr(assertion, "scope", "step") == "session":
+                    a_ctx = AssertionContext(
+                        response_text=ctx.response_text,
+                        tool_calls=ctx.tool_calls,
+                        tool_results=list(cumulative_results),
+                        skills_routed=ctx.skills_routed,
+                        artifacts=ctx.artifacts,
+                        task_ids=ctx.task_ids,
+                    )
+                passed, msg = evaluate_assertion(assertion, a_ctx)
                 assert passed, f"[{wf_step.replay}] via transcript: {msg}"

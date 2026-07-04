@@ -23,12 +23,17 @@ export type ArenaObjectiveStep = {
   checks: ArenaCheck[];
 };
 
+export type ArenaAxisTally = { passed: number; total: number };
+
 export type ArenaScoreBreakdown = {
   objective: {
     passed: number;
     total: number;
     steps: ArenaObjectiveStep[];
     success: ArenaCheck[];
+    // Per-axis subtotals (procedural/adherence/grounding/synthesis) — absent
+    // on breakdowns recorded before the flagship v2 scoring.
+    axes?: Record<string, ArenaAxisTally>;
   };
   judge: {
     rubric_scores: { point: string; score: number }[];
@@ -56,6 +61,8 @@ export type ArenaMatchSummary = {
   judge_missing: boolean;
   transcript_path: string | null;
   score_breakdown: ArenaScoreBreakdown | null;
+  // Corroborating failure reason (e.g. "infra_blank" for invalid matches).
+  error?: string | null;
 };
 
 export type ArenaRunDetail = {
@@ -68,6 +75,9 @@ export type ArenaLeaderboardRow = {
   avg_total: number | null;
   avg_objective: number | null;
   matches: number;
+  // Infra-invalid match count — excluded from the averages, surfaced so
+  // degraded routes stay visible.
+  invalid?: number;
 };
 
 export type ArenaLeaderboard = {

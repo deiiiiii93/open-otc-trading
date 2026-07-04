@@ -134,11 +134,22 @@ def _spans_to_turn_events(index: int, user: str, spans: list[dict]) -> dict:
     tool_results: list[dict] = []
     artifacts: list[dict] = []
     skill_spans: list[tuple[str, str]] = []
+    errors: list[dict] = []
     response_text = ""
 
     for sp in spans:
         run_type = sp.get("run_type")
         name = sp.get("name", "")
+        # Propagate span-level failures into turn errors — a provider/LLM span
+        # that errors with no text and no tool calls is exactly the evidence
+        # the arena's infra-blank gate needs (_is_infra_blank corroborates
+        # blankness with step errors before excluding a match).
+        if sp.get("status") == "error":
+            errors.append({
+                "span": run_type or "",
+                "name": name,
+                "error": sp.get("error") or "error",
+            })
         if run_type == "tool" and name == "read_file":
             inp = _loads(sp.get("inputs"))
             fp = inp.get("file_path", "") if isinstance(inp, dict) else ""
@@ -173,7 +184,7 @@ def _spans_to_turn_events(index: int, user: str, spans: list[dict]) -> dict:
         "skills_routed": skills_routed,
         "artifacts": artifacts,
         "response_text": response_text,
-        "errors": [],
+        "errors": errors,
     }
 
 

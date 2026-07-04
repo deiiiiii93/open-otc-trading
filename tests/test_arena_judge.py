@@ -337,3 +337,12 @@ class TestEmptyRubric:
         assert result.judge_missing is True
         assert result.judged_score is None
         assert post_calls[0] == 0, "post should never be called for empty rubric"
+
+
+def test_system_prompt_carries_anchor_discipline():
+    from app.services.arena.judge import _build_prompt
+    from app.golden_workflows.registry import get_workflow_bundle
+    from app.golden_workflows.transcript import transcript_from_replay
+    loaded = get_workflow_bundle("risk-manager-control-day")
+    msgs = _build_prompt(transcript_from_replay(loaded), loaded)
+    assert "anchor" in msgs[0]["content"].lower()

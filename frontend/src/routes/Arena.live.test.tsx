@@ -31,8 +31,8 @@ const mockRuns = [
 ];
 
 const mockLeaderboard = [
-  { model_id: 'claude-sonnet', avg_total: 0.85, avg_objective: 0.9, matches: 3 },
-  { model_id: 'gpt-4o', avg_total: 0.72, avg_objective: 0.75, matches: 3 },
+  { model_id: 'claude-sonnet', avg_total: 0.85, avg_objective: 0.9, matches: 3, invalid: 1 },
+  { model_id: 'gpt-4o', avg_total: 0.72, avg_objective: 0.75, matches: 3, invalid: 0 },
 ];
 
 const mockMatches = [
@@ -61,6 +61,12 @@ const mockMatches = [
           },
         ],
         success: [],
+        axes: {
+          procedural: { passed: 20, total: 22 },
+          adherence: { passed: 6, total: 8 },
+          grounding: { passed: 4, total: 5 },
+          synthesis: { passed: 4, total: 4 },
+        },
       },
       judge: { rubric_scores: [{ point: 'Identifies staleness', score: 80 }], judged_score: 80, judge_missing: false },
       diagnosis: {
@@ -72,6 +78,19 @@ const mockMatches = [
       objective_score: 50,
       total_score: 65,
     },
+  },
+  {
+    id: 102,
+    workflow_id: 'workflow-b',
+    model_id: 'gpt-4o',
+    status: 'invalid',
+    objective_score: null,
+    judged_score: null,
+    total_score: null,
+    judge_missing: true,
+    transcript_path: null,
+    score_breakdown: null,
+    error: 'infra_blank',
   },
 ];
 
@@ -124,7 +143,7 @@ describe('ArenaLive', () => {
 
     // Match cell should appear with workflow and model info
     expect(await screen.findByText('workflow-a')).toBeInTheDocument();
-    expect(await screen.findByText(/Total:/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/Total:/)).length).toBeGreaterThan(0);
     expect(arenaApi.getArenaRun).toHaveBeenCalledWith(1);
     expect(arenaApi.getArenaLeaderboard).toHaveBeenCalledWith(1);
   });
@@ -206,5 +225,37 @@ describe('ArenaLive', () => {
     render(<ArenaLive />);
 
     expect(await screen.findByRole('alert')).toBeInTheDocument();
+  });
+});
+
+
+describe('flagship v2: invalid matches + axis strip', () => {
+  it('renders invalid count chip on leaderboard rows', async () => {
+    setupMocks();
+    render(<ArenaLive />);
+    expect(await screen.findByText('Claude Sonnet')).toBeInTheDocument();
+    expect(screen.getByText(/1 infra/)).toBeInTheDocument();
+  });
+
+  it('renders invalid match status badge with its reason', async () => {
+    setupMocks();
+    render(<ArenaLive />);
+    const runButton = await screen.findByText('1');
+    await userEvent.click(runButton);
+    expect(await screen.findByText('invalid')).toBeInTheDocument();
+    expect(screen.getByText(/infra_blank/)).toBeInTheDocument();
+  });
+
+  it('renders axis strip when breakdown carries axes', async () => {
+    setupMocks();
+    render(<ArenaLive />);
+    const runButton = await screen.findByText('1');
+    await userEvent.click(runButton);
+    const matchCell = await screen.findByText('Claude Sonnet', { selector: '.wl-arena__match-title' });
+    await userEvent.click(matchCell);
+    expect(await screen.findByText('procedural')).toBeInTheDocument();
+    expect(screen.getByText('20/22')).toBeInTheDocument();
+    expect(screen.getByText('grounding')).toBeInTheDocument();
+    expect(screen.getByText('4/5')).toBeInTheDocument();
   });
 });

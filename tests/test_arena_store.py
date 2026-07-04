@@ -318,3 +318,45 @@ def test_leaderboard_default_uses_latest_completed_run(session):
     assert len(rows) == 1
     assert rows[0]["model_id"] == "model-x"
     assert rows[0]["mean_total"] == 90.0
+
+
+# ---------------------------------------------------------------------------
+# Invalid matches in the leaderboard (flagship v2)
+# ---------------------------------------------------------------------------
+
+
+def test_leaderboard_excludes_invalid_and_counts_them(session):
+    run_id = _make_run(session, workflow_ids=["wf-a", "wf-b"], model_ids=["a"])
+    from app.services.arena import store as arena_store
+    arena_store.set_run_status(session, run_id, "completed")
+    _make_match(session, run_id, workflow_id="wf-a", model_id="a",
+                status="scored", objective_score=80.0, total_score=80.0)
+    _make_match(session, run_id, workflow_id="wf-b", model_id="a",
+                status="invalid", objective_score=None, total_score=None)
+    session.commit()
+
+    rows = arena_store.leaderboard(session, run_id=run_id)
+    (row,) = rows
+    assert row["model_id"] == "a"
+    assert row["match_count"] == 1
+    assert row["invalid_count"] == 1
+    assert row["mean_total"] == 80.0
+
+
+def test_leaderboard_invalid_only_model_listed_with_zero_matches(session):
+    run_id = _make_run(session, workflow_ids=["wf-a"], model_ids=["a", "b"])
+    from app.services.arena import store as arena_store
+    arena_store.set_run_status(session, run_id, "completed")
+    _make_match(session, run_id, workflow_id="wf-a", model_id="a",
+                status="scored", objective_score=70.0, total_score=70.0)
+    _make_match(session, run_id, workflow_id="wf-a", model_id="b",
+                status="invalid", objective_score=None, total_score=None)
+    session.commit()
+
+    rows = arena_store.leaderboard(session, run_id=run_id)
+    by_model = {r["model_id"]: r for r in rows}
+    assert by_model["b"]["match_count"] == 0
+    assert by_model["b"]["invalid_count"] == 1
+    assert by_model["b"]["mean_total"] is None
+    # scored model sorts above invalid-only model
+    assert rows[0]["model_id"] == "a"

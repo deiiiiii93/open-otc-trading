@@ -91,7 +91,8 @@ def load_workflow_bundle(md_path: Path) -> LoadedWorkflow:
     for step in wf.steps:
         if step.replay not in bundle.replay:
             raise MissingReplayError(step.replay)
-        if normalize_skill(step.expected_skill) not in skill_names():
+        if step.expected_skill is not None and \
+                normalize_skill(step.expected_skill) not in skill_names():
             raise WorkflowError(f"unknown skill {step.expected_skill}")
         for te in step.expected_tools:
             if normalize_tool_name(te.name) not in agent_tool_names():

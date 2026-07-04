@@ -17,10 +17,13 @@ from langchain_core.messages import HumanMessage
 from app.golden_workflows.registry import get_workflow_bundle
 from app.golden_workflows.transcript import (
     extract_assertion_context,
-    evaluate_step,
     evaluate_success,
 )
-from app.golden_workflows.assertions import match_tools_subsequence
+from app.golden_workflows.assertions import (
+    AssertionContext,
+    evaluate_assertion,
+    match_tools_subsequence,
+)
 from _scripted_graph import _ScriptedGraph, _ai  # noqa: PLC0415  # test-only helper
 
 
@@ -78,19 +81,34 @@ def test_flagship_replays_green_through_scripted_graph():
     graph = build_scripted_graph_from_replay(loaded)
 
     session_records: list[dict] = []
+    # Cumulative tool_results for scope=="session" grounding assertions —
+    # mirrors scoring.py's cumulative-context semantics.
+    cumulative_results: list[dict] = []
 
     for step in loaded.workflow.steps:
         # .invoke() is the driving API (_ScriptedGraph has no run_turn)
         turn = graph.invoke({"messages": [HumanMessage(content=step.user)]})
         rec = replay_record_from_graph_turn(turn)
         ctx = extract_assertion_context(rec)
+        cumulative_results.extend(ctx.tool_results)
 
         # 1. Tool subsequence
         ok, msg = match_tools_subsequence(step.expected_tools, ctx.tool_calls)
         assert ok, f"[{step.replay}] tool subsequence: {msg}"
 
-        # 2. Per-step assertions
-        for passed, m in evaluate_step(step, ctx):
+        # 2. Per-step assertions (session-scope ones see cumulative results)
+        for assertion in step.assertions:
+            a_ctx = ctx
+            if getattr(assertion, "scope", "step") == "session":
+                a_ctx = AssertionContext(
+                    response_text=ctx.response_text,
+                    tool_calls=ctx.tool_calls,
+                    tool_results=list(cumulative_results),
+                    skills_routed=ctx.skills_routed,
+                    artifacts=ctx.artifacts,
+                    task_ids=ctx.task_ids,
+                )
+            passed, m = evaluate_assertion(assertion, a_ctx)
             assert passed, f"[{step.replay}] assertion failed: {m}"
 
         session_records.append(rec)
@@ -106,3 +124,15 @@ def test_flagship_replays_green_through_scripted_graph():
 
     for passed, m in evaluate_success(loaded.workflow.success, session_ctx):
         assert passed, f"[success] assertion failed: {m}"
+
+
+def test_flagship_golden_replay_scores_full_marks():
+    """The hand-authored golden replay must earn every one of the 39 points —
+    this is the fixture-consistency gate for the v2 manifest."""
+    from app.golden_workflows.transcript import transcript_from_replay
+    from app.services.arena.scoring import objective_score
+
+    loaded = get_workflow_bundle("risk-manager-control-day")
+    transcript = transcript_from_replay(loaded)
+    score, passed, total = objective_score(transcript, loaded)
+    assert (score, passed, total) == (100.0, 39, 39)

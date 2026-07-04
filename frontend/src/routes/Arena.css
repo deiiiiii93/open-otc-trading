@@ -352,3 +352,60 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* --- Flagship v2: invalid matches + axis strip --- */
+
+.wl-arena__status--invalid {
+  color: var(--ink-2);
+}
+
+.wl-arena__match-count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-1);
+}
+
+.wl-arena__invalid-chip {
+  padding: 0 var(--gap-1);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+  white-space: nowrap;
+}
+
+.wl-arena__match-invalid-reason {
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+}
+
+.wl-arena__axes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--gap-2);
+  margin-bottom: var(--gap-2);
+}
+
+.wl-arena__axis-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+  padding: var(--gap-1) var(--gap-2);
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+  background: var(--paper-2);
+}
+
+.wl-arena__axis-name {
+  color: var(--ink-2);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wl-arena__axis-tally {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+}

@@ -13,7 +13,19 @@ Scoring rules (§6.4):
   - +1 per success.assertions entry (evaluated against the SESSION context —
     all tool_calls, tool_results, skills_routed, artifacts, task_ids merged)
 
-total == fixed denominator (32 for the flagship).
+Steps with ``expected_skill: null`` emit NO skill check (the skills_routed
+channel is structurally blind for repeat-skill steps — the runtime never
+re-reads an already-loaded SKILL.md).
+
+Per-step assertions with ``scope == "session"`` (response_quotes_tool_value)
+are evaluated against a CUMULATIVE context: tool_results from steps 0..i,
+response_text from step i only — so a grounding question can reference a
+result computed in an earlier step.
+
+Every check carries a derived ``axis`` (procedural / adherence / grounding /
+synthesis) for reporting; the aggregate stays flat +1 per check.
+
+total == fixed denominator (39 for the flagship: 6+11+21+1).
 score = 100 * passed / total  (float, rounded to 1 dp at the storage boundary).
 """
 from __future__ import annotations
@@ -23,7 +35,7 @@ from app.golden_workflows.assertions import (
     evaluate_assertion,
     match_tool,
 )
-from app.golden_workflows.schema import normalize_skill, ToolExpectation
+from app.golden_workflows.schema import normalize_skill
 from app.golden_workflows.transcript import (
     MatchTranscript,
     extract_assertion_context,
@@ -33,6 +45,27 @@ from app.golden_workflows.transcript import (
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+# Reporting axis per assertion type; check kinds "skill" and "tool" are always
+# procedural. Unknown/new types default to procedural.
+_AXIS_BY_TYPE = {
+    "skill_routed": "procedural",
+    "skills_routed_sequence": "procedural",
+    "tools_routed_sequence": "procedural",
+    "task_returned_id": "procedural",
+    "tool_called": "adherence",
+    "tool_not_called": "adherence",
+    "response_contains": "adherence",
+    "tool_result_path": "grounding",
+    "response_quotes_tool_value": "grounding",
+    "artifact_exists": "synthesis",
+    "artifact_contains": "synthesis",
+}
+
+
+def _axis_for_assertion(assertion) -> str:
+    return _AXIS_BY_TYPE.get(assertion.type, "procedural")
 
 
 def _session_context(transcript: MatchTranscript) -> AssertionContext:
@@ -88,6 +121,12 @@ def _assertion_label(a) -> str:
         return f"skill routed: {a.name}"
     if t == "tool_called":
         return f"tool called: {a.name}"
+    if t == "tool_not_called":
+        return f"tool NOT called: {a.name}"
+    if t == "artifact_contains":
+        return f"artifact({a.kind}) contains " + " / ".join(a.any_of)
+    if t == "response_quotes_tool_value":
+        return f"response quotes {a.tool} {a.path}"
     return t
 
 
@@ -104,6 +143,8 @@ def _evaluate_objective(
     """
     workflow = loaded.workflow
     steps: list[dict] = []
+    # Cumulative tool_results (steps 0..i) for scope=="session" assertions.
+    cumulative_results: list[dict] = []
 
     for i, wf_step in enumerate(workflow.steps):
         if i < len(transcript.steps):
@@ -115,19 +156,22 @@ def _evaluate_objective(
                 response_text="", tool_calls=[], tool_results=[],
                 skills_routed=[], artifacts=[], task_ids=[],
             )
+        cumulative_results.extend(step_ctx.tool_results)
 
         checks: list[dict] = []
 
-        # 1. expected_skill
-        want = normalize_skill(wf_step.expected_skill)
-        routed = ts.skills_routed if ts is not None else []
-        skill_ok = any(normalize_skill(s) == want for s in routed)
-        checks.append({
-            "kind": "skill",
-            "label": f"skill: {wf_step.expected_skill}",
-            "passed": skill_ok,
-            "detail": "" if skill_ok else f"routed {list(routed)}",
-        })
+        # 1. expected_skill (skipped entirely for null-skill steps)
+        if wf_step.expected_skill is not None:
+            want = normalize_skill(wf_step.expected_skill)
+            routed = ts.skills_routed if ts is not None else []
+            skill_ok = any(normalize_skill(s) == want for s in routed)
+            checks.append({
+                "kind": "skill",
+                "label": f"skill: {wf_step.expected_skill}",
+                "passed": skill_ok,
+                "detail": "" if skill_ok else f"routed {list(routed)}",
+                "axis": "procedural",
+            })
 
         # 2. ToolExpectations
         for te in wf_step.expected_tools:
@@ -137,16 +181,29 @@ def _evaluate_objective(
                 "label": f"tool: {te.name}",
                 "passed": ok,
                 "detail": "" if ok else (msg or "not called"),
+                "axis": "procedural",
             })
 
         # 3. Per-step assertions
         for assertion in wf_step.assertions:
-            ok, msg = evaluate_assertion(assertion, step_ctx)
+            if getattr(assertion, "scope", "step") == "session":
+                ctx = AssertionContext(
+                    response_text=step_ctx.response_text,
+                    tool_calls=step_ctx.tool_calls,
+                    tool_results=list(cumulative_results),
+                    skills_routed=step_ctx.skills_routed,
+                    artifacts=step_ctx.artifacts,
+                    task_ids=step_ctx.task_ids,
+                )
+            else:
+                ctx = step_ctx
+            ok, msg = evaluate_assertion(assertion, ctx)
             checks.append({
                 "kind": "assertion",
                 "label": _assertion_label(assertion),
                 "passed": ok,
                 "detail": "" if ok else msg,
+                "axis": _axis_for_assertion(assertion),
             })
 
         steps.append({"index": i, "user": wf_step.user, "checks": checks})
@@ -161,6 +218,7 @@ def _evaluate_objective(
             "label": _assertion_label(assertion),
             "passed": ok,
             "detail": "" if ok else msg,
+            "axis": _axis_for_assertion(assertion),
         })
 
     return steps, success
@@ -206,7 +264,14 @@ def objective_breakdown(
     """
     steps, success = _evaluate_objective(transcript, loaded)
     passed, total = _count(steps, success)
-    return {"passed": passed, "total": total, "steps": steps, "success": success}
+    axes: dict[str, dict[str, int]] = {}
+    for c in [c for s in steps for c in s["checks"]] + success:
+        ax = c.get("axis", "procedural")
+        slot = axes.setdefault(ax, {"passed": 0, "total": 0})
+        slot["total"] += 1
+        slot["passed"] += int(c["passed"])
+    return {"passed": passed, "total": total, "steps": steps,
+            "success": success, "axes": axes}
 
 
 def diagnose_heuristic(

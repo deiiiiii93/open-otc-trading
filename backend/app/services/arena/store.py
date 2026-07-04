@@ -140,11 +140,15 @@ def leaderboard(
 ) -> list[dict]:
     """Return leaderboard rows for the latest completed run (or specified run_id).
 
-    Each row: {model_id, mean_total, mean_objective, match_count}.
-    Only scored matches (status=='scored') are counted.
-    Ordered by mean_total desc, mean_objective desc, model_id asc.
+    Each row: {model_id, mean_total, mean_objective, match_count, invalid_count}.
+    Means and match_count consider only scored matches (status=='scored');
+    'invalid' matches (infra-blank routes) are excluded from means but counted
+    in invalid_count so degraded routes stay visible instead of silently
+    vanishing. A model with only invalid matches is listed with match_count 0
+    and None means.
+    Ordered by mean_total desc (None last), mean_objective desc, model_id asc.
     If tag is given, only matches for workflows with that tag are included.
-    Returns [] on no completed run or no scored matches.
+    Returns [] on no completed run or no scored/invalid matches.
     """
     if run_id is None:
         # Find the latest completed run
@@ -158,12 +162,12 @@ def leaderboard(
             return []
         run_id = run.id
 
-    # Fetch scored matches for this run
+    # Fetch scored + invalid matches for this run (invalids only feed counts)
     matches = (
         session.query(ArenaMatch)
         .filter(
             ArenaMatch.run_id == run_id,
-            ArenaMatch.status == "scored",
+            ArenaMatch.status.in_(["scored", "invalid"]),
         )
         .all()
     )
@@ -190,28 +194,38 @@ def leaderboard(
     from collections import defaultdict
     model_totals: dict[str, list[float]] = defaultdict(list)
     model_objectives: dict[str, list[float]] = defaultdict(list)
+    invalid_counts: dict[str, int] = defaultdict(int)
 
     for m in matches:
+        if m.status == "invalid":
+            invalid_counts[m.model_id] += 1
+            continue
         if m.total_score is not None:
             model_totals[m.model_id].append(m.total_score)
         if m.objective_score is not None:
             model_objectives[m.model_id].append(m.objective_score)
 
-    # Build rows for models that have at least one scored match
+    # Build rows for models with at least one scored OR invalid match
     rows = []
-    for model_id, totals in model_totals.items():
+    for model_id in set(model_totals) | set(invalid_counts):
+        totals = model_totals.get(model_id, [])
         objectives = model_objectives.get(model_id, [])
-        mean_total = sum(totals) / len(totals)
-        mean_objective = sum(objectives) / len(objectives) if objectives else 0.0
         rows.append({
             "model_id": model_id,
-            "mean_total": round(mean_total, 1),
-            "mean_objective": round(mean_objective, 1),
+            "mean_total": round(sum(totals) / len(totals), 1) if totals else None,
+            "mean_objective": (round(sum(objectives) / len(objectives), 1)
+                               if objectives else (0.0 if totals else None)),
             "match_count": len(totals),
+            "invalid_count": invalid_counts.get(model_id, 0),
         })
 
-    # Tie-break: mean_total desc, mean_objective desc, model_id asc
-    rows.sort(key=lambda r: (-r["mean_total"], -r["mean_objective"], r["model_id"]))
+    # Tie-break: mean_total desc (None sorts last), mean_objective desc, model_id asc
+    rows.sort(key=lambda r: (
+        r["mean_total"] is None,
+        -(r["mean_total"] or 0.0),
+        -(r["mean_objective"] or 0.0),
+        r["model_id"],
+    ))
     return rows
 
 

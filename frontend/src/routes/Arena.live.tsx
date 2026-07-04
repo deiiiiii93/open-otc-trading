@@ -49,6 +49,21 @@ function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
         </span>
       </div>
 
+      {obj.axes && (
+        <div className="wl-arena__axes">
+          {(['procedural', 'adherence', 'grounding', 'synthesis'] as const)
+            .filter((k) => obj.axes && obj.axes[k])
+            .map((k) => (
+              <div key={k} className="wl-arena__axis-cell">
+                <span className="wl-arena__axis-name">{k}</span>
+                <span className="wl-arena__axis-tally">
+                  {obj.axes![k].passed}/{obj.axes![k].total}
+                </span>
+              </div>
+            ))}
+        </div>
+      )}
+
       {diagnosis && (diagnosis.counts || diagnosis.analysis) && (
         <div className="wl-arena__diagnosis">
           <span className="wl-arena__diagnosis-title">Diagnosis</span>
@@ -122,6 +137,7 @@ function statusClass(status: string): string {
   if (status === 'completed') return 'wl-arena__status--completed';
   if (status === 'failed') return 'wl-arena__status--failed';
   if (status === 'running') return 'wl-arena__status--running';
+  if (status === 'invalid') return 'wl-arena__status--invalid';
   return '';
 }
 
@@ -225,7 +241,14 @@ export function ArenaLive() {
         header: 'Matches',
         numeric: true,
         width: 'minmax(0, 1fr)',
-        render: (row) => row.matches,
+        render: (row) => (
+          <span className="wl-arena__match-count">
+            {row.matches}
+            {(row.invalid ?? 0) > 0 && (
+              <span className="wl-arena__invalid-chip">{row.invalid} infra</span>
+            )}
+          </span>
+        ),
       },
     ],
     [models],
@@ -322,6 +345,11 @@ export function ArenaLive() {
                         <span className={`wl-arena__status ${statusClass(match.status)}`}>
                           {match.status}
                         </span>
+                        {match.status === 'invalid' && match.error && (
+                          <span className="wl-arena__match-invalid-reason">
+                            {match.error}
+                          </span>
+                        )}
                         <span className="wl-arena__match-score">
                           Total: {fmtScore(match.total_score)}
                           {' · '}
