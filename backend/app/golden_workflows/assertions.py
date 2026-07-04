@@ -1,6 +1,16 @@
 from __future__ import annotations
+import re
 from dataclasses import dataclass
 from typing import Any
+
+# name[key=value] path segment, e.g. landscape[spot_shift=0.1]
+_SEL = re.compile(r"^(.+?)\[([^=\]]+)=([^\]]+)\]$")
+# numeric token: optional sign, digits with thousands commas, optional decimals,
+# optional magnitude suffix (k/m/mm/bn/b), optional percent
+_NUM_TOKEN = re.compile(r"[+-]?\d[\d,]*(?:\.\d+)?\s*(k|m|mm|bn|b)?(%)?", re.I)
+_SUFFIX = {"k": 1e3, "m": 1e6, "mm": 1e6, "bn": 1e9, "b": 1e9}
+_NEAR_WINDOW = 160  # chars after an anchor start a token may occur in
+
 
 @dataclass
 class AssertionContext:
@@ -62,9 +72,62 @@ def match_tools_subsequence(exps, calls) -> tuple[bool, str]:
             return False, f"tool {exp.name} not found in order"
     return True, ""
 
+def _parse_scalar(s: str) -> Any:
+    t = s.strip()
+    for cast in (int, float):
+        try:
+            return cast(t)
+        except ValueError:
+            pass
+    return t.strip("'\"")
+
+
+def _values_equal(a: Any, b: Any) -> bool:
+    def num(x: Any) -> bool:
+        return isinstance(x, (int, float)) and not isinstance(x, bool)
+    if num(a) and num(b):
+        return abs(float(a) - float(b)) < 1e-9
+    return a == b
+
+
+def _split_path(path: str) -> list[str]:
+    """Split a dotted path, keeping dots inside [key=value] selectors intact
+    (e.g. "landscape[spot_shift=0.1].gamma" → ["landscape[spot_shift=0.1]", "gamma"])."""
+    segs: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    for ch in path:
+        if ch == "." and depth == 0:
+            segs.append("".join(buf))
+            buf = []
+            continue
+        if ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth = max(0, depth - 1)
+        buf.append(ch)
+    segs.append("".join(buf))
+    return segs
+
+
 def _dig(obj: Any, path: str) -> tuple[bool, Any]:
     cur = obj
-    for seg in path.split("."):
+    for seg in _split_path(path):
+        sel = _SEL.match(seg)
+        if sel:
+            name, key, raw = sel.group(1), sel.group(2), _parse_scalar(sel.group(3))
+            if not (isinstance(cur, dict) and name in cur):
+                return False, None
+            cur = cur[name]
+            if not isinstance(cur, list):
+                return False, None
+            for el in cur:
+                if isinstance(el, dict) and key in el and _values_equal(el[key], raw):
+                    cur = el
+                    break
+            else:
+                return False, None
+            continue
         if isinstance(cur, list):
             try: cur = cur[int(seg)]
             except (ValueError, IndexError): return False, None
@@ -73,6 +136,51 @@ def _dig(obj: Any, path: str) -> tuple[bool, Any]:
         else:
             return False, None
     return True, cur
+
+
+def _scan_numeric_tokens(text: str) -> list[tuple[int, float]]:
+    """(start_offset, value) per numeric token; % tokens also yield value/100."""
+    out: list[tuple[int, float]] = []
+    for m in _NUM_TOKEN.finditer(text):
+        body = m.group(0)
+        suffix = (m.group(1) or "").lower()
+        pct = m.group(2)
+        num = body
+        if pct:
+            num = num.rstrip("%")
+        if suffix:
+            num = num[: len(num) - len(suffix)]
+        try:
+            val = float(num.replace(",", "").strip())
+        except ValueError:
+            continue
+        if suffix:
+            val *= _SUFFIX[suffix]
+        out.append((m.start(), val))
+        if pct:
+            out.append((m.start(), val / 100.0))
+    return out
+
+
+def _quote_value_in_text(text: str, target: float, *, rel_tol: float,
+                         mode: str, near: list[str] | None) -> bool:
+    tokens = _scan_numeric_tokens(text)
+    if near:
+        low = text.lower()
+        spans: list[tuple[int, int]] = []
+        for anchor in near:
+            needle = anchor.lower()
+            start = 0
+            while (i := low.find(needle, start)) != -1:
+                spans.append((i, i + _NEAR_WINDOW))
+                start = i + 1
+        tokens = [t for t in tokens if any(a <= t[0] <= b for a, b in spans)]
+    tol = rel_tol * abs(target) if target != 0 else rel_tol
+    for _, v in tokens:
+        a, b = (v, target) if mode == "signed" else (abs(v), abs(target))
+        if abs(a - b) <= tol:
+            return True
+    return False
 
 def _last_result(ctx: AssertionContext, tool: str) -> dict | None:
     from app.golden_workflows.schema import normalize_tool_name
@@ -97,8 +205,29 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
         exps = [ToolExpectation(name=n) for n in a.names]
         return match_tools_subsequence(exps, ctx.tool_calls)
     if t == "tool_called":
-        from app.golden_workflows.schema import ToolExpectation
-        return match_tool(ToolExpectation(name=a.name, args=a.args), ctx.tool_calls)
+        from app.golden_workflows.schema import normalize_tool_name
+        want = normalize_tool_name(a.name)
+        candidates = a.args_any_of if getattr(a, "args_any_of", None) else [a.args]
+        exclusive = getattr(a, "exclusive_keys", None) or []
+
+        def _absent(v: Any) -> bool:
+            return v is None or v == [] or v == ""
+
+        for c in ctx.tool_calls:
+            if normalize_tool_name(c.get("name", "")) != want:
+                continue
+            call_args = c.get("args", {}) or {}
+            for cand in candidates:
+                if cand is not None:
+                    ok, _ = _deep_subset(cand, call_args, a.name)
+                    if not ok:
+                        continue
+                cand_keys = set((cand or {}).keys())
+                if any(k not in cand_keys and not _absent(call_args.get(k))
+                       for k in exclusive):
+                    continue
+                return True, ""
+        return False, f"tool {a.name} not matched"
     if t == "task_returned_id":
         r = _last_result(ctx, a.tool)
         tid = (r or {}).get("content", {}).get("task_id") if r else None
@@ -124,6 +253,27 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
         want = normalize_tool_name(a.name)
         called = any(normalize_tool_name(c.get("name", "")) == want for c in ctx.tool_calls)
         return (not called, f"tool {a.name} was called but must not be")
+    if t == "artifact_contains":
+        bodies = [str(x.get("content") or x.get("text") or "")
+                  for x in ctx.artifacts if x.get("kind") == a.kind]
+        blob = "\n".join(bodies).lower()
+        if any(s.lower() in blob for s in a.any_of):
+            return True, ""
+        return False, f"no {a.kind} artifact contains any_of={a.any_of}"
+    if t == "response_quotes_tool_value":
+        r = _last_result(ctx, a.tool)
+        if not r:
+            return False, f"no result for {a.tool}"
+        found, val = _dig(r.get("content", {}), a.path)
+        if not found:
+            return False, f"path {a.path} missing"
+        if not isinstance(val, (int, float)) or isinstance(val, bool):
+            return False, f"{a.path} is not numeric: {val!r}"
+        ok = _quote_value_in_text(ctx.response_text, float(val),
+                                  rel_tol=a.rel_tol, mode=a.match, near=a.near)
+        return ok, "" if ok else (
+            f"response does not quote {a.path}={val} "
+            f"(match={a.match}, rel_tol={a.rel_tol}, near={a.near})")
     return False, f"unknown assertion {t}"
 
 def resolve_seed_refs(obj: Any, seed_map: dict[str, Any]) -> Any:
