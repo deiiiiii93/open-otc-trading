@@ -116,6 +116,7 @@ steps:
           - scenario_set: "market-crash"
         exclusive_keys: ["predefined", "custom", "scenario_set"]
         all_calls: true
+        max_calls: 1
       # Grounding: the reported CVaR must be the computed one (loss language
       # legitimately drops the sign → magnitude match).
       - type: response_quotes_tool_value

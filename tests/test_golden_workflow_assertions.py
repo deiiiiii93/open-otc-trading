@@ -438,11 +438,17 @@ def test_all_calls_requires_at_least_one_call():
     assert not ok
 
 
-def test_all_calls_duplicate_compliant_calls_pass():
-    a = _scenario_called(all_calls=True)
+def test_max_calls_blocks_duplicate_compliant_dispatch():
+    """Even duplicate COMPLIANT calls of a costly dispatch tool are
+    over-execution when max_calls caps the count."""
     calls = [
         {"name": "run_scenario_test", "args": {"predefined": ["market_crash"]}},
         {"name": "run_scenario_test", "args": {"scenario_set": "market-crash"}},
     ]
-    ok, _ = evaluate_assertion(a, ctx(tool_calls=calls))
-    assert ok
+    capped = _scenario_called(all_calls=True, max_calls=1)
+    ok, msg = evaluate_assertion(capped, ctx(tool_calls=calls))
+    assert not ok and "over-execution" in msg
+    # Without the cap, all-compliant duplicates pass (documenting the delta)
+    uncapped = _scenario_called(all_calls=True)
+    ok2, _ = evaluate_assertion(uncapped, ctx(tool_calls=calls))
+    assert ok2

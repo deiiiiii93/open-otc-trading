@@ -228,6 +228,10 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
 
         matching_name = [c.get("args", {}) or {} for c in ctx.tool_calls
                          if normalize_tool_name(c.get("name", "")) == want]
+        max_calls = getattr(a, "max_calls", None)
+        if max_calls is not None and len(matching_name) > max_calls:
+            return False, (f"{a.name} called {len(matching_name)}x "
+                           f"(max {max_calls}) — duplicate dispatch is over-execution")
         if getattr(a, "all_calls", False):
             # Exact-use: at least one call AND every call matches a candidate —
             # a compliant first call must not mask a later over-execution.

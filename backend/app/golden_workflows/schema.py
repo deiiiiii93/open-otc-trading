@@ -55,6 +55,9 @@ class _ToolCalled(BaseModel):
     # must be at least one call). Without it a compliant first call would mask
     # a later over-executing/substituted call of the same tool.
     all_calls: bool = False
+    # Cap on the number of calls of `name` (None = unlimited). For stateful /
+    # costly dispatch tools, even duplicate COMPLIANT calls are over-execution.
+    max_calls: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def _args_exclusive(self) -> "_ToolCalled":
