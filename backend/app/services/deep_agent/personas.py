@@ -52,6 +52,7 @@ def report_currency_instruction(report_currency: str) -> str:
 # the directive to "attempt, don't refuse" must be in-context for all personas.
 _TRADER_POLICY = (
     "escalation-policy",
+    "delegated-scope-policy",
     "read-before-compute-policy",
     "cost-preview-policy",
     "reply-options-policy",
@@ -62,6 +63,7 @@ _TRADER_POLICY = (
 _RISK_POLICY = _TRADER_POLICY
 _BOARD_POLICY = (
     "escalation-policy",
+    "delegated-scope-policy",
     "cost-preview-policy",
     "reply-options-policy",
     "yolo-hitl-policy",
@@ -78,11 +80,18 @@ def _resolve_policy_fragments(
     fragments: Sequence[str], allow_reply_options: bool
 ) -> tuple[str, ...]:
     """In headless (YOLO) mode, swap the reply-options policy for the headless
-    policy so the persona never asks or proposes cards."""
+    policy so the persona never asks or proposes cards, and DROP the cost-preview
+    policy: its "preview then wait for the user's yes" rule directly contradicts
+    headless operation and makes cautious models stall in prose forever (no user
+    answers). The headless policy's "Expensive actions" section supplies the
+    autonomous replacement (run inline / dispatch async). Server-side cost gates
+    (`confirmed_cost_preview`) still bound long runs."""
     if allow_reply_options:
         return tuple(fragments)
     return tuple(
-        "headless-policy" if f == "reply-options-policy" else f for f in fragments
+        "headless-policy" if f == "reply-options-policy" else f
+        for f in fragments
+        if f != "cost-preview-policy"
     )
 
 
@@ -182,6 +191,7 @@ def all_personas(
 
     from .audit_trail_middleware import AuditTrailMiddleware
     from .cost_preview_hitl import LongRunningCostHITLMiddleware
+    from .desk_context import DeskContextMiddleware
     from .term_grounding import TermGroundingMiddleware
     from .fanout_readonly import FanoutReadOnlyMiddleware
     from .tool_error_boundary import ToolErrorBoundaryMiddleware
@@ -207,6 +217,10 @@ def all_personas(
         middleware.insert(2, FanoutReadOnlyMiddleware(tools=tools))
         if yolo_mode:
             middleware.append(LongRunningCostHITLMiddleware(tools=tools))
+        # Inject the orchestrator-resolved desk scope (portfolio_id, profile_id,
+        # dates) inherited via desk_context state, so required_context skills see
+        # their scope as supplied; also snoops this persona's own domain calls.
+        middleware.append(DeskContextMiddleware())
         # Ungrounded term-completeness verdicts bounce back once (see
         # term_grounding.py) - personas hold the grounding tools.
         middleware.append(TermGroundingMiddleware())

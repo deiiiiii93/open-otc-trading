@@ -87,6 +87,16 @@ steps:
     assertions:
       - type: task_returned_id
         tool: run_backtest
+      # Explicit instruction-adherence check: the instruction names a concrete
+      # window (2026-03-24 → 2026-06-24). Score whether run_backtest was invoked
+      # with those exact dates, so a model substituting its own window (e.g. a
+      # "past quarter ending today" heuristic) fails here directly rather than
+      # only via downstream P&L numbers. See GH #6.
+      - type: tool_called
+        name: run_backtest
+        args:
+          start_date: "2026-03-24"
+          end_date: "2026-06-24"
     replay: step-6-backtest
 
   - user: "Generate a governance risk report for today's control session."
@@ -103,15 +113,23 @@ steps:
 
 success:
   assertions:
-    - type: skills_routed_sequence
+    # Procedural-fidelity check measured on the fully-captured tool-call
+    # sequence rather than read_file-derived skills_routed. skills_routed only
+    # records a skill when its SKILL.md is read, and the agent runtime does not
+    # re-open an already-loaded file — so a legitimate second read-risk step
+    # (or any description-only routing) is invisible, adding noise uncorrelated
+    # with ability. Each designed skill step maps to its signature tool; this
+    # keeps the exact designed order and bar (skip/reorder still fails) without
+    # the dedup blind spot.
+    - type: tools_routed_sequence
       names:
-        - read-risk-result
-        - run-risk
-        - read-risk-result
-        - run-greeks-landscape
-        - run-scenario-test
-        - run-backtest
-        - generate-report
+        - get_latest_risk_run
+        - run_batch_pricing
+        - get_latest_risk_run
+        - run_greeks_landscape
+        - run_scenario_test
+        - run_backtest
+        - write_report_artifact
     - type: task_returned_id
       tool: run_batch_pricing
     - type: task_returned_id

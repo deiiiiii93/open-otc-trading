@@ -79,6 +79,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   horse, flagged and not placed.
 
 ### Changed
+- **Flagship arena objective manifest is now 32 points (was 31).** Added a
+  `tool_called` assertion on the `risk-manager-control-day` backtest step that
+  verifies `run_backtest` is invoked with the instructed date window
+  (`2026-03-24 → 2026-06-24`). Some models (Opus 4.8, Sonnet 5 — see GH #6)
+  silently substitute a self-computed "past quarter" window; this scores that
+  instruction-adherence failure explicitly rather than leaving it visible only in
+  downstream P&L numbers. The full replay pin and denominator manifest tests were
+  updated (7 skills + 10 tools + 9 step assertions + 6 success = 32).
 - **Agent Desk composer chrome cleanup.** Removed the "Accounting" label from the
   global date picker to reclaim header space. Consecutive same-name tool calls in
   the chat tool timeline now collapse into one grouped row (`read_file ×14`). The
@@ -96,6 +104,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the rest of the desk.
 
 ### Fixed
+- **Headless (YOLO) agents stalled in prose on expensive actions instead of
+  executing.** In headless mode the persona/orchestrator prompts still carried the
+  cost-preview rule ("reply with a cost preview and wait for the user's yes; do
+  not invoke this turn"), which directly contradicts headless operation ("never
+  ask, proceed"). Cautious instruction-followers honored the more conservative
+  directive and ended the turn with an unanswered question — no user answers, and
+  the runtime cost-HITL is already auto-confirmed in headless mode
+  (`confirmed_cost_preview=True`), so nothing intercepted it. Sonnet 5 was the
+  clear outlier (9 stall steps across 4/5 Arena trials vs ≤7 for others). Fixed by
+  resolving the policy conflict, not by adding a model-callable bypass (which would
+  violate the server-owns-authorization invariant): `_resolve_policy_fragments`
+  now drops `cost-preview-policy` in headless mode, and `headless-policy` gained an
+  explicit "Expensive actions in headless mode" section (run inline <~30s; dispatch
+  async ≥30s; never ask which format/scope/profile) that also overrides the
+  orchestrator.md embedded Cost-preview rule. Backtest date-window bug found in the
+  same investigation filed separately as #6.
+- **Persona subagents blocked on "missing required scope" when the scope was
+  supplied.** The interactive orchestrator delegates to persona subagents via the
+  deepagents `task()` tool, which passes only a prose prompt — no context pack. A
+  delegated skill declaring `required_context` (portfolio_id, pricing profile,
+  dates) with `confirmation_required` then refused with "not in the task/context
+  pack" even though the id was stated verbatim in the delegation, because
+  `assemble_context_pack` runs only in the async executor path. Fixed with two
+  layers: (1) `DeskContextMiddleware` (on orchestrator + personas) snoops resolved
+  scope from domain-tool call args into a `desk_context` state key that propagates
+  parent→subagent (deepagents keeps non-excluded state) and persists across turns,
+  then injects it as an authoritative context block into the subagent prompt; and
+  (2) a `delegated-scope-policy` meta fragment telling personas that
+  orchestrator-supplied scope satisfies `required_context` and the delegation is
+  the confirmation. Live-validated on Claude Sonnet 5 (5 trials): the scope block
+  is eliminated (`run_scenario_test` 5/5, `run_backtest` 4/5 vs 2/5 pre-fix),
+  objective mean 70.3→82.6. Both middleware hooks fail open.
 - **Arena objective scoring dropped every async task id and text artifact.** The
   pre-fix trace harvester stored each tool result as the raw LangChain v3
   lc-constructor `ToolMessage` envelope (`{lc,type,id,kwargs}`); the real payload
@@ -113,7 +153,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   noise uncorrelated with ability (same model passed/failed across reruns). Added a
   `tools_routed_sequence` assertion that measures the same designed step order on the
   fully-captured tool-call sequence (each skill → its signature tool) via the
-  existing `match_tools_subsequence`; switched `risk-manager-control-day` to it. Same
+  existing `match_tools_subsequence`; migrated **all three** golden workflows
+  (`risk-manager-control-day`, `trader-rfq-booking-day`, `high-board-portfolio-review-day`)
+  to it — the latter two each satisfy the new check on their golden replay (100%),
+  and `trader-rfq` has a legitimately repeated skill (`position-snapshot`, backed by a
+  different tool each time) that the old read_file-based check could not observe. Same
   strict bar (skip/reorder still fails — genuine non-followers stay failing), minus
   the dedup blind spot.
   Wrapped `HedgeStrategyLive` in a flex column with `gap: var(--gap-3)` so the

@@ -40,6 +40,11 @@ class _SkillsRoutedSequence(BaseModel):
     names: list[str]
 
 
+class _ToolsRoutedSequence(BaseModel):
+    type: Literal["tools_routed_sequence"]
+    names: list[str]
+
+
 class _ToolCalled(BaseModel):
     type: Literal["tool_called"]
     name: str
@@ -85,8 +90,9 @@ class _ToolNotCalled(BaseModel):
 
 
 Assertion = Annotated[
-    Union[_SkillRouted, _SkillsRoutedSequence, _ToolCalled, _TaskReturnedId,
-          _ArtifactExists, _ResponseContains, _ToolResultPath, _ToolNotCalled],
+    Union[_SkillRouted, _SkillsRoutedSequence, _ToolsRoutedSequence, _ToolCalled,
+          _TaskReturnedId, _ArtifactExists, _ResponseContains, _ToolResultPath,
+          _ToolNotCalled],
     Field(discriminator="type"),
 ]
 

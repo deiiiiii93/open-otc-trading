@@ -102,6 +102,12 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         default_config=_DEFAULT_CONFIG,
     ),
     ArenaModel(
+        slug="claude-sonnet-5",
+        zenmux_name="anthropic/claude-sonnet-5",
+        display_name="Claude Sonnet 5",
+        default_config=_DEFAULT_CONFIG,
+    ),
+    ArenaModel(
         slug="gemini-2-5-pro",
         zenmux_name="google/gemini-2.5-pro",
         display_name="Gemini 2.5 Pro",

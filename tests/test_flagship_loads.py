@@ -7,14 +7,14 @@ def test_flagship_has_seven_steps_and_narration():
     assert len(wf.narration) == 7
     assert wf.steps[1].expected_tools[0].name == "run_batch_pricing"
 
-def test_flagship_objective_point_manifest_is_31():
+def test_flagship_objective_point_manifest_is_32():
     wf = get_workflow("risk-manager-control-day")
     skills = len(wf.steps)
     tools = sum(len(s.expected_tools) for s in wf.steps)
     step_assertions = sum(len(s.assertions) for s in wf.steps)
     success_assertions = len(wf.success.assertions)
-    assert (skills, tools, step_assertions, success_assertions) == (7, 10, 8, 6)
-    assert skills + tools + step_assertions + success_assertions == 31
+    assert (skills, tools, step_assertions, success_assertions) == (7, 10, 9, 6)
+    assert skills + tools + step_assertions + success_assertions == 32
 
 def test_flagship_exact_ordered_manifest():
     """Pin the exact spec §4 content, not just counts."""
@@ -32,7 +32,8 @@ def test_flagship_exact_ordered_manifest():
     replays = [s.replay for s in wf.steps]
     assert len(set(replays)) == 7  # all distinct
     success_types = sorted(a.type for a in wf.success.assertions)
-    assert success_types == ["artifact_exists", "skills_routed_sequence",
+    assert success_types == ["artifact_exists",
                              "task_returned_id", "task_returned_id",
-                             "task_returned_id", "task_returned_id"]
+                             "task_returned_id", "task_returned_id",
+                             "tools_routed_sequence"]
     assert len(wf.success.rubric) == 4

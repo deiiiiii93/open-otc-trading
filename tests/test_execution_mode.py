@@ -72,3 +72,55 @@ def test_orchestrator_prompt_headless_under_yolo():
     yolo = _orchestrator_prompt(allow_reply_options=False)
     assert "Pickable reply options" in auto
     assert "Headless operation" in yolo
+
+
+# --- headless cost-preview conflict resolution ---
+#
+# `cost-preview-policy` tells a persona to "reply with a cost preview and wait
+# for the user's yes" — which directly contradicts headless mode ("never ask,
+# proceed"). Cautious instruction-followers honor the more conservative directive
+# and stall in prose forever (no user answers). Headless must therefore DROP the
+# contradictory fragment and replace it with an explicit autonomous override.
+
+
+def test_cost_preview_policy_dropped_in_headless():
+    base = (
+        "escalation-policy",
+        "cost-preview-policy",
+        "reply-options-policy",
+        "clarification-policy",
+    )
+    # Interactive/AUTO: unchanged — the preview-and-wait rule applies.
+    assert _resolve_policy_fragments(base, True) == base
+    # Headless: cost-preview dropped, reply-options swapped for headless.
+    assert _resolve_policy_fragments(base, False) == (
+        "escalation-policy",
+        "headless-policy",
+        "clarification-policy",
+    )
+
+
+def test_headless_policy_carries_expensive_action_override():
+    from app.services.deep_agent.skills_loader import load_policy_fragments
+
+    body = load_policy_fragments(("headless-policy",)).lower()
+    assert "expensive actions in headless mode" in body
+    # Autonomous long-run handling replaces preview-and-wait.
+    assert "dispatch" in body and "async" in body
+
+
+def test_persona_headless_prompt_drops_preview_and_wait():
+    auto = trader_spec(None, [], allow_reply_options=True)["system_prompt"].lower()
+    yolo = trader_spec(None, [], allow_reply_options=False)["system_prompt"].lower()
+    # Interactive persona holds the preview-and-wait instruction.
+    assert "wait for the user" in auto
+    # Headless persona drops it (no user to wait for) and carries the override.
+    assert "wait for the user" not in yolo
+    assert "expensive actions in headless mode" in yolo
+
+
+def test_orchestrator_headless_prompt_neutralizes_cost_preview():
+    yolo = _orchestrator_prompt(allow_reply_options=False).lower()
+    # The appended headless-policy explicitly overrides the orchestrator.md
+    # embedded "Cost-preview rule" (which is static and always present).
+    assert "expensive actions in headless mode" in yolo

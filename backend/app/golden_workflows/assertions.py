@@ -92,6 +92,10 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
         it = iter(have)
         ok = all(any(x == w for x in it) for w in want)
         return ok, f"skill sequence {want} not a subsequence of {have}"
+    if t == "tools_routed_sequence":
+        from app.golden_workflows.schema import ToolExpectation
+        exps = [ToolExpectation(name=n) for n in a.names]
+        return match_tools_subsequence(exps, ctx.tool_calls)
     if t == "tool_called":
         from app.golden_workflows.schema import ToolExpectation
         return match_tool(ToolExpectation(name=a.name, args=a.args), ctx.tool_calls)

@@ -221,9 +221,11 @@ GET  /api/arena/models                → registered model list
 **Frontend:** `frontend/src/routes/Arena.live.tsx` renders the leaderboard and
 lets users trigger new runs.
 
-**Objective manifest for the flagship** (`risk-manager-control-day`): 31 points
-(7 expected_skill points + 10 expected_tools + 8 step assertions + 6 success
-assertions).
+**Objective manifest for the flagship** (`risk-manager-control-day`): 32 points
+(7 expected_skill points + 10 expected_tools + 9 step assertions + 6 success
+assertions). The 9th step assertion is a `tool_called` check on the backtest step
+verifying `run_backtest` carries the instructed date window (2026-03-24 →
+2026-06-24) — see GH #6.
 
 **Running live arena matches requires:**
 ```bash

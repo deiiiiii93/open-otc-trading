@@ -122,8 +122,12 @@ steps:
 
 success:
   assertions:
-    - type: skills_routed_sequence
-      names: [portfolio-membership, portfolio-maintenance, portfolio-view-counting, batch-run-reports, display-report, generate-report]
+    # Procedural-fidelity check on the fully-captured tool-call sequence rather
+    # than read_file-derived skills_routed (blind to routing toward an already-
+    # loaded skill). Each designed skill step maps to its signature tool; same
+    # designed order and bar, minus the dedup blind spot.
+    - type: tools_routed_sequence
+      names: [get_portfolio, create_portfolio, get_positions, run_report_batch, get_report, write_report_artifact]
     - type: tool_result_path
       tool: get_positions
       path: portfolio_total_count

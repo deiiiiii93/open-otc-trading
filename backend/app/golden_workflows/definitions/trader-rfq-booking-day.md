@@ -110,16 +110,21 @@ steps:
 
 success:
   assertions:
-    - type: skills_routed_sequence
+    # Procedural-fidelity check on the fully-captured tool-call sequence rather
+    # than read_file-derived skills_routed (which can't observe a re-routed skill
+    # whose SKILL.md is already loaded — e.g. position-snapshot appears twice here,
+    # backed by different tools each time). Each designed skill step maps to its
+    # signature tool; same designed order and bar, minus the dedup blind spot.
+    - type: tools_routed_sequence
       names:
-        - intake-request
-        - quote-rfq
-        - submit-for-approval
-        - build-product
-        - book-position
-        - position-snapshot
-        - price-portfolio
-        - position-snapshot
+        - create_or_update_rfq_draft
+        - quote_rfq
+        - submit_rfq_for_approval
+        - build_product
+        - book_position
+        - get_position_summaries
+        - run_batch_pricing
+        - get_latest_position_valuations
     - type: tool_result_path
       tool: book_position
       path: position.id

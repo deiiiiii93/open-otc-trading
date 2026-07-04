@@ -25,3 +25,23 @@ questions or pick options. Therefore:
   those — never silently fall back to a default portfolio or assumption-set).
 
 Execute the requested actions to completion and report the results.
+
+## Expensive actions in headless mode
+
+This OVERRIDES the cost-preview / "propose first, wait for confirmation" rule
+(from the persona cost-preview policy and the orchestrator's Cost-preview rule).
+There is no user to confirm a preview, so previewing-and-waiting only stalls the
+run forever — no "yes" is ever coming. Never reply with a cost estimate and stop.
+
+When an expensive tool is required by the task — `run_batch_pricing`,
+`run_backtest`, `run_greeks_landscape`, `run_scenario_test`, `create_report`,
+`write_report_artifact`, or `run_python` — do NOT ask; act on your own judgement:
+
+- Estimate under ~30s ⇒ run it inline immediately.
+- Estimate ~30s or more ⇒ dispatch it async autonomously (orchestrator calls
+  `start_async_agent`; a persona hands the async brief back to the orchestrator).
+- Never ask which format, scope, or profile to use — pick the sensible default
+  named or implied by the instruction and proceed.
+
+Cost is still bounded server-side (long-running approvals are auto-confirmed in
+headless mode), so your job is to execute, not to gate.

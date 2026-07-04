@@ -10,6 +10,7 @@ from app.services.deep_agent.skills_paths import META_DIR, SKILLS_ROOT
 EXPECTED_META_FILES = {
     "clarification-policy.md",
     "cost-preview-policy.md",
+    "delegated-scope-policy.md",
     "desk-async-contract.md",
     "desk-workflow-contract.md",
     "escalation-policy.md",

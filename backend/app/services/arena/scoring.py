@@ -13,7 +13,7 @@ Scoring rules (§6.4):
   - +1 per success.assertions entry (evaluated against the SESSION context —
     all tool_calls, tool_results, skills_routed, artifacts, task_ids merged)
 
-total == fixed denominator (31 for the flagship).
+total == fixed denominator (32 for the flagship).
 score = 100 * passed / total  (float, rounded to 1 dp at the storage boundary).
 """
 from __future__ import annotations
@@ -67,6 +67,8 @@ def _assertion_label(a) -> str:
     t = a.type
     if t == "skills_routed_sequence":
         return "skills routed in order: " + " → ".join(a.names)
+    if t == "tools_routed_sequence":
+        return "tools called in order: " + " → ".join(a.names)
     if t == "task_returned_id":
         return f"{a.tool} returned a task id"
     if t == "artifact_exists":
@@ -183,7 +185,7 @@ def objective_score(
     Returns:
         (score_0_100, passed, total)
         where score_0_100 = 100 * passed / total, total = sum of all manifest
-        points (7+10+8+6=31 for the flagship).
+        points (7+10+9+6=32 for the flagship).
     """
     steps, success = _evaluate_objective(transcript, loaded)
     passed, total = _count(steps, success)

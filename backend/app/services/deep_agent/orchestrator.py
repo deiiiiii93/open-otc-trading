@@ -137,6 +137,7 @@ def _agent_middleware(
     from .audit_trail_middleware import AuditTrailMiddleware
     from .compaction import LedgerScopedCompactionMiddleware
     from .cost_preview_hitl import LongRunningCostHITLMiddleware
+    from .desk_context import DeskContextMiddleware
     from .run_python_hitl import RunPythonArtifactHITLMiddleware
     from .tool_error_boundary import ToolErrorBoundaryMiddleware
 
@@ -147,6 +148,10 @@ def _agent_middleware(
     middleware: list[Any] = [
         ToolErrorBoundaryMiddleware(),
         AuditTrailMiddleware(tools=tools),
+        # Snoop resolved scope (portfolio_id, profile_id, dates) from the
+        # orchestrator's direct domain-tool calls into desk_context state, which
+        # propagates to persona subagents so their required_context is satisfied.
+        DeskContextMiddleware(),
     ]
     if yolo_mode:
         middleware.append(LongRunningCostHITLMiddleware(tools=tools))

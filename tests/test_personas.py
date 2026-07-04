@@ -33,6 +33,23 @@ def test_trader_spec_carries_full_tool_set_and_nonempty_prompt():
     assert _all_tool_names(spec) == {t.name for t in QUANT_AGENT_TOOLS}
 
 
+def test_all_personas_carry_delegated_scope_policy():
+    """Every persona subagent prompt must instruct it to treat orchestrator-
+    supplied scope as authoritative (satisfying required_context) — the fix for
+    subagents blocking on 'missing required scope' when the id was in the prompt."""
+    from app.tools import QUANT_AGENT_TOOLS
+
+    model = _FakeModel(responses=[AIMessage(content="ok")])
+    for spec in (
+        trader_spec(model, QUANT_AGENT_TOOLS),
+        risk_spec(model, QUANT_AGENT_TOOLS),
+        board_spec(model, QUANT_AGENT_TOOLS),
+    ):
+        p = spec["system_prompt"].lower()
+        assert "required_context" in p, f"{spec['name']} missing required_context guidance"
+        assert "authoritative" in p, f"{spec['name']} missing authoritative-scope guidance"
+
+
 def test_risk_and_board_specs_have_distinct_names_and_prompts():
     from app.tools import QUANT_AGENT_TOOLS
 
@@ -159,13 +176,14 @@ def test_orchestrator_can_enable_quickjs_code_interpreter_middleware(monkeypatch
     assert [type(item).__name__ for item in middleware] == [
         "ToolErrorBoundaryMiddleware",
         "AuditTrailMiddleware",
+        "DeskContextMiddleware",
         "RunPythonArtifactHITLMiddleware",
         "LedgerScopedCompactionMiddleware",
         "TermGroundingMiddleware",
         "EvalAttributionGateMiddleware",
         "CodeInterpreterMiddleware",
     ]
-    ci = middleware[6]
+    ci = middleware[7]
     # task() is exposed via subagents=True (default), NOT ptc=["task"] (which the
     # lib rejects); the per-eval backstop is lowered to 24.
     assert not getattr(ci, "_ptc")
@@ -203,6 +221,7 @@ def test_orchestrator_installs_ledger_scoped_compaction_middleware(monkeypatch):
     assert middleware_names == [
         "ToolErrorBoundaryMiddleware",
         "AuditTrailMiddleware",
+        "DeskContextMiddleware",
         "RunPythonArtifactHITLMiddleware",
         "LedgerScopedCompactionMiddleware",
         "TermGroundingMiddleware",

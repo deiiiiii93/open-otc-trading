@@ -3,7 +3,7 @@
 TDD approach — these tests were written before the implementation.
 
 Test groups:
-  1. Flagship pin: objective_score on a full replay == (100.0, 31, 31)
+  1. Flagship pin: objective_score on a full replay == (100.0, 32, 32)
   2. total_score: judge_missing → returns objective; weight blend; edge cases
   3. Partial scoring: one step missing a skill, one tool miss
   4. Empty workflow (no steps, no success assertions) → (0.0, 0, 0) edge case
@@ -28,18 +28,18 @@ from app.services.arena.scoring import (
 
 
 class TestFlagshipPin:
-    """The fully-passing replay must score exactly (100.0, 31, 31)."""
+    """The fully-passing replay must score exactly (100.0, 32, 32)."""
 
-    def test_flagship_replay_scores_100_31_31(self):
+    def test_flagship_replay_scores_100_32_32(self):
         loaded = get_workflow_bundle("risk-manager-control-day")
         transcript = transcript_from_replay(loaded)
         score, passed, total = objective_score(transcript, loaded)
-        assert total == 31, f"expected denominator 31, got {total}"
-        assert passed == 31, f"expected 31 passed, got {passed}"
+        assert total == 32, f"expected denominator 32, got {total}"
+        assert passed == 32, f"expected 32 passed, got {passed}"
         assert score == 100.0, f"expected 100.0, got {score}"
 
     def test_flagship_denominator_breakdown(self):
-        """Verify point breakdown: 7 skills + 10 tools + 8 step assertions + 6 success."""
+        """Verify point breakdown: 7 skills + 10 tools + 9 step assertions + 6 success."""
         loaded = get_workflow_bundle("risk-manager-control-day")
         wf = loaded.workflow
 
@@ -50,9 +50,9 @@ class TestFlagshipPin:
 
         assert skill_points == 7
         assert tool_points == 10
-        assert step_assertion_points == 8
+        assert step_assertion_points == 9
         assert success_points == 6
-        assert skill_points + tool_points + step_assertion_points + success_points == 31
+        assert skill_points + tool_points + step_assertion_points + success_points == 32
 
     def test_breakdown_matches_aggregate_and_shape(self):
         """objective_breakdown's passed/total equal objective_score, and every
@@ -63,8 +63,8 @@ class TestFlagshipPin:
         _score, passed, total = objective_score(transcript, loaded)
         bd = objective_breakdown(transcript, loaded)
 
-        assert bd["passed"] == passed == 31
-        assert bd["total"] == total == 31
+        assert bd["passed"] == passed == 32
+        assert bd["total"] == total == 32
         assert len(bd["steps"]) == len(loaded.workflow.steps)
         assert len(bd["success"]) == len(loaded.workflow.success.assertions)
 
@@ -181,12 +181,12 @@ class TestPartialScoring:
             steps=steps,
         )
         score, passed, total = objective_score(transcript, loaded)
-        assert total == 31
+        assert total == 32
         assert passed == 0
         assert score == 0.0
 
     def test_missing_steps_counted_in_denominator(self):
-        """Fewer steps in transcript → denominator still 31, passes reduced."""
+        """Fewer steps in transcript → denominator still 32, passes reduced."""
         from app.golden_workflows.transcript import MatchTranscript
 
         loaded = get_workflow_bundle("risk-manager-control-day")
@@ -201,7 +201,7 @@ class TestPartialScoring:
             steps=[],
         )
         score, passed, total = objective_score(transcript, loaded)
-        assert total == 31
+        assert total == 32
         assert passed == 0
         assert score == 0.0
 
@@ -249,12 +249,12 @@ class TestDiagnoseHeuristic:
         loaded = get_workflow_bundle("risk-manager-control-day")
         transcript = transcript_from_replay(loaded)
         diag = diagnose_heuristic(transcript, loaded)
-        # A fully-passing replay: every expected skill hit, all 31 checks pass.
+        # A fully-passing replay: every expected skill hit, all 32 checks pass.
         assert diag["skills_hit"] == diag["skills_total"] == 7
-        assert diag["checks_passed"] == diag["checks_total"] == 31
+        assert diag["checks_passed"] == diag["checks_total"] == 32
         assert diag["tool_calls"] > 0
         assert "7/7 expected skills" in diag["summary"]
-        assert "31/31 checks" in diag["summary"]
+        assert "32/32 checks" in diag["summary"]
 
     def test_empty_transcript_summary_reports_zero_engagement(self):
         """A model that never engaged: 0 skills, 0 tools, 0 checks — the exact
@@ -270,5 +270,5 @@ class TestDiagnoseHeuristic:
         assert diag["skills_hit"] == 0
         assert diag["tool_calls"] == 0
         assert diag["checks_passed"] == 0
-        assert diag["checks_total"] == 31
-        assert diag["summary"].startswith("0/7 expected skills · 0 tool calls · 0/31 checks")
+        assert diag["checks_total"] == 32
+        assert diag["summary"].startswith("0/7 expected skills · 0 tool calls · 0/32 checks")
