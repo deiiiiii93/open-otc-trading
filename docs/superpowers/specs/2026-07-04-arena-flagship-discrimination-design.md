@@ -86,6 +86,7 @@ assertions:
   - type: response_quotes_tool_value
     tool: get_latest_risk_run
     path: "hotspot.delta"
+    near: ["delta"]
 ```
 
 **3 checks** (tool + AAPL + quote).
@@ -107,10 +108,12 @@ assertions:
       tool: get_greeks_landscape_run
       path: "landscape[spot_shift=0.1].gamma"
       scope: session
+      near: ["gamma"]
     - type: response_quotes_tool_value
       tool: get_greeks_landscape_run
       path: "landscape[spot_shift=-0.2].delta"
       scope: session
+      near: ["delta"]
   replay: step-5-grid-comprehension
 ```
 
@@ -140,6 +143,7 @@ assertions:
     tool: get_scenario_test_run
     path: "results.var_cvar.cvar"
     match: magnitude
+    near: ["cvar", "expected shortfall", "loss"]
 ```
 
 `args_any_of` (§4.5) because the tool legitimately accepts either calling convention
@@ -248,6 +252,11 @@ Update the `scoring.py` docstring ("32 for the flagship") and every exact-count 
 `schema.py::Step.expected_skill: str | None` (default stays required-present in YAML —
 `null` must be explicit). In `scoring.py::_evaluate_objective`, when `expected_skill is
 None` **no skill check is emitted** (the step contributes only tools + assertions).
+**`registry.py` must change too**: the loader unconditionally calls
+`normalize_skill(step.expected_skill)` and validates it against `skill_names()` for
+every step — with `null` steps that crashes at bundle load, before any scoring runs.
+Skip skill-existence validation when `expected_skill is None`, and add a loader test
+with an explicit `null` step so this cannot regress.
 Rationale: `skills_routed` only records a skill when its SKILL.md is read; the runtime
 never re-reads an already-loaded file, so repeat-skill steps structurally cannot pass.
 This mirrors the session-level `skills_routed_sequence` → `tools_routed_sequence`
@@ -278,6 +287,7 @@ class _ResponseQuotesToolValue(BaseModel):
     rel_tol: float = 0.02          # 0 < rel_tol < 1
     scope: Literal["step", "session"] = "step"
     match: Literal["signed", "magnitude"] = "signed"
+    near: list[str] | None = None  # label anchors; None = whole response
 ```
 
 Semantics:
@@ -285,11 +295,18 @@ Semantics:
 1. Resolve the **last** successful result of `tool` in the evaluation context and dig
    `path` (extended `_dig`, §4.4). Target must be numeric (bool excluded); a missing
    path or non-numeric target fails with a clear detail message.
-2. Scan the step's `response_text` for numeric tokens: regex over
+2. Determine the scan region. With `near` set, only numeric tokens starting within
+   **160 characters after the start of any anchor occurrence** (case-insensitive
+   substring) are considered; with `near: None`, the whole `response_text`. Anchors
+   bind the number to the metric being asked about: without them, a multi-value
+   question can be satisfied by **swapped** answers (step 5: "gamma is −310,000 and
+   delta is −9,600" would contain both target tokens and pass both assertions).
+   Every grounding assertion in this manifest sets `near`.
+3. Scan the region for numeric tokens: regex over
    `-?\d[\d,]*(?:\.\d+)?\s*(k|m|mm|bn|b)?%?` (case-insensitive suffix), normalizing
    commas, expanding suffixes (k→1e3, m/mm→1e6, bn/b→1e9), and additionally trying
    `token/100` for `%`-suffixed tokens.
-3. Matching is **sign-sensitive by default** (`match: "signed"`): pass iff any token
+4. Matching is **sign-sensitive by default** (`match: "signed"`): pass iff any token
    satisfies `|token − target| ≤ rel_tol × |target|`, sign included — quoting
    `+148,000` against a delta of `−148,000` fails, because rewarding an inverted risk
    direction is a scoring false positive. `match: "magnitude"` compares
@@ -405,13 +422,21 @@ text flows through `judge.py::_collect_rubric_points` unchanged):
 anchors; pick the score matching the closest anchor and use the full 0–100 range."
 No structural changes (prompt shape, parser, retries untouched).
 
-## 7. Infra-invalid handling (runner / store / API)
+## 7. Infra-invalid handling (arena task / store / API)
 
-- **Detection** (`runner.py::run_match`, after transcript harvest, before scoring):
-  if **every** step has `not step.tool_calls and not step.response_text.strip()`,
-  the match is infra-blank. Set `status='invalid'`, `error='infra_blank'`, leave
-  `objective_score/judged_score/total_score` NULL, skip the judge. **No auto-retry.**
-  A model that produced text but never called tools is a real (low) score — unchanged.
+- **Detection lives at the task boundary, not in the runner.** `run_match` returns a
+  `MatchTranscript`; persistence, scoring, and the judge run later in the arena
+  **task** (`task.py`) — that is where the check goes, immediately after the
+  transcript is obtained and **before** scoring/judge. A match is infra-blank iff
+  **both**: (a) every step has `not step.tool_calls and not
+  step.response_text.strip()`, and (b) at least one step recorded a transport/provider
+  error (`step.errors` non-empty). Then `status='invalid'`, `error='infra_blank'`,
+  scores left NULL, judge skipped. **No auto-retry.** The error-evidence requirement
+  (b) keeps genuine model failures scoreable: an all-blank transcript with *no*
+  recorded errors is a model that silently did nothing and stays a real scored 0 —
+  invalidity must be corroborated by transport evidence, never inferred from
+  blankness alone. Invalid matches stay visible (per-model `invalid_count` on the
+  leaderboard), so degraded routes are surfaced rather than silently dropped.
 - **Store/aggregation** (`store.py` + `/api/arena` endpoints): leaderboard means and
   trial counts consider only `status='scored'` matches; expose `invalid_count` per
   (run, model). No migration needed — `arena_match.status` is a free string column.
@@ -434,12 +459,13 @@ No structural changes (prompt shape, parser, retries untouched).
 
 | File | Change |
 |---|---|
-| `test_golden_workflow_schema.py` | nullable `expected_skill`; `artifact_contains` validation (non-empty `any_of`); `response_quotes_tool_value` validation (`0 < rel_tol < 1`, scope/match literals); `tool_called` `args`/`args_any_of` mutual exclusion + non-empty; `_dig` selector syntax errors |
-| `test_golden_workflow_assertions.py` | evaluator cases: comma/suffix/percent token normalization, signed vs magnitude matching (inverted-sign token fails signed, passes magnitude), `rel_tol` boundary, target-0 abs-tol, missing path, non-numeric target; `args_any_of` (each alternative matches; over-long `predefined` list fails both); `exclusive_keys` (mixed-carrier call fails despite subset match; `custom: []`/`None`/missing counts as absent; composes with plain `args`); `artifact_contains` case-insensitivity + kind filtering; `_dig` `[key=value]` incl. negative floats |
+| `test_golden_workflow_schema.py` | nullable `expected_skill`; `artifact_contains` validation (non-empty `any_of`); `response_quotes_tool_value` validation (`0 < rel_tol < 1`, scope/match literals, `near` non-empty when present); `tool_called` `args`/`args_any_of` mutual exclusion + non-empty; `_dig` selector syntax errors |
+| `test_golden_workflow_registry.py` | bundle with an explicit `expected_skill: null` step loads (no skill-existence validation crash) |
+| `test_golden_workflow_assertions.py` | evaluator cases: comma/suffix/percent token normalization, signed vs magnitude matching (inverted-sign token fails signed, passes magnitude), `near` anchoring (swapped gamma/delta answers fail; token outside the 160-char window fails; anchor case-insensitive), `rel_tol` boundary, target-0 abs-tol, missing path, non-numeric target; `args_any_of` (each alternative matches; over-long `predefined` list fails both); `exclusive_keys` (mixed-carrier call fails despite subset match; `custom: []`/`None`/missing counts as absent; composes with plain `args`); `artifact_contains` case-insensitivity + kind filtering; `_dig` `[key=value]` incl. negative floats |
 | `test_arena_scoring.py` | null-skill emits no check; `scope: session` cumulative lookup (result in an earlier step); axis subtotals sum to passed/total; new denominator 38 |
 | `test_flagship_loads.py` | 9 steps, replay refs present, point-count table |
 | `test_golden_workflow_regression.py` | golden replay earns **38/38** (forces fixture consistency in §5) |
-| `test_arena_runner.py` | infra-blank → `invalid`, scores NULL, judge skipped; text-but-no-tools stays `scored` |
+| `test_arena_runner.py` / arena task tests | infra-blank (all-blank + step errors) → `invalid`, scores NULL, judge never invoked; all-blank *without* errors stays `scored` 0; text-but-no-tools stays `scored` |
 | `test_arena_store.py` / `test_arena_api.py` | invalid excluded from aggregates; `invalid_count` in responses |
 | `frontend Arena.live.test.tsx` | invalid badge, infra chip, axis strip rendering |
 
