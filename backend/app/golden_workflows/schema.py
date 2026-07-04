@@ -49,6 +49,16 @@ class _ToolCalled(BaseModel):
     type: Literal["tool_called"]
     name: str
     args: dict | None = None
+    args_any_of: list[dict] | None = None
+    exclusive_keys: list[str] | None = None
+
+    @model_validator(mode="after")
+    def _args_exclusive(self) -> "_ToolCalled":
+        if self.args is not None and self.args_any_of is not None:
+            raise ValueError("tool_called: args and args_any_of are mutually exclusive")
+        if self.args_any_of is not None and not self.args_any_of:
+            raise ValueError("tool_called: args_any_of must be non-empty")
+        return self
 
 
 class _TaskReturnedId(BaseModel):
@@ -89,10 +99,34 @@ class _ToolNotCalled(BaseModel):
     name: str
 
 
+class _ArtifactContains(BaseModel):
+    type: Literal["artifact_contains"]
+    kind: str
+    any_of: list[str] = Field(min_length=1)
+
+
+class _ResponseQuotesToolValue(BaseModel):
+    type: Literal["response_quotes_tool_value"]
+    tool: str
+    path: str
+    rel_tol: float = 0.02
+    scope: Literal["step", "session"] = "step"
+    match: Literal["signed", "magnitude"] = "signed"
+    near: list[str] | None = None
+
+    @model_validator(mode="after")
+    def _bounds(self) -> "_ResponseQuotesToolValue":
+        if not (0 < self.rel_tol < 1):
+            raise ValueError("rel_tol must be in (0, 1)")
+        if self.near is not None and not self.near:
+            raise ValueError("near must be non-empty when present")
+        return self
+
+
 Assertion = Annotated[
     Union[_SkillRouted, _SkillsRoutedSequence, _ToolsRoutedSequence, _ToolCalled,
           _TaskReturnedId, _ArtifactExists, _ResponseContains, _ToolResultPath,
-          _ToolNotCalled],
+          _ToolNotCalled, _ArtifactContains, _ResponseQuotesToolValue],
     Field(discriminator="type"),
 ]
 
@@ -109,7 +143,10 @@ class Success(BaseModel):
 
 class Step(BaseModel):
     user: str = Field(min_length=1)
-    expected_skill: str
+    # None (explicit YAML null) = no skill-routing point for this step. Used where
+    # skills_routed is structurally blind: the runtime never re-reads an
+    # already-loaded SKILL.md, so repeat-skill steps can never pass the check.
+    expected_skill: str | None
     expected_tools: list[ToolExpectation] = Field(default_factory=list)
     outcome: str = Field(min_length=1)
     assertions: list[Assertion] = Field(default_factory=list)
