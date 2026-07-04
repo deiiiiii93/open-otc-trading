@@ -44,6 +44,9 @@ class MatchSummary(BaseModel):
     judge_missing: bool
     transcript_path: str | None
     score_breakdown: dict | None = None
+    # Corroborating failure reason (e.g. "infra_blank" for invalid matches) —
+    # exclusions must be auditable, not just visible as a count.
+    error: str | None = None
 
 
 class CreateRunRequest(BaseModel):
@@ -185,6 +188,7 @@ def build_arena_router(
                 judge_missing=m.get("judge_missing", False),
                 transcript_path=m.get("transcript_path"),
                 score_breakdown=m.get("score_breakdown"),
+                error=m.get("error"),
             )
             for m in (run_dict.get("matches") or [])
         ]
@@ -238,6 +242,7 @@ def build_arena_router(
                 "avg_total": r["mean_total"],
                 "avg_objective": r["mean_objective"],
                 "matches": r["match_count"],
+                "invalid": r["invalid_count"],
             }
             for r in rows
         ]

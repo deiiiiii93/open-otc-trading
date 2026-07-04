@@ -83,6 +83,37 @@ def queue_arena_run(
     return run_obj, task
 
 
+def _is_infra_blank(transcript) -> bool:
+    """All steps produced nothing AND at least one step carries error evidence.
+
+    Blankness alone is not enough — a model that silently did nothing is a real
+    scored 0; invalidity must be corroborated by transport/provider errors.
+    """
+    steps = transcript.steps
+    if not steps:
+        return False
+    all_blank = all(
+        not s.tool_calls and not s.response_text.strip() for s in steps)
+    has_error = any(s.errors for s in steps)
+    return all_blank and has_error
+
+
+def _save_transcript(transcript, artifact_root: Path,
+                     workflow_id: str, model_id: str) -> str | None:
+    """Persist the transcript JSON to disk; best-effort, None on failure."""
+    try:
+        t_dir = artifact_root / workflow_id / model_id
+        t_dir.mkdir(parents=True, exist_ok=True)
+        t_file = t_dir / "transcript.json"
+        t_file.write_text(
+            json.dumps(transcript.model_dump(), indent=2),
+            encoding="utf-8",
+        )
+        return str(t_file)
+    except Exception:
+        return None
+
+
 def execute_arena_run_task(
     task_id: int,
     run_id: int,
@@ -196,6 +227,31 @@ def _execute(
 
                 transcript = _run_match_fn(loaded, model, artifact_root=artifact_root, run_id=run_id)
 
+                # Infra-blank gate: an all-blank transcript with transport-error
+                # evidence is a route failure, not model ability — record it as
+                # 'invalid' (excluded from leaderboard means), skip judge+scoring.
+                if _is_infra_blank(transcript):
+                    store.record_match(
+                        session,
+                        run_id=run_id,
+                        workflow_id=workflow_id,
+                        model_id=model_id,
+                        objective_score=None,
+                        judged_score=None,
+                        total_score=None,
+                        judge_missing=True,
+                        config={"weights": weights},
+                        transcript_path=_save_transcript(
+                            transcript, artifact_root, workflow_id, model_id),
+                        status="invalid",
+                        error="infra_blank",
+                    )
+                    completed_count += 1
+                    update_task_progress(session, task_id,
+                                         current=completed_count, total=total_pairs)
+                    session.commit()
+                    continue
+
                 judge_result = _judge_fn(transcript, loaded, post=post)
 
                 obj_score, _passed, _total = scoring.objective_score(transcript, loaded)
@@ -229,18 +285,8 @@ def _execute(
                 }
 
                 # Save transcript to disk
-                transcript_path: str | None = None
-                try:
-                    t_dir = artifact_root / workflow_id / model_id
-                    t_dir.mkdir(parents=True, exist_ok=True)
-                    t_file = t_dir / "transcript.json"
-                    t_file.write_text(
-                        json.dumps(transcript.model_dump(), indent=2),
-                        encoding="utf-8",
-                    )
-                    transcript_path = str(t_file)
-                except Exception:
-                    pass
+                transcript_path = _save_transcript(
+                    transcript, artifact_root, workflow_id, model_id)
 
                 store.record_match(
                     session,

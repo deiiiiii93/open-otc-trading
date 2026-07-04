@@ -563,3 +563,138 @@ def test_execute_arena_run_task_not_implemented_error_is_caught(session, setting
 
         task_row = s.get(TaskRun, task_id)
         assert task_row.status == "completed"
+
+
+# ---------------------------------------------------------------------------
+# Infra-blank → invalid (flagship v2)
+# ---------------------------------------------------------------------------
+
+
+def _blank_transcript(workflow_id, model_id, *, with_errors):
+    """All-blank transcript; error evidence on step 0 when with_errors."""
+    from app.golden_workflows.transcript import MatchTranscript, MatchStep
+    steps = [
+        MatchStep(
+            index=i, user=f"turn {i}", messages=[], tool_calls=[],
+            tool_results=[], skills_routed=[], artifacts=[], task_ids=[],
+            response_text="",
+            errors=(["provider 402 quota"] if (with_errors and i == 0) else []),
+        )
+        for i in range(3)
+    ]
+    return MatchTranscript(
+        schema_version=1, run_id=None, workflow_id=workflow_id,
+        model_id=model_id, started_at=None, finished_at=None, steps=steps,
+    )
+
+
+def _queue_single_pair_run(settings):
+    database.configure_database(settings)
+    database.init_db()
+    with database.SessionLocal() as s:
+        run_id = arena_store.create_run(
+            s, workflow_ids=["wf-a"], model_ids=["gpt-5-5"])
+        task = TaskRun(kind=TaskKind.ARENA_RUN.value, status="queued")
+        s.add(task)
+        s.flush()
+        task_id = task.id
+        s.commit()
+    return run_id, task_id
+
+
+def test_infra_blank_marks_invalid_and_skips_judge(session, settings):
+    """All-blank transcript WITH transport errors → status 'invalid',
+    scores NULL, judge never invoked."""
+    run_id, task_id = _queue_single_pair_run(settings)
+
+    def blank_run_match(loaded, model, *, artifact_root, run_id=None):
+        return _blank_transcript("wf-a", model.slug, with_errors=True)
+
+    def exploding_judge(transcript, loaded, *, post=None):
+        raise AssertionError("judge must not run for invalid matches")
+
+    from app.services.arena.task import execute_arena_run_task
+    execute_arena_run_task(
+        task_id, run_id, database.SessionLocal, settings=settings,
+        run_match_fn=blank_run_match, judge_fn=exploding_judge,
+        get_bundle_fn=_fake_get_bundle,
+    )
+
+    with database.SessionLocal() as s:
+        run_dict = arena_store.get_run(s, run_id)
+        assert run_dict["status"] == "completed"
+        (m,) = run_dict["matches"]
+        assert m["status"] == "invalid"
+        assert m["error"] == "infra_blank"
+        assert m["objective_score"] is None
+        assert m["judged_score"] is None
+        assert m["total_score"] is None
+        # Transcript evidence is still saved for audit
+        assert m["transcript_path"]
+
+
+def test_all_blank_without_errors_stays_scored(session, settings):
+    """Blankness alone is NOT infra evidence — a silent model is a real 0."""
+    run_id, task_id = _queue_single_pair_run(settings)
+
+    def blank_run_match(loaded, model, *, artifact_root, run_id=None):
+        return _blank_transcript("wf-a", model.slug, with_errors=False)
+
+    from app.services.arena.judge import JudgeResult
+
+    def fake_judge(transcript, loaded, *, post=None):
+        return JudgeResult(judged_score=None, judge_missing=True, notes="")
+
+    from app.services.arena.task import execute_arena_run_task
+    execute_arena_run_task(
+        task_id, run_id, database.SessionLocal, settings=settings,
+        run_match_fn=blank_run_match, judge_fn=fake_judge,
+        get_bundle_fn=_fake_get_bundle,
+    )
+
+    with database.SessionLocal() as s:
+        run_dict = arena_store.get_run(s, run_id)
+        (m,) = run_dict["matches"]
+        assert m["status"] == "scored"
+        assert m["objective_score"] is not None
+
+
+def test_leaderboard_api_carries_invalid_count(session, settings):
+    """GET /api/arena/leaderboard rows expose the invalid count."""
+    run_id = arena_store.create_run(session, workflow_ids=["wf-a"], model_ids=["m"])
+    arena_store.set_run_status(session, run_id, "completed")
+    arena_store.record_match(
+        session, run_id=run_id, workflow_id="wf-a", model_id="m",
+        objective_score=80.0, judged_score=None, total_score=80.0,
+        judge_missing=True, config={}, transcript_path=None, status="scored")
+    arena_store.record_match(
+        session, run_id=run_id, workflow_id="wf-b", model_id="m",
+        objective_score=None, judged_score=None, total_score=None,
+        judge_missing=True, config={}, transcript_path=None,
+        status="invalid", error="infra_blank")
+    session.commit()
+
+    client = _make_arena_app(session, settings)
+    resp = client.get(f"/api/arena/leaderboard?run_id={run_id}")
+    assert resp.status_code == 200
+    (row,) = resp.json()["rows"]
+    assert row["matches"] == 1
+    assert row["invalid"] == 1
+
+
+def test_run_detail_exposes_match_error(session, settings):
+    """The corroborating invalid reason must be auditable via the API."""
+    run_id = arena_store.create_run(session, workflow_ids=["wf-a"], model_ids=["m"])
+    arena_store.record_match(
+        session, run_id=run_id, workflow_id="wf-a", model_id="m",
+        objective_score=None, judged_score=None, total_score=None,
+        judge_missing=True, config={}, transcript_path=None,
+        status="invalid", error="infra_blank")
+    session.commit()
+
+    client = _make_arena_app(session, settings)
+    resp = client.get(f"/api/arena/runs/{run_id}")
+    assert resp.status_code == 200
+    (m,) = resp.json()["matches"]
+    assert m["status"] == "invalid"
+    assert m["error"] == "infra_blank"
