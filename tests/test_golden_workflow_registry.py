@@ -66,3 +66,20 @@ def test_seed_refs_resolved_at_load_in_args_and_assertions(tmp_path):
     assert step.expected_tools[0].args["portfolio_id"] == 6        # arg resolved
     assert step.assertions[0].equals == 6                          # comparator resolved
     assert isinstance(step.assertions[0].equals, int)             # type preserved
+
+
+def test_null_expected_skill_step_loads(tmp_path):
+    """A step with expected_skill: null must not crash skill-name validation."""
+    import shutil
+    from pathlib import Path
+    from app.golden_workflows import registry
+
+    src = Path("backend/app/golden_workflows/definitions")
+    for f in ("risk-manager-control-day.md", "risk-manager-control-day.fixtures.json"):
+        shutil.copy(src / f, tmp_path / f)
+    md_path = tmp_path / "risk-manager-control-day.md"
+    md = md_path.read_text()
+    md = md.replace("expected_skill: read-risk-result", "expected_skill: null", 1)
+    md_path.write_text(md)
+    loaded = registry.load_workflow_bundle(md_path)
+    assert loaded.workflow.steps[0].expected_skill is None
