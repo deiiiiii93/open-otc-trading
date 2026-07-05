@@ -68,6 +68,24 @@ def _axis_for_assertion(assertion) -> str:
     return _AXIS_BY_TYPE.get(assertion.type, "procedural")
 
 
+# Deterministic objective tie-break priority (spec D5a): when two models have
+# equal mean objective, break the tie by sub-axis pass-rate in this order —
+# grounding first (hardest to fake), then adherence, synthesis, procedural.
+# Subjective NEVER breaks the tie.
+_AXIS_TIEBREAK_PRIORITY = ("grounding", "adherence", "synthesis", "procedural")
+
+
+def objective_tiebreak_key(axes: dict) -> tuple:
+    """Sort key (ascending → better first) from aggregate objective sub-axis
+    tallies ``{axis: {passed, total}}``. Higher pass-rate on a higher-priority
+    axis sorts earlier (negated fractions)."""
+    def frac(ax: str) -> float:
+        a = axes.get(ax) or {}
+        total = a.get("total", 0)
+        return (a.get("passed", 0) / total) if total else 0.0
+    return tuple(-frac(ax) for ax in _AXIS_TIEBREAK_PRIORITY)
+
+
 def _session_context(transcript: MatchTranscript) -> AssertionContext:
     """Merge all steps into a single session-level AssertionContext."""
     tool_calls: list[dict] = []
