@@ -26,7 +26,10 @@ export type ArenaObjectiveStep = {
 export type ArenaAxisTally = { passed: number; total: number };
 
 export type ArenaScoreBreakdown = {
-  objective: {
+  // Optional because multi-trial *aggregate* rows and pre-v2 rows may omit the
+  // per-check detail, carrying only the averaged headline scores + `aggregate`.
+  // The drilldown must degrade gracefully rather than assume these are present.
+  objective?: {
     passed: number;
     total: number;
     steps: ArenaObjectiveStep[];
@@ -35,7 +38,7 @@ export type ArenaScoreBreakdown = {
     // on breakdowns recorded before the flagship v2 scoring.
     axes?: Record<string, ArenaAxisTally>;
   };
-  judge: {
+  judge?: {
     rubric_scores: { point: string; score: number }[];
     judged_score: number | null;
     judge_missing?: boolean;
@@ -48,6 +51,9 @@ export type ArenaScoreBreakdown = {
   weights?: { obj: number; judge: number };
   objective_score?: number;
   total_score?: number;
+  // Multi-trial aggregate rows (averaged board): per-trial detail lives here.
+  n_trials?: number;
+  aggregate?: ArenaScoreBreakdown[];
 };
 
 export type ArenaMatchSummary = {

@@ -204,6 +204,46 @@ describe('ArenaLive', () => {
     ).toBeGreaterThan(0);
   });
 
+  it('renders aggregate-shaped breakdown (no per-check objective) without crashing', async () => {
+    // Regression: multi-trial averaged rows (run #10) carry only headline
+    // scores + `aggregate`, with NO top-level `objective`/`judge`. The drilldown
+    // must degrade to a summary, not throw on `objective.passed`.
+    setupMocks();
+    const aggregateMatch = {
+      ...mockMatches[0],
+      id: 201,
+      transcript_path: null,
+      score_breakdown: {
+        weights: { obj: 0.5, judge: 0.5 },
+        objective_score: 74.4,
+        total_score: 67.3,
+        n_trials: 2,
+        aggregate: [
+          { objective: { passed: 29, total: 39, steps: [], success: [] },
+            judge: { rubric_scores: [], judged_score: 62.5 } },
+          { objective: { passed: 29, total: 39, steps: [], success: [] },
+            judge: { rubric_scores: [], judged_score: 58.3 } },
+        ],
+      },
+    };
+    vi.mocked(arenaApi.getArenaRun).mockResolvedValue({
+      run: mockRuns[0],
+      matches: [aggregateMatch],
+    });
+    render(<ArenaLive />);
+
+    await userEvent.click(await screen.findByText('1'));
+    await userEvent.click(await screen.findByText('workflow-a'));
+
+    expect(await screen.findByText('Score breakdown')).toBeInTheDocument();
+    // Headline summary renders from the aggregate fields
+    expect(screen.getByText(/Objective 74\.4/)).toBeInTheDocument();
+    expect(screen.getByText(/2 trials/)).toBeInTheDocument();
+    // Per-trial lines render from `aggregate`
+    expect(screen.getByText(/Trial 1: objective 29\/39/)).toBeInTheDocument();
+    expect(screen.getByText(/judge 58\.3/)).toBeInTheDocument();
+  });
+
   it('shows empty state when no leaderboard data', async () => {
     vi.mocked(arenaApi.listArenaRuns).mockResolvedValue({ runs: [], total: 0 });
     vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({ rows: [] });

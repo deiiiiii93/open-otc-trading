@@ -37,6 +37,49 @@ function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
   const obj = breakdown.objective;
   const judge = breakdown.judge;
   const diagnosis = breakdown.diagnosis;
+
+  // Aggregate (averaged multi-trial) or pre-v2 rows may carry only the headline
+  // scores without per-check detail. Render a compact summary instead of
+  // crashing on the absent `objective`/`judge` shape.
+  if (!obj || !judge) {
+    return (
+      <div className="wl-arena__breakdown">
+        <div className="wl-arena__breakdown-head">
+          <span className="wl-arena__transcript-title">Score breakdown</span>
+          <span className="wl-arena__breakdown-tally">
+            {breakdown.objective_score != null
+              ? `Objective ${breakdown.objective_score.toFixed(1)}`
+              : 'Objective n/a'}
+            {breakdown.total_score != null
+              ? ` · Total ${breakdown.total_score.toFixed(1)}`
+              : ''}
+            {breakdown.n_trials != null ? ` · ${breakdown.n_trials} trials` : ''}
+          </span>
+        </div>
+        {breakdown.aggregate && breakdown.aggregate.length > 0 && (
+          <div className="wl-arena__breakdown-step">
+            <div className="wl-arena__breakdown-step-head">
+              <span className="wl-arena__breakdown-step-title">Per-trial</span>
+            </div>
+            <ul className="wl-arena__check-list">
+              {breakdown.aggregate.map((t, i) => (
+                <li key={i} className="wl-arena__check-row">
+                  <span className="wl-arena__check-detail">
+                    Trial {i + 1}: objective {t.objective?.passed ?? '?'}/
+                    {t.objective?.total ?? '?'}
+                    {t.judge?.judged_score != null
+                      ? ` · judge ${t.judge.judged_score.toFixed(1)}`
+                      : ' · judge n/a'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="wl-arena__breakdown">
       <div className="wl-arena__breakdown-head">
@@ -202,6 +245,13 @@ export function ArenaLive() {
     setSelectedMatchId(match.id);
     setTranscript(null);
     setTranscriptError(null);
+    // Aggregate (multi-trial) and older rows persist no single transcript —
+    // skip the fetch that would 404 and show a plain note instead.
+    if (match.transcript_path == null) {
+      setLoadingTranscript(false);
+      setTranscriptError('No transcript stored for this match (aggregated multi-trial or older run).');
+      return;
+    }
     setLoadingTranscript(true);
     getMatchTranscript(match.id)
       .then((t) => { setTranscript(t); })
