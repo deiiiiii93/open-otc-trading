@@ -30,7 +30,9 @@ from __future__ import annotations
 
 import json
 import os
+import statistics
 import time
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -66,6 +68,12 @@ class JudgeResult:
     judge_missing: bool = False
     notes: str = ""
     diagnosis: str = ""
+    # Jury fields: per-judge detail, dispersion, and how the subjective score was
+    # produced ("panel" = ≥min_judges diverse models; "self_consistency" = k
+    # samples of one model, a DEGRADED fallback; "missing" = no eligible judge).
+    per_judge: list[dict] = field(default_factory=list)
+    judged_stdev: float | None = None
+    subjective_mode: str = "missing"
 
 
 # ---------------------------------------------------------------------------
@@ -337,3 +345,133 @@ def judge_match(
         judge_missing=True,
         notes=f"Judge failed after {retries + 1} attempts. Last error: {last_error}",
     )
+
+
+# ---------------------------------------------------------------------------
+# Jury (panel of diverse judges)
+# ---------------------------------------------------------------------------
+
+
+def _default_post_for(model_id: str) -> Callable[[dict], str]:
+    """Return a poster bound to *model_id*'s channel.
+
+    DeepSeek models route to the DIRECT api.deepseek.com (a non-ZenMux channel,
+    quota-independent); everything else routes through ZenMux. The payload's
+    ``model`` field is overridden with *model_id*.
+    """
+    if model_id.startswith("deepseek"):
+        base, key_env = "https://api.deepseek.com", "DEEPSEEK_API_KEY"
+    else:
+        base, key_env = ZENMUX_BASE_URL, "ZENMUX_API_KEY"
+
+    def post(payload: dict) -> str:
+        import requests
+        p = dict(payload)
+        p["model"] = model_id
+        api_key = os.environ.get(key_env, "")
+        resp = requests.post(
+            f"{base}/chat/completions", json=p,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            timeout=JUDGE_TIMEOUT)
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"]
+
+    return post
+
+
+def _judge_one(model_id, transcript, loaded, poster, retries=2) -> dict | None:
+    """One judge's scored rubric via the single-call path. Returns
+    ``{model, rubric_scores, judged_score}`` or None on failure/exhaustion."""
+    res = judge_match(transcript, loaded, post=poster, retries=retries)
+    if res.judge_missing or res.judged_score is None:
+        return None
+    return {"model": model_id, "rubric_scores": res.rubric_scores,
+            "judged_score": res.judged_score}
+
+
+def _mean_rubric(per_judge: list[dict]) -> list[dict]:
+    """Average each rubric point BY LABEL across all judges, so the headline
+    rubric breakdown explains the published subjective mean (never judge[0]'s,
+    which would depend on ordering)."""
+    sums: dict[str, float] = defaultdict(float)
+    counts: dict[str, int] = defaultdict(int)
+    order: list[str] = []
+    for j in per_judge:
+        for s in j["rubric_scores"]:
+            if s["point"] not in counts:
+                order.append(s["point"])
+            sums[s["point"]] += s["score"]
+            counts[s["point"]] += 1
+    return [{"point": p, "score": round(sums[p] / counts[p], 4), "rationale": "panel mean"}
+            for p in order]
+
+
+def _aggregate(per_judge: list[dict], mode: str) -> JudgeResult:
+    means = [j["judged_score"] for j in per_judge]
+    panel_mean = sum(means) / len(means)
+    stdev = statistics.pstdev(means) if len(means) > 1 else 0.0
+    return JudgeResult(
+        rubric_scores=_mean_rubric(per_judge),
+        judged_score=round(panel_mean, 4),
+        judge_missing=False,
+        per_judge=per_judge,
+        judged_stdev=round(stdev, 4),
+        subjective_mode=mode,
+    )
+
+
+def judge_panel(
+    transcript,
+    loaded,
+    *,
+    judge_models: list[str],
+    exclude_model: str | None = None,
+    min_judges: int = 2,
+    self_consistency_k: int = 3,
+    post_for: Callable[[str], Callable[[dict], str]] | None = None,
+    retries: int = 2,
+) -> JudgeResult:
+    """Score the subjective rubric with a jury of diverse judges.
+
+    - Excludes ``exclude_model`` (the contestant being judged) from the pool.
+    - Panel: with ``>= min_judges`` eligible judges, each scores independently;
+      the subjective score is the mean of per-judge means (+ stdev, per-judge).
+    - Self-consistency (DEGRADED): if the initial pool ``< min_judges`` OR
+      post-failure survivors ``< min_judges``, take ``k`` samples of ONE surviving
+      eligible judge rather than proceeding on a single judge (which would
+      reinstate the single-judge variance this jury removes).
+    - Missing: no eligible judge survives → ``judge_missing=True``.
+    """
+    post_for = post_for or _default_post_for
+    pool = [m for m in judge_models if m != exclude_model]
+
+    def missing() -> JudgeResult:
+        return JudgeResult(judge_missing=True, judged_score=None,
+                           subjective_mode="missing", notes="No eligible judges.")
+
+    if not pool:
+        return missing()
+
+    eligible: str
+    samples: list[dict] = []
+    if len(pool) >= min_judges:
+        survivors = [j for m in pool
+                     if (j := _judge_one(m, transcript, loaded, post_for(m), retries))]
+        if len(survivors) >= min_judges:
+            return _aggregate(survivors, "panel")
+        # Post-failure below the floor → self-consistency on one surviving/eligible
+        # judge. REUSE the survivor's already-computed sample rather than re-calling.
+        eligible = survivors[0]["model"] if survivors else pool[0]
+        samples = [s for s in survivors if s["model"] == eligible]
+    else:
+        eligible = pool[0]
+
+    # Top up to k independent samples on the single eligible judge (degraded mode).
+    while len(samples) < self_consistency_k:
+        j = _judge_one(eligible, transcript, loaded, post_for(eligible), retries)
+        if j is None:
+            break
+        samples.append(j)
+    if not samples:
+        return missing()
+    return _aggregate(samples, "self_consistency")

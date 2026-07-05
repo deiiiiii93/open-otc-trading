@@ -346,3 +346,98 @@ def test_system_prompt_carries_anchor_discipline():
     loaded = get_workflow_bundle("risk-manager-control-day")
     msgs = _build_prompt(transcript_from_replay(loaded), loaded)
     assert "anchor" in msgs[0]["content"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Jury (judge_panel) — network-free via injected post_for
+# ---------------------------------------------------------------------------
+
+
+def _post_for_fixed(scores_by_model):
+    """post_for factory: each model scores every rubric point with a fixed value
+    (int) or per-point list."""
+    import re
+
+    def factory(model_id):
+        def post(payload):
+            points = re.findall(r"^\d+\.\s+(.*)$", payload["messages"][1]["content"], re.M)
+            sc = scores_by_model[model_id]
+            vals = sc if isinstance(sc, list) else [sc] * len(points)
+            return json.dumps({"rubric_scores": [
+                {"point": p, "score": vals[i], "rationale": ""} for i, p in enumerate(points)],
+                "overall_notes": "", "diagnosis": ""})
+        return post
+    return factory
+
+
+class TestJuryPanel:
+    def test_panel_averages_and_stdev(self):
+        from app.services.arena.judge import judge_panel
+        loaded, transcript, _ = _flagship_setup()
+        r = judge_panel(transcript, loaded,
+                        judge_models=["deepseek-v4-pro", "claude-opus-4-8", "qwen-3-7-max"],
+                        post_for=_post_for_fixed(
+                            {"deepseek-v4-pro": 60, "claude-opus-4-8": 90, "qwen-3-7-max": 30}),
+                        retries=0)
+        assert r.subjective_mode == "panel"
+        assert r.judged_score == 60.0            # mean of 60/90/30
+        assert round(r.judged_stdev, 1) == 24.5  # population stdev
+        assert len(r.per_judge) == 3
+
+    def test_panel_rubric_points_are_per_point_mean(self):
+        """Judges disagree per point → panel rubric must be by-label mean, not judge[0]."""
+        from app.services.arena.judge import judge_panel
+        loaded, transcript, _ = _flagship_setup()
+        r = judge_panel(transcript, loaded,
+                        judge_models=["deepseek-v4-pro", "claude-opus-4-8"], min_judges=2,
+                        post_for=_post_for_fixed(
+                            {"deepseek-v4-pro": [80, 20], "claude-opus-4-8": [20, 80]}),
+                        retries=0)
+        assert [round(s["score"], 1) for s in r.rubric_scores] == [50.0, 50.0]  # NOT [80, 20]
+
+    def test_panel_excludes_contestant(self):
+        from app.services.arena.judge import judge_panel
+        loaded, transcript, _ = _flagship_setup()
+        r = judge_panel(transcript, loaded,
+                        judge_models=["deepseek-v4-pro", "claude-opus-4-8", "qwen-3-7-max"],
+                        exclude_model="claude-opus-4-8",
+                        post_for=_post_for_fixed(
+                            {"deepseek-v4-pro": 60, "qwen-3-7-max": 40}),
+                        retries=0)
+        assert {j["model"] for j in r.per_judge} == {"deepseek-v4-pro", "qwen-3-7-max"}
+
+    def test_panel_postfailure_below_min_escalates_to_self_consistency(self):
+        """3-judge pool, 2 fail, 1 survives → self-consistency, NOT proceed-on-one."""
+        from app.services.arena.judge import judge_panel
+        loaded, transcript, _ = _flagship_setup()
+        calls = {"n": 0}
+
+        def post_for(model_id):
+            def post(payload):
+                if model_id in ("claude-opus-4-8", "qwen-3-7-max"):
+                    raise RuntimeError("402 quote_exceeded")
+                calls["n"] += 1
+                import re
+                points = re.findall(r"^\d+\.\s+(.*)$", payload["messages"][1]["content"], re.M)
+                return json.dumps({"rubric_scores": [
+                    {"point": p, "score": 55, "rationale": ""} for p in points],
+                    "overall_notes": "", "diagnosis": ""})
+            return post
+        r = judge_panel(transcript, loaded,
+                        judge_models=["deepseek-v4-pro", "claude-opus-4-8", "qwen-3-7-max"],
+                        min_judges=2, self_consistency_k=3, post_for=post_for, retries=0)
+        assert r.subjective_mode == "self_consistency"
+        assert calls["n"] == 3   # k samples on the surviving deepseek judge
+
+    def test_panel_zero_survivors_is_missing(self):
+        from app.services.arena.judge import judge_panel
+        loaded, transcript, _ = _flagship_setup()
+
+        def post_for(model_id):
+            def post(payload):
+                raise RuntimeError("402 quote_exceeded")
+            return post
+        r = judge_panel(transcript, loaded,
+                        judge_models=["deepseek-v4-pro", "claude-opus-4-8"],
+                        post_for=post_for, retries=0)
+        assert r.judge_missing and r.subjective_mode == "missing" and r.judged_score is None
