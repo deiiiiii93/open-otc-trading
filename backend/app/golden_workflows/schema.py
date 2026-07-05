@@ -172,6 +172,11 @@ class GoldenWorkflow(BaseModel):
     steps: list[Step] = Field(min_length=1)
     success: Success
     narration: list[str] = Field(default_factory=list)  # attached by loader
+    # Benchmark-reserved scenario-set names that MUST NOT exist in the live
+    # scenario library — the runner asserts their absence at match setup so a
+    # "does-not-exist" trap step cannot silently invert (a competent model that
+    # checks the library and reports "not found" must be able to pass).
+    trap_absent_sets: list[str] = Field(default_factory=list)
 
     @field_validator("id")
     @classmethod

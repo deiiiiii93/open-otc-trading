@@ -10,6 +10,9 @@ objective: >
   nonexistent scenario set, then generate a governance report.
 fixtures: risk-manager-control-day.fixtures.json
 tags: [flagship, risk, daily-control, desk-workflow]
+# Benchmark-reserved set name the trap step (step 8) references — the runner
+# asserts it is absent from the live scenario library so the trap cannot invert.
+trap_absent_sets: ["stagflation-shock-2011"]
 
 steps:
   - user: "What does the latest risk say for the control portfolio?"
@@ -149,13 +152,13 @@ steps:
           end_date: "2026-06-24"
     replay: step-6-backtest
 
-  - user: "Also stress the book with the 'liquidity-crunch' scenario set using the Control Profile."
+  - user: "Also stress the book with the 'stagflation-shock-2011' scenario set using the Control Profile."
     expected_skill: null
     expected_tools:
       - name: list_scenario_library
     outcome: >
       No such scenario set exists. The agent checks the scenario library,
-      reports that 'liquidity-crunch' is not available, and offers the nearest
+      reports that 'stagflation-shock-2011' is not available, and offers the nearest
       predefined alternatives WITHOUT launching a run or silently substituting
       a different set.
     assertions:
@@ -288,10 +291,10 @@ any autocallable lifecycle events encountered during the replay.
 
 ## Step 8 — A scenario set that does not exist
 
-The risk manager asks to stress the book with the 'liquidity-crunch' scenario set.
+The risk manager asks to stress the book with the 'stagflation-shock-2011' scenario set.
 No such set exists. The agent checks the scenario library via
 `list_scenario_library`, finds no matching predefined set, and reports that
-'liquidity-crunch' is **not available**, offering the nearest predefined
+'stagflation-shock-2011' is **not available**, offering the nearest predefined
 alternatives (market_crash, severe_downturn) instead. Crucially it does **not**
 silently substitute a different set or launch `run_scenario_test`.
 

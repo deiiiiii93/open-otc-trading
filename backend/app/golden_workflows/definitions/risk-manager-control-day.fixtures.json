@@ -567,7 +567,7 @@
       ],
       "skills_routed": [],
       "artifacts": [],
-      "response_text": "There is no scenario set named 'liquidity-crunch' — it is not in the scenario library and not available as a predefined set. The closest predefined alternatives are market_crash and severe_downturn; say the word and I'll run one of those with the Control Profile instead."
+      "response_text": "There is no scenario set named 'stagflation-shock-2011' — it is not in the scenario library and not available as a predefined set. The closest predefined alternatives are market_crash and severe_downturn; say the word and I'll run one of those with the Control Profile instead."
     }
   }
 }

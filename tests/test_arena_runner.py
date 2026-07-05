@@ -7,6 +7,42 @@ from app.services.arena.models import get_model
 from app.services.arena.runner import run_match, _persona_to_character
 
 
+def _load_flagship():
+    from app.golden_workflows.registry import get_workflow_bundle
+    return get_workflow_bundle("risk-manager-control-day")
+
+
+def test_assert_trap_sets_absent_raises_when_present(tmp_path):
+    from app.services.arena.runner import _assert_trap_sets_absent
+    from app.config import Settings
+    d = tmp_path / "scenario_sets"; d.mkdir()
+    # WRONGLY seed the reserved trap-set name into the active library
+    name = _load_flagship().workflow.trap_absent_sets[0]
+    (d / f"{name}.yaml").write_text("version: '1.0'\nscenarios: []\n")
+    settings = Settings(scenario_sets_dir=str(d))
+    with pytest.raises(RuntimeError, match="[Tt]rap.*present|precondition"):
+        _assert_trap_sets_absent(_load_flagship(), settings)
+
+
+def test_assert_trap_sets_absent_ok_when_missing(tmp_path):
+    from app.services.arena.runner import _assert_trap_sets_absent
+    from app.config import Settings
+    d = tmp_path / "scenario_sets"; d.mkdir()
+    settings = Settings(scenario_sets_dir=str(d))
+    _assert_trap_sets_absent(_load_flagship(), settings)  # no raise
+
+
+def test_flagship_declares_reserved_trap_set():
+    wf = _load_flagship().workflow
+    assert wf.trap_absent_sets  # non-empty
+    # the reserved name must not exist in the live scenario library
+    from pathlib import Path
+    from app.config import get_settings
+    d = Path(get_settings().scenario_sets_dir)
+    for n in wf.trap_absent_sets:
+        assert not (d / f"{n}.yaml").exists() and not (d / f"{n}.set.json").exists()
+
+
 class _Step:
     def __init__(self, user):
         self.user = user
