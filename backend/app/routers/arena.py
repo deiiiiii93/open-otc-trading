@@ -235,12 +235,16 @@ def build_arena_router(
         session=Depends(_get_db),
     ) -> dict[str, Any]:
         rows = arena_store.leaderboard(session, run_id=run_id, tag=tag)
-        # Rename store keys: mean_total→avg_total, mean_objective→avg_objective, match_count→matches
+        # Ranking is by the deterministic objective axis (spec D5 — no blend);
+        # subjective is advisory (mean ± stdev + mode). `rank` is shared on ties.
         renamed = [
             {
                 "model_id": r["model_id"],
-                "avg_total": r["mean_total"],
+                "rank": r["rank"],
                 "avg_objective": r["mean_objective"],
+                "subjective_mean": r["subjective_mean"],
+                "subjective_stdev": r["subjective_stdev"],
+                "subjective_mode": r["subjective_mode"],
                 "matches": r["match_count"],
                 "invalid": r["invalid_count"],
             }

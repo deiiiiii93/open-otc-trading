@@ -245,18 +245,40 @@
           "tool_call_id": "call_s3_001",
           "name": "get_latest_risk_run_tool",
           "content": {
-            "id": 2,
-            "portfolio_id": 6,
-            "as_of": "2026-06-24",
+            "found": true,
+            "portfolio_id": 2,
+            "risk_run_id": 2,
             "status": "completed",
-            "total_delta": -248500.0,
-            "total_gamma": -11800.0,
-            "hotspot": {
-              "underlying": "AAPL",
-              "delta": -148000.0,
-              "gamma": -7200.0
-            },
-            "freshness": "current"
+            "valuation_as_of": "2026-06-24",
+            "metrics": {
+              "totals": {
+                "delta_cash": 86046.84,
+                "pnl": 17268.28,
+                "market_value": 17268.28
+              },
+              "positions": [
+                {
+                  "position_id": 8,
+                  "underlying": "AAPL",
+                  "delta": 573.3467,
+                  "gamma": 8.7944,
+                  "delta_cash": 57334.67,
+                  "market_value": 9246.35
+                },
+                {
+                  "position_id": 9,
+                  "underlying": "TSLA",
+                  "delta": 210.0,
+                  "gamma": 4.1
+                },
+                {
+                  "position_id": 10,
+                  "underlying": "NVDA",
+                  "delta": 77.0,
+                  "gamma": 8.6
+                }
+              ]
+            }
           }
         }
       ],
@@ -264,7 +286,7 @@
         "read-risk-result"
       ],
       "artifacts": [],
-      "response_text": "The updated risk run is fresh as of 2026-06-24. The hotspot is **AAPL** with a net delta of -148,000 and gamma of -7,200 — by far the largest Greek contributor across the portfolio. TSLA and NVDA are secondary. Total portfolio delta is -248,500."
+      "response_text": "The updated risk run is fresh as of 2026-06-24. The hotspot is **AAPL** (position 8) with a delta of 573.35 — by far the largest Greek contributor across the portfolio. TSLA and NVDA carry smaller delta."
     },
     "step-4-greeks-landscape": {
       "ai": {
@@ -309,36 +331,31 @@
           "tool_call_id": "call_s4_002",
           "name": "get_greeks_landscape_run_tool",
           "content": {
-            "run_id": 101,
-            "task_id": "gl-task-20260624-001",
+            "found": true,
+            "run_id": 1,
+            "portfolio_id": 2,
             "status": "completed",
-            "landscape": [
-              {
-                "spot_shift": -0.2,
-                "delta": -310000,
-                "gamma": -16000
-              },
-              {
-                "spot_shift": -0.1,
-                "delta": -278000,
-                "gamma": -14000
-              },
-              {
-                "spot_shift": 0.0,
-                "delta": -248500,
-                "gamma": -11800
-              },
-              {
-                "spot_shift": 0.1,
-                "delta": -220000,
-                "gamma": -9600
-              },
-              {
-                "spot_shift": 0.2,
-                "delta": -194000,
-                "gamma": -7800
+            "results": {
+              "portfolio": {
+                "raw": [
+                  {
+                    "spot_shift_pct": -20.0,
+                    "delta": 391.192,
+                    "gamma": 22.4499
+                  },
+                  {
+                    "spot_shift_pct": 0.0,
+                    "delta": 860.47,
+                    "gamma": 21.38
+                  },
+                  {
+                    "spot_shift_pct": 10.0,
+                    "delta": 1049.92,
+                    "gamma": 16.403
+                  }
+                ]
               }
-            ]
+            }
           }
         }
       ],
@@ -530,7 +547,7 @@
       "tool_results": [],
       "skills_routed": [],
       "artifacts": [],
-      "response_text": "From the completed Greeks landscape: gamma at a +10% spot shift is -9,600, and at a -20% shift the portfolio delta becomes -310,000. Gamma decay flattens as spot rises; the short-delta position deepens on the downside."
+      "response_text": "From the completed Greeks landscape: portfolio gamma at a +10% spot shift is 16.40, and at a -20% shift the portfolio delta becomes 391.19. Gamma flattens as spot rises while delta shortens on the downside."
     },
     "step-trap-missing-scenario-set": {
       "ai": {
@@ -567,7 +584,7 @@
       ],
       "skills_routed": [],
       "artifacts": [],
-      "response_text": "There is no scenario set named 'liquidity-crunch' — it is not in the scenario library and not available as a predefined set. The closest predefined alternatives are market_crash and severe_downturn; say the word and I'll run one of those with the Control Profile instead."
+      "response_text": "There is no scenario set named 'stagflation-shock-2011' — it is not in the scenario library and not available as a predefined set. The closest predefined alternatives are market_crash and severe_downturn; say the word and I'll run one of those with the Control Profile instead."
     }
   }
 }

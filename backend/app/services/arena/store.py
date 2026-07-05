@@ -190,42 +190,85 @@ def leaderboard(
         if not matches:
             return []
 
-    # Aggregate per model
+    # Aggregate per model. Ranking is by the DETERMINISTIC objective axis only
+    # (spec D5 — no blended total); subjective is advisory (mean ± stdev + mode).
     from collections import defaultdict
-    model_totals: dict[str, list[float]] = defaultdict(list)
+    from app.services.arena import scoring
+
     model_objectives: dict[str, list[float]] = defaultdict(list)
+    model_subjectives: dict[str, list[float]] = defaultdict(list)
+    model_sub_stdevs: dict[str, list[float]] = defaultdict(list)
+    model_sub_modes: dict[str, list[str]] = defaultdict(list)
+    model_axes: dict[str, dict[str, dict[str, int]]] = defaultdict(dict)
+    scored_counts: dict[str, int] = defaultdict(int)
     invalid_counts: dict[str, int] = defaultdict(int)
 
     for m in matches:
         if m.status == "invalid":
             invalid_counts[m.model_id] += 1
             continue
-        if m.total_score is not None:
-            model_totals[m.model_id].append(m.total_score)
+        scored_counts[m.model_id] += 1
         if m.objective_score is not None:
             model_objectives[m.model_id].append(m.objective_score)
+        bd = m.score_breakdown or {}
+        judge = bd.get("judge") or {}
+        if judge.get("judged_score") is not None:
+            model_subjectives[m.model_id].append(judge["judged_score"])
+        if judge.get("judged_stdev") is not None:
+            model_sub_stdevs[m.model_id].append(judge["judged_stdev"])
+        mode = bd.get("subjective_mode") or judge.get("subjective_mode")
+        if mode:
+            model_sub_modes[m.model_id].append(mode)
+        axes = (bd.get("objective") or {}).get("axes") or {}
+        for ax, tally in axes.items():
+            slot = model_axes[m.model_id].setdefault(ax, {"passed": 0, "total": 0})
+            slot["passed"] += tally.get("passed", 0)
+            slot["total"] += tally.get("total", 0)
 
-    # Build rows for models with at least one scored OR invalid match
+    def _agg_mode(modes: list[str]) -> str:
+        if not modes:
+            return "missing"
+        if "self_consistency" in modes:  # surface degradation over "panel"
+            return "self_consistency"
+        if "panel" in modes:
+            return "panel"
+        return modes[0]
+
     rows = []
-    for model_id in set(model_totals) | set(invalid_counts):
-        totals = model_totals.get(model_id, [])
+    for model_id in set(scored_counts) | set(invalid_counts):
         objectives = model_objectives.get(model_id, [])
+        subs = model_subjectives.get(model_id, [])
+        stdevs = model_sub_stdevs.get(model_id, [])
         rows.append({
             "model_id": model_id,
-            "mean_total": round(sum(totals) / len(totals), 1) if totals else None,
             "mean_objective": (round(sum(objectives) / len(objectives), 1)
-                               if objectives else (0.0 if totals else None)),
-            "match_count": len(totals),
+                               if objectives else None),
+            "subjective_mean": round(sum(subs) / len(subs), 1) if subs else None,
+            "subjective_stdev": round(sum(stdevs) / len(stdevs), 1) if stdevs else None,
+            "subjective_mode": _agg_mode(model_sub_modes.get(model_id, [])),
+            "match_count": scored_counts.get(model_id, 0),
             "invalid_count": invalid_counts.get(model_id, 0),
+            "_tiebreak": scoring.objective_tiebreak_key(dict(model_axes.get(model_id, {}))),
         })
 
-    # Tie-break: mean_total desc (None sorts last), mean_objective desc, model_id asc
+    # Sort by objective desc (None last), deterministic sub-axis tiebreak, then
+    # model_id (DISPLAY-only stabilizer). Rank is SHARED for exact ties on the
+    # (mean_objective, tiebreak) pair — model_id never breaks a rank (spec D5a).
     rows.sort(key=lambda r: (
-        r["mean_total"] is None,
-        -(r["mean_total"] or 0.0),
+        r["mean_objective"] is None,
         -(r["mean_objective"] or 0.0),
+        r["_tiebreak"],
         r["model_id"],
     ))
+    rank = 0
+    prev_key: object = object()
+    for i, r in enumerate(rows):
+        key = (r["mean_objective"], r["_tiebreak"])
+        if key != prev_key:
+            rank = i + 1  # standard competition ranking (1, 1, 3)
+            prev_key = key
+        r["rank"] = rank
+        del r["_tiebreak"]
     return rows
 
 

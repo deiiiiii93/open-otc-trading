@@ -394,3 +394,10 @@ class TestAxisAndScope:
             {"id": "x", "name": "get_greeks_landscape_run_tool", "args": {"run_id": 101}}]
         bd2 = objective_breakdown(refetch, loaded)
         assert all(c["passed"] for c in bd2["steps"][grid_i]["checks"])
+
+
+def test_objective_tiebreak_prefers_grounding():
+    from app.services.arena.scoring import objective_tiebreak_key
+    a = {"grounding": {"passed": 5, "total": 5}, "adherence": {"passed": 1, "total": 8}}
+    b = {"grounding": {"passed": 1, "total": 5}, "adherence": {"passed": 8, "total": 8}}
+    assert objective_tiebreak_key(a) < objective_tiebreak_key(b)  # a wins on grounding

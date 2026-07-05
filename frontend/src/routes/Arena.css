@@ -380,6 +380,36 @@
   font-size: var(--type-small-size);
 }
 
+.wl-arena__rank {
+  font-family: var(--font-numeric);
+  color: var(--ink-2);
+}
+
+.wl-arena__subjective {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-1);
+  font-family: var(--font-numeric);
+}
+
+.wl-arena__subjective-sd,
+.wl-arena__subjective-na {
+  color: var(--ink-2);
+}
+
+.wl-arena__degraded-chip {
+  margin-left: var(--gap-1);
+  padding: 0 var(--gap-1);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-size: var(--type-caps-size);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
 .wl-arena__axes {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

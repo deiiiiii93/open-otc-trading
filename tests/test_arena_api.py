@@ -207,14 +207,15 @@ def test_leaderboard_empty(session, settings):
     assert resp.json() == {"rows": []}
 
 
-def test_leaderboard_keys_are_avg_not_mean(session, settings):
-    """Router must rename mean_total→avg_total, mean_objective→avg_objective, match_count→matches."""
+def test_leaderboard_keys_are_rank_objective_subjective(session, settings):
+    """Router ranks by objective (no blend) and exposes advisory subjective + rank."""
     run_id = arena_store.create_run(session, workflow_ids=["wf-a"], model_ids=["model-x"])
     arena_store.set_run_status(session, run_id, "completed")
     arena_store.record_match(
         session, run_id, "wf-a", "model-x",
-        objective_score=60.0, judged_score=70.0, total_score=65.0,
+        objective_score=60.0, judged_score=70.0, total_score=60.0,
         judge_missing=False, config={}, transcript_path=None, status="scored",
+        score_breakdown={"objective": {"axes": {}}, "judge": {"judged_score": 70.0, "judged_stdev": 4.0}, "subjective_mode": "panel"},
     )
     session.commit()
 
@@ -224,14 +225,11 @@ def test_leaderboard_keys_are_avg_not_mean(session, settings):
     rows = resp.json()["rows"]
     assert len(rows) == 1
     row = rows[0]
-    # Must use avg_* keys, NOT mean_* keys
-    assert "avg_total" in row
-    assert "avg_objective" in row
-    assert "matches" in row
-    assert "mean_total" not in row
-    assert "mean_objective" not in row
-    assert "match_count" not in row
-    assert row["avg_total"] == 65.0
+    assert row["rank"] == 1
+    assert row["avg_objective"] == 60.0
+    assert row["subjective_mean"] == 70.0 and row["subjective_stdev"] == 4.0
+    assert row["subjective_mode"] == "panel"
+    assert "avg_total" not in row and "mean_total" not in row  # blend dropped
     assert row["matches"] == 1
 
 
@@ -655,6 +653,181 @@ def test_all_blank_without_errors_stays_scored(session, settings):
     with database.SessionLocal() as s:
         run_dict = arena_store.get_run(s, run_id)
         (m,) = run_dict["matches"]
+        assert m["status"] == "scored"
+        assert m["objective_score"] is not None
+
+
+def _partial_contaminated_transcript(workflow_id, model_id):
+    """Early steps ran; a provider transport error (402 quota) struck mid-run.
+
+    Mirrors the real Opus run-10 trial-1 shape: steps 0-1 produced real content,
+    steps 2+ carry an ``APIStatusError("Error code: 402 ... quote_exceeded")``.
+    """
+    from app.golden_workflows.transcript import MatchTranscript, MatchStep
+    steps = [
+        MatchStep(
+            index=0, user="turn 0", messages=[],
+            tool_calls=[{"id": "c0", "name": "get_latest_risk_run", "args": {}}],
+            tool_results=[], skills_routed=[], artifacts=[], task_ids=[],
+            response_text="Here is the latest risk.", errors=[],
+        ),
+        MatchStep(
+            index=1, user="turn 1", messages=[],
+            tool_calls=[{"id": "c1", "name": "run_batch_pricing", "args": {}}],
+            tool_results=[], skills_routed=[], artifacts=[], task_ids=["t1"],
+            response_text="Fresh run complete.", errors=[],
+        ),
+        MatchStep(
+            index=2, user="turn 2", messages=[], tool_calls=[],
+            tool_results=[], skills_routed=[], artifacts=[], task_ids=[],
+            response_text="",
+            errors=[{"span": "llm", "name": "ChatAnthropic",
+                     "error": "APIStatusError(\"Error code: 402 - {'error': "
+                              "{'code': '402', 'type': 'quote_exceeded'}}\")"}],
+        ),
+    ]
+    return MatchTranscript(
+        schema_version=1, run_id=None, workflow_id=workflow_id,
+        model_id=model_id, started_at=None, finished_at=None, steps=steps,
+    )
+
+
+def test_partial_provider_error_marks_invalid_and_skips_judge(session, settings):
+    """A mid-run provider transport error (402 quota) contaminates the trial.
+
+    Even though early steps produced real content (so it is NOT all-blank), a
+    truncated run behind a provider quota death cannot be fairly scored — it is
+    recorded 'invalid' (excluded from leaderboard means), judge is skipped."""
+    run_id, task_id = _queue_single_pair_run(settings)
+
+    def contaminated_run_match(loaded, model, *, artifact_root, run_id=None):
+        return _partial_contaminated_transcript("wf-a", model.slug)
+
+    def exploding_judge(transcript, loaded, *, post=None):
+        raise AssertionError("judge must not run for contaminated matches")
+
+    from app.services.arena.task import execute_arena_run_task
+    execute_arena_run_task(
+        task_id, run_id, database.SessionLocal, settings=settings,
+        run_match_fn=contaminated_run_match, judge_fn=exploding_judge,
+        get_bundle_fn=_fake_get_bundle,
+    )
+
+    with database.SessionLocal() as s:
+        run_dict = arena_store.get_run(s, run_id)
+        (m,) = run_dict["matches"]
+        assert m["status"] == "invalid"
+        assert m["error"] == "infra_error"
+        assert m["objective_score"] is None
+        assert m["total_score"] is None
+
+
+def test_domain_tool_error_stays_scored(session, settings):
+    """A non-provider error (a tool raising a domain error) is a real outcome,
+    not infra — the trial must still be scored, not invalidated."""
+    run_id, task_id = _queue_single_pair_run(settings)
+
+    from app.golden_workflows.transcript import MatchTranscript, MatchStep
+
+    def domain_error_run_match(loaded, model, *, artifact_root, run_id=None):
+        steps = [
+            MatchStep(
+                index=i, user=f"turn {i}", messages=[],
+                tool_calls=[{"id": f"c{i}", "name": "get_latest_risk_run", "args": {}}],
+                tool_results=[], skills_routed=[], artifacts=[], task_ids=[],
+                response_text="Portfolio not found for id=999.",
+                errors=([{"span": "tool", "name": "get_latest_risk_run",
+                          "error": "ValueError: portfolio 999 does not exist"}]
+                        if i == 1 else []),
+            )
+            for i in range(3)
+        ]
+        return MatchTranscript(
+            schema_version=1, run_id=None, workflow_id="wf-a",
+            model_id=model.slug, started_at=None, finished_at=None, steps=steps,
+        )
+
+    from app.services.arena.judge import JudgeResult
+
+    def fake_judge(transcript, loaded, *, post=None):
+        return JudgeResult(judged_score=50.0, judge_missing=False, notes="")
+
+    from app.services.arena.task import execute_arena_run_task
+    execute_arena_run_task(
+        task_id, run_id, database.SessionLocal, settings=settings,
+        run_match_fn=domain_error_run_match, judge_fn=fake_judge,
+        get_bundle_fn=_fake_get_bundle,
+    )
+
+    with database.SessionLocal() as s:
+        run_dict = arena_store.get_run(s, run_id)
+        (m,) = run_dict["matches"]
+        assert m["status"] == "scored"
+        assert m["objective_score"] is not None
+
+
+def test_toolcall_then_provider_death_marks_invalid(session, settings):
+    """A step that issues a tool call but whose FINAL response dies on a 402
+    (empty response_text + provider error) is a partial death, not recovery —
+    a mere issued tool call must NOT count as a completed turn."""
+    run_id, task_id = _queue_single_pair_run(settings)
+    from app.golden_workflows.transcript import MatchTranscript, MatchStep
+
+    def contaminated(loaded, model, *, artifact_root, run_id=None):
+        steps = [
+            MatchStep(index=0, user="t0", messages=[],
+                      tool_calls=[{"id": "c0", "name": "get_latest_risk_run", "args": {}}],
+                      tool_results=[], skills_routed=[], artifacts=[], task_ids=[],
+                      response_text="Latest risk is X.", errors=[]),
+            MatchStep(index=1, user="t1", messages=[],
+                      tool_calls=[{"id": "c1", "name": "run_batch_pricing", "args": {}}],
+                      tool_results=[], skills_routed=[], artifacts=[], task_ids=[],
+                      response_text="",  # final response died after the tool call
+                      errors=[{"span": "llm", "name": "ChatAnthropic",
+                               "error": "APIStatusError(\"Error code: 402 ... quote_exceeded\")"}]),
+        ]
+        return MatchTranscript(schema_version=1, run_id=None, workflow_id="wf-a",
+                               model_id=model.slug, started_at=None, finished_at=None, steps=steps)
+
+    def exploding_judge(transcript, loaded, *, post=None):
+        raise AssertionError("judge must not run for contaminated matches")
+
+    from app.services.arena.task import execute_arena_run_task
+    execute_arena_run_task(task_id, run_id, database.SessionLocal, settings=settings,
+                           run_match_fn=contaminated, judge_fn=exploding_judge,
+                           get_bundle_fn=_fake_get_bundle)
+    with database.SessionLocal() as s:
+        (m,) = arena_store.get_run(s, run_id)["matches"]
+        assert m["status"] == "invalid"
+        assert m["error"] == "infra_error"
+
+
+def test_judge_missing_stays_objective_scored(session, settings):
+    """A match whose jury is unavailable (judge_missing) is still a valid
+    objective-scored match — NOT invalid (subjective is advisory, objective is
+    the spine)."""
+    run_id, task_id = _queue_single_pair_run(settings)
+    from app.golden_workflows.transcript import MatchTranscript, MatchStep
+
+    def good_run_match(loaded, model, *, artifact_root, run_id=None):
+        steps = [MatchStep(index=i, user=f"t{i}", messages=[],
+                           tool_calls=[{"id": f"c{i}", "name": "get_latest_risk_run", "args": {}}],
+                           tool_results=[], skills_routed=[], artifacts=[], task_ids=[],
+                           response_text="A complete answer.", errors=[]) for i in range(3)]
+        return MatchTranscript(schema_version=1, run_id=None, workflow_id="wf-a",
+                               model_id=model.slug, started_at=None, finished_at=None, steps=steps)
+
+    from app.services.arena.judge import JudgeResult
+
+    def dead_panel(transcript, loaded, *, post=None):
+        return JudgeResult(judge_missing=True, judged_score=None, subjective_mode="missing")
+
+    from app.services.arena.task import execute_arena_run_task
+    execute_arena_run_task(task_id, run_id, database.SessionLocal, settings=settings,
+                           run_match_fn=good_run_match, judge_fn=dead_panel,
+                           get_bundle_fn=_fake_get_bundle)
+    with database.SessionLocal() as s:
+        (m,) = arena_store.get_run(s, run_id)["matches"]
         assert m["status"] == "scored"
         assert m["objective_score"] is not None
 

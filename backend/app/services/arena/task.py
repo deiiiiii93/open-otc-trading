@@ -8,6 +8,7 @@ execute_arena_run_task — sequential fan-out over (workflow, model) pairs;
 from __future__ import annotations
 
 import json
+import re
 import traceback
 from pathlib import Path
 from typing import Any, Callable
@@ -98,6 +99,59 @@ def _is_infra_blank(transcript) -> bool:
     return all_blank and has_error
 
 
+# Provider/transport failure signatures — quota, rate-limit, upstream 5xx, and
+# connection/proxy errors. Deliberately narrow: a domain tool raising (e.g.
+# "portfolio not found") is a real outcome the agent should handle and must NOT
+# invalidate the trial. These patterns only ever come from the LLM provider or
+# the network path to it.
+_PROVIDER_ERROR_RE = re.compile(
+    r"quote_exceeded"
+    r"|insufficient[_ ]?quota"
+    r"|rate[_ ]?limit"
+    r"|Error code:\s*(?:402|429|5\d\d)"
+    r"|\b(?:429|502|503|504)\b"
+    r"|overloaded_error|Overloaded"
+    r"|ServiceUnavailable"
+    r"|(?:Connection|Proxy|Read)\s*(?:Error|Timeout|refused|reset|aborted)",
+    re.IGNORECASE,
+)
+
+
+def _error_text(entry) -> str:
+    """Flatten a step-error record (dict {span,name,error} or str) to text."""
+    if isinstance(entry, dict):
+        return " ".join(str(entry.get(k, "")) for k in ("error", "name", "span"))
+    return str(entry)
+
+
+def _is_infra_contaminated(transcript) -> bool:
+    """A provider transport error (quota/rate-limit/5xx/connection) struck the
+    run — even mid-flight after real early steps.
+
+    This is the partial-death case ``_is_infra_blank`` misses: when the first
+    steps produce real content but a later model call dies on a 402 quota, the
+    truncated transcript cannot be fairly scored or compared. It is invalid, not
+    a real low score. Domain tool errors do not match ``_PROVIDER_ERROR_RE`` and
+    stay scored.
+
+    A provider blip that was *retried and recovered* leaves an error span but the
+    step still produces a completed assistant response (`response_text`). Only a
+    step left WITHOUT a completed response by a provider error is terminal — an
+    issued tool call alone is NOT recovery (a tool call followed by a 402 on the
+    final response is a partial death); a transient error that recovered into a
+    real response must not invalidate the trial.
+    """
+    for s in transcript.steps:
+        if s.response_text.strip():
+            continue  # recovered — a COMPLETED assistant response, not a mere
+                      # issued tool call (a tool call then a 402 on the final
+                      # response is a partial death, not recovery)
+        for entry in (s.errors or []):
+            if _PROVIDER_ERROR_RE.search(_error_text(entry)):
+                return True
+    return False
+
+
 def _save_transcript(transcript, artifact_root: Path,
                      workflow_id: str, model_id: str) -> str | None:
     """Persist the transcript JSON to disk; best-effort, None on failure."""
@@ -174,16 +228,28 @@ def _execute(
     get_bundle_fn: Callable | None = None,
 ) -> None:
     from app.services.arena.runner import run_match as _run_match
-    from app.services.arena.judge import judge_match as _judge_match
+    from app.services.arena.judge import judge_panel as _judge_panel
     from app.services.arena import scoring
     from app.golden_workflows.registry import get_workflow_bundle as _get_workflow_bundle
     from app.services.arena.models import get_model
+    from app.config import get_settings
 
     _get_bundle = get_bundle_fn or _get_workflow_bundle
     from app.services.task_runner import mark_task_running, mark_task_finished, update_task_progress
 
+    _cfg = settings if settings is not None else get_settings()
     _run_match_fn = run_match_fn or _run_match
-    _judge_fn = judge_fn or _judge_match
+
+    def _default_judge(transcript, loaded, *, exclude_model):
+        """Production judge: a contestant-excluded jury (spec P2/P3.2)."""
+        return _judge_panel(
+            transcript, loaded,
+            judge_models=_cfg.arena_judge_models,
+            exclude_model=exclude_model,
+            substitutes=_cfg.arena_judge_substitutes,
+            min_judges=_cfg.arena_min_judges,
+            self_consistency_k=_cfg.arena_self_consistency_k,
+        )
 
     # Resolve artifact root
     if settings is not None:
@@ -227,10 +293,17 @@ def _execute(
 
                 transcript = _run_match_fn(loaded, model, artifact_root=artifact_root, run_id=run_id)
 
-                # Infra-blank gate: an all-blank transcript with transport-error
-                # evidence is a route failure, not model ability — record it as
-                # 'invalid' (excluded from leaderboard means), skip judge+scoring.
+                # Infra gate: a route/transport failure is not model ability —
+                # record it as 'invalid' (excluded from leaderboard means), skip
+                # judge+scoring. Two shapes: an all-blank transcript with error
+                # evidence (infra_blank), and a partial run truncated by a
+                # provider transport error after real early steps (infra_error).
+                infra_error = None
                 if _is_infra_blank(transcript):
+                    infra_error = "infra_blank"
+                elif _is_infra_contaminated(transcript):
+                    infra_error = "infra_error"
+                if infra_error is not None:
                     store.record_match(
                         session,
                         run_id=run_id,
@@ -244,7 +317,7 @@ def _execute(
                         transcript_path=_save_transcript(
                             transcript, artifact_root, workflow_id, model_id),
                         status="invalid",
-                        error="infra_blank",
+                        error=infra_error,
                     )
                     completed_count += 1
                     update_task_progress(session, task_id,
@@ -252,15 +325,20 @@ def _execute(
                     session.commit()
                     continue
 
-                judge_result = _judge_fn(transcript, loaded, post=post)
+                # Subjective judgment: the injected test seam, else a
+                # contestant-excluded jury. Judge-missing (jury unavailable) is
+                # NOT infra-invalid — the objective axis is the spine and still
+                # scores the match.
+                if judge_fn is not None:
+                    judge_result = judge_fn(transcript, loaded, post=post)
+                else:
+                    judge_result = _default_judge(
+                        transcript, loaded, exclude_model=model_id)
 
                 obj_score, _passed, _total = scoring.objective_score(transcript, loaded)
-                t_score = scoring.total_score(
-                    obj_score,
-                    judge_result.judged_score,
-                    weights=weights,
-                    judge_missing=judge_result.judge_missing,
-                )
+                # No blend (spec D5): the stored total mirrors the objective axis,
+                # the sole ranking dimension; subjective is advisory, reported apart.
+                t_score = round(obj_score, 1)
 
                 # Per-check breakdown behind the aggregate scores, persisted so
                 # the /arena match drilldown can show where points were won/lost.
@@ -271,7 +349,10 @@ def _execute(
                         "rubric_scores": judge_result.rubric_scores,
                         "judged_score": judge_result.judged_score,
                         "judge_missing": judge_result.judge_missing,
+                        "per_judge": judge_result.per_judge,
+                        "judged_stdev": judge_result.judged_stdev,
                     },
+                    "subjective_mode": judge_result.subjective_mode,
                     # Why/where the model won or lost: deterministic engagement
                     # counts (always present) + the judge's LLM failure analysis.
                     "diagnosis": {
@@ -279,7 +360,6 @@ def _execute(
                         "counts_detail": heuristic,
                         "analysis": judge_result.diagnosis,
                     },
-                    "weights": weights or {"obj": 0.5, "judge": 0.5},
                     "objective_score": round(obj_score, 1),
                     "total_score": t_score,
                 }

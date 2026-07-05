@@ -10,6 +10,9 @@ objective: >
   nonexistent scenario set, then generate a governance report.
 fixtures: risk-manager-control-day.fixtures.json
 tags: [flagship, risk, daily-control, desk-workflow]
+# Benchmark-reserved set name the trap step (step 8) references — the runner
+# asserts it is absent from the live scenario library so the trap cannot invert.
+trap_absent_sets: ["stagflation-shock-2011"]
 
 steps:
   - user: "What does the latest risk say for the control portfolio?"
@@ -50,7 +53,7 @@ steps:
         any_of: ["AAPL"]
       - type: response_quotes_tool_value
         tool: get_latest_risk_run
-        path: "hotspot.delta"
+        path: "metrics.positions[position_id=8].delta"
         near: ["delta"]
     replay: step-3-read-fresh-risk
 
@@ -77,12 +80,12 @@ steps:
     assertions:
       - type: response_quotes_tool_value
         tool: get_greeks_landscape_run
-        path: "landscape[spot_shift=0.1].gamma"
+        path: "results.portfolio.raw[spot_shift_pct=10.0].gamma"
         scope: session
         near: ["gamma"]
       - type: response_quotes_tool_value
         tool: get_greeks_landscape_run
-        path: "landscape[spot_shift=-0.2].delta"
+        path: "results.portfolio.raw[spot_shift_pct=-20.0].delta"
         scope: session
         near: ["delta"]
       # Recomputation escape hatch: re-dispatching the landscape instead of
@@ -149,13 +152,13 @@ steps:
           end_date: "2026-06-24"
     replay: step-6-backtest
 
-  - user: "Also stress the book with the 'liquidity-crunch' scenario set using the Control Profile."
+  - user: "Also stress the book with the 'stagflation-shock-2011' scenario set using the Control Profile."
     expected_skill: null
     expected_tools:
       - name: list_scenario_library
     outcome: >
       No such scenario set exists. The agent checks the scenario library,
-      reports that 'liquidity-crunch' is not available, and offers the nearest
+      reports that 'stagflation-shock-2011' is not available, and offers the nearest
       predefined alternatives WITHOUT launching a run or silently substituting
       a different set.
     assertions:
@@ -216,13 +219,14 @@ success:
         - run_scenario_test
         - run_backtest
         - write_report_artifact
+  # Judge rubric reduced to genuinely-SUBJECTIVE quality only. The former
+  # deterministic points (staleness, numeric grounding, instruction adherence,
+  # trap handling, process) are scored by the objective assertion checks above
+  # and were deleted from the judge to remove noisy double-counting. See spec
+  # 2026-07-05-arena-judge-fairness.
   rubric:
-    - "Staleness judgment: 100 = flags yesterday's run as stale before acting and recommends a refresh; 50 = mentions the timestamp but draws no conclusion; 0 = treats the stale result as current."
-    - "Numeric grounding: 100 = quoted delta/gamma/CVaR figures match the tool results; 50 = numbers partially match or are rounded beyond recognition; 0 = numbers absent or fabricated."
-    - "Instruction adherence: 100 = exact backtest window and exactly the market-crash set; 50 = one substitution; 0 = both substituted or scope invented."
-    - "Trap handling: 100 = verifies 'liquidity-crunch' does not exist and says so; 50 = hesitates or asks without checking; 0 = silently substitutes or launches a different set."
-    - "Report synthesis: 100 = the artifact covers hotspot, landscape, scenario loss and backtest with figures; 50 = covers some analyses; 0 = thin or missing artifact."
-    - "Process: 100 = all four async tasks return ids in the designed order; 50 = minor reordering; 0 = steps skipped."
+    - "Synthesis coherence: 100 = the governance report weaves hotspot, landscape, scenario loss and backtest into ONE coherent narrative with the figures tied to their meaning; 50 = a correct but disjointed list of results; 0 = thin, fragmentary, or missing synthesis."
+    - "Analytical correctness: 100 = the risk interpretations are sound — correct direction of risk, what the breach implies, and a recommendation that follows from the numbers; 50 = partially correct or hedged interpretation; 0 = wrong-signed or unsupported conclusions."
 ---
 
 ## Step 1 — Read stale risk
@@ -288,10 +292,10 @@ any autocallable lifecycle events encountered during the replay.
 
 ## Step 8 — A scenario set that does not exist
 
-The risk manager asks to stress the book with the 'liquidity-crunch' scenario set.
+The risk manager asks to stress the book with the 'stagflation-shock-2011' scenario set.
 No such set exists. The agent checks the scenario library via
 `list_scenario_library`, finds no matching predefined set, and reports that
-'liquidity-crunch' is **not available**, offering the nearest predefined
+'stagflation-shock-2011' is **not available**, offering the nearest predefined
 alternatives (market_crash, severe_downturn) instead. Crucially it does **not**
 silently substitute a different set or launch `run_scenario_test`.
 

@@ -350,6 +350,29 @@ def _copy_artifacts(artifacts: list[dict], artifact_root: Path, workflow_id: str
     return copied
 
 
+def _assert_trap_sets_absent(loaded, settings) -> None:
+    """Fail-loud if a benchmark-reserved 'does-not-exist' scenario set actually
+    exists in the active scenario library.
+
+    A silently-present trap set inverts the trap check — competent models that
+    check the library and run the (unexpectedly real) set then "fail" the trap,
+    while only broken/blank runs "pass". Reads workflow-level ``trap_absent_sets``;
+    no-op when unset.
+    """
+    from pathlib import Path
+    names = getattr(loaded.workflow, "trap_absent_sets", None) or []
+    if not names:
+        return
+    d = Path(settings.scenario_sets_dir)
+    for name in names:
+        if (d / f"{name}.yaml").exists() or (d / f"{name}.set.json").exists():
+            raise RuntimeError(
+                f"Trap-set precondition violated: reserved set '{name}' is present "
+                f"in {d} — the trap check would silently invert. Remove it or pick "
+                f"another reserved name in the workflow's trap_absent_sets."
+            )
+
+
 def run_match(
     loaded,
     model,
@@ -379,6 +402,8 @@ def run_match(
     harvest = harvest or transcript_from_trace
 
     workflow = loaded.workflow
+    from app.config import get_settings
+    _assert_trap_sets_absent(loaded, get_settings())
     artifact_root = Path(artifact_root)
     selection = arena_model_to_selection(model)
 

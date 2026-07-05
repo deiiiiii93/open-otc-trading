@@ -1,4 +1,4 @@
-from app.golden_workflows.registry import get_workflow
+from app.golden_workflows.registry import get_workflow, get_workflow_bundle
 
 def test_flagship_has_nine_steps_and_narration():
     wf = get_workflow("risk-manager-control-day")
@@ -35,7 +35,19 @@ def test_flagship_exact_ordered_manifest():
     assert len(set(replays)) == 9  # all distinct
     success_types = sorted(a.type for a in wf.success.assertions)
     assert success_types == ["tools_routed_sequence"]
-    assert len(wf.success.rubric) == 6
+    assert len(wf.success.rubric) == 2  # judge rubric reduced to 2 subjective points
+
+def test_flagship_rubric_is_two_subjective_points():
+    """The judge rubric is reduced to genuinely-subjective points only; the five
+    deterministic-redundant points now live solely in the objective checks."""
+    from app.services.arena.judge import _collect_rubric_points
+    loaded = get_workflow_bundle("risk-manager-control-day")
+    pts = _collect_rubric_points(loaded)
+    assert len(pts) == 2
+    joined = " ".join(pts).lower()
+    assert "synthesis" in joined and "analytical" in joined
+    assert "reasoning depth" not in joined  # forbidden: rewards verbosity
+
 
 def test_flagship_grounding_and_trap_assertions():
     """Pin the discrimination-bearing assertion details."""
@@ -44,8 +56,8 @@ def test_flagship_grounding_and_trap_assertions():
     grid = wf.steps[4]
     quotes = [a for a in grid.assertions if a.type == "response_quotes_tool_value"]
     assert [q.scope for q in quotes] == ["session", "session"]
-    assert quotes[0].path == "landscape[spot_shift=0.1].gamma"
-    assert quotes[1].path == "landscape[spot_shift=-0.2].delta"
+    assert quotes[0].path == "results.portfolio.raw[spot_shift_pct=10.0].gamma"
+    assert quotes[1].path == "results.portfolio.raw[spot_shift_pct=-20.0].delta"
     assert any(a.type == "tool_not_called" and a.name == "run_greeks_landscape"
                for a in grid.assertions)
     # Step 6 (scenario): exact-args with both conventions + exclusive carriers

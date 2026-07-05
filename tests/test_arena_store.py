@@ -182,10 +182,10 @@ def test_leaderboard_averages_scores_per_model(session):
     rows = store.leaderboard(session)
     # model-y should be first (mean 90 > 70)
     assert rows[0]["model_id"] == "model-y"
-    assert rows[0]["mean_total"] == 90.0
+    assert rows[0]["mean_objective"] == 85.0
     assert rows[1]["model_id"] == "model-x"
     # model-x: mean of 80 + 60 = 70
-    assert rows[1]["mean_total"] == 70.0
+    assert rows[1]["mean_objective"] == 60.0
     assert rows[1]["match_count"] == 2
 
 
@@ -201,7 +201,7 @@ def test_leaderboard_excludes_failed_matches(session):
     rows = store.leaderboard(session)
     assert len(rows) == 1
     # Only the scored match counts
-    assert rows[0]["mean_total"] == 80.0
+    assert rows[0]["mean_objective"] == 70.0
     assert rows[0]["match_count"] == 1
 
 
@@ -249,7 +249,7 @@ def test_leaderboard_with_run_id(session):
 
     # Explicit run_id=rid1 should show score from run 1, not run 2
     rows = store.leaderboard(session, run_id=rid1)
-    assert rows[0]["mean_total"] == 50.0
+    assert rows[0]["mean_objective"] == 40.0
 
 
 def test_leaderboard_tag_filter_matching(session):
@@ -276,7 +276,7 @@ def test_leaderboard_tag_filter_matching(session):
         rows = store.leaderboard(session, tag="demo")
 
     assert len(rows) == 1
-    assert rows[0]["mean_total"] == 80.0
+    assert rows[0]["mean_objective"] == 70.0
 
 
 def test_leaderboard_tag_filter_no_match(session):
@@ -317,7 +317,7 @@ def test_leaderboard_default_uses_latest_completed_run(session):
     rows = store.leaderboard(session)
     assert len(rows) == 1
     assert rows[0]["model_id"] == "model-x"
-    assert rows[0]["mean_total"] == 90.0
+    assert rows[0]["mean_objective"] == 85.0
 
 
 # ---------------------------------------------------------------------------
@@ -340,7 +340,7 @@ def test_leaderboard_excludes_invalid_and_counts_them(session):
     assert row["model_id"] == "a"
     assert row["match_count"] == 1
     assert row["invalid_count"] == 1
-    assert row["mean_total"] == 80.0
+    assert row["mean_objective"] == 80.0
 
 
 def test_leaderboard_invalid_only_model_listed_with_zero_matches(session):
@@ -357,6 +357,39 @@ def test_leaderboard_invalid_only_model_listed_with_zero_matches(session):
     by_model = {r["model_id"]: r for r in rows}
     assert by_model["b"]["match_count"] == 0
     assert by_model["b"]["invalid_count"] == 1
-    assert by_model["b"]["mean_total"] is None
+    assert by_model["b"]["mean_objective"] is None
     # scored model sorts above invalid-only model
     assert rows[0]["model_id"] == "a"
+
+
+def test_leaderboard_ranks_by_objective_not_blend(session):
+    from app.services.arena import store as arena_store
+    run_id = arena_store.create_run(session, workflow_ids=["wf-a"], model_ids=["hi", "lo"])
+    arena_store.set_run_status(session, run_id, "completed")
+    arena_store.record_match(session, run_id=run_id, workflow_id="wf-a", model_id="hi",
+        objective_score=80.0, judged_score=40.0, total_score=None, judge_missing=False,
+        config={}, transcript_path=None, status="scored",
+        score_breakdown={"objective": {"axes": {}}, "judge": {"judged_score": 40.0, "judged_stdev": 5.0}, "subjective_mode": "panel"})
+    arena_store.record_match(session, run_id=run_id, workflow_id="wf-a", model_id="lo",
+        objective_score=70.0, judged_score=95.0, total_score=None, judge_missing=False,
+        config={}, transcript_path=None, status="scored",
+        score_breakdown={"objective": {"axes": {}}, "judge": {"judged_score": 95.0, "judged_stdev": 5.0}, "subjective_mode": "panel"})
+    rows = arena_store.leaderboard(session, run_id=run_id)
+    assert [r["model_id"] for r in rows] == ["hi", "lo"]
+    assert rows[0]["subjective_mean"] == 40.0 and rows[0]["subjective_stdev"] == 5.0
+    assert rows[0]["rank"] == 1 and rows[1]["rank"] == 2
+
+
+def test_leaderboard_shares_rank_on_exact_objective_tie(session):
+    from app.services.arena import store as arena_store
+    run_id = arena_store.create_run(session, workflow_ids=["wf-a"], model_ids=["a", "b", "c"])
+    arena_store.set_run_status(session, run_id, "completed")
+    axes = {"axes": {"grounding": {"passed": 5, "total": 5}}}
+    for mid, obj, sub in [("a", 80.0, 40.0), ("b", 80.0, 90.0), ("c", 70.0, 99.0)]:
+        arena_store.record_match(session, run_id=run_id, workflow_id="wf-a", model_id=mid,
+            objective_score=obj, judged_score=sub, total_score=None, judge_missing=False,
+            config={}, transcript_path=None, status="scored",
+            score_breakdown={"objective": axes, "judge": {"judged_score": sub, "judged_stdev": 0.0}, "subjective_mode": "panel"})
+    ranks = {r["model_id"]: r["rank"] for r in arena_store.leaderboard(session, run_id=run_id)}
+    assert ranks["a"] == 1 and ranks["b"] == 1  # tied objective -> shared rank, subjective ignored
+    assert ranks["c"] == 3
