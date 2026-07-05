@@ -246,6 +246,7 @@ def _execute(
             transcript, loaded,
             judge_models=_cfg.arena_judge_models,
             exclude_model=exclude_model,
+            substitutes=_cfg.arena_judge_substitutes,
             min_judges=_cfg.arena_min_judges,
             self_consistency_k=_cfg.arena_self_consistency_k,
         )

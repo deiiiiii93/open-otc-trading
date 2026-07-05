@@ -395,6 +395,34 @@ class TestJuryPanel:
                         retries=0)
         assert [round(s["score"], 1) for s in r.rubric_scores] == [50.0, 50.0]  # NOT [80, 20]
 
+    def test_panel_excludes_contestant_across_id_namespaces(self):
+        """A candidate SLUG must exclude its provider-id twin from the jury —
+        exclude_model='claude-opus-4-8' removes 'anthropic/claude-opus-4.8'."""
+        from app.services.arena.judge import judge_panel
+        loaded, transcript, _ = _flagship_setup()
+        r = judge_panel(transcript, loaded,
+                        judge_models=["deepseek-v4-pro", "anthropic/claude-opus-4.8", "qwen/qwen3.7-max"],
+                        exclude_model="claude-opus-4-8",  # arena slug, not the pool id
+                        post_for=_post_for_fixed(
+                            {"deepseek-v4-pro": 60, "qwen/qwen3.7-max": 40}),
+                        retries=0)
+        assert {j["model"] for j in r.per_judge} == {"deepseek-v4-pro", "qwen/qwen3.7-max"}
+
+    def test_panel_substitutes_backfill_when_exclusion_drops_below_min(self):
+        """If excluding the contestant drops the pool below min_judges, a
+        substitute backfills (spec D2/D3)."""
+        from app.services.arena.judge import judge_panel
+        loaded, transcript, _ = _flagship_setup()
+        r = judge_panel(transcript, loaded,
+                        judge_models=["deepseek-v4-pro", "anthropic/claude-opus-4.8"],
+                        exclude_model="claude-opus-4-8", min_judges=2,
+                        substitutes=["gemini-3.1-pro-preview"],
+                        post_for=_post_for_fixed(
+                            {"deepseek-v4-pro": 60, "gemini-3.1-pro-preview": 80}),
+                        retries=0)
+        assert r.subjective_mode == "panel"
+        assert {j["model"] for j in r.per_judge} == {"deepseek-v4-pro", "gemini-3.1-pro-preview"}
+
     def test_panel_excludes_contestant(self):
         from app.services.arena.judge import judge_panel
         loaded, transcript, _ = _flagship_setup()

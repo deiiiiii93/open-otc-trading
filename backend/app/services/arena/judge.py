@@ -420,12 +420,25 @@ def _aggregate(per_judge: list[dict], mode: str) -> JudgeResult:
     )
 
 
+def _canon_model(model_id: str) -> str:
+    """Canonicalize a model id to its arena slug so exclusion compares like with
+    like — a candidate slug (``claude-opus-4-8``) and a judge-pool provider id
+    (``anthropic/claude-opus-4.8``) must resolve to the same identity. Falls back
+    to the raw id for models not in the arena registry."""
+    try:
+        from app.services.arena.models import canonical_model_id
+        return canonical_model_id(model_id)
+    except Exception:
+        return model_id
+
+
 def judge_panel(
     transcript,
     loaded,
     *,
     judge_models: list[str],
     exclude_model: str | None = None,
+    substitutes: list[str] | None = None,
     min_judges: int = 2,
     self_consistency_k: int = 3,
     post_for: Callable[[str], Callable[[dict], str]] | None = None,
@@ -443,7 +456,20 @@ def judge_panel(
     - Missing: no eligible judge survives → ``judge_missing=True``.
     """
     post_for = post_for or _default_post_for
-    pool = [m for m in judge_models if m != exclude_model]
+    excl = _canon_model(exclude_model) if exclude_model else None
+    pool = [m for m in judge_models if _canon_model(m) != excl]
+
+    # Backfill from substitutes if excluding the contestant dropped the pool
+    # below the floor (spec D2/D3 substitution chain), skipping the contestant
+    # and any model already in the pool (identity-canonicalized).
+    if excl is not None and substitutes and len(pool) < min_judges:
+        have = {_canon_model(m) for m in pool} | {excl}
+        for sub in substitutes:
+            if len(pool) >= min_judges:
+                break
+            if _canon_model(sub) not in have:
+                pool.append(sub)
+                have.add(_canon_model(sub))
 
     def missing() -> JudgeResult:
         return JudgeResult(judge_missing=True, judged_score=None,
