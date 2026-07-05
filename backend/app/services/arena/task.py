@@ -135,13 +135,17 @@ def _is_infra_contaminated(transcript) -> bool:
     stay scored.
 
     A provider blip that was *retried and recovered* leaves an error span but the
-    step still produces real output (response text or tool calls). Only a step
-    left with NO usable output by a provider error is terminal — a transient one
-    that recovered must not invalidate the trial.
+    step still produces a completed assistant response (`response_text`). Only a
+    step left WITHOUT a completed response by a provider error is terminal — an
+    issued tool call alone is NOT recovery (a tool call followed by a 402 on the
+    final response is a partial death); a transient error that recovered into a
+    real response must not invalidate the trial.
     """
     for s in transcript.steps:
-        if s.response_text.strip() or s.tool_calls:
-            continue  # step recovered — a retried provider blip is not terminal
+        if s.response_text.strip():
+            continue  # recovered — a COMPLETED assistant response, not a mere
+                      # issued tool call (a tool call then a 402 on the final
+                      # response is a partial death, not recovery)
         for entry in (s.errors or []):
             if _PROVIDER_ERROR_RE.search(_error_text(entry)):
                 return True

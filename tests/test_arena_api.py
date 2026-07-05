@@ -768,6 +768,42 @@ def test_domain_tool_error_stays_scored(session, settings):
         assert m["objective_score"] is not None
 
 
+def test_toolcall_then_provider_death_marks_invalid(session, settings):
+    """A step that issues a tool call but whose FINAL response dies on a 402
+    (empty response_text + provider error) is a partial death, not recovery —
+    a mere issued tool call must NOT count as a completed turn."""
+    run_id, task_id = _queue_single_pair_run(settings)
+    from app.golden_workflows.transcript import MatchTranscript, MatchStep
+
+    def contaminated(loaded, model, *, artifact_root, run_id=None):
+        steps = [
+            MatchStep(index=0, user="t0", messages=[],
+                      tool_calls=[{"id": "c0", "name": "get_latest_risk_run", "args": {}}],
+                      tool_results=[], skills_routed=[], artifacts=[], task_ids=[],
+                      response_text="Latest risk is X.", errors=[]),
+            MatchStep(index=1, user="t1", messages=[],
+                      tool_calls=[{"id": "c1", "name": "run_batch_pricing", "args": {}}],
+                      tool_results=[], skills_routed=[], artifacts=[], task_ids=[],
+                      response_text="",  # final response died after the tool call
+                      errors=[{"span": "llm", "name": "ChatAnthropic",
+                               "error": "APIStatusError(\"Error code: 402 ... quote_exceeded\")"}]),
+        ]
+        return MatchTranscript(schema_version=1, run_id=None, workflow_id="wf-a",
+                               model_id=model.slug, started_at=None, finished_at=None, steps=steps)
+
+    def exploding_judge(transcript, loaded, *, post=None):
+        raise AssertionError("judge must not run for contaminated matches")
+
+    from app.services.arena.task import execute_arena_run_task
+    execute_arena_run_task(task_id, run_id, database.SessionLocal, settings=settings,
+                           run_match_fn=contaminated, judge_fn=exploding_judge,
+                           get_bundle_fn=_fake_get_bundle)
+    with database.SessionLocal() as s:
+        (m,) = arena_store.get_run(s, run_id)["matches"]
+        assert m["status"] == "invalid"
+        assert m["error"] == "infra_error"
+
+
 def test_leaderboard_api_carries_invalid_count(session, settings):
     """GET /api/arena/leaderboard rows expose the invalid count."""
     run_id = arena_store.create_run(session, workflow_ids=["wf-a"], model_ids=["m"])
