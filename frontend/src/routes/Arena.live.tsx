@@ -87,8 +87,13 @@ function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
         <span className="wl-arena__breakdown-tally">
           Objective {obj.passed}/{obj.total}
           {judge.judged_score != null && !judge.judge_missing
-            ? ` · Judge ${judge.judged_score.toFixed(1)}`
-            : ' · Judge n/a'}
+            ? ` · Subjective ${judge.judged_score.toFixed(1)}${
+                judge.judged_stdev != null ? ` ± ${judge.judged_stdev.toFixed(1)}` : ''
+              } (adv.)`
+            : ' · Subjective n/a'}
+          {breakdown.subjective_mode === 'self_consistency' && (
+            <span className="wl-arena__degraded-chip" title="Single-judge fallback">degraded</span>
+          )}
         </span>
       </div>
 
@@ -167,6 +172,22 @@ function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
               <li key={i} className="wl-arena__check wl-arena__check--judge">
                 <span className="wl-arena__check-score">{r.score}</span>
                 <span className="wl-arena__check-label">{r.point}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {judge.per_judge && judge.per_judge.length > 0 && (
+        <div className="wl-arena__breakdown-step">
+          <div className="wl-arena__breakdown-step-head">
+            <span className="wl-arena__breakdown-step-title">Per-judge (jury)</span>
+          </div>
+          <ul className="wl-arena__check-list">
+            {judge.per_judge.map((j, i) => (
+              <li key={i} className="wl-arena__check wl-arena__check--judge">
+                <span className="wl-arena__check-score">{j.judged_score.toFixed(1)}</span>
+                <span className="wl-arena__check-label">{j.model}</span>
               </li>
             ))}
           </ul>
@@ -267,24 +288,49 @@ export function ArenaLive() {
   const leaderboardColumns: Column<ArenaLeaderboardRow>[] = useMemo(
     () => [
       {
+        key: 'rank',
+        header: 'Rank',
+        numeric: true,
+        width: 'max-content',
+        render: (row) => <span className="wl-arena__rank">#{row.rank}</span>,
+      },
+      {
         key: 'model',
         header: 'Model',
         width: 'minmax(0, 2fr)',
         render: (row) => modelDisplayName(row.model_id, models),
       },
       {
-        key: 'avg_total',
-        header: 'Avg Total',
-        numeric: true,
-        width: 'minmax(0, 1fr)',
-        render: (row) => fmtScore(row.avg_total),
-      },
-      {
+        // The sole ranking axis — deterministic, no blend (spec D5).
         key: 'avg_objective',
-        header: 'Avg Objective',
+        header: 'Objective',
         numeric: true,
         width: 'minmax(0, 1fr)',
         render: (row) => fmtScore(row.avg_objective),
+      },
+      {
+        // Advisory only — jury mean ± stdev; never affects rank.
+        key: 'subjective',
+        header: 'Subjective (adv.)',
+        numeric: true,
+        width: 'minmax(0, 1.2fr)',
+        render: (row) => (
+          <span className="wl-arena__subjective">
+            {row.subjective_mean == null ? (
+              <span className="wl-arena__subjective-na">n/a</span>
+            ) : (
+              <>
+                {row.subjective_mean.toFixed(1)}
+                {row.subjective_stdev != null && (
+                  <span className="wl-arena__subjective-sd"> ± {row.subjective_stdev.toFixed(1)}</span>
+                )}
+              </>
+            )}
+            {row.subjective_mode === 'self_consistency' && (
+              <span className="wl-arena__degraded-chip" title="Single-judge fallback — panel unavailable">degraded</span>
+            )}
+          </span>
+        ),
       },
       {
         key: 'matches',

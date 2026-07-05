@@ -42,7 +42,13 @@ export type ArenaScoreBreakdown = {
     rubric_scores: { point: string; score: number }[];
     judged_score: number | null;
     judge_missing?: boolean;
+    // Jury detail: each judge's mean + dispersion across the panel.
+    per_judge?: { model: string; judged_score: number }[];
+    judged_stdev?: number | null;
   };
+  // How the subjective score was produced: "panel" | "self_consistency"
+  // (a DEGRADED single-model fallback) | "missing".
+  subjective_mode?: string;
   diagnosis?: {
     counts: string;
     analysis: string;
@@ -78,8 +84,15 @@ export type ArenaRunDetail = {
 
 export type ArenaLeaderboardRow = {
   model_id: string;
-  avg_total: number | null;
+  // Ranking is by the deterministic objective axis (spec D5 — no blend);
+  // `rank` is SHARED across models tied on objective.
+  rank: number;
   avg_objective: number | null;
+  // Advisory subjective jury score (mean ± stdev) + how it was produced
+  // ("panel" | "self_consistency" (degraded) | "missing"). Never affects rank.
+  subjective_mean?: number | null;
+  subjective_stdev?: number | null;
+  subjective_mode?: string;
   matches: number;
   // Infra-invalid match count — excluded from the averages, surfaced so
   // degraded routes stay visible.

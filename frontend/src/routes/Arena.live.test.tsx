@@ -31,8 +31,10 @@ const mockRuns = [
 ];
 
 const mockLeaderboard = [
-  { model_id: 'claude-sonnet', avg_total: 0.85, avg_objective: 0.9, matches: 3, invalid: 1 },
-  { model_id: 'gpt-4o', avg_total: 0.72, avg_objective: 0.75, matches: 3, invalid: 0 },
+  { model_id: 'claude-sonnet', rank: 1, avg_objective: 0.9, subjective_mean: 0.6,
+    subjective_stdev: 0.2, subjective_mode: 'panel', matches: 3, invalid: 1 },
+  { model_id: 'gpt-4o', rank: 2, avg_objective: 0.75, subjective_mean: 0.8,
+    subjective_stdev: 0.3, subjective_mode: 'self_consistency', matches: 3, invalid: 0 },
 ];
 
 const mockMatches = [
@@ -68,7 +70,11 @@ const mockMatches = [
           synthesis: { passed: 4, total: 4 },
         },
       },
-      judge: { rubric_scores: [{ point: 'Identifies staleness', score: 80 }], judged_score: 80, judge_missing: false },
+      judge: { rubric_scores: [{ point: 'Synthesis coherence', score: 80 }], judged_score: 80, judge_missing: false,
+        judged_stdev: 6.5, per_judge: [
+          { model: 'deepseek-v4-pro', judged_score: 74 },
+          { model: 'qwen/qwen3.7-max', judged_score: 86 }] },
+      subjective_mode: 'panel',
       diagnosis: {
         counts: '1/7 expected skills · 0 tool calls · 1/2 checks',
         analysis: 'Over-caution — asked for the portfolio instead of resolving the named profile.',
@@ -118,9 +124,11 @@ describe('ArenaLive', () => {
     expect(await screen.findByText('Claude Sonnet')).toBeInTheDocument();
     expect(await screen.findByText('GPT-4o')).toBeInTheDocument();
 
-    // Scores should be formatted
-    expect(screen.getByText('0.850')).toBeInTheDocument();
+    // Objective (the ranked axis) is formatted; the blended total is gone
     expect(screen.getByText('0.900')).toBeInTheDocument();
+    expect(screen.getByText('0.750')).toBeInTheDocument();
+    // gpt-4o's subjective came from a single-judge fallback → degraded badge
+    expect(screen.getByText('degraded')).toBeInTheDocument();
 
     // Initial load requests the global leaderboard
     expect(arenaApi.getArenaLeaderboard).toHaveBeenCalledWith(undefined);
@@ -184,7 +192,12 @@ describe('ArenaLive', () => {
     expect(screen.getByText('tool: get_latest_risk_run')).toBeInTheDocument();
     expect(screen.getByText('not called')).toBeInTheDocument();
     // Judge rubric point surfaces
-    expect(screen.getByText('Identifies staleness')).toBeInTheDocument();
+    expect(screen.getByText('Synthesis coherence')).toBeInTheDocument();
+    // Subjective is advisory with dispersion, and per-judge jury detail renders
+    expect(screen.getByText(/Subjective 80\.0 ± 6\.5 \(adv\.\)/)).toBeInTheDocument();
+    expect(screen.getByText('Per-judge (jury)')).toBeInTheDocument();
+    expect(screen.getByText('deepseek-v4-pro')).toBeInTheDocument();
+    expect(screen.getByText('qwen/qwen3.7-max')).toBeInTheDocument();
   });
 
   it('clicking a match shows the diagnosis (counts + analysis)', async () => {
