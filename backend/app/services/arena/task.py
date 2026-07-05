@@ -228,16 +228,27 @@ def _execute(
     get_bundle_fn: Callable | None = None,
 ) -> None:
     from app.services.arena.runner import run_match as _run_match
-    from app.services.arena.judge import judge_match as _judge_match
+    from app.services.arena.judge import judge_panel as _judge_panel
     from app.services.arena import scoring
     from app.golden_workflows.registry import get_workflow_bundle as _get_workflow_bundle
     from app.services.arena.models import get_model
+    from app.config import get_settings
 
     _get_bundle = get_bundle_fn or _get_workflow_bundle
     from app.services.task_runner import mark_task_running, mark_task_finished, update_task_progress
 
+    _cfg = settings if settings is not None else get_settings()
     _run_match_fn = run_match_fn or _run_match
-    _judge_fn = judge_fn or _judge_match
+
+    def _default_judge(transcript, loaded, *, exclude_model):
+        """Production judge: a contestant-excluded jury (spec P2/P3.2)."""
+        return _judge_panel(
+            transcript, loaded,
+            judge_models=_cfg.arena_judge_models,
+            exclude_model=exclude_model,
+            min_judges=_cfg.arena_min_judges,
+            self_consistency_k=_cfg.arena_self_consistency_k,
+        )
 
     # Resolve artifact root
     if settings is not None:
@@ -313,15 +324,20 @@ def _execute(
                     session.commit()
                     continue
 
-                judge_result = _judge_fn(transcript, loaded, post=post)
+                # Subjective judgment: the injected test seam, else a
+                # contestant-excluded jury. Judge-missing (jury unavailable) is
+                # NOT infra-invalid — the objective axis is the spine and still
+                # scores the match.
+                if judge_fn is not None:
+                    judge_result = judge_fn(transcript, loaded, post=post)
+                else:
+                    judge_result = _default_judge(
+                        transcript, loaded, exclude_model=model_id)
 
                 obj_score, _passed, _total = scoring.objective_score(transcript, loaded)
-                t_score = scoring.total_score(
-                    obj_score,
-                    judge_result.judged_score,
-                    weights=weights,
-                    judge_missing=judge_result.judge_missing,
-                )
+                # No blend (spec D5): the stored total mirrors the objective axis,
+                # the sole ranking dimension; subjective is advisory, reported apart.
+                t_score = round(obj_score, 1)
 
                 # Per-check breakdown behind the aggregate scores, persisted so
                 # the /arena match drilldown can show where points were won/lost.
@@ -332,7 +348,10 @@ def _execute(
                         "rubric_scores": judge_result.rubric_scores,
                         "judged_score": judge_result.judged_score,
                         "judge_missing": judge_result.judge_missing,
+                        "per_judge": judge_result.per_judge,
+                        "judged_stdev": judge_result.judged_stdev,
                     },
+                    "subjective_mode": judge_result.subjective_mode,
                     # Why/where the model won or lost: deterministic engagement
                     # counts (always present) + the judge's LLM failure analysis.
                     "diagnosis": {
@@ -340,7 +359,6 @@ def _execute(
                         "counts_detail": heuristic,
                         "analysis": judge_result.diagnosis,
                     },
-                    "weights": weights or {"obj": 0.5, "judge": 0.5},
                     "objective_score": round(obj_score, 1),
                     "total_score": t_score,
                 }
