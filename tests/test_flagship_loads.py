@@ -44,8 +44,8 @@ def test_flagship_grounding_and_trap_assertions():
     grid = wf.steps[4]
     quotes = [a for a in grid.assertions if a.type == "response_quotes_tool_value"]
     assert [q.scope for q in quotes] == ["session", "session"]
-    assert quotes[0].path == "landscape[spot_shift=0.1].gamma"
-    assert quotes[1].path == "landscape[spot_shift=-0.2].delta"
+    assert quotes[0].path == "results.portfolio.raw[spot_shift_pct=10.0].gamma"
+    assert quotes[1].path == "results.portfolio.raw[spot_shift_pct=-20.0].delta"
     assert any(a.type == "tool_not_called" and a.name == "run_greeks_landscape"
                for a in grid.assertions)
     # Step 6 (scenario): exact-args with both conventions + exclusive carriers

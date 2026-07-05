@@ -53,7 +53,7 @@ steps:
         any_of: ["AAPL"]
       - type: response_quotes_tool_value
         tool: get_latest_risk_run
-        path: "hotspot.delta"
+        path: "metrics.positions[position_id=8].delta"
         near: ["delta"]
     replay: step-3-read-fresh-risk
 
@@ -80,12 +80,12 @@ steps:
     assertions:
       - type: response_quotes_tool_value
         tool: get_greeks_landscape_run
-        path: "landscape[spot_shift=0.1].gamma"
+        path: "results.portfolio.raw[spot_shift_pct=10.0].gamma"
         scope: session
         near: ["gamma"]
       - type: response_quotes_tool_value
         tool: get_greeks_landscape_run
-        path: "landscape[spot_shift=-0.2].delta"
+        path: "results.portfolio.raw[spot_shift_pct=-20.0].delta"
         scope: session
         near: ["delta"]
       # Recomputation escape hatch: re-dispatching the landscape instead of
