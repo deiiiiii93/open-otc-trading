@@ -135,3 +135,11 @@ def test_settings_coerces_direct_workflow_routing_string():
 
     assert Settings(feature_workflow_routing="false").feature_workflow_routing is False
     assert Settings(feature_workflow_routing="true").feature_workflow_routing is True
+
+
+def test_arena_judge_pool_defaults():
+    from app.config import Settings
+    s = Settings()
+    assert s.arena_judge_models == ["deepseek-v4-pro", "anthropic/claude-opus-4.8", "qwen/qwen3.7-max"]
+    assert s.arena_min_judges == 2 and s.arena_self_consistency_k == 3
+    assert s.arena_judge_substitutes == ["gemini-3.1-pro-preview", "glm-5.2", "kimi-k2.7-code"]

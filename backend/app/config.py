@@ -199,6 +199,18 @@ class Settings:
     scenario_test_output_dir: str = "outputs/scenario_test"
     backtest_output_dir: str = "outputs/backtest"
     scenario_grid_max_cells: int = 200
+    # Arena judge jury (spec 2026-07-05-arena-judge-fairness): a contestant-
+    # excluded panel of diverse models. deepseek-v4-pro is the DIRECT (non-ZenMux)
+    # resilience judge; the other two route via ZenMux. Substitutes replace any
+    # panel member that is itself the contestant being judged, in order.
+    arena_judge_models: list[str] = field(
+        default_factory=lambda: [
+            "deepseek-v4-pro", "anthropic/claude-opus-4.8", "qwen/qwen3.7-max"])
+    arena_judge_substitutes: list[str] = field(
+        default_factory=lambda: [
+            "gemini-3.1-pro-preview", "glm-5.2", "kimi-k2.7-code"])
+    arena_min_judges: int = 2
+    arena_self_consistency_k: int = 3
     agent_channels_file: Path = field(
         default_factory=lambda: _env_value("agent_channels_file")
     )
