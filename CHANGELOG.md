@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Arena judge fairness & scoring-methodology reform** — the LLM judge is confined to
+  genuinely-subjective quality and de-biased; the leaderboard now ranks by the
+  deterministic **objective** axis alone (spec `2026-07-05-arena-judge-fairness`).
+  - **Judge rubric 6 → 2 points** (synthesis coherence + analytical correctness). The
+    five deterministic-redundant points (staleness, numeric grounding, instruction
+    adherence, trap handling, process) were re-grading — noisily — what the objective
+    assertion checks already score, and were deleted from the judge.
+  - **Jury, not a single judge** — `judge_panel` scores with a contestant-excluded panel
+    of 3 diverse models (`deepseek-v4-pro` direct + `claude-opus-4.8` + `qwen3.7-max`),
+    reporting **per-judge scores + stdev**. A ZenMux outage that drops the panel below
+    `min_judges` escalates to a visibly-**degraded** `self_consistency` fallback (k
+    samples of one judge), never a silent single judge.
+  - **Separate axes, no blend** — the 50/50 total is dropped; `subjective` is advisory
+    (`mean ± stdev` + mode) and never moves rank. Exact objective ties **share rank**
+    (competition ranking), broken deterministically by sub-axis priority
+    (grounding → adherence → synthesis → procedural), never by the subjective axis.
+  - **Benchmark correctness (P0)** — the infra-contamination gate now treats a tool call
+    followed by a provider-`402` on the final response as a partial death (was scored);
+    the trap step uses a reserved set name the runner **asserts absent** at match setup
+    (the old `liquidity-crunch` set actually existed, inverting the check); and the dead
+    grounding paths (`hotspot.delta`, `landscape[spot_shift=0.1]`) are re-harvested from
+    real payloads (`metrics.positions[position_id=8].delta`,
+    `results.portfolio.raw[spot_shift_pct=10.0]` — percent units).
 - **Arena flagship `risk-manager-control-day` rebuilt for discrimination** — 9 steps /
   **39 objective points** (was 7/32). New checks target the axes where frontier models
   actually differ: numeric grounding (`response_quotes_tool_value` — signed by default,

@@ -291,6 +291,36 @@ benchmark (was 7/32): grounding + adherence + synthesis checks on top of the
 procedural loop. Package: `backend/app/golden_workflows/` (schema/assertions/
 registry/scoring live here; arena scoring in `services/arena/scoring.py`).
 
+### Judge fairness & scoring methodology (2026-07-05 reform)
+
+The score has **two axes reported separately**: a deterministic **objective** score
+(rule-based assertion checks — the sole ranking axis) and an advisory **subjective**
+jury score. There is **no blended total** — `scoring.total_score` is retired from
+ranking; `store.leaderboard` sorts by `mean_objective`, assigns **shared ranks** on
+exact ties (broken by sub-axis priority grounding→adherence→synthesis→procedural,
+never by subjective), and exposes `subjective_mean/stdev/mode`.
+
+- **The judge is a contestant-excluded jury** (`judge.py::judge_panel`): a panel of 3
+  diverse models (`Settings.arena_judge_models` — `deepseek-v4-pro` on the DIRECT
+  channel + `claude-opus-4.8` + `qwen3.7-max`), per-judge scores + `judged_stdev`,
+  rubric points averaged **by label** (never judge[0]). Dropping below `arena_min_judges`
+  (post-exclusion or post-failure) escalates to a **degraded** `self_consistency` mode
+  (`arena_self_consistency_k` samples of one judge, `subjective_mode` surfaced), never a
+  silent single judge. Judge-missing ≠ infra-invalid — the objective axis still scores it.
+- **Judge rubric is 2 subjective points only** (synthesis coherence + analytical
+  correctness). The 5 deterministic points that used to live here duplicate objective
+  checks — scoring them with an LLM only injected noise, so they were deleted.
+- **Trap steps declare `trap_absent_sets`** (workflow frontmatter); `runner.py::
+  _assert_trap_sets_absent` fails the match setup if a reserved "does-not-exist" set is
+  actually present, so a trap can never silently invert (the old `liquidity-crunch` set
+  existed in `data/scenario_sets/`, making every competent model "fail" the trap).
+- **Infra-contamination recovery requires a completed `response_text`** — a tool call
+  followed by a 402 on the final response is a partial death (`_is_infra_contaminated`),
+  not recovery. **Grounding fixtures must be harvested from real tool payloads**, not
+  invented (the dead `hotspot.delta`/`landscape[spot_shift=0.1]` paths scored 0/23 for
+  everyone until re-pathed to `metrics.positions[position_id=8].delta` /
+  `results.portfolio.raw[spot_shift_pct=10.0]`).
+
 - **`expected_skill: null` steps score no skill point.** Use it for repeat-skill
   steps: `skills_routed` only records a skill when its SKILL.md is read and the
   runtime never re-reads a loaded file, so a repeat-skill check can never pass.
