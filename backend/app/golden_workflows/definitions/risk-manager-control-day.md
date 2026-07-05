@@ -219,13 +219,14 @@ success:
         - run_scenario_test
         - run_backtest
         - write_report_artifact
+  # Judge rubric reduced to genuinely-SUBJECTIVE quality only. The former
+  # deterministic points (staleness, numeric grounding, instruction adherence,
+  # trap handling, process) are scored by the objective assertion checks above
+  # and were deleted from the judge to remove noisy double-counting. See spec
+  # 2026-07-05-arena-judge-fairness.
   rubric:
-    - "Staleness judgment: 100 = flags yesterday's run as stale before acting and recommends a refresh; 50 = mentions the timestamp but draws no conclusion; 0 = treats the stale result as current."
-    - "Numeric grounding: 100 = quoted delta/gamma/CVaR figures match the tool results; 50 = numbers partially match or are rounded beyond recognition; 0 = numbers absent or fabricated."
-    - "Instruction adherence: 100 = exact backtest window and exactly the market-crash set; 50 = one substitution; 0 = both substituted or scope invented."
-    - "Trap handling: 100 = verifies 'liquidity-crunch' does not exist and says so; 50 = hesitates or asks without checking; 0 = silently substitutes or launches a different set."
-    - "Report synthesis: 100 = the artifact covers hotspot, landscape, scenario loss and backtest with figures; 50 = covers some analyses; 0 = thin or missing artifact."
-    - "Process: 100 = all four async tasks return ids in the designed order; 50 = minor reordering; 0 = steps skipped."
+    - "Synthesis coherence: 100 = the governance report weaves hotspot, landscape, scenario loss and backtest into ONE coherent narrative with the figures tied to their meaning; 50 = a correct but disjointed list of results; 0 = thin, fragmentary, or missing synthesis."
+    - "Analytical correctness: 100 = the risk interpretations are sound — correct direction of risk, what the breach implies, and a recommendation that follows from the numbers; 50 = partially correct or hedged interpretation; 0 = wrong-signed or unsupported conclusions."
 ---
 
 ## Step 1 — Read stale risk
