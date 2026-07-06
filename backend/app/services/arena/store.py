@@ -10,6 +10,31 @@ from sqlalchemy.orm import Session
 from app.models import ArenaRun, ArenaMatch
 
 
+def _derive_card(bd: dict, workflow_id: str) -> tuple[dict | None, str | None]:
+    """Derive an ability card from a stored score_breakdown, or (None, reason).
+
+    Fail-honest: requires non-empty objective.axes, an explicit numeric
+    diagnosis.counts_detail.tool_calls, and a loadable workflow (for par). Any
+    missing → uncarded with a machine reason, never a fabricated card. This is
+    the SINGLE stored-breakdown→card path — used by both leaderboard and
+    _match_to_dict so the board and the drilldown can never disagree.
+    """
+    from app.services.arena import scoring
+    axes = (bd.get("objective") or {}).get("axes") or {}
+    if not axes:
+        return None, "legacy_no_axes"
+    tc = ((bd.get("diagnosis") or {}).get("counts_detail") or {}).get("tool_calls")
+    if not isinstance(tc, (int, float)) or isinstance(tc, bool):
+        return None, "missing_tool_count"
+    try:
+        from app.golden_workflows.registry import get_workflow
+        par = scoring.designed_par(get_workflow(workflow_id))
+    except Exception:
+        return None, "workflow_unavailable"
+    judged = (bd.get("judge") or {}).get("judged_score")
+    return scoring.card_from_axes(axes, int(tc), par, judged=judged), None
+
+
 def create_run(
     session: Session,
     workflow_ids: list[str],
@@ -202,6 +227,10 @@ def leaderboard(
     model_axes: dict[str, dict[str, dict[str, int]]] = defaultdict(dict)
     scored_counts: dict[str, int] = defaultdict(int)
     invalid_counts: dict[str, int] = defaultdict(int)
+    # Ability card (spec B): per-match OVR + stats, via the fail-honest guard.
+    model_ovrs: dict[str, list[int]] = defaultdict(list)
+    model_stat_lists: dict[str, dict[str, list[int]]] = defaultdict(
+        lambda: defaultdict(list))
 
     for m in matches:
         if m.status == "invalid":
@@ -242,6 +271,14 @@ def leaderboard(
             slot["passed"] += tally.get("passed", 0)
             slot["total"] += tally.get("total", 0)
 
+        # Ability card, via the shared fail-honest guard. Uncarded rows (no axes /
+        # no tool count / unloadable workflow) contribute NOTHING to card_mean.
+        card, _reason = _derive_card(bd, m.workflow_id)
+        if card is not None:
+            model_ovrs[m.model_id].append(card["ovr"])
+            for stat, val in card["stats"].items():
+                model_stat_lists[m.model_id][stat].append(val)
+
     def _agg_mode(modes: list[str]) -> str:
         # Worst-visibility-wins so a degraded/failed jury-on row never collapses into
         # a clean "disabled" board (spec D8): missing > self_consistency > panel >
@@ -258,42 +295,72 @@ def leaderboard(
         objectives = model_objectives.get(model_id, [])
         subs = model_subjectives.get(model_id, [])
         stdevs = model_sub_stdevs.get(model_id, [])
+        ovrs = model_ovrs.get(model_id, [])
+        card_mean = (
+            {"ovr": round(sum(ovrs) / len(ovrs)),
+             **{stat: round(sum(vals) / len(vals))
+                for stat, vals in model_stat_lists[model_id].items()}}
+            if ovrs else None)
         rows.append({
             "model_id": model_id,
             "mean_objective": (round(sum(objectives) / len(objectives), 1)
                                if objectives else None),
+            "card_mean": card_mean,
             "subjective_mean": round(sum(subs) / len(subs), 1) if subs else None,
             "subjective_stdev": round(sum(stdevs) / len(stdevs), 1) if stdevs else None,
             "subjective_mode": _agg_mode(model_sub_modes.get(model_id, [])),
             "match_count": scored_counts.get(model_id, 0),
             "invalid_count": invalid_counts.get(model_id, 0),
-            "_tiebreak": scoring.objective_tiebreak_key(dict(model_axes.get(model_id, {}))),
+            "_obj_tb": scoring.objective_tiebreak_key(dict(model_axes.get(model_id, {}))),
         })
 
-    # Sort by objective desc (None last), deterministic sub-axis tiebreak, then
-    # model_id (DISPLAY-only stabilizer). Rank is SHARED for exact ties on the
-    # (mean_objective, tiebreak) pair — model_id never breaks a rank (spec D5a).
-    rows.sort(key=lambda r: (
-        r["mean_objective"] is None,
-        -(r["mean_objective"] or 0.0),
-        r["_tiebreak"],
-        r["model_id"],
-    ))
+    # Rank by OVR mean (spec B5 — numbers-first card): CARDED rows first, ordered
+    # by OVR then card stat-priority tie-break (GRD→ADH→SYN→EFF→PRC); UNCARDED rows
+    # after, ordered by the legacy objective axis (mean_objective + sub-axis
+    # tie-break) so an all-legacy board (runs #1-#9, no stored axes) keeps its old
+    # objective ranking instead of collapsing to a single shared rank. model_id is
+    # a DISPLAY-only stabilizer and never breaks a rank (shared on exact ties).
+    def _order_key(r) -> tuple:
+        cm = r["card_mean"]
+        if cm is not None:
+            return (0, -cm["ovr"], scoring.card_tiebreak_key(cm))
+        return (1, -(r["mean_objective"] or 0.0), r["_obj_tb"])
+
+    rows.sort(key=lambda r: (_order_key(r), r["model_id"]))
     rank = 0
     prev_key: object = object()
     for i, r in enumerate(rows):
-        key = (r["mean_objective"], r["_tiebreak"])
+        key = _order_key(r)
         if key != prev_key:
             rank = i + 1  # standard competition ranking (1, 1, 3)
             prev_key = key
         r["rank"] = rank
-        del r["_tiebreak"]
+        del r["_obj_tb"]
     return rows
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _serialized_breakdown(m: ArenaMatch) -> dict | None:
+    """Return the stored breakdown with an ability card synthesized on read when
+    absent (spec B8 — derive, no migration). A stored card (new write-time rows)
+    passes through untouched; a legacy row with axes gets a card derived via the
+    same shared guard as the leaderboard; an uncarded row carries card:null +
+    card_reason so board and drilldown never disagree."""
+    bd = m.score_breakdown
+    if bd is None:
+        return None
+    if bd.get("card") is not None:
+        return bd  # already carded at write time (new rows)
+    out = dict(bd)
+    card, reason = _derive_card(bd, m.workflow_id)
+    out["card"] = card
+    if card is None:
+        out["card_reason"] = reason
+    return out
 
 
 def _match_to_dict(m: ArenaMatch) -> dict:
@@ -308,7 +375,7 @@ def _match_to_dict(m: ArenaMatch) -> dict:
         "total_score": m.total_score,
         "judge_missing": m.judge_missing,
         "config": m.config,
-        "score_breakdown": m.score_breakdown,
+        "score_breakdown": _serialized_breakdown(m),
         "transcript_path": m.transcript_path,
         "error": m.error,
         "created_at": m.created_at.isoformat() if m.created_at else None,

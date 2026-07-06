@@ -71,7 +71,11 @@ def test_score_breakdown_round_trips_through_match_dict(session):
         score_breakdown=breakdown,
     )
     result = store.get_run(session, rid)
-    assert result["matches"][0]["score_breakdown"] == breakdown
+    got = result["matches"][0]["score_breakdown"]
+    # Derive-on-read adds an ability card; here axes are absent so it is null with
+    # a reason. The originally-stored content round-trips unchanged.
+    assert {k: got[k] for k in breakdown} == breakdown
+    assert got["card"] is None and got["card_reason"] == "legacy_no_axes"
 
 
 def test_get_run_returns_none_for_missing(session):
@@ -478,3 +482,69 @@ def test_leaderboard_shares_rank_on_exact_objective_tie(session):
     ranks = {r["model_id"]: r["rank"] for r in arena_store.leaderboard(session, run_id=run_id)}
     assert ranks["a"] == 1 and ranks["b"] == 1  # tied objective -> shared rank, subjective ignored
     assert ranks["c"] == 3
+
+
+# --- ability card leaderboard (Spec B, Task 5) ------------------------------
+def test_leaderboard_ranks_by_ovr_and_excludes_uncarded(session):
+    run_id = store.create_run(
+        session, ["risk-manager-control-day"],
+        ["m-hi", "m-lo", "m-legacy", "m-notool"])
+
+    def bd(axes, tool_calls):
+        return {"objective": {"axes": axes},
+                "diagnosis": {"counts_detail": {"tool_calls": tool_calls}}}
+
+    hi_axes = {"grounding": {"passed": 10, "total": 10}, "adherence": {"passed": 11, "total": 11},
+               "synthesis": {"passed": 5, "total": 5}, "procedural": {"passed": 6, "total": 6}}
+    lo_axes = {"grounding": {"passed": 2, "total": 10}, "adherence": {"passed": 2, "total": 11},
+               "synthesis": {"passed": 1, "total": 5}, "procedural": {"passed": 6, "total": 6}}
+    common = dict(judged_score=None, judge_missing=False, config={}, transcript_path=None,
+                  status="scored")
+    store.record_match(session, run_id, "risk-manager-control-day", "m-hi",
+                       objective_score=90.0, total_score=90.0,
+                       score_breakdown=bd(hi_axes, 11), **common)
+    store.record_match(session, run_id, "risk-manager-control-day", "m-lo",
+                       objective_score=20.0, total_score=20.0,
+                       score_breakdown=bd(lo_axes, 11), **common)
+    store.record_match(session, run_id, "risk-manager-control-day", "m-legacy",
+                       objective_score=50.0, total_score=50.0,
+                       score_breakdown={"objective_score": 50.0}, **common)
+    store.record_match(session, run_id, "risk-manager-control-day", "m-notool",
+                       objective_score=60.0, total_score=60.0,
+                       score_breakdown={"objective": {"axes": hi_axes}}, **common)
+    store.set_run_status(session, run_id, "completed")
+
+    rows = store.leaderboard(session, run_id=run_id)
+    by_model = {r["model_id"]: r for r in rows}
+    assert by_model["m-hi"]["card_mean"]["ovr"] > by_model["m-lo"]["card_mean"]["ovr"]
+    assert by_model["m-hi"]["rank"] == 1
+    assert by_model["m-legacy"]["card_mean"] is None
+    assert by_model["m-legacy"]["mean_objective"] == 50.0
+    assert by_model["m-notool"]["card_mean"] is None
+    assert by_model["m-hi"]["rank"] < by_model["m-legacy"]["rank"]
+    assert by_model["m-hi"]["rank"] < by_model["m-notool"]["rank"]
+
+
+def test_match_serialization_derives_card_on_read(session):
+    run_id = store.create_run(session, ["risk-manager-control-day"], ["m1"])
+    axes = {"grounding": {"passed": 8, "total": 10}, "adherence": {"passed": 9, "total": 11},
+            "synthesis": {"passed": 4, "total": 5}, "procedural": {"passed": 5, "total": 6}}
+    bd = {"objective": {"axes": axes}, "diagnosis": {"counts_detail": {"tool_calls": 11}}}
+    store.record_match(session, run_id, "risk-manager-control-day", "m1",
+                       objective_score=80.0, judged_score=None, total_score=80.0,
+                       judge_missing=False, config={}, transcript_path=None,
+                       status="scored", score_breakdown=bd)
+    detail = store.get_run(session, run_id)
+    card = detail["matches"][0]["score_breakdown"]["card"]
+    assert card is not None and set(card["stats"]) == {"GRD", "ADH", "SYN", "PRC", "EFF"}
+
+
+def test_match_serialization_uncarded_row_carries_reason(session):
+    run_id = store.create_run(session, ["risk-manager-control-day"], ["m2"])
+    store.record_match(session, run_id, "risk-manager-control-day", "m2",
+                       objective_score=50.0, judged_score=None, total_score=50.0,
+                       judge_missing=False, config={}, transcript_path=None,
+                       status="scored", score_breakdown={"objective_score": 50.0})
+    detail = store.get_run(session, run_id)
+    sb = detail["matches"][0]["score_breakdown"]
+    assert sb["card"] is None and sb["card_reason"] == "legacy_no_axes"
