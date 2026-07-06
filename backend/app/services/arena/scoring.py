@@ -87,6 +87,15 @@ def objective_tiebreak_key(axes: dict) -> tuple:
     return tuple(-frac(ax) for ax in _AXIS_TIEBREAK_PRIORITY)
 
 
+def designed_par(workflow) -> int:
+    """Designed complete-run tool-call count for the EFF stat. Explicit
+    ``par_tool_calls`` wins; else sum of per-step expected tools."""
+    explicit = getattr(workflow, "par_tool_calls", None)
+    if explicit is not None:
+        return explicit
+    return sum(len(s.expected_tools) for s in workflow.steps)
+
+
 def _session_context(transcript: MatchTranscript) -> AssertionContext:
     """Merge all steps into a single session-level AssertionContext."""
     tool_calls: list[dict] = []

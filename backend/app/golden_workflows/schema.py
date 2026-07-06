@@ -197,6 +197,10 @@ class GoldenWorkflow(BaseModel):
     # "does-not-exist" trap step cannot silently invert (a competent model that
     # checks the library and reports "not found" must be able to pass).
     trap_absent_sets: list[str] = Field(default_factory=list)
+    # Designed complete-run tool-call count for the EFF ability stat (Spec B).
+    # Optional so existing manifests still load; when absent, scoring.designed_par
+    # derives it from sum(len(step.expected_tools)). Overridable per-workflow.
+    par_tool_calls: int | None = Field(default=None, ge=1)
 
     @field_validator("id")
     @classmethod

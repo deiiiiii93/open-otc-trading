@@ -401,3 +401,22 @@ def test_objective_tiebreak_prefers_grounding():
     a = {"grounding": {"passed": 5, "total": 5}, "adherence": {"passed": 1, "total": 8}}
     b = {"grounding": {"passed": 1, "total": 5}, "adherence": {"passed": 8, "total": 8}}
     assert objective_tiebreak_key(a) < objective_tiebreak_key(b)  # a wins on grounding
+
+
+# --- ability card: par (Spec B, Task 2) -------------------------------------
+from app.services.arena import scoring
+from app.golden_workflows.registry import get_workflow as _get_wf
+
+
+def test_designed_par_defaults_to_expected_tools_sum():
+    wf = _get_wf("risk-manager-control-day")
+    assert scoring.designed_par(wf) == sum(len(s.expected_tools) for s in wf.steps)
+    assert scoring.designed_par(wf) == 11
+
+
+def test_designed_par_override_wins():
+    from app.golden_workflows.schema import GoldenWorkflow
+    wf = _get_wf("risk-manager-control-day")
+    data = wf.model_dump()
+    data["par_tool_calls"] = 99
+    assert scoring.designed_par(GoldenWorkflow(**data)) == 99
