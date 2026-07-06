@@ -81,3 +81,30 @@ def test_offline_guard_trips_without_seeded_history(offline_session_factory, blo
         with pytest.raises((RuntimeError, AssertionError)):
             with _no_async_dispatch():
                 _strict_backtest(_drive_backtest(s, pid, prof))
+
+
+def test_harvest_matches_payloads_and_is_idempotent(offline_session_factory, block_network):
+    from app.golden_workflows.harvest_fixtures import harvest, TARGETS
+    from app.golden_workflows.assertions import _dig
+
+    with offline_session_factory() as s:
+        truth1 = harvest(s)
+    with offline_session_factory() as s:
+        truth2 = harvest(s)
+    assert truth1 == truth2, "harvest not idempotent across identical seeds"
+    assert set(truth1) == {t[0] for t in TARGETS}
+
+    with offline_session_factory() as s:
+        payloads = drive_producers(s, seed_flagship(s))
+    for name, producer, path in TARGETS:
+        ok, val = _dig(payloads[producer], path)
+        assert ok, f"{name}: path {path} did not resolve"
+        assert truth1[name]["value"] == float(val)
+
+
+def test_harvest_raises_on_unresolved_target(offline_session_factory, block_network, monkeypatch):
+    from app.golden_workflows import harvest_fixtures as hf
+    monkeypatch.setattr(hf, "TARGETS", [("bogus", "risk", "does.not.exist")])
+    with offline_session_factory() as s:
+        with pytest.raises(RuntimeError):
+            hf.harvest(s)

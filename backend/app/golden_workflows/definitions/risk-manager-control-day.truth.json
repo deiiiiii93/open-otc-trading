@@ -1,0 +1,27 @@
+{
+  "aapl_hotspot_delta": {
+    "path": "positions[underlying=AAPL].delta",
+    "producer": "risk",
+    "value": 573.3467058766552
+  },
+  "backtest_total_pnl": {
+    "path": "portfolio.total_pnl",
+    "producer": "backtest",
+    "value": -3046.619402347232
+  },
+  "portfolio_delta_at_-20pct": {
+    "path": "portfolio.raw[spot_shift_pct=-20.0].delta",
+    "producer": "landscape",
+    "value": 391.1919745962153
+  },
+  "portfolio_gamma_at_+10pct": {
+    "path": "portfolio.raw[spot_shift_pct=10.0].gamma",
+    "producer": "landscape",
+    "value": 16.403033928381223
+  },
+  "scenario_cvar": {
+    "path": "var_cvar.cvar",
+    "producer": "scenario",
+    "value": -7758.989817924667
+  }
+}
