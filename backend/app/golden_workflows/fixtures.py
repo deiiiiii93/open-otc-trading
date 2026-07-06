@@ -13,6 +13,11 @@ from app.golden_workflows.schema import (
     WorkflowError,
 )
 
+# Single frozen valuation instant for the golden/arena path. Every time- or
+# market-dependent producer on this path resolves as-of this date so harvested
+# fixture truth is reproducible (Spec A). NOT used by the production desk.
+SEED_ACCOUNTING_DATE = datetime(2026, 6, 24)
+
 # Recognised seed namespaces and the set of keys each row must carry.
 # "alias" is always required.  Extra keys (column values) are passed
 # through to the ORM constructor unchanged.
@@ -30,21 +35,38 @@ _NAMESPACES: dict[str, set[str]] = {
     "risk_runs": {"alias", "portfolio"},
     "rfqs": {"alias", "status"},
     "reports": {"alias", "report_type"},
+    # Arena-owned market data (Spec A): pinned spot + backtest history on the
+    # golden path. All rows are tagged source="arena_seed" so production quote
+    # resolution can exclude them and the arena purge can delete them.
+    "instruments": {"alias", "symbol"},
+    "market_quotes": {"alias", "instrument", "as_of", "price"},
+    "spot_history": {"alias", "instrument", "as_of", "price"},
 }
 
 # FK edges: {child_ns: {field_in_row: parent_ns}}. The positions.rfq edge is
 # OPTIONAL — a position row may omit it (validated by the skip-when-absent branch
 # in load_fixtures).
 _FK: dict[str, dict[str, str]] = {
-    "positions": {"portfolio": "portfolios", "rfq": "rfqs"},
+    # positions.underlying_instrument is OPTIONAL — links a seeded position to a
+    # seeded arena instrument so the spot resolver finds its pinned quote.
+    "positions": {"portfolio": "portfolios", "rfq": "rfqs",
+                  "underlying_instrument": "instruments"},
     "pricing_parameter_rows": {"profile": "pricing_profiles"},
     "risk_runs": {"portfolio": "portfolios"},
+    "market_quotes": {"instrument": "instruments"},
+    "spot_history": {"instrument": "instruments"},
 }
 
 # Insertion order so FK parents exist before children (rfqs before positions).
 _INSERT_ORDER = [
-    "portfolios", "reports", "pricing_profiles", "pricing_parameter_rows", "rfqs", "positions", "risk_runs",
+    "instruments", "portfolios", "reports", "pricing_profiles",
+    "pricing_parameter_rows", "rfqs", "positions", "risk_runs",
+    "market_quotes", "spot_history",
 ]
+
+# Origin tag stamped on every arena-seeded instrument / quote / history row so
+# production quote resolution can exclude them and the arena purge can delete them.
+ARENA_MARKET_SOURCE = "arena_seed"
 
 # Column allowlist for the risk_runs seed namespace.  Only keys in this set
 # (beyond the always-excluded "alias" / "portfolio") are forwarded to the
@@ -233,14 +255,20 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
             elif ns == "positions":
                 portfolio_id = _parent_id("portfolios", row["portfolio"])
                 # Pass through any extra keys (e.g. engine_name) the test provides.
-                # The optional "rfq" alias resolves to Position.rfq_id.
+                # The optional "rfq" alias resolves to Position.rfq_id; the optional
+                # "underlying_instrument" alias resolves to Position.underlying_id so
+                # the spot resolver can find the seeded arena quote.
                 extra = {
                     k: v
                     for k, v in row.items()
-                    if k not in ("alias", "portfolio", "rfq")
+                    if k not in ("alias", "portfolio", "rfq", "underlying_instrument")
                 }
                 if "rfq" in row:
                     extra["rfq_id"] = _parent_id("rfqs", row["rfq"])
+                if "underlying_instrument" in row:
+                    extra["underlying_id"] = _parent_id(
+                        "instruments", row["underlying_instrument"]
+                    )
                 obj = models.Position(portfolio_id=portfolio_id, **extra)
 
             elif ns == "risk_runs":
@@ -269,6 +297,33 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
                     if k != "alias" and k in _REPORT_COLS
                 }
                 obj = models.ReportJob(**extra)
+
+            elif ns == "instruments":
+                # Arena-owned instrument: tagged source so production resolution
+                # excludes it and the arena purge can delete it. Extra keys (kind,
+                # currency, …) pass through; symbol is required.
+                extra = {k: v for k, v in row.items() if k != "alias"}
+                extra.setdefault("source", ARENA_MARKET_SOURCE)
+                obj = models.Instrument(**extra)
+
+            elif ns in ("market_quotes", "spot_history"):
+                instrument_id = _parent_id("instruments", row["instrument"])
+                extra = {
+                    k: v for k, v in row.items()
+                    if k not in ("alias", "instrument")
+                }
+                # as_of maps to a DateTime column; parse ISO strings so quotes sort
+                # and resolve as real timestamps (mirrors risk_runs.created_at).
+                ao = extra.get("as_of")
+                if isinstance(ao, str):
+                    extra["as_of"] = (
+                        datetime.strptime(ao, "%Y-%m-%d")
+                        if len(ao) == 10
+                        else datetime.fromisoformat(ao)
+                    )
+                extra.setdefault("price_type", "close")
+                extra.setdefault("source", ARENA_MARKET_SOURCE)
+                obj = models.MarketQuote(instrument_id=instrument_id, **extra)
 
             else:  # pragma: no cover
                 raise WorkflowError(f"apply_seed: unhandled namespace {ns!r}")
