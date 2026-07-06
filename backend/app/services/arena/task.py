@@ -385,6 +385,11 @@ def _execute(
                 # outages must not flag deliberate opt-outs.
                 judge_missing = judge_result.judge_missing if judge_result else False
 
+                # Ability card (spec B7): derived from the same objective axes +
+                # tool-call count, JDG advisory (the jury score, None when off).
+                breakdown["card"] = scoring.ability_card(
+                    transcript, loaded, judged=judged_score)
+
                 # Save transcript to disk
                 transcript_path = _save_transcript(
                     transcript, artifact_root, workflow_id, model_id)

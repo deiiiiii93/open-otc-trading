@@ -493,6 +493,10 @@ def test_execute_arena_run_task_jury_off_scores_objective_only(session, settings
         bd = m["score_breakdown"]
         assert "judge" not in bd
         assert bd["subjective_mode"] == "disabled"
+        # Ability card stamped at write time (spec B7); jury-off → jdg None.
+        assert set(bd["card"]["stats"]) == {"GRD", "ADH", "SYN", "PRC", "EFF"}
+        assert isinstance(bd["card"]["ovr"], int)
+        assert bd["card"]["jdg"] is None
 
 
 def test_execute_arena_run_task_failed_match_doesnt_abort_run(session, settings):
