@@ -365,3 +365,36 @@ never by subjective), and exposes `subjective_mean/stdev/mode`.
   `test_golden_workflow_regression` (replay must earn 39/39); changing the
   manifest means updating all of them — and the golden replay fixtures must keep
   earning full marks (fixture-consistency gate).
+
+### Fixture determinism (Spec A — enables the Model Ability Card)
+
+The flagship producers must yield **byte-identical** numbers across runs so grounding
+can score against harvested truth. Package: `golden_workflows/determinism.py`
+(`seed_flagship` + `drive_producers`, `seed_backtest_history`),
+`harvest_fixtures.py`, `definitions/risk-manager-control-day.truth.json`. Gate:
+`tests/test_arena_fixture_determinism.py`.
+
+- **The gate is offline + clean-DB.** `drive_producers` calls each producer's private
+  `_execute_*(session, task_id, run_id)` seam (async dispatch suppressed) and compares
+  a **canonical** payload — volatile keys (`created_at`, ids, `execution_time`, …) are
+  stripped, else identical numbers still differ. Backtest is checked **strict** (reject
+  `excluded_positions` / empty result), because `domains/backtest.py` swallows a live-
+  fetch failure into an empty "completed" run.
+- **Audit result:** risk/landscape/scenario are deterministic via the profile
+  `valuation_date` (`batch_pricing.py`); the backtest was the only live-fetch drift.
+  `seed_backtest_history` seeds a flat `MarketDataProfile` over **every expected SSE
+  trading day** (`expected_trading_days`) so `ensure_spot_history` finds full coverage
+  and never fetches — also sidestepping the US-stock gap-detection refetch.
+- **Truth is harvested, never invented.** `harvest_fixtures.py` digs five targets from
+  real payloads into `*.truth.json`, keyed **by underlying/shift** (`[underlying=AAPL]`,
+  not `[position_id=8]` — ids aren't stable in a clean DB). Re-run
+  `python -m app.golden_workflows.harvest_fixtures` after any QuantArk numeric change
+  rather than hand-editing.
+- **Isolation posture:** the determinism gate and harvester run in **isolated** clean
+  DBs, and the **live arena path is unchanged** — no market data is seeded into the
+  shared store (risk uses the deterministic fallback spot; the flagship `.fixtures.json`
+  carries no quotes). `seed_backtest_history` tags its rows `source="arena_seed"`
+  (`ARENA_MARKET_SOURCE`) as a forward hook: if Spec B ever grounds on **backtest P&L**
+  it must also seed that history on the live path and add purge/exclusion, since a live
+  arena backtest currently still fetches real akshare history (the other four truth
+  targets match live via fallback-spot determinism).

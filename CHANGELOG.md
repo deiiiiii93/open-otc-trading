@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Arena fixture determinism** (spec `2026-07-06-arena-fixture-determinism`) — the
+  prerequisite for the Model Ability Card reform (Spec B). An **offline, clean-DB
+  determinism gate** (`app/golden_workflows/determinism.py`,
+  `tests/test_arena_fixture_determinism.py`) drives the flagship's four producers
+  (risk / landscape / scenario / backtest) twice from independent seeds with the
+  market-data provider disabled and asserts the canonical payloads are identical.
+  An **audit** confirmed risk/landscape/scenario are already deterministic (profile
+  `valuation_date`); the backtest was the sole live-fetch drift, now fixed by
+  `seed_backtest_history` (a flat `MarketDataProfile` covering every expected SSE
+  trading day, so `ensure_spot_history` never fetches akshare — also sidesteps the
+  US-stock gap-detection refetch). A **harvester** (`harvest_fixtures.py`) digs five
+  grounding truth values from the REAL payloads (underlying/shift-keyed, not
+  position-id) into `risk-manager-control-day.truth.json`: AAPL delta 573.35,
+  gamma@+10% 16.40, delta@-20% 391.19, scenario CVaR -7,759, backtest P&L -3,047.
+  The flagship replay transcript's previously-fictional prose/report/scenario/backtest
+  numbers are **reconciled** to that truth (the replay regression still earns 39/39).
+  `SEED_ACCOUNTING_DATE = 2026-06-24` freezes the golden-path valuation instant.
+
 ### Changed
 - **Arena scoring is objective-only by default; the LLM jury is now opt-in** (spec
   `2026-07-06-arena-jury-opt-in`). Run #11 showed the subjective jury is too unstable to
