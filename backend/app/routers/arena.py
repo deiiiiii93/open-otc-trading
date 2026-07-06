@@ -241,6 +241,10 @@ def build_arena_router(
             {
                 "model_id": r["model_id"],
                 "rank": r["rank"],
+                # Ability card (spec B5): OVR is the headline ranking axis; the
+                # full card_mean stat block feeds the radar. Null for uncarded rows.
+                "ovr": (r.get("card_mean") or {}).get("ovr"),
+                "card_mean": r.get("card_mean"),
                 "avg_objective": r["mean_objective"],
                 "subjective_mean": r["subjective_mean"],
                 "subjective_stdev": r["subjective_stdev"],

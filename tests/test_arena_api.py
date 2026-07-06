@@ -147,7 +147,11 @@ def test_get_run_returns_score_breakdown_on_matches(session, settings):
     resp = client.get(f"/api/arena/runs/{run_id}")
     assert resp.status_code == 200
     match = resp.json()["matches"][0]
-    assert match["score_breakdown"] == breakdown
+    # Derive-on-read adds an ability card (null here — no axes); stored content
+    # round-trips unchanged (spec B8).
+    got = match["score_breakdown"]
+    assert {k: got[k] for k in breakdown} == breakdown
+    assert got["card"] is None and got["card_reason"] == "legacy_no_axes"
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +235,31 @@ def test_leaderboard_keys_are_rank_objective_subjective(session, settings):
     assert row["subjective_mode"] == "panel"
     assert "avg_total" not in row and "mean_total" not in row  # blend dropped
     assert row["matches"] == 1
+
+
+def test_leaderboard_exposes_ovr(session, settings):
+    """A carded row surfaces OVR + the full card_mean stat block on the API."""
+    run_id = arena_store.create_run(
+        session, workflow_ids=["risk-manager-control-day"], model_ids=["m1"])
+    arena_store.set_run_status(session, run_id, "completed")
+    axes = {"grounding": {"passed": 9, "total": 10}, "adherence": {"passed": 10, "total": 11},
+            "synthesis": {"passed": 4, "total": 5}, "procedural": {"passed": 5, "total": 6}}
+    arena_store.record_match(
+        session, run_id, "risk-manager-control-day", "m1",
+        objective_score=80.0, judged_score=None, total_score=80.0,
+        judge_missing=False, config={}, transcript_path=None, status="scored",
+        score_breakdown={"objective": {"axes": axes},
+                         "diagnosis": {"counts_detail": {"tool_calls": 11}}},
+    )
+    session.commit()
+
+    client = _make_arena_app(session, settings)
+    resp = client.get("/api/arena/leaderboard")
+    assert resp.status_code == 200
+    row = resp.json()["rows"][0]
+    assert "ovr" in row and "card_mean" in row
+    assert row["ovr"] == row["card_mean"]["ovr"]
+    assert set(row["card_mean"]) == {"ovr", "GRD", "ADH", "SYN", "PRC", "EFF"}
 
 
 # ---------------------------------------------------------------------------
