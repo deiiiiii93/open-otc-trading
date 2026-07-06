@@ -212,13 +212,30 @@ def leaderboard(
             model_objectives[m.model_id].append(m.objective_score)
         bd = m.score_breakdown or {}
         judge = bd.get("judge") or {}
-        if judge.get("judged_score") is not None:
-            model_subjectives[m.model_id].append(judge["judged_score"])
+        # Effective subjective score: prefer the breakdown's judge block, else fall
+        # back to the top-level column (oldest rows persisted the score only there).
+        eff_judged = judge.get("judged_score")
+        if eff_judged is None:
+            eff_judged = m.judged_score
+        if eff_judged is not None:
+            model_subjectives[m.model_id].append(eff_judged)
         if judge.get("judged_stdev") is not None:
             model_sub_stdevs[m.model_id].append(judge["judged_stdev"])
-        mode = bd.get("subjective_mode") or judge.get("subjective_mode")
-        if mode:
-            model_sub_modes[m.model_id].append(mode)
+        # Per-row provenance (spec D8/D9): explicit mode wins; else a row that has a
+        # subjective score is an inferred legacy "panel"; else a judge-missing row is
+        # "missing"; else the jury was never intended → "disabled". This keeps legacy
+        # successful juries (no stored mode) from reading as outages, and keeps a
+        # deliberate opt-out distinct from a failed opt-in jury.
+        explicit_mode = bd.get("subjective_mode") or judge.get("subjective_mode")
+        if explicit_mode:
+            row_mode = explicit_mode
+        elif eff_judged is not None:
+            row_mode = "panel"
+        elif m.judge_missing:
+            row_mode = "missing"
+        else:
+            row_mode = "disabled"
+        model_sub_modes[m.model_id].append(row_mode)
         axes = (bd.get("objective") or {}).get("axes") or {}
         for ax, tally in axes.items():
             slot = model_axes[m.model_id].setdefault(ax, {"passed": 0, "total": 0})
@@ -226,12 +243,14 @@ def leaderboard(
             slot["total"] += tally.get("total", 0)
 
     def _agg_mode(modes: list[str]) -> str:
+        # Worst-visibility-wins so a degraded/failed jury-on row never collapses into
+        # a clean "disabled" board (spec D8): missing > self_consistency > panel >
+        # disabled. Empty (no scored rows) → "disabled".
         if not modes:
-            return "missing"
-        if "self_consistency" in modes:  # surface degradation over "panel"
-            return "self_consistency"
-        if "panel" in modes:
-            return "panel"
+            return "disabled"
+        for level in ("missing", "self_consistency", "panel", "disabled"):
+            if level in modes:
+                return level
         return modes[0]
 
     rows = []

@@ -380,6 +380,71 @@ def test_leaderboard_ranks_by_objective_not_blend(session):
     assert rows[0]["rank"] == 1 and rows[1]["rank"] == 2
 
 
+def test_leaderboard_objective_only_rows_report_disabled(session):
+    """Jury-off rows (subjective_mode='disabled', no judge block) rank by objective
+    and report subjective_mean None + mode 'disabled'."""
+    from app.services.arena import store as arena_store
+    run_id = arena_store.create_run(session, workflow_ids=["wf-a"], model_ids=["hi", "lo"])
+    arena_store.set_run_status(session, run_id, "completed")
+    for mid, obj in [("hi", 85.0), ("lo", 70.0)]:
+        arena_store.record_match(session, run_id=run_id, workflow_id="wf-a", model_id=mid,
+            objective_score=obj, judged_score=None, total_score=obj, judge_missing=True,
+            config={}, transcript_path=None, status="scored",
+            score_breakdown={"objective": {"axes": {}}, "subjective_mode": "disabled"})
+    rows = arena_store.leaderboard(session, run_id=run_id)
+    assert [r["model_id"] for r in rows] == ["hi", "lo"]
+    assert all(r["subjective_mean"] is None for r in rows)
+    assert all(r["subjective_mode"] == "disabled" for r in rows)
+
+
+def test_leaderboard_jury_all_failed_reports_missing_not_disabled(session):
+    """A jury-on row whose judges all failed aggregates to 'missing' (visible outage),
+    distinct from a deliberately disabled row."""
+    from app.services.arena import store as arena_store
+    run_id = arena_store.create_run(session, workflow_ids=["wf-a"], model_ids=["m1"])
+    arena_store.set_run_status(session, run_id, "completed")
+    arena_store.record_match(session, run_id=run_id, workflow_id="wf-a", model_id="m1",
+        objective_score=80.0, judged_score=None, total_score=80.0, judge_missing=True,
+        config={}, transcript_path=None, status="scored",
+        score_breakdown={"objective": {"axes": {}}, "judge": {"judged_score": None, "judge_missing": True}, "subjective_mode": "missing"})
+    rows = arena_store.leaderboard(session, run_id=run_id)
+    assert rows[0]["subjective_mode"] == "missing"
+
+
+def test_leaderboard_legacy_row_infers_panel(session):
+    """A legacy row with a judge score but NO stored subjective_mode infers 'panel',
+    not 'missing' — a successful legacy jury must not read as an outage."""
+    from app.services.arena import store as arena_store
+    run_id = arena_store.create_run(session, workflow_ids=["wf-a"], model_ids=["m1"])
+    arena_store.set_run_status(session, run_id, "completed")
+    arena_store.record_match(session, run_id=run_id, workflow_id="wf-a", model_id="m1",
+        objective_score=80.0, judged_score=72.0, total_score=76.0, judge_missing=False,
+        config={}, transcript_path=None, status="scored",
+        score_breakdown={"objective": {"axes": {}}, "judge": {"judged_score": 72.0}})
+    rows = arena_store.leaderboard(session, run_id=run_id)
+    assert rows[0]["subjective_mean"] == 72.0
+    assert rows[0]["subjective_mode"] == "panel"
+
+
+def test_leaderboard_legacy_toplevel_judged_score_no_breakdown(session):
+    """Oldest shape: top-level ArenaMatch.judged_score set, score_breakdown None.
+    The mean must still surface and infer 'panel' — never vanish as 'disabled'."""
+    from app.services.arena import store as arena_store
+    run_id = arena_store.create_run(session, workflow_ids=["wf-a"], model_ids=["m1", "m2"])
+    arena_store.set_run_status(session, run_id, "completed")
+    _make_match(session, run_id, model_id="m1", objective_score=80.0,
+                judged_score=72.0, judge_missing=False, total_score=76.0)
+    # a newer disabled row in the same board must not override the legacy panel
+    arena_store.record_match(session, run_id=run_id, workflow_id="wf-a", model_id="m2",
+        objective_score=90.0, judged_score=None, total_score=90.0, judge_missing=True,
+        config={}, transcript_path=None, status="scored",
+        score_breakdown={"objective": {"axes": {}}, "subjective_mode": "disabled"})
+    rows = {r["model_id"]: r for r in arena_store.leaderboard(session, run_id=run_id)}
+    assert rows["m1"]["subjective_mean"] == 72.0
+    assert rows["m1"]["subjective_mode"] == "panel"
+    assert rows["m2"]["subjective_mode"] == "disabled"
+
+
 def test_leaderboard_shares_rank_on_exact_objective_tie(session):
     from app.services.arena import store as arena_store
     run_id = arena_store.create_run(session, workflow_ids=["wf-a"], model_ids=["a", "b", "c"])
