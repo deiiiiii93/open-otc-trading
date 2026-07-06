@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Arena Model Ability Card** (spec `2026-07-06-arena-ability-card`) — the flat
+  objective score is now reported as a **FIFA-style 6-stat card** (each stat 0–99)
+  with a numbers-first **OVR**: `GRD` grounding, `ADH` adherence, `SYN` synthesis,
+  `PRC` procedure, `EFF` efficiency, and advisory `JDG` (the opt-in jury, **never**
+  in OVR). `OVR = round(0.32·GRD + 0.26·ADH + 0.16·SYN + 0.16·EFF + 0.10·PRC)`; each
+  stat is `round(99 × axis_pass_rate)`, `EFF = round(C × min(1, par/actual_calls) ×
+  99)` (correctness-gated so a do-nothing transcript can't game it). The leaderboard
+  **ranks by OVR mean** (`store.leaderboard`, shared rank on ties, tie-break
+  GRD→ADH→SYN→EFF→PRC); uncarded rows fall back to the legacy objective ranking so an
+  all-legacy board never collapses to one rank. Cards are **derived, never migrated**
+  (`scoring.card_from_axes`/`ability_card`, `store._derive_card`): a row with stored
+  `axes` is carded on read (drilldown + board), a row without is left uncarded with a
+  reason (`legacy_no_axes`/`missing_tool_count`/`workflow_unavailable`) rather than a
+  fabricated card. A new **`response_quotes_value`** assertion scores grounding against
+  harvested fixture truth **regardless of whether the tool fired that turn** — crediting
+  a smart correct-from-context answer that the old self-grounding path failed. The
+  flagship declares an optional `par_tool_calls: 11` (else derived from the
+  `expected_tools` sum); its steps 3/5/6 grounding now uses the harvested truth values.
+  Frontend: OVR headline column + an ability-card render (OVR, position archetype,
+  six-stat strip) in the match drilldown.
 - **Arena fixture determinism** (spec `2026-07-06-arena-fixture-determinism`) — the
   prerequisite for the Model Ability Card reform (Spec B). An **offline, clean-DB
   determinism gate** (`app/golden_workflows/determinism.py`,

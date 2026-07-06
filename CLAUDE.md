@@ -291,6 +291,48 @@ benchmark (was 7/32): grounding + adherence + synthesis checks on top of the
 procedural loop. Package: `backend/app/golden_workflows/` (schema/assertions/
 registry/scoring live here; arena scoring in `services/arena/scoring.py`).
 
+### Model Ability Card (Spec B, 2026-07-06)
+
+The objective score is surfaced as a **FIFA-style 6-stat card + OVR**, derived from
+the same 39-check evaluation — nothing is re-scored, no DB migration. Five OVR stats
+map 1:1 to the objective axes plus a computed EFF; JDG is the advisory jury score.
+
+- **Stats & OVR** (`scoring.card_from_axes`): `stat = round(99 × passed/total)` per
+  axis (grounding→GRD, adherence→ADH, synthesis→SYN, procedural→PRC).
+  `EFF = round(C × min(1, par/actual_calls) × 99)` where `C` is the (GRD+ADH+SYN)
+  pass fraction — correctness-gated, so 0 calls with low C → EFF 0 (no gaming by
+  omission), and being leaner than `par` is **not** penalized (ratio capped at 1).
+  `OVR = round(0.32·GRD + 0.26·ADH + 0.16·SYN + 0.16·EFF + 0.10·PRC)`. **JDG is never
+  in OVR.** `ability_card(transcript, loaded, judged)` is the write-time wrapper;
+  `card_from_axes` is the shared kernel.
+- **`par` = a COMPLETE compliant run's tool count, not just signature tools.**
+  `scoring.designed_par(wf)` = `wf.par_tool_calls` if set else
+  `sum(len(step.expected_tools))` (= 11 for the flagship — the 7 signature tools plus
+  the 4 retrieval/library calls). `par_tool_calls` is an **optional** manifest field
+  (`int | None`, `≥ 1`) so existing manifests still load; a `par` of 7 would wrongly
+  cap even a perfect lean run's EFF at ~0.64.
+- **Ranking** (`store.leaderboard`): by **OVR mean**, shared rank on exact ties,
+  tie-break GRD→ADH→SYN→EFF→PRC (`scoring.card_tiebreak_key`). **Uncarded rows keep
+  the legacy objective ranking** (mean_objective + sub-axis tie-break) and sort after
+  carded rows — so an all-legacy board (runs #1–#9, no stored `axes`) does NOT collapse
+  to a single shared rank.
+- **Derive on read, never migrate** (`store._derive_card(bd, workflow_id)`): the SINGLE
+  stored-breakdown→card path, used by both `leaderboard` and `_match_to_dict` (via
+  `_serialized_breakdown`) so board and drilldown agree. **Fail-honest** — requires
+  non-empty `objective.axes` + an explicit numeric `diagnosis.counts_detail.tool_calls`
+  + a loadable workflow, else `card: null` + a reason (`legacy_no_axes` /
+  `missing_tool_count` / `workflow_unavailable`). Runs #10–#11 (axes present) card on
+  read; runs #1–#9 (no axes, verified against the live DB) stay uncarded — never a
+  fabricated par / inflated EFF. A stored write-time `card` passes through untouched.
+- **`response_quotes_value`** (grounding axis) scores a **known-truth fixture value**
+  (harvested per Spec A) against the response text **regardless of whether the tool
+  fired that turn** — the point-2 fix: a correct-from-context answer now scores GRD
+  even though the old `response_quotes_tool_value` self-grounding failed it (no
+  same-step payload). Fields `value/rel_tol/scope/match/near` mirror the tool-value
+  assertion; `_quote_value_in_text` is reused. Flagship steps 3/5/6 use it, keyed to
+  `truth.json` values; `test_flagship_grounding_targets_match_truth_file` guards drift.
+  The denominator stays 39 (1:1 assertion swap); the golden replay still earns 39/39.
+
 ### Judge fairness & scoring methodology (2026-07-05 reform)
 
 The score has **two axes reported separately**: a deterministic **objective** score
