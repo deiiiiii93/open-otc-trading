@@ -114,8 +114,9 @@ signals are demoted and made transparent.
 - New assertion `response_quotes_value` (fields: `value`, `match`, `near`,
   `rel_tol`) reusing `_quote_value_in_text`. Register in `_AXIS_BY_TYPE` as
   `grounding`.
-- Manifest gains a `par_tool_calls` field (or derive from the success
-  `tools_routed_sequence` length) so EFF's `par` is data, not a literal.
+- Manifest gains an explicit `par_tool_calls` frontmatter field (e.g. `7` for the
+  flagship) so EFF's `par` is self-documenting per-workflow data, not a literal and
+  not coupled to the success-block internals.
 
 **`services/arena/store.py`**
 - `leaderboard` sorts by `card_mean.ovr`; shared-rank + stat-priority tie-break
