@@ -84,6 +84,10 @@ class _EnvironmentSettings(BaseSettings):
         False,
         validation_alias="OPEN_OTC_AGENT_CODE_INTERPRETER",
     )
+    arena_jury_enabled: bool = Field(
+        False,
+        validation_alias="OPEN_OTC_ARENA_JURY",
+    )
     feature_workflow_routing: bool = Field(
         True,
         validation_alias="OPEN_OTC_FEATURE_WORKFLOW_ROUTING",
@@ -232,6 +236,9 @@ class Settings:
     agent_code_interpreter_enabled: bool = field(
         default_factory=lambda: _env_value("agent_code_interpreter_enabled")
     )
+    arena_jury_enabled: bool = field(
+        default_factory=lambda: _env_value("arena_jury_enabled")
+    )
     feature_workflow_routing: bool = field(
         default_factory=lambda: _env_value("feature_workflow_routing")
     )
@@ -321,6 +328,11 @@ class Settings:
             self,
             "agent_code_interpreter_enabled",
             _coerce_bool(self.agent_code_interpreter_enabled),
+        )
+        object.__setattr__(
+            self,
+            "arena_jury_enabled",
+            _coerce_bool(self.arena_jury_enabled),
         )
         object.__setattr__(
             self,

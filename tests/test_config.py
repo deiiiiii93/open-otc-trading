@@ -9,6 +9,7 @@ ENV_KEYS = [
     "OPEN_OTC_DATABASE_URL",
     "OPEN_OTC_AGENT_RECURSION_LIMIT",
     "OPEN_OTC_AGENT_CODE_INTERPRETER",
+    "OPEN_OTC_ARENA_JURY",
     "OPEN_OTC_AGENT_STREAM_VERSION",
     "OPEN_OTC_ARTIFACT_DIR",
     "OPEN_OTC_ASYNC_TASK_WORKERS",
@@ -143,3 +144,29 @@ def test_arena_judge_pool_defaults():
     assert s.arena_judge_models == ["deepseek-v4-pro", "anthropic/claude-opus-4.8", "qwen/qwen3.7-max"]
     assert s.arena_min_judges == 2 and s.arena_self_consistency_k == 3
     assert s.arena_judge_substitutes == ["gemini-3.1-pro-preview", "glm-5.2", "kimi-k2.7-code"]
+
+
+def test_arena_jury_disabled_by_default(monkeypatch, tmp_path):
+    # Hermetic: cleared env + empty env file → proves the CODE default is False
+    # (objective-only). get_settings() is the production path _execute reads.
+    _clear_config_env(monkeypatch)
+    env_file = tmp_path / "empty.env"
+    env_file.write_text("")
+    config_module = _config_with_env_file(monkeypatch, env_file)
+    assert config_module.Settings().arena_jury_enabled is False
+
+
+def test_arena_jury_env_override(monkeypatch, tmp_path):
+    # OPEN_OTC_ARENA_JURY must flip the flag on the SAME object _execute reads.
+    _clear_config_env(monkeypatch)
+    env_file = tmp_path / "empty.env"
+    env_file.write_text("")
+    monkeypatch.setenv("OPEN_OTC_ARENA_JURY", "1")
+    config_module = _config_with_env_file(monkeypatch, env_file)
+    assert config_module.Settings().arena_jury_enabled is True
+
+
+def test_settings_coerces_direct_arena_jury_string():
+    from app.config import Settings
+    assert Settings(arena_jury_enabled="false").arena_jury_enabled is False
+    assert Settings(arena_jury_enabled="true").arena_jury_enabled is True
