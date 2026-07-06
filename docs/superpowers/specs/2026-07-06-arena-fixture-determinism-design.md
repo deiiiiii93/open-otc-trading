@@ -53,14 +53,36 @@ harvested from real tool payloads, not invented."*
   Everything time- or market-dependent on the golden/arena path resolves against
   it.
 
-- **A2 — Freeze the market snapshot (spot), not just the date.** The golden/arena
-  pricing path must resolve spot from a **pinned per-underlying snapshot** seeded
-  alongside the pricing parameters (e.g. AAPL/TSLA/NVDA spot = 100.0, matching the
-  seed stale-run's `spot: 100.0`), never from a live market feed. This is the
-  actual determinism lever — with spot, `r`, `q`, `vol`, `maturity` and
-  `valuation_date` all fixed, QuantArk output is a pure function and every producer
-  (`run_batch_pricing`, `run_greeks_landscape`, `run_scenario_test`,
-  `run_backtest`) is reproducible.
+- **A2 — Freeze spot through the *real* resolver, not the pricing rows.** Spot
+  must be pinned at the seam the pricing path actually reads. Code check
+  (Codex-verified): `PricingParameterRow` overrides only `rate` /
+  `dividend_yield` / `volatility` — it has **no `spot` column**;
+  `market_snapshot_for_position` resolves spot from the **quote store / fallback
+  snapshot**. So the determinism seam is one of:
+  (a) seed deterministic `MarketQuote` rows keyed to the seeded instruments
+  (AAPL/TSLA/NVDA spot = 100.0, matching the stale-run `spot: 100.0`) so the quote
+  store is the pinned source; or
+  (b) an explicit **arena valuation-context provider** injected into
+  `market_snapshot_for_position` on the golden/arena path.
+  The plan picks one (lean (a): it needs no new resolver branch and matches how
+  live pricing already works). A test must prove the **seeded spot is the source
+  actually used** by risk, landscape, scenario, *and* backtest — not merely present
+  in the DB. Do **not** add a `pricing_parameter_rows.spot` column (it would be
+  ignored by the resolver or fail at schema level).
+
+- **A2b — Freeze the backtest's historical inputs too; spot alone is not enough.**
+  Code check (Codex-verified): `run_backtest` (`services/domains/backtest.py`)
+  calls `ensure_spot_history(...)`, which **fetches and persists AkShare history**
+  when stored data is missing or gapped, and futures-chain resolution uses
+  wall-clock to pick the effective end date. Freezing the current-spot snapshot
+  does **not** make backtest P&L reproducible: a clean DB, a data gap, a provider
+  revision, or network degradation can change or fail the harvested P&L. So the
+  frozen seed must also carry the **complete historical market-data inputs**
+  backtest consumes over `2026-03-24 → 2026-06-24`: the per-underlying spot-history
+  series `ensure_spot_history` would otherwise fetch, and any futures-chain rows,
+  seeded so no live fetch is ever triggered on the golden path. With `valuation_date`
+  fixed, futures end-date resolution is deterministic against the same seed instant
+  (A1/A7).
 
 - **A3 — Inject the clock/market context; do not touch production wall-clock.**
   Pinning applies **only** to the golden-workflow / arena desk path (seeded
@@ -84,9 +106,13 @@ harvested from real tool payloads, not invented."*
   this, the golden-replay regression earns full marks against **fixture** grounding
   (not just self-grounding), closing the prose/payload gap.
 
-- **A6 — Determinism gate test.** A test seeds the frozen state and drives the
-  flagship producers twice (or re-harvests), asserting the harvested numbers are
-  identical across runs. This is the guard that keeps the fixture truth valid over
+- **A6 — Determinism gate test runs clean-DB and OFFLINE.** A test seeds the
+  frozen state and drives the flagship producers twice (or re-harvests), asserting
+  the harvested numbers are identical across runs. Critically it runs from a
+  **clean database with the market-data provider / network disabled or mocked to
+  hard-fail** — so any residual live fetch (`ensure_spot_history`, quote refresh,
+  futures-chain lookup) raises instead of silently pulling environment-specific
+  data into the fixtures. This is the guard that keeps the fixture truth valid over
   time — if a producer ever reintroduces wall-clock/live-market dependence on the
   golden path, this test fails loudly rather than silently rotting the fixtures.
 
@@ -100,16 +126,21 @@ harvested from real tool payloads, not invented."*
 
 **Seed / fixtures (`app/golden_workflows/fixtures.py`,
 `risk-manager-control-day.fixtures.json`)**
-- Introduce `SEED_ACCOUNTING_DATE` (constant) and a `market_snapshot` seed
-  namespace (or extend `pricing_parameter_rows` with a `spot` column) so each
-  underlying carries a pinned spot. Validate it in `_NAMESPACES`.
+- Introduce `SEED_ACCOUNTING_DATE` (constant). Add a **`market_quotes`** seed
+  namespace (seam (a) of A2) that inserts deterministic `MarketQuote` rows for each
+  seeded instrument so `market_snapshot_for_position` resolves the pinned spot from
+  the quote store. Add a **`spot_history`** (and, if used, futures-chain) seed
+  namespace carrying the backtest's historical series over the flagship window
+  (A2b). Validate both in `_NAMESPACES`. **Do not** add `pricing_parameter_rows.spot`.
 - Reconcile all replay prose/report numbers to the harvested truth (A5).
 
-**Pricing / producer path** — resolve the valuation context (date + spot
-snapshot) from the frozen seed on the golden/arena path via the injectable seam
-(A3). Identify the exact resolution points during planning
-(`run_batch_pricing` / greeks-landscape / scenario / backtest producers); the plan
-enumerates each and routes it through the seam.
+**Pricing / producer path** — the plan enumerates every spot / market-data
+resolution point across the four producers and confirms each reads the seeded
+source: `market_snapshot_for_position` (risk / landscape / scenario) reads the
+seeded `MarketQuote`; `ensure_spot_history` + futures-chain resolution (backtest)
+read the seeded `spot_history` and never fetch live (A2/A2b). If any path cannot be
+satisfied by seeding alone, route it through the injectable valuation-context seam
+(A3, seam (b)).
 
 **Harvester (`app/golden_workflows/` tool or `scripts/`)** — `harvest_fixtures`:
 seed frozen state → drive flagship once → emit the manifest grounding targets.
@@ -133,7 +164,13 @@ frozen, harvested ones.
 ## Testing
 
 - **Determinism (A6):** seed frozen state, drive producers twice, assert byte-equal
-  harvested numbers.
+  harvested numbers — **clean DB, provider/network disabled or mocked to raise**, so
+  any live `ensure_spot_history` / quote / futures-chain fetch fails the gate rather
+  than leaking environment data into the fixtures.
+- **Seeded-source proof (A2/A2b):** assert the seeded spot is the value actually
+  used by risk, landscape, scenario, and backtest (not merely present in the DB),
+  and that a run with the provider disabled still completes because history was
+  seeded — proving no live fetch path remains on the golden path.
 - **Fixture consistency:** the golden-replay regression earns 39/39 with the
   reconciled transcript, now against fixture grounding — extends the existing
   fixture-consistency gate.
