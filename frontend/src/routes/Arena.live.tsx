@@ -38,10 +38,11 @@ function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
   const judge = breakdown.judge;
   const diagnosis = breakdown.diagnosis;
 
-  // Aggregate (averaged multi-trial) or pre-v2 rows may carry only the headline
-  // scores without per-check detail. Render a compact summary instead of
-  // crashing on the absent `objective`/`judge` shape.
-  if (!obj || !judge) {
+  // Objective drives the detailed view (it is the sole ranking axis). The compact
+  // fallback is only for rows with NO objective block (aggregate/pre-v2 headline-only
+  // rows). A jury-off row has objective but no `judge` — it must still show full
+  // objective detail, with the subjective/jury sections simply omitted.
+  if (!obj) {
     return (
       <div className="wl-arena__breakdown">
         <div className="wl-arena__breakdown-head">
@@ -86,12 +87,13 @@ function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
         <span className="wl-arena__transcript-title">Score breakdown</span>
         <span className="wl-arena__breakdown-tally">
           Objective {obj.passed}/{obj.total}
-          {judge.judged_score != null && !judge.judge_missing
-            ? ` · Subjective ${judge.judged_score.toFixed(1)}${
-                judge.judged_stdev != null ? ` ± ${judge.judged_stdev.toFixed(1)}` : ''
-              } (adv.)`
-            : ' · Subjective n/a'}
-          {breakdown.subjective_mode === 'self_consistency' && (
+          {judge &&
+            (judge.judged_score != null && !judge.judge_missing
+              ? ` · Subjective ${judge.judged_score.toFixed(1)}${
+                  judge.judged_stdev != null ? ` ± ${judge.judged_stdev.toFixed(1)}` : ''
+                } (adv.)`
+              : ' · Subjective n/a')}
+          {judge && breakdown.subjective_mode === 'self_consistency' && (
             <span className="wl-arena__degraded-chip" title="Single-judge fallback">degraded</span>
           )}
         </span>
@@ -162,7 +164,7 @@ function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
         </div>
       )}
 
-      {judge.rubric_scores.length > 0 && (
+      {judge && judge.rubric_scores.length > 0 && (
         <div className="wl-arena__breakdown-step">
           <div className="wl-arena__breakdown-step-head">
             <span className="wl-arena__breakdown-step-title">Judge rubric</span>
@@ -178,7 +180,7 @@ function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
         </div>
       )}
 
-      {judge.per_judge && judge.per_judge.length > 0 && (
+      {judge && judge.per_judge && judge.per_judge.length > 0 && (
         <div className="wl-arena__breakdown-step">
           <div className="wl-arena__breakdown-step-head">
             <span className="wl-arena__breakdown-step-title">Per-judge (jury)</span>
@@ -285,8 +287,20 @@ export function ArenaLive() {
     `${leaderboard.length} model${leaderboard.length === 1 ? '' : 's'}`,
   ];
 
-  const leaderboardColumns: Column<ArenaLeaderboardRow>[] = useMemo(
-    () => [
+  // Board-level predicate: the jury was intended for at least one displayed row
+  // (a jury-on run, or a legacy row). A pure objective-only board (every row
+  // "disabled") hides the Subjective column entirely; a mixed board keeps it so a
+  // failed opt-in jury ("missing") never silently vanishes (spec D7).
+  const juryIntended = useMemo(
+    () =>
+      leaderboard.some(
+        (r) => r.subjective_mean != null || r.subjective_mode !== 'disabled',
+      ),
+    [leaderboard],
+  );
+
+  const leaderboardColumns: Column<ArenaLeaderboardRow>[] = useMemo(() => {
+    const cols: Column<ArenaLeaderboardRow>[] = [
       {
         key: 'rank',
         header: 'Rank',
@@ -308,47 +322,58 @@ export function ArenaLive() {
         width: 'minmax(0, 1fr)',
         render: (row) => fmtScore(row.avg_objective),
       },
-      {
-        // Advisory only — jury mean ± stdev; never affects rank.
+    ];
+    if (juryIntended) {
+      cols.push({
+        // Advisory only — jury mean ± stdev; never affects rank. Shown only on
+        // boards where the jury was intended.
         key: 'subjective',
         header: 'Subjective (adv.)',
         numeric: true,
         width: 'minmax(0, 1.2fr)',
-        render: (row) => (
-          <span className="wl-arena__subjective">
-            {row.subjective_mean == null ? (
-              <span className="wl-arena__subjective-na">n/a</span>
-            ) : (
-              <>
-                {row.subjective_mean.toFixed(1)}
-                {row.subjective_stdev != null && (
-                  <span className="wl-arena__subjective-sd"> ± {row.subjective_stdev.toFixed(1)}</span>
-                )}
-              </>
-            )}
-            {row.subjective_mode === 'self_consistency' && (
-              <span className="wl-arena__degraded-chip" title="Single-judge fallback — panel unavailable">degraded</span>
-            )}
-          </span>
-        ),
-      },
-      {
-        key: 'matches',
-        header: 'Matches',
-        numeric: true,
-        width: 'minmax(0, 1fr)',
-        render: (row) => (
-          <span className="wl-arena__match-count">
-            {row.matches}
-            {(row.invalid ?? 0) > 0 && (
-              <span className="wl-arena__invalid-chip">{row.invalid} infra</span>
-            )}
-          </span>
-        ),
-      },
-    ],
-    [models],
-  );
+        render: (row) => {
+          // Jury on but all judges failed → visible outage marker, not blank.
+          if (row.subjective_mode === 'missing') {
+            return (
+              <span className="wl-arena__subjective">
+                <span className="wl-arena__subjective-na" title="Jury failed — all judges unavailable">—</span>
+              </span>
+            );
+          }
+          // Deliberately jury-off row inside a mixed board → blank cell.
+          if (row.subjective_mean == null) {
+            return <span className="wl-arena__subjective" />;
+          }
+          return (
+            <span className="wl-arena__subjective">
+              {row.subjective_mean.toFixed(1)}
+              {row.subjective_stdev != null && (
+                <span className="wl-arena__subjective-sd"> ± {row.subjective_stdev.toFixed(1)}</span>
+              )}
+              {row.subjective_mode === 'self_consistency' && (
+                <span className="wl-arena__degraded-chip" title="Single-judge fallback — panel unavailable">degraded</span>
+              )}
+            </span>
+          );
+        },
+      });
+    }
+    cols.push({
+      key: 'matches',
+      header: 'Matches',
+      numeric: true,
+      width: 'minmax(0, 1fr)',
+      render: (row) => (
+        <span className="wl-arena__match-count">
+          {row.matches}
+          {(row.invalid ?? 0) > 0 && (
+            <span className="wl-arena__invalid-chip">{row.invalid} infra</span>
+          )}
+        </span>
+      ),
+    });
+    return cols;
+  }, [models, juryIntended]);
 
   return (
     <PageScaffold

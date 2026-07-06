@@ -46,8 +46,9 @@ export type ArenaScoreBreakdown = {
     per_judge?: { model: string; judged_score: number }[];
     judged_stdev?: number | null;
   };
-  // How the subjective score was produced: "panel" | "self_consistency"
-  // (a DEGRADED single-model fallback) | "missing".
+  // How the subjective score was produced: "disabled" (jury opt-out — no judge
+  // attempted) | "panel" | "self_consistency" (DEGRADED single-model fallback) |
+  // "missing" (jury on, all judges failed).
   subjective_mode?: string;
   diagnosis?: {
     counts: string;

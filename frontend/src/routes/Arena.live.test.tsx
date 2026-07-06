@@ -217,6 +217,60 @@ describe('ArenaLive', () => {
     ).toBeGreaterThan(0);
   });
 
+  it('hides the Subjective column when every leaderboard row is jury-disabled', async () => {
+    setupMocks();
+    vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({
+      rows: [
+        { model_id: 'claude-sonnet', rank: 1, avg_objective: 0.9, subjective_mean: null,
+          subjective_mode: 'disabled', matches: 3, invalid: 0 },
+        { model_id: 'gpt-4o', rank: 2, avg_objective: 0.75, subjective_mean: null,
+          subjective_mode: 'disabled', matches: 3, invalid: 0 },
+      ],
+    });
+    render(<ArenaLive />);
+    expect(await screen.findByText('Claude Sonnet')).toBeInTheDocument();
+    // Objective-only board → no Subjective column header.
+    expect(screen.queryByText(/Subjective/)).not.toBeInTheDocument();
+  });
+
+  it('shows the Subjective column on a mixed board (jury-on + disabled rows)', async () => {
+    setupMocks();
+    vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({
+      rows: [
+        { model_id: 'claude-sonnet', rank: 1, avg_objective: 0.9, subjective_mean: 0.55,
+          subjective_stdev: 0.1, subjective_mode: 'panel', matches: 3, invalid: 0 },
+        { model_id: 'gpt-4o', rank: 2, avg_objective: 0.75, subjective_mean: null,
+          subjective_mode: 'disabled', matches: 3, invalid: 0 },
+      ],
+    });
+    render(<ArenaLive />);
+    expect(await screen.findByText('Claude Sonnet')).toBeInTheDocument();
+    // Any jury-intended row keeps the column visible so it never silently vanishes.
+    expect(screen.getByText(/Subjective/)).toBeInTheDocument();
+  });
+
+  it('renders objective drilldown for a jury-off match (no judge block, no per-judge)', async () => {
+    setupMocks();
+    const objBreakdown = { ...mockMatches[0].score_breakdown, subjective_mode: 'disabled' };
+    delete (objBreakdown as { judge?: unknown }).judge;
+    const objOnlyMatch = {
+      ...mockMatches[0], id: 201, judged_score: null, judge_missing: true,
+      score_breakdown: objBreakdown,
+    };
+    vi.mocked(arenaApi.getArenaRun).mockResolvedValue({ run: mockRuns[0], matches: [objOnlyMatch] });
+    render(<ArenaLive />);
+    await userEvent.click(await screen.findByText('1'));
+    await userEvent.click(await screen.findByText('workflow-a'));
+    // Detailed objective view (NOT the compact fallback): tally + step checks render.
+    expect(await screen.findByText('Score breakdown')).toBeInTheDocument();
+    expect(screen.getByText(/Objective 1\/2/)).toBeInTheDocument();
+    expect(screen.getByText('skill: read-risk-result')).toBeInTheDocument();
+    expect(screen.getByText('tool: get_latest_risk_run')).toBeInTheDocument();
+    // No subjective/jury sections when the jury did not run.
+    expect(screen.queryByText('Per-judge (jury)')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Subjective 80/)).not.toBeInTheDocument();
+  });
+
   it('renders aggregate-shaped breakdown (no per-check objective) without crashing', async () => {
     // Regression: multi-trial averaged rows (run #10) carry only headline
     // scores + `aggregate`, with NO top-level `objective`/`judge`. The drilldown
