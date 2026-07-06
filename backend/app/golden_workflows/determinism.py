@@ -44,17 +44,33 @@ def _canonical(payload: Any) -> Any:
     return payload
 
 
-def _strict_backtest(results: dict) -> dict:
-    """Reject a hollow backtest (Codex plan-review [high]). The backtest pipeline
-    records ``excluded_positions`` and can return an empty result rather than
-    raising when market-data prep fails under the offline gate."""
-    excluded = results.get("excluded_positions")
+def _require_complete(run, payload: dict, *, kind: str, needs: str) -> dict:
+    """Reject a non-completed or partial producer run BEFORE harvesting its
+    payload (Codex code-review [high]). A deterministic *failure* shape (excluded
+    positions, zeroed curves, empty results) must not be certified as truth. The
+    run's own status/exclusions are the source of truth, not just payload shape."""
+    from app.models import TaskStatus
+
+    status = getattr(run, "status", None)
+    if status != TaskStatus.COMPLETED.value:
+        raise AssertionError(f"{kind} run not completed: status={status!r}")
+    excluded = getattr(run, "excluded_positions", None)
     if excluded:
         raise AssertionError(
-            f"backtest excluded positions (live-fetch masked?): {excluded}")
-    if not results.get("by_underlying"):
-        raise AssertionError(f"backtest produced no by_underlying series: {results!r}")
-    return _canonical(results)
+            f"{kind} excluded positions (live-fetch/partial run masked?): {excluded}")
+    if not payload.get(needs):
+        raise AssertionError(f"{kind} payload missing/empty {needs!r}: {payload!r}")
+    return _canonical(payload)
+
+
+def _require_priced(risk_metrics: dict) -> dict:
+    """Risk has no excluded_positions column; a partial run surfaces as per-position
+    greeks_ok/pricing_ok=False. Reject any un-priced position."""
+    bad = [p.get("position_id") for p in risk_metrics.get("positions", [])
+           if not (p.get("greeks_ok") and p.get("pricing_ok"))]
+    if bad:
+        raise AssertionError(f"risk positions failed pricing/greeks: {bad}")
+    return risk_metrics
 
 
 @contextmanager
@@ -114,7 +130,7 @@ def seed_flagship(session) -> dict[str, dict[str, int]]:
     return ids
 
 
-def _drive_risk(session, portfolio_id, profile_id) -> dict:
+def _drive_risk(session, portfolio_id, profile_id):
     from app.services.batch_pricing import (
         queue_batch_pricing, _execute_batch_pricing_task,
     )
@@ -123,10 +139,10 @@ def _drive_risk(session, portfolio_id, profile_id) -> dict:
         pricing_parameter_profile_id=profile_id)
     _execute_batch_pricing_task(session, task.id, run.id)
     session.refresh(run)
-    return run.metrics or {}
+    return run, run.metrics or {}
 
 
-def _drive_landscape(session, portfolio_id, profile_id) -> dict:
+def _drive_landscape(session, portfolio_id, profile_id):
     from app.services.greeks_landscape import (
         queue_greeks_landscape, _execute_greeks_landscape_task,
     )
@@ -135,10 +151,10 @@ def _drive_landscape(session, portfolio_id, profile_id) -> dict:
         pricing_parameter_profile_id=profile_id)
     _execute_greeks_landscape_task(session, task.id, run.id)
     session.refresh(run)
-    return run.results or {}
+    return run, run.results or {}
 
 
-def _drive_scenario(session, portfolio_id, profile_id) -> dict:
+def _drive_scenario(session, portfolio_id, profile_id):
     from app.services import scenario_test_runner
     run, task = scenario_test_runner.queue_scenario_test(
         session, portfolio_id=portfolio_id,
@@ -147,10 +163,10 @@ def _drive_scenario(session, portfolio_id, profile_id) -> dict:
         pricing_parameter_profile_id=profile_id)
     scenario_test_runner._execute(session, task.id, run.id)
     session.refresh(run)
-    return run.results or {}
+    return run, run.results or {}
 
 
-def _drive_backtest(session, portfolio_id, profile_id) -> dict:
+def _drive_backtest(session, portfolio_id, profile_id):
     from app.services import backtest_runner
     run, task = backtest_runner.queue_backtest(
         session, portfolio_id=portfolio_id,
@@ -159,18 +175,28 @@ def _drive_backtest(session, portfolio_id, profile_id) -> dict:
         pricing_parameter_profile_id=profile_id)
     backtest_runner._execute(session, task.id, run.id)
     session.refresh(run)
-    return run.results or {}
+    return run, run.results or {}
 
 
 def drive_producers(session, ids: dict[str, dict[str, int]]) -> dict[str, Any]:
     """Drive all four flagship producers synchronously and return canonical
-    (volatile-stripped) payloads keyed risk/landscape/scenario/backtest."""
+    (volatile-stripped) payloads keyed risk/landscape/scenario/backtest. Each run
+    is validated complete (status/exclusions/priced) BEFORE its payload is trusted
+    — a deterministic partial/failed run must not be certified."""
     portfolio_id = ids["portfolios"]["control"]
     profile_id = ids["pricing_profiles"]["prof"]
     with _no_async_dispatch():
-        return {
-            "risk": _canonical(_drive_risk(session, portfolio_id, profile_id)),
-            "landscape": _canonical(_drive_landscape(session, portfolio_id, profile_id)),
-            "scenario": _canonical(_drive_scenario(session, portfolio_id, profile_id)),
-            "backtest": _strict_backtest(_drive_backtest(session, portfolio_id, profile_id)),
-        }
+        r_run, r = _drive_risk(session, portfolio_id, profile_id)
+        l_run, l = _drive_landscape(session, portfolio_id, profile_id)
+        s_run, s = _drive_scenario(session, portfolio_id, profile_id)
+        b_run, b = _drive_backtest(session, portfolio_id, profile_id)
+    return {
+        "risk": _require_complete(
+            r_run, _require_priced(r), kind="risk", needs="positions"),
+        "landscape": _require_complete(
+            l_run, l, kind="landscape", needs="portfolio"),
+        "scenario": _require_complete(
+            s_run, s, kind="scenario", needs="var_cvar"),
+        "backtest": _require_complete(
+            b_run, b, kind="backtest", needs="by_underlying"),
+    }

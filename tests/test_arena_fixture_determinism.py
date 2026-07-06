@@ -66,7 +66,7 @@ def test_offline_guard_trips_without_seeded_history(offline_session_factory, blo
     or the swallowed empty result trips _strict_backtest. Guards against certifying
     a hollow backtest (Codex plan-review [high])."""
     from app.golden_workflows.determinism import (
-        _drive_backtest, _strict_backtest, _no_async_dispatch,
+        _drive_backtest, _require_complete, _no_async_dispatch,
     )
     from app.golden_workflows.fixtures import apply_seed
     from app.golden_workflows.registry import get_workflow_bundle
@@ -80,7 +80,8 @@ def test_offline_guard_trips_without_seeded_history(offline_session_factory, blo
         prof = ids["pricing_profiles"]["prof"]
         with pytest.raises((RuntimeError, AssertionError)):
             with _no_async_dispatch():
-                _strict_backtest(_drive_backtest(s, pid, prof))
+                run, results = _drive_backtest(s, pid, prof)
+                _require_complete(run, results, kind="backtest", needs="by_underlying")
 
 
 def test_harvest_matches_payloads_and_is_idempotent(offline_session_factory, block_network):
@@ -108,3 +109,18 @@ def test_harvest_raises_on_unresolved_target(offline_session_factory, block_netw
     with offline_session_factory() as s:
         with pytest.raises(RuntimeError):
             hf.harvest(s)
+
+
+def test_committed_truth_file_is_current(offline_session_factory, block_network):
+    """The committed truth.json must equal a fresh harvest — otherwise objective
+    grounding (Spec B) anchors to stale numbers while the determinism gate stays
+    green (Codex code-review [high]). Re-run harvest_fixtures to refresh."""
+    import json
+    from app.golden_workflows.harvest_fixtures import harvest, TRUTH_PATH
+
+    committed = json.loads(TRUTH_PATH.read_text())
+    with offline_session_factory() as s:
+        fresh = harvest(s)
+    assert committed == fresh, (
+        "risk-manager-control-day.truth.json is stale — run "
+        "`python -m app.golden_workflows.harvest_fixtures`")
