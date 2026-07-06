@@ -289,6 +289,12 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
         return ok, "" if ok else (
             f"response does not quote {a.path}={val} "
             f"(match={a.match}, rel_tol={a.rel_tol}, near={a.near})")
+    if t == "response_quotes_value":
+        ok = _quote_value_in_text(ctx.response_text, float(a.value),
+                                  rel_tol=a.rel_tol, mode=a.match, near=a.near)
+        return ok, "" if ok else (
+            f"response does not quote value {a.value} "
+            f"(match={a.match}, rel_tol={a.rel_tol}, near={a.near})")
     return False, f"unknown assertion {t}"
 
 def resolve_seed_refs(obj: Any, seed_map: dict[str, Any]) -> Any:

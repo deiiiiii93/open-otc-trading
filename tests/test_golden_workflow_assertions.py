@@ -452,3 +452,29 @@ def test_max_calls_blocks_duplicate_compliant_dispatch():
     uncapped = _scenario_called(all_calls=True)
     ok2, _ = evaluate_assertion(uncapped, ctx(tool_calls=calls))
     assert ok2
+
+
+# --- response_quotes_value (fixture-truth grounding, Spec B) -----------------
+from app.golden_workflows.schema import _ResponseQuotesValue
+
+def test_response_quotes_value_signed_hit():
+    a = _ResponseQuotesValue(type="response_quotes_value", value=573.3467, near=["delta"])
+    ok, _ = evaluate_assertion(a, ctx(response_text="AAPL delta is 573.35"))
+    assert ok
+
+def test_response_quotes_value_signed_miss_on_wrong_sign():
+    a = _ResponseQuotesValue(type="response_quotes_value", value=573.3467, near=["delta"])
+    ok, _ = evaluate_assertion(a, ctx(response_text="AAPL delta is -573.35"))
+    assert not ok
+
+def test_response_quotes_value_magnitude_ignores_sign():
+    a = _ResponseQuotesValue(type="response_quotes_value", value=-7758.99,
+                             match="magnitude", near=["cvar"])
+    ok, _ = evaluate_assertion(a, ctx(response_text="CVaR loss of 7,759"))
+    assert ok
+
+def test_response_quotes_value_no_tool_needed():
+    # point-2 fix: correct-from-context, ZERO tool_results present.
+    a = _ResponseQuotesValue(type="response_quotes_value", value=16.403, near=["gamma"])
+    ok, _ = evaluate_assertion(a, ctx(response_text="gamma at +10% is 16.40"))
+    assert ok

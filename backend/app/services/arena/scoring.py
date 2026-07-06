@@ -59,6 +59,7 @@ _AXIS_BY_TYPE = {
     "response_contains": "adherence",
     "tool_result_path": "grounding",
     "response_quotes_tool_value": "grounding",
+    "response_quotes_value": "grounding",
     "artifact_exists": "synthesis",
     "artifact_contains": "synthesis",
 }
@@ -145,6 +146,8 @@ def _assertion_label(a) -> str:
         return f"artifact({a.kind}) contains " + " / ".join(a.any_of)
     if t == "response_quotes_tool_value":
         return f"response quotes {a.tool} {a.path}"
+    if t == "response_quotes_value":
+        return f"response quotes value {a.value}"
     return t
 
 

@@ -130,10 +130,30 @@ class _ResponseQuotesToolValue(BaseModel):
         return self
 
 
+class _ResponseQuotesValue(BaseModel):
+    # Grounding against a KNOWN-TRUTH fixture value (Spec A harvest), independent
+    # of whether the tool fired this turn — credits correct-from-context answers.
+    type: Literal["response_quotes_value"]
+    value: float
+    rel_tol: float = 0.02
+    scope: Literal["step", "session"] = "step"
+    match: Literal["signed", "magnitude"] = "signed"
+    near: list[str] | None = None
+
+    @model_validator(mode="after")
+    def _bounds(self) -> "_ResponseQuotesValue":
+        if not (0 < self.rel_tol < 1):
+            raise ValueError("rel_tol must be in (0, 1)")
+        if self.near is not None and not self.near:
+            raise ValueError("near must be non-empty when present")
+        return self
+
+
 Assertion = Annotated[
     Union[_SkillRouted, _SkillsRoutedSequence, _ToolsRoutedSequence, _ToolCalled,
           _TaskReturnedId, _ArtifactExists, _ResponseContains, _ToolResultPath,
-          _ToolNotCalled, _ArtifactContains, _ResponseQuotesToolValue],
+          _ToolNotCalled, _ArtifactContains, _ResponseQuotesToolValue,
+          _ResponseQuotesValue],
     Field(discriminator="type"),
 ]
 
