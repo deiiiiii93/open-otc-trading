@@ -300,6 +300,19 @@ ranking; `store.leaderboard` sorts by `mean_objective`, assigns **shared ranks**
 exact ties (broken by sub-axis priority grounding→adherence→synthesis→procedural,
 never by subjective), and exposes `subjective_mean/stdev/mode`.
 
+> **Jury is opt-in, default OFF (2026-07-06, spec `2026-07-06-arena-jury-opt-in`).**
+> Run #11 showed the jury too unstable to inform evaluation (it ranked models in
+> reverse of the objective axis and swung on ZenMux judge reachability), so the default
+> is **objective-only**. `OPEN_OTC_ARENA_JURY` (`Settings.arena_jury_enabled`, default
+> `False`) gates the default jury in `task._execute`; an injected `judge_fn` still runs
+> regardless (test seam). When off, a match stamps `subjective_mode="disabled"` and
+> writes **no** `judge` block. Provenance values: `disabled` (opt-out) | `missing` (jury
+> on, all judges failed) | `self_consistency` (degraded) | `panel`; `store.leaderboard`
+> aggregates worst-visibility-wins (`missing > self_consistency > panel > disabled`) and
+> **infers `panel`** for legacy pre-mode rows (score present, no mode) so old juries
+> don't read as outages. The jury code, config knobs, and the 2-point rubric are all
+> retained for opt-in use — nothing was deleted or migrated.
+
 - **The judge is a contestant-excluded jury** (`judge.py::judge_panel`): a panel of 3
   diverse models (`Settings.arena_judge_models` — `deepseek-v4-pro` on the DIRECT
   channel + `claude-opus-4.8` + `qwen3.7-max`), per-judge scores + `judged_stdev`,

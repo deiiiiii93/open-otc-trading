@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Arena scoring is objective-only by default; the LLM jury is now opt-in** (spec
+  `2026-07-06-arena-jury-opt-in`). Run #11 showed the subjective jury is too unstable to
+  inform evaluation even as an advisory axis — it ranked models in reverse of the
+  deterministic objective axis and swung on which ZenMux judges were reachable — so the
+  jury is gated behind `OPEN_OTC_ARENA_JURY` (default **off**). The jury code, config
+  knobs, and the 2-point manifest rubric are all kept intact for opt-in use.
+  - **Provenance is explicit** so a failed opt-in jury never looks like a deliberate
+    opt-out: a jury-off match stamps `subjective_mode="disabled"` (no judge attempted),
+    distinct from `"missing"` (jury on, all judges failed), `"self_consistency"`
+    (degraded), and `"panel"`. The leaderboard aggregates worst-visibility-wins
+    (`missing > self_consistency > panel > disabled`).
+  - **Legacy rows are inferred, not migrated** — pre-`subjective_mode` rows with a
+    subjective score (in the breakdown or the top-level column) read as `"panel"`, so old
+    successful juries never surface as outages. No DB migration; historical subjective
+    data is interpreted on read and still shows on drilldown.
+  - **UI** — the objective drilldown now renders in full for jury-off matches (it no
+    longer collapses to the compact fallback when the judge block is absent); the
+    leaderboard shows the Subjective column only for boards where the jury was intended,
+    with a visible degraded/`—` marker for `"missing"` rows.
 - **Arena judge fairness & scoring-methodology reform** — the LLM judge is confined to
   genuinely-subjective quality and de-biased; the leaderboard now ranks by the
   deterministic **objective** axis alone (spec `2026-07-05-arena-judge-fairness`).
