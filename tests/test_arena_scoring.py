@@ -453,6 +453,29 @@ def test_card_do_nothing_scores_low_eff():
     assert scoring.card_from_axes(axes, 0, 11)["stats"]["EFF"] == 0   # C=0 → no gaming
 
 
+def test_card_zero_tools_par_positive_gets_zero_eff():
+    # Value-only grounding can pass WITHOUT tool calls; a zero-tool transcript that
+    # quotes the truth numbers must NOT earn a free EFF pass (non-execution, not lean).
+    # GRD still credits the (context-derived) numbers — that is the point-2 fix — but
+    # EFF and PRC go to 0, so the card honestly reads "strong numbers, no execution".
+    axes = {"grounding": {"passed": 9, "total": 10}, "adherence": {"passed": 8, "total": 10},
+            "synthesis": {"passed": 2, "total": 3}, "procedural": {"passed": 0, "total": 6}}
+    card = scoring.card_from_axes(axes, tool_calls=0, par=11)
+    assert card["stats"]["EFF"] == 0
+    assert card["stats"]["PRC"] == 0
+    # Pre-fix (free EFF pass) this OVR was 73; zeroing the 16% EFF weight drops it.
+    with_free_eff = round(0.32 * 89 + 0.26 * 79 + 0.16 * 66 + 0.16 * 82 + 0.10 * 0)
+    assert with_free_eff == 73
+    assert card["ovr"] == 60 and card["ovr"] < with_free_eff
+
+
+def test_card_zero_tools_zero_par_is_full_eff():
+    # A workflow that designs NO tools (par 0) and makes none is legitimately efficient.
+    axes = {"grounding": {"passed": 2, "total": 2}, "adherence": {"passed": 2, "total": 2},
+            "synthesis": {"passed": 1, "total": 1}, "procedural": {"passed": 1, "total": 1}}
+    assert scoring.card_from_axes(axes, tool_calls=0, par=0)["stats"]["EFF"] == 99
+
+
 def test_card_jdg_excluded_from_ovr():
     axes = {"grounding": {"passed": 5, "total": 10}, "adherence": {"passed": 5, "total": 10},
             "synthesis": {"passed": 1, "total": 2}, "procedural": {"passed": 2, "total": 4}}

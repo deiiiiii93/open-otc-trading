@@ -300,8 +300,13 @@ map 1:1 to the objective axes plus a computed EFF; JDG is the advisory jury scor
 - **Stats & OVR** (`scoring.card_from_axes`): `stat = round(99 × passed/total)` per
   axis (grounding→GRD, adherence→ADH, synthesis→SYN, procedural→PRC).
   `EFF = round(C × min(1, par/actual_calls) × 99)` where `C` is the (GRD+ADH+SYN)
-  pass fraction — correctness-gated, so 0 calls with low C → EFF 0 (no gaming by
-  omission), and being leaner than `par` is **not** penalized (ratio capped at 1).
+  pass fraction — correctness-gated. Being leaner than `par` is **not** penalized
+  (ratio capped at 1), but **zero tool calls when `par > 0` is non-execution, not
+  leanness → ratio 0 → EFF 0**: value-only grounding (`response_quotes_value`) lets a
+  transcript quote the truth numbers without running the workflow, and EFF must not
+  hand that a free efficiency pass (GRD still credits the numbers; PRC/EFF read 0, so
+  the card honestly shows "strong numbers, no execution"). `par == 0` with 0 calls is
+  legitimately full efficiency.
   `OVR = round(0.32·GRD + 0.26·ADH + 0.16·SYN + 0.16·EFF + 0.10·PRC)`. **JDG is never
   in OVR.** `ability_card(transcript, loaded, judged)` is the write-time wrapper;
   `card_from_axes` is the shared kernel.
@@ -315,7 +320,10 @@ map 1:1 to the objective axes plus a computed EFF; JDG is the advisory jury scor
   tie-break GRD→ADH→SYN→EFF→PRC (`scoring.card_tiebreak_key`). **Uncarded rows keep
   the legacy objective ranking** (mean_objective + sub-axis tie-break) and sort after
   carded rows — so an all-legacy board (runs #1–#9, no stored `axes`) does NOT collapse
-  to a single shared rank.
+  to a single shared rank. A row is carded **only when EVERY scored match is carded**
+  (`carded_count == match_count`); a **partially**-carded model is treated as uncarded
+  for ranking so a partial OVR sample can't outrank a fully-carded row — `carded_count`
+  is surfaced per row to reveal the gap.
 - **Derive on read, never migrate** (`store._derive_card(bd, workflow_id)`): the SINGLE
   stored-breakdown→card path, used by both `leaderboard` and `_match_to_dict` (via
   `_serialized_breakdown`) so board and drilldown agree. **Fail-honest** — requires

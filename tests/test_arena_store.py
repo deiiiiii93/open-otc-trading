@@ -525,6 +525,46 @@ def test_leaderboard_ranks_by_ovr_and_excludes_uncarded(session):
     assert by_model["m-hi"]["rank"] < by_model["m-notool"]["rank"]
 
 
+def test_leaderboard_partial_card_coverage_falls_back_to_objective(session):
+    # One carded match + one uncarded scored match for the SAME model: the OVR
+    # sample is incomplete, so the model must NOT rank by the carded subset — it
+    # drops to the objective fallback group, with carded_count exposing the gap.
+    run_id = store.create_run(
+        session, ["risk-manager-control-day"], ["m-partial", "m-full"])
+    axes = {"grounding": {"passed": 10, "total": 10}, "adherence": {"passed": 11, "total": 11},
+            "synthesis": {"passed": 5, "total": 5}, "procedural": {"passed": 6, "total": 6}}
+    carded_bd = {"objective": {"axes": axes},
+                 "diagnosis": {"counts_detail": {"tool_calls": 11}}}
+    common = dict(judged_score=None, judge_missing=False, config={}, transcript_path=None,
+                  status="scored")
+    # m-partial: one carded, one uncarded (no axes) — partial coverage
+    store.record_match(session, run_id, "risk-manager-control-day", "m-partial",
+                       objective_score=90.0, total_score=90.0,
+                       score_breakdown=carded_bd, **common)
+    store.record_match(session, run_id, "trader-rfq-booking-day", "m-partial",
+                       objective_score=90.0, total_score=90.0,
+                       score_breakdown={"objective_score": 90.0}, **common)
+    # m-full: both matches carded
+    store.record_match(session, run_id, "risk-manager-control-day", "m-full",
+                       objective_score=50.0, total_score=50.0,
+                       score_breakdown=carded_bd, **common)
+    store.record_match(session, run_id, "trader-rfq-booking-day", "m-full",
+                       objective_score=50.0, total_score=50.0,
+                       score_breakdown=carded_bd, **common)
+    store.set_run_status(session, run_id, "completed")
+
+    rows = store.leaderboard(session, run_id=run_id)
+    by_model = {r["model_id"]: r for r in rows}
+    # m-partial: high objective but partial card coverage → uncarded, ranked last
+    assert by_model["m-partial"]["card_mean"] is None
+    assert by_model["m-partial"]["carded_count"] == 1
+    assert by_model["m-partial"]["match_count"] == 2
+    # m-full: fully carded → ranks first despite lower objective
+    assert by_model["m-full"]["card_mean"] is not None
+    assert by_model["m-full"]["carded_count"] == 2
+    assert by_model["m-full"]["rank"] < by_model["m-partial"]["rank"]
+
+
 def test_match_serialization_derives_card_on_read(session):
     run_id = store.create_run(session, ["risk-manager-control-day"], ["m1"])
     axes = {"grounding": {"passed": 8, "total": 10}, "adherence": {"passed": 9, "total": 11},

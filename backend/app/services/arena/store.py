@@ -296,16 +296,26 @@ def leaderboard(
         subs = model_subjectives.get(model_id, [])
         stdevs = model_sub_stdevs.get(model_id, [])
         ovrs = model_ovrs.get(model_id, [])
+        carded_count = len(ovrs)
+        scored_count = scored_counts.get(model_id, 0)
+        # A card_mean is trustworthy for ranking ONLY when EVERY scored match is
+        # carded. A partially-carded model (some matches uncarded — schema drift,
+        # missing tool counts) would otherwise rank by the derivable subset while
+        # its uncarded matches vanish from the OVR denominator, letting a partial
+        # sample outrank a fully-carded row. Partial rows drop to the objective
+        # fallback group; carded_count/match_count surface the coverage.
+        fully_carded = carded_count > 0 and carded_count == scored_count
         card_mean = (
             {"ovr": round(sum(ovrs) / len(ovrs)),
              **{stat: round(sum(vals) / len(vals))
                 for stat, vals in model_stat_lists[model_id].items()}}
-            if ovrs else None)
+            if fully_carded else None)
         rows.append({
             "model_id": model_id,
             "mean_objective": (round(sum(objectives) / len(objectives), 1)
                                if objectives else None),
             "card_mean": card_mean,
+            "carded_count": carded_count,
             "subjective_mean": round(sum(subs) / len(subs), 1) if subs else None,
             "subjective_stdev": round(sum(stdevs) / len(stdevs), 1) if stdevs else None,
             "subjective_mode": _agg_mode(model_sub_modes.get(model_id, [])),

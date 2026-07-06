@@ -148,7 +148,18 @@ def card_from_axes(axes: dict, tool_calls: int, par: int,
     for axis, stat in _STAT_BY_AXIS.items():
         stats[stat] = _stat_from_tally(axes.get(axis, {}))
     c = _correctness(axes)
-    ratio = min(1.0, par / tool_calls) if tool_calls > 0 else 1.0
+    # Efficiency ratio: lean (fewer calls than par) is NOT penalized (capped at 1),
+    # bloat scales it down. But ZERO calls when the workflow designs tools (par > 0)
+    # is non-execution, NOT leanness — EFF is 0 so a transcript that merely quotes
+    # the fixture-truth numbers (value-only grounding) without running the workflow
+    # cannot earn a mid-card OVR via a free efficiency pass. par == 0 (no tools
+    # designed) with 0 calls is legitimately full efficiency.
+    if tool_calls > 0:
+        ratio = min(1.0, par / tool_calls)
+    elif par > 0:
+        ratio = 0.0
+    else:
+        ratio = 1.0
     stats["EFF"] = round(c * ratio * 99)
     ovr = round(sum(_OVR_WEIGHTS[k] * stats[k] for k in _OVR_WEIGHTS))
     return {"ovr": ovr, "stats": stats, "jdg": judged,

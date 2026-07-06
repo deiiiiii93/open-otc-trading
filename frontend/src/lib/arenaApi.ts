@@ -105,6 +105,9 @@ export type ArenaLeaderboardRow = {
   // Headline OVR (0–99) + the per-stat means for the radar. Null for uncarded rows.
   ovr?: number | null;
   card_mean?: { ovr: number; GRD: number; ADH: number; SYN: number; EFF: number; PRC: number } | null;
+  // How many of this model's scored matches are carded. ovr/card_mean are null
+  // unless carded_count === matches (a full, non-partial sample).
+  carded_count?: number;
   avg_objective: number | null;
   // Advisory subjective jury score (mean ± stdev) + how it was produced
   // ("panel" | "self_consistency" (degraded) | "missing"). Never affects rank.

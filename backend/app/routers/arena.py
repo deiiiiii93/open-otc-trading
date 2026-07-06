@@ -245,6 +245,9 @@ def build_arena_router(
                 # full card_mean stat block feeds the radar. Null for uncarded rows.
                 "ovr": (r.get("card_mean") or {}).get("ovr"),
                 "card_mean": r.get("card_mean"),
+                # Coverage: how many of this model's scored matches are carded.
+                # ovr/card_mean are null unless carded_count == matches (full sample).
+                "carded_count": r.get("carded_count", 0),
                 "avg_objective": r["mean_objective"],
                 "subjective_mean": r["subjective_mean"],
                 "subjective_stdev": r["subjective_stdev"],
