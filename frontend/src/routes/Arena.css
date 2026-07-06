@@ -439,3 +439,94 @@
   font-family: var(--font-numeric);
   font-variant-numeric: tabular-nums;
 }
+
+/* Ability card (spec B) — OVR headline + six-stat strip, token-only. */
+.wl-arena__ovr {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--type-num-m-weight);
+  color: var(--ink);
+}
+
+.wl-arena__card {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-3);
+  flex-wrap: wrap;
+  padding: var(--gap-2) var(--gap-3);
+  margin-bottom: var(--gap-2);
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+  background: var(--paper-2);
+}
+
+.wl-arena__card-ovr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+}
+
+.wl-arena__card-ovr-value {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--type-num-l-size);
+  font-weight: var(--type-num-l-weight);
+  color: var(--ink);
+}
+
+.wl-arena__card-ovr-label {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+}
+
+.wl-arena__card-position {
+  padding: 0 var(--gap-2);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink-2);
+  font-size: var(--type-caps-size);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.wl-arena__card-stats {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--gap-2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wl-arena__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-1);
+}
+
+.wl-arena__stat-value {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--type-num-m-weight);
+  color: var(--ink);
+}
+
+.wl-arena__stat-name {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+}
+
+/* JDG is advisory (out of OVR) — muted to read as secondary. */
+.wl-arena__stat--jdg .wl-arena__stat-value,
+.wl-arena__stat--jdg .wl-arena__stat-name {
+  color: var(--ink-2);
+}

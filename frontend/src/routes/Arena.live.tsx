@@ -34,6 +34,43 @@ function CheckRow({ check }: { check: ArenaCheck }) {
   );
 }
 
+function AbilityCardView({ card }: { card: NonNullable<ArenaScoreBreakdown['card']> }) {
+  // Five OVR stats + the advisory JDG (greyed when the jury is off). Numbers-first
+  // order matches the OVR weighting (spec B2).
+  const stats: { key: string; value: number | null; advisory?: boolean }[] = [
+    { key: 'GRD', value: card.stats.GRD },
+    { key: 'ADH', value: card.stats.ADH },
+    { key: 'SYN', value: card.stats.SYN },
+    { key: 'EFF', value: card.stats.EFF },
+    { key: 'PRC', value: card.stats.PRC },
+    { key: 'JDG', value: card.jdg, advisory: true },
+  ];
+  return (
+    <div className="wl-arena__card">
+      <div className="wl-arena__card-ovr">
+        <span className="wl-arena__card-ovr-value">{card.ovr}</span>
+        <span className="wl-arena__card-ovr-label">OVR</span>
+      </div>
+      <span className="wl-arena__card-position">{card.position}</span>
+      <div className="wl-arena__card-stats">
+        {stats.map((s) => (
+          <div
+            key={s.key}
+            className={
+              'wl-arena__stat' + (s.advisory ? ' wl-arena__stat--jdg' : '')
+            }
+          >
+            <span className="wl-arena__stat-value">
+              {s.value != null ? Math.round(s.value) : '—'}
+            </span>
+            <span className="wl-arena__stat-name">{s.key}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
   const obj = breakdown.objective;
   const judge = breakdown.judge;
@@ -101,6 +138,8 @@ function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
           )}
         </span>
       </div>
+
+      {breakdown.card && <AbilityCardView card={breakdown.card} />}
 
       {obj.axes && (
         <div className="wl-arena__axes">
@@ -330,7 +369,20 @@ export function ArenaLive() {
         render: (row) => modelDisplayName(row.model_id, models),
       },
       {
-        // The sole ranking axis — deterministic, no blend (spec D5).
+        // Headline ranking axis — the numbers-first ability card OVR (spec B5).
+        key: 'ovr',
+        header: 'OVR',
+        numeric: true,
+        width: 'minmax(0, 1fr)',
+        render: (row) =>
+          row.ovr != null ? (
+            <span className="wl-arena__ovr">{row.ovr}</span>
+          ) : (
+            <span className="wl-arena__subjective-na" title="Uncarded — no stored axes">—</span>
+          ),
+      },
+      {
+        // Objective mean, retained as a secondary column (no longer the sort key).
         key: 'avg_objective',
         header: 'Objective',
         numeric: true,

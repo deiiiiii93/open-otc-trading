@@ -31,9 +31,13 @@ const mockRuns = [
 ];
 
 const mockLeaderboard = [
-  { model_id: 'claude-sonnet', rank: 1, avg_objective: 0.9, subjective_mean: 0.6,
+  { model_id: 'claude-sonnet', rank: 1, ovr: 82,
+    card_mean: { ovr: 82, GRD: 90, ADH: 80, SYN: 88, EFF: 75, PRC: 70 },
+    avg_objective: 0.9, subjective_mean: 0.6,
     subjective_stdev: 0.2, subjective_mode: 'panel', matches: 3, invalid: 1 },
-  { model_id: 'gpt-4o', rank: 2, avg_objective: 0.75, subjective_mean: 0.8,
+  { model_id: 'gpt-4o', rank: 2, ovr: 71,
+    card_mean: { ovr: 71, GRD: 70, ADH: 72, SYN: 68, EFF: 74, PRC: 66 },
+    avg_objective: 0.75, subjective_mean: 0.8,
     subjective_stdev: 0.3, subjective_mode: 'self_consistency', matches: 3, invalid: 0 },
 ];
 
@@ -83,6 +87,8 @@ const mockMatches = [
       weights: { obj: 0.5, judge: 0.5 },
       objective_score: 50,
       total_score: 65,
+      card: { ovr: 82, stats: { GRD: 90, ADH: 80, SYN: 88, PRC: 70, EFF: 75 },
+        jdg: null, position: 'Sniper' },
     },
   },
   {
@@ -198,6 +204,35 @@ describe('ArenaLive', () => {
     expect(screen.getByText('Per-judge (jury)')).toBeInTheDocument();
     expect(screen.getByText('deepseek-v4-pro')).toBeInTheDocument();
     expect(screen.getByText('qwen/qwen3.7-max')).toBeInTheDocument();
+  });
+
+  it('renders the OVR headline on the leaderboard', async () => {
+    setupMocks();
+    render(<ArenaLive />);
+    // OVR is the headline ranking column (spec B5).
+    expect(await screen.findByText('OVR')).toBeInTheDocument();
+    expect(screen.getByText('82')).toBeInTheDocument();
+    expect(screen.getByText('71')).toBeInTheDocument();
+  });
+
+  it('renders the ability card (OVR + six stats, JDG greyed when jury off)', async () => {
+    setupMocks();
+    render(<ArenaLive />);
+
+    await userEvent.click(await screen.findByText('1'));
+    await userEvent.click(await screen.findByText('workflow-a'));
+    await screen.findByText('Score breakdown');
+
+    // Card position badge + all six stat labels present.
+    expect(screen.getByText('Sniper')).toBeInTheDocument();
+    for (const stat of ['GRD', 'ADH', 'SYN', 'PRC', 'EFF', 'JDG']) {
+      expect(screen.getByText(stat)).toBeInTheDocument();
+    }
+    // JDG is advisory and null here → renders an em dash under the JDG stat.
+    const jdgName = screen.getByText('JDG');
+    const jdgCell = jdgName.closest('.wl-arena__stat');
+    expect(jdgCell?.className).toContain('wl-arena__stat--jdg');
+    expect(jdgCell?.querySelector('.wl-arena__stat-value')?.textContent).toBe('—');
   });
 
   it('clicking a match shows the diagnosis (counts + analysis)', async () => {

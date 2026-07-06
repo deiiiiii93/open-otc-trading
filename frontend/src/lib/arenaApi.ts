@@ -54,6 +54,16 @@ export type ArenaScoreBreakdown = {
   // attempted) | "panel" | "self_consistency" (DEGRADED single-model fallback) |
   // "missing" (jury on, all judges failed).
   subjective_mode?: string;
+  // Ability card (spec B) — derived from the objective axes + tool-call count.
+  // `null` (with a sibling card_reason) for rows that can't be carded: legacy
+  // rows without stored axes, missing tool counts, or an unloadable workflow.
+  card?: {
+    ovr: number;
+    stats: { GRD: number; ADH: number; SYN: number; PRC: number; EFF: number };
+    jdg: number | null;
+    position: string;
+  } | null;
+  card_reason?: string;
   diagnosis?: {
     counts: string;
     analysis: string;
@@ -89,9 +99,12 @@ export type ArenaRunDetail = {
 
 export type ArenaLeaderboardRow = {
   model_id: string;
-  // Ranking is by the deterministic objective axis (spec D5 — no blend);
-  // `rank` is SHARED across models tied on objective.
+  // Ranking is by the numbers-first ability card OVR (spec B5); `rank` is SHARED
+  // across models tied on OVR. Uncarded rows fall back to objective ranking.
   rank: number;
+  // Headline OVR (0–99) + the per-stat means for the radar. Null for uncarded rows.
+  ovr?: number | null;
+  card_mean?: { ovr: number; GRD: number; ADH: number; SYN: number; EFF: number; PRC: number } | null;
   avg_objective: number | null;
   // Advisory subjective jury score (mean ± stdev) + how it was produced
   // ("panel" | "self_consistency" (degraded) | "missing"). Never affects rank.
