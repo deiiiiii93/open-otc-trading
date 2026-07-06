@@ -52,12 +52,12 @@ def test_flagship_rubric_is_two_subjective_points():
 def test_flagship_grounding_and_trap_assertions():
     """Pin the discrimination-bearing assertion details."""
     wf = get_workflow("risk-manager-control-day")
-    # Step 5 (grid): two session-scope grounding checks + recompute guard
+    # Step 5 (grid): two fixture-truth grounding checks + recompute guard
     grid = wf.steps[4]
-    quotes = [a for a in grid.assertions if a.type == "response_quotes_tool_value"]
-    assert [q.scope for q in quotes] == ["session", "session"]
-    assert quotes[0].path == "results.portfolio.raw[spot_shift_pct=10.0].gamma"
-    assert quotes[1].path == "results.portfolio.raw[spot_shift_pct=-20.0].delta"
+    quotes = [a for a in grid.assertions if a.type == "response_quotes_value"]
+    assert len(quotes) == 2
+    assert any(abs(q.value - 16.403033928381223) < 1e-9 for q in quotes)   # gamma@+10%
+    assert any(abs(q.value - 391.1919745962153) < 1e-9 for q in quotes)    # delta@-20%
     assert any(a.type == "tool_not_called" and a.name == "run_greeks_landscape"
                for a in grid.assertions)
     # Step 6 (scenario): exact-args with both conventions + exclusive carriers
@@ -67,8 +67,9 @@ def test_flagship_grounding_and_trap_assertions():
                                   {"scenario_set": "market-crash"}]
     assert called.exclusive_keys == ["predefined", "custom", "scenario_set"]
     cvar = [a for a in scen.assertions
-            if a.type == "response_quotes_tool_value"][0]
+            if a.type == "response_quotes_value"][0]
     assert cvar.match == "magnitude"
+    assert abs(cvar.value - (-7758.989817924667)) < 1e-9
     # Step 8 (trap): verification is mandatory, launching is forbidden
     trap = wf.steps[7]
     assert trap.expected_tools[0].name == "list_scenario_library"
@@ -89,3 +90,22 @@ def test_flagship_report_step_names_a_format():
     report = wf.steps[8]
     assert any(fmt in report.user.lower() for fmt in ("markdown", "docx", "html"))
     assert any(a.type == "artifact_contains" for a in report.assertions)
+
+
+# --- ability card: par + fixture-truth grounding (Spec B, Task 7) -----------
+def test_flagship_declares_par_11():
+    wf = get_workflow("risk-manager-control-day")
+    assert wf.par_tool_calls == 11
+
+
+def test_flagship_grounding_targets_match_truth_file():
+    import json, pathlib
+    wf = get_workflow("risk-manager-control-day")
+    truth_path = pathlib.Path(__file__).resolve().parents[1] / (
+        "backend/app/golden_workflows/definitions/"
+        "risk-manager-control-day.truth.json")
+    truth = json.loads(truth_path.read_text())
+    want = {t["value"] for t in truth.values()}
+    got = {a.value for s in wf.steps for a in s.assertions
+           if a.type == "response_quotes_value"}
+    assert got and got <= want
