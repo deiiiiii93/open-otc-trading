@@ -85,6 +85,7 @@ def seed_backtest_history(
     gap-detection refetch (issue #7): have_dates ⊇ expected ⇒ no gap ⇒ no fetch."""
     from app.services.backtest_market_history import expected_trading_days
     from app.services.underlyings import akshare_symbol, akshare_asset_class
+    from app.golden_workflows.fixtures import ARENA_MARKET_SOURCE
     from app.models import MarketDataProfile
 
     days = expected_trading_days(start, end)
@@ -92,7 +93,7 @@ def seed_backtest_history(
     for u in underlyings:
         session.add(MarketDataProfile(
             name=f"{u} arena backtest history",
-            source="arena_seed",
+            source=ARENA_MARKET_SOURCE,
             symbol=akshare_symbol(u),
             asset_class=akshare_asset_class(u),
             start_date=series[0]["date"],
