@@ -30,10 +30,14 @@ export type ArenaScoreBreakdown = {
   // per-check detail, carrying only the averaged headline scores + `aggregate`.
   // The drilldown must degrade gracefully rather than assume these are present.
   objective?: {
-    passed: number;
-    total: number;
-    steps: ArenaObjectiveStep[];
-    success: ArenaCheck[];
+    // Per-check detail is present only on FULL v2 rows. Aggregate/legacy/minimal
+    // rows may carry only headline + axes, so these are optional and the drilldown
+    // must check for the full shape (Array.isArray(steps/success)) before the
+    // detailed render, else degrade to the compact summary.
+    passed?: number;
+    total?: number;
+    steps?: ArenaObjectiveStep[];
+    success?: ArenaCheck[];
     // Per-axis subtotals (procedural/adherence/grounding/synthesis) — absent
     // on breakdowns recorded before the flagship v2 scoring.
     axes?: Record<string, ArenaAxisTally>;

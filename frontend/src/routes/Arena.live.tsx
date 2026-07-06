@@ -38,11 +38,13 @@ function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
   const judge = breakdown.judge;
   const diagnosis = breakdown.diagnosis;
 
-  // Objective drives the detailed view (it is the sole ranking axis). The compact
-  // fallback is only for rows with NO objective block (aggregate/pre-v2 headline-only
-  // rows). A jury-off row has objective but no `judge` — it must still show full
-  // objective detail, with the subjective/jury sections simply omitted.
-  if (!obj) {
+  // Objective drives the detailed view (it is the sole ranking axis). Require the
+  // FULL per-check shape (steps + success arrays), not just presence of `objective`:
+  // aggregate/legacy/minimal rows may carry only headline+axes and would crash the
+  // detailed renderer. A real jury-off row has full objective detail (no `judge`) and
+  // renders in full with the subjective/jury sections simply omitted; a minimal row
+  // degrades to the compact summary.
+  if (!obj || !Array.isArray(obj.steps) || !Array.isArray(obj.success)) {
     return (
       <div className="wl-arena__breakdown">
         <div className="wl-arena__breakdown-head">
@@ -164,7 +166,7 @@ function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
         </div>
       )}
 
-      {judge && judge.rubric_scores.length > 0 && (
+      {judge && judge.rubric_scores && judge.rubric_scores.length > 0 && (
         <div className="wl-arena__breakdown-step">
           <div className="wl-arena__breakdown-step-head">
             <span className="wl-arena__breakdown-step-title">Judge rubric</span>

@@ -249,6 +249,26 @@ describe('ArenaLive', () => {
     expect(screen.getByText(/Subjective/)).toBeInTheDocument();
   });
 
+  it('degrades to the compact breakdown for a minimal objective (no steps/success) without crashing', async () => {
+    setupMocks();
+    // A legacy/aggregate objective-only row carrying only headline + axes (the shape
+    // the store emits for jury-off aggregate means) must NOT enter the detailed
+    // renderer (which maps obj.steps / reads obj.success.length) and crash.
+    const minimalMatch = {
+      ...mockMatches[0], id: 202, judged_score: null, judge_missing: false,
+      score_breakdown: { objective: { axes: {} }, subjective_mode: 'disabled',
+        objective_score: 71.8, total_score: 71.8, n_trials: 3 },
+    };
+    vi.mocked(arenaApi.getArenaRun).mockResolvedValue({ run: mockRuns[0], matches: [minimalMatch] });
+    render(<ArenaLive />);
+    await userEvent.click(await screen.findByText('1'));
+    await userEvent.click(await screen.findByText('workflow-a'));
+    // Compact summary renders (headline) rather than throwing.
+    expect(await screen.findByText('Score breakdown')).toBeInTheDocument();
+    expect(screen.getByText(/Objective 71\.8/)).toBeInTheDocument();
+    expect(screen.queryByText('Per-judge (jury)')).not.toBeInTheDocument();
+  });
+
   it('renders objective drilldown for a jury-off match (no judge block, no per-judge)', async () => {
     setupMocks();
     const objBreakdown = { ...mockMatches[0].score_breakdown, subjective_mode: 'disabled' };
