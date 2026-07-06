@@ -363,7 +363,7 @@
         "run-greeks-landscape"
       ],
       "artifacts": [],
-      "response_text": "The Greeks landscape is complete (task `gl-task-20260624-001`). At current spot the portfolio has delta -248,500 and gamma -11,800. A 20% down move increases negative delta to -310,000, while a 20% up move brings it toward -194,000. The book is short gamma throughout, confirming the need for close intraday monitoring."
+      "response_text": "The Greeks landscape is complete (task `gl-task-20260624-001`). At current spot the portfolio has delta 860 and gamma 21. A 20% down move brings delta to 391, while gamma is 16 at a +10% shift. The book is long delta and gamma across the grid, and I'll monitor intraday."
     },
     "step-5-scenario-test": {
       "ai": {
@@ -405,24 +405,16 @@
             "task_id": "st-task-20260624-001",
             "status": "completed",
             "results": {
-              "worst_scenario": "2008-financial-crisis",
+              "worst_scenario": "Market Crash",
               "var_cvar": {
-                "var": -1650000.0,
-                "cvar": -2100000.0,
+                "var": -7758.99,
+                "cvar": -7758.99,
                 "confidence": 0.95
               },
               "scenarios": [
                 {
-                  "name": "2008-financial-crisis",
-                  "pnl": -1850000.0
-                },
-                {
-                  "name": "2020-covid-crash",
-                  "pnl": -1420000.0
-                },
-                {
-                  "name": "2022-rate-shock",
-                  "pnl": -980000.0
+                  "name": "Market Crash",
+                  "pnl": -7758.99
                 }
               ]
             }
@@ -433,7 +425,7 @@
         "run-scenario-test"
       ],
       "artifacts": [],
-      "response_text": "Stress-test complete (task `st-task-20260624-001`). Under the market-crash scenario set the portfolio shows a worst-case P&L of **-1,850,000** (2008 financial-crisis analog). CVaR at 95% confidence is -2,100,000. All three scenarios produce negative P&L, confirming material tail risk."
+      "response_text": "Stress-test complete (task `st-task-20260624-001`). Under the market-crash scenario set the portfolio shows a worst-case P&L of **-7,759** (Market Crash analog). CVaR at 95% confidence is -7,759. The scenario produces negative P&L, confirming material tail risk."
     },
     "step-6-backtest": {
       "ai": {
@@ -476,10 +468,10 @@
             "run_id": 301,
             "task_id": "bt-task-20260624-001",
             "status": "completed",
-            "cumulative_hedge_pnl": 42500.0,
-            "sharpe": 1.12,
-            "max_drawdown": -85000.0,
-            "trading_days": 63
+            "cumulative_hedge_pnl": -3046.62,
+            "sharpe": -21.8,
+            "max_drawdown": -3046.62,
+            "trading_days": 62
           }
         }
       ],
@@ -487,7 +479,7 @@
         "run-backtest"
       ],
       "artifacts": [],
-      "response_text": "Backtest complete (task `bt-task-20260624-001`). Over the past quarter (63 trading days) the delta-hedge strategy generated cumulative P&L of +42,500 with a Sharpe of 1.12 and max drawdown of -85,000. The hedge performed adequately in trending markets but showed slippage around the AAPL earnings date."
+      "response_text": "Backtest complete (task `bt-task-20260624-001`). Over the past quarter (62 trading days) the delta-hedge strategy generated cumulative P&L of -3,047 with a negative Sharpe and max drawdown of -3,047. The hedge lagged in the flat replay window; worth revisiting the rebalance band."
     },
     "step-7-create-report": {
       "ai": {
@@ -534,10 +526,10 @@
           "path": "/trading_desk/reports/rpt-20260624-control.md",
           "title": "Control Day Risk Report — 2026-06-24",
           "url": "/trading_desk/reports/rpt-20260624-control",
-          "content": "# Control Day Risk Report — 2026-06-24\n\n## Risk run\nHotspot: AAPL, net delta -148,000, gamma -7,200. Total portfolio delta -248,500.\n\n## Greeks landscape\nGamma at +10% spot -9,600; delta at -20% spot -310,000.\n\n## Scenario stress (market_crash)\nWorst-case P&L -1,850,000 (2008 financial-crisis analog); CVaR at 95% confidence -2,100,000.\n\n## Backtest\nDelta-hedge historical replay 2026-03-24 → 2026-06-24: cumulative hedge P&L summarised; no autocallable lifecycle events."
+          "content": "# Control Day Risk Report — 2026-06-24\n\n## Risk run\nHotspot: AAPL, net delta 573.35, gamma 18.4. Total portfolio delta 860.\n\n## Greeks landscape\nGamma at +10% spot 16.40; delta at -20% spot 391.19.\n\n## Scenario stress (market_crash)\nWorst-case P&L -7,759 (Market Crash analog); CVaR at 95% confidence -7,759.\n\n## Backtest\nDelta-hedge historical replay 2026-03-24 → 2026-06-24: cumulative hedge P&L -3,047; no autocallable lifecycle events."
         }
       ],
-      "response_text": "The governance risk report has been created. Report ID: `rpt-20260624-control`. The report bundles today's risk run (hotspot: AAPL), Greeks landscape, market-crash scenario results (worst-case P&L: -1,850,000), and quarterly backtest summary (Sharpe 1.12). It is now available as a durable artifact for the governance record."
+      "response_text": "The governance risk report has been created. Report ID: `rpt-20260624-control`. The report bundles today's risk run (hotspot: AAPL), Greeks landscape, market-crash scenario results (worst-case P&L: -7,759), and quarterly backtest summary. It is now available as a durable artifact for the governance record."
     },
     "step-grid-comprehension": {
       "ai": {
