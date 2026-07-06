@@ -73,6 +73,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scores as a real 0 (a silent model is a model failure, not an infra failure).
 
 ### Added
+- **Arena transcript copy button.** The match drill-down transcript panel now has a
+  copy button next to the "Transcript" header that copies the full JSON transcript to
+  the clipboard and briefly shows a checkmark on success.
 - **Audit trail (dangerous-action log).** An always-on, append-only record of every
   write-class action an LLM agent takes — bookings, portfolio/RFQ writes, deletes,
   memory writes, async dispatches, file/artifact writes — **including actions taken

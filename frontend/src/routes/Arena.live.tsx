@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Check, Copy } from 'lucide-react';
 import { Button } from '../components/Button';
 import { Empty } from '../components/Empty';
 import { PageScaffold } from '../components/templates/PageScaffold';
@@ -236,7 +237,19 @@ export function ArenaLive() {
   const [transcript, setTranscript] = useState<unknown | null>(null);
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const [loadingTranscript, setLoadingTranscript] = useState(false);
+  const [copiedTranscript, setCopiedTranscript] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const copyTranscript = useCallback(async () => {
+    if (transcript == null) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(transcript, null, 2));
+      setCopiedTranscript(true);
+      window.setTimeout(() => setCopiedTranscript(false), 1500);
+    } catch {
+      // ignore
+    }
+  }, [transcript]);
 
   const refresh = useCallback(() => {
     setError(null);
@@ -519,6 +532,18 @@ export function ArenaLive() {
                 })()}
                 <div className="wl-arena__transcript-head" style={{ marginTop: 'var(--gap-3)' }}>
                   <span className="wl-arena__transcript-title">Transcript</span>
+                  {transcript != null && !loadingTranscript && (
+                    <Button
+                      variant="ghost"
+                      iconOnly
+                      className="wl-arena__transcript-copy"
+                      onClick={copyTranscript}
+                      aria-label={copiedTranscript ? 'Copied' : 'Copy transcript'}
+                      title={copiedTranscript ? 'Copied' : 'Copy transcript'}
+                    >
+                      {copiedTranscript ? <Check size={16} /> : <Copy size={16} />}
+                    </Button>
+                  )}
                 </div>
                 {loadingTranscript && (
                   <span style={{ color: 'var(--ink-2)', fontSize: 'var(--type-small-size)' }}>
