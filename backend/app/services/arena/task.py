@@ -329,11 +329,17 @@ def _execute(
                 # contestant-excluded jury. Judge-missing (jury unavailable) is
                 # NOT infra-invalid — the objective axis is the spine and still
                 # scores the match.
+                # Jury is opt-in (spec 2026-07-06): an explicitly injected judge_fn
+                # (test/caller intent) always runs; otherwise the default
+                # contestant-excluded jury runs ONLY when arena_jury_enabled. When
+                # off, no judge is attempted — the row is scored objective-only.
                 if judge_fn is not None:
                     judge_result = judge_fn(transcript, loaded, post=post)
-                else:
+                elif _cfg.arena_jury_enabled:
                     judge_result = _default_judge(
                         transcript, loaded, exclude_model=model_id)
+                else:
+                    judge_result = None
 
                 obj_score, _passed, _total = scoring.objective_score(transcript, loaded)
                 # No blend (spec D5): the stored total mirrors the objective axis,
@@ -342,27 +348,37 @@ def _execute(
 
                 # Per-check breakdown behind the aggregate scores, persisted so
                 # the /arena match drilldown can show where points were won/lost.
+                # The judge block is present only when a judge actually ran; a
+                # deliberately jury-off row stamps subjective_mode="disabled" so it
+                # is distinguishable from a jury-on row whose judges all failed
+                # ("missing"). See spec D3/D8.
                 heuristic = scoring.diagnose_heuristic(transcript, loaded)
                 breakdown = {
                     "objective": scoring.objective_breakdown(transcript, loaded),
-                    "judge": {
-                        "rubric_scores": judge_result.rubric_scores,
-                        "judged_score": judge_result.judged_score,
-                        "judge_missing": judge_result.judge_missing,
-                        "per_judge": judge_result.per_judge,
-                        "judged_stdev": judge_result.judged_stdev,
-                    },
-                    "subjective_mode": judge_result.subjective_mode,
                     # Why/where the model won or lost: deterministic engagement
                     # counts (always present) + the judge's LLM failure analysis.
                     "diagnosis": {
                         "counts": heuristic["summary"],
                         "counts_detail": heuristic,
-                        "analysis": judge_result.diagnosis,
+                        "analysis": (judge_result.diagnosis if judge_result else None),
                     },
                     "objective_score": round(obj_score, 1),
                     "total_score": t_score,
                 }
+                if judge_result is not None:
+                    breakdown["judge"] = {
+                        "rubric_scores": judge_result.rubric_scores,
+                        "judged_score": judge_result.judged_score,
+                        "judge_missing": judge_result.judge_missing,
+                        "per_judge": judge_result.per_judge,
+                        "judged_stdev": judge_result.judged_stdev,
+                    }
+                    breakdown["subjective_mode"] = judge_result.subjective_mode
+                else:
+                    breakdown["subjective_mode"] = "disabled"
+
+                judged_score = judge_result.judged_score if judge_result else None
+                judge_missing = judge_result.judge_missing if judge_result else True
 
                 # Save transcript to disk
                 transcript_path = _save_transcript(
@@ -374,9 +390,9 @@ def _execute(
                     workflow_id=workflow_id,
                     model_id=model_id,
                     objective_score=round(obj_score, 1),
-                    judged_score=judge_result.judged_score,
+                    judged_score=judged_score,
                     total_score=t_score,
-                    judge_missing=judge_result.judge_missing,
+                    judge_missing=judge_missing,
                     config={"weights": weights},
                     transcript_path=transcript_path,
                     status="scored",

@@ -454,6 +454,45 @@ def test_execute_arena_run_task_scores_all_pairs(session, settings):
         assert task_row.status == "completed"
 
 
+def test_execute_arena_run_task_jury_off_scores_objective_only(session, settings, monkeypatch):
+    """Default (arena_jury_enabled False, no judge_fn): score objective-only, no jury
+    call at all, and stamp subjective_mode='disabled' (distinct from a failed jury)."""
+    database.configure_database(settings)
+    database.init_db()
+
+    # Any attempt to run the default jury when the flag is off is a bug.
+    def _boom(*a, **k):
+        raise AssertionError("jury must not run when arena_jury_enabled is False")
+    monkeypatch.setattr("app.services.arena.judge.judge_panel", _boom)
+
+    with database.SessionLocal() as s:
+        run_id = arena_store.create_run(s, workflow_ids=["wf-a"], model_ids=["gpt-5-5"])
+        task = TaskRun(kind=TaskKind.ARENA_RUN.value, status="queued")
+        s.add(task); s.flush(); task_id = task.id; s.commit()
+
+    def fake_run_match(loaded, model, *, artifact_root, run_id=None):
+        return _fake_transcript(workflow_id="wf-a", model_id=model.slug)
+
+    from app.services.arena.task import execute_arena_run_task
+    # NOTE: no judge_fn → exercises the production flag branch.
+    execute_arena_run_task(
+        task_id, run_id, database.SessionLocal,
+        settings=settings, run_match_fn=fake_run_match, get_bundle_fn=_fake_get_bundle,
+    )
+
+    with database.SessionLocal() as s:
+        run_dict = arena_store.get_run(s, run_id)
+        assert run_dict["status"] == "completed"
+        m = run_dict["matches"][0]
+        assert m["status"] == "scored"
+        assert m["judged_score"] is None
+        assert m["judge_missing"] is True
+        assert m["total_score"] == m["objective_score"]
+        bd = m["score_breakdown"]
+        assert "judge" not in bd
+        assert bd["subjective_mode"] == "disabled"
+
+
 def test_execute_arena_run_task_failed_match_doesnt_abort_run(session, settings):
     """When run_match_fn raises, match is 'failed' but run still 'completed'."""
     database.configure_database(settings)
