@@ -217,6 +217,22 @@ describe('ArenaLive', () => {
     ).toBeGreaterThan(0);
   });
 
+  it('keeps the subjective mean visible on a partial outage (mean + missing marker)', async () => {
+    setupMocks();
+    vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({
+      rows: [
+        { model_id: 'claude-sonnet', rank: 1, avg_objective: 0.9, subjective_mean: 0.6,
+          subjective_stdev: 0.2, subjective_mode: 'missing', matches: 2, invalid: 0 },
+      ],
+    });
+    render(<ArenaLive />);
+    expect(await screen.findByText('Claude Sonnet')).toBeInTheDocument();
+    // The real advisory mean must NOT be suppressed by the partial-outage mode…
+    expect(screen.getByText('0.6')).toBeInTheDocument();
+    // …and the outage is still flagged alongside it.
+    expect(screen.getByText('partial')).toBeInTheDocument();
+  });
+
   it('hides the Subjective column when every leaderboard row is jury-disabled', async () => {
     setupMocks();
     vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({

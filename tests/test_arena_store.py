@@ -445,6 +445,26 @@ def test_leaderboard_legacy_toplevel_judged_score_no_breakdown(session):
     assert rows["m2"]["subjective_mode"] == "disabled"
 
 
+def test_leaderboard_partial_outage_keeps_mean_and_flags_missing(session):
+    """A model with one panel-scored match and one all-judges-failed match (multi-
+    workflow run): the advisory mean survives AND the aggregated mode is 'missing'
+    (worst-visibility-wins) so the partial outage stays flagged, not hidden."""
+    from app.services.arena import store as arena_store
+    run_id = arena_store.create_run(session, workflow_ids=["wf-a", "wf-b"], model_ids=["m1"])
+    arena_store.set_run_status(session, run_id, "completed")
+    arena_store.record_match(session, run_id=run_id, workflow_id="wf-a", model_id="m1",
+        objective_score=80.0, judged_score=60.0, total_score=80.0, judge_missing=False,
+        config={}, transcript_path=None, status="scored",
+        score_breakdown={"objective": {"axes": {}}, "judge": {"judged_score": 60.0}, "subjective_mode": "panel"})
+    arena_store.record_match(session, run_id=run_id, workflow_id="wf-b", model_id="m1",
+        objective_score=70.0, judged_score=None, total_score=70.0, judge_missing=True,
+        config={}, transcript_path=None, status="scored",
+        score_breakdown={"objective": {"axes": {}}, "judge": {"judged_score": None, "judge_missing": True}, "subjective_mode": "missing"})
+    rows = arena_store.leaderboard(session, run_id=run_id)
+    assert rows[0]["subjective_mean"] == 60.0           # real advisory number survives
+    assert rows[0]["subjective_mode"] == "missing"      # partial outage stays flagged
+
+
 def test_leaderboard_shares_rank_on_exact_objective_tie(session):
     from app.services.arena import store as arena_store
     run_id = arena_store.create_run(session, workflow_ids=["wf-a"], model_ids=["a", "b", "c"])

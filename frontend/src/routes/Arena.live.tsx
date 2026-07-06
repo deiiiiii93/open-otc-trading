@@ -334,26 +334,28 @@ export function ArenaLive() {
         numeric: true,
         width: 'minmax(0, 1.2fr)',
         render: (row) => {
-          // Jury on but all judges failed → visible outage marker, not blank.
-          if (row.subjective_mode === 'missing') {
-            return (
-              <span className="wl-arena__subjective">
-                <span className="wl-arena__subjective-na" title="Jury failed — all judges unavailable">—</span>
-              </span>
-            );
-          }
-          // Deliberately jury-off row inside a mixed board → blank cell.
-          if (row.subjective_mean == null) {
-            return <span className="wl-arena__subjective" />;
-          }
+          // A mean is shown whenever one exists — even if the aggregated mode is
+          // "missing" (a partial outage: some matches scored, others lost the jury).
+          // Never let a partial outage suppress a real advisory number; flag it with
+          // a marker alongside instead. A row with no mean shows the outage marker
+          // ("missing") or a blank cell (deliberately "disabled").
           return (
             <span className="wl-arena__subjective">
-              {row.subjective_mean.toFixed(1)}
-              {row.subjective_stdev != null && (
-                <span className="wl-arena__subjective-sd"> ± {row.subjective_stdev.toFixed(1)}</span>
-              )}
+              {row.subjective_mean != null ? (
+                <>
+                  {row.subjective_mean.toFixed(1)}
+                  {row.subjective_stdev != null && (
+                    <span className="wl-arena__subjective-sd"> ± {row.subjective_stdev.toFixed(1)}</span>
+                  )}
+                </>
+              ) : row.subjective_mode === 'missing' ? (
+                <span className="wl-arena__subjective-na" title="Jury failed — all judges unavailable">—</span>
+              ) : null}
               {row.subjective_mode === 'self_consistency' && (
                 <span className="wl-arena__degraded-chip" title="Single-judge fallback — panel unavailable">degraded</span>
+              )}
+              {row.subjective_mean != null && row.subjective_mode === 'missing' && (
+                <span className="wl-arena__degraded-chip" title="Some matches lost the jury (all judges failed)">partial</span>
               )}
             </span>
           );
