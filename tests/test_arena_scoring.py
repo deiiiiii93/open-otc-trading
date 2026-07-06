@@ -420,3 +420,48 @@ def test_designed_par_override_wins():
     data = wf.model_dump()
     data["par_tool_calls"] = 99
     assert scoring.designed_par(GoldenWorkflow(**data)) == 99
+
+
+# --- ability card: stats + OVR (Spec B, Task 3) -----------------------------
+def test_card_from_axes_stats_and_ovr():
+    axes = {
+        "grounding": {"passed": 10, "total": 10},   # GRD 99
+        "adherence": {"passed": 5, "total": 10},    # ADH round(49.5)=50
+        "synthesis": {"passed": 3, "total": 3},     # SYN 99
+        "procedural": {"passed": 0, "total": 5},    # PRC 0
+    }
+    card = scoring.card_from_axes(axes, tool_calls=11, par=11, judged=42.0)
+    s = card["stats"]
+    assert s["GRD"] == 99 and s["SYN"] == 99 and s["PRC"] == 0
+    assert s["ADH"] == 50
+    assert s["EFF"] == 77   # C=18/23=0.7826, ratio 1 → round(77.48)=77
+    assert card["ovr"] == 73
+    assert card["jdg"] == 42.0
+
+
+def test_card_eff_penalizes_bloat_not_leanness():
+    axes = {"grounding": {"passed": 4, "total": 4}, "adherence": {"passed": 4, "total": 4},
+            "synthesis": {"passed": 2, "total": 2}, "procedural": {"passed": 4, "total": 4}}
+    assert scoring.card_from_axes(axes, 11, 11)["stats"]["EFF"] == 99   # ratio 1.0
+    assert scoring.card_from_axes(axes, 22, 11)["stats"]["EFF"] == 50   # ratio 0.5
+    assert scoring.card_from_axes(axes, 5, 11)["stats"]["EFF"] == 99    # leaner NOT penalized
+
+
+def test_card_do_nothing_scores_low_eff():
+    axes = {"grounding": {"passed": 0, "total": 10}, "adherence": {"passed": 0, "total": 10},
+            "synthesis": {"passed": 0, "total": 3}, "procedural": {"passed": 3, "total": 3}}
+    assert scoring.card_from_axes(axes, 0, 11)["stats"]["EFF"] == 0   # C=0 → no gaming
+
+
+def test_card_jdg_excluded_from_ovr():
+    axes = {"grounding": {"passed": 5, "total": 10}, "adherence": {"passed": 5, "total": 10},
+            "synthesis": {"passed": 1, "total": 2}, "procedural": {"passed": 2, "total": 4}}
+    a = scoring.card_from_axes(axes, 11, 11, judged=0.0)
+    b = scoring.card_from_axes(axes, 11, 11, judged=99.0)
+    assert a["ovr"] == b["ovr"]
+
+
+def test_card_tiebreak_priority():
+    hi_grd = {"GRD": 90, "ADH": 10, "SYN": 10, "EFF": 10, "PRC": 10}
+    hi_adh = {"GRD": 10, "ADH": 90, "SYN": 10, "EFF": 10, "PRC": 10}
+    assert scoring.card_tiebreak_key(hi_grd) < scoring.card_tiebreak_key(hi_adh)

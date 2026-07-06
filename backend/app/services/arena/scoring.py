@@ -96,6 +96,78 @@ def designed_par(workflow) -> int:
     return sum(len(s.expected_tools) for s in workflow.steps)
 
 
+# --- Ability card (spec B) --------------------------------------------------
+# Stat ← axis map (spec B1). One axis → one stat; EFF is computed, not an axis.
+_STAT_BY_AXIS = {
+    "grounding": "GRD",
+    "adherence": "ADH",
+    "synthesis": "SYN",
+    "procedural": "PRC",
+}
+# OVR weights (spec B2). Sum to 1.00. JDG is NOT here (advisory, out of OVR).
+_OVR_WEIGHTS = {"GRD": 0.32, "ADH": 0.26, "SYN": 0.16, "EFF": 0.16, "PRC": 0.10}
+# Correctness axes gating EFF's C multiplier (procedural excluded on purpose —
+# EFF rewards outcome-per-cost, not ceremony).
+_CORRECTNESS_AXES = ("grounding", "adherence", "synthesis")
+# Card tie-break priority (spec B5): GRD → ADH → SYN → EFF → PRC. Never JDG.
+_CARD_TIEBREAK_PRIORITY = ("GRD", "ADH", "SYN", "EFF", "PRC")
+
+
+def _stat_from_tally(tally: dict) -> int:
+    total = tally.get("total", 0)
+    return round(99 * tally.get("passed", 0) / total) if total else 0
+
+
+def _correctness(axes: dict) -> float:
+    passed = sum(axes.get(ax, {}).get("passed", 0) for ax in _CORRECTNESS_AXES)
+    total = sum(axes.get(ax, {}).get("total", 0) for ax in _CORRECTNESS_AXES)
+    return (passed / total) if total else 0.0
+
+
+def _card_position(stats: dict) -> str:
+    """Presentation-only archetype from the dominant stat (spec B6)."""
+    keys = ("GRD", "ADH", "SYN", "EFF", "PRC")
+    vals = [stats[k] for k in keys]
+    if max(vals) - min(vals) <= 8:
+        return "All-rounder"
+    dominant = max(keys, key=lambda k: stats[k])
+    return {
+        "GRD": "Sniper", "ADH": "Anchor", "PRC": "Anchor",
+        "SYN": "Playmaker", "EFF": "Playmaker",
+    }[dominant]
+
+
+def card_from_axes(axes: dict, tool_calls: int, par: int,
+                   judged: float | None = None) -> dict:
+    """Derive the ability card from objective axis tallies + tool-call count.
+
+    Pure. Used at write time (task.py) and derive-on-read (store.py) — the single
+    stat/OVR formula, so the drilldown card and the leaderboard OVR never disagree.
+    """
+    stats = {stat: 0 for stat in ("GRD", "ADH", "SYN", "PRC")}
+    for axis, stat in _STAT_BY_AXIS.items():
+        stats[stat] = _stat_from_tally(axes.get(axis, {}))
+    c = _correctness(axes)
+    ratio = min(1.0, par / tool_calls) if tool_calls > 0 else 1.0
+    stats["EFF"] = round(c * ratio * 99)
+    ovr = round(sum(_OVR_WEIGHTS[k] * stats[k] for k in _OVR_WEIGHTS))
+    return {"ovr": ovr, "stats": stats, "jdg": judged,
+            "position": _card_position(stats)}
+
+
+def card_tiebreak_key(stats: dict) -> tuple:
+    """Descending sort key (better first) over GRD→ADH→SYN→EFF→PRC."""
+    return tuple(-stats.get(k, 0) for k in _CARD_TIEBREAK_PRIORITY)
+
+
+def ability_card(transcript, loaded, judged: float | None = None) -> dict:
+    """Convenience wrapper: evaluate the transcript once and build the card."""
+    bd = objective_breakdown(transcript, loaded)
+    heuristic = diagnose_heuristic(transcript, loaded)
+    return card_from_axes(bd["axes"], heuristic["tool_calls"],
+                          designed_par(loaded.workflow), judged=judged)
+
+
 def _session_context(transcript: MatchTranscript) -> AssertionContext:
     """Merge all steps into a single session-level AssertionContext."""
     tool_calls: list[dict] = []
