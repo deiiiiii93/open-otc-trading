@@ -486,7 +486,9 @@ def test_execute_arena_run_task_jury_off_scores_objective_only(session, settings
         m = run_dict["matches"][0]
         assert m["status"] == "scored"
         assert m["judged_score"] is None
-        assert m["judge_missing"] is True
+        # Top-level contract: a deliberate opt-out is NOT a jury outage — consumers
+        # keying off judge_missing must not flag it. Provenance is subjective_mode.
+        assert m["judge_missing"] is False
         assert m["total_score"] == m["objective_score"]
         bd = m["score_breakdown"]
         assert "judge" not in bd

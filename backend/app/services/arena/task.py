@@ -378,7 +378,12 @@ def _execute(
                     breakdown["subjective_mode"] = "disabled"
 
                 judged_score = judge_result.judged_score if judge_result else None
-                judge_missing = judge_result.judge_missing if judge_result else True
+                # A jury-OFF row is not a jury FAILURE: no judge was attempted, so
+                # nothing is "missing". Keep the top-level judge_missing contract honest
+                # (False) — the "disabled" vs "missing" distinction lives in
+                # subjective_mode, and consumers keying off judge_missing to detect
+                # outages must not flag deliberate opt-outs.
+                judge_missing = judge_result.judge_missing if judge_result else False
 
                 # Save transcript to disk
                 transcript_path = _save_transcript(
