@@ -418,6 +418,10 @@ DEEP_AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         "build_assumption_set",
         "get_latest_position_valuations",
         "get_latest_risk_run",
+        # Golden-workflow structured-answer capture: a benign no-op recorder the
+        # arena flagship's answer_field_* checks read back. Allowlisted so the model
+        # can actually call it (else select_deep_agent_tools drops it).
+        "record_answer",
         # Dynamic-subagents pilot: the deterministic coverage-reconciliation tool the
         # morning-risk-breach workflow's finalize step calls. Registered in
         # QUANT_AGENT_TOOLS but was missing here, so select_deep_agent_tools() dropped

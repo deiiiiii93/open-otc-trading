@@ -26,7 +26,15 @@ def test_quant_agent_tools_count_unchanged():
     # +1 underlying-tag registration tool (register_underlying).
     # +1 product-semantics reader (get_product_reference_doc).
     # +1 contract-grounded completeness checker (check_term_completeness).
-    assert len(QUANT_AGENT_TOOLS) == 97
+    # +1 structured-answer recorder (record_answer) for arena flagship scoring.
+    assert len(QUANT_AGENT_TOOLS) == 98
+
+
+def test_record_answer_is_domain_read():
+    """The benign answer recorder must be gated DOMAIN_READ (read-class): safe in
+    read-only fan-out, no audit-write classification."""
+    by_name = {t.name: t for t in QUANT_AGENT_TOOLS}
+    assert by_name["record_answer"].__capability_group__ is ToolGroup.DOMAIN_READ
 
 
 def test_every_tool_has_capability_group():

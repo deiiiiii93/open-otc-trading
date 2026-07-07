@@ -135,6 +135,7 @@ from .greeks_landscape import (
 )
 from .product_reference import get_product_reference_doc
 from .term_completeness import check_term_completeness
+from .record_answer import record_answer_tool
 
 
 QUANT_AGENT_TOOLS = [
@@ -178,6 +179,7 @@ QUANT_AGENT_TOOLS = [
     get_instrument_pricing_defaults_tool,
     get_latest_position_valuations_tool,
     get_latest_risk_run_tool,
+    record_answer_tool,
     list_reports_tool,
     get_report_tool,
     write_report_artifact_tool,
