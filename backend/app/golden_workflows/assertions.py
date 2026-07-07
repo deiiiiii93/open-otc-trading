@@ -359,6 +359,12 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
         return ok, "" if ok else (
             f"response does not quote value {a.value} "
             f"(match={a.match}, rel_tol={a.rel_tol}, near={a.near})")
+    # DELIBERATE (spec 2026-07-07, user-affirmed): the record_answer payload is the
+    # AUTHORITATIVE answer for grounding/adherence — these branches score ctx.tool_calls
+    # (via answer_fields), NOT ctx.response_text. The visible prose is scored separately
+    # by the synthesis axis. A model that records the right answer but writes contradictory
+    # prose still passes here; that is an accepted trade-off for a capability benchmark
+    # and keeps the retired fuzzy near-anchor response scan from re-entering as a guard.
     if t == "answer_field_equals":
         fields = answer_fields(ctx)
         if a.field not in fields:
