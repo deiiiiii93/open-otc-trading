@@ -41,7 +41,7 @@ steps:
         tool: run_batch_pricing
     replay: step-2-run-risk
 
-  - user: "Now check the updated risk result — what's the hotspot?"
+  - user: "Now check the updated risk result — what's the hotspot? Record your answer by calling record_answer(answer={\"hotspot\": <ticker>, \"delta\": <number>})."
     # null: read-risk-result was already routed in step 1 and the runtime never
     # re-reads a loaded SKILL.md, so a skill check here can never pass (the
     # skills_routed dedup blind spot) — the signature tool carries the point.
@@ -50,13 +50,17 @@ steps:
       - name: get_latest_risk_run
     outcome: >
       The agent reads the freshly computed risk run, identifies AAPL as the
-      hotspot, and quotes the actual AAPL delta from the tool result.
+      hotspot, and records the actual AAPL delta as a typed answer.
     assertions:
-      - type: response_contains
-        any_of: ["AAPL"]
-      - type: response_quotes_value
+      # Structured answer: role-bound categorical (adherence) + numeric (grounding),
+      # replacing the old substring/near-scan which confused presence with assertion.
+      - type: answer_field_equals
+        field: hotspot
+        equals: AAPL
+      - type: answer_field_quotes
+        field: delta
         value: 573.3467058766552
-        near: ["delta"]
+        match: signed
     replay: step-3-read-fresh-risk
 
   - user: "Run a Greeks landscape across spot shifts for the control portfolio."
@@ -72,34 +76,36 @@ steps:
         tool: run_greeks_landscape
     replay: step-4-greeks-landscape
 
-  - user: "From the landscape you just ran: what is portfolio gamma at a +10% spot shift, and what does delta become at a -20% shift?"
+  - user: "From the landscape you just ran: what is portfolio gamma at a +10% spot shift, and what does delta become at a -20% shift? Record your answer by calling record_answer(answer={\"gamma_at_+10pct\": <number>, \"delta_at_-20pct\": <number>})."
     expected_skill: null
     expected_tools: []
     outcome: >
       The agent answers from the retrieved landscape grid (re-fetching via
-      get_greeks_landscape_run is acceptable but not required), quoting the
-      actual gamma at +10% and delta at -20% from the completed run.
+      get_greeks_landscape_run is acceptable but not required), recording the
+      actual gamma at +10% and delta at -20% as typed answers.
     assertions:
-      - type: response_quotes_value
+      # Structured answer: each value bound to its role by key (grounding),
+      # replacing the near-anchor scan that could match a swapped number.
+      - type: answer_field_quotes
+        field: gamma_at_+10pct
         value: 16.403033928381223
-        near: ["gamma"]
-      - type: response_quotes_value
+      - type: answer_field_quotes
+        field: delta_at_-20pct
         value: 391.1919745962153
-        near: ["delta"]
       # Recomputation escape hatch: re-dispatching the landscape instead of
       # reading the data it already has must fail; re-FETCHING stays allowed.
       - type: tool_not_called
         name: run_greeks_landscape
     replay: step-grid-comprehension
 
-  - user: "Stress-test the control portfolio using the market-crash scenario set with the Control Profile."
+  - user: "Stress-test the control portfolio using the market-crash scenario set with the Control Profile. Record the tail loss by calling record_answer(answer={\"cvar\": <number>})."
     expected_skill: run-scenario-test
     expected_tools:
       - name: run_scenario_test
       - name: get_scenario_test_run
     outcome: >
       The agent runs exactly the market-crash scenario stress test, retrieves
-      results, shows a negative P&L, and quotes the computed CVaR figure.
+      results, shows a negative P&L, and records the computed CVaR figure.
     assertions:
       - type: task_returned_id
         tool: run_scenario_test
@@ -118,12 +124,12 @@ steps:
         exclusive_keys: ["predefined", "custom", "scenario_set"]
         all_calls: true
         max_calls: 1
-      # Grounding: the reported CVaR must be the computed one (loss language
-      # legitimately drops the sign → magnitude match).
-      - type: response_quotes_value
+      # Grounding: the recorded CVaR must be the computed one (loss language
+      # legitimately drops the sign → magnitude match). Role bound by key.
+      - type: answer_field_quotes
+        field: cvar
         value: -7758.989817924667
         match: magnitude
-        near: ["cvar", "expected shortfall", "loss"]
     replay: step-5-scenario-test
 
   - user: "Run a historical backtest of the delta-hedge strategy from 2026-03-24 to 2026-06-24."

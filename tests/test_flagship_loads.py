@@ -52,10 +52,11 @@ def test_flagship_rubric_is_two_subjective_points():
 def test_flagship_grounding_and_trap_assertions():
     """Pin the discrimination-bearing assertion details."""
     wf = get_workflow("risk-manager-control-day")
-    # Step 5 (grid): two fixture-truth grounding checks + recompute guard
+    # Step 5 (grid): two fixture-truth grounding checks (structured answer) + guard
     grid = wf.steps[4]
-    quotes = [a for a in grid.assertions if a.type == "response_quotes_value"]
+    quotes = [a for a in grid.assertions if a.type == "answer_field_quotes"]
     assert len(quotes) == 2
+    assert {q.field for q in quotes} == {"gamma_at_+10pct", "delta_at_-20pct"}
     assert any(abs(q.value - 16.403033928381223) < 1e-9 for q in quotes)   # gamma@+10%
     assert any(abs(q.value - 391.1919745962153) < 1e-9 for q in quotes)    # delta@-20%
     assert any(a.type == "tool_not_called" and a.name == "run_greeks_landscape"
@@ -67,7 +68,8 @@ def test_flagship_grounding_and_trap_assertions():
                                   {"scenario_set": "market-crash"}]
     assert called.exclusive_keys == ["predefined", "custom", "scenario_set"]
     cvar = [a for a in scen.assertions
-            if a.type == "response_quotes_value"][0]
+            if a.type == "answer_field_quotes"][0]
+    assert cvar.field == "cvar"
     assert cvar.match == "magnitude"
     assert abs(cvar.value - (-7758.989817924667)) < 1e-9
     # Step 8 (trap): verification is mandatory, launching is forbidden
@@ -99,13 +101,24 @@ def test_flagship_declares_par_11():
 
 
 def test_flagship_grounding_targets_match_truth_file():
-    import json, pathlib
+    import json, pathlib, re
     wf = get_workflow("risk-manager-control-day")
     truth_path = pathlib.Path(__file__).resolve().parents[1] / (
         "backend/app/golden_workflows/definitions/"
         "risk-manager-control-day.truth.json")
     truth = json.loads(truth_path.read_text())
-    want = {t["value"] for t in truth.values()}
+    # Numeric grounding: every structured numeric answer target is a harvested
+    # truth value. (truth.json stays harvester-owned + numeric-only — the
+    # categorical hotspot is NOT stored there; it is derived below.)
+    want = {t["value"] for t in truth.values() if isinstance(t["value"], (int, float))}
     got = {a.value for s in wf.steps for a in s.assertions
-           if a.type == "response_quotes_value"}
+           if a.type == "answer_field_quotes"}
     assert got and got <= want
+    # Categorical grounding: the hotspot answer must equal the underlying the
+    # AAPL delta truth is harvested from (positions[underlying=AAPL].delta),
+    # rather than a hand-added truth key.
+    hotspot_underlying = re.search(r"underlying=([A-Za-z0-9.]+)",
+                                   truth["aapl_hotspot_delta"]["path"]).group(1)
+    hotspots = [a for s in wf.steps for a in s.assertions
+                if a.type == "answer_field_equals" and a.field == "hotspot"]
+    assert hotspots and all(h.equals == hotspot_underlying for h in hotspots)
