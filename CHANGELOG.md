@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Arena structured-answer scoring** (spec `2026-07-07-arena-structured-answer-scoring`)
+  — a benign `record_answer` agent tool + two golden-workflow assertion types,
+  `answer_field_equals` (adherence) and `answer_field_quotes` (grounding), that verify a
+  **typed, role-bound answer** the model commits (e.g. `{"hotspot":"AAPL","delta":…}`)
+  instead of fuzzy-scanning the free-text response. The tool tolerates both the nested
+  `answer={…}` and flat-kwargs call shapes and bounds its payload (capture-sink guard);
+  it is `DOMAIN_READ` and excluded from the EFF tool count so complying is never
+  penalized. Reads the answer from `ctx.tool_calls` (normalized name), so it survives
+  live trace harvesting.
 - **Arena Model Ability Card** (spec `2026-07-06-arena-ability-card`) — the flat
   objective score is now reported as a **FIFA-style 6-stat card** (each stat 0–99)
   with a numbers-first **OVR**: `GRD` grounding, `ADH` adherence, `SYN` synthesis,
@@ -47,6 +56,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SEED_ACCOUNTING_DATE = 2026-06-24` freezes the golden-path valuation instant.
 
 ### Changed
+- **Arena flagship: the two ambiguous grounding/adherence checks now score a typed
+  structured answer** (spec `2026-07-07-arena-structured-answer-scoring`). The flagship
+  `risk-manager-control-day` swaps 5 fuzzy checks 1:1 — step 3 hotspot + delta, step 5
+  gamma@+10% + delta@−20%, step 6 CVaR — from `response_contains`/`response_quotes_value`
+  free-text scans to `answer_field_equals`/`answer_field_quotes` reading the model's
+  `record_answer` payload by key. Denominator unchanged (**39**), axes preserved
+  (1 adherence + 4 grounding). A missing/wrong-key answer scores 0 with a naming detail
+  (`key delta absent; answered: delta_cash=…`); other axes are unaffected. Historical
+  runs #1–#13 are **not** re-scored (they predate the tool). `truth.json` stays
+  harvester-owned (numeric-only); the hotspot categorical is derived from the existing
+  AAPL delta truth path.
 - **Arena scoring is objective-only by default; the LLM jury is now opt-in** (spec
   `2026-07-06-arena-jury-opt-in`). Run #11 showed the subjective jury is too unstable to
   inform evaluation even as an advisory axis — it ranked models in reverse of the
