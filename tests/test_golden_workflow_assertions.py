@@ -505,3 +505,56 @@ def test_answer_fields_suffixed_tool_name():
 
 def test_answer_fields_empty_when_absent():
     assert answer_fields(ctx(tool_calls=[{"name": "get_latest_risk_run", "args": {}}])) == {}
+
+
+# --- structured-answer evaluation branches ---
+from app.golden_workflows.schema import _AnswerFieldEquals, _AnswerFieldQuotes
+
+
+def _answer_ctx(fields):
+    return ctx(tool_calls=[{"name": "record_answer", "args": {"answer": fields}}])
+
+
+def test_answer_field_equals_hit_and_miss():
+    a = _AnswerFieldEquals(type="answer_field_equals", field="hotspot", equals="AAPL")
+    assert evaluate_assertion(a, _answer_ctx({"hotspot": "aapl"}))[0] is True
+    ok, detail = evaluate_assertion(a, _answer_ctx({"hotspot": "TSLA"}))
+    assert ok is False and "TSLA" in detail
+
+
+def test_answer_field_equals_no_answer_and_wrong_key():
+    a = _AnswerFieldEquals(type="answer_field_equals", field="hotspot", equals="AAPL")
+    assert evaluate_assertion(a, ctx())[1] == "no answer recorded for hotspot"
+    ok, detail = evaluate_assertion(a, _answer_ctx({"underlying": "AAPL"}))
+    assert ok is False and "key hotspot absent" in detail and "underlying" in detail
+
+
+def test_answer_field_equals_any_of():
+    a = _AnswerFieldEquals(type="answer_field_equals", field="hotspot", any_of=["AAPL", "Apple"])
+    assert evaluate_assertion(a, _answer_ctx({"hotspot": "apple"}))[0] is True
+
+
+def test_answer_field_quotes_signed_and_magnitude():
+    a = _AnswerFieldQuotes(type="answer_field_quotes", field="delta", value=573.3467)
+    assert evaluate_assertion(a, _answer_ctx({"delta": 573.35}))[0] is True
+    assert evaluate_assertion(a, _answer_ctx({"delta": -573.35}))[0] is False  # sign matters
+    m = _AnswerFieldQuotes(type="answer_field_quotes", field="cvar", value=-7758.99, match="magnitude")
+    assert evaluate_assertion(m, _answer_ctx({"cvar": 7758.5}))[0] is True
+
+
+def test_answer_field_quotes_non_numeric_and_no_answer():
+    a = _AnswerFieldQuotes(type="answer_field_quotes", field="delta", value=573.3467)
+    ok, detail = evaluate_assertion(a, _answer_ctx({"delta": "the delta"}))
+    assert ok is False and "not numeric" in detail
+    assert evaluate_assertion(a, ctx())[1] == "no answer recorded for delta"
+
+
+def test_answer_field_quotes_numeric_string_coerced():
+    a = _AnswerFieldQuotes(type="answer_field_quotes", field="delta", value=573.3467)
+    assert evaluate_assertion(a, _answer_ctx({"delta": "573.35"}))[0] is True
+
+
+def test_answer_field_axes():
+    from app.services.arena.scoring import _AXIS_BY_TYPE
+    assert _AXIS_BY_TYPE["answer_field_equals"] == "adherence"
+    assert _AXIS_BY_TYPE["answer_field_quotes"] == "grounding"

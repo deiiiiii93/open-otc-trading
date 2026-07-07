@@ -60,6 +60,10 @@ _AXIS_BY_TYPE = {
     "tool_result_path": "grounding",
     "response_quotes_tool_value": "grounding",
     "response_quotes_value": "grounding",
+    # Structured-answer checks preserve the axes of the fuzzy checks they replace:
+    # role-bound categorical → adherence, role-bound numeric → grounding.
+    "answer_field_equals": "adherence",
+    "answer_field_quotes": "grounding",
     "artifact_exists": "synthesis",
     "artifact_contains": "synthesis",
 }
@@ -240,6 +244,10 @@ def _assertion_label(a) -> str:
         return f"response quotes {a.tool} {a.path}"
     if t == "response_quotes_value":
         return f"response quotes value {a.value}"
+    if t == "answer_field_equals":
+        return f"answer {a.field} = {a.equals or a.any_of}"
+    if t == "answer_field_quotes":
+        return f"answer {a.field} quotes {a.value}"
     return t
 
 

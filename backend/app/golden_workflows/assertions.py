@@ -335,6 +335,28 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
         return ok, "" if ok else (
             f"response does not quote value {a.value} "
             f"(match={a.match}, rel_tol={a.rel_tol}, near={a.near})")
+    if t == "answer_field_equals":
+        fields = answer_fields(ctx)
+        if a.field not in fields:
+            return False, _no_answer_detail(fields, a.field)
+        got = fields[a.field]
+        wants = a.any_of if a.any_of else [a.equals]
+        norm = lambda s: str(s).strip().lower()
+        ok = norm(got) in [norm(w) for w in wants]
+        return ok, "" if ok else f"{a.field}={got!r} != {a.equals or a.any_of}"
+    if t == "answer_field_quotes":
+        fields = answer_fields(ctx)
+        if a.field not in fields:
+            return False, _no_answer_detail(fields, a.field)
+        got = _coerce_num(fields[a.field])
+        if got is None:
+            return False, f"{a.field}={fields[a.field]!r} is not numeric"
+        target = float(a.value)
+        gv, tv = (got, target) if a.match == "signed" else (abs(got), abs(target))
+        tol = a.rel_tol * abs(target) if target != 0 else a.rel_tol
+        ok = abs(gv - tv) <= tol
+        return ok, "" if ok else (
+            f"{a.field}={got} != {a.value} (rel_tol={a.rel_tol}, match={a.match})")
     return False, f"unknown assertion {t}"
 
 def resolve_seed_refs(obj: Any, seed_map: dict[str, Any]) -> Any:
