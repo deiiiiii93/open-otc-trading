@@ -444,3 +444,42 @@ def test_deep_agent_filesystem_permissions_allow_trading_desk_artifacts():
     assert _check_fs_permission(
         permissions, "write", "/large_tool_results/toolu_01ABCdef"
     ) == "deny"
+
+
+def test_orchestrator_holds_record_answer_so_it_can_score_answer_fields():
+    """Regression: grounding/answer follow-ups are synthesized by the ORCHESTRATOR
+    directly (it delegates domain tool-work to a persona, then answers itself), so
+    ``record_answer`` must live on the orchestrator toolset — not only the personas.
+    Without it the orchestrator answers in prose ("record_answer isn't available in
+    my toolset") and every answer_field_* check scores 0 (found live in arena run
+    #14). Personas still receive the full toolset separately."""
+    from app.services.deep_agent.orchestrator import _orchestrator_tools
+    from app.tools import QUANT_AGENT_TOOLS
+
+    # non-headless: recorder + reply-options card both present
+    names = {getattr(t, "name", None) for t in
+             _orchestrator_tools(QUANT_AGENT_TOOLS, allow_reply_options=True)}
+    assert "record_answer" in names
+    assert "propose_reply_options" in names
+
+    # headless (YOLO): recorder still present, reply-options card withheld
+    names_headless = {getattr(t, "name", None) for t in
+                      _orchestrator_tools(QUANT_AGENT_TOOLS, allow_reply_options=False)}
+    assert "record_answer" in names_headless
+    assert "propose_reply_options" not in names_headless
+
+
+def test_orchestrator_tools_omits_record_answer_if_toolset_lacks_it():
+    """The helper pulls the recorder OUT of the passed toolset (no re-registration),
+    so a toolset without it yields an orchestrator without it — never a phantom."""
+    from app.services.deep_agent.orchestrator import _orchestrator_tools
+
+    class _T:
+        def __init__(self, name):
+            self.name = name
+
+    tools = [_T("get_latest_risk_run"), _T("run_scenario_test")]
+    names = {getattr(t, "name", None) for t in
+             _orchestrator_tools(tools, allow_reply_options=True)}
+    assert "record_answer" not in names
+    assert "propose_reply_options" in names

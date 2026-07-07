@@ -206,6 +206,28 @@ def _append_goal_grader(middleware: list[Any], goal_grader: Any) -> None:
         middleware.append(goal_grader)
 
 
+def _orchestrator_tools(
+    tools: Sequence[BaseTool], *, allow_reply_options: bool
+) -> list[BaseTool]:
+    """Tools the ORCHESTRATOR itself holds (personas get the full ``tools``).
+
+    Besides the UI-control ``propose_reply_options`` card (non-headless only),
+    the orchestrator needs ``record_answer``: grounding/answer follow-ups
+    ("what's the hotspot?", "what is the CVaR?") are synthesized by the
+    orchestrator DIRECTLY from context — it delegates the domain tool-work to a
+    persona, then produces the final answer itself. Without the recorder here the
+    orchestrator can only answer in prose (it literally reports "record_answer
+    isn't available in my toolset"), so every ``answer_field_*`` check scores 0.
+    Pull the already scope-gated instance out of ``tools`` rather than
+    re-registering it.
+    """
+    from ..reply_options.tool import ProposeReplyOptionsTool
+
+    out: list[BaseTool] = [ProposeReplyOptionsTool()] if allow_reply_options else []
+    out += [t for t in tools if getattr(t, "name", None) == "record_answer"]
+    return out
+
+
 def build_orchestrator(
     *,
     model: BaseChatModel,
@@ -226,11 +248,12 @@ def build_orchestrator(
     """
     from deepagents import create_deep_agent
 
-    # Orchestrator has no DOMAIN tools, but in non-headless modes it also needs
-    # the UI-control tool ``propose_reply_options`` so final synthesis replies can
-    # attach pickable buttons. Personas receive their own copy through ``tools``.
-    from ..reply_options.tool import ProposeReplyOptionsTool
-    orchestrator_tools = [ProposeReplyOptionsTool()] if allow_reply_options else []
+    # Orchestrator has no DOMAIN tools, but it needs propose_reply_options
+    # (non-headless) and record_answer — see _orchestrator_tools. Personas receive
+    # their own copy of everything through ``tools``.
+    orchestrator_tools = _orchestrator_tools(
+        tools, allow_reply_options=allow_reply_options
+    )
     # Headless: also strip the card tool from the persona toolset so no subagent
     # can defer either.
     persona_tools = (

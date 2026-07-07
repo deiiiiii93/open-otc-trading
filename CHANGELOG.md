@@ -231,6 +231,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the rest of the desk.
 
 ### Fixed
+- **`record_answer` was unreachable by the orchestrator, so every structured-answer
+  check scored 0 in practice.** The structured-answer feature registered `record_answer`
+  in the persona toolset (`DEEP_AGENT_TOOL_NAMES`), but grounding/answer follow-ups
+  ("what's the hotspot?", "what is the CVaR?") are synthesized by the **orchestrator**
+  directly — it delegates the domain tool-work to a persona, then produces the final
+  answer itself — and the orchestrator's toolset held only `propose_reply_options`. The
+  model reported "record_answer isn't available in my toolset" and answered in prose, so
+  `answer_field_equals`/`answer_field_quotes` scored 0 (found live in arena run #14).
+  `build_orchestrator` now composes its toolset via `_orchestrator_tools`, which surfaces
+  the already scope-gated `record_answer` instance to the orchestrator (non-headless and
+  YOLO). Post-fix, all four run-#14 models emit `record_answer` with the required
+  role-keys.
 - **Headless (YOLO) agents stalled in prose on expensive actions instead of
   executing.** In headless mode the persona/orchestrator prompts still carried the
   cost-preview rule ("reply with a cost preview and wait for the user's yes; do
