@@ -149,11 +149,44 @@ class _ResponseQuotesValue(BaseModel):
         return self
 
 
+class _AnswerFieldEquals(BaseModel):
+    # Categorical grounding/adherence against a typed answer the model commits via
+    # record_answer — verifies role (this field IS the hotspot), not mere presence.
+    type: Literal["answer_field_equals"]
+    field: str = Field(min_length=1)
+    equals: str | None = None
+    any_of: list[str] | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> "_AnswerFieldEquals":
+        if (self.equals is None) == (self.any_of is None):
+            raise ValueError("answer_field_equals: exactly one of equals/any_of")
+        if self.any_of is not None and not self.any_of:
+            raise ValueError("answer_field_equals: any_of must be non-empty")
+        return self
+
+
+class _AnswerFieldQuotes(BaseModel):
+    # Numeric grounding against a typed answer field — direct value compare (no text
+    # scan, no proximity heuristic); the key binds the number to its role.
+    type: Literal["answer_field_quotes"]
+    field: str = Field(min_length=1)
+    value: float
+    rel_tol: float = 0.02
+    match: Literal["signed", "magnitude"] = "signed"
+
+    @model_validator(mode="after")
+    def _bounds(self) -> "_AnswerFieldQuotes":
+        if not (0 < self.rel_tol < 1):
+            raise ValueError("rel_tol must be in (0, 1)")
+        return self
+
+
 Assertion = Annotated[
     Union[_SkillRouted, _SkillsRoutedSequence, _ToolsRoutedSequence, _ToolCalled,
           _TaskReturnedId, _ArtifactExists, _ResponseContains, _ToolResultPath,
           _ToolNotCalled, _ArtifactContains, _ResponseQuotesToolValue,
-          _ResponseQuotesValue],
+          _ResponseQuotesValue, _AnswerFieldEquals, _AnswerFieldQuotes],
     Field(discriminator="type"),
 ]
 

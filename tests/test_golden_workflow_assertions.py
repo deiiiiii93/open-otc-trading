@@ -478,3 +478,30 @@ def test_response_quotes_value_no_tool_needed():
     a = _ResponseQuotesValue(type="response_quotes_value", value=16.403, near=["gamma"])
     ok, _ = evaluate_assertion(a, ctx(response_text="gamma at +10% is 16.40"))
     assert ok
+
+
+# --- structured-answer accessor (record_answer) ---
+from app.golden_workflows.assertions import answer_fields
+
+
+def test_answer_fields_merges_last_wins():
+    c = ctx(tool_calls=[
+        {"name": "record_answer", "args": {"answer": {"hotspot": "TSLA", "delta": 1.0}}},
+        {"name": "record_answer", "args": {"answer": {"delta": 573.35}}},
+    ])
+    assert answer_fields(c) == {"hotspot": "TSLA", "delta": 573.35}
+
+
+def test_answer_fields_flat_kwargs_shape():
+    c = ctx(tool_calls=[{"name": "record_answer", "args": {"hotspot": "AAPL", "delta": 573.35}}])
+    assert answer_fields(c) == {"hotspot": "AAPL", "delta": 573.35}
+
+
+def test_answer_fields_suffixed_tool_name():
+    # a harvested/live trace may carry the _tool suffix — normalize_tool_name folds it
+    c = ctx(tool_calls=[{"name": "record_answer_tool", "args": {"answer": {"cvar": -7758.99}}}])
+    assert answer_fields(c) == {"cvar": -7758.99}
+
+
+def test_answer_fields_empty_when_absent():
+    assert answer_fields(ctx(tool_calls=[{"name": "get_latest_risk_run", "args": {}}])) == {}

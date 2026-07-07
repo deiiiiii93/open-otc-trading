@@ -21,6 +21,46 @@ class AssertionContext:
     artifacts: list[dict]
     task_ids: list[str]
 
+
+def answer_fields(ctx: "AssertionContext") -> dict[str, Any]:
+    """Merged answer of every record_answer call in this context (last-wins per key).
+
+    Tolerates both call shapes the tool accepts: nested args={"answer": {...}} and
+    flat args={"hotspot": ..., "delta": ...}. For each call, the nested `answer`
+    dict (if any) is merged first, then the remaining top-level arg keys — so a
+    model that flattens is still captured.
+    """
+    from app.golden_workflows.schema import normalize_tool_name
+    merged: dict[str, Any] = {}
+    for c in ctx.tool_calls:
+        if normalize_tool_name(c.get("name", "")) != "record_answer":
+            continue
+        args = c.get("args") or {}
+        nested = args.get("answer")
+        if isinstance(nested, dict):
+            merged.update(nested)
+        merged.update({k: v for k, v in args.items() if k != "answer"})
+    return merged
+
+
+def _no_answer_detail(fields: dict, field: str) -> str:
+    if not fields:
+        return f"no answer recorded for {field}"
+    shown = ", ".join(f"{k}={v!r}" for k, v in list(fields.items())[:6])
+    return f"key {field} absent; answered: {shown}"
+
+
+def _coerce_num(v: Any) -> float | None:
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    try:
+        return float(str(v).replace(",", "").replace("$", "").strip().rstrip("%"))
+    except (ValueError, AttributeError):
+        return None
+
+
 def _exact(a: Any, b: Any) -> bool:
     if isinstance(a, bool) or isinstance(b, bool):
         return a is b
