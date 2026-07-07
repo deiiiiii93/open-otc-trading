@@ -17,20 +17,94 @@ import {
   type ArenaRunSummary,
   type ArenaScoreBreakdown,
   type ArenaCheck,
+  type ArenaObjectiveStep,
 } from '../lib/arenaApi';
 import './Arena.css';
 
-function CheckRow({ check }: { check: ArenaCheck }) {
+// Dimension order + card-stat labels, so the drilldown groups and the ability
+// card speak the same language. A stat is round(99 × passed/total) — the same
+// kernel the backend card uses — computed here from the axis tally so the header
+// stays truthful even for rows without a stored card.
+const AXIS_ORDER = ['grounding', 'adherence', 'synthesis', 'procedural'] as const;
+const AXIS_STAT: Record<string, string> = {
+  grounding: 'GRD',
+  adherence: 'ADH',
+  synthesis: 'SYN',
+  procedural: 'PRC',
+};
+const axisStat = (passed: number, total: number): number =>
+  total > 0 ? Math.round((99 * passed) / total) : 0;
+
+function CheckRow({ check, showAxis = false }: { check: ArenaCheck; showAxis?: boolean }) {
   return (
     <li className={`wl-arena__check wl-arena__check--${check.passed ? 'pass' : 'fail'}`}>
       <span className="wl-arena__check-mark" aria-hidden="true">
         {check.passed ? '✓' : '✗'}
       </span>
       <span className="wl-arena__check-label">{check.label}</span>
+      {showAxis && check.axis && AXIS_STAT[check.axis] && (
+        <span className="wl-arena__check-axis" title={check.axis}>
+          {AXIS_STAT[check.axis]}
+        </span>
+      )}
       {!check.passed && check.detail && (
         <span className="wl-arena__check-detail">{check.detail}</span>
       )}
     </li>
+  );
+}
+
+// "By dimension" view: flatten every scored check (per-step + success criteria)
+// and bucket by axis, so a user reads exactly which checks fed GRD/ADH/SYN/PRC
+// and where points were lost. Source order is preserved within a dimension.
+// Unknown-axis checks (older rows) fall into a trailing "other" group.
+function DimensionGroups({
+  steps,
+  success,
+}: {
+  steps: ArenaObjectiveStep[];
+  success: ArenaCheck[];
+}) {
+  const groups = new Map<string, ArenaCheck[]>();
+  for (const c of [...steps.flatMap((s) => s.checks), ...success]) {
+    const key = c.axis && AXIS_STAT[c.axis] ? c.axis : 'other';
+    const arr = groups.get(key);
+    if (arr) arr.push(c);
+    else groups.set(key, [c]);
+  }
+  const ordered = [...AXIS_ORDER, 'other'].filter((k) => groups.has(k));
+  return (
+    <>
+      {ordered.map((axis) => {
+        const checks = groups.get(axis)!;
+        const passed = checks.filter((c) => c.passed).length;
+        const total = checks.length;
+        const stat = AXIS_STAT[axis];
+        return (
+          <div key={axis} className="wl-arena__dim-group">
+            <div className="wl-arena__dim-head">
+              <span className="wl-arena__dim-name">{axis}</span>
+              <span className="wl-arena__dim-tally">
+                {passed}/{total}
+              </span>
+              {stat && (
+                <span
+                  className="wl-arena__dim-stat"
+                  title={`${stat} = round(99 × ${passed}/${total})`}
+                >
+                  {stat} {axisStat(passed, total)}
+                </span>
+              )}
+            </div>
+            <ul className="wl-arena__check-list">
+              {checks.map((c, i) => (
+                <CheckRow key={i} check={c} />
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </>
   );
 }
 
@@ -75,6 +149,11 @@ function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
   const obj = breakdown.objective;
   const judge = breakdown.judge;
   const diagnosis = breakdown.diagnosis;
+  // Drilldown grouping: "step" (chronological, the default) vs "dimension"
+  // (checks regrouped under GRD/ADH/SYN/PRC so a user can read exactly where a
+  // stat's points came from and where they were lost). Hook declared before the
+  // early-return guard to satisfy the rules-of-hooks.
+  const [checkView, setCheckView] = useState<'step' | 'dimension'>('step');
 
   // Objective drives the detailed view (it is the sole ranking axis). Require the
   // FULL per-check shape (steps + success arrays), not just presence of `objective`:
@@ -168,42 +247,71 @@ function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
         </div>
       )}
 
-      {obj.steps.map((step) => {
-        const passed = step.checks.filter((c) => c.passed).length;
-        return (
-          <div key={step.index} className="wl-arena__breakdown-step">
-            <div className="wl-arena__breakdown-step-head">
-              <span className="wl-arena__breakdown-step-title">
-                Step {step.index + 1}
-              </span>
-              <span className="wl-arena__breakdown-step-tally">
-                {passed}/{step.checks.length}
-              </span>
-            </div>
-            <div className="wl-arena__breakdown-step-user">{step.user}</div>
-            <ul className="wl-arena__check-list">
-              {step.checks.map((c, i) => (
-                <CheckRow key={i} check={c} />
-              ))}
-            </ul>
-          </div>
-        );
-      })}
+      <div className="wl-arena__view-toggle" role="group" aria-label="Group checks by">
+        <button
+          type="button"
+          className={`wl-arena__view-btn wl-arena__view-btn--${
+            checkView === 'step' ? 'active' : 'idle'
+          }`}
+          aria-pressed={checkView === 'step'}
+          onClick={() => setCheckView('step')}
+        >
+          By step
+        </button>
+        <button
+          type="button"
+          className={`wl-arena__view-btn wl-arena__view-btn--${
+            checkView === 'dimension' ? 'active' : 'idle'
+          }`}
+          aria-pressed={checkView === 'dimension'}
+          onClick={() => setCheckView('dimension')}
+        >
+          By dimension
+        </button>
+      </div>
 
-      {obj.success.length > 0 && (
-        <div className="wl-arena__breakdown-step">
-          <div className="wl-arena__breakdown-step-head">
-            <span className="wl-arena__breakdown-step-title">Success criteria</span>
-            <span className="wl-arena__breakdown-step-tally">
-              {obj.success.filter((c) => c.passed).length}/{obj.success.length}
-            </span>
-          </div>
-          <ul className="wl-arena__check-list">
-            {obj.success.map((c, i) => (
-              <CheckRow key={i} check={c} />
-            ))}
-          </ul>
-        </div>
+      {checkView === 'dimension' ? (
+        <DimensionGroups steps={obj.steps} success={obj.success} />
+      ) : (
+        <>
+          {obj.steps.map((step) => {
+            const passed = step.checks.filter((c) => c.passed).length;
+            return (
+              <div key={step.index} className="wl-arena__breakdown-step">
+                <div className="wl-arena__breakdown-step-head">
+                  <span className="wl-arena__breakdown-step-title">
+                    Step {step.index + 1}
+                  </span>
+                  <span className="wl-arena__breakdown-step-tally">
+                    {passed}/{step.checks.length}
+                  </span>
+                </div>
+                <div className="wl-arena__breakdown-step-user">{step.user}</div>
+                <ul className="wl-arena__check-list">
+                  {step.checks.map((c, i) => (
+                    <CheckRow key={i} check={c} showAxis />
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+
+          {obj.success.length > 0 && (
+            <div className="wl-arena__breakdown-step">
+              <div className="wl-arena__breakdown-step-head">
+                <span className="wl-arena__breakdown-step-title">Success criteria</span>
+                <span className="wl-arena__breakdown-step-tally">
+                  {obj.success.filter((c) => c.passed).length}/{obj.success.length}
+                </span>
+              </div>
+              <ul className="wl-arena__check-list">
+                {obj.success.map((c, i) => (
+                  <CheckRow key={i} check={c} showAxis />
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
       )}
 
       {judge && judge.rubric_scores && judge.rubric_scores.length > 0 && (

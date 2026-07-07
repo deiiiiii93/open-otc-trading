@@ -15,6 +15,10 @@ export type ArenaCheck = {
   label: string;
   passed: boolean;
   detail: string;
+  // Which scoring dimension this check feeds (grounding/adherence/synthesis/
+  // procedural). Present on full v2 rows; drives the "By dimension" drilldown
+  // and the per-check axis chip. Optional for older/minimal rows.
+  axis?: string;
 };
 
 export type ArenaObjectiveStep = {

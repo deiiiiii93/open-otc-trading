@@ -132,6 +132,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scores as a real 0 (a silent model is a model failure, not an infra failure).
 
 ### Added
+- **Arena drilldown: per-dimension score derivation.** The match score-breakdown now
+  has a **By step | By dimension** toggle. "By dimension" regroups every scored check
+  under its axis (grounding / adherence / synthesis / procedural), each header showing
+  the axis tally **and** its derived card stat (e.g. `SYN 0` = `round(99 × 0/4)`), so a
+  user can read exactly where a dimension earned or lost its points and see each failed
+  check's reason inline. Each check in the "By step" view also gets a small axis chip
+  linking it to its card dimension. Surfaced the per-check `axis` field (already stored)
+  to the frontend; token-only, no backend change.
 - **Grounding checks report what the response actually quoted.** A failed
   `response_quotes_value` / `response_quotes_tool_value` check now appends the raw
   numeric tokens the response wrote in the scored (near-anchored) region — e.g.

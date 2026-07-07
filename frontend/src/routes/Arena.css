@@ -298,6 +298,7 @@
 
 .wl-arena__check {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: var(--gap-2);
   font-size: var(--type-small-size);
@@ -327,7 +328,11 @@
 }
 
 .wl-arena__check-detail {
-  flex: 0 1 auto;
+  /* Drop onto its own full-width line under the label (rows wrap): failure
+     reasons now include the numbers the response actually quoted and would
+     otherwise be cramped competing with the label for width. */
+  flex: 1 1 100%;
+  margin-left: calc(1em + var(--gap-2));
   color: var(--neg);
   font-family: var(--font-numeric);
   font-size: var(--type-small-size);
@@ -529,4 +534,95 @@
 .wl-arena__stat--jdg .wl-arena__stat-value,
 .wl-arena__stat--jdg .wl-arena__stat-name {
   color: var(--ink-2);
+}
+
+/* ── Check-list grouping toggle (By step | By dimension) ── */
+.wl-arena__view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+  overflow: hidden;
+  align-self: flex-start;
+}
+
+.wl-arena__view-btn {
+  appearance: none;
+  border: 0;
+  border-right: 1px solid var(--hairline);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  cursor: pointer;
+  padding: var(--gap-1) var(--gap-2);
+  font: var(--type-caps-weight) var(--type-caps-size) var(--font-ui);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wl-arena__view-btn:last-child {
+  border-right: 0;
+}
+
+.wl-arena__view-btn:hover {
+  color: var(--ink);
+}
+
+.wl-arena__view-btn--active {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* ── "By dimension" groups: an axis header with its tally + card stat ── */
+.wl-arena__dim-group {
+  background: var(--paper-2);
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+  padding: var(--gap-2);
+}
+
+.wl-arena__dim-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap-2);
+  margin-bottom: var(--gap-1);
+}
+
+.wl-arena__dim-name {
+  flex: 1 1 auto;
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+}
+
+.wl-arena__dim-tally {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+.wl-arena__dim-stat {
+  padding: 0 var(--gap-1);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--type-caps-size);
+  white-space: nowrap;
+}
+
+/* Per-check axis chip (shown in the "By step" view to link a check to its
+   dimension). Muted, non-numeric — an inline tag, not a value. */
+.wl-arena__check-axis {
+  flex: 0 0 auto;
+  padding: 0 var(--gap-1);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-size: var(--type-caps-size);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ArenaLive } from './Arena.live';
 
@@ -61,8 +61,8 @@ const mockMatches = [
             index: 0,
             user: 'Check the latest risk',
             checks: [
-              { kind: 'skill', label: 'skill: read-risk-result', passed: true, detail: '' },
-              { kind: 'tool', label: 'tool: get_latest_risk_run', passed: false, detail: 'not called' },
+              { kind: 'skill', label: 'skill: read-risk-result', passed: true, detail: '', axis: 'procedural' },
+              { kind: 'tool', label: 'tool: get_latest_risk_run', passed: false, detail: 'not called', axis: 'procedural' },
             ],
           },
         ],
@@ -206,6 +206,32 @@ describe('ArenaLive', () => {
     expect(screen.getByText('qwen/qwen3.7-max')).toBeInTheDocument();
   });
 
+  it('toggles the score breakdown between By step and By dimension', async () => {
+    setupMocks();
+    render(<ArenaLive />);
+
+    await userEvent.click(await screen.findByText('1'));
+    await userEvent.click(await screen.findByText('workflow-a'));
+    await screen.findByText('Score breakdown');
+
+    // Default = By step: the per-step header shows.
+    expect(screen.getByText('Step 1')).toBeInTheDocument();
+
+    // Switch to By dimension: checks regroup under their axis, with the derived
+    // card stat (procedural 1 pass + 1 fail → PRC = round(99 × 1/2) = 50).
+    await userEvent.click(screen.getByRole('button', { name: 'By dimension' }));
+    expect(screen.getByText(/PRC\s+50/)).toBeInTheDocument();
+    // The failing check and its reason still surface, now under the dimension.
+    expect(screen.getByText('tool: get_latest_risk_run')).toBeInTheDocument();
+    expect(screen.getByText('not called')).toBeInTheDocument();
+    // Step grouping is replaced (no per-step header in the dimension view).
+    expect(screen.queryByText('Step 1')).not.toBeInTheDocument();
+
+    // Toggling back restores the step view.
+    await userEvent.click(screen.getByRole('button', { name: 'By step' }));
+    expect(screen.getByText('Step 1')).toBeInTheDocument();
+  });
+
   it('renders the OVR headline on the leaderboard', async () => {
     setupMocks();
     render(<ArenaLive />);
@@ -223,13 +249,16 @@ describe('ArenaLive', () => {
     await userEvent.click(await screen.findByText('workflow-a'));
     await screen.findByText('Score breakdown');
 
-    // Card position badge + all six stat labels present.
+    // Card position badge + all six stat labels present. Scope to the card:
+    // the same stat codes (e.g. PRC) now also appear as per-check axis chips in
+    // the By-step check list, so an unscoped getByText would be ambiguous.
     expect(screen.getByText('Sniper')).toBeInTheDocument();
+    const card = screen.getByText('Sniper').closest('.wl-arena__card') as HTMLElement;
     for (const stat of ['GRD', 'ADH', 'SYN', 'PRC', 'EFF', 'JDG']) {
-      expect(screen.getByText(stat)).toBeInTheDocument();
+      expect(within(card).getByText(stat)).toBeInTheDocument();
     }
     // JDG is advisory and null here → renders an em dash under the JDG stat.
-    const jdgName = screen.getByText('JDG');
+    const jdgName = within(card).getByText('JDG');
     const jdgCell = jdgName.closest('.wl-arena__stat');
     expect(jdgCell?.className).toContain('wl-arena__stat--jdg');
     expect(jdgCell?.querySelector('.wl-arena__stat-value')?.textContent).toBe('—');
