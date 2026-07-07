@@ -13,14 +13,17 @@ from __future__ import annotations
 from typing import Any
 
 from langchain_core.tools import tool
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.services.deep_agent.capability_gate import capability_gated
 from app.services.deep_agent.envelopes import ToolGroup
 
 # Bounds so the globally-exposed recorder can't become an unbounded capture sink
 # (tool inputs are persisted by the local tracer). A benchmark answer is a handful
-# of scalars; anything past these caps is truncated, not retained.
+# of scalars; anything past these caps is truncated, not retained. Applied at the
+# VALIDATION boundary (so the bounded values are what the tool layer sees) AND at the
+# scoring read path (assertions.answer_fields) — the tool's return-value bound alone
+# does not protect either channel (Codex code-review).
 _MAX_FIELDS = 32
 _MAX_STR = 256
 _MAX_KEY = 128
@@ -48,6 +51,21 @@ class RecordAnswerInput(BaseModel):
                     '{"hotspot": "AAPL", "delta": 573.35}. You may also pass the '
                     "fields directly as keyword arguments.",
     )
+
+    @model_validator(mode="after")
+    def _bound_at_validation(self) -> "RecordAnswerInput":
+        """Cap the recorded answer (nested + flat) at the validation boundary so the
+        bounded values are what any downstream layer sees, not just the return value."""
+        if isinstance(self.answer, dict):
+            self.answer = _bound_fields(self.answer)
+        extras = self.__pydantic_extra__ or {}
+        for k in list(extras):
+            extras[k] = _bound_value(extras[k])
+        # cap the number of extra flat fields too
+        if len(extras) > _MAX_FIELDS:
+            for k in list(extras)[_MAX_FIELDS:]:
+                del extras[k]
+        return self
 
 
 @capability_gated(group=ToolGroup.DOMAIN_READ)
