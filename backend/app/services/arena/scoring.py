@@ -395,19 +395,36 @@ def objective_breakdown(
             "success": success, "axes": axes}
 
 
-# Benign answer-recording instrumentation — excluded from the EFF tool count so a
-# model is not penalized for complying with a step's record_answer contract. Compared
-# on the NORMALIZED name so a `record_answer_tool`-suffixed trace name is also excluded
-# (the codebase already carries this _tool skew — that is why normalize_tool_name exists).
-_EFF_EXCLUDED_TOOLS = frozenset({"record_answer"})
+# Structured-answer assertion types — a step declaring one legitimately expects a
+# record_answer call, which is the only recorder call exempt from the EFF tool count.
+_ANSWER_ASSERTION_TYPES = frozenset({"answer_field_equals", "answer_field_quotes"})
 
 
-def _workflow_call_count(transcript: MatchTranscript) -> int:
-    """Tool-call count for the EFF stat, excluding benign answer instrumentation."""
-    return sum(
-        1 for s in transcript.steps for c in s.tool_calls
-        if normalize_tool_name(c.get("name") or "") not in _EFF_EXCLUDED_TOOLS
-    )
+def _workflow_call_count(transcript: MatchTranscript, loaded) -> int:
+    """Tool-call count for the EFF stat.
+
+    record_answer is benign instrumentation, so a model is not penalized for the ONE
+    recorder call a structured-answer step expects — but only that one, per such step.
+    Extra record_answer calls (spam / wrong-key retries) and recorder calls on steps
+    that declare no answer_field_* assertion all COUNT, so the recorder cannot be used
+    to hide execution churn or inflate EFF (Codex code-review [medium]). Matched on the
+    NORMALIZED name so a `record_answer_tool`-suffixed trace name is also handled.
+    """
+    steps = loaded.workflow.steps
+    total = 0
+    for i, s in enumerate(transcript.steps):
+        total += len(s.tool_calls)
+        step_expects_answer = (
+            i < len(steps)
+            and any(a.type in _ANSWER_ASSERTION_TYPES for a in steps[i].assertions)
+        )
+        if step_expects_answer:
+            recorder_here = sum(
+                1 for c in s.tool_calls
+                if normalize_tool_name(c.get("name") or "") == "record_answer"
+            )
+            total -= min(recorder_here, 1)  # exempt exactly one expected recorder call
+    return total
 
 
 def diagnose_heuristic(
@@ -430,7 +447,7 @@ def diagnose_heuristic(
     skills_hit = sum(1 for c in skill_checks if c["passed"])
     skills_total = len(skill_checks)
 
-    tool_calls = _workflow_call_count(transcript)
+    tool_calls = _workflow_call_count(transcript, loaded)
     errors = sum(len(s.errors) for s in transcript.steps)
 
     parts = [

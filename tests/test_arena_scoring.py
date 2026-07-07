@@ -391,7 +391,12 @@ class TestAxisAndScope:
 
         refetch = transcript.model_copy(deep=True)
         refetch.steps[grid_i].tool_calls = [
-            {"id": "x", "name": "get_greeks_landscape_run_tool", "args": {"run_id": 101}}]
+            {"id": "x", "name": "get_greeks_landscape_run_tool", "args": {"run_id": 101}},
+            # a compliant refetch still records its structured answer (the grid
+            # step's grounding is now answer_field_quotes, not a response scan)
+            {"id": "a", "name": "record_answer_tool", "args": {"answer": {
+                "gamma_at_+10pct": 16.403033928381223,
+                "delta_at_-20pct": 391.1919745962153}}}]
         bd2 = objective_breakdown(refetch, loaded)
         assert all(c["passed"] for c in bd2["steps"][grid_i]["checks"])
 
@@ -490,22 +495,55 @@ def test_card_tiebreak_priority():
     assert scoring.card_tiebreak_key(hi_grd) < scoring.card_tiebreak_key(hi_adh)
 
 
-def test_record_answer_excluded_from_eff_tool_count():
-    """record_answer (and its _tool-suffixed trace form) must not inflate the EFF
-    tool-call count — a compliant model is not penalized for recording its answer."""
-    from app.services.arena.scoring import diagnose_heuristic
+def _flagship_transcript(calls_by_index):
+    """A MatchTranscript over the flagship's step count with tool_calls placed at the
+    given 0-based step indices (all other steps empty)."""
     from app.golden_workflows.transcript import MatchTranscript, MatchStep
     from app.golden_workflows.registry import get_workflow_bundle
-    step = MatchStep(
-        index=0, user="u", messages=[], tool_calls=[
-            {"name": "get_latest_risk_run", "args": {}},
-            {"name": "record_answer", "args": {"answer": {"x": 1}}},
-            # a harvested/live trace may carry the _tool suffix — must also be excluded
-            {"name": "record_answer_tool", "args": {"answer": {"y": 2}}},
-        ], tool_results=[], skills_routed=[], artifacts=[], task_ids=[],
-        response_text="", errors=[])
-    t = MatchTranscript(schema_version=1, run_id=None,
-                        workflow_id="risk-manager-control-day", model_id="x",
-                        started_at=None, finished_at=None, steps=[step])
     loaded = get_workflow_bundle("risk-manager-control-day")
+    n = len(loaded.workflow.steps)
+    steps = [MatchStep(index=i, user="u", messages=[], tool_calls=calls_by_index.get(i, []),
+                       tool_results=[], skills_routed=[], artifacts=[], task_ids=[],
+                       response_text="", errors=[]) for i in range(n)]
+    return MatchTranscript(schema_version=1, run_id=None,
+                           workflow_id="risk-manager-control-day", model_id="x",
+                           started_at=None, finished_at=None, steps=steps), loaded
+
+
+def test_record_answer_one_expected_recorder_is_exempt_from_eff():
+    """The ONE record_answer a structured-answer step expects (incl. the _tool-suffixed
+    trace form) does not inflate the EFF tool count — complying is not penalized."""
+    from app.services.arena.scoring import diagnose_heuristic
+    risk = {"name": "get_latest_risk_run", "args": {}}
+    ra = {"name": "record_answer_tool", "args": {"answer": {"hotspot": "AAPL"}}}
+    # step index 2 (the hotspot step) declares answer_field_* → 1 recorder exempt
+    t, loaded = _flagship_transcript({2: [risk, ra]})
     assert diagnose_heuristic(t, loaded)["tool_calls"] == 1
+
+
+def test_record_answer_spam_and_offstep_calls_count_toward_eff():
+    """Extra recorder calls on an answer step, and any recorder call on a step that
+    declares no answer_field_* assertion, all COUNT — the recorder cannot hide churn
+    or inflate EFF (Codex code-review)."""
+    from app.services.arena.scoring import diagnose_heuristic
+    risk = {"name": "get_latest_risk_run", "args": {}}
+    ra = {"name": "record_answer", "args": {"answer": {"x": 1}}}
+    # step 2 (answer step): 1 risk + 3 recorders → 1 exempt, 2 count → 3
+    # step 0 (non-answer step): 1 recorder → counts → 1
+    # total = 4 (step2) + 1 (step0) = 5; exempt 1 → 4
+    t, loaded = _flagship_transcript({2: [risk, ra, ra, ra], 0: [ra]})
+    assert diagnose_heuristic(t, loaded)["tool_calls"] == 4
+
+
+def test_answer_fields_bounds_oversized_and_spam_payload():
+    """answer_fields caps field count and value/key length so an oversized/spam recorder
+    input cannot be scored or retained in full (Codex code-review [high])."""
+    from app.golden_workflows.assertions import answer_fields, AssertionContext
+    big = {"blob": "x" * 5000, **{f"k{i}": i for i in range(50)}}
+    ctx = AssertionContext(response_text="", tool_calls=[
+        {"name": "record_answer", "args": {"answer": big}}],
+        tool_results=[], skills_routed=[], artifacts=[], task_ids=[])
+    fields = answer_fields(ctx)
+    assert len(fields) <= 32
+    assert all(not isinstance(v, str) or len(v) <= 257 for v in fields.values())
+    assert all(len(k) <= 128 for k in fields)

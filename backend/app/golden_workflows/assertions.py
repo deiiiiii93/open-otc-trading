@@ -22,13 +22,33 @@ class AssertionContext:
     task_ids: list[str]
 
 
+# Capture-sink bounds applied at the SCORING read path — the tool's own output
+# bounding does not protect scoring, because answer_fields consumes the raw persisted
+# tool *inputs* (ctx.tool_calls[].args), not the tool's return value. Bounding here
+# caps what any consumer scores/retains regardless of what a model recorded (Codex
+# code-review [high]). Real answers are 1-2 short scalars, so this never clips a
+# compliant answer; it only defuses oversized/spam payloads.
+_ANSWER_MAX_FIELDS = 32
+_ANSWER_MAX_STR = 256
+_ANSWER_MAX_KEY = 128
+
+
+def _bound_answer_value(v: Any) -> Any:
+    if isinstance(v, (int, float, bool)) or v is None:
+        return v
+    s = str(v)
+    return s if len(s) <= _ANSWER_MAX_STR else s[:_ANSWER_MAX_STR] + "…"
+
+
 def answer_fields(ctx: "AssertionContext") -> dict[str, Any]:
     """Merged answer of every record_answer call in this context (last-wins per key).
 
     Tolerates both call shapes the tool accepts: nested args={"answer": {...}} and
     flat args={"hotspot": ..., "delta": ...}. For each call, the nested `answer`
     dict (if any) is merged first, then the remaining top-level arg keys — so a
-    model that flattens is still captured.
+    model that flattens is still captured. The result is bounded (field count, key
+    and value length) so oversized/spam recorder inputs cannot be scored/retained
+    in full.
     """
     from app.golden_workflows.schema import normalize_tool_name
     merged: dict[str, Any] = {}
@@ -40,7 +60,11 @@ def answer_fields(ctx: "AssertionContext") -> dict[str, Any]:
         if isinstance(nested, dict):
             merged.update(nested)
         merged.update({k: v for k, v in args.items() if k != "answer"})
-    return merged
+    bounded: dict[str, Any] = {}
+    for k, v in list(merged.items())[:_ANSWER_MAX_FIELDS]:
+        key = str(k)[:_ANSWER_MAX_KEY]
+        bounded[key] = _bound_answer_value(v)
+    return bounded
 
 
 def _no_answer_detail(fields: dict, field: str) -> str:

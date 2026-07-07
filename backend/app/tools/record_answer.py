@@ -23,6 +23,7 @@ from app.services.deep_agent.envelopes import ToolGroup
 # of scalars; anything past these caps is truncated, not retained.
 _MAX_FIELDS = 32
 _MAX_STR = 256
+_MAX_KEY = 128
 
 
 def _bound_value(v: Any) -> Any:
@@ -33,7 +34,8 @@ def _bound_value(v: Any) -> Any:
 
 
 def _bound_fields(fields: dict[str, Any]) -> dict[str, Any]:
-    return {k: _bound_value(v) for k, v in list(fields.items())[:_MAX_FIELDS]}
+    return {str(k)[:_MAX_KEY]: _bound_value(v)
+            for k, v in list(fields.items())[:_MAX_FIELDS]}
 
 
 class RecordAnswerInput(BaseModel):
