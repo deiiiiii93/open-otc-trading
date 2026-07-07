@@ -488,3 +488,24 @@ def test_card_tiebreak_priority():
     hi_grd = {"GRD": 90, "ADH": 10, "SYN": 10, "EFF": 10, "PRC": 10}
     hi_adh = {"GRD": 10, "ADH": 90, "SYN": 10, "EFF": 10, "PRC": 10}
     assert scoring.card_tiebreak_key(hi_grd) < scoring.card_tiebreak_key(hi_adh)
+
+
+def test_record_answer_excluded_from_eff_tool_count():
+    """record_answer (and its _tool-suffixed trace form) must not inflate the EFF
+    tool-call count — a compliant model is not penalized for recording its answer."""
+    from app.services.arena.scoring import diagnose_heuristic
+    from app.golden_workflows.transcript import MatchTranscript, MatchStep
+    from app.golden_workflows.registry import get_workflow_bundle
+    step = MatchStep(
+        index=0, user="u", messages=[], tool_calls=[
+            {"name": "get_latest_risk_run", "args": {}},
+            {"name": "record_answer", "args": {"answer": {"x": 1}}},
+            # a harvested/live trace may carry the _tool suffix — must also be excluded
+            {"name": "record_answer_tool", "args": {"answer": {"y": 2}}},
+        ], tool_results=[], skills_routed=[], artifacts=[], task_ids=[],
+        response_text="", errors=[])
+    t = MatchTranscript(schema_version=1, run_id=None,
+                        workflow_id="risk-manager-control-day", model_id="x",
+                        started_at=None, finished_at=None, steps=[step])
+    loaded = get_workflow_bundle("risk-manager-control-day")
+    assert diagnose_heuristic(t, loaded)["tool_calls"] == 1

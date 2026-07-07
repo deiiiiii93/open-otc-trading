@@ -35,7 +35,7 @@ from app.golden_workflows.assertions import (
     evaluate_assertion,
     match_tool,
 )
-from app.golden_workflows.schema import normalize_skill
+from app.golden_workflows.schema import normalize_skill, normalize_tool_name
 from app.golden_workflows.transcript import (
     MatchTranscript,
     extract_assertion_context,
@@ -395,6 +395,21 @@ def objective_breakdown(
             "success": success, "axes": axes}
 
 
+# Benign answer-recording instrumentation — excluded from the EFF tool count so a
+# model is not penalized for complying with a step's record_answer contract. Compared
+# on the NORMALIZED name so a `record_answer_tool`-suffixed trace name is also excluded
+# (the codebase already carries this _tool skew — that is why normalize_tool_name exists).
+_EFF_EXCLUDED_TOOLS = frozenset({"record_answer"})
+
+
+def _workflow_call_count(transcript: MatchTranscript) -> int:
+    """Tool-call count for the EFF stat, excluding benign answer instrumentation."""
+    return sum(
+        1 for s in transcript.steps for c in s.tool_calls
+        if normalize_tool_name(c.get("name") or "") not in _EFF_EXCLUDED_TOOLS
+    )
+
+
 def diagnose_heuristic(
     transcript: MatchTranscript,
     loaded,
@@ -415,7 +430,7 @@ def diagnose_heuristic(
     skills_hit = sum(1 for c in skill_checks if c["passed"])
     skills_total = len(skill_checks)
 
-    tool_calls = sum(len(s.tool_calls) for s in transcript.steps)
+    tool_calls = _workflow_call_count(transcript)
     errors = sum(len(s.errors) for s in transcript.steps)
 
     parts = [
