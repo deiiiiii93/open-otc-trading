@@ -240,3 +240,36 @@ def test_ok_spans_leave_errors_empty():
               "outputs": None}]
     turn = _spans_to_turn_events(0, "user turn", spans)
     assert turn["errors"] == []
+
+
+def test_record_answer_survives_trace_harvest_into_answer_fields():
+    """BLOCKING plumbing gate: a record_answer tool span, as the tracer persists it,
+    must survive the harvest into ctx.tool_calls where the answer_field_* checks read
+    it — including the _tool-suffixed name the live registry emits. Proves the live
+    trace→transcript→score path, not just synthetic transcripts / hand-edited replay."""
+    from app.golden_workflows.transcript import extract_step_from_events, extract_assertion_context
+    from app.golden_workflows.assertions import answer_fields, evaluate_assertion
+    from app.golden_workflows.schema import _AnswerFieldQuotes, _AnswerFieldEquals
+
+    spans = [
+        {"run_type": "tool", "name": "get_latest_risk_run_tool", "start_time": "1",
+         "inputs": json.dumps({"portfolio_id": 6}),
+         "outputs": _tool_output({"found": True}, "get_latest_risk_run_tool")},
+        {"run_type": "tool", "name": "record_answer_tool", "start_time": "2",
+         "inputs": json.dumps({"answer": {"hotspot": "AAPL", "delta": 573.3467058766552}}),
+         "outputs": _tool_output(
+             {"recorded": True, "fields": {"hotspot": "AAPL", "delta": 573.3467058766552}},
+             "record_answer_tool")},
+    ]
+    turn = _spans_to_turn_events(0, "what's the hotspot?", spans)
+    step = extract_step_from_events(turn)
+    actx = extract_assertion_context(step.model_dump())
+
+    fields = answer_fields(actx)
+    assert fields.get("hotspot") == "AAPL"
+    assert fields.get("delta") == 573.3467058766552
+
+    q = _AnswerFieldQuotes(type="answer_field_quotes", field="delta", value=573.3467058766552)
+    assert evaluate_assertion(q, actx)[0] is True
+    e = _AnswerFieldEquals(type="answer_field_equals", field="hotspot", equals="AAPL")
+    assert evaluate_assertion(e, actx)[0] is True
