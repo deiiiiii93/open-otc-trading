@@ -32,6 +32,33 @@ def test_assert_trap_sets_absent_ok_when_missing(tmp_path):
     _assert_trap_sets_absent(_load_flagship(), settings)  # no raise
 
 
+def test_purge_seeded_trap_sets_clears_leaked_set(tmp_path):
+    """A trap set a prior match fabricated (both .yaml and .set.json) is removed,
+    so the subsequent absence assertion passes instead of cascading a failure."""
+    from app.services.arena.runner import (
+        _purge_seeded_trap_sets, _assert_trap_sets_absent)
+    from app.config import Settings
+    d = tmp_path / "scenario_sets"; d.mkdir()
+    name = _load_flagship().workflow.trap_absent_sets[0]
+    (d / f"{name}.yaml").write_text("version: '1.0'\nscenarios: []\n")
+    (d / f"{name}.set.json").write_text("{}")
+    settings = Settings(scenario_sets_dir=str(d))
+
+    _purge_seeded_trap_sets(_load_flagship(), settings)
+
+    assert not (d / f"{name}.yaml").exists()
+    assert not (d / f"{name}.set.json").exists()
+    _assert_trap_sets_absent(_load_flagship(), settings)  # no raise after purge
+
+
+def test_purge_seeded_trap_sets_noop_when_absent(tmp_path):
+    """No trap-set files present → purge is a harmless no-op (no error)."""
+    from app.services.arena.runner import _purge_seeded_trap_sets
+    from app.config import Settings
+    d = tmp_path / "scenario_sets"; d.mkdir()
+    _purge_seeded_trap_sets(_load_flagship(), Settings(scenario_sets_dir=str(d)))
+
+
 def test_flagship_declares_reserved_trap_set():
     wf = _load_flagship().workflow
     assert wf.trap_absent_sets  # non-empty

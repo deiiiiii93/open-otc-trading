@@ -243,6 +243,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the already scope-gated `record_answer` instance to the orchestrator (non-headless and
   YOLO). Post-fix, all four run-#14 models emit `record_answer` with the required
   role-keys.
+- **Arena trap-set self-pollution cascade.** A model that falls for the flagship
+  trap step — creating the reserved "does-not-exist" scenario set
+  (`stagflation-shock-2011`) via the scenario CRUD instead of reporting it absent —
+  used to leak `{name}.yaml`/`{name}.set.json` to `data/scenario_sets/`, tripping the
+  `_assert_trap_sets_absent` precondition and **failing every subsequent match in the
+  run**. `run_match` now purges the workflow's `trap_absent_sets` files at the start of
+  each match (`_purge_seeded_trap_sets`, mirroring the seeded-report purge), so matches
+  self-isolate; the absence assertion remains as a hard backstop. Surfaced by Run #12.
 - **Headless (YOLO) agents stalled in prose on expensive actions instead of
   executing.** In headless mode the persona/orchestrator prompts still carried the
   cost-preview rule ("reply with a cost preview and wait for the user's yes; do

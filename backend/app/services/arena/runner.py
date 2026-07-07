@@ -350,6 +350,42 @@ def _copy_artifacts(artifacts: list[dict], artifact_root: Path, workflow_id: str
     return copied
 
 
+def _purge_seeded_trap_sets(loaded, settings) -> None:
+    """Delete any scenario-set files matching the workflow's reserved
+    ``trap_absent_sets`` names, so a set a PRIOR match fabricated cannot leak
+    forward and invert the trap for every later match.
+
+    The flagship trap asks the model to run a 'does-not-exist' set; a model that
+    falls for it creates that set via the scenario CRUD tool, leaving
+    ``{name}.yaml`` / ``{name}.set.json`` on disk. ``run_match`` already purges
+    seeded portfolios/RFQs/reports but not scenario-set files, so without this the
+    leak trips ``_assert_trap_sets_absent`` at the START of every subsequent match
+    — a self-pollution cascade that fails all later matches in a run.
+
+    Safe by the same reserved-name contract as ``_purge_seeded_reports``: a
+    ``trap_absent_sets`` name is benchmark-private (the workflow declares it must
+    NOT exist), so any file under that name in the library is arena pollution,
+    never a real desk set. Fail-soft: a removal error is logged, not raised — the
+    subsequent ``_assert_trap_sets_absent`` is the hard backstop.
+    """
+    from pathlib import Path
+
+    names = getattr(loaded.workflow, "trap_absent_sets", None) or []
+    if not names:
+        return
+    d = Path(settings.scenario_sets_dir)
+    for name in names:
+        for suffix in (".yaml", ".set.json"):
+            f = d / f"{name}{suffix}"
+            try:
+                if f.exists():
+                    f.unlink()
+                    logger.info("arena: purged leaked trap set %s", f)
+            except OSError:
+                logger.warning(
+                    "arena: could not purge trap set %s", f, exc_info=True)
+
+
 def _assert_trap_sets_absent(loaded, settings) -> None:
     """Fail-loud if a benchmark-reserved 'does-not-exist' scenario set actually
     exists in the active scenario library.
@@ -357,7 +393,9 @@ def _assert_trap_sets_absent(loaded, settings) -> None:
     A silently-present trap set inverts the trap check — competent models that
     check the library and run the (unexpectedly real) set then "fail" the trap,
     while only broken/blank runs "pass". Reads workflow-level ``trap_absent_sets``;
-    no-op when unset.
+    no-op when unset. Runs AFTER ``_purge_seeded_trap_sets`` as a hard backstop: a
+    surviving file here means the purge could not remove it (e.g. permissions),
+    which is a genuine setup fault worth failing on.
     """
     from pathlib import Path
     names = getattr(loaded.workflow, "trap_absent_sets", None) or []
@@ -403,7 +441,11 @@ def run_match(
 
     workflow = loaded.workflow
     from app.config import get_settings
-    _assert_trap_sets_absent(loaded, get_settings())
+    _settings = get_settings()
+    # Self-heal first: clear any reserved trap set a prior match fabricated, then
+    # assert absence as a hard backstop (a survivor means the purge failed).
+    _purge_seeded_trap_sets(loaded, _settings)
+    _assert_trap_sets_absent(loaded, _settings)
     artifact_root = Path(artifact_root)
     selection = arena_model_to_selection(model)
 
