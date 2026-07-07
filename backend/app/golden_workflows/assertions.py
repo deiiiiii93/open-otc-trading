@@ -226,25 +226,57 @@ def _scan_numeric_tokens(text: str) -> list[tuple[int, float]]:
     return out
 
 
-def _quote_value_in_text(text: str, target: float, *, rel_tol: float,
-                         mode: str, near: list[str] | None) -> bool:
-    tokens = _scan_numeric_tokens(text)
+def _near_spans(text: str, near: list[str]) -> list[tuple[int, int]]:
+    """[anchor_start, anchor_start+window] span per occurrence of each anchor."""
+    low = text.lower()
+    spans: list[tuple[int, int]] = []
+    for anchor in near:
+        needle = anchor.lower()
+        start = 0
+        while (i := low.find(needle, start)) != -1:
+            spans.append((i, i + _NEAR_WINDOW))
+            start = i + 1
+    return spans
+
+
+def _quote_value_report(text: str, target: float, *, rel_tol: float,
+                        mode: str, near: list[str] | None) -> tuple[bool, list[str]]:
+    """(matched, quoted) — whether the response quotes *target* within tolerance,
+    plus the RAW numeric tokens actually present in the scored region (near-
+    anchored when *near* is set), deduped in document order. `quoted` lets a
+    failed grounding check show what the response said instead of the expected
+    value — the numbers the scorer weighed, not a guess."""
+    valued = _scan_numeric_tokens(text)
+    raw = [(m.start(), m.group(0).strip()) for m in _NUM_TOKEN.finditer(text)]
     if near:
-        low = text.lower()
-        spans: list[tuple[int, int]] = []
-        for anchor in near:
-            needle = anchor.lower()
-            start = 0
-            while (i := low.find(needle, start)) != -1:
-                spans.append((i, i + _NEAR_WINDOW))
-                start = i + 1
-        tokens = [t for t in tokens if any(a <= t[0] <= b for a, b in spans)]
+        spans = _near_spans(text, near)
+        valued = [t for t in valued if any(a <= t[0] <= b for a, b in spans)]
+        raw = [t for t in raw if any(a <= t[0] <= b for a, b in spans)]
     tol = rel_tol * abs(target) if target != 0 else rel_tol
-    for _, v in tokens:
+    matched = False
+    for _, v in valued:
         a, b = (v, target) if mode == "signed" else (abs(v), abs(target))
         if abs(a - b) <= tol:
-            return True
-    return False
+            matched = True
+            break
+    seen: set[str] = set()
+    quoted: list[str] = []
+    for _, s in raw:
+        if s and s not in seen:
+            seen.add(s)
+            quoted.append(s)
+    return matched, quoted
+
+
+def _quoted_clause(quoted: list[str], near: list[str] | None) -> str:
+    """Human clause naming what the response actually quoted in the scored region,
+    for a failed quote-value check. Capped so a number-dense report stays legible."""
+    loc = f" near {near}" if near else ""
+    if not quoted:
+        return f"response has no number{loc}"
+    shown = ", ".join(quoted[:6])
+    more = "" if len(quoted) <= 6 else f", +{len(quoted) - 6} more"
+    return f"response quoted{loc}: {shown}{more}"
 
 def _last_result(ctx: AssertionContext, tool: str) -> dict | None:
     from app.golden_workflows.schema import normalize_tool_name
@@ -348,17 +380,19 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
             return False, f"path {a.path} missing"
         if not isinstance(val, (int, float)) or isinstance(val, bool):
             return False, f"{a.path} is not numeric: {val!r}"
-        ok = _quote_value_in_text(ctx.response_text, float(val),
-                                  rel_tol=a.rel_tol, mode=a.match, near=a.near)
+        ok, quoted = _quote_value_report(ctx.response_text, float(val),
+                                         rel_tol=a.rel_tol, mode=a.match, near=a.near)
         return ok, "" if ok else (
             f"response does not quote {a.path}={val} "
-            f"(match={a.match}, rel_tol={a.rel_tol}, near={a.near})")
+            f"(match={a.match}, rel_tol={a.rel_tol}, near={a.near}) — "
+            f"{_quoted_clause(quoted, a.near)}")
     if t == "response_quotes_value":
-        ok = _quote_value_in_text(ctx.response_text, float(a.value),
-                                  rel_tol=a.rel_tol, mode=a.match, near=a.near)
+        ok, quoted = _quote_value_report(ctx.response_text, float(a.value),
+                                         rel_tol=a.rel_tol, mode=a.match, near=a.near)
         return ok, "" if ok else (
             f"response does not quote value {a.value} "
-            f"(match={a.match}, rel_tol={a.rel_tol}, near={a.near})")
+            f"(match={a.match}, rel_tol={a.rel_tol}, near={a.near}) — "
+            f"{_quoted_clause(quoted, a.near)}")
     # DELIBERATE (spec 2026-07-07, user-affirmed): the record_answer payload is the
     # AUTHORITATIVE answer for grounding/adherence — these branches score ctx.tool_calls
     # (via answer_fields), NOT ctx.response_text. The visible prose is scored separately

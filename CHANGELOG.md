@@ -132,6 +132,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scores as a real 0 (a silent model is a model failure, not an infra failure).
 
 ### Added
+- **Grounding checks report what the response actually quoted.** A failed
+  `response_quotes_value` / `response_quotes_tool_value` check now appends the raw
+  numeric tokens the response wrote in the scored (near-anchored) region — e.g.
+  `… does not quote value 573.35 (near ['delta']) — response quoted near ['delta']:
+  86.2%, 79.1%` — so the drilldown shows the *wrong* value the model gave instead of
+  just "not found" (`no number near …` when the anchored region is numberless). The
+  detail is rendered by the existing check row; long reasons now wrap to their own
+  line. Scores are unchanged (text-only enrichment).
 - **Arena transcript copy button.** The match drill-down transcript panel now has a
   copy button next to the "Transcript" header that copies the full JSON transcript to
   the clipboard and briefly shows a checkmark on success.

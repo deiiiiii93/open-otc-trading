@@ -558,3 +558,22 @@ def test_answer_field_axes():
     from app.services.arena.scoring import _AXIS_BY_TYPE
     assert _AXIS_BY_TYPE["answer_field_equals"] == "adherence"
     assert _AXIS_BY_TYPE["answer_field_quotes"] == "grounding"
+
+
+def test_response_quotes_value_miss_reports_what_was_quoted():
+    # A failed grounding check names the numbers the response actually wrote in
+    # the near-anchored region, so the drilldown can show the wrong value quoted.
+    a = _ResponseQuotesValue(type="response_quotes_value", value=573.3467, near=["delta"])
+    ok, detail = evaluate_assertion(
+        a, ctx(response_text="AAPL delta cash 66.6%, gamma cash 86.2%"))
+    assert not ok
+    assert "response quoted" in detail
+    assert "86.2%" in detail  # the actual token the model wrote near 'delta'
+
+
+def test_response_quotes_value_miss_reports_no_number_near_anchor():
+    # When nothing numeric sits near the anchor, say so plainly.
+    a = _ResponseQuotesValue(type="response_quotes_value", value=16.403, near=["gamma"])
+    ok, detail = evaluate_assertion(a, ctx(response_text="gamma looks elevated today"))
+    assert not ok
+    assert "no number" in detail
