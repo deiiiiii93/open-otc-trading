@@ -237,6 +237,16 @@
             "args": {
               "portfolio_id": 6
             }
+          },
+          {
+            "id": "call_step_3_read_fresh_risk_answer",
+            "name": "record_answer_tool",
+            "args": {
+              "answer": {
+                "hotspot": "AAPL",
+                "delta": 573.3467058766552
+              }
+            }
           }
         ]
       },
@@ -382,6 +392,15 @@
             "name": "get_scenario_test_run_tool",
             "args": {
               "run_id": 201
+            }
+          },
+          {
+            "id": "call_step_5_scenario_test_answer",
+            "name": "record_answer_tool",
+            "args": {
+              "answer": {
+                "cvar": -7758.989817924667
+              }
             }
           }
         ]
@@ -534,7 +553,18 @@
     "step-grid-comprehension": {
       "ai": {
         "content": "Reading the completed landscape grid for the answer.",
-        "tool_calls": []
+        "tool_calls": [
+          {
+            "id": "call_step_grid_comprehension_answer",
+            "name": "record_answer_tool",
+            "args": {
+              "answer": {
+                "gamma_at_+10pct": 16.403033928381223,
+                "delta_at_-20pct": 391.1919745962153
+              }
+            }
+          }
+        ]
       },
       "tool_results": [],
       "skills_routed": [],
