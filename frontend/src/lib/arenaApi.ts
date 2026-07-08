@@ -65,6 +65,12 @@ export type ArenaScoreBreakdown = {
     ovr: number;
     stats: { GRD: number; ADH: number; SYN: number; PRC: number; EFF: number };
     jdg: number | null;
+    // Consistency (0–99): reliability across the model's matches in this run.
+    // `null` when the run has a single match for the model (no dispersion to
+    // measure → greyed in the radar). Server-derived at run-read time; folded into
+    // `ovr` at weight 0.18. `base_ovr` is the pre-CON OVR (present once folded).
+    con?: number | null;
+    base_ovr?: number;
     position: string;
   } | null;
   card_reason?: string;
@@ -75,8 +81,11 @@ export type ArenaScoreBreakdown = {
   };
   weights?: { obj: number; judge: number };
   objective_score?: number;
+  objective_stdev?: number;
   total_score?: number;
-  // Multi-trial aggregate rows (averaged board): per-trial detail lives here.
+  // Multi-trial aggregate rows: per-trial detail lives here — each element is a
+  // full breakdown (own objective steps + a derived `card`), so the drilldown can
+  // render one tab per trial. `card` at this level is the trial-averaged aggregate.
   n_trials?: number;
   aggregate?: ArenaScoreBreakdown[];
 };
@@ -108,7 +117,7 @@ export type ArenaLeaderboardRow = {
   rank: number;
   // Headline OVR (0–99) + the per-stat means for the radar. Null for uncarded rows.
   ovr?: number | null;
-  card_mean?: { ovr: number; GRD: number; ADH: number; SYN: number; EFF: number; PRC: number } | null;
+  card_mean?: { ovr: number; base_ovr?: number; con?: number | null; GRD: number; ADH: number; SYN: number; EFF: number; PRC: number } | null;
   // How many of this model's scored matches are carded. ovr/card_mean are null
   // unless carded_count === matches (a full, non-partial sample).
   carded_count?: number;

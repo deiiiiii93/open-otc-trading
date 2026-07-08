@@ -8,12 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Arena multi-trial matches are now first-class: per-trial drilldown tabs + a
+  trial-based Consistency (CON) stat replacing JDG on the radar.** When a model runs
+  the same workflow N times (an aggregate match, `n_trials`), the drilldown now shows a
+  tab bar — **Average | Trial 1 | Trial 2 | …** — where each Trial tab renders that
+  trial's own derived ability card and full By-step / By-dimension per-check breakdown,
+  and Average shows the aggregate card + a per-trial OVR roster (replacing the old
+  headline-mean-over-one-trial's-detail that misread as the aggregate). **CON (0–99)**
+  measures how tightly a match's **per-trial base OVRs** cluster — the trial-to-trial
+  reliability signal: `con = round(99 × (1 − min(1, pstdev/15)))`, identical trials → 99,
+  a ≥15-point OVR std dev → 0. CON acts on OVR as a **discount, never a boost**:
+  `final_ovr = round(base_ovr × (0.82 + 0.18·con/99))`, so perfect consistency returns
+  the base untouched, inconsistency shaves up to 18% off, and a consistently-*bad* model
+  earns nothing from low dispersion (mirrors EFF's correctness gate). Everything is
+  **derived on read, no migration** (`store._match_card` / `scoring.aggregate_card_from_trials`):
+  existing multi-trial runs (#10/#11) card on read from their stored trials — e.g.
+  deepseek-v4-pro's 67/37/30/63 swing now reads CON 0 → OVR 40. A **single-trial** match
+  has no dispersion → CON `null` (greyed) and OVR at the base. The hexagon's sixth axis
+  and the stat strip show **CON** in place of the advisory JDG (JDG stays in the payload,
+  off the chart). Kernel: `scoring.consistency_stat` / `blend_ovr` /
+  `aggregate_card_from_trials`.
 - **Arena match cards lead with OVR + an ability radar.** Each carded match cell now
   shows its numbers-first **OVR** headline and a six-axis **hexagon** (GRD · ADH · SYN ·
-  EFF · PRC · JDG) drawn as a self-contained token-styled SVG, so a run's models can be
-  profile-compared at a glance. JDG is advisory (muted; its vertex sits at centre when
-  the jury is off). The old `Total: … · Obj: …` line is retired from the cells; uncarded
-  legacy rows keep a minimal `Obj:` fallback.
+  EFF · PRC · CON) drawn as a self-contained token-styled SVG, so a run's models can be
+  profile-compared at a glance. CON is muted (its vertex at centre) only when
+  unmeasurable (a single-trial match). The old `Total: … · Obj: …` line is retired from
+  the cells; uncarded legacy rows keep a minimal `Obj:` fallback.
 - **Arena structured-answer scoring** (spec `2026-07-07-arena-structured-answer-scoring`)
   — a benign `record_answer` agent tool + two golden-workflow assertion types,
   `answer_field_equals` (adherence) and `answer_field_quotes` (grounding), that verify a

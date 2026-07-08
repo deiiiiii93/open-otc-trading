@@ -189,8 +189,8 @@
   letter-spacing: 0.02em;
 }
 
-/* JDG is advisory (out of OVR) — muted, matching the stat strip. */
-.wl-arena__hex-label--jdg {
+/* A muted axis label — CON when unmeasurable (single-match run). */
+.wl-arena__hex-label--muted {
   fill: var(--hairline-2);
 }
 
@@ -571,9 +571,9 @@
   color: var(--ink-2);
 }
 
-/* JDG is advisory (out of OVR) — muted to read as secondary. */
-.wl-arena__stat--jdg .wl-arena__stat-value,
-.wl-arena__stat--jdg .wl-arena__stat-name {
+/* A muted stat — CON when unmeasurable (single-match run) reads as secondary. */
+.wl-arena__stat--muted .wl-arena__stat-value,
+.wl-arena__stat--muted .wl-arena__stat-name {
   color: var(--ink-2);
 }
 
@@ -610,6 +610,39 @@
 .wl-arena__view-btn--active {
   background: var(--ink);
   color: var(--paper);
+}
+
+/* ── Multi-trial drilldown tabs (Average | Trial 1 | Trial 2 …) ── */
+.wl-arena__trial-tabs {
+  display: flex;
+  gap: var(--gap-1);
+  margin-bottom: var(--gap-2);
+  overflow-x: auto;            /* n=5+ trials scroll rather than wrap */
+  padding-bottom: 2px;
+}
+
+.wl-arena__trial-tab {
+  appearance: none;
+  flex: 0 0 auto;
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+  background: var(--paper-2);
+  color: var(--ink-2);
+  cursor: pointer;
+  padding: var(--gap-1) var(--gap-2);
+  font: var(--type-caps-weight) var(--type-caps-size) var(--font-ui);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wl-arena__trial-tab:hover {
+  color: var(--ink);
+}
+
+.wl-arena__trial-tab--active {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
 }
 
 /* ── "By dimension" groups: an axis header with its tally + card stat ── */

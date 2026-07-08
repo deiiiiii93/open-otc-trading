@@ -108,17 +108,26 @@ function DimensionGroups({
   );
 }
 
-function AbilityCardView({ card }: { card: NonNullable<ArenaScoreBreakdown['card']> }) {
-  // Five OVR stats + the advisory JDG (greyed when the jury is off). Numbers-first
-  // order matches the OVR weighting (spec B2).
-  const stats: { key: string; value: number | null; advisory?: boolean }[] = [
+// The six ability-card axes: the five OVR stats + Consistency (CON). CON is
+// muted (greyed) only when null — a single-match run has no dispersion to measure.
+// When present it is a first-class stat folded into the OVR (weight 0.18), so it
+// is NOT advisory. Numbers-first order matches the OVR weighting.
+function cardAxes(
+  card: NonNullable<ArenaScoreBreakdown['card']>,
+): { key: string; value: number | null; advisory?: boolean }[] {
+  const con = card.con ?? null;
+  return [
     { key: 'GRD', value: card.stats.GRD },
     { key: 'ADH', value: card.stats.ADH },
     { key: 'SYN', value: card.stats.SYN },
     { key: 'EFF', value: card.stats.EFF },
     { key: 'PRC', value: card.stats.PRC },
-    { key: 'JDG', value: card.jdg, advisory: true },
+    { key: 'CON', value: con, advisory: con == null },
   ];
+}
+
+function AbilityCardView({ card }: { card: NonNullable<ArenaScoreBreakdown['card']> }) {
+  const stats = cardAxes(card);
   return (
     <div className="wl-arena__card">
       <div className="wl-arena__card-ovr">
@@ -131,7 +140,7 @@ function AbilityCardView({ card }: { card: NonNullable<ArenaScoreBreakdown['card
           <div
             key={s.key}
             className={
-              'wl-arena__stat' + (s.advisory ? ' wl-arena__stat--jdg' : '')
+              'wl-arena__stat' + (s.advisory ? ' wl-arena__stat--muted' : '')
             }
           >
             <span className="wl-arena__stat-value">
@@ -145,21 +154,14 @@ function AbilityCardView({ card }: { card: NonNullable<ArenaScoreBreakdown['card
   );
 }
 
-// Radar/hexagon of the six ability-card stats (spec B), for at-a-glance profile
-// comparison across a run's match cards. Drawn in a 100×100 viewBox sized 1:1 to
-// px so the label font can use the caps type token directly. Axis order matches
-// AbilityCardView (numbers-first, OVR weighting). JDG is advisory (out of OVR):
-// a null jury score plots at the centre and its label is muted, mirroring the
-// stat-strip convention so the shape reads honestly when the jury is off.
+// Radar/hexagon of the six ability-card axes (five OVR stats + Consistency), for
+// at-a-glance profile comparison across a run's match cards. Drawn in a 100×100
+// viewBox sized 1:1 to px so the label font can use the caps type token directly.
+// Axis order matches AbilityCardView (numbers-first, OVR weighting). CON plots
+// like any stat when measured; when null (a single-match run — no dispersion) it
+// plots at the centre with a muted label, so the shape reads honestly.
 function AbilityHexagon({ card }: { card: NonNullable<ArenaScoreBreakdown['card']> }) {
-  const axes: { key: string; value: number | null; advisory?: boolean }[] = [
-    { key: 'GRD', value: card.stats.GRD },
-    { key: 'ADH', value: card.stats.ADH },
-    { key: 'SYN', value: card.stats.SYN },
-    { key: 'EFF', value: card.stats.EFF },
-    { key: 'PRC', value: card.stats.PRC },
-    { key: 'JDG', value: card.jdg, advisory: true },
-  ];
+  const axes = cardAxes(card);
   const C = 50; // centre of the 100×100 viewBox
   const R = 30; // radius to the outer ring (leaves room for vertex labels)
   const MAX = 99; // a stat's ceiling
@@ -209,7 +211,7 @@ function AbilityHexagon({ card }: { card: NonNullable<ArenaScoreBreakdown['card'
           <text
             key={ax.key}
             className={
-              'wl-arena__hex-label' + (ax.advisory ? ' wl-arena__hex-label--jdg' : '')
+              'wl-arena__hex-label' + (ax.advisory ? ' wl-arena__hex-label--muted' : '')
             }
             x={x.toFixed(1)}
             y={y.toFixed(1)}
@@ -224,6 +226,45 @@ function AbilityHexagon({ card }: { card: NonNullable<ArenaScoreBreakdown['card'
   );
 }
 
+// Compact per-trial roster + the aggregate card, shown on the drilldown's
+// "Average" tab. The misleading single-trial per-check detail that used to render
+// here (aggregate rows carry one representative trial's steps but a MEAN headline)
+// is replaced by an honest summary; the real per-check detail lives in each Trial tab.
+function AggregateSummary({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
+  const trials = breakdown.aggregate ?? [];
+  return (
+    <div className="wl-arena__breakdown">
+      <div className="wl-arena__breakdown-head">
+        <span className="wl-arena__transcript-title">
+          Average of {breakdown.n_trials ?? trials.length} trials
+        </span>
+        <span className="wl-arena__breakdown-tally">
+          {breakdown.objective_score != null
+            ? `Objective ${breakdown.objective_score.toFixed(1)}`
+            : 'Objective n/a'}
+          {breakdown.objective_stdev != null
+            ? ` ± ${breakdown.objective_stdev.toFixed(1)}`
+            : ''}
+        </span>
+      </div>
+      {breakdown.card && <AbilityCardView card={breakdown.card} />}
+      <ul className="wl-arena__check-list">
+        {trials.map((t, i) => (
+          <li key={i} className="wl-arena__check-row">
+            <span className="wl-arena__check-detail">
+              Trial {i + 1}: OVR {t.card?.ovr ?? '—'} · objective{' '}
+              {t.objective?.passed ?? '?'}/{t.objective?.total ?? '?'}
+              {t.judge?.judged_score != null
+                ? ` · judge ${t.judge.judged_score.toFixed(1)}`
+                : ''}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
   const obj = breakdown.objective;
   const judge = breakdown.judge;
@@ -233,6 +274,86 @@ function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
   // stat's points came from and where they were lost). Hook declared before the
   // early-return guard to satisfy the rules-of-hooks.
   const [checkView, setCheckView] = useState<'step' | 'dimension'>('step');
+  // Multi-trial drilldown: 'avg' (the aggregate summary, default) or a trial index
+  // (that trial's full breakdown). Hook before any early return (rules-of-hooks).
+  const [trialTab, setTrialTab] = useState<'avg' | number>('avg');
+
+  // A multi-trial aggregate with a validated aggregate card: show a tab per trial.
+  // Each trial is itself a full breakdown with its own derived card, so a selected
+  // trial recurses through this same renderer to get the complete card + per-check
+  // view; 'avg' shows the summary.
+  const trials = breakdown.aggregate;
+  // Coverage guard (mirrors the backend): partial trial COVERAGE — a row declaring
+  // more trials than were scored (retry / partial write) — or a MALFORMED trial
+  // (null/primitive placeholder) must NOT render trial tabs (the recursive renderer
+  // would crash on a non-object trial). Keyed on the backend's card_reason FIRST,
+  // independent of the aggregate shape, since a partial write can also leave the
+  // aggregate missing / empty / non-list.
+  if (
+    breakdown.card_reason === 'partial_trial_coverage' ||
+    breakdown.card_reason === 'invalid_trial_shape'
+  ) {
+    const scored = Array.isArray(trials) ? trials.length : 0;
+    return (
+      <div className="wl-arena__breakdown">
+        <div className="wl-arena__breakdown-head">
+          <span className="wl-arena__transcript-title">Incomplete multi-trial run</span>
+          <span className="wl-arena__breakdown-tally">
+            {breakdown.n_trials != null
+              ? `${scored}/${breakdown.n_trials} trials scored`
+              : `${scored} trials`}
+          </span>
+        </div>
+        <p className="wl-arena__diagnosis-analysis">
+          Per-trial detail is withheld until this match is fully scored.
+        </p>
+      </div>
+    );
+  }
+  if (Array.isArray(trials) && trials.length > 1) {
+    // Clamp: a numeric tab left over from a longer aggregate (if state ever
+    // outlives a match switch) falls back to the average rather than indexing
+    // out of range. The drilldown also keys this component per match (below), so
+    // this is defence-in-depth, not the primary reset.
+    const activeTrial =
+      typeof trialTab === 'number' && trialTab < trials.length ? trialTab : null;
+    return (
+      <div className="wl-arena__breakdown">
+        <div className="wl-arena__trial-tabs" role="tablist" aria-label="Trials">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTrial === null}
+            className={`wl-arena__trial-tab wl-arena__trial-tab--${
+              activeTrial === null ? 'active' : 'idle'
+            }`}
+            onClick={() => setTrialTab('avg')}
+          >
+            Average
+          </button>
+          {trials.map((_, i) => (
+            <button
+              key={i}
+              type="button"
+              role="tab"
+              aria-selected={activeTrial === i}
+              className={`wl-arena__trial-tab wl-arena__trial-tab--${
+                activeTrial === i ? 'active' : 'idle'
+              }`}
+              onClick={() => setTrialTab(i)}
+            >
+              Trial {i + 1}
+            </button>
+          ))}
+        </div>
+        {activeTrial === null ? (
+          <AggregateSummary breakdown={breakdown} />
+        ) : (
+          <ScoreBreakdownView breakdown={trials[activeTrial]} />
+        )}
+      </div>
+    );
+  }
 
   // Objective drives the detailed view (it is the sole ranking axis). Require the
   // FULL per-check shape (steps + success arrays), not just presence of `objective`:
@@ -776,7 +897,9 @@ export function ArenaLive() {
                 {(() => {
                   const selectedMatch = runDetail?.matches.find((m) => m.id === selectedMatchId);
                   return selectedMatch?.score_breakdown ? (
-                    <ScoreBreakdownView breakdown={selectedMatch.score_breakdown} />
+                    // key per match → trial-tab / check-view state resets on switch,
+                    // never carrying a stale trial index into a different match.
+                    <ScoreBreakdownView key={selectedMatch.id} breakdown={selectedMatch.score_breakdown} />
                   ) : selectedMatch ? (
                     <span style={{ color: 'var(--ink-2)', fontSize: 'var(--type-small-size)' }}>
                       No score breakdown for this match (older run or failed match).

@@ -588,3 +588,269 @@ def test_match_serialization_uncarded_row_carries_reason(session):
     detail = store.get_run(session, run_id)
     sb = detail["matches"][0]["score_breakdown"]
     assert sb["card"] is None and sb["card_reason"] == "legacy_no_axes"
+
+
+# ---- Consistency (CON) from multi-trial aggregates ----
+
+_WF = "risk-manager-control-day"
+
+
+def _trial(passed_by_axis, tool_calls=11):
+    """A per-trial breakdown _derive_card can card (axes + tool_calls)."""
+    axes = {ax: {"passed": p, "total": t} for ax, (p, t) in passed_by_axis.items()}
+    return {"objective": {"axes": axes},
+            "diagnosis": {"counts_detail": {"tool_calls": tool_calls}}}
+
+
+# Two trials with clearly different base OVRs (strong vs weak grounding/synthesis).
+_STRONG = {"grounding": (10, 10), "adherence": (9, 10), "synthesis": (3, 3), "procedural": (5, 6)}
+_WEAK = {"grounding": (3, 10), "adherence": (4, 10), "synthesis": (0, 3), "procedural": (4, 6)}
+
+
+def _agg_match(session, rid, model, trials, *, wf=_WF, status="scored"):
+    store.record_match(session, rid, wf, model,
+                       objective_score=60.0, judged_score=None, total_score=None,
+                       judge_missing=False, config={}, transcript_path=None,
+                       status=status,
+                       score_breakdown={"n_trials": len(trials), "aggregate": trials})
+
+
+def test_get_run_cards_aggregate_from_trials_with_con(session):
+    from app.services.arena import scoring
+    rid = _make_run(session, model_ids=["m"])
+    trials = [_trial(_STRONG), _trial(_WEAK)]
+    _agg_match(session, rid, "m", trials)
+
+    match = store.get_run(session, rid)["matches"][0]
+    sb = match["score_breakdown"]
+    # Per-trial cards attached for the drilldown tabs.
+    tcards = [t["card"] for t in sb["aggregate"]]
+    assert all(c is not None for c in tcards)
+    base_ovrs = [c["ovr"] for c in tcards]
+    assert base_ovrs[0] > base_ovrs[1]           # strong trial out-scores weak
+    # Top-level aggregate card = averaged stats + trial-dispersion CON.
+    agg = sb["card"]
+    assert agg["con"] == scoring.consistency_stat(base_ovrs)
+    assert agg["base_ovr"] == round(sum(base_ovrs) / len(base_ovrs))
+    assert agg["ovr"] == scoring.blend_ovr(sum(base_ovrs) / len(base_ovrs), agg["con"])
+
+
+def test_get_run_single_trial_aggregate_is_grey(session):
+    rid = _make_run(session, model_ids=["m"])
+    _agg_match(session, rid, "m", [_trial(_STRONG)])   # n_trials == 1
+    agg = store.get_run(session, rid)["matches"][0]["score_breakdown"]["card"]
+    assert agg["con"] is None                          # no dispersion → grey
+    assert agg["ovr"] == agg["base_ovr"]               # OVR at base
+
+
+def test_get_run_partial_trial_coverage_is_uncarded(session):
+    # If ANY trial can't be carded (no axes), the whole aggregate is uncarded — a
+    # biased subset must not masquerade as the full multi-trial sample.
+    rid = _make_run(session, model_ids=["m"])
+    _agg_match(session, rid, "m",
+               [_trial(_STRONG), {"objective_score": 40.0}])   # 2nd trial: no axes
+    sb = store.get_run(session, rid)["matches"][0]["score_breakdown"]
+    assert sb["card"] is None
+    assert sb["card_reason"] == "partial_trial_cards"
+
+
+@pytest.mark.parametrize("aggregate", [
+    [_trial(_STRONG), _trial(_WEAK)],          # short: 2 stored, claims 3
+    [],                                         # empty
+    None,                                       # missing entirely
+    {"objective": {}},                          # not a list
+], ids=["short", "empty", "missing", "non_list"])
+def test_get_run_n_trials_mismatch_is_uncarded(session, aggregate):
+    # A row DECLARING n_trials=3 must carry exactly 3 trials. Any short / empty /
+    # missing / non-list aggregate (retry, partial write) must NOT card — and in
+    # particular must NOT fall through to the top-level representative objective.
+    rid = _make_run(session, model_ids=["m"])
+    bd = {"n_trials": 3,
+          # a top-level derivable objective the guard must refuse to card from:
+          "objective": {"axes": {ax: {"passed": p, "total": t}
+                                 for ax, (p, t) in _STRONG.items()}},
+          "diagnosis": {"counts_detail": {"tool_calls": 11}}}
+    if aggregate is not None:
+        bd["aggregate"] = aggregate
+    store.record_match(session, rid, _WF, "m",
+                       objective_score=60.0, judged_score=None, total_score=None,
+                       judge_missing=False, config={}, transcript_path=None,
+                       status="scored", score_breakdown=bd)
+    sb = store.get_run(session, rid)["matches"][0]["score_breakdown"]
+    assert sb["card"] is None
+    assert sb["card_reason"] == "partial_trial_coverage"
+
+
+def test_get_run_partial_aggregate_exposes_no_trial_cards(session):
+    # The coverage guard must not be bypassed via the per-trial path: a declared
+    # 3-trial row with only 2 derivable trials is uncarded AND its trials carry NO
+    # per-trial cards (so the drilldown can't render scored trial tabs for a remnant).
+    rid = _make_run(session, model_ids=["m"])
+    store.record_match(session, rid, _WF, "m",
+                       objective_score=60.0, judged_score=None, total_score=None,
+                       judge_missing=False, config={}, transcript_path=None,
+                       status="scored",
+                       score_breakdown={"n_trials": 3,
+                                        "aggregate": [_trial(_STRONG), _trial(_WEAK)]})
+    sb = store.get_run(session, rid)["matches"][0]["score_breakdown"]
+    assert sb["card"] is None and sb["card_reason"] == "partial_trial_coverage"
+    assert all("card" not in t for t in sb["aggregate"])   # no scored trial cards
+
+
+def test_get_run_uncardable_trial_exposes_no_partial_ovrs(session):
+    # Complete count (n_trials == len) but ONE trial can't be carded (no axes/tool
+    # count): the aggregate is uncarded, and NEITHER trial exposes a derived card —
+    # a cardable subset must not masquerade as trustworthy scored OVRs.
+    rid = _make_run(session, model_ids=["m"])
+    store.record_match(session, rid, _WF, "m",
+                       objective_score=60.0, judged_score=None, total_score=None,
+                       judge_missing=False, config={}, transcript_path=None,
+                       status="scored",
+                       score_breakdown={"n_trials": 2,
+                                        "aggregate": [_trial(_STRONG),
+                                                      {"objective_score": 40.0}]})
+    sb = store.get_run(session, rid)["matches"][0]["score_breakdown"]
+    assert sb["card"] is None and sb["card_reason"] == "partial_trial_cards"
+    assert all("card" not in t for t in sb["aggregate"])   # not even the cardable one
+
+
+def test_get_run_uncarded_aggregate_strips_prestored_trial_cards(session):
+    # Even if a producer persisted per-trial `card` fields, a refused aggregate must
+    # NOT leak them (strip on the uncarded path).
+    rid = _make_run(session, model_ids=["m"])
+    strong_with_card = {**_trial(_STRONG),
+                        "card": {"ovr": 88, "stats": {}, "jdg": None, "position": "x"}}
+    store.record_match(session, rid, _WF, "m",
+                       objective_score=60.0, judged_score=None, total_score=None,
+                       judge_missing=False, config={}, transcript_path=None,
+                       status="scored",
+                       score_breakdown={"n_trials": 3,        # count mismatch → refused
+                                        "aggregate": [strong_with_card, _trial(_WEAK)]})
+    sb = store.get_run(session, rid)["matches"][0]["score_breakdown"]
+    assert sb["card"] is None and sb["card_reason"] == "partial_trial_coverage"
+    assert all("card" not in t for t in sb["aggregate"])   # pre-stored card stripped
+
+
+def test_get_run_does_not_mutate_stored_breakdown(session):
+    # Derivation copies — the ORM-owned JSON must stay pristine (read path).
+    rid = _make_run(session, model_ids=["m"])
+    _agg_match(session, rid, "m", [_trial(_STRONG), _trial(_WEAK)])
+    store.get_run(session, rid)
+    from app.models import ArenaMatch
+    stored = session.query(ArenaMatch).filter_by(run_id=rid, model_id="m").one()
+    assert "card" not in stored.score_breakdown          # top-level card not persisted
+    assert "card" not in stored.score_breakdown["aggregate"][0]
+
+
+def test_leaderboard_ranks_by_aggregate_final_ovr(session):
+    from app.services.arena import scoring
+    rid = _make_run(session, model_ids=["steady", "erratic"])
+    # steady: two identical strong trials → CON 99, OVR ≈ base.
+    _agg_match(session, rid, "steady", [_trial(_STRONG), _trial(_STRONG)])
+    # erratic: strong then weak → high dispersion → CON low → OVR discounted.
+    _agg_match(session, rid, "erratic", [_trial(_STRONG), _trial(_WEAK)])
+    store.set_run_status(session, rid, "completed")
+
+    rows = {r["model_id"]: r for r in store.leaderboard(session, run_id=rid)}
+    steady, erratic = rows["steady"], rows["erratic"]
+    # Each card_mean.ovr is the match's aggregate final OVR (single match per model).
+    base_strong = store._derive_card(_trial(_STRONG), _WF)[0]["ovr"]
+    assert steady["card_mean"]["con"] == 99
+    assert steady["card_mean"]["ovr"] == base_strong          # perfect consistency
+    # The erratic model is discounted below its own base mean and below steady.
+    assert erratic["card_mean"]["con"] < 99
+    assert erratic["card_mean"]["ovr"] < erratic["card_mean"]["base_ovr"]
+    assert steady["rank"] < erratic["rank"]
+
+
+def test_read_recomputes_over_a_stored_card_that_disagrees_with_axes(session):
+    # A stored card whose OVR contradicts its own axes (stale / corrupted JSON) must
+    # be RECOMPUTED, never trusted — else the public board ranks a fabricated number.
+    from app.services.arena import scoring
+    rid = _make_run(session, model_ids=["m"])
+    zero_axes = {ax: {"passed": 0, "total": t} for ax, (_p, t) in _STRONG.items()}
+    bd = {"objective": {"axes": zero_axes},
+          "diagnosis": {"counts_detail": {"tool_calls": 11}},
+          "card": {"ovr": 99, "base_ovr": 99,
+                   "stats": {"GRD": 99, "ADH": 99, "SYN": 99, "PRC": 99, "EFF": 99},
+                   "jdg": None, "position": "Sniper"}}
+    store.record_match(session, rid, _WF, "m",
+                       objective_score=0.0, judged_score=None, total_score=None,
+                       judge_missing=False, config={}, transcript_path=None,
+                       status="scored", score_breakdown=bd)
+    derived = store._derive_card(bd, _WF)[0]
+    assert derived["ovr"] == 0                # zero-pass axes → OVR 0, not the stored 99
+    sb = store.get_run(session, rid)["matches"][0]["score_breakdown"]
+    assert sb["card"]["ovr"] == 0             # read recomputed, ignored the stored 99
+
+
+def test_get_run_null_aggregate_entry_fails_closed(session):
+    # A null / primitive trial placeholder (partial write) must fail closed as
+    # uncarded, never crash the read path on _derive_card(None).
+    rid = _make_run(session, model_ids=["m"])
+    store.record_match(session, rid, _WF, "m",
+                       objective_score=60.0, judged_score=None, total_score=None,
+                       judge_missing=False, config={}, transcript_path=None,
+                       status="scored",
+                       score_breakdown={"n_trials": 2,
+                                        "aggregate": [None, _trial(_STRONG)]})
+    sb = store.get_run(session, rid)["matches"][0]["score_breakdown"]   # no crash
+    assert sb["card"] is None and sb["card_reason"] == "invalid_trial_shape"
+
+
+def test_stored_card_ranks_never_but_still_presents_when_unrecomputable(session):
+    # Non-empty axes + a stored card BUT missing tool count → EFF can't be recomputed.
+    # The leaderboard (ranking) must NOT rank the unverifiable stored OVR; the drilldown
+    # (presentation) still shows the write-time card. This is the deliberate split.
+    rid = _make_run(session, model_ids=["m"])
+    axes = {ax: {"passed": p, "total": t} for ax, (p, t) in _STRONG.items()}
+    bd = {"objective": {"axes": axes},          # non-empty axes, but…
+          "diagnosis": {"counts_detail": {}},   # …no tool_calls → missing_tool_count
+          "card": {"ovr": 99, "base_ovr": 99,
+                   "stats": {"GRD": 99, "ADH": 99, "SYN": 99, "PRC": 99, "EFF": 99},
+                   "jdg": None, "position": "Sniper"}}
+    store.record_match(session, rid, _WF, "m",
+                       objective_score=80.0, judged_score=None, total_score=None,
+                       judge_missing=False, config={}, transcript_path=None,
+                       status="scored", score_breakdown=bd)
+    store.set_run_status(session, rid, "completed")
+    # Ranking: uncarded — the stored 99 never reaches card_mean.
+    row = next(r for r in store.leaderboard(session, run_id=rid) if r["model_id"] == "m")
+    assert row["card_mean"] is None and row["carded_count"] == 0
+    # Presentation: the drilldown still renders the write-time card.
+    sb = store.get_run(session, rid)["matches"][0]["score_breakdown"]
+    assert sb["card"] is not None and sb["card"]["ovr"] == 99
+
+
+def test_leaderboard_ignores_stored_card_without_scoring_evidence(session):
+    # Fail-honest: a single-match row carrying a persisted `card` but NO axes / tool
+    # count (stale / schema drift) must be re-derived, fail, and NOT rank on the board.
+    rid = _make_run(session, model_ids=["ghost"])
+    store.record_match(session, rid, _WF, "ghost",
+                       objective_score=90.0, judged_score=None, total_score=None,
+                       judge_missing=False, config={}, transcript_path=None,
+                       status="scored",
+                       score_breakdown={"card": {"ovr": 99, "base_ovr": 99,
+                                                 "stats": {"GRD": 99, "ADH": 99, "SYN": 99,
+                                                           "PRC": 99, "EFF": 99},
+                                                 "jdg": None, "position": "Sniper"}})
+    store.set_run_status(session, rid, "completed")
+    row = next(r for r in store.leaderboard(session, run_id=rid)
+               if r["model_id"] == "ghost")
+    assert row["card_mean"] is None            # not ranked from an unvalidated card
+    assert row["carded_count"] == 0
+    # And the drilldown agrees — uncarded with a fail-honest reason.
+    sb = store.get_run(session, rid)["matches"][0]["score_breakdown"]
+    assert sb["card"] is None and sb["card_reason"] == "legacy_no_axes"
+
+
+def test_leaderboard_single_trial_match_has_no_con(session):
+    from app.services.arena import scoring
+    rid = _make_run(session, model_ids=["solo"])
+    _agg_match(session, rid, "solo", [_trial(_STRONG)])
+    store.set_run_status(session, rid, "completed")
+    cm = next(r for r in store.leaderboard(session, run_id=rid)
+              if r["model_id"] == "solo")["card_mean"]
+    base = store._derive_card(_trial(_STRONG), _WF)[0]["ovr"]
+    assert cm["con"] is None
+    assert cm["ovr"] == base == scoring.blend_ovr(base, None)

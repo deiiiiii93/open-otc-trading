@@ -87,8 +87,9 @@ const mockMatches = [
       weights: { obj: 0.5, judge: 0.5 },
       objective_score: 50,
       total_score: 65,
-      card: { ovr: 82, stats: { GRD: 90, ADH: 80, SYN: 88, PRC: 70, EFF: 75 },
-        jdg: null, position: 'Sniper' },
+      // Single-match model → CON unmeasurable (null → greyed), OVR at its base.
+      card: { ovr: 82, base_ovr: 82, stats: { GRD: 90, ADH: 80, SYN: 88, PRC: 70, EFF: 75 },
+        jdg: null, con: null, position: 'Sniper' },
     },
   },
   {
@@ -176,10 +177,10 @@ describe('ArenaLive', () => {
     expect(abilityRow).toBeTruthy();
     expect(within(abilityRow).getByText('OVR')).toBeInTheDocument();
     expect(within(abilityRow).getByText('82')).toBeInTheDocument();
-    // ...and a radar drawn as an SVG with the six stat labels (JDG advisory).
+    // ...and a radar drawn as an SVG with the six axis labels (CON replaces JDG).
     const radar = abilityRow.querySelector('.wl-arena__hex') as SVGElement;
     expect(radar).toBeTruthy();
-    for (const stat of ['GRD', 'ADH', 'SYN', 'EFF', 'PRC', 'JDG']) {
+    for (const stat of ['GRD', 'ADH', 'SYN', 'EFF', 'PRC', 'CON']) {
       expect(within(abilityRow).getByText(stat)).toBeInTheDocument();
     }
 
@@ -268,7 +269,7 @@ describe('ArenaLive', () => {
     expect(screen.getByText('71')).toBeInTheDocument();
   });
 
-  it('renders the ability card (OVR + six stats, JDG greyed when jury off)', async () => {
+  it('renders the ability card (OVR + six stats, CON greyed when single-match)', async () => {
     setupMocks();
     render(<ArenaLive />);
 
@@ -281,14 +282,148 @@ describe('ArenaLive', () => {
     // the By-step check list, so an unscoped getByText would be ambiguous.
     expect(screen.getByText('Sniper')).toBeInTheDocument();
     const card = screen.getByText('Sniper').closest('.wl-arena__card') as HTMLElement;
-    for (const stat of ['GRD', 'ADH', 'SYN', 'PRC', 'EFF', 'JDG']) {
+    for (const stat of ['GRD', 'ADH', 'SYN', 'PRC', 'EFF', 'CON']) {
       expect(within(card).getByText(stat)).toBeInTheDocument();
     }
-    // JDG is advisory and null here → renders an em dash under the JDG stat.
-    const jdgName = within(card).getByText('JDG');
-    const jdgCell = jdgName.closest('.wl-arena__stat');
-    expect(jdgCell?.className).toContain('wl-arena__stat--jdg');
-    expect(jdgCell?.querySelector('.wl-arena__stat-value')?.textContent).toBe('—');
+    // CON is null (single-match run) → muted, renders an em dash under CON.
+    const conName = within(card).getByText('CON');
+    const conCell = conName.closest('.wl-arena__stat');
+    expect(conCell?.className).toContain('wl-arena__stat--muted');
+    expect(conCell?.querySelector('.wl-arena__stat-value')?.textContent).toBe('—');
+  });
+
+  it('renders a measured CON as a first-class (non-muted) stat', async () => {
+    setupMocks();
+    // Override the run with a card whose CON is measured (a multi-match model).
+    vi.mocked(arenaApi.getArenaRun).mockResolvedValue({
+      run: mockRuns[0],
+      matches: [{
+        ...mockMatches[0],
+        score_breakdown: {
+          ...mockMatches[0].score_breakdown!,
+          card: { ...mockMatches[0].score_breakdown!.card!, con: 60, base_ovr: 87 },
+        },
+      }],
+    });
+    render(<ArenaLive />);
+
+    await userEvent.click(await screen.findByText('1'));
+    await userEvent.click(await screen.findByText('workflow-a'));
+    await screen.findByText('Score breakdown');
+
+    const card = screen.getByText('Sniper').closest('.wl-arena__card') as HTMLElement;
+    const conCell = within(card).getByText('CON').closest('.wl-arena__stat');
+    expect(conCell?.className).not.toContain('wl-arena__stat--muted');
+    expect(conCell?.querySelector('.wl-arena__stat-value')?.textContent).toBe('60');
+  });
+
+  it('renders per-trial tabs for a multi-trial aggregate match', async () => {
+    setupMocks();
+    const base = mockMatches[0].score_breakdown!;
+    const trialA = { ...base, objective_score: 84.6,
+      card: { ovr: 82, base_ovr: 82, stats: { GRD: 90, ADH: 80, SYN: 88, PRC: 70, EFF: 75 },
+        jdg: null, con: null, position: 'Sniper' } };
+    const trialB = { ...base, objective_score: 48.7,
+      card: { ovr: 40, base_ovr: 40, stats: { GRD: 40, ADH: 60, SYN: 0, PRC: 54, EFF: 16 },
+        jdg: null, con: null, position: 'Anchor' } };
+    vi.mocked(arenaApi.getArenaRun).mockResolvedValue({
+      run: mockRuns[0],
+      matches: [{
+        ...mockMatches[0],
+        score_breakdown: {
+          objective_score: 66.7, objective_stdev: 18.0, n_trials: 2,
+          // Aggregate card: averaged stats + trial-dispersion CON (20).
+          card: { ovr: 50, base_ovr: 61, stats: { GRD: 65, ADH: 70, SYN: 44, PRC: 62, EFF: 46 },
+            jdg: null, con: 20, position: 'All-rounder' },
+          aggregate: [trialA, trialB],
+        },
+      }],
+    });
+    render(<ArenaLive />);
+    await userEvent.click(await screen.findByText('1'));
+    await userEvent.click(await screen.findByText('workflow-a'));
+
+    // Tab bar: Average + one tab per trial.
+    expect(await screen.findByRole('tab', { name: 'Average' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Trial 1' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Trial 2' })).toBeInTheDocument();
+    // Average tab (default): honest summary + per-trial roster with each trial's OVR.
+    expect(screen.getByText(/Average of 2 trials/)).toBeInTheDocument();
+    expect(screen.getByText(/Trial 1: OVR 82/)).toBeInTheDocument();
+    expect(screen.getByText(/Trial 2: OVR 40/)).toBeInTheDocument();
+
+    // Switch to Trial 2 → its own full breakdown (the aggregate summary is gone).
+    await userEvent.click(screen.getByRole('tab', { name: 'Trial 2' }));
+    expect(screen.queryByText(/Average of 2 trials/)).not.toBeInTheDocument();
+    // Trial 2's own card (position Anchor) renders in the recursive detailed view.
+    expect(screen.getByText('Anchor')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['short 2/3', [{}, {}], '2/3 trials scored'],
+    ['missing aggregate', undefined, '0/3 trials scored'],
+    ['empty aggregate', [], '0/3 trials scored'],
+  ])('shows an incomplete state (no trial tabs) for a partial aggregate — %s',
+    async (_label, aggregate, tally) => {
+    setupMocks();
+    const base = mockMatches[0].score_breakdown!;
+    // Backend refused the aggregate card (partial coverage) and withheld per-trial
+    // cards; the drilldown must not render scored trial tabs for the remnant — even
+    // when the aggregate is missing/empty, keyed on card_reason not the array shape.
+    vi.mocked(arenaApi.getArenaRun).mockResolvedValue({
+      run: mockRuns[0],
+      matches: [{
+        ...mockMatches[0],
+        score_breakdown: {
+          n_trials: 3,
+          card: null,
+          card_reason: 'partial_trial_coverage',
+          ...(aggregate ? { aggregate: aggregate.map(() => ({ ...base })) } : {}),
+        },
+      }],
+    });
+    render(<ArenaLive />);
+    await userEvent.click(await screen.findByText('1'));
+    await userEvent.click(await screen.findByText('workflow-a'));
+
+    expect(await screen.findByText('Incomplete multi-trial run')).toBeInTheDocument();
+    expect(screen.getByText(tally)).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Trial 1' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Average' })).not.toBeInTheDocument();
+  });
+
+  it('resets the trial tab when switching to a shorter aggregate match', async () => {
+    setupMocks();
+    const base = mockMatches[0].score_breakdown!;
+    const mkCard = (ovr: number) => ({ ovr, base_ovr: ovr,
+      stats: { GRD: ovr, ADH: ovr, SYN: ovr, PRC: ovr, EFF: ovr },
+      jdg: null, con: null, position: 'Sniper' });
+    const mkAgg = (n: number) => ({
+      objective_score: 60, n_trials: n, con: 30,
+      card: { ...mkCard(60), con: 30 },
+      aggregate: Array.from({ length: n }, (_, i) => ({ ...base, card: mkCard(50 + i) })),
+    });
+    vi.mocked(arenaApi.getArenaRun).mockResolvedValue({
+      run: mockRuns[0],
+      matches: [
+        { ...mockMatches[0], id: 301, workflow_id: 'wf-long', score_breakdown: mkAgg(3) },
+        { ...mockMatches[0], id: 302, workflow_id: 'wf-short', score_breakdown: mkAgg(2) },
+      ],
+    });
+    render(<ArenaLive />);
+    await userEvent.click(await screen.findByText('1'));
+
+    // Open the 3-trial match and jump to Trial 3.
+    await userEvent.click(await screen.findByText('wf-long'));
+    await userEvent.click(await screen.findByRole('tab', { name: 'Trial 3' }));
+
+    // Switch to the 2-trial match: must not crash, must reset to Average, and must
+    // NOT expose a Trial 3 tab (the stale index is gone).
+    await userEvent.click(screen.getByText('wf-short'));
+    const avg = await screen.findByRole('tab', { name: 'Average' });
+    expect(avg).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('tab', { name: 'Trial 3' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Trial 2' })).toBeInTheDocument();
   });
 
   it('clicking a match shows the diagnosis (counts + analysis)', async () => {
@@ -429,12 +564,13 @@ describe('ArenaLive', () => {
     await userEvent.click(await screen.findByText('1'));
     await userEvent.click(await screen.findByText('workflow-a'));
 
-    expect(await screen.findByText('Score breakdown')).toBeInTheDocument();
-    // Headline summary renders from the aggregate fields
+    // Tabbed drilldown renders (trials carry empty steps + no card) without throwing.
+    expect(await screen.findByText(/Average of 2 trials/)).toBeInTheDocument();
     expect(screen.getByText(/Objective 74\.4/)).toBeInTheDocument();
-    expect(screen.getByText(/2 trials/)).toBeInTheDocument();
-    // Per-trial lines render from `aggregate`
-    expect(screen.getByText(/Trial 1: objective 29\/39/)).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Trial 2' })).toBeInTheDocument();
+    // Per-trial roster: no card → OVR em-dash, but objective + judge still render
+    // (both trials are 29/39, so there are two such lines).
+    expect(screen.getAllByText(/objective 29\/39/)).toHaveLength(2);
     expect(screen.getByText(/judge 58\.3/)).toBeInTheDocument();
   });
 

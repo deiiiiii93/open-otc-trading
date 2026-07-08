@@ -259,7 +259,13 @@ def test_leaderboard_exposes_ovr(session, settings):
     row = resp.json()["rows"][0]
     assert "ovr" in row and "card_mean" in row
     assert row["ovr"] == row["card_mean"]["ovr"]
-    assert set(row["card_mean"]) == {"ovr", "GRD", "ADH", "SYN", "PRC", "EFF"}
+    # card_mean carries the five stats + headline OVR, plus the CON block:
+    # base_ovr (pre-blend) and con (None here — a single-match model has no
+    # dispersion to measure, so OVR stays at the base).
+    assert set(row["card_mean"]) == {"ovr", "base_ovr", "con",
+                                     "GRD", "ADH", "SYN", "PRC", "EFF"}
+    assert row["card_mean"]["con"] is None
+    assert row["card_mean"]["ovr"] == row["card_mean"]["base_ovr"]
 
 
 # ---------------------------------------------------------------------------

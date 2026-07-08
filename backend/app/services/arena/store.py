@@ -227,8 +227,11 @@ def leaderboard(
     model_axes: dict[str, dict[str, dict[str, int]]] = defaultdict(dict)
     scored_counts: dict[str, int] = defaultdict(int)
     invalid_counts: dict[str, int] = defaultdict(int)
-    # Ability card (spec B): per-match OVR + stats, via the fail-honest guard.
-    model_ovrs: dict[str, list[int]] = defaultdict(list)
+    # Ability card (spec B): per-match FINAL OVR (CON already baked in for
+    # multi-trial rows) + base OVR + con + stats, via the aggregate-aware guard.
+    model_final_ovrs: dict[str, list[int]] = defaultdict(list)
+    model_base_ovrs: dict[str, list[int]] = defaultdict(list)
+    model_cons: dict[str, list[int]] = defaultdict(list)
     model_stat_lists: dict[str, dict[str, list[int]]] = defaultdict(
         lambda: defaultdict(list))
 
@@ -271,11 +274,17 @@ def leaderboard(
             slot["passed"] += tally.get("passed", 0)
             slot["total"] += tally.get("total", 0)
 
-        # Ability card, via the shared fail-honest guard. Uncarded rows (no axes /
-        # no tool count / unloadable workflow) contribute NOTHING to card_mean.
-        card, _reason = _derive_card(bd, m.workflow_id)
+        # Ability card, via the aggregate-aware guard (same path as the drilldown).
+        # A multi-trial row's card already has trial-dispersion CON baked into its
+        # final OVR; a single-trial row's con is None. Uncarded rows (no axes / no
+        # tool count / unloadable workflow / partial trial coverage) contribute
+        # NOTHING to card_mean.
+        card, _reason = _match_card(bd, m.workflow_id)
         if card is not None:
-            model_ovrs[m.model_id].append(card["ovr"])
+            model_final_ovrs[m.model_id].append(card["ovr"])
+            model_base_ovrs[m.model_id].append(card.get("base_ovr", card["ovr"]))
+            if card.get("con") is not None:
+                model_cons[m.model_id].append(card["con"])
             for stat, val in card["stats"].items():
                 model_stat_lists[m.model_id][stat].append(val)
 
@@ -295,8 +304,10 @@ def leaderboard(
         objectives = model_objectives.get(model_id, [])
         subs = model_subjectives.get(model_id, [])
         stdevs = model_sub_stdevs.get(model_id, [])
-        ovrs = model_ovrs.get(model_id, [])
-        carded_count = len(ovrs)
+        final_ovrs = model_final_ovrs.get(model_id, [])
+        base_ovrs = model_base_ovrs.get(model_id, [])
+        cons = model_cons.get(model_id, [])
+        carded_count = len(final_ovrs)
         scored_count = scored_counts.get(model_id, 0)
         # A card_mean is trustworthy for ranking ONLY when EVERY scored match is
         # carded. A partially-carded model (some matches uncarded — schema drift,
@@ -305,8 +316,15 @@ def leaderboard(
         # sample outrank a fully-carded row. Partial rows drop to the objective
         # fallback group; carded_count/match_count surface the coverage.
         fully_carded = carded_count > 0 and carded_count == scored_count
+        # Headline OVR is the mean of the per-match FINAL OVRs — each match's CON
+        # (trial dispersion) is already discounted into its own final OVR by
+        # _match_card, exactly as the drilldown shows, so the board is the mean of
+        # what a user drills into. card_mean.con is the mean of the measurable
+        # per-match cons (single-trial matches have none); None when no match has one.
         card_mean = (
-            {"ovr": round(sum(ovrs) / len(ovrs)),
+            {"ovr": round(sum(final_ovrs) / len(final_ovrs)),
+             "base_ovr": round(sum(base_ovrs) / len(base_ovrs)),
+             "con": round(sum(cons) / len(cons)) if cons else None,
              **{stat: round(sum(vals) / len(vals))
                 for stat, vals in model_stat_lists[model_id].items()}}
             if fully_carded else None)
@@ -354,22 +372,110 @@ def leaderboard(
 # ---------------------------------------------------------------------------
 
 
+def _match_card(bd: dict, workflow_id: str, *,
+                allow_stored_fallback: bool = False) -> tuple[dict | None, str | None]:
+    """The ability card for a whole match — AGGREGATE-AWARE.
+
+    A multi-trial match (``aggregate``) is carded from its TRIALS: each trial is
+    carded via _derive_card, then scoring.aggregate_card_from_trials averages the
+    stats and folds trial-dispersion CON into the OVR. If ANY trial is uncarded the
+    whole aggregate is uncarded (``partial_trial_cards``) — a biased subset must not
+    masquerade as the full sample.
+
+    A single-trial match is RECOMPUTED from its axes; a persisted `card` never
+    overrides recomputable evidence. ``allow_stored_fallback`` splits the two callers:
+    the leaderboard (ranking) passes False, so a card that CANNOT be recomputed
+    (missing tool count, empty axes, unloadable workflow) stays uncarded and never
+    ranks on an unverifiable number; the drilldown (presentation) passes True, so the
+    write-time card (spec B7) still renders for those non-recomputable rows. For a
+    recomputable row both callers get the identical derived card, so board and
+    drilldown agree wherever a row actually ranks."""
+    from app.services.arena import scoring
+    trials = bd.get("aggregate")
+    n_trials = bd.get("n_trials")
+    has_n = isinstance(n_trials, int) and not isinstance(n_trials, bool)
+    # Coverage guard, BEFORE the aggregate branch: a row that DECLARES n_trials must
+    # carry an aggregate list of exactly that length. A missing / empty / non-list /
+    # short / long aggregate under a declared n_trials is a partial write or retry
+    # remnant — it must NOT fall through to the single-card path and card from the
+    # top-level representative objective as if the multi-trial match completed.
+    if isinstance(n_trials, int) and not isinstance(n_trials, bool) and n_trials > 1 \
+            and (not isinstance(trials, list) or len(trials) != n_trials):
+        return None, "partial_trial_coverage"
+    if isinstance(trials, list) and trials:
+        if has_n and n_trials != len(trials):        # e.g. n_trials 1 but 2 stored
+            return None, "partial_trial_coverage"
+        trial_cards: list[dict] = []
+        for t in trials:
+            if not isinstance(t, dict):              # null / primitive placeholder
+                return None, "invalid_trial_shape"   # (fail closed, never crash)
+            tc, _reason = _derive_card(t, workflow_id)
+            if tc is None:
+                return None, "partial_trial_cards"
+            trial_cards.append(tc)
+        return scoring.aggregate_card_from_trials(trial_cards), None
+    # Single-trial match. RECOMPUTE from the stored evidence first — never let a
+    # persisted `card` number override recomputable axes (a stale/corrupted card whose
+    # OVR disagrees with its axes must not rank on the public board).
+    derived, reason = _derive_card(bd, workflow_id)
+    if derived is not None:
+        return derived, None
+    # Recompute impossible. The stored card is a PRESENTATION-ONLY fallback (drilldown,
+    # allow_stored_fallback=True) — never a ranking input — and only when the row still
+    # carries a genuine `objective` block (a bare card with nothing behind it is always
+    # refused). The leaderboard passes allow_stored_fallback=False, so these rows stay
+    # uncarded and fall back to the objective ranking rather than an unverifiable OVR.
+    if allow_stored_fallback:
+        stored = bd.get("card")
+        objective = bd.get("objective")
+        if isinstance(stored, dict) and isinstance(objective, dict) and "axes" in objective:
+            return dict(stored), None
+    return None, reason
+
+
 def _serialized_breakdown(m: ArenaMatch) -> dict | None:
-    """Return the stored breakdown with an ability card synthesized on read when
-    absent (spec B8 — derive, no migration). A stored card (new write-time rows)
-    passes through untouched; a legacy row with axes gets a card derived via the
-    same shared guard as the leaderboard; an uncarded row carries card:null +
-    card_reason so board and drilldown never disagree."""
+    """Return the stored breakdown with ability cards synthesized on read (spec B8 —
+    derive, no migration). The top-level ``card`` comes from the aggregate-aware
+    _match_card; per-trial cards are attached to ``aggregate`` for the drilldown tabs
+    ONLY when that aggregate card is non-null — i.e. coverage validated and every
+    trial carded. A partial / uncarded aggregate exposes NO scored trial cards, so the
+    coverage guard can't be bypassed via the per-trial path (the drilldown then shows
+    an explicit incomplete state instead of trustworthy-looking tabs). Uncarded rows
+    carry card:null + card_reason so board and drilldown never disagree."""
     bd = m.score_breakdown
     if bd is None:
         return None
-    if bd.get("card") is not None:
-        return bd  # already carded at write time (new rows)
     out = dict(bd)
-    card, reason = _derive_card(bd, m.workflow_id)
+    # Drilldown is presentation: a non-recomputable single-match row may fall back to
+    # its stored write-time card (the leaderboard, ranking, does not — see _match_card).
+    card, reason = _match_card(bd, m.workflow_id, allow_stored_fallback=True)
     out["card"] = card
     if card is None:
         out["card_reason"] = reason
+    trials = bd.get("aggregate")
+    # Attach per-trial cards for the drilldown tabs ONLY when the aggregate itself is
+    # carded (card non-null ⇒ full coverage AND every trial derivable). If the
+    # aggregate is uncarded — a count mismatch (partial_trial_coverage) OR a complete
+    # set where some trial can't be scored (partial_trial_cards) — NO per-trial card
+    # is exposed, so a cardable subset can't masquerade as trustworthy scored OVRs.
+    # (For partial_trial_cards the frontend still shows the per-trial objective detail,
+    # just without OVR/card affordances; for a count mismatch it shows an incomplete
+    # state.)
+    if isinstance(trials, list) and trials:
+        if card is not None:
+            out["aggregate"] = [{**t, "card": _derive_card(t, m.workflow_id)[0]}
+                                for t in trials]
+        else:
+            # Uncarded aggregate: STRIP any pre-stored per-trial card/reason so a
+            # refused aggregate can never expose trustworthy-looking per-trial OVRs
+            # (the server never adds them here, but a producer might have persisted
+            # them). Non-dict entries (malformed) pass through untouched — the UI
+            # shows an incomplete state for those, not tabs. Detail without card
+            # affordances is what the UI renders for the merely-uncarded case.
+            out["aggregate"] = [
+                {k: v for k, v in t.items() if k not in ("card", "card_reason")}
+                if isinstance(t, dict) else t
+                for t in trials]
     return out
 
 

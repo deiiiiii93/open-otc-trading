@@ -175,6 +175,85 @@ def card_tiebreak_key(stats: dict) -> tuple:
     return tuple(-stats.get(k, 0) for k in _CARD_TIEBREAK_PRIORITY)
 
 
+# ---------------------------------------------------------------------------
+# Consistency (CON) — a per-(run, model) reliability stat
+# ---------------------------------------------------------------------------
+# CON measures how tightly a model's per-TRIAL base OVRs cluster when it runs the
+# same workflow N times (an aggregate match, ``n_trials``). It is derived from the
+# per-trial base OVR (the five-stat composite, PRE-blend) rather than the final OVR
+# so the dependency stays a clean DAG — trial base_ovr → con → aggregate final_ovr —
+# with no fixed-point circularity. Because dispersion needs ≥2 trials, CON is a
+# property of a MULTI-TRIAL match: it is derived on read (store._match_card /
+# aggregate_card_from_trials); a single-trial match yields None (greyed in the UI,
+# OVR at the base) so single-trial runs read exactly as before CON existed.
+#
+# CON acts as a DISCOUNT, never a boost: final = base × (0.82 + 0.18·con/99), so
+# perfect consistency (con 99) returns the base OVR untouched and inconsistency
+# shaves up to 18% off — a consistently *bad* model (base 0) can never earn OVR
+# from low dispersion alone (0 × anything = 0). This mirrors EFF's correctness
+# gate: reliability is only worth points on top of real ability.
+CON_WEIGHT = 0.18               # max fraction of base OVR that inconsistency discounts
+CON_ZERO_STDEV = 15.0           # base-OVR pstdev (points) at which CON reads 0
+_BASE_OVR_SHARE = 1.0 - CON_WEIGHT  # 0.82 — the floor the discount can drop to
+
+
+def consistency_stat(base_ovrs: list[float]) -> int | None:
+    """CON stat (0–99) from a model's per-match base OVRs in one run.
+
+    None when fewer than 2 matches (no dispersion to measure). Lower dispersion →
+    higher consistency: population stdev 0 → 99, and ≥ ``CON_ZERO_STDEV`` → 0,
+    linear between. pstdev (not sample stdev) matches the jury's ``judged_stdev``.
+    """
+    import statistics
+    if len(base_ovrs) < 2:
+        return None
+    sd = statistics.pstdev([float(v) for v in base_ovrs])
+    frac = max(0.0, 1.0 - sd / CON_ZERO_STDEV)
+    return round(99 * frac)
+
+
+def blend_ovr(base_ovr: float, con: int | None) -> int:
+    """Final OVR = base OVR discounted by inconsistency.
+
+    ``final = base × (_BASE_OVR_SHARE + CON_WEIGHT · con/99)`` — con 99 returns the
+    base untouched, con 0 shaves ``CON_WEIGHT`` (18%) off. A discount, never a boost:
+    a zero base stays zero, so consistent failure earns no OVR from CON alone.
+    ``con is None`` (single-match / invalid) → the base OVR unchanged.
+    """
+    if con is None:
+        return round(base_ovr)
+    return round(base_ovr * (_BASE_OVR_SHARE + CON_WEIGHT * con / 99))
+
+
+def aggregate_card_from_trials(trial_cards: list[dict]) -> dict | None:
+    """Build a multi-trial match's ability card from its per-trial cards.
+
+    A model that runs the same workflow N times (an aggregate match, ``n_trials``)
+    is carded from its TRIALS: stats are the per-trial mean, ``base_ovr`` is the mean
+    of the per-trial base OVRs, and CON is the dispersion of those base OVRs — the
+    trial-to-trial reliability signal. The final ``ovr`` discounts the base mean by
+    CON (see ``blend_ovr``: inconsistency shaves up to 18%, consistency is neutral).
+    Returns None for an empty trial list. Each ``trial_card`` is a base card
+    (``consistency_stat`` needs ≥2 trials, so per-trial cards carry no CON of their
+    own — a single trial has nothing to be consistent against).
+    """
+    if not trial_cards:
+        return None
+    stat_keys = ("GRD", "ADH", "SYN", "PRC", "EFF")
+    stats = {k: round(sum(c["stats"][k] for c in trial_cards) / len(trial_cards))
+             for k in stat_keys}
+    base_ovrs = [c["ovr"] for c in trial_cards]          # per-trial base OVR (con-free)
+    base_mean = sum(base_ovrs) / len(base_ovrs)
+    con = consistency_stat(base_ovrs)
+    judgeds = [c["jdg"] for c in trial_cards if c.get("jdg") is not None]
+    return {"ovr": blend_ovr(base_mean, con),
+            "base_ovr": round(base_mean),
+            "con": con,
+            "stats": stats,
+            "jdg": round(sum(judgeds) / len(judgeds), 1) if judgeds else None,
+            "position": _card_position(stats)}
+
+
 def ability_card(transcript, loaded, judged: float | None = None) -> dict:
     """Convenience wrapper: evaluate the transcript once and build the card."""
     bd = objective_breakdown(transcript, loaded)

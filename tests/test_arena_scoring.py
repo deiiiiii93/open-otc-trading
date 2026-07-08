@@ -495,6 +495,93 @@ def test_card_tiebreak_priority():
     assert scoring.card_tiebreak_key(hi_grd) < scoring.card_tiebreak_key(hi_adh)
 
 
+# --- Consistency (CON) ----------------------------------------------------
+
+def test_consistency_none_below_two_matches():
+    # No dispersion to measure with 0 or 1 sample → invalid (greyed in the UI).
+    assert scoring.consistency_stat([]) is None
+    assert scoring.consistency_stat([80]) is None
+
+
+def test_consistency_identical_scores_is_max():
+    assert scoring.consistency_stat([70, 70, 70]) == 99
+
+
+def test_consistency_linear_to_zero_at_15_pstdev():
+    # Two OVRs 30 apart → pstdev 15 → CON 0 (the CON_ZERO_STDEV anchor).
+    assert scoring.consistency_stat([50, 80]) == 0
+    # A wider spread stays clamped at 0, never negative.
+    assert scoring.consistency_stat([40, 90]) == 0
+    # pstdev 5 (10 apart) → 99*(1-5/15) = round(66.0) = 66.
+    assert scoring.consistency_stat([70, 80]) == 66
+
+
+def test_blend_ovr_discounts_never_boosts():
+    # Discount form: base * (0.82 + 0.18*con/99).
+    assert scoring.blend_ovr(80, 40) == round(80 * (0.82 + 0.18 * 40 / 99))
+    # Perfect consistency returns the base untouched.
+    assert scoring.blend_ovr(80, 99) == 80
+    # Max inconsistency shaves 18% off — never below the floor, never a boost.
+    assert scoring.blend_ovr(80, 0) == round(80 * 0.82)  # 66
+    # None con (single match) leaves the base untouched.
+    assert scoring.blend_ovr(80, None) == 80
+
+
+def test_consistency_cannot_boost_a_failing_model():
+    # The Codex finding: a consistently-BAD model must not earn OVR from low
+    # dispersion. Zero base × any CON stays zero — no free floor from consistency.
+    assert scoring.consistency_stat([0, 0]) == 99      # perfectly consistent...
+    assert scoring.blend_ovr(0, 99) == 0               # ...but earns nothing.
+    # A steady-mediocre model is only ever discounted from its base, never lifted:
+    # base 40, con 99 → 40 (not 40 + a CON bonus).
+    assert scoring.blend_ovr(40, 99) == 40
+    assert scoring.blend_ovr(40, 0) == round(40 * 0.82)  # 33 — erratic is penalized
+
+
+def _trial_card(ovr, jdg=None):
+    return {"ovr": ovr, "stats": {"GRD": ovr, "ADH": ovr, "SYN": ovr,
+                                  "PRC": ovr, "EFF": ovr}, "jdg": jdg}
+
+
+def test_aggregate_card_averages_stats_and_folds_trial_con():
+    # Multi-trial match: stats are the per-trial mean, CON is trial dispersion, and
+    # the final OVR discounts the base mean by CON.
+    cards = [_trial_card(80), _trial_card(70)]
+    agg = scoring.aggregate_card_from_trials(cards)
+    con = scoring.consistency_stat([80, 70])           # pstdev 5 → 66
+    assert agg["con"] == con
+    assert agg["base_ovr"] == 75                        # mean of 80, 70
+    assert agg["ovr"] == scoring.blend_ovr(75, con)
+    assert agg["stats"]["GRD"] == 75                    # (80+70)/2
+
+
+def test_aggregate_card_single_trial_is_grey():
+    # One trial → no dispersion → CON None (greyed), OVR at the base.
+    agg = scoring.aggregate_card_from_trials([_trial_card(85)])
+    assert agg["con"] is None
+    assert agg["ovr"] == 85 and agg["base_ovr"] == 85
+
+
+def test_aggregate_card_inconsistent_trials_are_discounted():
+    # The real deepseek-v4-pro case: trials 67/37/30/63 swing hard → CON 0 → the
+    # aggregate OVR is the base mean discounted 18%.
+    cards = [_trial_card(v) for v in (67, 37, 30, 63)]
+    agg = scoring.aggregate_card_from_trials(cards)
+    assert agg["con"] == 0
+    assert agg["base_ovr"] == round((67 + 37 + 30 + 63) / 4)   # 49
+    assert agg["ovr"] == scoring.blend_ovr(49.25, 0)          # 40
+
+    assert scoring.aggregate_card_from_trials([]) is None
+
+
+def test_aggregate_card_averages_available_judge_scores():
+    agg = scoring.aggregate_card_from_trials(
+        [_trial_card(80, jdg=70), _trial_card(70, jdg=None), _trial_card(75, jdg=90)])
+    assert agg["jdg"] == 80.0        # mean of the non-null 70, 90
+    assert scoring.aggregate_card_from_trials(
+        [_trial_card(80), _trial_card(70)])["jdg"] is None
+
+
 def _flagship_transcript(calls_by_index):
     """A MatchTranscript over the flagship's step count with tool_calls placed at the
     given 0-based step indices (all other steps empty)."""
