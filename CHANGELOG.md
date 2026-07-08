@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`store.merge_runs` + a `merge_runs_cli` tool** to fold several single-trial arena
+  runs into ONE multi-trial aggregate run — each `(workflow, model)` pair's scored
+  matches across the runs become the trials of one `n_trials` match, which the ability
+  card then scores with a trial-dispersion **CON**. Non-destructive (creates a new run;
+  sources untouched); trials ordered by source-run position; a pair present in only one
+  source stays a single-trial (grey CON). Run it with
+  `python -m app.services.arena.merge_runs_cli 18 19` — it prints the new run id and a
+  per-model OVR / base / CON / per-trial-OVR read-back.
 - **Arena multi-trial matches are now first-class: per-trial drilldown tabs + a
   trial-based Consistency (CON) stat replacing JDG on the radar.** When a model runs
   the same workflow N times (an aggregate match, `n_trials`), the drilldown now shows a

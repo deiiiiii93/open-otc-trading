@@ -854,3 +854,66 @@ def test_leaderboard_single_trial_match_has_no_con(session):
     base = store._derive_card(_trial(_STRONG), _WF)[0]["ovr"]
     assert cm["con"] is None
     assert cm["ovr"] == base == scoring.blend_ovr(base, None)
+
+
+# ---- merge_runs (fold single-trial runs into one multi-trial aggregate) ----
+
+def _single(session, rid, model, breakdown, obj_score):
+    """Record one SCORED single-trial match with a trial-shaped breakdown."""
+    store.record_match(
+        session, rid, _WF, model,
+        objective_score=obj_score, judged_score=None, total_score=obj_score,
+        judge_missing=False, config={}, transcript_path=None, status="scored",
+        score_breakdown={**breakdown, "objective_score": obj_score,
+                         "subjective_mode": "disabled"})
+
+
+def test_merge_runs_folds_pairs_into_trial_aggregates_with_con(session):
+    from app.services.arena import scoring
+    r1 = _make_run(session, model_ids=["m"])
+    _single(session, r1, "m", _trial(_STRONG), 84.6)
+    store.set_run_status(session, r1, "completed")
+    r2 = _make_run(session, model_ids=["m"])
+    _single(session, r2, "m", _trial(_WEAK), 48.7)
+    store.set_run_status(session, r2, "completed")
+
+    new_id = store.merge_runs(session, [r1, r2])
+    matches = store.get_run(session, new_id)["matches"]
+    assert len(matches) == 1
+    sb = matches[0]["score_breakdown"]
+    assert sb["n_trials"] == 2
+    # Trials ordered by source-run position (r1 then r2).
+    assert [t["objective_score"] for t in sb["aggregate"]] == [84.6, 48.7]
+    assert sb["objective_score"] == round((84.6 + 48.7) / 2, 1)
+    # Carded on read with a trial-dispersion CON.
+    base = [store._derive_card(_trial(_STRONG), _WF)[0]["ovr"],
+            store._derive_card(_trial(_WEAK), _WF)[0]["ovr"]]
+    assert sb["card"]["con"] == scoring.consistency_stat(base)
+    # Non-destructive: the sources are untouched.
+    assert store.get_run(session, r1)["matches"][0]["score_breakdown"]["objective_score"] == 84.6
+
+
+def test_merge_runs_lone_pair_becomes_single_trial_grey_con(session):
+    r1 = _make_run(session, model_ids=["a", "b"])
+    _single(session, r1, "a", _trial(_STRONG), 84.6)
+    _single(session, r1, "b", _trial(_STRONG), 80.0)   # "b" only ever runs here
+    store.set_run_status(session, r1, "completed")
+    r2 = _make_run(session, model_ids=["a"])
+    _single(session, r2, "a", _trial(_WEAK), 48.7)     # only model "a" appears twice
+    store.set_run_status(session, r2, "completed")
+
+    new_id = store.merge_runs(session, [r1, r2])
+    by_model = {m["model_id"]: m["score_breakdown"]
+                for m in store.get_run(session, new_id)["matches"]}
+    assert by_model["a"]["n_trials"] == 2 and by_model["a"]["card"]["con"] is not None
+    # "b" ran in only one source → single-trial aggregate → CON greys.
+    assert by_model["b"]["n_trials"] == 1 and by_model["b"]["card"]["con"] is None
+
+
+def test_merge_runs_requires_two_runs(session):
+    r1 = _make_run(session, model_ids=["m"])
+    _single(session, r1, "m", _trial(_STRONG), 84.6)
+    with pytest.raises(ValueError):
+        store.merge_runs(session, [r1])
+    with pytest.raises(ValueError):
+        store.merge_runs(session, [r1, r1])            # de-duped → only one distinct

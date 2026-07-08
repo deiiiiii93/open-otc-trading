@@ -123,6 +123,76 @@ def set_run_status(
     session.flush()
 
 
+def merge_runs(session: Session, source_run_ids: list[int]) -> int:
+    """Fold several single-trial runs into ONE multi-trial aggregate run.
+
+    Each ``(workflow_id, model_id)`` pair's scored matches across the source runs
+    become the TRIALS of one aggregate match (``n_trials``), which the ability card
+    then scores on read with a trial-dispersion CON. Trials are ordered by the
+    position of their source run in ``source_run_ids`` (stable), then by match id.
+
+    Non-destructive: a NEW completed run is created and its id returned; the sources
+    are untouched. Only ``status == 'scored'`` matches participate (invalid/failed
+    routes are not trials). A pair present in just one source becomes a single-trial
+    aggregate (CON greys, as for any lone trial). Raises ``ValueError`` on fewer than
+    two source runs or when no scored matches are found.
+    """
+    import statistics
+    from collections import defaultdict
+
+    ordered = list(dict.fromkeys(source_run_ids))     # de-dup, preserve order
+    if len(ordered) < 2:
+        raise ValueError("merge_runs needs at least two distinct source run ids")
+
+    matches = (
+        session.query(ArenaMatch)
+        .filter(ArenaMatch.run_id.in_(ordered), ArenaMatch.status == "scored")
+        .all()
+    )
+    if not matches:
+        raise ValueError(f"no scored matches found in runs {ordered}")
+
+    pos = {rid: i for i, rid in enumerate(ordered)}
+    groups: dict[tuple[str, str], list[ArenaMatch]] = defaultdict(list)
+    for m in matches:
+        groups[(m.workflow_id, m.model_id)].append(m)
+    for ms in groups.values():
+        ms.sort(key=lambda m: (pos[m.run_id], m.id))
+
+    workflow_ids = sorted({wf for wf, _ in groups})
+    model_ids = sorted({md for _, md in groups})
+    new_run_id = create_run(session, workflow_ids, model_ids)
+
+    for (workflow_id, model_id), ms in groups.items():
+        trials = [dict(m.score_breakdown) for m in ms if m.score_breakdown]
+        if not trials:
+            continue
+        objs = [t["objective_score"] for t in trials
+                if t.get("objective_score") is not None]
+        obj_mean = round(sum(objs) / len(objs), 1) if objs else None
+        obj_stdev = round(statistics.pstdev(objs), 1) if len(objs) > 1 else 0.0
+        aggregate = {
+            "n_trials": len(trials),
+            "aggregate": trials,
+            # Representative top-level objective for the objective tie-break; the
+            # ability card + CON are re-derived from the trials on read.
+            "objective": trials[0].get("objective"),
+            "objective_score": obj_mean,
+            "objective_stdev": obj_stdev,
+            "total_score": obj_mean,
+            "subjective_mode": trials[0].get("subjective_mode", "disabled"),
+        }
+        record_match(
+            session, new_run_id, workflow_id, model_id,
+            objective_score=obj_mean, judged_score=None, total_score=obj_mean,
+            judge_missing=False, config={"merged_from": ordered},
+            transcript_path=None, status="scored", score_breakdown=aggregate,
+        )
+
+    set_run_status(session, new_run_id, "completed")
+    return new_run_id
+
+
 def get_run(session: Session, run_id: int) -> dict | None:
     """Return a run dict with its matches, or None if not found."""
     run = session.get(ArenaRun, run_id)
