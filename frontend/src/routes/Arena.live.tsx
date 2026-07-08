@@ -145,6 +145,85 @@ function AbilityCardView({ card }: { card: NonNullable<ArenaScoreBreakdown['card
   );
 }
 
+// Radar/hexagon of the six ability-card stats (spec B), for at-a-glance profile
+// comparison across a run's match cards. Drawn in a 100×100 viewBox sized 1:1 to
+// px so the label font can use the caps type token directly. Axis order matches
+// AbilityCardView (numbers-first, OVR weighting). JDG is advisory (out of OVR):
+// a null jury score plots at the centre and its label is muted, mirroring the
+// stat-strip convention so the shape reads honestly when the jury is off.
+function AbilityHexagon({ card }: { card: NonNullable<ArenaScoreBreakdown['card']> }) {
+  const axes: { key: string; value: number | null; advisory?: boolean }[] = [
+    { key: 'GRD', value: card.stats.GRD },
+    { key: 'ADH', value: card.stats.ADH },
+    { key: 'SYN', value: card.stats.SYN },
+    { key: 'EFF', value: card.stats.EFF },
+    { key: 'PRC', value: card.stats.PRC },
+    { key: 'JDG', value: card.jdg, advisory: true },
+  ];
+  const C = 50; // centre of the 100×100 viewBox
+  const R = 30; // radius to the outer ring (leaves room for vertex labels)
+  const MAX = 99; // a stat's ceiling
+  const at = (i: number, frac: number): [number, number] => {
+    const a = (Math.PI * 2 * i) / axes.length - Math.PI / 2; // vertex 0 at top
+    return [C + Math.cos(a) * R * frac, C + Math.sin(a) * R * frac];
+  };
+  const ring = (frac: number) =>
+    axes.map((_, i) => at(i, frac).map((n) => n.toFixed(1)).join(',')).join(' ');
+  const data = axes
+    .map((ax, i) =>
+      at(i, Math.max(0, Math.min(MAX, ax.value ?? 0)) / MAX)
+        .map((n) => n.toFixed(1))
+        .join(','),
+    )
+    .join(' ');
+  // Anchor labels away from the shape so they don't overlap the vertices.
+  const anchor = (x: number) => (x > C + 3 ? 'start' : x < C - 3 ? 'end' : 'middle');
+  return (
+    <svg
+      className="wl-arena__hex"
+      viewBox="0 0 100 100"
+      width={100}
+      height={100}
+      role="img"
+      aria-label={`Ability radar, OVR ${card.ovr}`}
+    >
+      <polygon className="wl-arena__hex-ring" points={ring(1)} />
+      <polygon className="wl-arena__hex-ring" points={ring(0.5)} />
+      {axes.map((_, i) => {
+        const [x, y] = at(i, 1);
+        return (
+          <line
+            key={i}
+            className="wl-arena__hex-spoke"
+            x1={C}
+            y1={C}
+            x2={x.toFixed(1)}
+            y2={y.toFixed(1)}
+          />
+        );
+      })}
+      <polygon className="wl-arena__hex-data" points={data} />
+      {axes.map((ax, i) => {
+        const [x, y] = at(i, 1.28);
+        return (
+          <text
+            key={ax.key}
+            className={
+              'wl-arena__hex-label' + (ax.advisory ? ' wl-arena__hex-label--jdg' : '')
+            }
+            x={x.toFixed(1)}
+            y={y.toFixed(1)}
+            textAnchor={anchor(x)}
+            dominantBaseline="middle"
+          >
+            {ax.key}
+          </text>
+        );
+      })}
+    </svg>
+  );
+}
+
 function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
   const obj = breakdown.objective;
   const judge = breakdown.judge;
@@ -648,11 +727,25 @@ export function ArenaLive() {
                             {match.error}
                           </span>
                         )}
-                        <span className="wl-arena__match-score">
-                          Total: {fmtScore(match.total_score)}
-                          {' · '}
-                          Obj: {fmtScore(match.objective_score)}
-                        </span>
+                        {match.score_breakdown?.card ? (
+                          <div className="wl-arena__match-ability">
+                            <div className="wl-arena__card-ovr">
+                              <span className="wl-arena__card-ovr-value">
+                                {match.score_breakdown.card.ovr}
+                              </span>
+                              <span className="wl-arena__card-ovr-label">OVR</span>
+                            </div>
+                            <AbilityHexagon card={match.score_breakdown.card} />
+                          </div>
+                        ) : (
+                          // Uncarded rows (legacy runs, no ability card) keep the
+                          // objective score so the cell still reports a number.
+                          match.objective_score != null && (
+                            <span className="wl-arena__match-score">
+                              Obj: {fmtScore(match.objective_score)}
+                            </span>
+                          )
+                        )}
                         {match.score_breakdown?.diagnosis?.analysis && (
                           <span className="wl-arena__match-diagnosis">
                             {match.score_breakdown.diagnosis.analysis}

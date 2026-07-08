@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Arena match cards lead with OVR + an ability radar.** Each carded match cell now
+  shows its numbers-first **OVR** headline and a six-axis **hexagon** (GRD · ADH · SYN ·
+  EFF · PRC · JDG) drawn as a self-contained token-styled SVG, so a run's models can be
+  profile-compared at a glance. JDG is advisory (muted; its vertex sits at centre when
+  the jury is off). The old `Total: … · Obj: …` line is retired from the cells; uncarded
+  legacy rows keep a minimal `Obj:` fallback.
 - **Arena structured-answer scoring** (spec `2026-07-07-arena-structured-answer-scoring`)
   — a benign `record_answer` agent tool + two golden-workflow assertion types,
   `answer_field_equals` (adherence) and `answer_field_quotes` (grounding), that verify a

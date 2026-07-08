@@ -157,9 +157,36 @@ describe('ArenaLive', () => {
 
     // Match cell should appear with workflow and model info
     expect(await screen.findByText('workflow-a')).toBeInTheDocument();
-    expect((await screen.findAllByText(/Total:/)).length).toBeGreaterThan(0);
+    // Carded matches lead with the OVR headline (Total/Obj text retired).
+    expect((await screen.findAllByText('OVR')).length).toBeGreaterThan(0);
     expect(arenaApi.getArenaRun).toHaveBeenCalledWith(1);
     expect(arenaApi.getArenaLeaderboard).toHaveBeenCalledWith(1);
+  });
+
+  it('shows OVR and the ability radar on a carded match cell (and neither on an uncarded one)', async () => {
+    setupMocks();
+    render(<ArenaLive />);
+
+    await userEvent.click(await screen.findByText('1'));
+
+    // The carded match (#101, OVR 82) surfaces the OVR headline...
+    const abilityRow = (await screen.findByText('workflow-a'))
+      .closest('.wl-arena__match-cell')!
+      .querySelector('.wl-arena__match-ability') as HTMLElement;
+    expect(abilityRow).toBeTruthy();
+    expect(within(abilityRow).getByText('OVR')).toBeInTheDocument();
+    expect(within(abilityRow).getByText('82')).toBeInTheDocument();
+    // ...and a radar drawn as an SVG with the six stat labels (JDG advisory).
+    const radar = abilityRow.querySelector('.wl-arena__hex') as SVGElement;
+    expect(radar).toBeTruthy();
+    for (const stat of ['GRD', 'ADH', 'SYN', 'EFF', 'PRC', 'JDG']) {
+      expect(within(abilityRow).getByText(stat)).toBeInTheDocument();
+    }
+
+    // The invalid match (#102, score_breakdown null) shows no card.
+    const invalidCell = (await screen.findByText('workflow-b'))
+      .closest('.wl-arena__match-cell') as HTMLElement;
+    expect(invalidCell.querySelector('.wl-arena__match-ability')).toBeNull();
   });
 
   it('clicking a match fetches the transcript and renders transcript content', async () => {

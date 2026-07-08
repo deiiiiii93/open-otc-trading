@@ -153,6 +153,47 @@
   color: var(--ink-2);
 }
 
+/* Ability card: OVR headline + stat radar on each match cell */
+.wl-arena__match-ability {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  margin: var(--gap-1) 0;
+}
+
+.wl-arena__hex {
+  overflow: visible; /* vertex labels sit just outside the 100×100 viewBox */
+  flex: 0 0 auto;
+}
+
+.wl-arena__hex-ring,
+.wl-arena__hex-spoke {
+  fill: none;
+  stroke: var(--hairline);
+  stroke-width: 1;
+}
+
+.wl-arena__hex-data {
+  fill: var(--info);
+  fill-opacity: 0.18;
+  stroke: var(--info);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.wl-arena__hex-label {
+  fill: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  letter-spacing: 0.02em;
+}
+
+/* JDG is advisory (out of OVR) — muted, matching the stat strip. */
+.wl-arena__hex-label--jdg {
+  fill: var(--hairline-2);
+}
+
 /* Transcript panel */
 .wl-arena__transcript {
   border: 1px solid var(--hairline);
