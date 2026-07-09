@@ -934,3 +934,28 @@ def test_delete_runs_removes_runs_matches_and_returns_paths(session):
     assert out["match_count"] == 1
     assert "/x/t.json" in out["transcript_paths"]
     assert store.get_run(session, rid) is None
+
+
+def test_delete_runs_keeps_orm_identity_map_in_sync(session, agent_thread_factory):
+    """delete_runs must null arena_run_id via the ORM, not a raw Core UPDATE,
+    so an AgentThread already loaded in this session reflects the NULL
+    immediately (no stale in-memory value survives the commit)."""
+    from app.models import AgentThread
+
+    rid = store.create_run(session, ["wf"], ["m"])
+    session.commit()
+
+    thread = agent_thread_factory()
+    thread.arena_run_id = rid
+    session.commit()
+
+    # Load it into the identity map before deleting so a raw-SQL UPDATE
+    # (which bypasses the ORM) would leave this in-memory object stale.
+    loaded = session.get(AgentThread, thread.id)
+    assert loaded.arena_run_id == rid
+
+    store.delete_runs(session, [rid])
+    session.commit()
+
+    assert loaded.arena_run_id is None
+    assert session.get(AgentThread, thread.id).arena_run_id is None

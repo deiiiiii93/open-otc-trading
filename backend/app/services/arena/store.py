@@ -8,7 +8,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from app.models import ArenaRun, ArenaMatch
+from app.models import AgentThread, ArenaRun, ArenaMatch
 
 
 def _derive_card(bd: dict, workflow_id: str) -> tuple[dict | None, str | None]:
@@ -205,10 +205,10 @@ def delete_runs(session: Session, run_ids: list[int]) -> dict:
         deleted.append(rid)
     if deleted:
         session.execute(
-            sa.text("UPDATE agent_threads SET arena_run_id = NULL "
-                    "WHERE arena_run_id IN :ids").bindparams(
-                        sa.bindparam("ids", expanding=True)),
-            {"ids": deleted},
+            sa.update(AgentThread)
+            .where(AgentThread.arena_run_id.in_(deleted))
+            .values(arena_run_id=None),
+            execution_options={"synchronize_session": "fetch"},
         )
     return {"deleted_run_ids": deleted, "transcript_paths": paths, "match_count": match_count}
 
