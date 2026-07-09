@@ -211,3 +211,28 @@ def test_0034_upgrade_is_idempotent(tmp_path: Path) -> None:
     assert "score_breakdown" in {
         c["name"] for c in inspect(engine).get_columns("arena_match")
     }
+
+
+# ---------------------------------------------------------------------------
+# Test 5: migration 0045 adds/removes arena_run.trials
+# ---------------------------------------------------------------------------
+
+def test_0045_adds_and_drops_trials(tmp_path: Path) -> None:
+    engine = _fresh_engine(tmp_path, "test_0045.sqlite3")
+    base = importlib.import_module("backend.alembic.versions.0032_arena_runs")
+    mig = importlib.import_module("backend.alembic.versions.0045_arena_run_trials")
+
+    _run_migration(base, "upgrade", engine)
+    assert "trials" not in {
+        c["name"] for c in inspect(engine).get_columns("arena_run")
+    }
+
+    _run_migration(mig, "upgrade", engine)
+    assert "trials" in {
+        c["name"] for c in inspect(engine).get_columns("arena_run")
+    }
+
+    _run_migration(mig, "downgrade", engine)
+    assert "trials" not in {
+        c["name"] for c in inspect(engine).get_columns("arena_run")
+    }

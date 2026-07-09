@@ -43,6 +43,18 @@ def test_create_run_returns_id(session):
     assert rid > 0
 
 
+def test_create_run_persists_trials(session):
+    rid = store.create_run(session, ["wf"], ["m"], trials=3)
+    session.commit()
+    assert store.get_run(session, rid)["trials"] == 3
+
+
+def test_create_run_defaults_trials_to_one(session):
+    rid = store.create_run(session, ["wf"], ["m"])
+    session.commit()
+    assert store.get_run(session, rid)["trials"] == 1
+
+
 def test_get_run_returns_dict_with_matches(session):
     rid = _make_run(session)
     _make_match(session, rid, workflow_id="wf-a", model_id="model-x")

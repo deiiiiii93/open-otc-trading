@@ -41,6 +41,7 @@ def create_run(
     workflow_ids: list[str],
     model_ids: list[str],
     weights: dict | None = None,
+    trials: int = 1,
 ) -> int:
     """Insert a new ArenaRun in 'queued' status; return its id."""
     run = ArenaRun(
@@ -48,6 +49,7 @@ def create_run(
         workflow_ids=workflow_ids,
         model_ids=model_ids,
         weights=weights,
+        trials=trials,
     )
     session.add(run)
     session.flush()
@@ -595,6 +597,7 @@ def _run_to_dict(run: ArenaRun) -> dict:
         "workflow_ids": run.workflow_ids,
         "model_ids": run.model_ids,
         "weights": run.weights,
+        "trials": run.trials,
         "error": run.error,
         "created_at": run.created_at.isoformat() if run.created_at else None,
         "matches": [_match_to_dict(m) for m in run.matches],
