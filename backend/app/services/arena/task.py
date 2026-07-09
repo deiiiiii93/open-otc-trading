@@ -357,15 +357,34 @@ def _record_pair(
     cfg = {"weights": weights, "trials": trials_n}
     if clean:
         agg = scoring.fold_trial_breakdowns(clean)
+
+        # Roll up per-trial judge scores (each clean trial's own
+        # breakdown["judge"]["judged_score"]) onto the aggregate so the
+        # top-level ArenaMatch.judged_score column and score_breakdown["judge"]
+        # aren't silently dropped when the jury ran. Only stamp a judge block
+        # when at least one clean trial actually carries one — a jury-off
+        # aggregate must keep judged_score=None / no "judge" key, matching
+        # subjective_mode="disabled".
+        trial_judges = [t["judge"] for t in clean if isinstance(t.get("judge"), dict)]
+        judged_values = [
+            j["judged_score"] for j in trial_judges if j.get("judged_score") is not None
+        ]
+        judged_score = (
+            round(sum(judged_values) / len(judged_values), 1) if judged_values else None
+        )
+        judge_missing = any(j.get("judge_missing") for j in trial_judges)
+        if trial_judges:
+            agg["judge"] = {"judged_score": judged_score, "judge_missing": judge_missing}
+
         store.record_match(
             session,
             run_id=run_id,
             workflow_id=workflow_id,
             model_id=model_id,
             objective_score=agg["objective_score"],
-            judged_score=None,
+            judged_score=judged_score,
             total_score=agg["objective_score"],
-            judge_missing=False,
+            judge_missing=judge_missing,
             config=cfg,
             transcript_path=last_path,
             status="scored",

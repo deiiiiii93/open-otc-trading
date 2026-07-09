@@ -1134,6 +1134,76 @@ def test_execute_one_of_three_trials_infra_folds_remaining_two(session, settings
         assert len(bd["aggregate"]) == 2
 
 
+def test_execute_multi_trial_rolls_up_judged_score_onto_aggregate(session, settings):
+    """trials=2, judge_fn injected → the scored match's top-level judged_score
+    column and score_breakdown["judge"] reflect the mean of the per-trial
+    judged scores (not None/dropped), and store.leaderboard's subjective_mean
+    picks it up too. Regression test for _record_pair hardcoding
+    judged_score=None/judge_missing=False on the aggregate row."""
+    run_id, task_id = _queue_pair_run(settings, trials=2)
+
+    calls = {"n": 0}
+
+    def fake_run_match(loaded, model, *, artifact_root, run_id=None):
+        calls["n"] += 1
+        return _scorable_transcript("wf-a", model.slug)
+
+    from app.services.arena.judge import JudgeResult
+
+    scores = iter([60.0, 80.0])
+
+    def fake_judge(transcript, loaded, *, post=None):
+        return JudgeResult(judged_score=next(scores), judge_missing=False, notes="")
+
+    from app.services.arena.task import execute_arena_run_task
+    execute_arena_run_task(
+        task_id, run_id, database.SessionLocal, settings=settings,
+        run_match_fn=fake_run_match, judge_fn=fake_judge,
+        get_bundle_fn=_fake_get_bundle,
+    )
+
+    with database.SessionLocal() as s:
+        run_dict = arena_store.get_run(s, run_id)
+        assert run_dict["status"] == "completed"
+        (m,) = run_dict["matches"]
+        assert m["status"] == "scored"
+        # Mean of the two per-trial judged scores (60.0, 80.0) == 70.0.
+        assert m["judged_score"] == 70.0
+        bd = m["score_breakdown"]
+        assert bd["judge"]["judged_score"] == 70.0
+        assert bd["judge"]["judge_missing"] is False
+
+        rows = arena_store.leaderboard(s, run_id=run_id)
+        row = next(r for r in rows if r["model_id"] == "gpt-5-5")
+        assert row["subjective_mean"] == 70.0
+
+
+def test_execute_jury_off_run_stays_behavior_preserving(session, settings):
+    """No judge_fn injected, arena_jury_enabled False (default) → the scored
+    match keeps judged_score=None and NO top-level judge key in the
+    aggregate breakdown (subjective_mode=="disabled"), matching pre-fix
+    behavior exactly."""
+    run_id, task_id = _queue_pair_run(settings, trials=2)
+
+    def fake_run_match(loaded, model, *, artifact_root, run_id=None):
+        return _scorable_transcript("wf-a", model.slug)
+
+    from app.services.arena.task import execute_arena_run_task
+    execute_arena_run_task(
+        task_id, run_id, database.SessionLocal, settings=settings,
+        run_match_fn=fake_run_match, get_bundle_fn=_fake_get_bundle,
+    )
+
+    with database.SessionLocal() as s:
+        run_dict = arena_store.get_run(s, run_id)
+        (m,) = run_dict["matches"]
+        assert m["status"] == "scored"
+        assert m["judged_score"] is None
+        bd = m["score_breakdown"]
+        assert "judge" not in bd
+        assert bd["subjective_mode"] == "disabled"
+
+
 def test_queue_arena_run_threads_trials(session):
     """queue_arena_run(trials=N) persists trials on the run and scales
     progress_total by pairs × trials."""
