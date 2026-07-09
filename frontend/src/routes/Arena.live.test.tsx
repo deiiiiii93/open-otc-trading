@@ -10,6 +10,7 @@ vi.mock('../lib/arenaApi', () => ({
   getArenaLeaderboard: vi.fn(),
   getMatchTranscript: vi.fn(),
   listArenaModels: vi.fn(),
+  listArenaWorkflows: vi.fn(),
   createArenaRun: vi.fn(),
   deleteArenaRuns: vi.fn(),
   mergeArenaRuns: vi.fn(),
@@ -729,5 +730,79 @@ describe('arena runs: multi-select + merge/delete action bar', () => {
     await waitFor(() => {
       expect(arenaApi.getArenaRun).toHaveBeenCalledWith(99);
     });
+  });
+});
+
+describe('arena runs: New Run modal', () => {
+  const mockWorkflows = [
+    { id: 'risk-manager-control-day', title: 'Risk Manager Control Day', tags: ['flagship'], step_count: 9 },
+  ];
+  const flashModel = {
+    slug: 'deepseek-v4-flash',
+    zenmux_name: 'deepseek/deepseek-v4-flash',
+    display_name: 'DeepSeek V4 Flash',
+  };
+
+  function setupNewRunMocks() {
+    vi.mocked(arenaApi.listArenaRuns).mockResolvedValue({ runs: mockRuns, total: 1 });
+    vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({ rows: mockLeaderboard });
+    vi.mocked(arenaApi.listArenaModels).mockResolvedValue({ models: [...mockModels, flashModel] });
+    vi.mocked(arenaApi.listArenaWorkflows).mockResolvedValue({ workflows: mockWorkflows });
+    vi.mocked(arenaApi.getArenaRun).mockResolvedValue({ run: mockRuns[0], matches: mockMatches });
+  }
+
+  it('clicking New Run opens the modal with workflow + model checklists and a Trials input', async () => {
+    setupNewRunMocks();
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    fireEvent.click(screen.getByText('New Run'));
+
+    expect(await screen.findByLabelText(/risk-manager-control-day/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/DeepSeek V4 Flash/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Trials/i)).toBeInTheDocument();
+    expect(arenaApi.listArenaWorkflows).toHaveBeenCalled();
+  });
+
+  it('Launch is disabled until at least one workflow and one model are selected', async () => {
+    setupNewRunMocks();
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    fireEvent.click(screen.getByText('New Run'));
+    expect(screen.getByText(/^Launch$/)).toBeDisabled();
+
+    fireEvent.click(await screen.findByLabelText(/risk-manager-control-day/i));
+    expect(screen.getByText(/^Launch$/)).toBeDisabled();
+
+    fireEvent.click(screen.getByLabelText(/DeepSeek V4 Flash/i));
+    expect(screen.getByText(/^Launch$/)).toBeEnabled();
+  });
+
+  it('launches a run from the New Run modal with trials', async () => {
+    setupNewRunMocks();
+    vi.mocked(arenaApi.createArenaRun).mockResolvedValue({ run_id: 55, status: 'pending' });
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    fireEvent.click(screen.getByText('New Run'));
+    fireEvent.click(await screen.findByLabelText(/risk-manager-control-day/i));
+    fireEvent.click(screen.getByLabelText(/DeepSeek V4 Flash/i));
+    fireEvent.change(screen.getByLabelText(/Trials/i), { target: { value: '3' } });
+    fireEvent.click(screen.getByText(/^Launch$/));
+
+    await waitFor(() => expect(arenaApi.createArenaRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflow_ids: ['risk-manager-control-day'],
+        model_ids: ['deepseek-v4-flash'],
+        trials: 3,
+      }),
+    ));
+
+    // Success closes the modal, refreshes runs, and selects the new run.
+    await waitFor(() => {
+      expect(arenaApi.getArenaRun).toHaveBeenCalledWith(55);
+    });
+    expect(screen.queryByText(/^Launch$/)).not.toBeInTheDocument();
   });
 });

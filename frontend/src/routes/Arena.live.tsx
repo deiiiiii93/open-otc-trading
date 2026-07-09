@@ -3,15 +3,18 @@ import { Check, Copy } from 'lucide-react';
 import { Button } from '../components/Button';
 import { Empty } from '../components/Empty';
 import { Modal } from '../components/Modal';
+import { NumberInput } from '../components/NumberInput';
 import { PageScaffold } from '../components/templates/PageScaffold';
 import { Table, type Column } from '../components/Table';
 import {
+  createArenaRun,
   deleteArenaRuns,
   getArenaLeaderboard,
   getArenaRun,
   getMatchTranscript,
   listArenaModels,
   listArenaRuns,
+  listArenaWorkflows,
   mergeArenaRuns,
   type ArenaLeaderboardRow,
   type ArenaMatchSummary,
@@ -21,6 +24,7 @@ import {
   type ArenaScoreBreakdown,
   type ArenaCheck,
   type ArenaObjectiveStep,
+  type ArenaWorkflowSummary,
 } from '../lib/arenaApi';
 import './Arena.css';
 
@@ -591,6 +595,11 @@ export function ArenaLive() {
   const [error, setError] = useState<string | null>(null);
   const [selectedRunIds, setSelectedRunIds] = useState<Set<number>>(new Set());
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [newRunOpen, setNewRunOpen] = useState(false);
+  const [workflows, setWorkflows] = useState<ArenaWorkflowSummary[]>([]);
+  const [selectedWorkflowIds, setSelectedWorkflowIds] = useState<Set<string>>(new Set());
+  const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(new Set());
+  const [trials, setTrials] = useState(2);
 
   const copyTranscript = useCallback(async () => {
     if (transcript == null) return;
@@ -619,6 +628,21 @@ export function ArenaLive() {
   }, [selectedRunId]);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // Status polling: while any listed run hasn't finished, re-fetch the runs list
+  // every 4s so in-flight launches surface their progress without a manual
+  // Refresh click. Stops (and the interval is cleared) once every run is
+  // 'completed', and always cleared on unmount.
+  useEffect(() => {
+    const anyRunning = runs.some((r) => r.status !== 'completed');
+    if (!anyRunning) return;
+    const t = setInterval(() => {
+      listArenaRuns()
+        .then((resp) => setRuns(resp.runs))
+        .catch((e: unknown) => setError(String(e)));
+    }, 4000);
+    return () => clearInterval(t);
+  }, [runs]);
 
   const selectRun = useCallback((runId: number) => {
     setSelectedRunId(runId);
@@ -693,6 +717,57 @@ export function ArenaLive() {
         setDeleteConfirmOpen(false);
       });
   }, [selectedRunIds, selectedRunId, refresh]);
+
+  const openNewRunModal = useCallback(() => {
+    setSelectedWorkflowIds(new Set());
+    setSelectedModelIds(new Set());
+    setTrials(2);
+    setNewRunOpen(true);
+    listArenaWorkflows()
+      .then((resp) => setWorkflows(resp.workflows))
+      .catch((e: unknown) => setError(String(e)));
+  }, []);
+
+  const toggleWorkflowSelection = useCallback((workflowId: string) => {
+    setSelectedWorkflowIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(workflowId)) {
+        next.delete(workflowId);
+      } else {
+        next.add(workflowId);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleModelSelection = useCallback((modelId: string) => {
+    setSelectedModelIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(modelId)) {
+        next.delete(modelId);
+      } else {
+        next.add(modelId);
+      }
+      return next;
+    });
+  }, []);
+
+  const canLaunchRun = selectedWorkflowIds.size > 0 && selectedModelIds.size > 0;
+
+  const handleLaunchRun = useCallback(() => {
+    if (!canLaunchRun) return;
+    createArenaRun({
+      workflow_ids: Array.from(selectedWorkflowIds),
+      model_ids: Array.from(selectedModelIds),
+      trials,
+    })
+      .then((res) => {
+        setNewRunOpen(false);
+        refresh();
+        selectRun(res.run_id);
+      })
+      .catch((e: unknown) => setError(String(e)));
+  }, [canLaunchRun, selectedWorkflowIds, selectedModelIds, trials, refresh, selectRun]);
 
   const chips = [
     `${runs.length} run${runs.length === 1 ? '' : 's'}`,
@@ -833,6 +908,7 @@ export function ArenaLive() {
           <div className="wl-arena__panel">
             <div className="wl-arena__section-head">
               <span className="wl-arena__eyebrow">Runs</span>
+              <Button variant="default" onClick={openNewRunModal}>New Run</Button>
             </div>
             {selectedRunIds.size > 0 && (
               <div className="wl-arena__run-actions">
@@ -1039,6 +1115,84 @@ export function ArenaLive() {
           <div className="wl-arena__delete-confirm-actions">
             <Button variant="ghost" onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>
             <Button variant="danger" onClick={handleDeleteRunsConfirmed}>Delete</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={newRunOpen}
+        onOpenChange={(open) => setNewRunOpen(open)}
+        title="NEW RUN"
+        layoutKey="arena-new-run"
+      >
+        <div className="wl-arena__new-run">
+          <div className="wl-arena__new-run-section">
+            <span className="wl-arena__new-run-label">Workflows</span>
+            {workflows.length === 0 ? (
+              <Empty message="No workflows available." />
+            ) : (
+              <ul className="wl-arena__checklist" role="list" aria-label="Workflows">
+                {workflows.map((wf) => (
+                  <li key={wf.id} className="wl-arena__checklist-item">
+                    <label className="wl-arena__checklist-label">
+                      <input
+                        type="checkbox"
+                        className="wl-arena__checklist-checkbox"
+                        aria-label={wf.id}
+                        checked={selectedWorkflowIds.has(wf.id)}
+                        onChange={() => toggleWorkflowSelection(wf.id)}
+                      />
+                      <span className="wl-arena__checklist-text">{wf.title || wf.id}</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="wl-arena__new-run-section">
+            <span className="wl-arena__new-run-label">Models</span>
+            {models.length === 0 ? (
+              <Empty message="No models available." />
+            ) : (
+              <ul className="wl-arena__checklist" role="list" aria-label="Models">
+                {models.map((m) => (
+                  <li key={m.slug} className="wl-arena__checklist-item">
+                    <label className="wl-arena__checklist-label">
+                      <input
+                        type="checkbox"
+                        className="wl-arena__checklist-checkbox"
+                        aria-label={m.display_name}
+                        checked={selectedModelIds.has(m.slug)}
+                        onChange={() => toggleModelSelection(m.slug)}
+                      />
+                      <span className="wl-arena__checklist-text">{m.display_name}</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <label className="wl-arena__new-run-field">
+            <span>Trials</span>
+            <NumberInput
+              type="number"
+              min={1}
+              max={10}
+              value={trials}
+              onChange={(e) => {
+                const parsed = Number(e.target.value);
+                setTrials(Number.isFinite(parsed) ? parsed : trials);
+              }}
+            />
+          </label>
+
+          <div className="wl-arena__new-run-actions">
+            <Button variant="ghost" onClick={() => setNewRunOpen(false)}>Cancel</Button>
+            <Button variant="primary" disabled={!canLaunchRun} onClick={handleLaunchRun}>
+              Launch
+            </Button>
           </div>
         </div>
       </Modal>
