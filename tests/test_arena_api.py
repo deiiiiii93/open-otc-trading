@@ -287,7 +287,7 @@ def test_post_runs_empty_model_ids_returns_422(session, settings):
 
 def test_post_runs_unknown_model_returns_422(session, settings):
     # Patch queue_arena_run to raise ValueError for unknown model
-    def fake_queue(sess, *, workflow_ids, model_ids, weights=None):
+    def fake_queue(sess, *, workflow_ids, model_ids, weights=None, trials=1):
         raise ValueError(f"Unknown model id(s): {model_ids}")
 
     client = _make_arena_app(session, settings, queue_fn=fake_queue)
@@ -299,7 +299,7 @@ def test_post_runs_unknown_model_returns_422(session, settings):
 
 
 def test_post_runs_unknown_workflow_returns_422(session, settings):
-    def fake_queue(sess, *, workflow_ids, model_ids, weights=None):
+    def fake_queue(sess, *, workflow_ids, model_ids, weights=None, trials=1):
         raise ValueError(f"Unknown workflow_id '{workflow_ids[0]}'")
 
     client = _make_arena_app(session, settings, queue_fn=fake_queue)
@@ -325,7 +325,7 @@ def test_post_runs_valid_returns_202_and_task_run(session, settings):
     # Use the real queue_arena_run but patch the workflow registry
     from app.services.arena.task import queue_arena_run
 
-    def fake_queue(sess, *, workflow_ids, model_ids, weights=None):
+    def fake_queue(sess, *, workflow_ids, model_ids, weights=None, trials=1):
         # Create run directly in store (skip registry validation)
         run_id = arena_store.create_run(
             sess,
@@ -1219,3 +1219,122 @@ def test_queue_arena_run_threads_trials(session):
     run_dict = arena_store.get_run(session, run_obj.id)
     assert run_dict["trials"] == 4
     assert task.progress_total == 2 * 4
+
+
+# ---------------------------------------------------------------------------
+# POST /api/arena/runs/delete, POST /api/arena/runs/merge, GET /api/arena/workflows
+# ---------------------------------------------------------------------------
+
+
+def test_delete_runs_endpoint_removes_run_and_files(session, settings, tmp_path):
+    """Happy path: seed a run + a match with a transcript file and an
+    artifact_dir/arena/{run_id} directory; deleting removes the DB rows AND
+    the filesystem artifacts."""
+    run_id = arena_store.create_run(session, workflow_ids=["wf-a"], model_ids=["model-x"])
+    transcript_file = tmp_path / "transcript.json"
+    transcript_file.write_text("{}", encoding="utf-8")
+    arena_store.record_match(
+        session, run_id, "wf-a", "model-x",
+        objective_score=80.0, judged_score=None, total_score=80.0,
+        judge_missing=True, config={}, transcript_path=str(transcript_file),
+        status="scored",
+    )
+    session.commit()
+
+    arena_dir = Path(settings.artifact_dir) / "arena" / str(run_id)
+    arena_dir.mkdir(parents=True, exist_ok=True)
+    (arena_dir / "artifact.txt").write_text("x", encoding="utf-8")
+
+    client = _make_arena_app(session, settings)
+    resp = client.post("/api/arena/runs/delete", json={"run_ids": [run_id]})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["deleted_run_ids"] == [run_id]
+    assert data["match_count"] == 1
+    assert data["files_removed"] >= 2
+
+    assert arena_store.get_run(session, run_id) is None
+    assert not transcript_file.exists()
+    assert not arena_dir.exists()
+
+
+def test_delete_runs_empty_400(session, settings):
+    client = _make_arena_app(session, settings)
+    resp = client.post("/api/arena/runs/delete", json={"run_ids": []})
+    assert resp.status_code == 400
+
+
+def test_merge_runs_needs_two_400(session, settings):
+    run_id = arena_store.create_run(session, workflow_ids=["wf-a"], model_ids=["model-x"])
+    arena_store.record_match(
+        session, run_id, "wf-a", "model-x",
+        objective_score=80.0, judged_score=None, total_score=80.0,
+        judge_missing=True, config={}, transcript_path=None, status="scored",
+    )
+    session.commit()
+
+    client = _make_arena_app(session, settings)
+    resp = client.post("/api/arena/runs/merge", json={"source_run_ids": [run_id]})
+    assert resp.status_code == 400
+
+
+def test_merge_runs_folds_two_runs(session, settings):
+    """Two distinct scored runs merge into a new aggregate run."""
+    run_a = arena_store.create_run(session, workflow_ids=["wf-a"], model_ids=["model-x"])
+    arena_store.record_match(
+        session, run_a, "wf-a", "model-x",
+        objective_score=70.0, judged_score=None, total_score=70.0,
+        judge_missing=True, config={}, transcript_path=None, status="scored",
+    )
+    run_b = arena_store.create_run(session, workflow_ids=["wf-a"], model_ids=["model-x"])
+    arena_store.record_match(
+        session, run_b, "wf-a", "model-x",
+        objective_score=90.0, judged_score=None, total_score=90.0,
+        judge_missing=True, config={}, transcript_path=None, status="scored",
+    )
+    session.commit()
+
+    client = _make_arena_app(session, settings)
+    resp = client.post(
+        "/api/arena/runs/merge", json={"source_run_ids": [run_a, run_b]}
+    )
+    assert resp.status_code == 200
+    new_run_id = resp.json()["run_id"]
+    assert new_run_id not in (run_a, run_b)
+    assert arena_store.get_run(session, new_run_id) is not None
+
+
+def test_workflows_endpoint_shape(session, settings):
+    client = _make_arena_app(session, settings)
+    resp = client.get("/api/arena/workflows")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "workflows" in body
+    assert len(body["workflows"]) > 0
+    assert {"id", "title", "tags", "step_count"} <= set(body["workflows"][0])
+
+
+def test_create_run_trials_bounds_422(session, settings):
+    client = _make_arena_app(session, settings)
+    resp = client.post(
+        "/api/arena/runs",
+        json={
+            "workflow_ids": ["risk-manager-control-day"],
+            "model_ids": ["gpt-5-5"],
+            "trials": 99,
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_create_run_trials_zero_422(session, settings):
+    client = _make_arena_app(session, settings)
+    resp = client.post(
+        "/api/arena/runs",
+        json={
+            "workflow_ids": ["risk-manager-control-day"],
+            "model_ids": ["gpt-5-5"],
+            "trials": 0,
+        },
+    )
+    assert resp.status_code == 422
