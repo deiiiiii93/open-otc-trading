@@ -917,3 +917,20 @@ def test_merge_runs_requires_two_runs(session):
         store.merge_runs(session, [r1])
     with pytest.raises(ValueError):
         store.merge_runs(session, [r1, r1])            # de-duped → only one distinct
+
+
+# ---- delete_runs (DB-pure hard delete) ----
+
+def test_delete_runs_removes_runs_matches_and_returns_paths(session):
+    rid = store.create_run(session, ["wf"], ["m"])
+    store.record_match(session, rid, "wf", "m", objective_score=80.0,
+                       judged_score=None, total_score=80.0, judge_missing=False,
+                       config={}, transcript_path="/x/t.json", status="scored",
+                       score_breakdown={"objective_score": 80.0})
+    session.commit()
+    out = store.delete_runs(session, [rid, 999999])  # 999999 does not exist
+    session.commit()
+    assert out["deleted_run_ids"] == [rid]
+    assert out["match_count"] == 1
+    assert "/x/t.json" in out["transcript_paths"]
+    assert store.get_run(session, rid) is None

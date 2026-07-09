@@ -5,6 +5,7 @@ callers handle HTTP mapping.
 """
 from __future__ import annotations
 
+import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.models import ArenaRun, ArenaMatch
@@ -179,6 +180,37 @@ def merge_runs(session: Session, source_run_ids: list[int]) -> int:
 
     set_run_status(session, new_run_id, "completed")
     return new_run_id
+
+
+def delete_runs(session: Session, run_ids: list[int]) -> dict:
+    """Hard-delete arena runs (+cascade matches). DB only — no filesystem.
+
+    Returns deleted ids (only those that existed), the transcript_paths of their
+    matches (for the caller to unlink), and the match_count removed. Nulls any
+    agent_threads.arena_run_id pointing at a deleted run so no thread dangles.
+    """
+    ids = list(dict.fromkeys(run_ids))
+    deleted: list[int] = []
+    paths: list[str] = []
+    match_count = 0
+    for rid in ids:
+        run = session.get(ArenaRun, rid)
+        if run is None:
+            continue
+        for m in run.matches:
+            match_count += 1
+            if m.transcript_path:
+                paths.append(m.transcript_path)
+        session.delete(run)          # cascade="all, delete-orphan" drops matches
+        deleted.append(rid)
+    if deleted:
+        session.execute(
+            sa.text("UPDATE agent_threads SET arena_run_id = NULL "
+                    "WHERE arena_run_id IN :ids").bindparams(
+                        sa.bindparam("ids", expanding=True)),
+            {"ids": deleted},
+        )
+    return {"deleted_run_ids": deleted, "transcript_paths": paths, "match_count": match_count}
 
 
 def get_run(session: Session, run_id: int) -> dict | None:
