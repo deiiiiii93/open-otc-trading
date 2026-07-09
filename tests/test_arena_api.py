@@ -951,3 +951,201 @@ def test_run_detail_exposes_match_error(session, settings):
     (m,) = resp.json()["matches"]
     assert m["status"] == "invalid"
     assert m["error"] == "infra_blank"
+
+
+# ---------------------------------------------------------------------------
+# Multi-trial _execute — fold N trials per pair into one aggregate match
+# ---------------------------------------------------------------------------
+
+
+def _scorable_transcript(workflow_id: str, model_id: str):
+    """A non-blank, error-free transcript with tool calls — passes the infra
+    gates and yields a numeric objective_score."""
+    from app.golden_workflows.transcript import MatchTranscript, MatchStep
+    steps = [
+        MatchStep(
+            index=i, user=f"turn {i}", messages=[],
+            tool_calls=[{"id": f"c{i}", "name": "get_latest_risk_run", "args": {}}],
+            tool_results=[], skills_routed=[], artifacts=[], task_ids=[],
+            response_text="A complete answer.", errors=[],
+        )
+        for i in range(3)
+    ]
+    return MatchTranscript(
+        schema_version=1, run_id=None, workflow_id=workflow_id,
+        model_id=model_id, started_at=None, finished_at=None, steps=steps,
+    )
+
+
+def _queue_pair_run(settings, *, trials: int):
+    database.configure_database(settings)
+    database.init_db()
+    with database.SessionLocal() as s:
+        run_id = arena_store.create_run(
+            s, workflow_ids=["wf-a"], model_ids=["gpt-5-5"], trials=trials)
+        task = TaskRun(kind=TaskKind.ARENA_RUN.value, status="queued",
+                       progress_current=0, progress_total=trials, message="")
+        s.add(task)
+        s.flush()
+        task_id = task.id
+        s.commit()
+    return run_id, task_id
+
+
+def test_execute_folds_multiple_trials_into_one_match(session, settings):
+    """trials=3, all clean → exactly ONE scored match whose score_breakdown
+    aggregates all 3 trials (n_trials==3, aggregate has 3 entries), and
+    run_match_fn is called exactly 3 times."""
+    run_id, task_id = _queue_pair_run(settings, trials=3)
+
+    calls = {"n": 0}
+
+    def fake_run_match(loaded, model, *, artifact_root, run_id=None):
+        calls["n"] += 1
+        return _scorable_transcript("wf-a", model.slug)
+
+    from app.services.arena.judge import JudgeResult
+
+    def fake_judge(transcript, loaded, *, post=None):
+        return JudgeResult(judged_score=None, judge_missing=True, notes="")
+
+    from app.services.arena.task import execute_arena_run_task
+    execute_arena_run_task(
+        task_id, run_id, database.SessionLocal, settings=settings,
+        run_match_fn=fake_run_match, judge_fn=fake_judge,
+        get_bundle_fn=_fake_get_bundle,
+    )
+
+    with database.SessionLocal() as s:
+        run_dict = arena_store.get_run(s, run_id)
+        assert run_dict["status"] == "completed"
+        assert calls["n"] == 3
+        scored = [m for m in run_dict["matches"] if m["status"] == "scored"]
+        assert len(scored) == 1
+        bd = scored[0]["score_breakdown"]
+        assert bd["n_trials"] == 3
+        assert len(bd["aggregate"]) == 3
+        assert scored[0]["config"]["trials"] == 3
+
+        task_row = s.get(TaskRun, task_id)
+        assert task_row.status == "completed"
+        assert task_row.progress_total == 3
+
+
+def test_execute_trials_one_is_behavior_preserving(session, settings):
+    """trials=1 (the default/historical path) → one scored match, n_trials==1,
+    a single aggregate entry, and run_match_fn is called exactly once."""
+    run_id, task_id = _queue_pair_run(settings, trials=1)
+
+    calls = {"n": 0}
+
+    def fake_run_match(loaded, model, *, artifact_root, run_id=None):
+        calls["n"] += 1
+        return _scorable_transcript("wf-a", model.slug)
+
+    from app.services.arena.judge import JudgeResult
+
+    def fake_judge(transcript, loaded, *, post=None):
+        return JudgeResult(judged_score=None, judge_missing=True, notes="")
+
+    from app.services.arena.task import execute_arena_run_task
+    execute_arena_run_task(
+        task_id, run_id, database.SessionLocal, settings=settings,
+        run_match_fn=fake_run_match, judge_fn=fake_judge,
+        get_bundle_fn=_fake_get_bundle,
+    )
+
+    with database.SessionLocal() as s:
+        run_dict = arena_store.get_run(s, run_id)
+        assert run_dict["status"] == "completed"
+        assert calls["n"] == 1
+        (m,) = run_dict["matches"]
+        assert m["status"] == "scored"
+        bd = m["score_breakdown"]
+        assert bd["n_trials"] == 1
+        assert len(bd["aggregate"]) == 1
+
+
+def test_execute_all_trials_infra_marks_invalid(session, settings):
+    """trials=3, every trial infra-gated (all-blank + errors) → ONE invalid
+    match — infra trials are skipped, not retried into a scored aggregate."""
+    run_id, task_id = _queue_pair_run(settings, trials=3)
+
+    calls = {"n": 0}
+
+    def blank_run_match(loaded, model, *, artifact_root, run_id=None):
+        calls["n"] += 1
+        return _blank_transcript("wf-a", model.slug, with_errors=True)
+
+    def exploding_judge(transcript, loaded, *, post=None):
+        raise AssertionError("judge must not run for invalid matches")
+
+    from app.services.arena.task import execute_arena_run_task
+    execute_arena_run_task(
+        task_id, run_id, database.SessionLocal, settings=settings,
+        run_match_fn=blank_run_match, judge_fn=exploding_judge,
+        get_bundle_fn=_fake_get_bundle,
+    )
+
+    with database.SessionLocal() as s:
+        run_dict = arena_store.get_run(s, run_id)
+        assert run_dict["status"] == "completed"
+        assert calls["n"] == 3
+        (m,) = run_dict["matches"]
+        assert m["status"] == "invalid"
+        assert m["error"] == "infra_blank"
+        assert m["objective_score"] is None
+
+
+def test_execute_one_of_three_trials_infra_folds_remaining_two(session, settings):
+    """trials=3, 1 infra-gated + 2 clean → ONE scored match aggregating just
+    the 2 clean trials (n_trials==2) — the infra trial is skipped, not
+    counted, and not retried."""
+    run_id, task_id = _queue_pair_run(settings, trials=3)
+
+    calls = {"n": 0}
+
+    def mixed_run_match(loaded, model, *, artifact_root, run_id=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _blank_transcript("wf-a", model.slug, with_errors=True)
+        return _scorable_transcript("wf-a", model.slug)
+
+    from app.services.arena.judge import JudgeResult
+
+    def fake_judge(transcript, loaded, *, post=None):
+        return JudgeResult(judged_score=None, judge_missing=True, notes="")
+
+    from app.services.arena.task import execute_arena_run_task
+    execute_arena_run_task(
+        task_id, run_id, database.SessionLocal, settings=settings,
+        run_match_fn=mixed_run_match, judge_fn=fake_judge,
+        get_bundle_fn=_fake_get_bundle,
+    )
+
+    with database.SessionLocal() as s:
+        run_dict = arena_store.get_run(s, run_id)
+        assert run_dict["status"] == "completed"
+        assert calls["n"] == 3
+        (m,) = run_dict["matches"]
+        assert m["status"] == "scored"
+        bd = m["score_breakdown"]
+        assert bd["n_trials"] == 2
+        assert len(bd["aggregate"]) == 2
+
+
+def test_queue_arena_run_threads_trials(session):
+    """queue_arena_run(trials=N) persists trials on the run and scales
+    progress_total by pairs × trials."""
+    from app.services.arena.task import queue_arena_run
+
+    run_obj, task = queue_arena_run(
+        session, workflow_ids=["risk-manager-control-day"],
+        model_ids=["gpt-5-5", "claude-opus-4-8"],
+        trials=4,
+    )
+    session.commit()
+
+    run_dict = arena_store.get_run(session, run_obj.id)
+    assert run_dict["trials"] == 4
+    assert task.progress_total == 2 * 4

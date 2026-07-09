@@ -502,6 +502,20 @@ def _match_card(bd: dict, workflow_id: str, *,
             if not isinstance(t, dict):              # null / primitive placeholder
                 return None, "invalid_trial_shape"   # (fail closed, never crash)
             tc, _reason = _derive_card(t, workflow_id)
+            if tc is None and allow_stored_fallback:
+                # Mirror the single-trial fallback exactly (same two
+                # conditions, same "presentation only, never ranking"
+                # posture — the leaderboard passes allow_stored_fallback=
+                # False so it never takes this path): a trial whose card
+                # can't be recomputed (missing tool count, unloadable
+                # workflow, or legacy empty axes) still renders its
+                # write-time card in the drilldown as long as it carries a
+                # genuine `objective` block.
+                stored = t.get("card")
+                objective = t.get("objective")
+                if isinstance(stored, dict) and isinstance(objective, dict) \
+                        and "axes" in objective:
+                    tc = dict(stored)
             if tc is None:
                 return None, "partial_trial_cards"
             trial_cards.append(tc)
