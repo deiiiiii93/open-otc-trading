@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ArenaLive } from './Arena.live';
 
@@ -11,6 +11,8 @@ vi.mock('../lib/arenaApi', () => ({
   getMatchTranscript: vi.fn(),
   listArenaModels: vi.fn(),
   createArenaRun: vi.fn(),
+  deleteArenaRuns: vi.fn(),
+  mergeArenaRuns: vi.fn(),
 }));
 
 import * as arenaApi from '../lib/arenaApi';
@@ -627,5 +629,105 @@ describe('flagship v2: invalid matches + axis strip', () => {
     expect(screen.getByText('20/22')).toBeInTheDocument();
     expect(screen.getByText('grounding')).toBeInTheDocument();
     expect(screen.getByText('4/5')).toBeInTheDocument();
+  });
+});
+
+describe('arena runs: multi-select + merge/delete action bar', () => {
+  const twoRuns = [
+    { id: 1, status: 'completed', created_at: '2026-06-24T10:00:00Z', workflow_ids: ['workflow-a'], model_ids: ['claude-sonnet'] },
+    { id: 2, status: 'completed', created_at: '2026-06-25T10:00:00Z', workflow_ids: ['workflow-a'], model_ids: ['gpt-4o'] },
+  ];
+
+  function setupTwoRunMocks() {
+    vi.mocked(arenaApi.listArenaRuns).mockResolvedValue({ runs: twoRuns, total: 2 });
+    vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({ rows: mockLeaderboard });
+    vi.mocked(arenaApi.listArenaModels).mockResolvedValue({ models: mockModels });
+    vi.mocked(arenaApi.getArenaRun).mockResolvedValue({ run: twoRuns[0], matches: mockMatches });
+    vi.mocked(arenaApi.getMatchTranscript).mockResolvedValue(mockTranscript);
+  }
+
+  it('shows merge/delete action bar when runs are checked', async () => {
+    setupTwoRunMocks();
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    const checkboxes = screen.getAllByRole('checkbox');
+    expect(checkboxes).toHaveLength(2);
+
+    fireEvent.click(checkboxes[0]);
+    expect(screen.getByText(/Merge \(1\)/)).toBeDisabled();
+    expect(screen.getByText(/Delete \(1\)/)).toBeEnabled();
+
+    fireEvent.click(checkboxes[1]);
+    expect(screen.getByText(/Merge \(2\)/)).toBeEnabled();
+    expect(screen.getByText(/Delete \(2\)/)).toBeEnabled();
+  });
+
+  it('checking a run checkbox does not also select the run (stopPropagation)', async () => {
+    setupTwoRunMocks();
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    expect(arenaApi.getArenaRun).not.toHaveBeenCalled();
+  });
+
+  it('Clear deselects all runs and hides the action bar', async () => {
+    setupTwoRunMocks();
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    expect(screen.getByText(/Delete \(1\)/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(screen.queryByText(/Delete \(/)).not.toBeInTheDocument();
+  });
+
+  it('confirms and calls deleteArenaRuns, then refreshes and clears selection', async () => {
+    setupTwoRunMocks();
+    vi.mocked(arenaApi.deleteArenaRuns).mockResolvedValue({
+      deleted_run_ids: [1, 2],
+      match_count: 4,
+      files_removed: 4,
+    });
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    fireEvent.click(screen.getAllByRole('checkbox')[1]);
+
+    await userEvent.click(screen.getByText(/Delete \(2\)/));
+    // Confirm modal shows the "cannot be undone" warning copy.
+    expect(await screen.findByText(/cannot be undone/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      expect(arenaApi.deleteArenaRuns).toHaveBeenCalledWith([1, 2]);
+    });
+    // Selection clears (action bar disappears) once the delete resolves.
+    await waitFor(() => {
+      expect(screen.queryByText(/Delete \(/)).not.toBeInTheDocument();
+    });
+  });
+
+  it('merges the selected runs and selects the new aggregate run', async () => {
+    setupTwoRunMocks();
+    vi.mocked(arenaApi.mergeArenaRuns).mockResolvedValue({ run_id: 99 });
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    fireEvent.click(screen.getAllByRole('checkbox')[1]);
+
+    await userEvent.click(screen.getByText(/Merge \(2\)/));
+
+    await waitFor(() => {
+      expect(arenaApi.mergeArenaRuns).toHaveBeenCalledWith([1, 2]);
+    });
+    await waitFor(() => {
+      expect(arenaApi.getArenaRun).toHaveBeenCalledWith(99);
+    });
   });
 });

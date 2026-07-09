@@ -43,17 +43,9 @@
 .wl-arena__run-item {
   display: flex;
   align-items: center;
-  gap: var(--gap-2);
   width: 100%;
-  text-align: left;
-  padding: var(--gap-2) var(--gap-3);
-  border: none;
   border-bottom: 1px solid var(--hairline);
   background: transparent;
-  color: var(--ink);
-  cursor: pointer;
-  font-family: var(--font-ui);
-  font-size: var(--type-body-size);
 }
 
 .wl-arena__run-item:last-child {
@@ -66,6 +58,65 @@
 
 .wl-arena__run-item.is-active {
   background: var(--paper-3);
+}
+
+.wl-arena__run-checkbox {
+  width: 16px;
+  height: 16px;
+  margin: 0 0 0 var(--gap-3);
+  flex: 0 0 auto;
+}
+
+.wl-arena__run-item-body {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  padding: var(--gap-2) var(--gap-3);
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+}
+
+/* Run action bar (multi-select merge/delete) */
+.wl-arena__run-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.wl-arena__run-actions-count {
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  margin-right: auto;
+}
+
+/* Delete-runs confirm modal */
+.wl-arena__delete-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+
+.wl-arena__delete-confirm-body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.wl-arena__delete-confirm-actions {
+  display: flex;
+  gap: var(--gap-2);
+  justify-content: flex-end;
 }
 
 .wl-arena__run-id {

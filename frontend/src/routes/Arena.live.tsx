@@ -2,14 +2,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { Button } from '../components/Button';
 import { Empty } from '../components/Empty';
+import { Modal } from '../components/Modal';
 import { PageScaffold } from '../components/templates/PageScaffold';
 import { Table, type Column } from '../components/Table';
 import {
+  deleteArenaRuns,
   getArenaLeaderboard,
   getArenaRun,
   getMatchTranscript,
   listArenaModels,
   listArenaRuns,
+  mergeArenaRuns,
   type ArenaLeaderboardRow,
   type ArenaMatchSummary,
   type ArenaModel,
@@ -586,6 +589,8 @@ export function ArenaLive() {
   const [loadingTranscript, setLoadingTranscript] = useState(false);
   const [copiedTranscript, setCopiedTranscript] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedRunIds, setSelectedRunIds] = useState<Set<number>>(new Set());
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const copyTranscript = useCallback(async () => {
     if (transcript == null) return;
@@ -643,6 +648,51 @@ export function ArenaLive() {
       .catch((e: unknown) => { setTranscriptError(String(e)); })
       .finally(() => setLoadingTranscript(false));
   }, []);
+
+  const toggleRunSelection = useCallback((runId: number) => {
+    setSelectedRunIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(runId)) {
+        next.delete(runId);
+      } else {
+        next.add(runId);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearRunSelection = useCallback(() => setSelectedRunIds(new Set()), []);
+
+  const handleMergeRuns = useCallback(() => {
+    const ids = Array.from(selectedRunIds);
+    if (ids.length < 2) return;
+    mergeArenaRuns(ids)
+      .then((res) => {
+        setSelectedRunIds(new Set());
+        refresh();
+        selectRun(res.run_id);
+      })
+      .catch((e: unknown) => setError(String(e)));
+  }, [selectedRunIds, refresh, selectRun]);
+
+  const handleDeleteRunsConfirmed = useCallback(() => {
+    const ids = Array.from(selectedRunIds);
+    deleteArenaRuns(ids)
+      .then(() => {
+        setDeleteConfirmOpen(false);
+        setSelectedRunIds(new Set());
+        if (selectedRunId != null && ids.includes(selectedRunId)) {
+          setSelectedRunId(null);
+          setRunDetail(null);
+          setSelectedMatchId(null);
+        }
+        refresh();
+      })
+      .catch((e: unknown) => {
+        setError(String(e));
+        setDeleteConfirmOpen(false);
+      });
+  }, [selectedRunIds, selectedRunId, refresh]);
 
   const chips = [
     `${runs.length} run${runs.length === 1 ? '' : 's'}`,
@@ -784,23 +834,55 @@ export function ArenaLive() {
             <div className="wl-arena__section-head">
               <span className="wl-arena__eyebrow">Runs</span>
             </div>
+            {selectedRunIds.size > 0 && (
+              <div className="wl-arena__run-actions">
+                <span className="wl-arena__run-actions-count">
+                  {selectedRunIds.size} selected
+                </span>
+                <Button
+                  variant="default"
+                  disabled={selectedRunIds.size < 2}
+                  onClick={handleMergeRuns}
+                >
+                  Merge ({selectedRunIds.size})
+                </Button>
+                <Button variant="danger" onClick={() => setDeleteConfirmOpen(true)}>
+                  Delete ({selectedRunIds.size})
+                </Button>
+                <Button variant="ghost" onClick={clearRunSelection}>
+                  Clear
+                </Button>
+              </div>
+            )}
             {runs.length === 0 ? (
               <Empty message="No arena runs yet." />
             ) : (
               <div className="wl-arena__run-list">
                 {runs.map((run) => (
-                  <button
+                  <div
                     key={run.id}
-                    type="button"
                     className={`wl-arena__run-item${run.id === selectedRunId ? ' is-active' : ''}`}
-                    onClick={() => selectRun(run.id)}
                   >
-                    <span className="wl-arena__run-id">{String(run.id).slice(0, 8)}</span>
-                    <span className={`wl-arena__status ${statusClass(run.status)}`}>
-                      {run.status}
-                    </span>
-                    <span className="wl-arena__run-meta">{fmtDate(run.created_at)}</span>
-                  </button>
+                    <input
+                      type="checkbox"
+                      className="wl-arena__run-checkbox"
+                      aria-label={`Select run ${run.id}`}
+                      checked={selectedRunIds.has(run.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={() => toggleRunSelection(run.id)}
+                    />
+                    <button
+                      type="button"
+                      className="wl-arena__run-item-body"
+                      onClick={() => selectRun(run.id)}
+                    >
+                      <span className="wl-arena__run-id">{String(run.id).slice(0, 8)}</span>
+                      <span className={`wl-arena__status ${statusClass(run.status)}`}>
+                        {run.status}
+                      </span>
+                      <span className="wl-arena__run-meta">{fmtDate(run.created_at)}</span>
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -941,6 +1023,25 @@ export function ArenaLive() {
           </div>
         </div>
       </div>
+
+      <Modal
+        open={deleteConfirmOpen}
+        onOpenChange={(open) => { if (!open) setDeleteConfirmOpen(false); }}
+        title="DELETE ARENA RUNS"
+        layoutKey="arena-run-delete"
+      >
+        <div className="wl-arena__delete-confirm">
+          <p className="wl-arena__delete-confirm-body">
+            Delete run{selectedRunIds.size === 1 ? '' : 's'}{' '}
+            <strong>{Array.from(selectedRunIds).join(', ')}</strong>? This removes matches and
+            transcript files for the selected runs. This action cannot be undone.
+          </p>
+          <div className="wl-arena__delete-confirm-actions">
+            <Button variant="ghost" onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>
+            <Button variant="danger" onClick={handleDeleteRunsConfirmed}>Delete</Button>
+          </div>
+        </div>
+      </Modal>
     </PageScaffold>
   );
 }
