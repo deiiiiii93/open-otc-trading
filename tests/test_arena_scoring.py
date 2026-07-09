@@ -634,3 +634,30 @@ def test_answer_fields_bounds_oversized_and_spam_payload():
     assert len(fields) <= 32
     assert all(not isinstance(v, str) or len(v) <= 257 for v in fields.values())
     assert all(len(k) <= 128 for k in fields)
+
+
+def test_fold_trial_breakdowns_means_and_shape():
+    from app.services.arena import scoring
+    trials = [
+        {"objective": {"axes": {"grounding": 1}}, "objective_score": 80.0,
+         "subjective_mode": "disabled", "card": {"ovr": 70}},
+        {"objective": {"axes": {"grounding": 0}}, "objective_score": 90.0,
+         "subjective_mode": "disabled", "card": {"ovr": 72}},
+    ]
+    agg = scoring.fold_trial_breakdowns(trials)
+    assert agg["n_trials"] == 2
+    assert agg["aggregate"] == trials
+    assert agg["objective"] == trials[0]["objective"]
+    assert agg["objective_score"] == 85.0
+    assert agg["objective_stdev"] == 5.0
+    assert agg["total_score"] == 85.0
+    assert agg["subjective_mode"] == "disabled"
+
+
+def test_fold_trial_breakdowns_single_trial_zero_stdev():
+    from app.services.arena import scoring
+    agg = scoring.fold_trial_breakdowns([
+        {"objective": {}, "objective_score": 88.5, "subjective_mode": "disabled"}])
+    assert agg["n_trials"] == 1
+    assert agg["objective_stdev"] == 0.0
+    assert agg["objective_score"] == 88.5

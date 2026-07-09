@@ -254,6 +254,31 @@ def aggregate_card_from_trials(trial_cards: list[dict]) -> dict | None:
             "position": _card_position(stats)}
 
 
+import statistics
+
+
+def fold_trial_breakdowns(trials: list[dict]) -> dict:
+    """Fold N single-match breakdowns into the canonical multi-trial aggregate.
+
+    Shared by store.merge_runs (folding cross-run trials) and the arena task's
+    multi-trial New Run path. The CON ability card is derived on READ from the
+    per-trial cards via aggregate_card_from_trials — not built here.
+    """
+    objs = [t["objective_score"] for t in trials
+            if t.get("objective_score") is not None]
+    obj_mean = round(sum(objs) / len(objs), 1) if objs else None
+    obj_stdev = round(statistics.pstdev(objs), 1) if len(objs) > 1 else 0.0
+    return {
+        "n_trials": len(trials),
+        "aggregate": trials,
+        "objective": trials[0].get("objective"),
+        "objective_score": obj_mean,
+        "objective_stdev": obj_stdev,
+        "total_score": obj_mean,
+        "subjective_mode": trials[0].get("subjective_mode", "disabled"),
+    }
+
+
 def ability_card(transcript, loaded, judged: float | None = None) -> dict:
     """Convenience wrapper: evaluate the transcript once and build the card."""
     bd = objective_breakdown(transcript, loaded)

@@ -137,8 +137,9 @@ def merge_runs(session: Session, source_run_ids: list[int]) -> int:
     aggregate (CON greys, as for any lone trial). Raises ``ValueError`` on fewer than
     two source runs or when no scored matches are found.
     """
-    import statistics
     from collections import defaultdict
+
+    from app.services.arena import scoring
 
     ordered = list(dict.fromkeys(source_run_ids))     # de-dup, preserve order
     if len(ordered) < 2:
@@ -167,26 +168,13 @@ def merge_runs(session: Session, source_run_ids: list[int]) -> int:
         trials = [dict(m.score_breakdown) for m in ms if m.score_breakdown]
         if not trials:
             continue
-        objs = [t["objective_score"] for t in trials
-                if t.get("objective_score") is not None]
-        obj_mean = round(sum(objs) / len(objs), 1) if objs else None
-        obj_stdev = round(statistics.pstdev(objs), 1) if len(objs) > 1 else 0.0
-        aggregate = {
-            "n_trials": len(trials),
-            "aggregate": trials,
-            # Representative top-level objective for the objective tie-break; the
-            # ability card + CON are re-derived from the trials on read.
-            "objective": trials[0].get("objective"),
-            "objective_score": obj_mean,
-            "objective_stdev": obj_stdev,
-            "total_score": obj_mean,
-            "subjective_mode": trials[0].get("subjective_mode", "disabled"),
-        }
+        aggregate = scoring.fold_trial_breakdowns(trials)
         record_match(
             session, new_run_id, workflow_id, model_id,
-            objective_score=obj_mean, judged_score=None, total_score=obj_mean,
-            judge_missing=False, config={"merged_from": ordered},
-            transcript_path=None, status="scored", score_breakdown=aggregate,
+            objective_score=aggregate["objective_score"], judged_score=None,
+            total_score=aggregate["objective_score"], judge_missing=False,
+            config={"merged_from": ordered}, transcript_path=None,
+            status="scored", score_breakdown=aggregate,
         )
 
     set_run_status(session, new_run_id, "completed")
