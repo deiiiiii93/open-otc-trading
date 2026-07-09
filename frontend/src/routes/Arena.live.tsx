@@ -584,7 +584,7 @@ function modelDisplayName(modelId: string, models: ArenaModel[]): string {
 // Non-terminal ArenaRunStatus values. An explicit in-progress allowlist
 // (rather than a `!== 'completed'` denylist) so a terminal 'failed' run
 // doesn't keep the status-poll interval alive forever.
-const IN_PROGRESS_STATUSES: ReadonlySet<string> = new Set(['pending', 'running']);
+const IN_PROGRESS_STATUSES: ReadonlySet<string> = new Set(['queued', 'pending', 'running']);
 
 export function ArenaLive() {
   const [leaderboard, setLeaderboard] = useState<ArenaLeaderboardRow[]>([]);

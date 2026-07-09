@@ -831,4 +831,32 @@ describe('arena runs: status polling stops on terminal states', () => {
     // have been armed, so no additional listArenaRuns calls fire.
     expect(vi.mocked(arenaApi.listArenaRuns).mock.calls.length).toBe(callsAfterInitialLoad);
   });
+
+  it('keeps polling when a run is queued (the backend-created initial status)', async () => {
+    const queuedRun = [
+      { id: 1, status: 'queued', created_at: '2026-06-24T10:00:00Z', workflow_ids: ['workflow-a'], model_ids: ['claude-sonnet'] },
+    ];
+    vi.mocked(arenaApi.listArenaRuns).mockResolvedValue({ runs: queuedRun, total: 1 });
+    vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({ rows: mockLeaderboard });
+    vi.mocked(arenaApi.listArenaModels).mockResolvedValue({ models: mockModels });
+
+    // Fake timers must be armed *before* render so the poll interval itself
+    // (created inside the component's useEffect once the queued run loads)
+    // is scheduled against the fake clock — arming them only after render
+    // would leave a real, un-advanceable setInterval in place. `shouldAdvanceTime`
+    // lets the fake clock still tick in real time so testing-library's internal
+    // `findByText` polling (which relies on real setTimeout ticks) doesn't hang.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    const callsAfterInitialLoad = vi.mocked(arenaApi.listArenaRuns).mock.calls.length;
+
+    await vi.advanceTimersByTimeAsync(4000);
+    vi.useRealTimers();
+
+    // A 'queued' run is non-terminal (the backend creates runs in this
+    // status) — the poll interval must fire again.
+    expect(vi.mocked(arenaApi.listArenaRuns).mock.calls.length).toBeGreaterThan(callsAfterInitialLoad);
+  });
 });
