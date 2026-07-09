@@ -291,6 +291,29 @@ benchmark (was 7/32): grounding + adherence + synthesis checks on top of the
 procedural loop. Package: `backend/app/golden_workflows/` (schema/assertions/
 registry/scoring live here; arena scoring in `services/arena/scoring.py`).
 
+### Runs management (New Run / delete / merge)
+
+The `/arena` Runs panel launches, deletes, and merges runs (endpoints in
+`routers/arena.py`, store logic in `services/arena/store.py`):
+
+- **New Run** launches multiple workflows × models with a **trials** count
+  (`arena_run.trials`, migration **0045**, default 1). `task._execute` runs each pair
+  `trials` times and folds the clean trials into one aggregate match via the shared
+  `scoring.fold_trial_breakdowns` kernel — the SAME `n_trials` shape and CON scheme
+  `store.merge_runs` produces. **Infra trials are skipped, not retried** (the async task
+  layer already reruns whole failed runs); 0 clean trials → `invalid`. **`trials=1` is
+  behavior-preserving** (single-trial aggregate = today's single match, derive-on-read
+  card unchanged). Jury scores (when the jury runs) roll up onto the aggregate in
+  `_record_pair` so the leaderboard's advisory subjective stats survive the wrap.
+- **Delete** is **hard**: `store.delete_runs` drops the run + its matches (ORM cascade,
+  via an ORM `update` so the session identity map stays in sync) and nulls dangling
+  `agent_threads.arena_run_id`; the **router** then removes the transcript files and the
+  `arena/<run_id>` artifact dir (store stays DB-pure). Missing ids are skipped.
+- **Merge** stays non-destructive (reuses `store.merge_runs`).
+- The frontend runs list polls while any run is **non-terminal** — poll only on
+  `queued`/`running` (the backend emits `queued`, **not** the type union's `pending`);
+  `completed`/`failed` are terminal.
+
 ### Model Ability Card (Spec B, 2026-07-06)
 
 The objective score is surfaced as a **FIFA-style 6-stat card + OVR**, derived from

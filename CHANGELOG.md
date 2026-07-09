@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Arena Runs management — launch (New Run), delete, and merge from the Runs panel.**
+  The `/arena` Runs panel now: (1) **New Run** — a modal picks multiple workflows ×
+  multiple models and a **trials** count (default 2, 1–10); each `(workflow × model)`
+  pair runs N trials that fold into one multi-trial aggregate match with the same
+  trial-dispersion **CON** as `merge_runs` (a shared `scoring.fold_trial_breakdowns`
+  kernel; jury scores roll up onto the aggregate). (2) **Delete** — per-row checkboxes +
+  an action bar hard-delete the selected runs (rows via cascade **and** their transcript
+  files + `arena/<run_id>` artifact dir; dangling `agent_threads.arena_run_id` nulled).
+  (3) **Merge** — non-destructively fold the selected runs into a new aggregate. New
+  endpoints `POST /api/arena/runs/delete`, `POST /api/arena/runs/merge`,
+  `GET /api/arena/workflows`, and a `trials` field on `POST /api/arena/runs`; the runs
+  list polls while any run is non-terminal. Migration **0045** adds `arena_run.trials`
+  (default 1, back-compatible). `trials=1` is behavior-preserving for the existing
+  single-match execute path.
 - **`store.merge_runs` + a `merge_runs_cli` tool** to fold several single-trial arena
   runs into ONE multi-trial aggregate run — each `(workflow, model)` pair's scored
   matches across the runs become the trials of one `n_trials` match, which the ability
