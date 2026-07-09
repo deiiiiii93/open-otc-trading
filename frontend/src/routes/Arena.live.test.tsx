@@ -806,3 +806,29 @@ describe('arena runs: New Run modal', () => {
     expect(screen.queryByText(/^Launch$/)).not.toBeInTheDocument();
   });
 });
+
+describe('arena runs: status polling stops on terminal states', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('does not keep polling when every run is already terminal (failed)', async () => {
+    const failedRun = [
+      { id: 1, status: 'failed', created_at: '2026-06-24T10:00:00Z', workflow_ids: ['workflow-a'], model_ids: ['claude-sonnet'] },
+    ];
+    vi.mocked(arenaApi.listArenaRuns).mockResolvedValue({ runs: failedRun, total: 1 });
+    vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({ rows: mockLeaderboard });
+    vi.mocked(arenaApi.listArenaModels).mockResolvedValue({ models: mockModels });
+
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    const callsAfterInitialLoad = vi.mocked(arenaApi.listArenaRuns).mock.calls.length;
+
+    vi.useFakeTimers();
+    await vi.advanceTimersByTimeAsync(20000);
+    vi.useRealTimers();
+
+    // A purely 'failed' run list is terminal — the poll interval must never
+    // have been armed, so no additional listArenaRuns calls fire.
+    expect(vi.mocked(arenaApi.listArenaRuns).mock.calls.length).toBe(callsAfterInitialLoad);
+  });
+});

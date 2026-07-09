@@ -581,6 +581,11 @@ function modelDisplayName(modelId: string, models: ArenaModel[]): string {
   return models.find((m) => m.slug === modelId)?.display_name ?? modelId;
 }
 
+// Non-terminal ArenaRunStatus values. An explicit in-progress allowlist
+// (rather than a `!== 'completed'` denylist) so a terminal 'failed' run
+// doesn't keep the status-poll interval alive forever.
+const IN_PROGRESS_STATUSES: ReadonlySet<string> = new Set(['pending', 'running']);
+
 export function ArenaLive() {
   const [leaderboard, setLeaderboard] = useState<ArenaLeaderboardRow[]>([]);
   const [runs, setRuns] = useState<ArenaRunSummary[]>([]);
@@ -631,10 +636,11 @@ export function ArenaLive() {
 
   // Status polling: while any listed run hasn't finished, re-fetch the runs list
   // every 4s so in-flight launches surface their progress without a manual
-  // Refresh click. Stops (and the interval is cleared) once every run is
-  // 'completed', and always cleared on unmount.
+  // Refresh click. Stops (and the interval is cleared) once every run has
+  // reached a terminal state ('completed' or 'failed'), and always cleared
+  // on unmount.
   useEffect(() => {
-    const anyRunning = runs.some((r) => r.status !== 'completed');
+    const anyRunning = runs.some((r) => IN_PROGRESS_STATUSES.has(r.status));
     if (!anyRunning) return;
     const t = setInterval(() => {
       listArenaRuns()
@@ -1138,7 +1144,7 @@ export function ArenaLive() {
                       <input
                         type="checkbox"
                         className="wl-arena__checklist-checkbox"
-                        aria-label={wf.id}
+                        aria-label={`${wf.title} (${wf.id})`}
                         checked={selectedWorkflowIds.has(wf.id)}
                         onChange={() => toggleWorkflowSelection(wf.id)}
                       />
