@@ -159,6 +159,12 @@ def build_arena_router(
 
         out = arena_store.delete_runs(session, payload.run_ids)
 
+        # Persist the deletion FIRST — the filesystem cleanup below is best-effort
+        # (OSError-tolerant); if it partially fails, the DB rows must already be
+        # gone rather than leaving a committed-looking response with an uncommitted
+        # transaction.
+        session.commit()
+
         files_removed = 0
         for p in out["transcript_paths"]:
             try:
@@ -174,8 +180,6 @@ def build_arena_router(
                 if d.exists():
                     shutil.rmtree(d, ignore_errors=True)
                     files_removed += 1
-
-        session.commit()
 
         return {
             "deleted_run_ids": out["deleted_run_ids"],

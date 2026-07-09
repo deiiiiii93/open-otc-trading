@@ -168,7 +168,19 @@ def merge_runs(session: Session, source_run_ids: list[int]) -> int:
     new_run_id = create_run(session, workflow_ids, model_ids)
 
     for (workflow_id, model_id), ms in groups.items():
-        trials = [dict(m.score_breakdown) for m in ms if m.score_breakdown]
+        trials: list[dict] = []
+        for m in ms:
+            bd = m.score_breakdown
+            if not bd:
+                continue
+            if bd.get("n_trials") and isinstance(bd.get("aggregate"), list):
+                # Source match is ITSELF a multi-trial aggregate (e.g. a New Run
+                # with trials>1) — flatten its per-trial entries into the trial
+                # list rather than nesting the wrapper, so the flattened trials
+                # keep their own diagnosis/card and the merged aggregate re-cards.
+                trials.extend(dict(t) for t in bd["aggregate"])
+            else:
+                trials.append(dict(bd))
         if not trials:
             continue
         aggregate = scoring.fold_trial_breakdowns(trials)

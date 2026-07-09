@@ -1189,7 +1189,11 @@ export function ArenaLive() {
               value={trials}
               onChange={(e) => {
                 const parsed = Number(e.target.value);
-                setTrials(Number.isFinite(parsed) ? parsed : trials);
+                setTrials(
+                  Number.isFinite(parsed) && parsed > 0
+                    ? Math.min(10, Math.max(1, Math.trunc(parsed)))
+                    : 1,
+                );
               }}
             />
           </label>
