@@ -52,6 +52,11 @@ channels:
         tags: [tool-use, reasoning]
       - id: minimax/minimax-m3
         provider: openai
+        # minimax emits Anthropic-format tool calls; the OpenAI-compatible gateway
+        # leaves them unparsed (they leak into text as <invoke ...> markup), so
+        # dispatch it through the Anthropic endpoint. provider stays 'openai' (the
+        # gateway routing label); protocol overrides only the wire format.
+        protocol: anthropic
         label: MiniMax M3
         tags: [tool-use]
       - id: xiaomi/mimo-v2.5-pro
@@ -64,6 +69,12 @@ channels:
         tags: [tool-use, reasoning]
       - id: qwen/qwen3.7-max
         provider: openai
+        # qwen's tool-call id arrives empty through the OpenAI-compatible gateway in
+        # the full agent flow, breaking subagent (task) dispatch with "Tool call ID
+        # is required for subagent invocation". The Anthropic endpoint assigns
+        # server-side toolu_ ids that can't be empty. provider stays 'openai' (gateway
+        # label); protocol overrides only the wire format.
+        protocol: anthropic
         label: Qwen 3.7 Max
         tags: [tool-use, reasoning]
       # --- Run #9 flash-tier candidate field (Zenmux OpenAI-compatible) ---
@@ -110,6 +121,17 @@ channels:
         provider: openai
         label: Hunyuan 3 Preview
         tags: [fast, tool-use]
+      - id: meituan/longcat-2.0
+        provider: openai
+        # longcat emits tool calls as <longcat_tool_call> markup that the OpenAI-
+        # compatible gateway leaves unparsed (they leak into the response text →
+        # zero tool calls → arena prohibition floor). Route it through the Anthropic
+        # endpoint so ZenMux translates its native tool calls into structured
+        # tool_use. provider stays 'openai' (gateway routing label); protocol
+        # overrides only the wire format. See minimax-m3 / qwen3.7-max above.
+        protocol: anthropic
+        label: LongCat 2.0
+        tags: [tool-use, reasoning]
 
   - name: deepseek
     label: DeepSeek

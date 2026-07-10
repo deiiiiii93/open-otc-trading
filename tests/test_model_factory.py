@@ -72,6 +72,55 @@ def test_build_agent_model_returns_chat_openai_for_zenmux_openai():
     assert isinstance(model, ChatOpenAI)
 
 
+def _registry_with_anthropic_protocol_model() -> ChannelRegistry:
+    """A zenmux model whose provider is 'openai' but wire protocol is 'anthropic'
+    (the minimax case): find_model still keys on provider, client routes on protocol."""
+    zenmux = ChannelDescriptor(
+        name="zenmux",
+        label="Zenmux",
+        type="zenmux",
+        api_key="zm_fake",
+        base_url="https://zenmux.test/api/v1",
+        anthropic_base_url="https://zenmux.test/api/anthropic",
+        healthy=True,
+        models=(
+            ModelDescriptor(
+                id="minimax/minimax-m3",
+                provider="openai",
+                label="MiniMax M3",
+                protocol="anthropic",
+            ),
+        ),
+    )
+    return ChannelRegistry(
+        channels=(zenmux,),
+        default=("zenmux", "openai", "minimax/minimax-m3"),
+    )
+
+
+def test_wire_protocol_defaults_to_provider():
+    md = ModelDescriptor(id="openai/gpt-5.4", provider="openai", label="GPT-5.4")
+    assert md.wire_protocol == "openai"
+    md2 = ModelDescriptor(id="x", provider="openai", label="x", protocol="anthropic")
+    assert md2.wire_protocol == "anthropic"
+
+
+def test_build_agent_model_routes_anthropic_protocol_openai_provider_to_chat_anthropic():
+    """A provider='openai' model with protocol='anthropic' builds ChatAnthropic
+    on the Anthropic endpoint — the minimax tool-format fix."""
+    from langchain_anthropic import ChatAnthropic
+    reg = _registry_with_anthropic_protocol_model()
+    model = build_agent_model(
+        reg,
+        selection={"channel": "zenmux", "provider": "openai", "model": "minimax/minimax-m3"},
+    )
+    assert isinstance(model, ChatAnthropic)
+    base_url_attr = (
+        getattr(model, "anthropic_api_url", None) or getattr(model, "base_url", None)
+    )
+    assert "zenmux.test/api/anthropic" in str(base_url_attr)
+
+
 def test_build_agent_model_returns_deepseek_wrapper_for_deepseek_channel():
     from app.services.deep_agent.model_factory import DeepSeekReasoningChat
 

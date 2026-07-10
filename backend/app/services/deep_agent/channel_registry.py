@@ -27,6 +27,18 @@ class ModelDescriptor:
     label: str
     description: str | None = None
     tags: tuple[str, ...] = ()
+    # Wire protocol the model speaks, decoupled from ``provider`` (the ZenMux
+    # gateway routing label). Empty means "same as provider". Some third-party
+    # vendors routed through ZenMux (e.g. minimax) emit tool calls in the
+    # Anthropic tool-use format, which the OpenAI-compatible gateway does NOT
+    # translate — they must be dispatched via the Anthropic endpoint even though
+    # their ``provider`` stays "openai" so ``find_model`` keeps matching them.
+    protocol: str = ""
+
+    @property
+    def wire_protocol(self) -> str:
+        """Effective dispatch protocol: explicit ``protocol`` else ``provider``."""
+        return self.protocol or self.provider
 
 
 @dataclass(frozen=True)
@@ -188,6 +200,17 @@ def _build_model(channel_name: str, channel_type: str, m: dict) -> ModelDescript
             f"channel {channel_name!r}: model {model_id!r}: "
             f"provider must be 'anthropic' or 'openai' on zenmux channels, got {provider!r}"
         )
+    protocol = m.get("protocol")
+    if protocol is not None:
+        if not isinstance(protocol, str):
+            raise ValueError(
+                f"channel {channel_name!r}: model {model_id!r}: protocol must be a string or null"
+            )
+        if channel_type == "zenmux" and protocol not in {"anthropic", "openai"}:
+            raise ValueError(
+                f"channel {channel_name!r}: model {model_id!r}: "
+                f"protocol must be 'anthropic' or 'openai' on zenmux channels, got {protocol!r}"
+            )
     description = m.get("description")
     if description is not None and not isinstance(description, str):
         raise ValueError(f"channel {channel_name!r}: model {model_id!r}: description must be a string or null")
@@ -200,6 +223,7 @@ def _build_model(channel_name: str, channel_type: str, m: dict) -> ModelDescript
         label=label,
         description=description,
         tags=tuple(raw_tags),
+        protocol=protocol or "",
     )
 
 

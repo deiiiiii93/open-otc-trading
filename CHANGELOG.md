@@ -7,7 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Per-model wire-protocol mapping so ZenMux models that need the Anthropic tool
+  protocol actually execute.** A new optional **`protocol`** field on channel-registry
+  model descriptors (defaulting to `provider` via `ModelDescriptor.wire_protocol`)
+  decouples the wire format from the gateway routing label: `build_agent_model` now
+  selects `ChatAnthropic` on the Anthropic endpoint by `wire_protocol == "anthropic"`,
+  so a model can keep `provider: openai` (its `find_model` key) while declaring
+  `protocol: anthropic`. `config/agent_channels.yaml` (+ `.example`) pin
+  `protocol: anthropic` on **minimax/minimax-m3**, **qwen/qwen3.7-max**, and
+  **meituan/longcat-2.0**. Three failures all routed through the OpenAI-compatible
+  gateway are fixed:
+  - *minimax* emits tool calls in the Anthropic tool-use format, which the gateway never
+    parsed — every call leaked into the assistant text as `<invoke …>` markup, so the
+    model dispatched **zero** tools and scored the arena's bare prohibition floor (~7.7)
+    regardless of ability.
+  - *longcat* has the same failure mode via its own vendor format: it emits
+    `<longcat_tool_call>` markup the gateway leaves unparsed → zero tools → the ~7.7 floor
+    on both trials, until routed through the Anthropic endpoint (then 39–44 tool calls).
+  - *qwen* parses fine in isolation but its tool-call **id arrives empty** in the full
+    agent flow, so deepagents' `task()` rejected every subagent dispatch with
+    `ValueError: Tool call ID is required for subagent invocation` (a retry loop visible
+    in the ZenMux logs). The Anthropic endpoint assigns server-side `toolu_` ids that
+    can't be empty.
+
+  No behavior change for existing models (absent `protocol` ⇒ routes by provider exactly
+  as before).
+
 ### Added
+- **`meituan/longcat-2.0` (LongCat 2.0) added as an arena contestant** — registered in
+  `CANDIDATE_MODELS` and the `zenmux` channel (pinning `protocol: anthropic`, see Fixed
+  above) — and appended to **Arena Run #20** as a 2-trial aggregate on the flagship
+  `risk-manager-control-day` (OVR 38, CON 0 from a high-variance pair: OBJ 84.6 / 28.2).
 - **`store.merge_runs` + a `merge_runs_cli` tool** to fold several single-trial arena
   runs into ONE multi-trial aggregate run — each `(workflow, model)` pair's scored
   matches across the runs become the trials of one `n_trials` match, which the ability

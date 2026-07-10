@@ -359,6 +359,63 @@ channels:
         channel_registry.load_from_path(path, force_reread_dotenv=False)
 
 
+def test_load_parses_protocol_override(tmp_path, monkeypatch):
+    """A model may declare protocol != provider (minimax: provider openai,
+    Anthropic wire format); wire_protocol reflects the override, provider does not."""
+    monkeypatch.setenv("K", "x")
+    body = """
+channels:
+  - name: zenmux
+    label: Zenmux
+    type: zenmux
+    api_key_env: K
+    base_url: https://x
+    anthropic_base_url: https://y
+    models:
+      - id: minimax/minimax-m3
+        provider: openai
+        protocol: anthropic
+        label: MiniMax M3
+"""
+    path = _write_yaml(tmp_path, body)
+    reg = channel_registry.load_from_path(path, force_reread_dotenv=False)
+    md = reg.channels[0].models[0]
+    assert md.provider == "openai"
+    assert md.protocol == "anthropic"
+    assert md.wire_protocol == "anthropic"
+
+
+def test_load_defaults_protocol_to_provider(tmp_path, monkeypatch):
+    monkeypatch.setenv("TEST_ZENMUX_KEY", "zm_fake")
+    monkeypatch.setenv("TEST_DEEPSEEK_KEY", "ds_fake")
+    path = _write_yaml(tmp_path)
+    reg = channel_registry.load_from_path(path, force_reread_dotenv=False)
+    gpt = next(m for m in reg.channels[0].models if m.id == "openai/gpt-5.4")
+    assert gpt.protocol == ""            # not declared
+    assert gpt.wire_protocol == "openai"  # falls back to provider
+
+
+def test_load_raises_on_zenmux_invalid_protocol(tmp_path, monkeypatch):
+    monkeypatch.setenv("K", "x")
+    body = """
+channels:
+  - name: zenmux
+    label: Zenmux
+    type: zenmux
+    api_key_env: K
+    base_url: https://x
+    anthropic_base_url: https://y
+    models:
+      - id: m
+        provider: openai
+        protocol: hermes
+        label: M
+"""
+    path = _write_yaml(tmp_path, body)
+    with pytest.raises(ValueError, match="protocol must be 'anthropic' or 'openai'"):
+        channel_registry.load_from_path(path, force_reread_dotenv=False)
+
+
 def test_load_raises_when_no_channels_declared(tmp_path):
     body = "channels: []\n"
     path = _write_yaml(tmp_path, body)

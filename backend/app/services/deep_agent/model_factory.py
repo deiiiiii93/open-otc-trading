@@ -138,7 +138,11 @@ def build_agent_model(
     if not channel.healthy:
         return None  # caller renders "agent disabled"
 
-    if channel.type == "zenmux" and model_desc.provider == "anthropic":
+    # Route by WIRE PROTOCOL, not provider: a model whose provider is "openai"
+    # (its ZenMux gateway label) but which emits Anthropic-format tool calls
+    # (e.g. minimax) declares protocol="anthropic" and must be dispatched through
+    # the Anthropic endpoint, or its tool calls leak into text as unparsed markup.
+    if channel.type == "zenmux" and model_desc.wire_protocol == "anthropic":
         from langchain_anthropic import ChatAnthropic
         assert channel.anthropic_base_url is not None  # validated at load
         return ChatAnthropic(

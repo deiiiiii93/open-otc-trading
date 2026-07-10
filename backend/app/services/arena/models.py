@@ -137,6 +137,10 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         provider="openai",
     ),
     ArenaModel(
+        # provider stays "openai" (the ZenMux gateway routing label), but minimax
+        # emits Anthropic-format tool calls, so config/agent_channels.yaml pins
+        # protocol: anthropic to dispatch it via the Anthropic endpoint. Without
+        # that, its tool calls leak into text as <invoke …> markup and never run.
         slug="minimax-m3",
         zenmux_name="minimax/minimax-m3",
         display_name="MiniMax M3",
@@ -158,6 +162,10 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         provider="openai",
     ),
     ArenaModel(
+        # provider stays "openai", but qwen's tool-call id arrives empty through the
+        # OpenAI-compatible gateway in the full agent flow, breaking subagent (task)
+        # dispatch; config/agent_channels.yaml pins protocol: anthropic (server-side
+        # toolu_ ids) to fix it. See minimax-m3 above for the protocol mechanism.
         slug="qwen-3-7-max",
         zenmux_name="qwen/qwen3.7-max",
         display_name="Qwen 3.7 Max",
@@ -233,6 +241,18 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         slug="hunyuan-3-preview",
         zenmux_name="tencent/hy3-preview",
         display_name="Hunyuan 3 Preview",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
+    ArenaModel(
+        # provider stays "openai" (the ZenMux gateway routing label), but longcat
+        # emits tool calls as <longcat_tool_call> markup the OpenAI-compatible
+        # gateway leaves unparsed (they leak into text → zero tools → arena floor),
+        # so config/agent_channels.yaml pins protocol: anthropic to dispatch it via
+        # the Anthropic endpoint. See minimax-m3 / qwen-3-7-max above.
+        slug="longcat-2-0",
+        zenmux_name="meituan/longcat-2.0",
+        display_name="LongCat 2.0",
         default_config=_DEFAULT_CONFIG,
         provider="openai",
     ),
