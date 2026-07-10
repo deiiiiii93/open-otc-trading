@@ -25,6 +25,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `services/arena/models.py::CANDIDATE_MODELS` list.
 
 ### Fixed
+- **Flagship arena CVaR grounding no longer breaks when a model regenerates the
+  mutable `market-crash` scenario-set file.** The `scenario_cvar` grounding truth
+  (`-7758.99`) is harvested from the **`predefined: ["market_crash"]`** built-in
+  scenario, but the step prompt said "market-crash scenario *set*" and the
+  `tool_called` check also accepted `scenario_set: "market-crash"` — a **gitignored,
+  runtime-mutable** artifact (`data/scenario_sets/market-crash.set.json`). A model
+  regenerated it into a 5-point spot×vol grid on 2026-07-09 (CVaR `-12175.28`), so
+  every *live* run that followed the "set" wording quoted `-12175` and failed the ±2%
+  magnitude check **deterministically, regardless of model** — while the golden
+  *replay* stayed green (its recorded fixture used the predefined path), masking the
+  break. Fix: steer the step prompt to the **predefined built-in**, tighten
+  `tool_called` to predefined-only, and update the golden fixture's recorded call to
+  match. The flagship no longer depends on any on-disk scenario-set file.
 - **Per-model wire-protocol mapping so ZenMux models that need the Anthropic tool
   protocol actually execute.** A new optional **`protocol`** field on channel-registry
   model descriptors (defaulting to `provider` via `ModelDescriptor.wire_protocol`)

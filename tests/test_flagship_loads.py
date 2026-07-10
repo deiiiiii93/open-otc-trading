@@ -61,11 +61,12 @@ def test_flagship_grounding_and_trap_assertions():
     assert any(abs(q.value - 391.1919745962153) < 1e-9 for q in quotes)    # delta@-20%
     assert any(a.type == "tool_not_called" and a.name == "run_greeks_landscape"
                for a in grid.assertions)
-    # Step 6 (scenario): exact-args with both conventions + exclusive carriers
+    # Step 6 (scenario): the predefined built-in only (NOT the mutable named
+    # `market-crash` SET file, which a model can regenerate mid-arena and drift
+    # the grounding truth); exclusive carriers still block mixed-carrier runs.
     scen = wf.steps[5]
     called = [a for a in scen.assertions if a.type == "tool_called"][0]
-    assert called.args_any_of == [{"predefined": ["market_crash"]},
-                                  {"scenario_set": "market-crash"}]
+    assert called.args_any_of == [{"predefined": ["market_crash"]}]
     assert called.exclusive_keys == ["predefined", "custom", "scenario_set"]
     cvar = [a for a in scen.assertions
             if a.type == "answer_field_quotes"][0]

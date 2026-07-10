@@ -98,14 +98,14 @@ steps:
         name: run_greeks_landscape
     replay: step-grid-comprehension
 
-  - user: "Stress-test the control portfolio using the market-crash scenario set with the Control Profile. Record the tail loss by calling record_answer(answer={\"cvar\": <number>})."
+  - user: "Stress-test the control portfolio using the market_crash predefined scenario with the Control Profile. Record the tail loss by calling record_answer(answer={\"cvar\": <number>})."
     expected_skill: run-scenario-test
     expected_tools:
       - name: run_scenario_test
       - name: get_scenario_test_run
     outcome: >
-      The agent runs exactly the market-crash scenario stress test, retrieves
-      results, shows a negative P&L, and records the computed CVaR figure.
+      The agent runs exactly the market_crash predefined scenario stress test,
+      retrieves results, shows a negative P&L, and records the computed CVaR figure.
     assertions:
       - type: task_returned_id
         tool: run_scenario_test
@@ -113,14 +113,18 @@ steps:
         tool: get_scenario_test_run
         path: "results.var_cvar.cvar"
         lte: 0
-      # Adherence: exactly the instructed scenario set, via either legitimate
-      # calling convention; exclusive_keys blocks mixed-carrier over-execution
-      # and all_calls blocks a compliant first call masking an extra run.
+      # Adherence: exactly the instructed predefined built-in scenario.
+      # exclusive_keys blocks mixed-carrier over-execution and all_calls blocks a
+      # compliant first call masking an extra run. Deliberately the predefined
+      # built-in, NOT a named on-disk `market-crash` SET: that set file is a
+      # mutable, gitignored artifact a model can regenerate mid-arena (it drifted
+      # from a single Market Crash scenario to a 5-point spot×vol grid on
+      # 2026-07-09, moving CVaR -7759 → -12175), which would silently break this
+      # deterministic grounding truth.
       - type: tool_called
         name: run_scenario_test
         args_any_of:
           - predefined: ["market_crash"]
-          - scenario_set: "market-crash"
         exclusive_keys: ["predefined", "custom", "scenario_set"]
         all_calls: true
         max_calls: 1

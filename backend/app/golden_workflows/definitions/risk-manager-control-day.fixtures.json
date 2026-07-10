@@ -384,7 +384,7 @@
             "name": "run_scenario_test_tool",
             "args": {
               "portfolio_id": 6,
-              "scenario_set": "market-crash"
+              "predefined": ["market_crash"]
             }
           },
           {
@@ -413,7 +413,7 @@
             "task_id": "st-task-20260624-001",
             "status": "queued",
             "portfolio_id": 6,
-            "scenario_set": "market-crash"
+            "predefined": ["market_crash"]
           }
         },
         {
