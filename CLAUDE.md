@@ -471,3 +471,56 @@ can score against harvested truth. Package: `golden_workflows/determinism.py`
   it must also seed that history on the live path and add purge/exclusion, since a live
   arena backtest currently still fetches real akshare history (the other four truth
   targets match live via fallback-spot determinism).
+
+---
+
+## Model maintenance UI
+
+A web console to add/edit/delete LLM **channels and models** — and set the registry
+default — instead of hand-editing `config/agent_channels.yaml`. The YAML stays the single
+source of truth; the UI mutates it and hot-reloads the live registry.
+
+**Package:** `backend/app/services/deep_agent/channel_registry_writer.py` (the writer),
+`channel_registry.py` (`reload()` now reads under `_LOCK`; new `commit_registry()` seam),
+`model_factory.py::agent_registry_config` (maintenance serializer), `routers/agent_channels.py`
+(`build_agent_channels_router`, flag-gated CRUD under `/api/agent`). Schemas:
+`AgentRegistryOut` / `ChannelWriteIn` / `ModelWriteIn` / `DefaultWriteIn` (`schemas.py`).
+Frontend: `frontend/src/routes/ModelMaintenance.{tsx,live.tsx,css}` (the **Model Maintenance**
+nav page). New dep: `ruamel.yaml`.
+
+### Write model (validate-then-commit, corrupt-save-proof)
+
+Every mutation runs the FULL read-modify-write under `channel_registry._LOCK` via
+`_mutate`: load the YAML round-trip (`ruamel`, comment/key-order preserving) → apply one
+change + guards → dump to a temp file → validate with the existing
+`channel_registry.load_from_path` → only on success `os.replace` onto the live file **and**
+swap `_REGISTRY` under the same lock, then the router calls
+`agent_service.rebuild_default_model()`. A bad candidate never reaches `os.replace`
+(→ HTTP 422, live file byte-unchanged); guard violations → 409.
+
+### Gotchas
+
+- **Holding `_LOCK` across the load (not just the commit) is the lost-update fix.** Two
+  concurrent writes that each only locked the commit would both read the same snapshot and
+  the second `os.replace` would clobber the first. `reload()` was also changed to read the
+  file under `_LOCK` for the same reason.
+- **Health-independent default integrity.** `load_from_path`'s `_resolve_default` *skips*
+  validating the default when its channel is unhealthy (missing `api_key_env` var), so the
+  writer has its **own** raw-level check (`_assert_default_integrity`) that blocks
+  deleting/renaming the default even when unhealthy — else a later reload (once the key
+  returns) would fail with a dangling default.
+- **Model routes need `{model_id:path}`.** Model ids contain slashes
+  (`anthropic/claude-sonnet-4.6`), so a plain `{model_id}` segment can't match; the frontend
+  sends the id **raw** (channel names are URL-encoded).
+- **Secrets never touch the YAML.** The UI edits only the `api_key_env` *name*; health is
+  derived from whether that env var is set. Adding a brand-new provider still needs a manual
+  `.env` edit + restart.
+- **Does NOT sync arena `CANDIDATE_MODELS`.** `services/arena/models.py::CANDIDATE_MODELS`
+  is a separate hardcoded list; adding a model here does not make it an arena contestant.
+- **Writes gated by `OPEN_OTC_FEATURE_MODEL_WRITE_API`** (default on; three config sites like
+  every other flag). This is a default-on, unauthenticated surface consistent with the rest
+  of the no-auth backend — set it `false` on any non-localhost bind. The UI edits only the
+  live root `config/agent_channels.yaml`; the tracked `.example.yml` is left to humans.
+- **Tests are hermetic against `AGENT_CHANNELS_FILE` leaks** — the writer/router/serializer
+  test fixtures source the config from `channel_registry._REPO_ROOT`, not the env-overridable
+  `_yaml_path()` (another test in the suite repoints that env var).

@@ -58,6 +58,7 @@ The product walkthrough tells it as one continuous flow:
 - **Market data** — AKShare adapter with caching and fallback for A-share / HK markets.
 - **Long-term memory** — A cross-session memory layer distills durable facts — desk preferences, per-book context, and corrections — from closed sessions and injects the relevant ones into later conversations. Facts are scoped (`user` / `book` / `domain` / `correction`), with a propose→approve gate for shared domain knowledge and a dedicated **Memory** console to review, pin, edit, and approve them.
 - **Audit trail** — An always-on, append-only log of every dangerous action an agent takes — bookings, writes, deletes, async dispatches, artifact writes — **including actions taken in headless YOLO mode**. Distinct from the full `/tracing` transcript viewer, the **Audit** console surfaces just the write-class actions with their outcome, human-in-the-loop approval chain, and redacted arguments.
+- **Model maintenance** — A **Model Maintenance** console (`/model-maintenance`) to add, edit, and delete LLM channels and models — and pick the registry default — without hand-editing `config/agent_channels.yaml`. Edits go through a comment-preserving, validate-then-commit write that hot-reloads the agent live; only the `api_key_env` **name** is stored (never a secret), with a per-channel health badge. Gated by `OPEN_OTC_FEATURE_MODEL_WRITE_API` (default on).
 - **Reproducible & audited** — Every pricing run, risk run, and agent trace is persisted; QuantArk keeps the math deterministic.
 
 ---
