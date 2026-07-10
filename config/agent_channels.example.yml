@@ -94,10 +94,6 @@ channels:
         provider: openai
         label: Step 3.7 Flash
         tags: [fast, tool-use]
-      - id: sapiens-ai/agnes-2.0-flash
-        provider: openai
-        label: Agnes 2.0 Flash
-        tags: [fast, tool-use]
       - id: google/gemini-3.5-flash
         provider: openai
         label: Gemini 3.5 Flash
@@ -131,6 +127,10 @@ channels:
         # overrides only the wire format. See minimax-m3 / qwen3.7-max above.
         protocol: anthropic
         label: LongCat 2.0
+        tags: [tool-use, reasoning]
+      - id: x-ai/grok-4.5
+        provider: openai
+        label: Grok 4.5
         tags: [tool-use, reasoning]
 
   - name: deepseek

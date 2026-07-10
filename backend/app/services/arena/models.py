@@ -204,13 +204,6 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         provider="openai",
     ),
     ArenaModel(
-        slug="agnes-2-0-flash",
-        zenmux_name="sapiens-ai/agnes-2.0-flash",
-        display_name="Agnes 2.0 Flash",
-        default_config=_DEFAULT_CONFIG,
-        provider="openai",
-    ),
-    ArenaModel(
         slug="gemini-3-5-flash",
         zenmux_name="google/gemini-3.5-flash",
         display_name="Gemini 3.5 Flash",
@@ -253,6 +246,13 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         slug="longcat-2-0",
         zenmux_name="meituan/longcat-2.0",
         display_name="LongCat 2.0",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
+    ArenaModel(
+        slug="grok-4-5",
+        zenmux_name="x-ai/grok-4.5",
+        display_name="Grok 4.5",
         default_config=_DEFAULT_CONFIG,
         provider="openai",
     ),

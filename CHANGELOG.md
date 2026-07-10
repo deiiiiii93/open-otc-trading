@@ -69,7 +69,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`meituan/longcat-2.0` (LongCat 2.0) added as an arena contestant** — registered in
   `CANDIDATE_MODELS` and the `zenmux` channel (pinning `protocol: anthropic`, see Fixed
   above) — and appended to **Arena Run #20** as a 2-trial aggregate on the flagship
-  `risk-manager-control-day` (OVR 38, CON 0 from a high-variance pair: OBJ 84.6 / 28.2).
+  `risk-manager-control-day` (OVR 70, CON 99 — a consistent OBJ 84.6 / 84.6 pair,
+  ranking 4th). An initial trial 2 that read OBJ 28.2 was a mid-run ZenMux 402
+  `quote_exceeded` contamination the infra gate missed (it recovered enough to look
+  complete), not model weakness; re-run after quota refresh it matched trial 1.
+- **`x-ai/grok-4.5` (Grok 4.5) added as an arena contestant** — registered in
+  `CANDIDATE_MODELS` and the `zenmux` channel (`provider: openai`, **no** `protocol`
+  override — xAI's function-calling parses natively through the OpenAI-compatible
+  gateway, verified by a bound-tool probe) — and appended to **Arena Run #20** as a
+  2-trial aggregate on the flagship (OVR 72, CON 86, OBJ 88.5 from a consistent
+  89.7 / 87.2 pair; ranks 3rd — highest objective outside the two DeepSeek models, and
+  an efficient 22–27 tool calls per trial). In the same pass **`sapiens-ai/agnes-2.0-flash`
+  was removed** from `CANDIDATE_MODELS` and the channel registry: it floors on the
+  OpenAI-compatible gateway (leaks tool calls as literal `task(…)` text → zero tools) and
+  its ZenMux Anthropic endpoint returns `500` / times out, so it has no working route to
+  score (historical run-#9 data is unaffected — it keys off `model_id`, not the registry).
 - **`store.merge_runs` + a `merge_runs_cli` tool** to fold several single-trial arena
   runs into ONE multi-trial aggregate run — each `(workflow, model)` pair's scored
   matches across the runs become the trials of one `n_trials` match, which the ability
