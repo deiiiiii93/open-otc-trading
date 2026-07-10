@@ -27,6 +27,7 @@ def queue_arena_run(
     workflow_ids: list[str],
     model_ids: list[str],
     weights: dict | None = None,
+    trials: int = 1,
 ) -> tuple[Any, TaskRun]:
     """Validate inputs, create ArenaRun + TaskRun, flush (no commit).
 
@@ -35,6 +36,8 @@ def queue_arena_run(
         workflow_ids: Non-empty list of workflow IDs.
         model_ids:    Non-empty list of model slugs/zenmux_names.
         weights:      Optional dict with keys "obj" and "judge".
+        trials:       Number of trials to run per (workflow, model) pair,
+                      folded into one aggregate match at execution time.
 
     Returns:
         (run_id_int, task_run) — run_id_int is the ArenaRun.id.
@@ -65,6 +68,7 @@ def queue_arena_run(
         workflow_ids=workflow_ids,
         model_ids=canonical_model_ids,
         weights=weights,
+        trials=trials,
     )
 
     task = TaskRun(
@@ -72,7 +76,7 @@ def queue_arena_run(
         status=TaskStatus.QUEUED.value,
         description=f"Arena run: {len(workflow_ids)} workflow(s) × {len(canonical_model_ids)} model(s)",
         progress_current=0,
-        progress_total=len(workflow_ids) * len(canonical_model_ids),
+        progress_total=len(workflow_ids) * len(canonical_model_ids) * trials,
         message="Queued arena run",
     )
     session.add(task)
@@ -216,6 +220,208 @@ def execute_arena_run_task(
         session.close()
 
 
+def _run_and_score_once(
+    session: Session,
+    *,
+    run_id: int,
+    loaded,
+    model,
+    workflow_id: str,
+    model_id: str,
+    weights: dict | None,
+    artifact_root: Path,
+    cfg,
+    run_match_fn: Callable,
+    judge_fn: Callable | None,
+    post: Callable | None,
+) -> tuple[str, dict | None, str | None, str | None]:
+    """Run and score ONE trial for a (workflow, model) pair.
+
+    Returns ("scored", breakdown, transcript_path) or ("invalid", None,
+    infra_reason, transcript_path). Raises on transport/other exceptions —
+    the caller is responsible for catching those per-trial and recording a
+    "failed" pair. The transcript is saved to disk (audit evidence) for both
+    outcomes; ``transcript_path`` is the 4th tuple element for the invalid
+    case (kept out of the 3rd slot so it stays the human-readable reason).
+    """
+    from app.services.arena import scoring
+    from app.services.arena.judge import judge_panel as _judge_panel
+
+    transcript = run_match_fn(loaded, model, artifact_root=artifact_root, run_id=run_id)
+
+    # Infra gate: a route/transport failure is not model ability — record it
+    # as 'invalid' (excluded from leaderboard means), skip judge+scoring. Two
+    # shapes: an all-blank transcript with error evidence (infra_blank), and a
+    # partial run truncated by a provider transport error after real early
+    # steps (infra_error). Transcript evidence is still saved for audit.
+    if _is_infra_blank(transcript):
+        invalid_path = _save_transcript(transcript, artifact_root, workflow_id, model_id)
+        return "invalid", None, "infra_blank", invalid_path
+    if _is_infra_contaminated(transcript):
+        invalid_path = _save_transcript(transcript, artifact_root, workflow_id, model_id)
+        return "invalid", None, "infra_error", invalid_path
+
+    # Subjective judgment: the injected test seam, else a contestant-excluded
+    # jury. Judge-missing (jury unavailable) is NOT infra-invalid — the
+    # objective axis is the spine and still scores the match.
+    # Jury is opt-in (spec 2026-07-06): an explicitly injected judge_fn
+    # (test/caller intent) always runs; otherwise the default
+    # contestant-excluded jury runs ONLY when arena_jury_enabled. When off, no
+    # judge is attempted — the row is scored objective-only.
+    if judge_fn is not None:
+        judge_result = judge_fn(transcript, loaded, post=post)
+    elif cfg.arena_jury_enabled:
+        judge_result = _judge_panel(
+            transcript, loaded,
+            judge_models=cfg.arena_judge_models,
+            exclude_model=model_id,
+            substitutes=cfg.arena_judge_substitutes,
+            min_judges=cfg.arena_min_judges,
+            self_consistency_k=cfg.arena_self_consistency_k,
+        )
+    else:
+        judge_result = None
+
+    obj_score, _passed, _total = scoring.objective_score(transcript, loaded)
+    # No blend (spec D5): the stored total mirrors the objective axis, the
+    # sole ranking dimension; subjective is advisory, reported apart.
+    t_score = round(obj_score, 1)
+
+    # Per-check breakdown behind the aggregate scores, persisted so the
+    # /arena match drilldown can show where points were won/lost. The judge
+    # block is present only when a judge actually ran; a deliberately
+    # jury-off row stamps subjective_mode="disabled" so it is distinguishable
+    # from a jury-on row whose judges all failed ("missing"). See spec D3/D8.
+    heuristic = scoring.diagnose_heuristic(transcript, loaded)
+    breakdown = {
+        "objective": scoring.objective_breakdown(transcript, loaded),
+        # Why/where the model won or lost: deterministic engagement counts
+        # (always present) + the judge's LLM failure analysis.
+        "diagnosis": {
+            "counts": heuristic["summary"],
+            "counts_detail": heuristic,
+            "analysis": (judge_result.diagnosis if judge_result else None),
+        },
+        "objective_score": round(obj_score, 1),
+        "total_score": t_score,
+    }
+    if judge_result is not None:
+        breakdown["judge"] = {
+            "rubric_scores": judge_result.rubric_scores,
+            "judged_score": judge_result.judged_score,
+            "judge_missing": judge_result.judge_missing,
+            "per_judge": judge_result.per_judge,
+            "judged_stdev": judge_result.judged_stdev,
+        }
+        breakdown["subjective_mode"] = judge_result.subjective_mode
+    else:
+        breakdown["subjective_mode"] = "disabled"
+
+    judged_score = judge_result.judged_score if judge_result else None
+
+    # Ability card (spec B7): derived from the same objective axes +
+    # tool-call count, JDG advisory (the jury score, None when off).
+    breakdown["card"] = scoring.ability_card(
+        transcript, loaded, judged=judged_score)
+
+    # Save transcript to disk
+    transcript_path = _save_transcript(transcript, artifact_root, workflow_id, model_id)
+
+    return "scored", breakdown, transcript_path, None
+
+
+def _record_pair(
+    session: Session,
+    run_id: int,
+    workflow_id: str,
+    model_id: str,
+    weights: dict | None,
+    trials_n: int,
+    clean: list[dict],
+    last_path: str | None,
+    last_infra: str | None,
+    failed_exc: str | None,
+    last_infra_path: str | None = None,
+) -> None:
+    """Persist exactly one match row for a (workflow, model) pair after its trials.
+
+    >=1 clean trial folds into one scored aggregate match; else a failed row
+    if every trial raised, else an invalid row (all trials were infra-gated).
+    ``last_infra_path`` preserves the last infra-gated trial's saved
+    transcript (audit evidence) on the invalid row, matching the
+    single-trial behavior of always saving transcript evidence for an
+    infra-invalid match.
+    """
+    from app.services.arena import scoring
+
+    cfg = {"weights": weights, "trials": trials_n}
+    if clean:
+        agg = scoring.fold_trial_breakdowns(clean)
+
+        # Roll up per-trial judge scores (each clean trial's own
+        # breakdown["judge"]["judged_score"]) onto the aggregate so the
+        # top-level ArenaMatch.judged_score column and score_breakdown["judge"]
+        # aren't silently dropped when the jury ran. Only stamp a judge block
+        # when at least one clean trial actually carries one — a jury-off
+        # aggregate must keep judged_score=None / no "judge" key, matching
+        # subjective_mode="disabled".
+        trial_judges = [t["judge"] for t in clean if isinstance(t.get("judge"), dict)]
+        judged_values = [
+            j["judged_score"] for j in trial_judges if j.get("judged_score") is not None
+        ]
+        judged_score = (
+            round(sum(judged_values) / len(judged_values), 1) if judged_values else None
+        )
+        judge_missing = any(j.get("judge_missing") for j in trial_judges)
+        if trial_judges:
+            agg["judge"] = {"judged_score": judged_score, "judge_missing": judge_missing}
+
+        store.record_match(
+            session,
+            run_id=run_id,
+            workflow_id=workflow_id,
+            model_id=model_id,
+            objective_score=agg["objective_score"],
+            judged_score=judged_score,
+            total_score=agg["objective_score"],
+            judge_missing=judge_missing,
+            config=cfg,
+            transcript_path=last_path,
+            status="scored",
+            score_breakdown=agg,
+        )
+    elif last_infra is None and failed_exc is not None:
+        store.record_match(
+            session,
+            run_id=run_id,
+            workflow_id=workflow_id,
+            model_id=model_id,
+            objective_score=None,
+            judged_score=None,
+            total_score=None,
+            judge_missing=True,
+            config=cfg,
+            transcript_path=None,
+            status="failed",
+            error=failed_exc,
+        )
+    else:
+        store.record_match(
+            session,
+            run_id=run_id,
+            workflow_id=workflow_id,
+            model_id=model_id,
+            objective_score=None,
+            judged_score=None,
+            total_score=None,
+            judge_missing=True,
+            config=cfg,
+            transcript_path=last_infra_path,
+            status="invalid",
+            error=last_infra or "infra_blank",
+        )
+
+
 def _execute(
     session: Session,
     task_id: int,
@@ -228,8 +434,6 @@ def _execute(
     get_bundle_fn: Callable | None = None,
 ) -> None:
     from app.services.arena.runner import run_match as _run_match
-    from app.services.arena.judge import judge_panel as _judge_panel
-    from app.services.arena import scoring
     from app.golden_workflows.registry import get_workflow_bundle as _get_workflow_bundle
     from app.services.arena.models import get_model
     from app.config import get_settings
@@ -239,17 +443,6 @@ def _execute(
 
     _cfg = settings if settings is not None else get_settings()
     _run_match_fn = run_match_fn or _run_match
-
-    def _default_judge(transcript, loaded, *, exclude_model):
-        """Production judge: a contestant-excluded jury (spec P2/P3.2)."""
-        return _judge_panel(
-            transcript, loaded,
-            judge_models=_cfg.arena_judge_models,
-            exclude_model=exclude_model,
-            substitutes=_cfg.arena_judge_substitutes,
-            min_judges=_cfg.arena_min_judges,
-            self_consistency_k=_cfg.arena_self_consistency_k,
-        )
 
     # Resolve artifact root
     if settings is not None:
@@ -276,158 +469,59 @@ def _execute(
     workflow_ids: list[str] = run_dict["workflow_ids"]
     model_ids: list[str] = run_dict["model_ids"]
     weights: dict | None = run_dict.get("weights")
+    trials_n = int(run_dict.get("trials") or 1)
 
-    total_pairs = len(workflow_ids) * len(model_ids)
+    total_units = len(workflow_ids) * len(model_ids) * trials_n
     mark_task_running(session, task_id)
     store.set_run_status(session, run_id, "running")
     session.commit()
 
-    completed_count = 0
+    completed = 0
 
-    # Sequential fan-out: one pair at a time
+    # Sequential fan-out: one pair at a time, N trials per pair folded into a
+    # single aggregate match (trials_n == 1 is the historical single-match path).
     for workflow_id in workflow_ids:
         for model_id in model_ids:
-            try:
-                loaded = _get_bundle(workflow_id)
-                model = get_model(model_id)
+            loaded = _get_bundle(workflow_id)
+            model = get_model(model_id)
 
-                transcript = _run_match_fn(loaded, model, artifact_root=artifact_root, run_id=run_id)
-
-                # Infra gate: a route/transport failure is not model ability —
-                # record it as 'invalid' (excluded from leaderboard means), skip
-                # judge+scoring. Two shapes: an all-blank transcript with error
-                # evidence (infra_blank), and a partial run truncated by a
-                # provider transport error after real early steps (infra_error).
-                infra_error = None
-                if _is_infra_blank(transcript):
-                    infra_error = "infra_blank"
-                elif _is_infra_contaminated(transcript):
-                    infra_error = "infra_error"
-                if infra_error is not None:
-                    store.record_match(
+            clean: list[dict] = []
+            last_infra: str | None = None
+            last_path: str | None = None
+            last_infra_path: str | None = None
+            failed_exc: str | None = None
+            for _trial in range(trials_n):
+                try:
+                    status, breakdown, info, invalid_path = _run_and_score_once(
                         session,
                         run_id=run_id,
+                        loaded=loaded,
+                        model=model,
                         workflow_id=workflow_id,
                         model_id=model_id,
-                        objective_score=None,
-                        judged_score=None,
-                        total_score=None,
-                        judge_missing=True,
-                        config={"weights": weights},
-                        transcript_path=_save_transcript(
-                            transcript, artifact_root, workflow_id, model_id),
-                        status="invalid",
-                        error=infra_error,
+                        weights=weights,
+                        artifact_root=artifact_root,
+                        cfg=_cfg,
+                        run_match_fn=_run_match_fn,
+                        judge_fn=judge_fn,
+                        post=post,
                     )
-                    completed_count += 1
-                    update_task_progress(session, task_id,
-                                         current=completed_count, total=total_pairs)
-                    session.commit()
-                    continue
+                    if status == "scored":
+                        clean.append(breakdown)
+                        last_path = info          # info is the saved transcript path
+                    else:
+                        last_infra = info         # info is the infra reason
+                        last_infra_path = invalid_path
+                except Exception:
+                    failed_exc = traceback.format_exc()
 
-                # Subjective judgment: the injected test seam, else a
-                # contestant-excluded jury. Judge-missing (jury unavailable) is
-                # NOT infra-invalid — the objective axis is the spine and still
-                # scores the match.
-                # Jury is opt-in (spec 2026-07-06): an explicitly injected judge_fn
-                # (test/caller intent) always runs; otherwise the default
-                # contestant-excluded jury runs ONLY when arena_jury_enabled. When
-                # off, no judge is attempted — the row is scored objective-only.
-                if judge_fn is not None:
-                    judge_result = judge_fn(transcript, loaded, post=post)
-                elif _cfg.arena_jury_enabled:
-                    judge_result = _default_judge(
-                        transcript, loaded, exclude_model=model_id)
-                else:
-                    judge_result = None
+                completed += 1
+                update_task_progress(session, task_id, current=completed, total=total_units)
+                session.commit()
 
-                obj_score, _passed, _total = scoring.objective_score(transcript, loaded)
-                # No blend (spec D5): the stored total mirrors the objective axis,
-                # the sole ranking dimension; subjective is advisory, reported apart.
-                t_score = round(obj_score, 1)
-
-                # Per-check breakdown behind the aggregate scores, persisted so
-                # the /arena match drilldown can show where points were won/lost.
-                # The judge block is present only when a judge actually ran; a
-                # deliberately jury-off row stamps subjective_mode="disabled" so it
-                # is distinguishable from a jury-on row whose judges all failed
-                # ("missing"). See spec D3/D8.
-                heuristic = scoring.diagnose_heuristic(transcript, loaded)
-                breakdown = {
-                    "objective": scoring.objective_breakdown(transcript, loaded),
-                    # Why/where the model won or lost: deterministic engagement
-                    # counts (always present) + the judge's LLM failure analysis.
-                    "diagnosis": {
-                        "counts": heuristic["summary"],
-                        "counts_detail": heuristic,
-                        "analysis": (judge_result.diagnosis if judge_result else None),
-                    },
-                    "objective_score": round(obj_score, 1),
-                    "total_score": t_score,
-                }
-                if judge_result is not None:
-                    breakdown["judge"] = {
-                        "rubric_scores": judge_result.rubric_scores,
-                        "judged_score": judge_result.judged_score,
-                        "judge_missing": judge_result.judge_missing,
-                        "per_judge": judge_result.per_judge,
-                        "judged_stdev": judge_result.judged_stdev,
-                    }
-                    breakdown["subjective_mode"] = judge_result.subjective_mode
-                else:
-                    breakdown["subjective_mode"] = "disabled"
-
-                judged_score = judge_result.judged_score if judge_result else None
-                # A jury-OFF row is not a jury FAILURE: no judge was attempted, so
-                # nothing is "missing". Keep the top-level judge_missing contract honest
-                # (False) — the "disabled" vs "missing" distinction lives in
-                # subjective_mode, and consumers keying off judge_missing to detect
-                # outages must not flag deliberate opt-outs.
-                judge_missing = judge_result.judge_missing if judge_result else False
-
-                # Ability card (spec B7): derived from the same objective axes +
-                # tool-call count, JDG advisory (the jury score, None when off).
-                breakdown["card"] = scoring.ability_card(
-                    transcript, loaded, judged=judged_score)
-
-                # Save transcript to disk
-                transcript_path = _save_transcript(
-                    transcript, artifact_root, workflow_id, model_id)
-
-                store.record_match(
-                    session,
-                    run_id=run_id,
-                    workflow_id=workflow_id,
-                    model_id=model_id,
-                    objective_score=round(obj_score, 1),
-                    judged_score=judged_score,
-                    total_score=t_score,
-                    judge_missing=judge_missing,
-                    config={"weights": weights},
-                    transcript_path=transcript_path,
-                    status="scored",
-                    score_breakdown=breakdown,
-                )
-
-            except Exception as exc:
-                error_msg = traceback.format_exc()
-                store.record_match(
-                    session,
-                    run_id=run_id,
-                    workflow_id=workflow_id,
-                    model_id=model_id,
-                    objective_score=None,
-                    judged_score=None,
-                    total_score=None,
-                    judge_missing=True,
-                    config={"weights": weights},
-                    transcript_path=None,
-                    status="failed",
-                    error=error_msg,
-                )
-
-            completed_count += 1
-            update_task_progress(session, task_id, current=completed_count, total=total_pairs)
+            _record_pair(session, run_id, workflow_id, model_id, weights, trials_n,
+                        clean, last_path, last_infra, failed_exc,
+                        last_infra_path=last_infra_path)
             session.commit()
 
     # All pairs processed — always mark completed (individual match failures are ok)

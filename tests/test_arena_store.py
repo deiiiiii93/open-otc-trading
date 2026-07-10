@@ -43,6 +43,18 @@ def test_create_run_returns_id(session):
     assert rid > 0
 
 
+def test_create_run_persists_trials(session):
+    rid = store.create_run(session, ["wf"], ["m"], trials=3)
+    session.commit()
+    assert store.get_run(session, rid)["trials"] == 3
+
+
+def test_create_run_defaults_trials_to_one(session):
+    rid = store.create_run(session, ["wf"], ["m"])
+    session.commit()
+    assert store.get_run(session, rid)["trials"] == 1
+
+
 def test_get_run_returns_dict_with_matches(session):
     rid = _make_run(session)
     _make_match(session, rid, workflow_id="wf-a", model_id="model-x")
@@ -910,6 +922,67 @@ def test_merge_runs_lone_pair_becomes_single_trial_grey_con(session):
     assert by_model["b"]["n_trials"] == 1 and by_model["b"]["card"]["con"] is None
 
 
+def _agg_source(session, rid, model, trials):
+    """Record a SCORED match whose breakdown is ITSELF a multi-trial aggregate
+    (mirrors what a New Run with trials>1 produces via fold_trial_breakdowns) —
+    the shape merge_runs must FLATTEN rather than nest as a single trial."""
+    from app.services.arena import scoring
+    aggregate = scoring.fold_trial_breakdowns(trials)
+    store.record_match(
+        session, rid, _WF, model,
+        objective_score=aggregate["objective_score"], judged_score=None,
+        total_score=aggregate["objective_score"], judge_missing=False,
+        config={}, transcript_path=None, status="scored",
+        score_breakdown=aggregate,
+    )
+
+
+def test_merge_runs_flattens_nested_multi_trial_aggregates(session):
+    # Each source run holds a New-Run-style aggregate match (n_trials=2) whose
+    # `aggregate` entries are real single-match breakdowns with axes + tool_calls
+    # (derivable cards). Merging two such runs must FLATTEN both aggregates' trials
+    # into one 4-trial aggregate — not nest the wrappers (which would card None).
+    r1 = _make_run(session, model_ids=["m"])
+    _agg_source(session, r1, "m", [_trial(_STRONG), _trial(_WEAK)])
+    store.set_run_status(session, r1, "completed")
+    r2 = _make_run(session, model_ids=["m"])
+    _agg_source(session, r2, "m", [_trial(_STRONG), _trial(_STRONG)])
+    store.set_run_status(session, r2, "completed")
+
+    new_id = store.merge_runs(session, [r1, r2])
+    matches = store.get_run(session, new_id)["matches"]
+    assert len(matches) == 1
+    sb = matches[0]["score_breakdown"]
+    assert sb["n_trials"] == 4
+    # The merged aggregate re-cards: flattened trials each carry their own
+    # diagnosis/objective, so the aggregate is NOT uncarded (would be None/
+    # "partial_trial_cards" if the nested wrapper had been kept as a single trial).
+    assert sb["card"] is not None
+    assert "card_reason" not in sb
+
+    # Leaderboard reflects the same carded aggregate.
+    row = next(r for r in store.leaderboard(session, run_id=new_id) if r["model_id"] == "m")
+    assert row["card_mean"] is not None
+    assert row["carded_count"] == 1
+
+
+def test_merge_runs_still_appends_raw_single_breakdown_as_one_trial(session):
+    # A source match that is a RAW single-trial breakdown (no n_trials/aggregate
+    # wrapper) must still append as exactly one trial — the existing single-trial
+    # merge behavior must not regress.
+    r1 = _make_run(session, model_ids=["m"])
+    _single(session, r1, "m", _trial(_STRONG), 84.6)
+    store.set_run_status(session, r1, "completed")
+    r2 = _make_run(session, model_ids=["m"])
+    _single(session, r2, "m", _trial(_WEAK), 48.7)
+    store.set_run_status(session, r2, "completed")
+
+    new_id = store.merge_runs(session, [r1, r2])
+    sb = store.get_run(session, new_id)["matches"][0]["score_breakdown"]
+    assert sb["n_trials"] == 2
+    assert [t["objective_score"] for t in sb["aggregate"]] == [84.6, 48.7]
+
+
 def test_merge_runs_requires_two_runs(session):
     r1 = _make_run(session, model_ids=["m"])
     _single(session, r1, "m", _trial(_STRONG), 84.6)
@@ -917,3 +990,45 @@ def test_merge_runs_requires_two_runs(session):
         store.merge_runs(session, [r1])
     with pytest.raises(ValueError):
         store.merge_runs(session, [r1, r1])            # de-duped → only one distinct
+
+
+# ---- delete_runs (DB-pure hard delete) ----
+
+def test_delete_runs_removes_runs_matches_and_returns_paths(session):
+    rid = store.create_run(session, ["wf"], ["m"])
+    store.record_match(session, rid, "wf", "m", objective_score=80.0,
+                       judged_score=None, total_score=80.0, judge_missing=False,
+                       config={}, transcript_path="/x/t.json", status="scored",
+                       score_breakdown={"objective_score": 80.0})
+    session.commit()
+    out = store.delete_runs(session, [rid, 999999])  # 999999 does not exist
+    session.commit()
+    assert out["deleted_run_ids"] == [rid]
+    assert out["match_count"] == 1
+    assert "/x/t.json" in out["transcript_paths"]
+    assert store.get_run(session, rid) is None
+
+
+def test_delete_runs_keeps_orm_identity_map_in_sync(session, agent_thread_factory):
+    """delete_runs must null arena_run_id via the ORM, not a raw Core UPDATE,
+    so an AgentThread already loaded in this session reflects the NULL
+    immediately (no stale in-memory value survives the commit)."""
+    from app.models import AgentThread
+
+    rid = store.create_run(session, ["wf"], ["m"])
+    session.commit()
+
+    thread = agent_thread_factory()
+    thread.arena_run_id = rid
+    session.commit()
+
+    # Load it into the identity map before deleting so a raw-SQL UPDATE
+    # (which bypasses the ORM) would leave this in-memory object stale.
+    loaded = session.get(AgentThread, thread.id)
+    assert loaded.arena_run_id == rid
+
+    store.delete_runs(session, [rid])
+    session.commit()
+
+    assert loaded.arena_run_id is None
+    assert session.get(AgentThread, thread.id).arena_run_id is None

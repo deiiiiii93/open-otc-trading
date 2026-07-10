@@ -155,8 +155,11 @@ export type ArenaRunsResponse = {
 export type ArenaCreateRunRequest = {
   workflow_ids: string[];
   model_ids: string[];
+  trials: number;
   weights?: { obj: number; judge: number };
 };
+
+export type ArenaWorkflowSummary = { id: string; title: string; tags: string[]; step_count: number };
 
 export type ArenaCreateRunResponse = {
   run_id: number;
@@ -198,5 +201,25 @@ export function createArenaRun(body: ArenaCreateRunRequest): Promise<ArenaCreate
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
+  });
+}
+
+export function listArenaWorkflows(): Promise<{ workflows: ArenaWorkflowSummary[] }> {
+  return apiFetch('/api/arena/workflows');
+}
+
+export function deleteArenaRuns(runIds: number[]): Promise<{ deleted_run_ids: number[]; match_count: number; files_removed: number }> {
+  return apiFetch('/api/arena/runs/delete', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ run_ids: runIds }),
+  });
+}
+
+export function mergeArenaRuns(sourceRunIds: number[]): Promise<{ run_id: number }> {
+  return apiFetch('/api/arena/runs/merge', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ source_run_ids: sourceRunIds }),
   });
 }

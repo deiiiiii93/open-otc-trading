@@ -11,11 +11,12 @@ Endpoints:
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.services.arena.models import CANDIDATE_MODELS
 from app.services.arena import store as arena_store
@@ -53,6 +54,15 @@ class CreateRunRequest(BaseModel):
     workflow_ids: list[str]
     model_ids: list[str]
     weights: dict | None = None
+    trials: int = Field(default=2, ge=1, le=10)
+
+
+class DeleteRunsRequest(BaseModel):
+    run_ids: list[int]
+
+
+class MergeRunsRequest(BaseModel):
+    source_run_ids: list[int]
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +122,7 @@ def build_arena_router(
                 workflow_ids=payload.workflow_ids,
                 model_ids=payload.model_ids,
                 weights=payload.weights,
+                trials=payload.trials,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -133,6 +144,86 @@ def build_arena_router(
             submit_async_task(_exec_fn, task.id, run.id, _sf, settings=_settings)
 
         return {"run_id": run.id, "status": "queued"}
+
+    # ------------------------------------------------------------------
+    # POST /api/arena/runs/delete
+    # ------------------------------------------------------------------
+
+    @router.post("/runs/delete")
+    def delete_arena_runs(
+        payload: DeleteRunsRequest,
+        session=Depends(_get_db),
+    ) -> dict[str, Any]:
+        if not payload.run_ids:
+            raise HTTPException(status_code=400, detail="run_ids must not be empty")
+
+        out = arena_store.delete_runs(session, payload.run_ids)
+
+        # Persist the deletion FIRST — the filesystem cleanup below is best-effort
+        # (OSError-tolerant); if it partially fails, the DB rows must already be
+        # gone rather than leaving a committed-looking response with an uncommitted
+        # transaction.
+        session.commit()
+
+        files_removed = 0
+        for p in out["transcript_paths"]:
+            try:
+                Path(p).unlink()
+                files_removed += 1
+            except OSError:
+                pass
+
+        if settings is not None:
+            arena_root = Path(settings.artifact_dir) / "arena"
+            for rid in out["deleted_run_ids"]:
+                d = arena_root / str(rid)
+                if d.exists():
+                    shutil.rmtree(d, ignore_errors=True)
+                    files_removed += 1
+
+        return {
+            "deleted_run_ids": out["deleted_run_ids"],
+            "match_count": out["match_count"],
+            "files_removed": files_removed,
+        }
+
+    # ------------------------------------------------------------------
+    # POST /api/arena/runs/merge
+    # ------------------------------------------------------------------
+
+    @router.post("/runs/merge")
+    def merge_arena_runs(
+        payload: MergeRunsRequest,
+        session=Depends(_get_db),
+    ) -> dict[str, Any]:
+        try:
+            new_run_id = arena_store.merge_runs(session, payload.source_run_ids)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        session.commit()
+
+        return {"run_id": new_run_id}
+
+    # ------------------------------------------------------------------
+    # GET /api/arena/workflows
+    # ------------------------------------------------------------------
+
+    @router.get("/workflows")
+    def list_arena_workflows() -> dict[str, Any]:
+        from app.golden_workflows.registry import list_workflows
+
+        return {
+            "workflows": [
+                {
+                    "id": w.id,
+                    "title": w.title,
+                    "tags": w.tags,
+                    "step_count": len(w.steps),
+                }
+                for w in list_workflows()
+            ]
+        }
 
     # ------------------------------------------------------------------
     # GET /api/arena/runs

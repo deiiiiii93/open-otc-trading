@@ -43,17 +43,9 @@
 .wl-arena__run-item {
   display: flex;
   align-items: center;
-  gap: var(--gap-2);
   width: 100%;
-  text-align: left;
-  padding: var(--gap-2) var(--gap-3);
-  border: none;
   border-bottom: 1px solid var(--hairline);
   background: transparent;
-  color: var(--ink);
-  cursor: pointer;
-  font-family: var(--font-ui);
-  font-size: var(--type-body-size);
 }
 
 .wl-arena__run-item:last-child {
@@ -66,6 +58,176 @@
 
 .wl-arena__run-item.is-active {
   background: var(--paper-3);
+}
+
+.wl-arena__run-checkbox {
+  width: 16px;
+  height: 16px;
+  margin: 0 0 0 var(--gap-3);
+  flex: 0 0 auto;
+  accent-color: var(--info);
+}
+
+.wl-arena__run-checkbox:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.wl-arena__run-item-body {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  padding: var(--gap-2) var(--gap-3);
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+}
+
+/* Run action bar (multi-select merge/delete) */
+.wl-arena__run-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.wl-arena__run-actions-count {
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  margin-right: auto;
+}
+
+/* Delete-runs confirm modal */
+.wl-arena__delete-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+
+.wl-arena__delete-confirm-body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.wl-arena__delete-confirm-actions {
+  display: flex;
+  gap: var(--gap-2);
+  justify-content: flex-end;
+}
+
+/* New Run modal */
+.wl-arena__new-run {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-4);
+}
+
+.wl-arena__new-run-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  min-height: 0;
+}
+
+.wl-arena__new-run-label {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}
+
+.wl-arena__checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+}
+
+.wl-arena__checklist-item {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.wl-arena__checklist-item:last-child {
+  border-bottom: none;
+}
+
+.wl-arena__checklist-label {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  cursor: pointer;
+}
+
+.wl-arena__checklist-label:hover {
+  background: var(--paper-2);
+}
+
+.wl-arena__checklist-checkbox {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: var(--info);
+  cursor: pointer;
+}
+
+.wl-arena__checklist-checkbox:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.wl-arena__checklist-text {
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  color: var(--ink);
+  min-width: 0;
+}
+
+.wl-arena__new-run-field {
+  display: grid;
+  gap: var(--gap-1);
+  max-width: 160px;
+  color: var(--ink-2);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.wl-arena__new-run-field input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--hairline-2);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  padding: var(--input-padding-y) var(--input-padding-x);
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  font-weight: var(--type-body-weight);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.wl-arena__new-run-actions {
+  display: flex;
+  gap: var(--gap-2);
+  justify-content: flex-end;
 }
 
 .wl-arena__run-id {

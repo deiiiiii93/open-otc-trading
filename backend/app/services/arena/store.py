@@ -5,9 +5,10 @@ callers handle HTTP mapping.
 """
 from __future__ import annotations
 
+import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from app.models import ArenaRun, ArenaMatch
+from app.models import AgentThread, ArenaRun, ArenaMatch
 
 
 def _derive_card(bd: dict, workflow_id: str) -> tuple[dict | None, str | None]:
@@ -40,6 +41,7 @@ def create_run(
     workflow_ids: list[str],
     model_ids: list[str],
     weights: dict | None = None,
+    trials: int = 1,
 ) -> int:
     """Insert a new ArenaRun in 'queued' status; return its id."""
     run = ArenaRun(
@@ -47,6 +49,7 @@ def create_run(
         workflow_ids=workflow_ids,
         model_ids=model_ids,
         weights=weights,
+        trials=trials,
     )
     session.add(run)
     session.flush()
@@ -137,8 +140,9 @@ def merge_runs(session: Session, source_run_ids: list[int]) -> int:
     aggregate (CON greys, as for any lone trial). Raises ``ValueError`` on fewer than
     two source runs or when no scored matches are found.
     """
-    import statistics
     from collections import defaultdict
+
+    from app.services.arena import scoring
 
     ordered = list(dict.fromkeys(source_run_ids))     # de-dup, preserve order
     if len(ordered) < 2:
@@ -164,33 +168,63 @@ def merge_runs(session: Session, source_run_ids: list[int]) -> int:
     new_run_id = create_run(session, workflow_ids, model_ids)
 
     for (workflow_id, model_id), ms in groups.items():
-        trials = [dict(m.score_breakdown) for m in ms if m.score_breakdown]
+        trials: list[dict] = []
+        for m in ms:
+            bd = m.score_breakdown
+            if not bd:
+                continue
+            if bd.get("n_trials") and isinstance(bd.get("aggregate"), list):
+                # Source match is ITSELF a multi-trial aggregate (e.g. a New Run
+                # with trials>1) — flatten its per-trial entries into the trial
+                # list rather than nesting the wrapper, so the flattened trials
+                # keep their own diagnosis/card and the merged aggregate re-cards.
+                trials.extend(dict(t) for t in bd["aggregate"])
+            else:
+                trials.append(dict(bd))
         if not trials:
             continue
-        objs = [t["objective_score"] for t in trials
-                if t.get("objective_score") is not None]
-        obj_mean = round(sum(objs) / len(objs), 1) if objs else None
-        obj_stdev = round(statistics.pstdev(objs), 1) if len(objs) > 1 else 0.0
-        aggregate = {
-            "n_trials": len(trials),
-            "aggregate": trials,
-            # Representative top-level objective for the objective tie-break; the
-            # ability card + CON are re-derived from the trials on read.
-            "objective": trials[0].get("objective"),
-            "objective_score": obj_mean,
-            "objective_stdev": obj_stdev,
-            "total_score": obj_mean,
-            "subjective_mode": trials[0].get("subjective_mode", "disabled"),
-        }
+        aggregate = scoring.fold_trial_breakdowns(trials)
         record_match(
             session, new_run_id, workflow_id, model_id,
-            objective_score=obj_mean, judged_score=None, total_score=obj_mean,
-            judge_missing=False, config={"merged_from": ordered},
-            transcript_path=None, status="scored", score_breakdown=aggregate,
+            objective_score=aggregate["objective_score"], judged_score=None,
+            total_score=aggregate["objective_score"], judge_missing=False,
+            config={"merged_from": ordered}, transcript_path=None,
+            status="scored", score_breakdown=aggregate,
         )
 
     set_run_status(session, new_run_id, "completed")
     return new_run_id
+
+
+def delete_runs(session: Session, run_ids: list[int]) -> dict:
+    """Hard-delete arena runs (+cascade matches). DB only — no filesystem.
+
+    Returns deleted ids (only those that existed), the transcript_paths of their
+    matches (for the caller to unlink), and the match_count removed. Nulls any
+    agent_threads.arena_run_id pointing at a deleted run so no thread dangles.
+    """
+    ids = list(dict.fromkeys(run_ids))
+    deleted: list[int] = []
+    paths: list[str] = []
+    match_count = 0
+    for rid in ids:
+        run = session.get(ArenaRun, rid)
+        if run is None:
+            continue
+        for m in run.matches:
+            match_count += 1
+            if m.transcript_path:
+                paths.append(m.transcript_path)
+        session.delete(run)          # cascade="all, delete-orphan" drops matches
+        deleted.append(rid)
+    if deleted:
+        session.execute(
+            sa.update(AgentThread)
+            .where(AgentThread.arena_run_id.in_(deleted))
+            .values(arena_run_id=None),
+            execution_options={"synchronize_session": "fetch"},
+        )
+    return {"deleted_run_ids": deleted, "transcript_paths": paths, "match_count": match_count}
 
 
 def get_run(session: Session, run_id: int) -> dict | None:
@@ -480,6 +514,20 @@ def _match_card(bd: dict, workflow_id: str, *,
             if not isinstance(t, dict):              # null / primitive placeholder
                 return None, "invalid_trial_shape"   # (fail closed, never crash)
             tc, _reason = _derive_card(t, workflow_id)
+            if tc is None and allow_stored_fallback:
+                # Mirror the single-trial fallback exactly (same two
+                # conditions, same "presentation only, never ranking"
+                # posture — the leaderboard passes allow_stored_fallback=
+                # False so it never takes this path): a trial whose card
+                # can't be recomputed (missing tool count, unloadable
+                # workflow, or legacy empty axes) still renders its
+                # write-time card in the drilldown as long as it carries a
+                # genuine `objective` block.
+                stored = t.get("card")
+                objective = t.get("objective")
+                if isinstance(stored, dict) and isinstance(objective, dict) \
+                        and "axes" in objective:
+                    tc = dict(stored)
             if tc is None:
                 return None, "partial_trial_cards"
             trial_cards.append(tc)
@@ -575,6 +623,7 @@ def _run_to_dict(run: ArenaRun) -> dict:
         "workflow_ids": run.workflow_ids,
         "model_ids": run.model_ids,
         "weights": run.weights,
+        "trials": run.trials,
         "error": run.error,
         "created_at": run.created_at.isoformat() if run.created_at else None,
         "matches": [_match_to_dict(m) for m in run.matches],

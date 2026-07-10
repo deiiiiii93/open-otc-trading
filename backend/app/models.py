@@ -1901,6 +1901,7 @@ class ArenaRun(Base):
     workflow_ids: Mapped[list] = mapped_column(JSON, nullable=False)
     model_ids: Mapped[list] = mapped_column(JSON, nullable=False)
     weights: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    trials: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     matches: Mapped[list["ArenaMatch"]] = relationship(

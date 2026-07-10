@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ArenaLive } from './Arena.live';
 
@@ -10,7 +10,10 @@ vi.mock('../lib/arenaApi', () => ({
   getArenaLeaderboard: vi.fn(),
   getMatchTranscript: vi.fn(),
   listArenaModels: vi.fn(),
+  listArenaWorkflows: vi.fn(),
   createArenaRun: vi.fn(),
+  deleteArenaRuns: vi.fn(),
+  mergeArenaRuns: vi.fn(),
 }));
 
 import * as arenaApi from '../lib/arenaApi';
@@ -627,5 +630,233 @@ describe('flagship v2: invalid matches + axis strip', () => {
     expect(screen.getByText('20/22')).toBeInTheDocument();
     expect(screen.getByText('grounding')).toBeInTheDocument();
     expect(screen.getByText('4/5')).toBeInTheDocument();
+  });
+});
+
+describe('arena runs: multi-select + merge/delete action bar', () => {
+  const twoRuns = [
+    { id: 1, status: 'completed', created_at: '2026-06-24T10:00:00Z', workflow_ids: ['workflow-a'], model_ids: ['claude-sonnet'] },
+    { id: 2, status: 'completed', created_at: '2026-06-25T10:00:00Z', workflow_ids: ['workflow-a'], model_ids: ['gpt-4o'] },
+  ];
+
+  function setupTwoRunMocks() {
+    vi.mocked(arenaApi.listArenaRuns).mockResolvedValue({ runs: twoRuns, total: 2 });
+    vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({ rows: mockLeaderboard });
+    vi.mocked(arenaApi.listArenaModels).mockResolvedValue({ models: mockModels });
+    vi.mocked(arenaApi.getArenaRun).mockResolvedValue({ run: twoRuns[0], matches: mockMatches });
+    vi.mocked(arenaApi.getMatchTranscript).mockResolvedValue(mockTranscript);
+  }
+
+  it('shows merge/delete action bar when runs are checked', async () => {
+    setupTwoRunMocks();
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    const checkboxes = screen.getAllByRole('checkbox');
+    expect(checkboxes).toHaveLength(2);
+
+    fireEvent.click(checkboxes[0]);
+    expect(screen.getByText(/Merge \(1\)/)).toBeDisabled();
+    expect(screen.getByText(/Delete \(1\)/)).toBeEnabled();
+
+    fireEvent.click(checkboxes[1]);
+    expect(screen.getByText(/Merge \(2\)/)).toBeEnabled();
+    expect(screen.getByText(/Delete \(2\)/)).toBeEnabled();
+  });
+
+  it('checking a run checkbox does not also select the run (stopPropagation)', async () => {
+    setupTwoRunMocks();
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    expect(arenaApi.getArenaRun).not.toHaveBeenCalled();
+  });
+
+  it('Clear deselects all runs and hides the action bar', async () => {
+    setupTwoRunMocks();
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    expect(screen.getByText(/Delete \(1\)/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(screen.queryByText(/Delete \(/)).not.toBeInTheDocument();
+  });
+
+  it('confirms and calls deleteArenaRuns, then refreshes and clears selection', async () => {
+    setupTwoRunMocks();
+    vi.mocked(arenaApi.deleteArenaRuns).mockResolvedValue({
+      deleted_run_ids: [1, 2],
+      match_count: 4,
+      files_removed: 4,
+    });
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    fireEvent.click(screen.getAllByRole('checkbox')[1]);
+
+    await userEvent.click(screen.getByText(/Delete \(2\)/));
+    // Confirm modal shows the "cannot be undone" warning copy.
+    expect(await screen.findByText(/cannot be undone/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      expect(arenaApi.deleteArenaRuns).toHaveBeenCalledWith([1, 2]);
+    });
+    // Selection clears (action bar disappears) once the delete resolves.
+    await waitFor(() => {
+      expect(screen.queryByText(/Delete \(/)).not.toBeInTheDocument();
+    });
+  });
+
+  it('merges the selected runs and selects the new aggregate run', async () => {
+    setupTwoRunMocks();
+    vi.mocked(arenaApi.mergeArenaRuns).mockResolvedValue({ run_id: 99 });
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    fireEvent.click(screen.getAllByRole('checkbox')[1]);
+
+    await userEvent.click(screen.getByText(/Merge \(2\)/));
+
+    await waitFor(() => {
+      expect(arenaApi.mergeArenaRuns).toHaveBeenCalledWith([1, 2]);
+    });
+    await waitFor(() => {
+      expect(arenaApi.getArenaRun).toHaveBeenCalledWith(99);
+    });
+  });
+});
+
+describe('arena runs: New Run modal', () => {
+  const mockWorkflows = [
+    { id: 'risk-manager-control-day', title: 'Risk Manager Control Day', tags: ['flagship'], step_count: 9 },
+  ];
+  const flashModel = {
+    slug: 'deepseek-v4-flash',
+    zenmux_name: 'deepseek/deepseek-v4-flash',
+    display_name: 'DeepSeek V4 Flash',
+  };
+
+  function setupNewRunMocks() {
+    vi.mocked(arenaApi.listArenaRuns).mockResolvedValue({ runs: mockRuns, total: 1 });
+    vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({ rows: mockLeaderboard });
+    vi.mocked(arenaApi.listArenaModels).mockResolvedValue({ models: [...mockModels, flashModel] });
+    vi.mocked(arenaApi.listArenaWorkflows).mockResolvedValue({ workflows: mockWorkflows });
+    vi.mocked(arenaApi.getArenaRun).mockResolvedValue({ run: mockRuns[0], matches: mockMatches });
+  }
+
+  it('clicking New Run opens the modal with workflow + model checklists and a Trials input', async () => {
+    setupNewRunMocks();
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    fireEvent.click(screen.getByText('New Run'));
+
+    expect(await screen.findByLabelText(/risk-manager-control-day/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/DeepSeek V4 Flash/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Trials/i)).toBeInTheDocument();
+    expect(arenaApi.listArenaWorkflows).toHaveBeenCalled();
+  });
+
+  it('Launch is disabled until at least one workflow and one model are selected', async () => {
+    setupNewRunMocks();
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    fireEvent.click(screen.getByText('New Run'));
+    expect(screen.getByText(/^Launch$/)).toBeDisabled();
+
+    fireEvent.click(await screen.findByLabelText(/risk-manager-control-day/i));
+    expect(screen.getByText(/^Launch$/)).toBeDisabled();
+
+    fireEvent.click(screen.getByLabelText(/DeepSeek V4 Flash/i));
+    expect(screen.getByText(/^Launch$/)).toBeEnabled();
+  });
+
+  it('launches a run from the New Run modal with trials', async () => {
+    setupNewRunMocks();
+    vi.mocked(arenaApi.createArenaRun).mockResolvedValue({ run_id: 55, status: 'pending' });
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    fireEvent.click(screen.getByText('New Run'));
+    fireEvent.click(await screen.findByLabelText(/risk-manager-control-day/i));
+    fireEvent.click(screen.getByLabelText(/DeepSeek V4 Flash/i));
+    fireEvent.change(screen.getByLabelText(/Trials/i), { target: { value: '3' } });
+    fireEvent.click(screen.getByText(/^Launch$/));
+
+    await waitFor(() => expect(arenaApi.createArenaRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflow_ids: ['risk-manager-control-day'],
+        model_ids: ['deepseek-v4-flash'],
+        trials: 3,
+      }),
+    ));
+
+    // Success closes the modal, refreshes runs, and selects the new run.
+    await waitFor(() => {
+      expect(arenaApi.getArenaRun).toHaveBeenCalledWith(55);
+    });
+    expect(screen.queryByText(/^Launch$/)).not.toBeInTheDocument();
+  });
+});
+
+describe('arena runs: status polling stops on terminal states', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('does not keep polling when every run is already terminal (failed)', async () => {
+    const failedRun = [
+      { id: 1, status: 'failed', created_at: '2026-06-24T10:00:00Z', workflow_ids: ['workflow-a'], model_ids: ['claude-sonnet'] },
+    ];
+    vi.mocked(arenaApi.listArenaRuns).mockResolvedValue({ runs: failedRun, total: 1 });
+    vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({ rows: mockLeaderboard });
+    vi.mocked(arenaApi.listArenaModels).mockResolvedValue({ models: mockModels });
+
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    const callsAfterInitialLoad = vi.mocked(arenaApi.listArenaRuns).mock.calls.length;
+
+    vi.useFakeTimers();
+    await vi.advanceTimersByTimeAsync(20000);
+    vi.useRealTimers();
+
+    // A purely 'failed' run list is terminal — the poll interval must never
+    // have been armed, so no additional listArenaRuns calls fire.
+    expect(vi.mocked(arenaApi.listArenaRuns).mock.calls.length).toBe(callsAfterInitialLoad);
+  });
+
+  it('keeps polling when a run is queued (the backend-created initial status)', async () => {
+    const queuedRun = [
+      { id: 1, status: 'queued', created_at: '2026-06-24T10:00:00Z', workflow_ids: ['workflow-a'], model_ids: ['claude-sonnet'] },
+    ];
+    vi.mocked(arenaApi.listArenaRuns).mockResolvedValue({ runs: queuedRun, total: 1 });
+    vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({ rows: mockLeaderboard });
+    vi.mocked(arenaApi.listArenaModels).mockResolvedValue({ models: mockModels });
+
+    // Fake timers must be armed *before* render so the poll interval itself
+    // (created inside the component's useEffect once the queued run loads)
+    // is scheduled against the fake clock — arming them only after render
+    // would leave a real, un-advanceable setInterval in place. `shouldAdvanceTime`
+    // lets the fake clock still tick in real time so testing-library's internal
+    // `findByText` polling (which relies on real setTimeout ticks) doesn't hang.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    const callsAfterInitialLoad = vi.mocked(arenaApi.listArenaRuns).mock.calls.length;
+
+    await vi.advanceTimersByTimeAsync(4000);
+    vi.useRealTimers();
+
+    // A 'queued' run is non-terminal (the backend creates runs in this
+    // status) — the poll interval must fire again.
+    expect(vi.mocked(arenaApi.listArenaRuns).mock.calls.length).toBeGreaterThan(callsAfterInitialLoad);
   });
 });
