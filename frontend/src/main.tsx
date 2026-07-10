@@ -38,6 +38,7 @@ import { TracingLive } from './routes/Tracing.live';
 import { ArenaLive } from './routes/Arena.live';
 import { WorkflowsLive } from './routes/Workflows.live';
 import { MemoryLive } from './routes/Memory.live';
+import { ModelMaintenanceLive } from './routes/ModelMaintenance.live';
 import { AuditLive } from './routes/Audit.live';
 import { fetchTracingConfig } from './api/client';
 import { openTraceTarget } from './lib/tracing';
@@ -66,6 +67,7 @@ const navItems = [
   { route: 'arena' as const,     label: 'Arena' },
   { route: 'workflows' as const, label: 'Workflows' },
   { route: 'memory' as const,    label: 'Memory' },
+  { route: 'model-maintenance' as const, label: 'Model Maintenance' },
   { route: 'client' as const,    label: 'Client RFQ' },
 ];
 
@@ -205,6 +207,7 @@ function App() {
     { id: 'jump-workflows', group: 'Jump To', label: 'Workflows',     shortcut: '↵' },
     { id: 'jump-tracing',   group: 'Jump To', label: 'Tracing',       shortcut: '↵' },
     { id: 'jump-audit',     group: 'Jump To', label: 'Audit',         shortcut: '↵' },
+    { id: 'jump-model-maintenance', group: 'Jump To', label: 'Model Maintenance', shortcut: '↵' },
     { id: 'jump-chat',      group: 'Jump To', label: 'Agent Desk',    shortcut: '↵' },
     { id: 'jump-client',    group: 'Jump To', label: 'Client RFQ',    shortcut: '↵' },
     { id: 'portfolios-create-container', group: 'Create', label: 'New container portfolio', shortcut: '↵' },
@@ -325,6 +328,7 @@ function App() {
         {route === 'arena'     && <ArenaLive />}
         {route === 'workflows' && <WorkflowsLive />}
         {route === 'memory'    && <MemoryLive onPageContextChange={handlePageContextChange} />}
+        {route === 'model-maintenance' && <ModelMaintenanceLive onPageContextChange={handlePageContextChange} />}
         {route === 'client'    && <ClientRfqLive onPageContextChange={handlePageContextChange} />}
       </AppShell>
       <CommandPalette

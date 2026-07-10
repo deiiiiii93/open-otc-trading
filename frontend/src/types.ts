@@ -23,7 +23,52 @@ export type Route =
   | 'arena'
   | 'workflows'
   | 'memory'
+  | 'model-maintenance'
   | 'audit';
+
+export interface AgentRegistryModel {
+  id: string;
+  provider: string;
+  label: string;
+  description: string | null;
+  tags: string[];
+  protocol: string | null;
+}
+
+export interface AgentRegistryChannel {
+  name: string;
+  label: string;
+  type: 'zenmux' | 'openai_compatible';
+  base_url: string;
+  anthropic_base_url: string | null;
+  api_key_env: string | null;
+  healthy: boolean;
+  models: AgentRegistryModel[];
+}
+
+export interface AgentRegistry {
+  default: { channel: string; model: string };
+  channels: AgentRegistryChannel[];
+}
+
+export type ModelWrite = {
+  id: string;
+  provider: string;
+  label: string;
+  description?: string | null;
+  tags: string[];
+  protocol?: string | null;
+};
+
+export type ChannelWrite = {
+  name: string;
+  label: string;
+  type: 'zenmux' | 'openai_compatible';
+  base_url: string;
+  anthropic_base_url?: string | null;
+  api_key_env?: string | null;
+  models?: ModelWrite[];
+};
 
 export interface MemoryFact {
   id: number;

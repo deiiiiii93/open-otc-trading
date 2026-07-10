@@ -32,6 +32,9 @@ import type {
   AuditAction,
   AuditActionDetail,
   AuditSummary,
+  AgentRegistry,
+  ChannelWrite,
+  ModelWrite,
 } from '../types';
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -371,3 +374,51 @@ export const listPortfoliosWithIds = () =>
   api<Array<{ id: number; name: string }>>('/api/portfolios').then((rows) =>
     rows.map((r) => ({ id: r.id, name: r.name })),
   );
+
+// --- Model maintenance (agent channel/model registry) ----------------------
+// Channel names are URL-encoded; model ids are sent RAW because they contain
+// slashes (e.g. anthropic/claude-sonnet-4.6) and the backend route uses the
+// {model_id:path} converter to match the whole remainder.
+
+export const getAgentRegistry = () => api<AgentRegistry>('/api/agent/registry');
+
+export const createChannel = (c: ChannelWrite) =>
+  api<AgentRegistry>('/api/agent/channels', { method: 'POST', body: JSON.stringify(c) });
+
+export const updateChannel = (name: string, c: ChannelWrite) =>
+  api<AgentRegistry>(`/api/agent/channels/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    body: JSON.stringify(c),
+  });
+
+export const deleteChannel = (name: string) =>
+  api<AgentRegistry>(`/api/agent/channels/${encodeURIComponent(name)}`, { method: 'DELETE' });
+
+export const createModel = (channel: string, m: ModelWrite) =>
+  api<AgentRegistry>(`/api/agent/channels/${encodeURIComponent(channel)}/models`, {
+    method: 'POST',
+    body: JSON.stringify(m),
+  });
+
+export const updateModel = (channel: string, id: string, m: ModelWrite) =>
+  api<AgentRegistry>(`/api/agent/channels/${encodeURIComponent(channel)}/models/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(m),
+  });
+
+export const deleteModel = (channel: string, id: string) =>
+  api<AgentRegistry>(`/api/agent/channels/${encodeURIComponent(channel)}/models/${id}`, {
+    method: 'DELETE',
+  });
+
+export const setDefaultModel = (channel: string, model: string) =>
+  api<AgentRegistry>('/api/agent/registry/default', {
+    method: 'PUT',
+    body: JSON.stringify({ channel, model }),
+  });
+
+export const validateDraft = (kind: string, payload: unknown) =>
+  api<{ ok: boolean; errors: string[] }>('/api/agent/channels/validate', {
+    method: 'POST',
+    body: JSON.stringify({ kind, payload }),
+  });
