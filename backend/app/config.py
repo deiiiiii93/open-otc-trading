@@ -96,6 +96,10 @@ class _EnvironmentSettings(BaseSettings):
         True,
         validation_alias="OPEN_OTC_FEATURE_SKILLS_WRITE_API",
     )
+    feature_model_write_api: bool = Field(
+        True,
+        validation_alias="OPEN_OTC_FEATURE_MODEL_WRITE_API",
+    )
     tracing_mode: str = Field(
         "local",
         validation_alias="OPEN_OTC_TRACING",
@@ -245,6 +249,9 @@ class Settings:
     feature_skills_write_api: bool = field(
         default_factory=lambda: _env_value("feature_skills_write_api")
     )
+    feature_model_write_api: bool = field(
+        default_factory=lambda: _env_value("feature_model_write_api")
+    )
     tracing_mode: str = field(default_factory=lambda: _env_value("tracing_mode"))
     trace_db_path: str = field(default_factory=lambda: _env_value("trace_db_path"))
     gateway_default_desk_user: str = field(
@@ -343,6 +350,11 @@ class Settings:
             self,
             "feature_skills_write_api",
             _coerce_bool(self.feature_skills_write_api),
+        )
+        object.__setattr__(
+            self,
+            "feature_model_write_api",
+            _coerce_bool(self.feature_model_write_api),
         )
 
 
