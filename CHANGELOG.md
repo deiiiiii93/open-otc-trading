@@ -84,6 +84,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OpenAI-compatible gateway (leaks tool calls as literal `task(…)` text → zero tools) and
   its ZenMux Anthropic endpoint returns `500` / times out, so it has no working route to
   score (historical run-#9 data is unaffected — it keys off `model_id`, not the registry).
+- **`openai/gpt-5.6-terra` (GPT-5.6 Terra) added as an arena contestant** — registered in
+  `CANDIDATE_MODELS` and the `zenmux` channel (genuine OpenAI model, parses tool calls
+  natively — no `protocol` override) — and appended to **Arena Run #20** as a 2-trial
+  aggregate on the flagship (OVR 74, CON 96, OBJ 87.2 from a consistent 84.6 / 89.7 pair;
+  ranks 3rd, and very efficient at 15–29 tool calls per trial).
 - **`store.merge_runs` + a `merge_runs_cli` tool** to fold several single-trial arena
   runs into ONE multi-trial aggregate run — each `(workflow, model)` pair's scored
   matches across the runs become the trials of one `n_trials` match, which the ability

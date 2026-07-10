@@ -90,6 +90,12 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         default_config=_DEFAULT_CONFIG,
     ),
     ArenaModel(
+        slug="gpt-5-6-terra",
+        zenmux_name="openai/gpt-5.6-terra",
+        display_name="GPT-5.6 Terra",
+        default_config=_DEFAULT_CONFIG,
+    ),
+    ArenaModel(
         slug="claude-opus-4-8",
         zenmux_name="anthropic/claude-opus-4.8",
         display_name="Claude Opus 4.8",
