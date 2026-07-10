@@ -170,3 +170,12 @@ def test_settings_coerces_direct_arena_jury_string():
     from app.config import Settings
     assert Settings(arena_jury_enabled="false").arena_jury_enabled is False
     assert Settings(arena_jury_enabled="true").arena_jury_enabled is True
+
+
+def test_feature_model_write_api_defaults_true():
+    from app.config import Settings
+    assert Settings().feature_model_write_api is True
+
+
+def test_ruamel_yaml_importable():
+    import ruamel.yaml  # noqa: F401

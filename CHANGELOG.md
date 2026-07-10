@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Model Maintenance page** (`/model-maintenance`): add/edit/delete LLM channels and
+  models — and set the registry default — from the web UI instead of hand-editing
+  `config/agent_channels.yaml`. Backed by a flag-gated CRUD API under `/api/agent`
+  (`GET /registry`, channel/model create/update/delete, `PUT /registry/default`,
+  `POST /channels/validate`). Writes go through a **comment-preserving `ruamel.yaml`
+  round-trip** with a **validate-then-commit** flow (the candidate is validated by the
+  existing `channel_registry.load_from_path` on a temp file and only atomically
+  `os.replace`d + hot-reloaded if it parses), so a bad edit can never corrupt the live
+  file. The full read-modify-write runs under `channel_registry._LOCK` (lost-update safe;
+  `reload()` now also reads under the lock), and a health-independent guard blocks
+  deleting/renaming the default even when its channel is unhealthy. Secrets are never
+  written: the UI edits only the `api_key_env` **name** and shows a per-channel health
+  badge. Gated by `OPEN_OTC_FEATURE_MODEL_WRITE_API` (default on; set `false` to make the
+  API read-only on non-localhost binds). Does **not** sync the arena
+  `services/arena/models.py::CANDIDATE_MODELS` list.
+
 ### Fixed
 - **Per-model wire-protocol mapping so ZenMux models that need the Anthropic tool
   protocol actually execute.** A new optional **`protocol`** field on channel-registry

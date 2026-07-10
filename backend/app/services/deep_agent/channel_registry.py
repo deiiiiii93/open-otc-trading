@@ -310,14 +310,28 @@ def get_registry() -> ChannelRegistry:
 def reload(*, force_reread_dotenv: bool = True) -> ChannelRegistry:
     """Re-read YAML and env, atomically swap the registry, return the new one.
 
-    If parsing/validation fails, the old registry remains live and the error
-    propagates to the caller.
+    The file read happens INSIDE ``_LOCK`` so a reload cannot install a stale
+    snapshot over a concurrent writer's fresh registry (the writer holds the
+    same lock across its read-modify-replace-swap). If parsing/validation fails,
+    the old registry remains live and the error propagates to the caller.
     """
-    new_registry = load_from_path(_yaml_path(), force_reread_dotenv=force_reread_dotenv)
+    with _LOCK:
+        new_registry = load_from_path(_yaml_path(), force_reread_dotenv=force_reread_dotenv)
+        global _REGISTRY
+        _REGISTRY = new_registry
+        return new_registry
+
+
+def commit_registry(new_registry: ChannelRegistry) -> None:
+    """Swap the live registry under ``_LOCK``.
+
+    Used by ``channel_registry_writer`` after it atomically replaces the YAML
+    file, so the on-disk file and the in-memory registry move together inside
+    one critical section.
+    """
     with _LOCK:
         global _REGISTRY
         _REGISTRY = new_registry
-    return new_registry
 
 
 def configure_registry(registry: ChannelRegistry | None) -> None:

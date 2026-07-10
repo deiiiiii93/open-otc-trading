@@ -215,3 +215,56 @@ def agent_model_config(registry: ChannelRegistry) -> dict[str, object]:
         "active": active,
         "channels": channels_payload,
     }
+
+
+def agent_registry_config(registry: ChannelRegistry) -> dict[str, object]:
+    """Maintenance view: full editable fields incl. api_key_env (read from raw
+    YAML, since the dataclass keeps only the derived api_key/healthy)."""
+    import yaml as _yaml
+
+    from . import channel_registry as _cr
+
+    raw = _yaml.safe_load(_cr._yaml_path().read_text()) or {}
+    api_key_env_by_channel: dict[str, str | None] = {}
+    for entry in raw.get("channels") or []:
+        if isinstance(entry, dict) and entry.get("name"):
+            api_key_env_by_channel[entry["name"]] = entry.get("api_key_env")
+
+    # Report the DECLARED default (what is persisted in the YAML), not the
+    # resolved registry.default — the loader silently redirects the resolved
+    # default away from an unhealthy channel, which would make the UI show a
+    # different default than the file holds and let the agent "switch" later
+    # when the api_key_env var returns. The declared default is the truth the
+    # maintenance UI must edit.
+    raw_default = raw.get("default")
+    if isinstance(raw_default, dict) and raw_default.get("channel") and raw_default.get("model"):
+        ch_name = raw_default["channel"]
+        model_id = raw_default["model"]
+    else:
+        ch_name, _prov, model_id = registry.default
+    channels_payload: list[dict[str, object]] = []
+    for ch in registry.channels:
+        channels_payload.append({
+            "name": ch.name,
+            "label": ch.label,
+            "type": ch.type,
+            "base_url": ch.base_url,
+            "anthropic_base_url": ch.anthropic_base_url,
+            "api_key_env": api_key_env_by_channel.get(ch.name),
+            "healthy": ch.healthy,
+            "models": [
+                {
+                    "id": md.id,
+                    "provider": md.provider,
+                    "label": md.label,
+                    "description": md.description,
+                    "tags": list(md.tags),
+                    "protocol": md.protocol or None,
+                }
+                for md in ch.models
+            ],
+        })
+    return {
+        "default": {"channel": ch_name, "model": model_id},
+        "channels": channels_payload,
+    }

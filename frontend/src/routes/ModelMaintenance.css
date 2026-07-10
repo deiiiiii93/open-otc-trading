@@ -1,0 +1,168 @@
+.wl-mm__health-chip {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  border: 1px solid var(--hairline);
+  background: var(--paper-2);
+  padding: 3px var(--gap-2);
+}
+
+.wl-mm__list {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+
+.wl-mm__group {
+  display: flex;
+  flex-direction: column;
+}
+
+/* RailItem owns row chrome; the channel header and model rows only need to push
+   the trailing badge to the far edge. */
+.wl-mm__channel,
+.wl-mm__model {
+  justify-content: space-between;
+}
+
+/* Indent model rows so the channel/model hierarchy reads at a glance. */
+.wl-mm__model {
+  padding-left: var(--gap-4);
+}
+
+.wl-mm__channel-name,
+.wl-mm__model-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-mm__channel-name {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: var(--type-caps-weight);
+}
+
+.wl-mm__editor {
+  flex: 1;
+  min-width: 0;
+}
+
+.wl-mm__save-status {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  margin-bottom: var(--gap-2);
+}
+
+.wl-mm__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-4);
+}
+
+.wl-mm__section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gap-3);
+  padding-bottom: var(--gap-2);
+  border-bottom: 1px solid var(--hairline);
+}
+.wl-mm__section-head span {
+  font-family: var(--font-ui);
+  font-size: var(--type-h3-size);
+  font-weight: var(--type-h3-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink);
+}
+.wl-mm__section-head small {
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+
+.wl-mm__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gap-3);
+}
+
+.wl-mm__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.wl-mm__field--wide {
+  grid-column: 1 / -1;
+}
+.wl-mm__label {
+  font-family: var(--font-ui);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}
+
+.wl-mm__field input,
+.wl-mm__field select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  padding: var(--input-padding-y) var(--input-padding-x);
+  border-radius: 0;
+}
+.wl-mm__field select {
+  min-height: 34px;
+}
+.wl-mm__field input:focus,
+.wl-mm__field select:focus {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.wl-mm__field input:disabled,
+.wl-mm__field select:disabled {
+  opacity: 0.5;
+}
+.wl-mm__field input::placeholder {
+  color: var(--ink-2);
+}
+
+.wl-mm__issues {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+}
+.wl-mm__issue--error {
+  color: var(--neg);
+  border: 1px solid var(--neg);
+  padding: var(--gap-2);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+}
+
+.wl-mm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+}
+
+@media (max-width: 980px) {
+  .wl-mm__grid { grid-template-columns: 1fr; }
+  .wl-mm__section-head {
+    flex-direction: column;
+    gap: var(--gap-1);
+  }
+}
