@@ -186,6 +186,60 @@ class AgentModelConfigOut(BaseModel):
     channels: list[AgentChannelOut] = Field(default_factory=list)
 
 
+class AgentRegistryModelOut(BaseModel):
+    id: str
+    provider: str
+    label: str
+    description: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    protocol: str | None = None
+
+
+class AgentRegistryChannelOut(BaseModel):
+    name: str
+    label: str
+    type: Literal["zenmux", "openai_compatible"]
+    base_url: str
+    anthropic_base_url: str | None = None
+    api_key_env: str | None = None
+    healthy: bool = True
+    models: list[AgentRegistryModelOut] = Field(default_factory=list)
+
+
+class AgentRegistryDefaultOut(BaseModel):
+    channel: str
+    model: str
+
+
+class AgentRegistryOut(BaseModel):
+    default: AgentRegistryDefaultOut
+    channels: list[AgentRegistryChannelOut] = Field(default_factory=list)
+
+
+class ModelWriteIn(BaseModel):
+    id: str
+    provider: str
+    label: str
+    description: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    protocol: str | None = None
+
+
+class ChannelWriteIn(BaseModel):
+    name: str
+    label: str
+    type: Literal["zenmux", "openai_compatible"]
+    base_url: str
+    anthropic_base_url: str | None = None
+    api_key_env: str | None = None
+    models: list[ModelWriteIn] = Field(default_factory=list)
+
+
+class DefaultWriteIn(BaseModel):
+    channel: str
+    model: str
+
+
 class AgentMessageCreate(BaseModel):
     content: str
     character: Literal["auto", "trader", "risk_manager", "high_board"] = "auto"
