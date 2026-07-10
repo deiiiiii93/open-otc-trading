@@ -8,8 +8,12 @@ from app.services.deep_agent import channel_registry_writer as w
 
 
 @pytest.fixture
-def yaml_path(tmp_path: Path) -> Path:
-    src = cr._yaml_path()
+def yaml_path(tmp_path: Path, monkeypatch) -> Path:
+    # Hermetic: source from the stable repo-root config, NOT cr._yaml_path()
+    # (which honors AGENT_CHANNELS_FILE and can be repointed by another test).
+    monkeypatch.delenv("AGENT_CHANNELS_FILE", raising=False)
+    cr.configure_registry(None)
+    src = cr._REPO_ROOT / "config" / "agent_channels.yaml"
     dst = tmp_path / "agent_channels.yaml"
     shutil.copy(src, dst)
     # ensure a comment exists to assert preservation

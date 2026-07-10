@@ -21,7 +21,7 @@ class _FakeAgent:
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch):
     dst = tmp_path / "agent_channels.yaml"
-    shutil.copy(cr._yaml_path(), dst)
+    shutil.copy(cr._REPO_ROOT / "config" / "agent_channels.yaml", dst)
     monkeypatch.setenv("AGENT_CHANNELS_FILE", str(dst))
     cr.configure_registry(None)
     agent = _FakeAgent()
@@ -76,7 +76,7 @@ def test_delete_default_channel_returns_409(client):
 
 def test_write_gate_403_when_flag_off(tmp_path, monkeypatch):
     dst = tmp_path / "agent_channels.yaml"
-    shutil.copy(cr._yaml_path(), dst)
+    shutil.copy(cr._REPO_ROOT / "config" / "agent_channels.yaml", dst)
     monkeypatch.setenv("AGENT_CHANNELS_FILE", str(dst))
     cr.configure_registry(None)
     app = FastAPI()
