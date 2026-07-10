@@ -225,7 +225,9 @@ export function ModelMaintenance({
     if (selection?.kind === 'new-channel') {
       onValidateDraft('add_channel', toChannelWrite(channelForm, [toModelWrite(next)]));
     } else if (selection?.kind === 'add-model') {
-      onValidateDraft('add_model', toModelWrite(next));
+      // Backend _apply_draft('add_model', …) expects {channel, model}, not a
+      // bare ModelWrite — sending the bare model KeyErrors into a swallowed 500.
+      onValidateDraft('add_model', { channel: selection.channel, model: toModelWrite(next) });
     }
   };
 

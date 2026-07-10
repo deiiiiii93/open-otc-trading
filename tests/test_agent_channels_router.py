@@ -74,6 +74,31 @@ def test_delete_default_channel_returns_409(client):
     assert r.status_code == 409
 
 
+def test_validate_add_model_ok(client):
+    c, _agent, _ = client
+    r = c.post(
+        "/api/agent/channels/validate",
+        json={"kind": "add_model", "payload": {
+            "channel": "zenmux",
+            "model": {"id": "openai/gpt-6.0", "provider": "openai", "label": "GPT-6.0"},
+        }},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["ok"] is True
+
+
+def test_validate_malformed_add_model_is_not_500(client):
+    # A bare ModelWrite (no {channel, model}) must come back ok:false, never a 500.
+    c, _agent, _ = client
+    r = c.post(
+        "/api/agent/channels/validate",
+        json={"kind": "add_model", "payload": {"id": "x/y", "provider": "openai", "label": "x"}},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is False and body["errors"]
+
+
 def test_write_gate_403_when_flag_off(tmp_path, monkeypatch):
     dst = tmp_path / "agent_channels.yaml"
     shutil.copy(cr._REPO_ROOT / "config" / "agent_channels.yaml", dst)

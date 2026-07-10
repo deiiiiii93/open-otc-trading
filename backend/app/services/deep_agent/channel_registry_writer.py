@@ -303,11 +303,22 @@ def validate_draft(kind: str, payload: dict, *, path: Path | None = None) -> Non
 
 
 def _apply_draft(kind: str, payload: dict, doc: CommentedMap) -> None:
-    if kind == "add_channel":
-        doc.setdefault("channels", CommentedSeq()).append(_channel_map(payload))
-    elif kind == "add_model":
-        _find_channel(doc, payload["channel"]).setdefault("models", CommentedSeq()).append(
-            _model_map(payload["model"])
-        )
-    else:
-        raise RegistryConflictError(f"unknown draft kind {kind!r}")
+    # payload comes straight from the client (dry-run), so treat missing/wrong
+    # keys as a validation error, never let a KeyError bubble to a 500.
+    try:
+        if kind == "add_channel":
+            doc.setdefault("channels", CommentedSeq()).append(_channel_map(payload))
+        elif kind == "add_model":
+            channel = payload.get("channel")
+            model = payload.get("model")
+            if not channel or not isinstance(model, dict):
+                raise RegistryValidationError(
+                    "add_model draft requires {channel, model} keys"
+                )
+            _find_channel(doc, channel).setdefault("models", CommentedSeq()).append(
+                _model_map(model)
+            )
+        else:
+            raise RegistryValidationError(f"unknown draft kind {kind!r}")
+    except KeyError as exc:
+        raise RegistryValidationError(f"draft missing required field: {exc}") from exc

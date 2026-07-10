@@ -19,3 +19,19 @@ def test_agent_registry_config_exposes_editable_fields(monkeypatch):
     assert "healthy" in zen
     m = zen["models"][0]
     assert {"id", "provider", "label", "tags", "protocol"} <= set(m)
+
+
+def test_agent_registry_config_reports_declared_default_even_when_unhealthy(monkeypatch):
+    # The declared default is zenmux/…; with ZENMUX_API_KEY unset the loader
+    # RESOLVES the default away to a healthy channel, but the maintenance view
+    # must report the DECLARED default (the persisted truth), not the resolved
+    # one — else the UI would hide the real default and the agent could switch
+    # silently on reload once the key returns.
+    monkeypatch.setenv(
+        "AGENT_CHANNELS_FILE", str(cr._REPO_ROOT / "config" / "agent_channels.yaml")
+    )
+    monkeypatch.delenv("ZENMUX_API_KEY", raising=False)
+    cr.configure_registry(None)
+    reg = cr.load_from_path(cr._yaml_path())
+    cfg = agent_registry_config(reg)
+    assert cfg["default"]["channel"] == "zenmux"  # declared, not the resolved fallback

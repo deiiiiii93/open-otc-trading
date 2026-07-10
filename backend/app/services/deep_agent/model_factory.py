@@ -230,7 +230,18 @@ def agent_registry_config(registry: ChannelRegistry) -> dict[str, object]:
         if isinstance(entry, dict) and entry.get("name"):
             api_key_env_by_channel[entry["name"]] = entry.get("api_key_env")
 
-    ch_name, _prov, model_id = registry.default
+    # Report the DECLARED default (what is persisted in the YAML), not the
+    # resolved registry.default — the loader silently redirects the resolved
+    # default away from an unhealthy channel, which would make the UI show a
+    # different default than the file holds and let the agent "switch" later
+    # when the api_key_env var returns. The declared default is the truth the
+    # maintenance UI must edit.
+    raw_default = raw.get("default")
+    if isinstance(raw_default, dict) and raw_default.get("channel") and raw_default.get("model"):
+        ch_name = raw_default["channel"]
+        model_id = raw_default["model"]
+    else:
+        ch_name, _prov, model_id = registry.default
     channels_payload: list[dict[str, object]] = []
     for ch in registry.channels:
         channels_payload.append({
