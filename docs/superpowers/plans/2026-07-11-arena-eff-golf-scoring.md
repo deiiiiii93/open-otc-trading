@@ -151,108 +151,43 @@ git add backend/app/services/arena/scoring.py tests/test_arena_scoring.py
 git commit -m "feat(arena): golf-style linear EFF gated behind a calibrated par"
 ```
 
+> **Task 1 is runtime-safe on its own.** `par_calibrated` defaults to `False` and no
+> call site passes it yet, so `_derive_card` / `ability_card` still call `card_from_axes`
+> without the flag → the flagship (even though it *declares* `par_tool_calls`) keeps the
+> **hyperbolic** curve. The board is byte-for-byte unchanged after this commit.
+
 ---
 
-### Task 2: Thread `par_calibrated` through both card call sites
+### Task 2: Turn on golf scoring for the flagship — ATOMIC (par 11→24 + thread `par_calibrated` + coupled tests)
+
+> **Why atomic (Codex plan review [high]):** the flagship *already* declares
+> `par_tool_calls: 11`, so `par_calibrated(flagship)` is `True`. If the call-site
+> threading were committed *before* the par bump, the flagship would derive-on-read with
+> the **linear** curve at **par=11** (span 11 → EFF zeros at 22 calls), silently
+> publishing distorted OVRs on the live leaderboard with no migration signal. The par
+> change (11→24) and the `par_calibrated` threading MUST land in ONE commit, and every
+> committed state must be green.
 
 **Files:**
+- Modify: `backend/app/golden_workflows/definitions/risk-manager-control-day.md` (frontmatter `par_tool_calls: 11 → 24`)
 - Modify: `backend/app/services/arena/scoring.py` (`ability_card`, ~line 286)
 - Modify: `backend/app/services/arena/store.py` (`_derive_card`, ~lines 30–36)
-- Test: `tests/test_arena_scoring.py`
+- Modify: `tests/test_flagship_loads.py` (~line 99–101: `test_flagship_declares_par_11`)
+- Modify: `tests/test_arena_scoring.py` (`test_designed_par_defaults_to_expected_tools_sum`, ~line 416; add two tests)
 
 **Interfaces:**
 - Consumes: `scoring.par_calibrated`, `scoring.card_from_axes(..., par_calibrated=...)` from Task 1.
-- Produces: `ability_card` and `store._derive_card` both pass `par_calibrated` derived from the resolved workflow — so a calibrated workflow's card (write-time AND on-read) uses the linear curve.
+- Produces: `designed_par(flagship) == 24`; `par_calibrated(flagship) is True`; the flagship's card (write-time AND derive-on-read) uses the linear curve.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write/adjust the tests (they will only pass once ALL edits below land)**
 
-Add to `tests/test_arena_scoring.py`:
-
-```python
-def test_derive_card_uses_linear_for_calibrated_flagship():
-    # A stored breakdown for the flagship (calibrated par=24) must derive a LINEAR EFF
-    # on read, not the hyperbolic one. c=1.0 → EFF == round(99 * linear_ratio).
-    from app.services.arena.store import _derive_card
-    axes = {"grounding": {"passed": 4, "total": 4}, "adherence": {"passed": 4, "total": 4},
-            "synthesis": {"passed": 2, "total": 2}, "procedural": {"passed": 4, "total": 4}}
-    bd = {"objective": {"axes": axes},
-          "diagnosis": {"counts_detail": {"tool_calls": 36}}}
-    card, reason = _derive_card(bd, "risk-manager-control-day")
-    assert reason is None
-    # 36 calls, par 24, span 24 → 1-(12/24)=0.5 → EFF 50 (linear).
-    # (Hyperbolic would be round(99*24/36)=66 — proving the gate is on.)
-    assert card["stats"]["EFF"] == 50
-```
-
-- [ ] **Step 2: Run it to verify it fails**
-
-Run: `.venv/bin/python -m pytest tests/test_arena_scoring.py::test_derive_card_uses_linear_for_calibrated_flagship -v`
-Expected: FAIL — `_derive_card` still calls `card_from_axes` without `par_calibrated`, so EFF is the hyperbolic 66, not 50. (This test also depends on Task 3 setting flagship par=24; until then it may fail on the par value instead — that is fine, it stays red until Task 3.)
-
-- [ ] **Step 3: Thread the flag in `ability_card`**
-
-In `backend/app/services/arena/scoring.py`, change `ability_card`'s return:
-
-```python
-def ability_card(transcript, loaded, judged: float | None = None) -> dict:
-    """Convenience wrapper: evaluate the transcript once and build the card."""
-    bd = objective_breakdown(transcript, loaded)
-    heuristic = diagnose_heuristic(transcript, loaded)
-    return card_from_axes(bd["axes"], heuristic["tool_calls"],
-                          designed_par(loaded.workflow), judged=judged,
-                          par_calibrated=par_calibrated(loaded.workflow))
-```
-
-- [ ] **Step 4: Thread the flag in `store._derive_card`**
-
-In `backend/app/services/arena/store.py`, resolve the workflow once and pass the flag:
-
-```python
-    try:
-        from app.golden_workflows.registry import get_workflow
-        wf = get_workflow(workflow_id)
-        par = scoring.designed_par(wf)
-    except Exception:
-        return None, "workflow_unavailable"
-    judged = (bd.get("judge") or {}).get("judged_score")
-    return scoring.card_from_axes(axes, int(tc), par, judged=judged,
-                                  par_calibrated=scoring.par_calibrated(wf)), None
-```
-
-- [ ] **Step 5: Run the test (expect still-red until Task 3, then green)**
-
-Run: `.venv/bin/python -m pytest tests/test_arena_scoring.py::test_derive_card_uses_linear_for_calibrated_flagship -v`
-Expected: With flagship par still 11, EFF = linear against par 11 (span 11): 36 calls → floored 0 → FAIL (asserts 50). This test goes green after Task 3 sets par=24. Leave it; do NOT weaken the assertion.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add backend/app/services/arena/scoring.py backend/app/services/arena/store.py tests/test_arena_scoring.py
-git commit -m "feat(arena): pass par_calibrated through ability_card + derive-on-read"
-```
-
----
-
-### Task 3: Flagship par 11→24 + fix par-coupled tests
-
-**Files:**
-- Modify: `backend/app/golden_workflows/definitions/risk-manager-control-day.md` (frontmatter `par_tool_calls`)
-- Modify: `tests/test_flagship_loads.py:101`
-- Modify: `tests/test_arena_scoring.py::test_designed_par_defaults_to_expected_tools_sum` (~line 416)
-
-**Interfaces:**
-- Consumes: the calibration gate from Tasks 1–2 (flagship now `par_calibrated=True`).
-- Produces: `designed_par(flagship) == 24`; `par_calibrated(flagship) is True`.
-
-- [ ] **Step 1: Update the failing test assertions first (TDD: red)**
-
-In `tests/test_flagship_loads.py`, line 101:
+In `tests/test_flagship_loads.py`, rename `test_flagship_declares_par_11` → `test_flagship_declares_par_24` and set line 101:
 
 ```python
     assert wf.par_tool_calls == 24
 ```
 
-In `tests/test_arena_scoring.py`, rewrite `test_designed_par_defaults_to_expected_tools_sum` so it tests the actual FALLBACK (a workflow with no explicit par), since the flagship now carries an explicit non-sum par:
+In `tests/test_arena_scoring.py`, rewrite the fallback test (the flagship now carries an explicit non-sum par) and add the calibration + derive-card-linear tests:
 
 ```python
 def test_designed_par_defaults_to_expected_tools_sum():
@@ -272,14 +207,27 @@ def test_flagship_par_is_calibrated_24():
     assert wf.par_tool_calls == 24
     assert scoring.designed_par(wf) == 24
     assert scoring.par_calibrated(wf) is True
+
+
+def test_derive_card_uses_linear_for_calibrated_flagship():
+    # A stored breakdown for the flagship (calibrated par=24) derives a LINEAR EFF on
+    # read, not the hyperbolic one. c=1.0 → EFF == round(99 * linear_ratio).
+    from app.services.arena.store import _derive_card
+    axes = {"grounding": {"passed": 4, "total": 4}, "adherence": {"passed": 4, "total": 4},
+            "synthesis": {"passed": 2, "total": 2}, "procedural": {"passed": 4, "total": 4}}
+    bd = {"objective": {"axes": axes},
+          "diagnosis": {"counts_detail": {"tool_calls": 36}}}
+    card, reason = _derive_card(bd, "risk-manager-control-day")
+    assert reason is None
+    # 36 calls, par 24, span 24 → 1-(12/24)=0.5 → EFF 50 (linear).
+    # (Hyperbolic would be round(99*24/36)=66 — proving the gate is on.)
+    assert card["stats"]["EFF"] == 50
 ```
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `.venv/bin/python -m pytest tests/test_flagship_loads.py::test_flagship_declares_par_11 tests/test_arena_scoring.py::test_flagship_par_is_calibrated_24 -v`
-Expected: FAIL — flagship still declares `par_tool_calls: 11`.
-
-Note: rename `test_flagship_declares_par_11` → `test_flagship_declares_par_24` in `tests/test_flagship_loads.py` (the function around line 99–101) to match its new assertion.
+Run: `.venv/bin/python -m pytest tests/test_flagship_loads.py tests/test_arena_scoring.py -k "par or derive_card_uses_linear" -v`
+Expected: FAIL — flagship still `par_tool_calls: 11`; derive-card test sees par 11 (linear span 11 → 36 calls floored to EFF 0, not 50).
 
 - [ ] **Step 3: Set the flagship par to 24**
 
@@ -289,29 +237,61 @@ In `backend/app/golden_workflows/definitions/risk-manager-control-day.md` frontm
 par_tool_calls: 24
 ```
 
-- [ ] **Step 4: Run the par + derive tests**
+- [ ] **Step 4: Thread `par_calibrated` in `ability_card` (write-time)**
 
-Run: `.venv/bin/python -m pytest tests/test_flagship_loads.py tests/test_arena_scoring.py -k "par or derive or card" -v`
-Expected: PASS — including `test_derive_card_uses_linear_for_calibrated_flagship` from Task 2 (now par=24 → EFF 50).
+In `backend/app/services/arena/scoring.py`:
 
-- [ ] **Step 5: Commit**
+```python
+def ability_card(transcript, loaded, judged: float | None = None) -> dict:
+    """Convenience wrapper: evaluate the transcript once and build the card."""
+    bd = objective_breakdown(transcript, loaded)
+    heuristic = diagnose_heuristic(transcript, loaded)
+    return card_from_axes(bd["axes"], heuristic["tool_calls"],
+                          designed_par(loaded.workflow), judged=judged,
+                          par_calibrated=par_calibrated(loaded.workflow))
+```
+
+- [ ] **Step 5: Thread `par_calibrated` in `store._derive_card` (derive-on-read)**
+
+In `backend/app/services/arena/store.py`, resolve the workflow once and pass the flag:
+
+```python
+    try:
+        from app.golden_workflows.registry import get_workflow
+        wf = get_workflow(workflow_id)
+        par = scoring.designed_par(wf)
+    except Exception:
+        return None, "workflow_unavailable"
+    judged = (bd.get("judge") or {}).get("judged_score")
+    return scoring.card_from_axes(axes, int(tc), par, judged=judged,
+                                  par_calibrated=scoring.par_calibrated(wf)), None
+```
+
+- [ ] **Step 6: Run the full par/card/derive slice — everything green**
+
+Run: `.venv/bin/python -m pytest tests/test_flagship_loads.py tests/test_arena_scoring.py -k "par or card or derive" -v`
+Expected: PASS — all four new/adjusted tests green; every pre-existing `test_card_*` still passes.
+
+- [ ] **Step 7: Commit (ONE atomic, green commit)**
 
 ```bash
-git add backend/app/golden_workflows/definitions/risk-manager-control-day.md tests/test_flagship_loads.py tests/test_arena_scoring.py
-git commit -m "feat(arena): calibrate flagship par 11->24 (realistic competent-run standard)"
+git add backend/app/golden_workflows/definitions/risk-manager-control-day.md \
+        backend/app/services/arena/scoring.py backend/app/services/arena/store.py \
+        tests/test_flagship_loads.py tests/test_arena_scoring.py
+git commit -m "feat(arena): enable golf EFF for flagship (par 11->24 + thread par_calibrated, atomic)"
 ```
 
 ---
 
-### Task 4: Full regression, board re-score verification, and docs
+### Task 3: Full regression, board re-score verification, and docs
 
 **Files:**
-- Modify: `CHANGELOG.md` (under `[Unreleased] ### Changed` or `### Fixed`)
+- Modify: `CHANGELOG.md` (under `[Unreleased] ### Changed`)
 - Modify: `CLAUDE.md` (Model Ability Card section — EFF note)
 - Verify only (no edit): run #20 leaderboard re-derives
 
 **Interfaces:**
-- Consumes: everything from Tasks 1–3.
+- Consumes: everything from Tasks 1–2.
 
 - [ ] **Step 1: Run the full arena + golden regression suite**
 
@@ -321,9 +301,9 @@ Expected: PASS — critically `test_golden_workflow_regression` still earns 39/3
 - [ ] **Step 2: Run the broader suite to catch any other coupling**
 
 Run: `.venv/bin/python -m pytest tests/ -k "arena or flagship or golden or card" -q`
-Expected: PASS. If any test asserts a specific flagship EFF/OVR number, update it to the new linear value (there should be none beyond those handled in Tasks 1–3).
+Expected: PASS. If any test asserts a specific flagship EFF/OVR number, update it to the new linear value (there should be none beyond those handled in Tasks 1–2).
 
-- [ ] **Step 3: Verify the run #20 board re-scores on read (no migration)**
+- [ ] **Step 3: Verify the run #20 board re-scores on read (no migration; never linear-at-par-11)**
 
 Run:
 ```bash
@@ -339,7 +319,7 @@ for r in rows[:4]:
     print(r.get("rank"), r["model_id"], "OVR", c.get("ovr"), "EFF", c.get("eff"))
 PY
 ```
-Expected: lean runs now carry a much higher EFF (~70–82 vs the old 34–41); terra rises toward #1 over luna. This is derive-on-read — no DB write occurred.
+Expected: lean runs now carry a much higher EFF (~70–82 vs the old 34–41); terra rises toward #1 over luna. This confirms the board derived through the LINEAR curve at **par=24** (not the broken par=11 intermediate Codex flagged) — and it is derive-on-read, so no DB write occurred.
 
 - [ ] **Step 4: Update CHANGELOG**
 
@@ -359,7 +339,7 @@ Add under `[Unreleased] ### Changed`:
 
 - [ ] **Step 5: Update CLAUDE.md**
 
-In the **Model Ability Card** section, update the EFF description to note the golf curve and the calibration gate. Replace the `EFF = round(C × min(1, par/actual_calls) × 99)` sentence with:
+In the **Model Ability Card** section, replace the `EFF = round(C × min(1, par/actual_calls) × 99)` description with:
 
 ```markdown
 `EFF` is golf-scored against a **calibrated** par: full at/under par, then linear decay
@@ -378,3 +358,4 @@ against the same metric as `counts_detail.tool_calls`, which excludes skill-file
 git add CHANGELOG.md CLAUDE.md
 git commit -m "docs: changelog + CLAUDE.md for golf-style EFF scoring"
 ```
+
