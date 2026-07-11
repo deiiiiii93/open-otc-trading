@@ -25,15 +25,19 @@ def _derive_card(bd: dict, workflow_id: str) -> tuple[dict | None, str | None]:
     if not axes:
         return None, "legacy_no_axes"
     tc = ((bd.get("diagnosis") or {}).get("counts_detail") or {}).get("tool_calls")
-    if not isinstance(tc, (int, float)) or isinstance(tc, bool):
+    # Fail-honest: a missing, non-numeric, boolean, or NEGATIVE count is impossible/corrupt
+    # evidence — leave the row uncarded rather than let it rank on a fabricated number.
+    if not isinstance(tc, (int, float)) or isinstance(tc, bool) or tc < 0:
         return None, "missing_tool_count"
     try:
         from app.golden_workflows.registry import get_workflow
-        par = scoring.designed_par(get_workflow(workflow_id))
+        wf = get_workflow(workflow_id)
+        par = scoring.designed_par(wf)
     except Exception:
         return None, "workflow_unavailable"
     judged = (bd.get("judge") or {}).get("judged_score")
-    return scoring.card_from_axes(axes, int(tc), par, judged=judged), None
+    return scoring.card_from_axes(axes, int(tc), par, judged=judged,
+                                  par_calibrated=scoring.par_calibrated(wf)), None
 
 
 def create_run(

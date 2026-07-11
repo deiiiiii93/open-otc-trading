@@ -414,9 +414,37 @@ from app.golden_workflows.registry import get_workflow as _get_wf
 
 
 def test_designed_par_defaults_to_expected_tools_sum():
+    # The fallback (no explicit par_tool_calls) is sum(expected_tools). Strip the
+    # flagship's explicit par to exercise it — the flagship itself now declares 24.
+    from app.golden_workflows.schema import GoldenWorkflow
     wf = _get_wf("risk-manager-control-day")
-    assert scoring.designed_par(wf) == sum(len(s.expected_tools) for s in wf.steps)
-    assert scoring.designed_par(wf) == 11
+    data = wf.model_dump()
+    data["par_tool_calls"] = None
+    stripped = GoldenWorkflow(**data)
+    assert scoring.designed_par(stripped) == sum(len(s.expected_tools) for s in wf.steps)
+    assert scoring.designed_par(stripped) == 11
+
+
+def test_flagship_par_is_calibrated_24():
+    wf = _get_wf("risk-manager-control-day")
+    assert wf.par_tool_calls == 24
+    assert scoring.designed_par(wf) == 24
+    assert scoring.par_calibrated(wf) is True
+
+
+def test_derive_card_uses_linear_for_calibrated_flagship():
+    # A stored breakdown for the flagship (calibrated par=24) derives a LINEAR EFF on
+    # read, not the hyperbolic one. c=1.0 → EFF == round(99 * linear_ratio).
+    from app.services.arena.store import _derive_card
+    axes = {"grounding": {"passed": 4, "total": 4}, "adherence": {"passed": 4, "total": 4},
+            "synthesis": {"passed": 2, "total": 2}, "procedural": {"passed": 4, "total": 4}}
+    bd = {"objective": {"axes": axes},
+          "diagnosis": {"counts_detail": {"tool_calls": 36}}}
+    card, reason = _derive_card(bd, "risk-manager-control-day")
+    assert reason is None
+    # 36 calls, par 24, span 24 → 1-(12/24)=0.5 → EFF 50 (linear).
+    # (Hyperbolic would be round(99*24/36)=66 — proving the gate is on.)
+    assert card["stats"]["EFF"] == 50
 
 
 def test_designed_par_override_wins():
@@ -450,6 +478,69 @@ def test_card_eff_penalizes_bloat_not_leanness():
     assert scoring.card_from_axes(axes, 11, 11)["stats"]["EFF"] == 99   # ratio 1.0
     assert scoring.card_from_axes(axes, 22, 11)["stats"]["EFF"] == 50   # ratio 0.5
     assert scoring.card_from_axes(axes, 5, 11)["stats"]["EFF"] == 99    # leaner NOT penalized
+
+
+def test_par_calibrated_helper():
+    from app.golden_workflows.schema import GoldenWorkflow
+    wf = _get_wf("risk-manager-control-day")  # declares par_tool_calls → calibrated
+    assert scoring.par_calibrated(wf) is True
+    data = wf.model_dump()
+    data["par_tool_calls"] = None             # strip → falls back to sum(expected_tools)
+    assert scoring.par_calibrated(GoldenWorkflow(**data)) is False
+
+
+def test_card_eff_uncalibrated_keeps_hyperbolic():
+    # A workflow without a calibrated par keeps TODAY's hyperbolic EFF exactly.
+    axes = {"grounding": {"passed": 4, "total": 4}, "adherence": {"passed": 4, "total": 4},
+            "synthesis": {"passed": 2, "total": 2}, "procedural": {"passed": 4, "total": 4}}
+    # default par_calibrated=False → ratio = min(1, par/tool_calls)
+    assert scoring.card_from_axes(axes, 22, 11)["stats"]["EFF"] == 50   # 11/22
+    assert scoring.card_from_axes(axes, 11, 11)["stats"]["EFF"] == 99
+    assert scoring.card_from_axes(axes, 5, 11)["stats"]["EFF"] == 99    # leaner not penalized
+
+
+def test_card_eff_linear_when_calibrated():
+    # c = 1.0 (all correctness axes full) so EFF == round(99 * ratio).
+    axes = {"grounding": {"passed": 4, "total": 4}, "adherence": {"passed": 4, "total": 4},
+            "synthesis": {"passed": 2, "total": 2}, "procedural": {"passed": 4, "total": 4}}
+    f = lambda tc, par: scoring.card_from_axes(axes, tc, par, par_calibrated=True)["stats"]["EFF"]
+    assert f(24, 24) == 99          # at par → full
+    assert f(20, 24) == 99          # under par → full (leaner not penalized)
+    assert f(36, 24) == 50          # +12 over par of 24, span 24 → 1-0.5 → round(49.5)=50
+    assert f(48, 24) == 0           # 2×par → 0
+    assert f(60, 24) == 0           # beyond 2×par → floored at 0
+
+
+def test_card_eff_calibrated_guards_unchanged():
+    # The non-execution / zero-par guards precede the calibration branch.
+    axes = {"grounding": {"passed": 9, "total": 10}, "adherence": {"passed": 8, "total": 10},
+            "synthesis": {"passed": 2, "total": 3}, "procedural": {"passed": 0, "total": 6}}
+    assert scoring.card_from_axes(axes, 0, 24, par_calibrated=True)["stats"]["EFF"] == 0
+    full = {"grounding": {"passed": 2, "total": 2}, "adherence": {"passed": 2, "total": 2},
+            "synthesis": {"passed": 1, "total": 1}, "procedural": {"passed": 1, "total": 1}}
+    assert scoring.card_from_axes(full, 0, 0, par_calibrated=True)["stats"]["EFF"] == 99
+
+
+def test_card_eff_negative_tool_count_fails_closed():
+    # A corrupt/negative persisted count must NEVER score as perfect. It fails closed to
+    # EFF 0 on BOTH the calibrated (linear) and the uncalibrated (hyperbolic) path — the
+    # negative count would otherwise read as "under par" (ratio 1) or a negative ratio.
+    axes = {"grounding": {"passed": 4, "total": 4}, "adherence": {"passed": 4, "total": 4},
+            "synthesis": {"passed": 2, "total": 2}, "procedural": {"passed": 4, "total": 4}}
+    assert scoring.card_from_axes(axes, -1, 24, par_calibrated=True)["stats"]["EFF"] == 0
+    assert scoring.card_from_axes(axes, -5, 11)["stats"]["EFF"] == 0   # uncalibrated
+
+
+def test_derive_card_rejects_negative_tool_count():
+    # Read boundary fails HONEST: a corrupt negative count is uncarded, not scored 0 —
+    # so a malformed row never ranks on the public board at all.
+    from app.services.arena.store import _derive_card
+    axes = {"grounding": {"passed": 4, "total": 4}, "adherence": {"passed": 4, "total": 4},
+            "synthesis": {"passed": 2, "total": 2}, "procedural": {"passed": 4, "total": 4}}
+    bd = {"objective": {"axes": axes},
+          "diagnosis": {"counts_detail": {"tool_calls": -1}}}
+    card, reason = _derive_card(bd, "risk-manager-control-day")
+    assert card is None and reason == "missing_tool_count"
 
 
 def test_card_do_nothing_scores_low_eff():

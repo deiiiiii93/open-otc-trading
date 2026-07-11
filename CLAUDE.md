@@ -322,23 +322,35 @@ map 1:1 to the objective axes plus a computed EFF; JDG is the advisory jury scor
 
 - **Stats & OVR** (`scoring.card_from_axes`): `stat = round(99 × passed/total)` per
   axis (grounding→GRD, adherence→ADH, synthesis→SYN, procedural→PRC).
-  `EFF = round(C × min(1, par/actual_calls) × 99)` where `C` is the (GRD+ADH+SYN)
-  pass fraction — correctness-gated. Being leaner than `par` is **not** penalized
-  (ratio capped at 1), but **zero tool calls when `par > 0` is non-execution, not
-  leanness → ratio 0 → EFF 0**: value-only grounding (`response_quotes_value`) lets a
-  transcript quote the truth numbers without running the workflow, and EFF must not
-  hand that a free efficiency pass (GRD still credits the numbers; PRC/EFF read 0, so
-  the card honestly shows "strong numbers, no execution"). `par == 0` with 0 calls is
-  legitimately full efficiency.
+  **EFF is golf-scored** (spec `2026-07-11-arena-eff-golf-scoring`): full at/under `par`,
+  then **linear** decay to 0 at `_EFF_ZERO_MULT × par` (2×par) — `EFF = round(C × 99 ×
+  max(0, 1 − (calls−par)/((_EFF_ZERO_MULT−1)·par)))` above par — still gated by the
+  correctness fraction `C` (GRD+ADH+SYN). The golf curve applies **only when `par` is
+  calibrated** (`scoring.par_calibrated` = the workflow declares `par_tool_calls`);
+  uncalibrated workflows keep the **legacy hyperbolic** `min(1, par/calls)` so the shared
+  `card_from_axes` kernel never regresses a workflow that hasn't set a realistic par
+  (`card_from_axes(..., par_calibrated=bool)`, default `False`). Being leaner than `par`
+  is **not** penalized, but **zero tool calls when `par > 0` is non-execution → ratio 0 →
+  EFF 0** (guard precedes the calibration branch): value-only grounding
+  (`response_quotes_value`) lets a transcript quote the truth numbers without running the
+  workflow, and EFF must not hand that a free efficiency pass (GRD still credits the
+  numbers; PRC/EFF read 0, so the card honestly shows "strong numbers, no execution").
+  `par == 0` with 0 calls is legitimately full efficiency.
   `OVR = round(0.32·GRD + 0.26·ADH + 0.16·SYN + 0.16·EFF + 0.10·PRC)`. **JDG is never
   in OVR.** `ability_card(transcript, loaded, judged)` is the write-time wrapper;
   `card_from_axes` is the shared kernel.
-- **`par` = a COMPLETE compliant run's tool count, not just signature tools.**
+- **`par` = a realistic COUNTED competent run, not the theoretical minimum.**
   `scoring.designed_par(wf)` = `wf.par_tool_calls` if set else
-  `sum(len(step.expected_tools))` (= 11 for the flagship — the 7 signature tools plus
-  the 4 retrieval/library calls). `par_tool_calls` is an **optional** manifest field
-  (`int | None`, `≥ 1`) so existing manifests still load; a `par` of 7 would wrongly
-  cap even a perfect lean run's EFF at ~0.64.
+  `sum(len(step.expected_tools))` (the fallback = theoretical min, which is why an
+  uncalibrated workflow must stay on the hyperbolic curve). The flagship declares
+  **`par_tool_calls: 24`** — 11 expected tool calls + ~13 legitimate counted overhead
+  (re-fetching `get_*_run` results, re-listing the scenario library, sanity re-pricing).
+  **par is counted against the same metric as `counts_detail.tool_calls`** — which
+  EXCLUDES `META_TOOLS = {task, read_file, write_todos}` (`trace_harvest.py`), so
+  **skill-file reads must never be counted into a designed par** (that would inflate the
+  denominator above the measured numerator and hand free EFF credit). `par_tool_calls` is
+  an **optional** manifest field (`int | None`, `≥ 1`); setting it opts a workflow into
+  golf scoring.
 - **Ranking** (`store.leaderboard`): by **OVR mean**, shared rank on exact ties,
   tie-break GRD→ADH→SYN→EFF→PRC (`scoring.card_tiebreak_key`). **Uncarded rows keep
   the legacy objective ranking** (mean_objective + sub-axis tie-break) and sort after
