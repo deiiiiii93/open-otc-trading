@@ -43,6 +43,8 @@ if tool_calls == 0 and par > 0:      # non-execution guard (unchanged): value-on
     ratio = 0.0                      # grounding must NOT earn a free efficiency pass
 elif par == 0:                       # a workflow that designs no tools (unchanged)
     ratio = 1.0
+elif not par_calibrated:             # no explicit realistic par → keep TODAY's curve
+    ratio = min(1.0, par / tool_calls)   # existing hyperbolic — zero behavior change
 elif tool_calls <= par:              # at or under par → full efficiency
     ratio = 1.0
 else:                                # each call over par is a "bogey"
@@ -52,6 +54,13 @@ else:                                # each call over par is a "bogey"
 EFF = round(c × 99 × ratio)
 ```
 
+- **The golf (linear) curve applies only when par is explicitly calibrated** — i.e. the
+  workflow declares `par_tool_calls`. A workflow that falls back to
+  `sum(expected_tools)` (the too-low theoretical minimum) keeps **today's hyperbolic
+  formula unchanged**, so changing this global kernel causes **zero regression** for any
+  non-flagship workflow. The linear curve is only trusted with a par an author has
+  calibrated to real counted runs; otherwise `2 × a-too-low-par` would wrongly zero out
+  legitimate runs. `par_calibrated = (workflow.par_tool_calls is not None)`.
 - **`c` (correctness gate) is retained** — a lean run with weak grounding/adherence
   still can't earn a high EFF. Full efficiency is `c × 99`, not a flat 99.
 - **Leaner than par is not penalized** (`ratio = 1`), same as today.
@@ -63,17 +72,24 @@ EFF = round(c × 99 × ratio)
 `risk-manager-control-day.md` frontmatter: `par_tool_calls: 11 → 24`.
 
 Derived from the **workflow structure**, not the contestant field (so it doesn't drift
-run-to-run and isn't circular):
+run-to-run and isn't circular). **Critically, par is counted against the same metric it
+is compared to** — `_workflow_call_count` / `counts_detail.tool_calls`, which
+**excludes** the `META_TOOLS = {task, read_file, write_todos}` set (`trace_harvest.py`)
+and therefore does **not** count skill-file `read_file` loads (those are harvested
+separately into `skills_routed`). So par must be built from *counted domain tool calls
+only* — including skill reads in par would inflate the denominator above the measured
+numerator and hand every model free efficiency credit.
 
-| Component | Count |
+| Component (counted domain tool calls only) | Count |
 |---|---|
 | Expected tool calls (7 signature + 4 retrieval) | 11 |
-| Skill-file reads (6 steps declare a skill → one `read_file` each) | 6 |
-| Legitimate result inspections / re-checks | ~7 |
+| Legitimate counted overhead — re-fetching `get_*_run` results, re-listing the scenario library, sanity re-pricing before reporting | ~13 |
 | **Designed par** | **24** |
 
-This matches the leanest *observed* competent runs (deepseek-pro 22/24, terra 26/27)
-as a sanity check, without being computed from them.
+Skill-file reads are **excluded** (they aren't counted by the EFF metric). This
+designed par matches the leanest *observed* competent runs — which are likewise
+counted, excluding their skill reads (deepseek-pro 22/24, terra 26/27) — as a sanity
+check, without being computed from them.
 
 ### Slope S = par (EFF reaches 0 at 2×par)
 
@@ -91,17 +107,26 @@ higher-objective one) rather than a mere tie-break.
 ## Code changes
 
 1. **`backend/app/services/arena/scoring.py`**
-   - `card_from_axes` (~line 161): replace the `ratio = min(1.0, par / tool_calls)`
-     branch with the linear decay. Define the zero-point as `zero_at = _EFF_ZERO_MULT
-     × par` and the span as `S = zero_at − par` (with `_EFF_ZERO_MULT = 2.0` this gives
-     `S = par`, i.e. EFF reaches 0 at `2 × par`). Then
-     `ratio = max(0.0, 1.0 − (tool_calls − par) / S)` for `tool_calls > par`.
-     Keep the `tool_calls == 0 / par == 0 / tool_calls <= par` branches exactly as
-     specified in the Formula section.
+   - `card_from_axes` (~line 161): add a `par_calibrated: bool = False` parameter.
+     When `par_calibrated` is `False`, keep the **existing** `ratio = min(1.0, par /
+     tool_calls)` hyperbolic branch verbatim (back-compat for uncalibrated workflows).
+     When `True`, use the linear decay: zero-point `zero_at = _EFF_ZERO_MULT × par`,
+     span `S = zero_at − par` (with `_EFF_ZERO_MULT = 2.0`, `S = par`, EFF reaches 0 at
+     `2 × par`), then `ratio = max(0.0, 1.0 − (tool_calls − par) / S)` for
+     `tool_calls > par` and `1.0` for `tool_calls ≤ par`. Keep the `tool_calls == 0 /
+     par == 0` guards exactly as specified in the Formula section (they precede the
+     calibration branch, so a `par_calibrated=False` workflow with 0 calls still gets
+     `ratio=0`).
    - Add module constant `_EFF_ZERO_MULT = 2.0` with a comment (tunable later — e.g.
      `2.5` widens the fairway — without touching any per-workflow manifest).
-   - `designed_par` is unchanged (explicit `par_tool_calls` wins; fallback stays
-     `sum(expected_tools)`).
+   - Add a `par_calibrated(workflow) -> bool` helper returning
+     `getattr(workflow, "par_tool_calls", None) is not None` (single source of truth for
+     the gate). `designed_par` is unchanged (explicit `par_tool_calls` wins; fallback
+     stays `sum(expected_tools)`).
+   - Thread `par_calibrated` through the two call sites: `ability_card` (write-time
+     wrapper, ~line 286) passes `par_calibrated(loaded.workflow)`; `store._derive_card`
+     passes it from the loaded workflow the same way. Both already resolve the workflow,
+     so no new plumbing.
 
 2. **`backend/app/golden_workflows/definitions/risk-manager-control-day.md`**
    - `par_tool_calls: 11 → 24`.
@@ -118,8 +143,16 @@ higher-objective one) rather than a mere tie-break.
      - `test_card_from_axes_stats_and_ovr` (line 438/442): uses `tool_calls == par == 11`
        → `ratio 1` → EFF unchanged (77). No change.
      - `test_card_zero_tools_par_positive_gets_zero_eff` / `_zero_par_is_full_eff` /
-       `_do_nothing_scores_low_eff`: all exercise the retained guards → unchanged.
+       `_do_nothing_scores_low_eff`: all exercise the retained guards → unchanged. Note
+       these call `card_from_axes` without `par_calibrated`, so they run the default
+       (hyperbolic) branch — the guards precede it, so the assertions hold. Add explicit
+       `par_calibrated=True` variants only where they assert the linear shape.
      - `test_designed_par_defaults_to_expected_tools_sum`: fallback unchanged → no change.
+     - **New `test_card_eff_uncalibrated_par_keeps_hyperbolic`**: with `par_calibrated=
+       False`, `card_from_axes(axes, 22, 11)` still yields the old hyperbolic `EFF` (ratio
+       0.5), proving a non-flagship/uncalibrated workflow is byte-for-byte unchanged.
+     - **New `test_flagship_par_is_calibrated`**: `par_calibrated(flagship) is True` and a
+       non-flagship workflow without `par_tool_calls` is `False`.
 
 ## Consequences
 
@@ -137,11 +170,11 @@ higher-objective one) rather than a mere tie-break.
 
 ## Out of scope
 
-- **Other arena workflows' par.** Only the flagship has real arena runs and a realistic
-  designed par. Workflows without an explicit `par_tool_calls` still fall back to
-  `sum(expected_tools)` (theoretical minimum), which under the *linear* curve would
-  over-penalize them (their EFF would zero out at `2 × a-too-low-par`). Each such
-  workflow should declare a realistic `par_tool_calls` before its EFF is trustworthy —
-  tracked as a follow-up, not done here.
+- **Calibrating other arena workflows' par.** Only the flagship gets a realistic
+  designed par here. Other workflows without an explicit `par_tool_calls` are **safe**
+  under this change — the calibration gate keeps them on today's hyperbolic formula, so
+  their cards are byte-for-byte unchanged (no regression). Giving trader-rfq /
+  high-board their own realistic `par_tool_calls` (to opt them into golf scoring) is a
+  follow-up, not done here. **Golf scoring is opt-in per workflow via a calibrated par.**
 - No change to how tool calls are *counted* (`counts_detail.tool_calls`), including the
   `record_answer` exemption.
