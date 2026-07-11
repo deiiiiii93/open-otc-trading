@@ -116,6 +116,21 @@ _CORRECTNESS_AXES = ("grounding", "adherence", "synthesis")
 # Card tie-break priority (spec B5): GRD → ADH → SYN → EFF → PRC. Never JDG.
 _CARD_TIEBREAK_PRIORITY = ("GRD", "ADH", "SYN", "EFF", "PRC")
 
+# Golf-style EFF (spec 2026-07-11): EFF reaches 0 at _EFF_ZERO_MULT × par. Scale-free —
+# a workflow declares only its par and the slope follows. Tunable (2.5 widens the fairway)
+# without touching any manifest.
+_EFF_ZERO_MULT = 2.0
+
+
+def par_calibrated(workflow) -> bool:
+    """True when the workflow declares an explicit realistic par (opts into golf EFF).
+
+    Uncalibrated workflows fall back to designed_par = sum(expected_tools) — a too-low
+    theoretical minimum — and KEEP the legacy hyperbolic EFF, so changing the shared
+    card_from_axes kernel can never regress a workflow that hasn't calibrated its par.
+    """
+    return getattr(workflow, "par_tool_calls", None) is not None
+
 
 def _stat_from_tally(tally: dict) -> int:
     total = tally.get("total", 0)
@@ -142,7 +157,7 @@ def _card_position(stats: dict) -> str:
 
 
 def card_from_axes(axes: dict, tool_calls: int, par: int,
-                   judged: float | None = None) -> dict:
+                   judged: float | None = None, par_calibrated: bool = False) -> dict:
     """Derive the ability card from objective axis tallies + tool-call count.
 
     Pure. Used at write time (task.py) and derive-on-read (store.py) — the single
@@ -152,18 +167,24 @@ def card_from_axes(axes: dict, tool_calls: int, par: int,
     for axis, stat in _STAT_BY_AXIS.items():
         stats[stat] = _stat_from_tally(axes.get(axis, {}))
     c = _correctness(axes)
-    # Efficiency ratio: lean (fewer calls than par) is NOT penalized (capped at 1),
-    # bloat scales it down. But ZERO calls when the workflow designs tools (par > 0)
-    # is non-execution, NOT leanness — EFF is 0 so a transcript that merely quotes
-    # the fixture-truth numbers (value-only grounding) without running the workflow
-    # cannot earn a mid-card OVR via a free efficiency pass. par == 0 (no tools
-    # designed) with 0 calls is legitimately full efficiency.
-    if tool_calls > 0:
-        ratio = min(1.0, par / tool_calls)
-    elif par > 0:
+    # Efficiency ratio. Guards first (unchanged): ZERO calls with par>0 is non-execution
+    # (ratio 0 — a transcript that merely quotes the fixture-truth numbers via value-only
+    # grounding must not earn a free EFF pass); par==0 (no tools designed) is legitimately
+    # full efficiency. Then, only when par is CALIBRATED, score golf-style: full at/under
+    # par, linear decay to 0 at _EFF_ZERO_MULT × par. An UNCALIBRATED par (theoretical-min
+    # fallback) keeps the legacy hyperbolic ratio, so this shared kernel never regresses a
+    # workflow that hasn't set a realistic par.
+    if tool_calls == 0 and par > 0:
         ratio = 0.0
-    else:
+    elif par == 0:
         ratio = 1.0
+    elif not par_calibrated:
+        ratio = min(1.0, par / tool_calls)
+    elif tool_calls <= par:
+        ratio = 1.0
+    else:
+        span = (_EFF_ZERO_MULT - 1.0) * par        # zero at _EFF_ZERO_MULT × par
+        ratio = max(0.0, 1.0 - (tool_calls - par) / span)
     stats["EFF"] = round(c * ratio * 99)
     ovr = round(sum(_OVR_WEIGHTS[k] * stats[k] for k in _OVR_WEIGHTS))
     return {"ovr": ovr, "stats": stats, "jdg": judged,

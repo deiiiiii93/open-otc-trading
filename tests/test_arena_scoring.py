@@ -452,6 +452,47 @@ def test_card_eff_penalizes_bloat_not_leanness():
     assert scoring.card_from_axes(axes, 5, 11)["stats"]["EFF"] == 99    # leaner NOT penalized
 
 
+def test_par_calibrated_helper():
+    from app.golden_workflows.schema import GoldenWorkflow
+    wf = _get_wf("risk-manager-control-day")  # declares par_tool_calls → calibrated
+    assert scoring.par_calibrated(wf) is True
+    data = wf.model_dump()
+    data["par_tool_calls"] = None             # strip → falls back to sum(expected_tools)
+    assert scoring.par_calibrated(GoldenWorkflow(**data)) is False
+
+
+def test_card_eff_uncalibrated_keeps_hyperbolic():
+    # A workflow without a calibrated par keeps TODAY's hyperbolic EFF exactly.
+    axes = {"grounding": {"passed": 4, "total": 4}, "adherence": {"passed": 4, "total": 4},
+            "synthesis": {"passed": 2, "total": 2}, "procedural": {"passed": 4, "total": 4}}
+    # default par_calibrated=False → ratio = min(1, par/tool_calls)
+    assert scoring.card_from_axes(axes, 22, 11)["stats"]["EFF"] == 50   # 11/22
+    assert scoring.card_from_axes(axes, 11, 11)["stats"]["EFF"] == 99
+    assert scoring.card_from_axes(axes, 5, 11)["stats"]["EFF"] == 99    # leaner not penalized
+
+
+def test_card_eff_linear_when_calibrated():
+    # c = 1.0 (all correctness axes full) so EFF == round(99 * ratio).
+    axes = {"grounding": {"passed": 4, "total": 4}, "adherence": {"passed": 4, "total": 4},
+            "synthesis": {"passed": 2, "total": 2}, "procedural": {"passed": 4, "total": 4}}
+    f = lambda tc, par: scoring.card_from_axes(axes, tc, par, par_calibrated=True)["stats"]["EFF"]
+    assert f(24, 24) == 99          # at par → full
+    assert f(20, 24) == 99          # under par → full (leaner not penalized)
+    assert f(36, 24) == 50          # +12 over par of 24, span 24 → 1-0.5 → round(49.5)=50
+    assert f(48, 24) == 0           # 2×par → 0
+    assert f(60, 24) == 0           # beyond 2×par → floored at 0
+
+
+def test_card_eff_calibrated_guards_unchanged():
+    # The non-execution / zero-par guards precede the calibration branch.
+    axes = {"grounding": {"passed": 9, "total": 10}, "adherence": {"passed": 8, "total": 10},
+            "synthesis": {"passed": 2, "total": 3}, "procedural": {"passed": 0, "total": 6}}
+    assert scoring.card_from_axes(axes, 0, 24, par_calibrated=True)["stats"]["EFF"] == 0
+    full = {"grounding": {"passed": 2, "total": 2}, "adherence": {"passed": 2, "total": 2},
+            "synthesis": {"passed": 1, "total": 1}, "procedural": {"passed": 1, "total": 1}}
+    assert scoring.card_from_axes(full, 0, 0, par_calibrated=True)["stats"]["EFF"] == 99
+
+
 def test_card_do_nothing_scores_low_eff():
     axes = {"grounding": {"passed": 0, "total": 10}, "adherence": {"passed": 0, "total": 10},
             "synthesis": {"passed": 0, "total": 3}, "procedural": {"passed": 3, "total": 3}}
