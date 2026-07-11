@@ -24,6 +24,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   API read-only on non-localhost binds). Does **not** sync the arena
   `services/arena/models.py::CANDIDATE_MODELS` list.
 
+### Changed
+- **Arena EFF is now golf-scored against a realistic, calibrated par.** The efficiency
+  stat previously divided by par=11 (the flagship's theoretical minimum — each expected
+  tool called once), so every real run (22–108 calls) scored a hyperbolic 9–47 while
+  other stats sat at 70–90; EFF was a uniform drag, not a discriminator. It now decays
+  **linearly** from a designed par (flagship 11→24, a competent *counted* run — skill-file
+  reads excluded, since `META_TOOLS` aren't counted by the EFF metric) to 0 at `2×par`
+  (`scoring._EFF_ZERO_MULT`). Lean runs earn full EFF; only genuine over-execution is
+  penalized. Gated behind an explicit `par_tool_calls` (`scoring.par_calibrated`):
+  workflows without a calibrated par keep the old hyperbolic formula unchanged (no
+  regression). Derive-on-read re-scores runs #10–#20 with no migration — the flagship
+  Run #20 board re-sorts (lean **gpt-5.6-terra** rises to #1 over heavier runs; the
+  over-executors fall) — and the 39-point objective and golden replay are unaffected.
+
 ### Fixed
 - **Flagship arena CVaR grounding no longer breaks when a model regenerates the
   mutable `market-crash` scenario-set file.** The `scenario_cvar` grounding truth
