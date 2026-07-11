@@ -167,14 +167,16 @@ def card_from_axes(axes: dict, tool_calls: int, par: int,
     for axis, stat in _STAT_BY_AXIS.items():
         stats[stat] = _stat_from_tally(axes.get(axis, {}))
     c = _correctness(axes)
-    # Efficiency ratio. Guards first (unchanged): ZERO calls with par>0 is non-execution
-    # (ratio 0 — a transcript that merely quotes the fixture-truth numbers via value-only
-    # grounding must not earn a free EFF pass); par==0 (no tools designed) is legitimately
-    # full efficiency. Then, only when par is CALIBRATED, score golf-style: full at/under
-    # par, linear decay to 0 at _EFF_ZERO_MULT × par. An UNCALIBRATED par (theoretical-min
-    # fallback) keeps the legacy hyperbolic ratio, so this shared kernel never regresses a
-    # workflow that hasn't set a realistic par.
-    if tool_calls == 0 and par > 0:
+    # Efficiency ratio. Guards first (unchanged): NON-POSITIVE calls with par>0 is
+    # non-execution or corrupt evidence (ratio 0 — a transcript that merely quotes the
+    # fixture-truth numbers via value-only grounding must not earn a free EFF pass, and a
+    # malformed/negative persisted count must FAIL CLOSED, never read as "under par" and
+    # score a perfect card); par==0 (no tools designed) is legitimately full efficiency.
+    # Then, only when par is CALIBRATED, score golf-style: full at/under par, linear decay
+    # to 0 at _EFF_ZERO_MULT × par. An UNCALIBRATED par (theoretical-min fallback) keeps
+    # the legacy hyperbolic ratio, so this shared kernel never regresses a workflow that
+    # hasn't set a realistic par.
+    if tool_calls <= 0 and par > 0:
         ratio = 0.0
     elif par == 0:
         ratio = 1.0

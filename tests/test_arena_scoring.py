@@ -521,6 +521,28 @@ def test_card_eff_calibrated_guards_unchanged():
     assert scoring.card_from_axes(full, 0, 0, par_calibrated=True)["stats"]["EFF"] == 99
 
 
+def test_card_eff_negative_tool_count_fails_closed():
+    # A corrupt/negative persisted count must NEVER score as perfect. It fails closed to
+    # EFF 0 on BOTH the calibrated (linear) and the uncalibrated (hyperbolic) path — the
+    # negative count would otherwise read as "under par" (ratio 1) or a negative ratio.
+    axes = {"grounding": {"passed": 4, "total": 4}, "adherence": {"passed": 4, "total": 4},
+            "synthesis": {"passed": 2, "total": 2}, "procedural": {"passed": 4, "total": 4}}
+    assert scoring.card_from_axes(axes, -1, 24, par_calibrated=True)["stats"]["EFF"] == 0
+    assert scoring.card_from_axes(axes, -5, 11)["stats"]["EFF"] == 0   # uncalibrated
+
+
+def test_derive_card_rejects_negative_tool_count():
+    # Read boundary fails HONEST: a corrupt negative count is uncarded, not scored 0 —
+    # so a malformed row never ranks on the public board at all.
+    from app.services.arena.store import _derive_card
+    axes = {"grounding": {"passed": 4, "total": 4}, "adherence": {"passed": 4, "total": 4},
+            "synthesis": {"passed": 2, "total": 2}, "procedural": {"passed": 4, "total": 4}}
+    bd = {"objective": {"axes": axes},
+          "diagnosis": {"counts_detail": {"tool_calls": -1}}}
+    card, reason = _derive_card(bd, "risk-manager-control-day")
+    assert card is None and reason == "missing_tool_count"
+
+
 def test_card_do_nothing_scores_low_eff():
     axes = {"grounding": {"passed": 0, "total": 10}, "adherence": {"passed": 0, "total": 10},
             "synthesis": {"passed": 0, "total": 3}, "procedural": {"passed": 3, "total": 3}}
