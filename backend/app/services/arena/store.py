@@ -29,11 +29,13 @@ def _derive_card(bd: dict, workflow_id: str) -> tuple[dict | None, str | None]:
         return None, "missing_tool_count"
     try:
         from app.golden_workflows.registry import get_workflow
-        par = scoring.designed_par(get_workflow(workflow_id))
+        wf = get_workflow(workflow_id)
+        par = scoring.designed_par(wf)
     except Exception:
         return None, "workflow_unavailable"
     judged = (bd.get("judge") or {}).get("judged_score")
-    return scoring.card_from_axes(axes, int(tc), par, judged=judged), None
+    return scoring.card_from_axes(axes, int(tc), par, judged=judged,
+                                  par_calibrated=scoring.par_calibrated(wf)), None
 
 
 def create_run(

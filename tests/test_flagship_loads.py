@@ -96,9 +96,9 @@ def test_flagship_report_step_names_a_format():
 
 
 # --- ability card: par + fixture-truth grounding (Spec B, Task 7) -----------
-def test_flagship_declares_par_11():
+def test_flagship_declares_par_24():
     wf = get_workflow("risk-manager-control-day")
-    assert wf.par_tool_calls == 11
+    assert wf.par_tool_calls == 24
 
 
 def test_flagship_grounding_targets_match_truth_file():

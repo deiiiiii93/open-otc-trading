@@ -13,9 +13,12 @@ tags: [flagship, risk, daily-control, desk-workflow]
 # Benchmark-reserved set name the trap step (step 8) references — the runner
 # asserts it is absent from the live scenario library so the trap cannot invert.
 trap_absent_sets: ["stagflation-shock-2011"]
-# Designed complete-run tool-call count (EFF ability stat, Spec B). Equals the
-# expected_tools sum across steps; declared explicitly for self-documentation.
-par_tool_calls: 11
+# Designed par for golf-style EFF (spec 2026-07-11): a realistic COUNTED competent run,
+# not the theoretical minimum. 11 expected tool calls + ~13 legitimate counted overhead
+# (re-fetching get_*_run results, re-listing the scenario library, sanity re-pricing).
+# Skill-file reads are EXCLUDED — they aren't counted by the EFF metric (META_TOOLS).
+# EFF decays linearly from par to 0 at 2×par; calibrated par opts this workflow into golf.
+par_tool_calls: 24
 
 steps:
   - user: "What does the latest risk say for the control portfolio?"

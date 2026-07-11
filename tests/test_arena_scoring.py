@@ -414,9 +414,37 @@ from app.golden_workflows.registry import get_workflow as _get_wf
 
 
 def test_designed_par_defaults_to_expected_tools_sum():
+    # The fallback (no explicit par_tool_calls) is sum(expected_tools). Strip the
+    # flagship's explicit par to exercise it — the flagship itself now declares 24.
+    from app.golden_workflows.schema import GoldenWorkflow
     wf = _get_wf("risk-manager-control-day")
-    assert scoring.designed_par(wf) == sum(len(s.expected_tools) for s in wf.steps)
-    assert scoring.designed_par(wf) == 11
+    data = wf.model_dump()
+    data["par_tool_calls"] = None
+    stripped = GoldenWorkflow(**data)
+    assert scoring.designed_par(stripped) == sum(len(s.expected_tools) for s in wf.steps)
+    assert scoring.designed_par(stripped) == 11
+
+
+def test_flagship_par_is_calibrated_24():
+    wf = _get_wf("risk-manager-control-day")
+    assert wf.par_tool_calls == 24
+    assert scoring.designed_par(wf) == 24
+    assert scoring.par_calibrated(wf) is True
+
+
+def test_derive_card_uses_linear_for_calibrated_flagship():
+    # A stored breakdown for the flagship (calibrated par=24) derives a LINEAR EFF on
+    # read, not the hyperbolic one. c=1.0 → EFF == round(99 * linear_ratio).
+    from app.services.arena.store import _derive_card
+    axes = {"grounding": {"passed": 4, "total": 4}, "adherence": {"passed": 4, "total": 4},
+            "synthesis": {"passed": 2, "total": 2}, "procedural": {"passed": 4, "total": 4}}
+    bd = {"objective": {"axes": axes},
+          "diagnosis": {"counts_detail": {"tool_calls": 36}}}
+    card, reason = _derive_card(bd, "risk-manager-control-day")
+    assert reason is None
+    # 36 calls, par 24, span 24 → 1-(12/24)=0.5 → EFF 50 (linear).
+    # (Hyperbolic would be round(99*24/36)=66 — proving the gate is on.)
+    assert card["stats"]["EFF"] == 50
 
 
 def test_designed_par_override_wins():

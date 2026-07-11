@@ -305,7 +305,8 @@ def ability_card(transcript, loaded, judged: float | None = None) -> dict:
     bd = objective_breakdown(transcript, loaded)
     heuristic = diagnose_heuristic(transcript, loaded)
     return card_from_axes(bd["axes"], heuristic["tool_calls"],
-                          designed_par(loaded.workflow), judged=judged)
+                          designed_par(loaded.workflow), judged=judged,
+                          par_calibrated=par_calibrated(loaded.workflow))
 
 
 def _session_context(transcript: MatchTranscript) -> AssertionContext:
