@@ -86,6 +86,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ranking 4th). An initial trial 2 that read OBJ 28.2 was a mid-run ZenMux 402
   `quote_exceeded` contamination the infra gate missed (it recovered enough to look
   complete), not model weakness; re-run after quota refresh it matched trial 1.
+- **`openai/gpt-5.6-luna` (GPT-5.6 Luna) added as an arena contestant** — registered in
+  `CANDIDATE_MODELS` and the `zenmux` channel (genuine OpenAI model, parses tool calls
+  natively — no `protocol` override) — and appended to **Arena Run #20** as a 2-trial
+  aggregate on the flagship. It **tops the board at OVR 80** (CON 96, OBJ 91.1 from a
+  94.9 / 87.2 pair, an efficient 33 tool calls per trial); both trials pass the corrected
+  CVaR grounding (`-7758.99`).
 - **`x-ai/grok-4.5` (Grok 4.5) added as an arena contestant** — registered in
   `CANDIDATE_MODELS` and the `zenmux` channel (`provider: openai`, **no** `protocol`
   override — xAI's function-calling parses natively through the OpenAI-compatible
