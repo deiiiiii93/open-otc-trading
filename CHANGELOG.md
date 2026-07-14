@@ -54,6 +54,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   count (e.g. Run #20) render without the old `assert len == 3`.
 
 ### Fixed
+- **Command palette (⌘K) now lists every nav page automatically.** The "Jump To"
+  items were a second hand-maintained list in `main.tsx` that had drifted from the
+  sidebar — the **Arena** page was missing entirely. The list is now derived from
+  `navItems` (the single source of truth), so any page added to the sidebar appears
+  in the palette with no separate list to update.
+- **Arena Runs selection toolbar no longer overflows the panel border.** The
+  `.wl-arena__run-actions` row (count + Merge/Delete/Clear buttons) is a flex row
+  inside the fixed 280px Runs column; with no `flex-wrap` the buttons punched past
+  the panel's right edge (the `Clear` button spilled outside the box). Added
+  `flex-wrap: wrap` so the buttons wrap onto a second line within the panel.
 - **Flagship arena CVaR grounding no longer breaks when a model regenerates the
   mutable `market-crash` scenario-set file.** The `scenario_cvar` grounding truth
   (`-7758.99`) is harvested from the **`predefined: ["market_crash"]`** built-in

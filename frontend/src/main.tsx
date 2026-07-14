@@ -186,30 +186,17 @@ function App() {
     <LaptopMinimal size={16} aria-hidden="true" />
   );
 
+  // "Jump To" items are derived from navItems (the single source of truth for the
+  // sidebar) so any page added to the nav automatically appears in the palette —
+  // no second hand-maintained list to keep in sync. onSelectCommand maps the id
+  // back to a route via `id.replace('jump-', '')`, so `jump-${route}` round-trips.
   const commandItems: CommandItem[] = [
-    { id: 'jump-positions',  group: 'Jump To', label: 'Positions',     shortcut: '↵' },
-    { id: 'jump-booking',    group: 'Jump To', label: 'Booking',       shortcut: '↵' },
-    { id: 'jump-pricing-parameters', group: 'Jump To', label: 'Pricing Parameters', shortcut: '↵' },
-    { id: 'jump-engine-configs', group: 'Jump To', label: 'Engine Configs', shortcut: '↵' },
-    { id: 'jump-portfolios', group: 'Jump To', label: 'Portfolios',    shortcut: '↵' },
-    { id: 'jump-rfq',       group: 'Jump To', label: 'RFQ Approval',  shortcut: '↵' },
-    { id: 'jump-try-solve', group: 'Jump To', label: 'Try to Solve',  shortcut: '↵' },
-    { id: 'jump-instruments', group: 'Jump To', label: 'Instruments',  shortcut: '↵' },
-    { id: 'jump-hedging',   group: 'Jump To', label: 'Hedging',       shortcut: '↵' },
-    { id: 'jump-memory',    group: 'Jump To', label: 'Memory',        shortcut: '↵' },
-    { id: 'jump-risk',      group: 'Jump To', label: 'Risk',          shortcut: '↵' },
-    { id: 'jump-greeks-landscape', group: 'Jump To', label: 'Greeks Landscape', shortcut: '↵' },
-    { id: 'jump-scenario-test', group: 'Jump To', label: 'Scenario Test', shortcut: '↵' },
-    { id: 'jump-backtest',  group: 'Jump To', label: 'Backtest',      shortcut: '↵' },
-    { id: 'jump-tasks',     group: 'Jump To', label: 'Tasks',         shortcut: '↵' },
-    { id: 'jump-reports',   group: 'Jump To', label: 'Reports',       shortcut: '↵' },
-    { id: 'jump-skills',    group: 'Jump To', label: 'Skills',        shortcut: '↵' },
-    { id: 'jump-workflows', group: 'Jump To', label: 'Workflows',     shortcut: '↵' },
-    { id: 'jump-tracing',   group: 'Jump To', label: 'Tracing',       shortcut: '↵' },
-    { id: 'jump-audit',     group: 'Jump To', label: 'Audit',         shortcut: '↵' },
-    { id: 'jump-model-maintenance', group: 'Jump To', label: 'Model Maintenance', shortcut: '↵' },
-    { id: 'jump-chat',      group: 'Jump To', label: 'Agent Desk',    shortcut: '↵' },
-    { id: 'jump-client',    group: 'Jump To', label: 'Client RFQ',    shortcut: '↵' },
+    ...navItems.map((nav) => ({
+      id: `jump-${nav.route}`,
+      group: 'Jump To',
+      label: nav.label,
+      shortcut: '↵',
+    })),
     { id: 'portfolios-create-container', group: 'Create', label: 'New container portfolio', shortcut: '↵' },
     { id: 'portfolios-create-view',      group: 'Create', label: 'New view portfolio',      shortcut: '↵' },
   ];
