@@ -170,6 +170,7 @@ def parse_leaderboard(text: str) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------- cover ---
 
 DEFAULT_REF_IMAGES = [
+    Path(__file__).parent.parent / "assets" / "ref-layout.png",
     Path(__file__).parent.parent / "assets" / "ref-editorial.png",
     Path(__file__).parent.parent / "assets" / "ref-palette.jpg",
 ]
@@ -177,48 +178,68 @@ DEFAULT_REF_IMAGES = [
 
 def generate_cover_prompt(run: str, leaderboard: list[dict[str, Any]]) -> str:
     """Build the Chinese Red Note cover prompt from parsed report data."""
-    top = sorted(leaderboard, key=lambda r: (-r["ovr"], -r["eff"], -r["con"]))[:5]
-    winner = top[0] if top else {"model": "TBD", "ovr": 0}
-    second = top[1] if len(top) > 1 else {"model": "TBD", "ovr": 0}
-    third = top[2] if len(top) > 2 else {"model": "TBD", "ovr": 0}
-    fourth = top[3] if len(top) > 3 else {"model": "TBD", "ovr": 0}
+    top = sorted(leaderboard, key=lambda r: (-r["ovr"], -r["eff"], -r["con"]))[:6]
+
+    def row_text(idx: int, item: dict[str, Any], suffix: str = "") -> str:
+        return f"{idx}. {item['model']} — {item['ovr']}{suffix}"
+
+    board_lines = []
+    if len(top) >= 1:
+        board_lines.append(row_text(1, top[0], "（全场最佳）"))
+    if len(top) >= 2:
+        board_lines.append(row_text(2, top[1]))
+    if len(top) >= 3:
+        board_lines.append(row_text(3, top[2]))
+    if len(top) >= 4 and top[3]["ovr"] == top[2]["ovr"]:
+        board_lines.append(row_text(3, top[3]))
+    elif len(top) >= 4:
+        board_lines.append(row_text(4, top[3]))
+    if len(top) >= 5:
+        board_lines.append(row_text(5, top[4]))
 
     # Grok inversion candidate: high obj, low-ish ovr
     grok = next((r for r in leaderboard if "grok" in r["model"].lower()), None)
     if grok is None:
         grok = max(leaderboard, key=lambda r: (r["obj"], -r["ovr"])) if leaderboard else {"model": "Grok 4.5", "obj": 91, "ovr": 73, "eff": 4}
 
-    key_lines = [
-        f"- {winner['model']} OVR {winner['ovr']} 全场最佳",
-        f"- {second['model']} OVR {second['ovr']} 第二",
-    ]
-    if third["ovr"] == fourth.get("ovr"):
-        key_lines.append(f"- {third['model']} 与 {fourth['model']} OVR {third['ovr']} 并列第三")
-    else:
-        key_lines.append(f"- {third['model']} OVR {third['ovr']} 第三")
-
-    key_lines.append(
-        f"- {grok['model']} 客观分{grok['obj']}并列第一，但因工具调用开销大、效率极低，综合OVR仅{grok['ovr']}，排名较低"
+    board_lines.append(
+        f"10. {grok['model']} — {grok['ovr']}（客观分{grok['obj']}并列第一，但工具调用开销大，效率极低）"
     )
 
-    key_conclusions = "\n".join(key_lines)
+    board_text = "\n".join(board_lines)
 
     return f"""根据报告内容，设计一张小红书封面。
 
 报告：The OTC Desk Agent Arena — Methodology & Results (Run #{run})，评估{len(leaderboard)}个主流大语言模型在无人工干预下独立运营真实OTC衍生品交易台的能力。
 
-关键结论：
-{key_conclusions}
+主标题：{len(leaderboard)}大模型无人交易台真实对决
+副标题：评估{len(leaderboard)}个主流大语言模型在无人工干预下独立运营真实OTC衍生品交易台的能力
 
-核心观点：大规模无人值守AI Agent部署，效率（EFF）与一致性（CON）比单纯客观能力更重要。
+OVR 综合得分排行榜（至少展示前5名及Grok）：
+{board_text}
+
+核心洞察：
+大规模无人值守 AI Agent 部署，效率（EFF）与一致性（CON）比单纯客观能力更重要。
+
+评估维度：
+用六边形雷达图展示六个核心维度，OVR 综合评分放在雷达图中心：
+- GRD 基础核实
+- ADH 合规服从
+- SYN 综合分析
+- PRC 流程执行
+- EFF 执行效率
+- CON 一致性
+
+底部链接栏：
+- 详细报告：https://www.artena.one/arena/
+- 评测项目 GitHub：https://github.com/deiiiiii93/open-otc-trading
 
 视觉要求：
 - Claude 官网式的 editorial 杂志主页风格
-- 配色以淡蓝和淡白色为主，整体干净、高级、专业
+- 配色以淡蓝（#3A7BD5 附近）和淡白/米白（#F4F7FC 附近）为主
 - 竖版 3:4 比例
 - 排版留白充足、字体优雅、信息层级清晰
-- 包含报告标题、主标题"{len(leaderboard)}大模型无人交易台真实对决"、OVR综合得分排行榜和核心洞察
-- 适合作为小红书笔记首图"""
+- 整体干净、高级、专业，适合作为小红书笔记首图"""
 
 
 def generate_cover_image(

@@ -1,5 +1,5 @@
 ---
-title: OTC Desk Agent Arena Run #20 Red Note Cover
+title: OTC Desk Agent Arena Run #20 Red Note Cover v3
 ---
 根据报告内容，设计一张小红书封面。
 
@@ -13,8 +13,8 @@ OVR 综合得分排行榜（至少展示前5名及Grok）：
 2. GLM 5.2 — 85
 3. DeepSeek V4 Pro — 84
 3. GPT-5.6 Luna — 84
-5. MiMo V2.5 Pro — 82
-10. Grok 4.5 — 73（客观分91并列第一，但工具调用开销大，效率极低）
+5. Kimi K2.7 — 82
+10. Grok 4.5 — 73（客观分91并列第一，但工具调用58/46次，效率极低）
 
 核心洞察：
 大规模无人值守 AI Agent 部署，效率（EFF）与一致性（CON）比单纯客观能力更重要。
