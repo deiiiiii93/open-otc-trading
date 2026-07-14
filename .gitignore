@@ -34,3 +34,6 @@ config/agent_channels.yaml
 
 # stray root sqlite (real DB lives in data/, gitignored)
 open_otc.sqlite
+
+# generated rednote artifacts
+docs/rednotes/

@@ -1,0 +1,4 @@
+---
+title: OTC Desk Agent Arena Run #20 Red Note Cover
+---
+A cinematic, high-end digital illustration for a social media cover image. The scene shows a futuristic AI trading desk arena: a dark, polished command center with multiple holographic screens floating in mid-air, displaying leaderboard rankings, glowing bar charts, and finance metrics. In the center, a large luminous leaderboard shows "OTC Desk Agent Arena · Run #20" at the top. Silhouettes of abstract AI agents face the screens like competitors. Color palette: deep navy blue, electric cyan, soft gold highlights, clean white text. Style: sleek, modern, fintech editorial, premium tech magazine cover, shallow depth of field, dramatic rim lighting, no text other than the leaderboard title. Aspect ratio 3:4 portrait.

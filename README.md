@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB.svg)](https://react.dev/)
-[![Agent Arena: Run #9](https://img.shields.io/badge/Agent_Arena-Run_%239-8a2be2.svg)](docs/arena/)
+[![Agent Arena: Run #20](https://img.shields.io/badge/Agent_Arena-Run_%2320-8a2be2.svg)](docs/arena/)
 
 ![Open OTC agent desk](docs/screenshots/agent-desk.png)
 
@@ -79,29 +79,33 @@ marked invalid and excluded from leaderboard means rather than scored 0.
 
 For an easy public view of the leaderboards and reports, visit [Artena](https://www.artena.one/arena/).
 
-**Run #9 (latest)** evaluated **nine flash-tier models over five trials each** — with
-**exact, measured token & cost** per match:
+**Run #20 (latest)** evaluated **16 frontier and near-frontier models over two trials
+each** using the new **Model Ability Card** — separating objective capability,
+efficiency (EFF), and consistency (CON) rather than collapsing everything into one
+score:
 
-| Rank | Model | Total | σ | $/match | pts/$ |
+| Rank | Model | OVR | CON | EFF | Obj |
 |:---:|---|:---:|:---:|:---:|:---:|
-| 🥇 | Gemini 3.5 Flash | **59.1** | 5.5 | $14.28 | 4.1 |
-| 🥈 | Step 3.7 Flash | 57.9 | **4.3** | **$1.04** | 55.6 |
-| 🥉 | DeepSeek V4 Flash | 49.2 | 15.5 | $0.68 | 72.2 |
+| 🥇 | **GPT-5.6 Terra** | **86** | 92 | **76** | 89.8 |
+| 🥈 | GLM 5.2 | 85 | **96** | 60 | **91** |
+| 🥉 | DeepSeek V4 Pro | 84 | **96** | **82** | 84.6 |
+| 🥉 | GPT-5.6 Luna | 84 | **96** | 55 | **91** |
+| 5 | MiMo V2.5 Pro | 82 | 92 | 54 | 89.8 |
+| 10 | Grok 4.5 | 73 | 50 | 4 | **91** |
 
-**"Flash" is a latency claim, not a price claim.** Gemini 3.5 Flash wins the
-*placed* board but is the *most expensive* operator the Arena has measured (dearer
-than Run #8's frontier models); **Step 3.7 Flash** lands 0.1 behind, is the
-steadiest in the field, and costs **14× less**. Cost-efficiency inverts the ranking
-(MiMo V2.5 ≈ 85 pts/$). The dark horse, **Doubao Seed 2.1 Turbo**, posts the highest
-*functional* score (65.3) but completed only 2/5 trials — reported separately, not
-placed. Three of nine couldn't operate the desk at all.
+**Raw capability is not deployability.** Grok 4.5 ties the highest objective
+score (**91**) but ranks **10th overall** because it burns ~52 tool calls per run
+and scores **EFF 4**. GPT-5.6 Terra wins the board with the best balance of
+objective strength, efficiency, and consistency. DeepSeek V4 Pro is the
+reliability exemplar: byte-identical across both trials (CON 96) with the highest
+EFF in the field.
 
-📖 **Read Run #9 in full** —
-[Markdown](docs/arena/2026-06-28-run9-otc-desk-agent-arena.md) ·
-[HTML](https://htmlpreview.github.io/?https://github.com/deiiiiii93/open-otc-trading/blob/main/docs/arena/2026-06-28-run9-otc-desk-agent-arena.html) ·
-[PDF](docs/arena/2026-06-28-run9-otc-desk-agent-arena.pdf)
-&nbsp;·&nbsp; **Run #8** (frontier tier) and all reports live in
-[**`docs/arena/`**](docs/arena/).
+📖 **Read Run #20 in full** —
+[Markdown](docs/arena/2026-07-13-run20-otc-desk-agent-arena.md) ·
+[HTML](https://htmlpreview.github.io/?https://github.com/deiiiiii93/open-otc-trading/blob/main/docs/arena/2026-07-13-run20-otc-desk-agent-arena.html) ·
+[PDF](docs/arena/2026-07-13-run20-otc-desk-agent-arena.pdf)
+&nbsp;·&nbsp; Previous runs (**Run #9** flash tier, **Run #8** frontier tier) and all
+reports live in [**`docs/arena/`**](docs/arena/).
 
 > New runs and additional **long-workflow match designs** are in progress and will
 > be published in the Arena as they're released.
