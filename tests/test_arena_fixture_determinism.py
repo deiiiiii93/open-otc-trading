@@ -72,6 +72,33 @@ def test_registry_flagship_matches_legacy_drive(offline_session_factory, block_n
     assert via_registry["risk"]["positions"]  # non-empty priced payload
 
 
+def test_trader_rfq_quote_is_reproducible(offline_session_factory, block_network):
+    from app.golden_workflows.determinism import (
+        TRADER_RFQ_ID, seed_workflow, drive_producers,
+    )
+    with offline_session_factory() as s1:
+        first = drive_producers(s1, seed_workflow(s1, TRADER_RFQ_ID), workflow_id=TRADER_RFQ_ID)
+    with offline_session_factory() as s2:
+        second = drive_producers(s2, seed_workflow(s2, TRADER_RFQ_ID), workflow_id=TRADER_RFQ_ID)
+    assert first == second, "trader-rfq quote drifted across identical seeds"
+    assert isinstance(first["quote"]["achieved_price"], (int, float))
+
+
+def test_trader_rfq_quote_tracks_spot(offline_session_factory, block_network):
+    """Parity: the harvested number is coupled to the live quote inputs, not hand-built.
+    Changing the pinned spot must change the harvested achieved_price."""
+    from app.golden_workflows.determinism import (
+        TRADER_RFQ_ID, seed_workflow, _drive_quote_rfq,
+    )
+    with offline_session_factory() as s:
+        ids = seed_workflow(s, TRADER_RFQ_ID)
+        _, base = _drive_quote_rfq(s, ids)
+    with offline_session_factory() as s:
+        ids = seed_workflow(s, TRADER_RFQ_ID)
+        _, bumped = _drive_quote_rfq(s, ids, spot=120.0)
+    assert base["achieved_price"] != bumped["achieved_price"]
+
+
 def test_offline_guard_trips_without_seeded_history(offline_session_factory, block_network):
     """Without the seeded backtest history, driving the backtest offline must FAIL
     loudly — either ensure_spot_history raises (network disabled) and propagates,

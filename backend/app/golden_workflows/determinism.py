@@ -252,6 +252,71 @@ _FLAGSHIP_DETERMINISM = WorkflowDeterminism(
 DETERMINISM_REGISTRY: dict = {FLAGSHIP_ID: _FLAGSHIP_DETERMINISM}
 
 
+# --- Trader RFQ→Booking determinism -----------------------------------------
+#
+# Grounds on the MSFT down-and-in barrier put QUOTE. The live step-2 tool is
+# ``quote_rfq``; in PRICE mode it emits ``quote_payload.achieved_price`` (the
+# option's model price = the premium). Solve mode is NOT used — its ``solved_value``
+# defaults to a solved *strike*, an input here, not a groundable output. The market
+# snapshot is pinned (fixed spot + the seeded Arena Trader Profile MSFT rate/div/vol),
+# so the price is byte-deterministic offline.
+
+TRADER_RFQ_ID = "trader-rfq-booking-day"
+_TRADER_RFQ_SPOT = 100.0
+_MSFT_RATE, _MSFT_DIV, _MSFT_VOL = 0.04, 0.01, 0.28
+
+
+def _seed_trader_rfq(session) -> dict:
+    ids = apply_seed(get_workflow_bundle(TRADER_RFQ_ID).fixtures, session)
+    session.commit()
+    return ids
+
+
+def _drive_quote_rfq(session, ids, *, spot: float = _TRADER_RFQ_SPOT):
+    """Replay the LIVE quote_rfq PRICE path on a deterministic MSFT down-in barrier
+    put draft; return (rfq, {'achieved_price', 'engine'})."""
+    from app.services import rfq as rfq_svc
+    from app.schemas import RFQRequestDraft, RFQQuoteRequest
+
+    draft = RFQRequestDraft.model_validate({
+        "client_name": "ARENA Determinism",
+        "product_type": "BarrierOption",
+        "product_kwargs": {
+            "strike": 100, "barrier": 80, "maturity": 1.0,
+            "option_type": "PUT", "barrier_type": "DOWN_IN",
+        },
+        "market": {
+            "spot": spot, "rate": _MSFT_RATE, "dividend_yield": _MSFT_DIV,
+            "volatility": _MSFT_VOL, "currency": "USD", "underlying": "MSFT",
+        },
+        "engine_spec": {"engine_name": "BarrierAnalyticalEngine"},
+        "quote_mode": "price",
+    })
+    rfq = rfq_svc.create_rfq_draft(session, draft, channel="arena", actor="arena")
+    rfq = rfq_svc.quote_rfq(session, rfq.id, RFQQuoteRequest(quote_mode="price"))
+    session.refresh(rfq)
+    payload = rfq.quote_payload or {}
+    return rfq, {"achieved_price": payload.get("achieved_price"),
+                 "engine": (payload.get("engine_summary") or {}).get("engine_class")}
+
+
+def _validate_quote(run, payload):
+    """RFQ quote completion predicate: quote_rfq persists status pending_approval
+    (NOT TaskStatus.COMPLETED), so the task-run validator would wrongly reject it.
+    Trust the payload iff a numeric achieved_price is present."""
+    price = payload.get("achieved_price")
+    if not isinstance(price, (int, float)) or isinstance(price, bool):
+        raise AssertionError(f"quote produced no numeric achieved_price: {payload!r}")
+    return payload
+
+
+DETERMINISM_REGISTRY[TRADER_RFQ_ID] = WorkflowDeterminism(
+    workflow_id=TRADER_RFQ_ID,
+    seed_fn=_seed_trader_rfq,
+    drivers={"quote": ProducerDriver(_drive_quote_rfq, _validate_quote)},
+)
+
+
 def seed_workflow(session, workflow_id: str) -> dict:
     return DETERMINISM_REGISTRY[workflow_id].seed_fn(session)
 
