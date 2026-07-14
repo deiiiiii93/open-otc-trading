@@ -121,9 +121,9 @@ channels:
         provider: openai
         label: MiMo V2.5
         tags: [fast, tool-use]
-      - id: tencent/hy3-preview
+      - id: tencent/hy3
         provider: openai
-        label: Hunyuan 3 Preview
+        label: Hunyuan 3
         tags: [fast, tool-use]
       - id: meituan/longcat-2.0
         provider: openai

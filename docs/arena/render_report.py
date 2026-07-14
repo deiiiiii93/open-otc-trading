@@ -69,10 +69,11 @@ PPD = ("Score per dollar (est.) — cost-efficiency inverts the quality ranking"
 
 _SIDECAR = SRC.with_suffix(".charts.json")
 if _SIDECAR.exists():
-    # Sidecar: [[caption, axis_max, unit, [[label, value, cls, vlabel], ...]], x3]
+    # Sidecar: [[caption, axis_max, unit, [[label, value, cls, vlabel], ...]], ...]
     _specs = [(s[0], s[1], s[2], [tuple(r) for r in s[3]])
               for s in json.loads(_SIDECAR.read_text())]
-    LEADERBOARD, RELIABILITY, PPD = _specs
+else:
+    _specs = [LEADERBOARD, RELIABILITY, PPD]
 
 
 def chart_html(spec):
@@ -93,17 +94,21 @@ def chart_html(spec):
 
 # --------------------------------------------------- swap ASCII blocks -> charts
 md_text = SRC.read_text()
-charts = iter([chart_html(LEADERBOARD), chart_html(RELIABILITY), chart_html(PPD)])
+chart_blocks = list(re.finditer(r"```[^\n]*\n.*?█.*?```", md_text, flags=re.DOTALL))
+n_blocks = len(chart_blocks)
+charts = iter([chart_html(s) for s in _specs[:n_blocks]])
 sentinels = []
 
 def _sub(_m):
     tok = f"@@CHART_{len(sentinels)}@@"
-    sentinels.append(next(charts))
+    try:
+        sentinels.append(next(charts))
+    except StopIteration:
+        sentinels.append("")
     return tok
 
 # fenced blocks that contain a full-block char are our ASCII charts
 md_text = re.sub(r"```[^\n]*\n.*?█.*?```", _sub, md_text, flags=re.DOTALL)
-assert len(sentinels) == 3, f"expected 3 ascii charts, found {len(sentinels)}"
 
 body = markdown.markdown(
     md_text,

@@ -1,0 +1,25 @@
+[
+  [
+    "Overall rating (OVR) — ranked board",
+    100,
+    "OVR",
+    [
+      ["🥇 GPT-5.6 Terra", 86, "gold", "86"],
+      ["🥈 GLM 5.2", 85, "silver", "85"],
+      ["🥉 DeepSeek V4 Pro", 84, "bronze", "84 · T-3"],
+      ["GPT-5.6 Luna", 84, "bronze", "84 · T-3"],
+      ["MiMo V2.5 Pro", 82, "mid", "82"],
+      ["Claude Sonnet 5", 77, "mid", "77"],
+      ["LongCat 2.0", 76, "mid", "76"],
+      ["DeepSeek V4 Flash", 75, "mid", "75 · T-8"],
+      ["Qwen 3.7 Max", 75, "mid", "75 · T-8"],
+      ["Grok 4.5", 73, "mid", "73 · T-10"],
+      ["Kimi 2.7", 73, "mid", "73 · T-10"],
+      ["MiMo V2.5", 72, "mid", "72"],
+      ["Step 3.7 Flash", 69, "mid", "69 · T-13"],
+      ["Hunyuan 3", 69, "mid", "69 · T-13"],
+      ["Gemini 3.5 Flash", 61, "floor", "61"],
+      ["MiniMax M3", 60, "floor", "60"]
+    ]
+  ]
+]

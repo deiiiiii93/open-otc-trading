@@ -243,9 +243,9 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         provider="openai",
     ),
     ArenaModel(
-        slug="hunyuan-3-preview",
-        zenmux_name="tencent/hy3-preview",
-        display_name="Hunyuan 3 Preview",
+        slug="hunyuan-3",
+        zenmux_name="tencent/hy3",
+        display_name="Hunyuan 3",
         default_config=_DEFAULT_CONFIG,
         provider="openai",
     ),

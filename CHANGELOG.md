@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   badge. Gated by `OPEN_OTC_FEATURE_MODEL_WRITE_API` (default on; set `false` to make the
   API read-only on non-localhost binds). Does **not** sync the arena
   `services/arena/models.py::CANDIDATE_MODELS` list.
+- **Run #20 Arena report** (`docs/arena/2026-07-13-run20-otc-desk-agent-arena.md`, plus
+  rendered `.html`/`.pdf`/`.charts.json`): a sixteen-model, cross-tier evaluation on the
+  v2 flagship (`risk-manager-control-day`, 9-step/39-point), scored by the new Model
+  Ability Card (GRD/ADH/SYN/PRC/EFF → OVR + CON). Centers on how the bench evolved from
+  Run #9's single blended score to the card, and argues why efficiency (golf-EFF) and
+  consistency — not saturated objective capability — are the right axes for choosing a
+  **long-run** autonomous desk operator. **GPT-5.6 Terra** tops the board (OVR 86); the
+  Grok inversion (best objective 91.0, ranks T-10 on EFF 4) is the worked case.
 
 ### Changed
 - **Arena EFF is now golf-scored against a realistic, calibrated par.** The efficiency
@@ -37,6 +45,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   regression). Derive-on-read re-scores runs #10–#20 with no migration — the flagship
   Run #20 board re-sorts (lean **gpt-5.6-terra** rises to #1 over heavier runs; the
   over-executors fall) — and the 39-point objective and golden replay are unaffected.
+- **Arena contestant `hunyuan-3-preview` → `hunyuan-3`** (route `tencent/hy3-preview` →
+  `tencent/hy3`) in `services/arena/models.py` and `config/agent_channels.example.yml`,
+  replacing the preview with the GA model. Run #9's historical match keeps its literal
+  stored slug (display reads the stored string, not the live registry — no migration).
+- **`docs/arena/render_report.py`** now swaps a **variable** number of ASCII chart blocks
+  into rendered HTML (was hard-coded to exactly 3), so reports with a different chart
+  count (e.g. Run #20) render without the old `assert len == 3`.
 
 ### Fixed
 - **Flagship arena CVaR grounding no longer breaks when a model regenerates the

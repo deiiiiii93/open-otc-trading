@@ -1,0 +1,975 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OTC Desk Agent Arena — Run #20</title>
+<style>
+:root{
+  --ink:#1a1d21; --muted:#5b6470; --line:#e3e6eb; --bg:#ffffff;
+  --accent:#2f5d8a; --soft:#f4f6f9;
+  --gold:#caa12e; --silver:#9aa0a6; --bronze:#b06a3b; --mid:#3b6fb0; --floor:#c5c9d1;
+  --good:#2e8b57; --neutral:#6b7280; --warn:#d98a2b; --bad:#c0392b; --frontier:#3b6fb0;
+}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+body{
+  font-family:"Charter","Georgia",Cambria,"Times New Roman",serif;
+  color:var(--ink); background:var(--bg); line-height:1.62;
+  max-width:820px; margin:0 auto; padding:56px 40px 80px; font-size:16.5px;
+}
+h1,h2,h3,h4{font-family:-apple-system,"Inter","Segoe UI",Helvetica,Arial,sans-serif;
+  line-height:1.22; letter-spacing:-.01em; color:var(--ink)}
+h1{font-size:2.05rem; margin:.2em 0 .1em; font-weight:800}
+h2{font-size:1.42rem; margin:2.1em 0 .55em; padding-bottom:.28em;
+  border-bottom:2px solid var(--line); font-weight:750}
+h3{font-size:1.12rem; margin:1.7em 0 .5em; font-weight:700; color:#2b3038}
+h1+p em, body>p:first-of-type em{color:var(--muted)}
+p,li{font-size:1rem}
+a{color:var(--accent); text-decoration:none}
+hr{border:none; border-top:1px solid var(--line); margin:2.2em 0}
+code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.86em;
+  background:var(--soft); padding:.1em .35em; border-radius:4px}
+blockquote{margin:1.1em 0; padding:.7em 1.1em; background:var(--soft);
+  border-left:4px solid var(--accent); border-radius:0 6px 6px 0; color:#2b3038}
+blockquote p{margin:.3em 0}
+strong{font-weight:700}
+
+/* tables */
+table{border-collapse:collapse; width:100%; margin:1.1em 0; font-size:.9rem;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+th,td{padding:.5em .7em; border-bottom:1px solid var(--line); text-align:left}
+thead th{background:#f7f9fc; border-bottom:2px solid #d6dbe3; font-weight:700;
+  font-size:.82rem; letter-spacing:.01em; color:#39414c}
+tbody tr:nth-child(even){background:#fbfcfe}
+td:first-child,th:first-child{white-space:nowrap}
+
+/* charts */
+.chart{margin:1.3em 0 1.6em; padding:0}
+.chart .row{display:flex; align-items:center; gap:12px; margin:5px 0;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+.chart .lbl{flex:0 0 168px; text-align:right; font-size:.82rem; color:#39414c; font-weight:600}
+.chart .track{flex:1; height:22px; background:#eef1f5; border-radius:5px; overflow:hidden}
+.chart .bar{display:block; height:100%; border-radius:5px}
+.chart .val{flex:0 0 150px; font-size:.78rem; color:var(--muted); font-variant-numeric:tabular-nums}
+.chart figcaption{margin-top:.7em; font-size:.76rem; color:var(--muted);
+  font-family:-apple-system,"Inter",sans-serif; text-align:right}
+.bar.gold{background:linear-gradient(90deg,#d9b13f,#caa12e)}
+.bar.silver{background:linear-gradient(90deg,#aab0b6,#9aa0a6)}
+.bar.bronze{background:linear-gradient(90deg,#c07c4a,#b06a3b)}
+.bar.mid{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.frontier{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.floor{background:#c5c9d1}
+.bar.good{background:linear-gradient(90deg,#37a169,#2e8b57)}
+.bar.neutral{background:#8a929e}
+.bar.warn{background:linear-gradient(90deg,#e09a3e,#d98a2b)}
+.bar.bad{background:linear-gradient(90deg,#d04b3c,#c0392b)}
+
+/* report header band */
+.masthead{border-bottom:3px solid var(--ink); padding-bottom:.6em; margin-bottom:1.4em}
+.footer-note{margin-top:3em; padding-top:1em; border-top:1px solid var(--line);
+  font-size:.8rem; color:var(--muted); font-family:-apple-system,"Inter",sans-serif}
+
+@page{size:A4; margin:16mm 15mm}
+@media print{
+  body{max-width:none; margin:0; padding:0; font-size:10.6pt}
+  h2{margin-top:1.4em}
+  h2,h3,h4{break-after:avoid}
+  table,.chart,blockquote,figure{break-inside:avoid}
+  tr{break-inside:avoid}
+  a{color:var(--ink)}
+}
+</style>
+</head><body>
+<h1>The OTC Desk Agent Arena — Methodology &amp; Results (Run #20)</h1>
+<p><em>A controlled, repeated-trial evaluation of sixteen LLMs operating a real OTC
+derivatives trading desk, fully autonomously, with no human in the loop — scored
+by a new </em><em>Model Ability Card</em><em> built to answer one question a blended leaderboard
+cannot: </em><em>which model should you trust to run the desk unattended, day after day?</em>**</p>
+<p><strong>Date:</strong> 2026-07-13 · <strong>Run:</strong> #20 · <strong>Task:</strong> <code>risk-manager-control-day</code> (v2, 9-step / 39-point)
+· <strong>Trials:</strong> 2 per model · <strong>Gateway:</strong> ZenMux (+ direct DeepSeek) · <strong>Field:</strong> 16 models, cross-tier</p>
+<hr />
+<h2>Abstract</h2>
+<p>Run #9 measured nine flash-tier models and reported a single blended number per
+model — half a 31-point objective manifest, half a GPT-5.5 judge. That instrument
+answered <em>"can this model run the desk once?"</em> Run #20 asks a harder, more
+practical question: <em>"which model runs the desk </em><em>well enough, cheaply enough, and
+reliably enough</em><em> to deploy unattended at scale?"</em> — and it required rebuilding the
+measurement instrument to answer it.</p>
+<p>Three things changed. <strong>(1)</strong> The task itself doubled in discriminating power —
+from 7 steps / 31 points to <strong>9 steps / 39 points</strong>, with explicit <em>grounding</em>,
+<em>adherence</em>, and <em>synthesis</em> axes plus adversarial trap steps, so a model can no
+longer coast on procedure. <strong>(2)</strong> The single blended score is retired. In its
+place is a <strong>FIFA-style Model Ability Card</strong>: six stats — grounding (GRD),
+adherence (ADH), synthesis (SYN), procedure (PRC), and <strong>efficiency (EFF)</strong> — that
+compose into one <strong>OVR</strong>, alongside a <strong>consistency (CON)</strong> stat derived from
+trial-to-trial dispersion. <strong>(3)</strong> The efficiency stat was rebuilt on a <strong>golf
+scoring</strong> model — par is what a competent expert <em>actually shoots</em>, not a
+theoretical minimum — so that a model which reaches the right answer by firing 58
+tool calls is scored differently from one that reaches it in 24.</p>
+<p>The headline is what the new instrument reveals that the old one <strong>structurally
+could not</strong>: <strong>objective capability is now saturated at the top</strong> — thirteen of
+sixteen models satisfy 84–91% of the manifest — so <em>raw capability no longer
+separates the field.</em> What separates it is <strong>efficiency</strong> and <strong>consistency</strong>, the two axes that
+actually determine cost, latency, and error surface when a workflow runs thousands
+of times unattended. <strong>GPT-5.6 Terra wins the board (OVR 86)</strong> — not by scoring
+highest on objective (it doesn't; three models beat it there) but by pairing a
+near-top objective with a lean, steady execution profile. The most instructive
+result is the <strong>inversion</strong>: <strong>Grok 4.5 ties for the best objective score in the
+entire field (91.0) yet ranks T-10</strong>, because it takes ~52 tool calls to get there
+(EFF 4). On a single-shot benchmark Grok looks elite; as a <em>long-run desk operator</em>
+it is exactly the profile you should not deploy. Only a card that measures
+efficiency separately can tell you that.</p>
+<hr />
+<h2>1. Introduction — from "can it?" to "should you deploy it?"</h2>
+<p>Agentic benchmarks measure whether a model can <em>do the job</em> rather than <em>answer the
+question</em>. For a derivatives desk, the job is a stateful sequence: pull risk →
+price the portfolio → find the hotspot underlying → run the Greeks landscape →
+stress it → back-test the hedge → resist a trap → write the governance report, each
+step threading state from the last, with no human to approve or correct.</p>
+<p>Run #9 established that this is measurable and that models differ wildly at it.
+But Run #9's instrument had a ceiling built into its own design. A single blended
+score conflates three things a desk operator must get right <strong>independently</strong>:</p>
+<ul>
+<li><strong>Can it reach the right answer?</strong> (capability)</li>
+<li><strong>Does it reach it without wasted motion?</strong> (efficiency — the driver of cost,
+  latency, and error surface over repeated runs)</li>
+<li><strong>Does it reach it the same way every day?</strong> (consistency — the driver of whether
+  you can leave it unattended)</li>
+</ul>
+<p>For a workflow you run <strong>once</strong>, only capability matters, and a blend is fine. For
+a workflow you run <strong>every portfolio, every morning, forever</strong>, the other two axes
+<em>dominate the economics</em> — and a blend hides them inside a single number. Run #20
+is a bet that separating them is the single most important upgrade the Arena can
+make.</p>
+<blockquote>
+<p><strong>What the Arena measures (unchanged in spirit, sharper in instrument):</strong>
+the ability to operate the desk as a competent human would, end-to-end, with zero
+human intervention — now decomposed into <em>how well</em>, <em>how efficiently</em>, and <em>how
+reliably</em>.</p>
+</blockquote>
+<hr />
+<h2>2. What we changed, and why — the bench-design upgrade</h2>
+<p>This section is the core of Run #20. Each change below exists to make the bench a
+better instrument for choosing a <strong>long-run</strong> autonomous operator, not just a
+capable one.</p>
+<h3>2.1 A harder task: 7/31 → 9/39, with discrimination axes</h3>
+<p>The flagship <code>risk-manager-control-day</code> grew from a 7-step / 31-point procedural
+loop into a <strong>9-step / 39-point</strong> benchmark. The added points are not more of the
+same — they are deliberately <em>discriminating</em>:</p>
+<ul>
+<li><strong>Grounding checks</strong> verify the model quotes the <strong>actual</strong> numbers from tool
+  output (a gamma of <code>16.40</code>, a CVaR of <code>-7758.99</code>) — harvested, byte-identical,
+  from real QuantArk payloads, not invented. A model that hand-waves "gamma is
+  elevated" fails where one that reads the tool result passes.</li>
+<li><strong>Adherence checks</strong> verify the model does what the desk <em>procedure</em> requires and
+  <strong>refrains</strong> from what it forbids — including <strong>trap steps</strong> that dangle a
+  plausible-but-wrong action (re-running a scenario that already exists, launching a
+  forbidden job) to see if the model resists.</li>
+<li><strong>Synthesis checks</strong> verify the final governance report actually <em>integrates</em> the
+  day's findings rather than listing them.</li>
+</ul>
+<p>The effect: a model can no longer score well by mechanically calling the expected
+tools. It has to be <strong>right about the numbers</strong>, <strong>disciplined about the
+procedure</strong>, and <strong>coherent in the synthesis</strong> — three independently-failable
+things. This is what makes top-of-board saturation <em>meaningful</em>: the models tied
+near the top genuinely nailed all three.</p>
+<h3>2.2 One number → a Model Ability Card (six stats + OVR)</h3>
+<p>The blended total is retired from ranking. Every match now derives a <strong>Model
+Ability Card</strong> from the same 39-check evaluation — nothing is re-scored, no data is
+migrated:</p>
+<table>
+<thead>
+<tr>
+<th>Stat</th>
+<th>Axis</th>
+<th>What it captures</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>GRD</strong></td>
+<td>grounding</td>
+<td>Did it quote the real tool numbers?</td>
+</tr>
+<tr>
+<td><strong>ADH</strong></td>
+<td>adherence</td>
+<td>Did it follow the procedure and resist the traps?</td>
+</tr>
+<tr>
+<td><strong>SYN</strong></td>
+<td>synthesis</td>
+<td>Did the report integrate the findings?</td>
+</tr>
+<tr>
+<td><strong>PRC</strong></td>
+<td>procedure</td>
+<td>Did it route the right skills and tools in order?</td>
+</tr>
+<tr>
+<td><strong>EFF</strong></td>
+<td>efficiency</td>
+<td>Did it get there without wasted tool calls? (§2.3)</td>
+</tr>
+<tr>
+<td><strong>OVR</strong></td>
+<td>—</td>
+<td><code>round(0.32·GRD + 0.26·ADH + 0.16·SYN + 0.16·EFF + 0.10·PRC)</code></td>
+</tr>
+</tbody>
+</table>
+<p>A separate <strong>CON</strong> (consistency) stat is derived from trial-to-trial dispersion
+(§2.4) and applied as a reliability penalty to OVR. The old LLM jury is <strong>retained
+but opt-in and off by default</strong> — Run #11 showed it too unstable to inform ranking
+(it inverted the objective order and swung on judge reachability), so Run #20 ranks
+on the <strong>deterministic objective axes only</strong>. The card is honest and reproducible:
+same transcript, same card, every time.</p>
+<p>Why a card instead of a number? Because <strong>the answer to "which model is best"
+depends on what you are optimizing</strong> — and a card lets a desk lead read that off
+directly. Optimizing for correctness-at-any-cost? Read GRD+SYN. Optimizing for a
+cheap unattended cron? Read EFF+CON. A single blended number forces one weighting on
+every reader; the card exposes the trade-off.</p>
+<h3>2.3 The efficiency reform: golf-style EFF</h3>
+<p>This is the change that most directly serves the <em>long-run</em> question, and it earned
+its own spec.</p>
+<p><strong>The problem.</strong> EFF used to be a hyperbolic ratio against <strong>par = 11</strong> — the
+task's <em>theoretical minimum</em> (each expected tool called exactly once). But no real
+run comes near 11; the leanest competent run is ~22 calls. So <code>min(1, 11/x)</code> was
+always far below 1, EFF sat uniformly at single digits, and it acted as a flat drag
+on every model instead of <em>separating</em> them. It measured nothing.</p>
+<p><strong>The fix — golf scoring.</strong> In golf, <em>par is what a competent expert shoots</em>, and
+you score relative to par. We recalibrated:</p>
+<ul>
+<li><strong>par = 24</strong> — a realistic <em>counted</em> competent run: the 11 expected tool calls
+  plus ~13 legitimate overhead calls (re-fetching async results, re-listing the
+  scenario library, sanity re-pricing). Critically, par is counted against the
+  <strong>same metric</strong> it is compared to — which <em>excludes</em> skill-file reads and
+  meta-tools — so it can't be gamed by inflating the denominator.</li>
+<li><strong>Full credit at or under par.</strong> Being lean is not penalized.</li>
+<li><strong>Linear decay above par, reaching 0 at <code>2 × par</code> (48 calls).</strong> Each call over par
+  is a "bogey." Take more than twice a competent expert's calls and you get no
+  efficiency credit at all.</li>
+<li><strong>Still gated by correctness</strong> — a lean run with weak grounding can't buy EFF.</li>
+</ul>
+<p>The result is a stat with a <strong>0–82 spread</strong> across this field — by far the widest of
+the six, and the <strong>primary discriminator of OVR</strong>. It rewards exactly the behavior a
+long-run agent needs (reach the answer, stop) and punishes the behavior that quietly
+bankrupts an unattended deployment (grinding through 50+ tool calls per run, every
+run). Golf EFF is <strong>opt-in per workflow</strong> behind a calibrated par, so no other
+workflow's card regressed.</p>
+<h3>2.4 Consistency (CON) as a first-class stat</h3>
+<p>A long-run agent that averages well but swings wildly is undeployable — you cannot
+leave it alone if one day in three it burns 58 tool calls or misreads the hotspot.
+Run #9 already reported σ as "a signal, not noise"; Run #20 promotes it into the
+card. <strong>CON</strong> is derived from the dispersion of the per-trial OVRs and applied as a
+penalty: two identical trials → CON ~96 and no penalty; a 30-call trial paired with
+a 40-call trial → CON drops and OVR is marked down from its raw mean. Consistency is
+no longer a footnote next to the score — it is <em>part of</em> the score.</p>
+<h3>2.5 Trial-level infra-vs-ability discipline</h3>
+<p>Run #9's central methodological point — never let a <strong>gateway failure</strong> masquerade
+as a <strong>model failure</strong> — carries into Run #20, now enforced at the <strong>trial</strong> level.
+A trial that dies mid-run (transport wedge, connection storm) is detected and
+<strong>replaced</strong>, not averaged in. The discriminator, refined this run (§6):</p>
+<ul>
+<li><strong>Short run + high error count</strong> (e.g. 9 tool calls, 25 errors) = an infra death →
+  discard and re-run.</li>
+<li><strong>Full run + weak score</strong> (e.g. 68 tool calls, a bad efficiency profile) = a
+  <em>genuine</em> model result → keep.</li>
+</ul>
+<p>The tool-call count is the tell: a model that <em>tried and operated badly</em> still
+executes a full workflow; a model whose <em>pipe failed</em> produces a stub. We exercised
+this live in Run #20 on GLM 5.2 and MiniMax M3 (§6).</p>
+<hr />
+<h2>3. The task &amp; environment</h2>
+<p>The environment is unchanged from Run #9 and remains <strong>real, not simulated</strong>: each
+trial seeds arena-tagged fixtures into the live desk DB, drives every step through
+the production <code>AgentService.stream_and_persist</code> path bound to the candidate model,
+and reconstructs the transcript from the trace log (skills routed are ground truth —
+the deep agent physically reads each <code>SKILL.md</code> it follows). Every production
+safeguard, tool, and sub-agent is in play, including the failure surface.</p>
+<p>The execution regime is the same <strong>single headless "YOLO" path</strong>: no
+human-in-the-loop interrupts (HITL gates auto-clear), and the deferral/reply-options
+tool is withheld so a model cannot "pass" by bouncing a decision to a human who
+isn't there. Every model is driven through the identical path — no model is
+advantaged by a different harness.</p>
+<p><strong>Determinism upgrade.</strong> Because the new grounding checks score the model against
+<em>specific</em> numbers, the flagship's producers were made <strong>byte-identical across
+runs</strong> (fixed valuation date, seeded backtest history), and the truth values were
+<strong>harvested from real payloads</strong> rather than invented. This is what makes grounding
+scorable at all: the bench knows the correct <code>16.40</code> because it ran the engine and
+recorded it, not because someone typed it.</p>
+<hr />
+<h2>4. Models evaluated</h2>
+<p>Sixteen models — a <strong>cross-tier</strong> field (frontier, mid, and flash), unlike Run #9's
+flash-only board — routed through ZenMux's OpenAI-compatible gateway except where
+noted:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Vendor</th>
+<th>Route</th>
+<th>Tier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPT-5.6 Terra</td>
+<td>OpenAI</td>
+<td><code>openai/gpt-5.6-terra</code></td>
+<td>frontier</td>
+</tr>
+<tr>
+<td>GPT-5.6 Luna</td>
+<td>OpenAI</td>
+<td><code>openai/gpt-5.6-luna</code></td>
+<td>frontier</td>
+</tr>
+<tr>
+<td>Claude Sonnet 5</td>
+<td>Anthropic</td>
+<td><code>anthropic/claude-sonnet-5</code></td>
+<td>frontier</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Pro</td>
+<td>DeepSeek</td>
+<td><code>deepseek/deepseek-v4-pro</code></td>
+<td>frontier</td>
+</tr>
+<tr>
+<td>Grok 4.5</td>
+<td>xAI</td>
+<td><code>x-ai/grok-4.5</code></td>
+<td>frontier</td>
+</tr>
+<tr>
+<td>GLM 5.2</td>
+<td>Zhipu</td>
+<td><code>z-ai/glm-5.2</code></td>
+<td>mid</td>
+</tr>
+<tr>
+<td>Qwen 3.7 Max</td>
+<td>Alibaba</td>
+<td><code>qwen/qwen3.7-max</code> †</td>
+<td>mid</td>
+</tr>
+<tr>
+<td>LongCat 2.0</td>
+<td>Meituan</td>
+<td><code>meituan/longcat-2.0</code> †</td>
+<td>mid</td>
+</tr>
+<tr>
+<td>MiniMax M3</td>
+<td>MiniMax</td>
+<td><code>minimax/minimax-m3</code> †</td>
+<td>mid</td>
+</tr>
+<tr>
+<td>Kimi 2.7</td>
+<td>Moonshot</td>
+<td><code>moonshotai/kimi-k2.7-code</code></td>
+<td>mid</td>
+</tr>
+<tr>
+<td>MiMo V2.5 Pro</td>
+<td>Xiaomi</td>
+<td><code>xiaomi/mimo-v2.5-pro</code></td>
+<td>mid</td>
+</tr>
+<tr>
+<td>MiMo V2.5</td>
+<td>Xiaomi</td>
+<td><code>xiaomi/mimo-v2.5</code></td>
+<td>flash</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Flash</td>
+<td>DeepSeek</td>
+<td><code>deepseek/deepseek-v4-flash</code></td>
+<td>flash</td>
+</tr>
+<tr>
+<td>Step 3.7 Flash</td>
+<td>StepFun</td>
+<td><code>stepfun/step-3.7-flash</code></td>
+<td>flash</td>
+</tr>
+<tr>
+<td>Gemini 3.5 Flash</td>
+<td>Google</td>
+<td><code>google/gemini-3.5-flash</code></td>
+<td>flash</td>
+</tr>
+<tr>
+<td>Hunyuan 3</td>
+<td>Tencent</td>
+<td><code>tencent/hy3</code></td>
+<td>flash</td>
+</tr>
+</tbody>
+</table>
+<p>† Routed via the Anthropic wire protocol: these three emit vendor/Anthropic-style
+tool markup that ZenMux's OpenAI-compatible endpoint leaves unparsed (it leaks into
+the response text as zero tool calls); dispatching them through the Anthropic
+endpoint restores structured tool calls. This is a <em>gateway routing</em> fix, not a
+model capability adjustment.</p>
+<p>Each model ran <strong>2 independent trials</strong>. (Run #9's five-trial depth is the ideal;
+Run #20 trades trial depth for field breadth — sixteen models across three tiers —
+and compensates with the CON stat and trial-level infra replacement.)</p>
+<hr />
+<h2>5. Results</h2>
+<h3>5.1 The board (ranked by OVR)</h3>
+<figure class="chart">
+<div class="row"><span class="lbl">🥇 GPT-5.6 Terra</span><span class="track"><span class="bar gold" style="width:86.0%"></span></span><span class="val">86</span></div>
+<div class="row"><span class="lbl">🥈 GLM 5.2</span><span class="track"><span class="bar silver" style="width:85.0%"></span></span><span class="val">85</span></div>
+<div class="row"><span class="lbl">🥉 DeepSeek V4 Pro</span><span class="track"><span class="bar bronze" style="width:84.0%"></span></span><span class="val">84 · T-3</span></div>
+<div class="row"><span class="lbl">GPT-5.6 Luna</span><span class="track"><span class="bar bronze" style="width:84.0%"></span></span><span class="val">84 · T-3</span></div>
+<div class="row"><span class="lbl">MiMo V2.5 Pro</span><span class="track"><span class="bar mid" style="width:82.0%"></span></span><span class="val">82</span></div>
+<div class="row"><span class="lbl">Claude Sonnet 5</span><span class="track"><span class="bar mid" style="width:77.0%"></span></span><span class="val">77</span></div>
+<div class="row"><span class="lbl">LongCat 2.0</span><span class="track"><span class="bar mid" style="width:76.0%"></span></span><span class="val">76</span></div>
+<div class="row"><span class="lbl">DeepSeek V4 Flash</span><span class="track"><span class="bar mid" style="width:75.0%"></span></span><span class="val">75 · T-8</span></div>
+<div class="row"><span class="lbl">Qwen 3.7 Max</span><span class="track"><span class="bar mid" style="width:75.0%"></span></span><span class="val">75 · T-8</span></div>
+<div class="row"><span class="lbl">Grok 4.5</span><span class="track"><span class="bar mid" style="width:73.0%"></span></span><span class="val">73 · T-10</span></div>
+<div class="row"><span class="lbl">Kimi 2.7</span><span class="track"><span class="bar mid" style="width:73.0%"></span></span><span class="val">73 · T-10</span></div>
+<div class="row"><span class="lbl">MiMo V2.5</span><span class="track"><span class="bar mid" style="width:72.0%"></span></span><span class="val">72</span></div>
+<div class="row"><span class="lbl">Step 3.7 Flash</span><span class="track"><span class="bar mid" style="width:69.0%"></span></span><span class="val">69 · T-13</span></div>
+<div class="row"><span class="lbl">Hunyuan 3</span><span class="track"><span class="bar mid" style="width:69.0%"></span></span><span class="val">69 · T-13</span></div>
+<div class="row"><span class="lbl">Gemini 3.5 Flash</span><span class="track"><span class="bar floor" style="width:61.0%"></span></span><span class="val">61</span></div>
+<div class="row"><span class="lbl">MiniMax M3</span><span class="track"><span class="bar floor" style="width:60.0%"></span></span><span class="val">60</span></div>
+<figcaption>Overall rating (OVR) — ranked board · axis 0–100 OVR</figcaption>
+</figure>
+<h3>5.2 The full card</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Rank</th>
+<th>Model</th>
+<th style="text-align: right;">OVR</th>
+<th style="text-align: right;">CON</th>
+<th style="text-align: right;">GRD</th>
+<th style="text-align: right;">ADH</th>
+<th style="text-align: right;">SYN</th>
+<th style="text-align: right;">PRC</th>
+<th style="text-align: right;">EFF</th>
+<th style="text-align: right;">Obj (mean)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">1</td>
+<td><strong>GPT-5.6 Terra</strong></td>
+<td style="text-align: right;"><strong>86</strong></td>
+<td style="text-align: right;">92</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">68</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">92</td>
+<td style="text-align: right;">76</td>
+<td style="text-align: right;">89.8</td>
+</tr>
+<tr>
+<td style="text-align: right;">2</td>
+<td><strong>GLM 5.2</strong></td>
+<td style="text-align: right;"><strong>85</strong></td>
+<td style="text-align: right;">96</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">74</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">92</td>
+<td style="text-align: right;">60</td>
+<td style="text-align: right;">91.0</td>
+</tr>
+<tr>
+<td style="text-align: right;">T-3</td>
+<td>DeepSeek V4 Pro</td>
+<td style="text-align: right;">84</td>
+<td style="text-align: right;">96</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">68</td>
+<td style="text-align: right;">86</td>
+<td style="text-align: right;">86</td>
+<td style="text-align: right;"><strong>82</strong></td>
+<td style="text-align: right;">84.6</td>
+</tr>
+<tr>
+<td style="text-align: right;">T-3</td>
+<td>GPT-5.6 Luna</td>
+<td style="text-align: right;">84</td>
+<td style="text-align: right;">96</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">74</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">92</td>
+<td style="text-align: right;">55</td>
+<td style="text-align: right;">91.1</td>
+</tr>
+<tr>
+<td style="text-align: right;">5</td>
+<td>MiMo V2.5 Pro</td>
+<td style="text-align: right;">82</td>
+<td style="text-align: right;">92</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">68</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">90</td>
+<td style="text-align: right;">54</td>
+<td style="text-align: right;">88.5</td>
+</tr>
+<tr>
+<td style="text-align: right;">6</td>
+<td>Claude Sonnet 5</td>
+<td style="text-align: right;">77</td>
+<td style="text-align: right;">69</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">68</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">90</td>
+<td style="text-align: right;">46</td>
+<td style="text-align: right;">88.5</td>
+</tr>
+<tr>
+<td style="text-align: right;">7</td>
+<td>LongCat 2.0</td>
+<td style="text-align: right;">76</td>
+<td style="text-align: right;">96</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">68</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">92</td>
+<td style="text-align: right;">12</td>
+<td style="text-align: right;">89.7</td>
+</tr>
+<tr>
+<td style="text-align: right;">T-8</td>
+<td>DeepSeek V4 Flash</td>
+<td style="text-align: right;">75</td>
+<td style="text-align: right;">63</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">68</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">88</td>
+<td style="text-align: right;">41</td>
+<td style="text-align: right;">87.2</td>
+</tr>
+<tr>
+<td style="text-align: right;">T-8</td>
+<td>Qwen 3.7 Max</td>
+<td style="text-align: right;">75</td>
+<td style="text-align: right;">63</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">62</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">88</td>
+<td style="text-align: right;">50</td>
+<td style="text-align: right;">85.9</td>
+</tr>
+<tr>
+<td style="text-align: right;">T-10</td>
+<td>Grok 4.5</td>
+<td style="text-align: right;">73</td>
+<td style="text-align: right;">86</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">68</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">94</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;"><strong>91.0</strong></td>
+</tr>
+<tr>
+<td style="text-align: right;">T-10</td>
+<td>Kimi 2.7</td>
+<td style="text-align: right;">73</td>
+<td style="text-align: right;">82</td>
+<td style="text-align: right;">89</td>
+<td style="text-align: right;">62</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">81</td>
+<td style="text-align: right;">42</td>
+<td style="text-align: right;">80.8</td>
+</tr>
+<tr>
+<td style="text-align: right;">12</td>
+<td>MiMo V2.5</td>
+<td style="text-align: right;">72</td>
+<td style="text-align: right;">50</td>
+<td style="text-align: right;">79</td>
+<td style="text-align: right;">74</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">94</td>
+<td style="text-align: right;">62</td>
+<td style="text-align: right;">89.8</td>
+</tr>
+<tr>
+<td style="text-align: right;">T-13</td>
+<td>Step 3.7 Flash</td>
+<td style="text-align: right;">69</td>
+<td style="text-align: right;">69</td>
+<td style="text-align: right;">89</td>
+<td style="text-align: right;">62</td>
+<td style="text-align: right;">74</td>
+<td style="text-align: right;">92</td>
+<td style="text-align: right;">51</td>
+<td style="text-align: right;">84.6</td>
+</tr>
+<tr>
+<td style="text-align: right;">T-13</td>
+<td>Hunyuan 3</td>
+<td style="text-align: right;">69</td>
+<td style="text-align: right;">82</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">62</td>
+<td style="text-align: right;">86</td>
+<td style="text-align: right;">72</td>
+<td style="text-align: right;">18</td>
+<td style="text-align: right;">75.7</td>
+</tr>
+<tr>
+<td style="text-align: right;">15</td>
+<td>Gemini 3.5 Flash</td>
+<td style="text-align: right;">61</td>
+<td style="text-align: right;">76</td>
+<td style="text-align: right;">69</td>
+<td style="text-align: right;">62</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">94</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">85.9</td>
+</tr>
+<tr>
+<td style="text-align: right;">16</td>
+<td>MiniMax M3</td>
+<td style="text-align: right;">60</td>
+<td style="text-align: right;">69</td>
+<td style="text-align: right;">79</td>
+<td style="text-align: right;">74</td>
+<td style="text-align: right;">50</td>
+<td style="text-align: right;">85</td>
+<td style="text-align: right;">16</td>
+<td style="text-align: right;">79.5</td>
+</tr>
+</tbody>
+</table>
+<p>Ranking is by <strong>OVR mean</strong>, shared rank on exact ties, tie-break
+GRD→ADH→SYN→EFF→PRC. JDG (jury) is not in OVR and was not run (§2.2).</p>
+<h3>5.3 Why OVR ≠ objective — the saturation problem the card solves</h3>
+<p>Read the <strong>Obj (mean)</strong> column and the <strong>OVR</strong> column side by side. They disagree,
+and the disagreement is the whole point of this run.</p>
+<p>Ranked by <strong>objective alone</strong> (the Run #9 axis), the top of the board would be:
+<strong>Luna 91.1, GLM 91.0, Grok 91.0, Terra &amp; MiMo V2.5 89.8, LongCat 89.7</strong> — a
+six-way photo finish inside 1.5 points. Thirteen of sixteen models land between 84.6
+and 91.1. <strong>Objective capability is saturated:</strong> the new grounding/adherence/synthesis
+checks are hard enough to be meaningful, but the strong models all clear them. If
+this were Run #9, you would report a near-tie at the top and shrug.</p>
+<p>The card breaks the tie by asking what the objective score <em>cannot</em>: <strong>how did they
+get there?</strong> And there the field fans out from OVR 60 to 86. The separation lives
+almost entirely in <strong>EFF</strong> (spread 0–82) and <strong>CON</strong> (spread 50–96) — precisely the
+two axes we added for the long-run question.</p>
+<h3>5.4 The Grok inversion — the case for measuring efficiency</h3>
+<p><strong>Grok 4.5 ties for the highest objective score in the entire field (91.0) and
+ranks T-10 (OVR 73).</strong> This is not a bug; it is the instrument working.</p>
+<p>Grok reaches the right answers — but it fires <strong>58 and 46 tool calls</strong> to do it,
+against a par of 24. Past <code>2 × par = 48</code>, golf-EFF gives no credit, so Grok's EFF is
+<strong>4</strong>. Its PRC is the highest on the board (94 — impeccable procedure) and its
+grounding is perfect (99). It is, on capability, elite. But run this profile
+unattended across every portfolio every morning and it is the most expensive, most
+latency-prone, most error-exposed operator in the top half of the field — because
+every extra tool call is real money, real wall-clock, and one more chance to trip.</p>
+<p>A blended objective+judge score (Run #9) would have ranked Grok near the top and
+told a desk lead to deploy it. The card says: <strong>capable, but do not run this one on
+a cron.</strong> That single corrected recommendation is the return on the entire
+bench-design investment.</p>
+<p>Gemini 3.5 Flash is the same lesson one tier down: <strong>objective 85.9, EFF 0</strong> (52 and
+58 calls) → OVR 61, near the bottom. Strong analyst, ruinous executor.</p>
+<h3>5.5 The consistency axis — Sonnet 5 vs DeepSeek V4 Pro</h3>
+<p><strong>Claude Sonnet 5</strong> has the raw material of a top-3 model: one trial scored OVR 86
+(30 tool calls) — tying the board leader. But its second trial ballooned to 40 calls
+(OVR 77), and that dispersion drops CON to <strong>69</strong>, marking its OVR down from a raw
+base of 82 to <strong>77</strong> (rank 6). Sonnet 5's ceiling is elite; its <em>variance</em> is what a
+long-run deployment can't absorb.</p>
+<p>Contrast <strong>DeepSeek V4 Pro</strong> (T-3, OVR 84): objective 84.6 — <em>lower</em> than eight
+models above and around it — but its two trials are <strong>byte-identical</strong> (84.6 / 84.6,
+22 and 24 tool calls), giving <strong>CON 96</strong> and the <strong>highest EFF in the field (82)</strong>.
+It is not the most capable model; it is the most <em>deployable</em> one. Boring,
+lean, and identical every day is exactly the profile you want operating a desk
+unattended — and the card is the only view that surfaces it, because on a
+capability-only leaderboard DeepSeek V4 Pro looks mid-pack.</p>
+<blockquote>
+<p><strong>The practitioner's read.</strong> If you can supervise every run, chase <strong>objective</strong>
+(Luna / GLM / Grok). If you are deploying an <strong>unattended long-run operator</strong>,
+read <strong>EFF + CON first</strong>: <strong>GPT-5.6 Terra</strong> (86 / lean / steady) is the best
+all-round pick, and <strong>DeepSeek V4 Pro</strong> is the efficiency-and-reliability
+exemplar — the model that will still be quietly correct on run #3,000.</p>
+</blockquote>
+<h3>5.6 What the stats say about the field</h3>
+<ul>
+<li><strong>Grounding is table stakes.</strong> Twelve of sixteen score GRD 99 — the strong models
+  reliably quote the real tool numbers. The four that don't (Gemini Flash 69, MiMo
+  V2.5 79, MiniMax 79, Kimi 89) are the ones that hand-wave figures, and it shows in
+  their rank.</li>
+<li><strong>Adherence has the most headroom.</strong> No model exceeds ADH 74; most sit at 62–68.
+  The trap steps and prohibition checks are doing their job — even top models
+  occasionally take a forbidden action or skip a required refusal. This is the axis
+  vendors have the most room to improve.</li>
+<li><strong>Synthesis is near-binary.</strong> Models either integrate the report (SYN 99) or
+  clearly don't (MiniMax 50, Step 74, DeepSeek-Pro/Hunyuan 86). It rarely lands in
+  between.</li>
+<li><strong>The MiMo pair is a clean controlled comparison.</strong> MiMo V2.5 Pro (OVR 82, CON 92,
+  EFF 54) vs base MiMo V2.5 (OVR 72, CON 50, EFF 62): the base variant is
+  <em>marginally</em> leaner on its good trial but wildly inconsistent (CON 50 — one trial
+  OVR 72, one OVR 87), while Pro is steady. Same family, and the card cleanly prices
+  the reliability difference.</li>
+</ul>
+<hr />
+<h2>6. Infra-vs-ability, exercised live</h2>
+<p>Run #20 put the trial-level discipline of §2.5 to work on two models, in opposite
+directions — the clearest demonstration of why the distinction matters.</p>
+<h3>6.1 GLM 5.2 — an infra-killed trial, replaced</h3>
+<p>GLM 5.2's first completed pair was <code>[OVR 85, OVR 19]</code>, aggregating to a misleading
+OVR 43 (CON 0) that buried it at rank 14. Inspecting the bad trial: <strong>9 tool calls,
+25 errors, objective 23.1</strong> — a run that died in a connection storm partway through,
+not a model that operated badly. The tell is decisive: the <em>good</em> trial (32 clean
+calls, 0 errors) proved GLM tool-calls fine through the identical channel, so the
+error storm was transient infrastructure, not a systematic model or protocol fault.
+We <strong>kept the clean trial and replaced only the dead one</strong>; the fresh trial landed
+at <strong>OVR 86</strong> (31 calls, 0 errors). GLM's honest card — <strong>OVR 85, CON 96, objective
+91.0</strong> — is a genuine <strong>#2 finish</strong>. The infra artifact had it 42 OVR points too low.</p>
+<h3>6.2 MiniMax M3 — bloated trials, kept</h3>
+<p>The opposite call. MiniMax produced trials that varied a lot (objective 71.8 / 87.2)
+and ran heavy (50 and 38 tool calls). It would have been easy to call the weak trial
+"compromised" and re-roll. But these were <strong>full runs</strong> — the workflow executed
+end-to-end, the errors were few (6 and 1), the tool counts were real. This is a
+<em>genuine</em> model result: MiniMax reaches acceptable objective scores but over-executes
+and is internally inconsistent (SYN 50 — it doesn't synthesize). We <strong>kept both
+trials</strong>. MiniMax's OVR 60 (rank 16) is earned, not an accident of the gateway.</p>
+<p>The rule, restated: <strong>replace deaths, keep genuine failures.</strong> A bench that re-rolls
+every low score until it likes the number is measuring its own patience; a bench that
+averages in gateway deaths is measuring the gateway. The tool-call-count discriminator
+is what lets Run #20 do neither.</p>
+<hr />
+<h2>7. Why this bench answers the long-run question better</h2>
+<p>Pulling the threads together — the case that Run #20's instrument is the right one
+for choosing an autonomous, long-running desk operator:</p>
+<ol>
+<li>
+<p><strong>It refuses to let capability alone decide.</strong> When ten of sixteen models are
+   within 6 objective points, "most capable" is a near-tie and a bad basis for a
+   deployment decision. The card ranks on the axes that still vary at the top —
+   efficiency and consistency — which are <em>also</em> the axes that determine the cost and
+   trustworthiness of running the workflow at scale. The measurement is aligned with
+   the decision.</p>
+</li>
+<li>
+<p><strong>It prices the thing you pay for every single run.</strong> A long-run agent's dominant
+   cost is not whether it <em>can</em> do the task but how many tool calls, tokens, seconds,
+   and error-opportunities it spends <em>each time</em>, multiplied by thousands of runs.
+   Golf-EFF makes that a first-class, correctness-gated stat with real spread (0–82),
+   so the Grok/Gemini "capable but expensive" profile is visible instead of hidden.</p>
+</li>
+<li>
+<p><strong>It penalizes the variance you can't supervise away.</strong> CON turns "steady" from a
+   footnote into part of the score, so a model you'd have to babysit (Sonnet 5, MiMo
+   V2.5) ranks below an equally-capable model you can leave alone (DeepSeek V4 Pro,
+   GLM 5.2). For unattended operation, that ordering is the correct one.</p>
+</li>
+<li>
+<p><strong>It keeps the score honest at the trial level.</strong> By separating infra deaths from
+   genuine failures with an objective signature (call count + error count), the bench
+   neither flatters models with re-rolls nor punishes them for the gateway — so the
+   numbers mean what they say.</p>
+</li>
+<li>
+<p><strong>It exposes the trade-off instead of imposing one.</strong> The card lets a reader pick
+   the weighting their deployment demands. Supervised, one-shot use → objective.
+   Unattended cron → EFF + CON. One instrument, correctly answering different
+   questions for different readers.</p>
+</li>
+</ol>
+<p>The winner, <strong>GPT-5.6 Terra (OVR 86)</strong>, is not the most capable model on the board
+(Luna, GLM, and Grok all out-score it on raw objective). It wins because it is the
+best <em>operator</em>: near-top capability, delivered leanly and consistently. That is the
+right definition of "best" for a long-run OTC trading management agent — and it is a
+definition the previous instrument could not have expressed.</p>
+<hr />
+<h2>8. Limitations &amp; threats to validity</h2>
+<ul>
+<li><strong>Two trials, not five.</strong> Run #20 trades trial depth for field breadth (16 models,
+  3 tiers). CON is estimated from two points, which is enough to catch gross
+  instability (Sonnet 5, MiMo V2.5) but coarse — a model that happens to draw two
+  similar trials can post a flattering CON. Deeper sampling on the top cluster is
+  warranted before treating the T-3 ordering as settled.</li>
+<li><strong>No measured dollar cost this run.</strong> Run #9's exact per-match token/cost capture
+  was not re-run here (the offline scoring path did not persist usage). EFF and
+  tool-call counts are the cost/latency proxy in this report; a future run should
+  re-attach <code>stream_usage</code> capture to turn the efficiency story into measured
+  dollars, as Run #9 did.</li>
+<li><strong>One workflow.</strong> As in Run #9, this is a depth-over-breadth design on a single
+  flagship task. Rankings may shift on other desk workflows; golf-EFF is currently
+  calibrated (par) only for this one.</li>
+<li><strong>par is a designed estimate.</strong> par = 24 is derived from the workflow structure and
+  sanity-checked against the leanest observed runs, not fit to the field. A different
+  defensible par would move EFF absolute values (though not, materially, the ordering,
+  which is driven by who lands under 48 calls).</li>
+<li><strong>Objective-only ranking.</strong> The LLM jury is off by default (Run #11 instability), so
+  genuinely subjective qualities not captured by the 39 deterministic checks are
+  unmeasured this run. The jury remains available opt-in.</li>
+<li><strong>Gateway variance.</strong> All traffic shares one gateway (ZenMux). We detect and replace
+  infra deaths (§6) rather than let them depress scores, but route instability remains
+  a confound — GLM 5.2 needed a trial replacement precisely because of it.</li>
+</ul>
+<hr />
+<h2>9. Reproducibility</h2>
+<ul>
+<li><strong>Run:</strong> <code>ArenaRun #20</code>, status <code>completed</code>, viewable on the <code>/arena</code> page; each
+  model's per-trial detail is in its <code>score_breakdown.aggregate</code>, and the card is
+  <strong>derived on read</strong> from the stored axes (no migration — changing the scoring kernel
+  re-scores every historical run consistently).</li>
+<li><strong>Task:</strong> <code>risk-manager-control-day</code> v2 — 9 steps / 39-point objective manifest with
+  grounding/adherence/synthesis axes and trap steps; grounding truth in
+  <code>risk-manager-control-day.truth.json</code>, harvested from real payloads.</li>
+<li><strong>Card kernel:</strong> <code>services/arena/scoring.py::card_from_axes</code>;
+  <code>OVR = round(0.32·GRD + 0.26·ADH + 0.16·SYN + 0.16·EFF + 0.10·PRC)</code>; golf-EFF gated
+  behind a calibrated <code>par_tool_calls: 24</code> (<code>_EFF_ZERO_MULT = 2.0</code>, zero at 2×par);
+  CON from per-trial OVR dispersion.</li>
+<li><strong>Regime:</strong> headless YOLO — HITL auto-cleared, deferral tool withheld.</li>
+<li><strong>Determinism:</strong> flagship producers are byte-identical across runs (fixed valuation
+  date, seeded backtest history), gated by <code>tests/test_arena_fixture_determinism.py</code>.</li>
+<li><strong>Infra discipline:</strong> trials that die (short run + high error count) are detected and
+  replaced; genuine full-run failures are kept (§6).</li>
+</ul>
+<hr />
+<h2>Appendix A — per-trial detail</h2>
+<p>Per-trial objective score and tool-call count (par = 24; EFF reaches 0 at 48 calls):</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>trial 1 (obj / calls)</th>
+<th>trial 2 (obj / calls)</th>
+<th style="text-align: right;">Obj mean</th>
+<th style="text-align: right;">EFF</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPT-5.6 Terra</td>
+<td>87.2 / 27</td>
+<td>92.3 / 26</td>
+<td style="text-align: right;">89.8</td>
+<td style="text-align: right;">76</td>
+</tr>
+<tr>
+<td>GLM 5.2</td>
+<td>89.7 / 32</td>
+<td>92.3 / 31</td>
+<td style="text-align: right;">91.0</td>
+<td style="text-align: right;">60</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Pro</td>
+<td>84.6 / 24</td>
+<td>84.6 / 22</td>
+<td style="text-align: right;">84.6</td>
+<td style="text-align: right;">82</td>
+</tr>
+<tr>
+<td>GPT-5.6 Luna</td>
+<td>94.9 / 33</td>
+<td>87.2 / 33</td>
+<td style="text-align: right;">91.1</td>
+<td style="text-align: right;">55</td>
+</tr>
+<tr>
+<td>MiMo V2.5 Pro</td>
+<td>87.2 / 31</td>
+<td>89.7 / 34</td>
+<td style="text-align: right;">88.5</td>
+<td style="text-align: right;">54</td>
+</tr>
+<tr>
+<td>Claude Sonnet 5</td>
+<td>89.7 / 30</td>
+<td>87.2 / 40</td>
+<td style="text-align: right;">88.5</td>
+<td style="text-align: right;">46</td>
+</tr>
+<tr>
+<td>LongCat 2.0</td>
+<td>89.7 / 49</td>
+<td>89.7 / 41</td>
+<td style="text-align: right;">89.7</td>
+<td style="text-align: right;">12</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Flash</td>
+<td>87.2 / 22</td>
+<td>87.2 / 54</td>
+<td style="text-align: right;">87.2</td>
+<td style="text-align: right;">41</td>
+</tr>
+<tr>
+<td>Qwen 3.7 Max</td>
+<td>87.2 / 23</td>
+<td>84.6 / 43</td>
+<td style="text-align: right;">85.9</td>
+<td style="text-align: right;">50</td>
+</tr>
+<tr>
+<td>Grok 4.5</td>
+<td>89.7 / 58</td>
+<td>92.3 / 46</td>
+<td style="text-align: right;">91.0</td>
+<td style="text-align: right;">4</td>
+</tr>
+<tr>
+<td>Kimi 2.7</td>
+<td>79.5 / 33</td>
+<td>82.1 / 37</td>
+<td style="text-align: right;">80.8</td>
+<td style="text-align: right;">42</td>
+</tr>
+<tr>
+<td>MiMo V2.5</td>
+<td>87.2 / 31</td>
+<td>92.3 / 29</td>
+<td style="text-align: right;">89.8</td>
+<td style="text-align: right;">62</td>
+</tr>
+<tr>
+<td>Hunyuan 3</td>
+<td>69.2 / 36</td>
+<td>82.1 / 51</td>
+<td style="text-align: right;">75.7</td>
+<td style="text-align: right;">18</td>
+</tr>
+<tr>
+<td>Step 3.7 Flash</td>
+<td>84.6 / 39</td>
+<td>84.6 / 24</td>
+<td style="text-align: right;">84.6</td>
+<td style="text-align: right;">51</td>
+</tr>
+<tr>
+<td>Gemini 3.5 Flash</td>
+<td>87.2 / 52</td>
+<td>84.6 / 58</td>
+<td style="text-align: right;">85.9</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td>MiniMax M3</td>
+<td>71.8 / 50</td>
+<td>87.2 / 38</td>
+<td style="text-align: right;">79.5</td>
+<td style="text-align: right;">16</td>
+</tr>
+</tbody>
+</table>
+<p><em>GLM 5.2's trial 2 shown is the clean replacement (§6.1); the original infra-killed
+trial (23.1 / 9 calls, 25 errors) was discarded.</em></p>
+<p><em>Run #20 · OTC Desk Agent Arena · generated 2026-07-13.</em></p>
+<p class="footer-note">Rendered from
+<code>docs/arena/2026-07-13-run20-otc-desk-agent-arena.md</code> ·
+OTC Desk Agent Arena · Run #20.</p>
+</body></html>
