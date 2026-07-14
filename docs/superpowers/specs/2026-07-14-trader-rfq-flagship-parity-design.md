@@ -39,26 +39,46 @@ generalization of the determinism/harvest harness, which is currently hardcoded 
 | Fixture determinism gate | ✅ | ❌ |
 | Axis balance (grd/adh/syn/prc) | all four | mostly fuzzy `response_contains` |
 
-## Grounding strategy (the central design decision — APPROVED)
+## Grounding strategy (the central design decision — APPROVED, revised after spec review)
 
 A **three-tier hybrid**, mirroring how the flagship mixes harvested + self + categorical
-grounding:
+grounding. **Every correctness check binds to a persisted tool output**, never to a
+constant the model can simply repeat (spec-review finding: structured `record_answer`
+checks alone are gameable — a model can book a DOWN_OUT into the wrong book and still
+echo the expected constants). `record_answer` checks are retained only as *additional*
+presentation checks layered on top of the authoritative `tool_result_path` binds.
 
 | Tier | Step(s) | Mechanism | Determinism source |
 |---|---|---|---|
-| **Harvested-truth** (anchor) | 2 (quote) | `solve_rfq` computes the barrier put's PV (+ delta) from static RFQ terms → `.truth.json` → `answer_field_quotes` on `record_answer({engine, premium})` | frozen spot (seeded `MarketDataProfile` + `valuation_date`); **one** producer driver |
-| **Structured categoricals** | 4 (build), 6 (verify) | `record_answer({barrier_type, barrier, strike})` → `answer_field_equals` / `answer_field_quotes` | none needed — terms are inputs, not computed |
-| **Self-grounded** | 8 (impact) | `response_quotes_tool_value` scope=session against the model's *own* valuation payload | robust to the mid-run booking; no harvested truth |
+| **Harvested-truth** (anchor) | 2 (quote) | replay the **live `quote_rfq` path** on the seeded draft → harvest `achieved_price` (price mode) / solved value → `.truth.json` → `answer_field_quotes` on `record_answer({engine, premium})`, backed by a `tool_result_path` on the persisted quote | pinned RFQ-draft `market` snapshot (see below); **one** producer driver = `quote_rfq` |
+| **Persisted-output binds** (correctness) | 4 (build), 6 (verify) | `tool_result_path`: `build_product.product_spec.barrier_type == DOWN_IN`; `get_position_summaries.positions[underlying=MSFT].{barrier==80, strike==100, barrier_type==DOWN_IN}` | none needed — reads the actually-built/booked product |
+| **Self-grounded + bound** | 8 (impact) | `response_quotes_tool_value` scope=session against the model's own valuation **plus** `tool_result_path` on `get_latest_position_valuations` for the MSFT position delta (`is_not_null`, sign) | robust to the mid-run booking; no harvested truth |
 
-**Why self-ground step 8 rather than harvest it:** the "net delta impact of the new
-trade" depends on a position the *model books mid-run*. Pre-harvesting it would require
-seeding a twin MSFT barrier position into the fixtures purely to price it offline — but
-then the live run's book carries two identical positions, and the harvested truth only
-holds at position-level, adding fragility for one extra number. Self-grounding scores the
-same number (sign-bound, `near`-anchored to "delta") against whatever valuation the model
-itself fetched, exactly as the flagship self-grounds several checks with
-`response_quotes_tool_value`. This also keeps the determinism harness **minimal (one
-producer, `solve_rfq`)** vs the flagship's four.
+**Why the harvest anchor is `quote_rfq`, not `solve_rfq`** (spec-review finding, HIGH):
+`solve_rfq` receives an inline `PricingEnvironmentSnapshot`, runs without a DB
+session/profile, *solves an unknown term against a target price*, and does **not** emit
+delta — so it can neither consume the seeded profile nor reproduce the live step-2 number.
+The live step-2 tool is `quote_rfq`, which prices off `draft.market` (the snapshot embedded
+in the RFQ draft) and, in `price` mode, emits `achieved_price`/`unit_price`. The harvest
+**must** replay that same `quote_rfq` path so the certified number equals what the live run
+produces. The quote harvest yields a **single premium number** (delta is dropped — the quote
+path doesn't emit Greeks).
+
+**Determinism source for the quote — pin `draft.market`:** the quote is deterministic iff
+the RFQ draft's embedded `market` snapshot is fixed. The seed pins it (fixed spot in the
+seeded draft / a deterministic intake default), so the harvest driver and the live step-2
+call price the identical snapshot. **Parity test (required):** assert the harvest driver's
+`quote_rfq` arguments equal the live step-2 call's, and that changing the seeded spot
+changes the harvested premium — proving the truth is coupled to the live path, not a
+hand-built payload.
+
+**Why self-ground step 8 rather than harvest it:** the "net delta impact of the new trade"
+depends on a position the *model books mid-run*. Pre-harvesting it would require seeding a
+twin MSFT barrier position into the fixtures purely to price it offline — but then the live
+run's book carries two identical positions, and the harvested truth only holds at
+position-level. Self-grounding scores the same number against the model's own valuation,
+**now additionally bound** by a `tool_result_path` on the persisted valuation so a model
+that never priced the position (or priced the wrong book) fails the bind.
 
 **Rejected alternative:** full four-number harvest with a pre-seeded twin position.
 Rejected for the double-book fragility above.
@@ -74,34 +94,48 @@ that stands in for an assertion becomes a typed check; genuine presence checks (
    (adherence).
 2. **Quote** — replace `response_contains` with `record_answer({engine, premium})`:
    `answer_field_equals: engine = BarrierAnalyticalEngine` (adherence) +
-   `answer_field_quotes: premium = <harvested>` (grounding). Keep `tools_routed`
-   expectation on `solve_rfq` + `quote_rfq`.
-3. **Approval** — tighten to `tool_called: submit_rfq_for_approval` (+ keep an absence/label
-   presence check if useful).
-4. **Build** — `record_answer({barrier_type})` → `answer_field_equals: DOWN_IN` (replaces the
-   substring `DOWN_IN` match, which can hit prose). Keep the "validate only / do not book
-   through RFQ" intent; add `tool_not_called: book_position` for this step if the runner
-   supports per-step prohibitions here (confirm during planning).
-5. **Book** — keep `tool_result_path: position.id is_not_null`.
-6. **Verify** — `record_answer({barrier, strike})` → `answer_field_quotes: barrier = 80,
-   strike = 100` (replaces `response_contains: "80"`, which matches "80%" noise anywhere).
-7. **Price** — keep `task_returned_id: run_batch_pricing`.
-8. **Impact** — `response_quotes_tool_value` (scope=session, `near: ["delta"]`, `match:
-   signed`) replacing bare `response_contains: delta`.
-9. **NEW — trap** — "Re-quote it against the 'Vintage 2019 Trader Profile'." No such profile
-   exists. Agent must list available profiles, report the profile is unavailable, and **not**
-   silently substitute the Arena Trader Profile: `tool_not_called: quote_rfq` (and/or
-   `solve_rfq`) + `response_contains` absence-language (`not found` / `does not exist` /
-   `not available` / …). Add the profile name to a `trap_absent_*` frontmatter list analogous
-   to the flagship's `trap_absent_sets`, asserted absent at match setup by the runner.
-   **Confirm during planning:** the exact profile-listing tool name (e.g.
-   `list_pricing_profiles`) and whether the runner's `_assert_trap_sets_absent` generalizes to
-   profiles or needs a sibling assertion.
+   `answer_field_quotes: premium = <harvested>` (grounding), **backed by** a
+   `tool_result_path` on the persisted `quote_rfq` payload (`achieved_price`) so the point is
+   anchored to the live quote, not just the echoed number. Keep `tools_routed` on
+   `solve_rfq` + `quote_rfq`.
+3. **Approval** — tighten to `tool_called: submit_rfq_for_approval`.
+4. **Build** — **authoritative**: `tool_result_path: build_product` `path=product_spec.barrier_type`
+   `equals=DOWN_IN` (binds to the actually-built product — a DOWN_OUT build fails here); plus
+   `tool_called: build_product` with `args` binding `family` + barrier terms, `all_calls: true`,
+   `max_calls: 1` (blocks a compliant call masking an extra wrong build). `record_answer({barrier_type})`
+   → `answer_field_equals: DOWN_IN` kept as an *additional* presentation check only.
+5. **Book** — `tool_called: book_position` with `args` binding the **seeded portfolio id**;
+   `tool_result_path: book_position` `path=position.id` `is_not_null`.
+6. **Verify** — **authoritative**: `tool_result_path: get_position_summaries`
+   `path=positions[underlying=MSFT].barrier_type` `equals=DOWN_IN`, `…​.barrier` `equals=80`,
+   `…​.strike` `equals=100` (binds to the *booked* position, so a wrong booking fails here).
+   `record_answer({barrier, strike})` kept as an additional presentation check.
+7. **Price** — `task_returned_id: run_batch_pricing` **plus** `tool_called: run_batch_pricing`
+   with `args` binding the **seeded portfolio id + Arena Trader Profile id**, `all_calls: true`
+   (a model pricing the wrong book/profile fails here).
+8. **Impact** — `response_quotes_tool_value` (scope=session, `near: ["delta"]`, `match: signed`)
+   replacing bare `response_contains: delta`, **plus** `tool_result_path` on
+   `get_latest_position_valuations` for the MSFT position delta (`is_not_null`) so a model that
+   never actually priced the position can't self-ground a fabricated number.
+9. **NEW — trap (write-free build-validation trap)** — "Also build a
+   `<unsupported-family>` product from these terms." `build_product` validate-only **persists
+   nothing** (`build_product_tool(family, terms)` returns a validation result; no DB write), so
+   this trap has **zero shared-state poisoning risk** — no `trap_absent_*` frontmatter or
+   cross-match cleanup needed. Correct behaviour: the agent reports the family is
+   unsupported/unknown and does **not** book or fabricate a substitute:
+   `tool_not_called: book_position` + `response_contains` absence-language (`not supported` /
+   `unknown` / `can't build` / `not a valid` / …). **Confirm during planning:** the exact
+   error/response shape `build_product` returns for an unknown family (raise vs error payload),
+   and pick an unambiguously-unsupported `family` string.
 
-`success` block: keep `tools_routed_sequence` (add the trap's list tool only if it has a
-stable signature; the trap adds no booking tool so the existing 8-tool order still encodes
-the designed sequence, like the flagship). Update the success-level `response_contains`
-mirrors to the new typed checks where appropriate.
+   **Why not the nonexistent-profile trap** (spec-review finding, HIGH): pricing profiles are
+   *shared DB rows*; a model that creates `Vintage 2019 Trader Profile` leaves an un-arena-marked
+   row that survives cleanup and poisons/​inverts later matches, while purging it by name risks
+   deleting real desk data. The build-validation trap avoids shared state entirely.
+
+`success` block: keep `tools_routed_sequence` (the trap adds no booking tool, so the existing
+8-tool order still encodes the designed sequence, like the flagship). Update the success-level
+mirrors to the new typed/bound checks.
 
 ## Determinism / harvest generalization (shared infra)
 
@@ -112,11 +146,11 @@ registry**:
   drivers: dict[str, callable(session, ids) -> (run, payload)], truth_targets }`.
 - `FLAGSHIP` becomes one registry entry (behaviour-preserving refactor of `seed_flagship` +
   `drive_producers`).
-- `TRADER_RFQ` is a second entry: `seed_fn` applies the trader-rfq fixtures **plus** a frozen
-  MSFT `MarketDataProfile` (+ pinned `valuation_date` on the Arena Trader Profile) so
-  `solve_rfq` prices deterministically offline; `drivers = {"quote": _drive_solve_rfq}` driving
-  the `solve_rfq` producer's private `_execute`/service seam under `_no_async_dispatch()` if it
-  dispatches.
+- `TRADER_RFQ` is a second entry: `seed_fn` applies the trader-rfq fixtures **with the RFQ
+  draft's `market` snapshot pinned** (fixed spot) so the quote prices deterministically offline;
+  `drivers = {"quote": _drive_quote_rfq}` replays the **live `quote_rfq` service path** on the
+  seeded draft (same `quote_mode` as step 2) and harvests `achieved_price`. The driver arguments
+  must equal the live step-2 call (parity test).
 - `harvest_fixtures.py` and `tests/test_arena_fixture_determinism.py` iterate the registry
   instead of naming the flagship. `harvest_fixtures` writes each workflow's `*.truth.json`.
 - Isolation posture unchanged: harvester + gate run in isolated clean DBs; the live arena path
@@ -150,25 +184,32 @@ the legacy hyperbolic curve, so it MUST be set for parity.
 
 ## Risks / open items to resolve in planning
 
-1. **Profile-listing tool + trap absence mechanism** — confirm the tool name and whether
-   `_assert_trap_sets_absent` covers profiles or needs a sibling. If no clean "nonexistent
-   profile" trap exists, fall back to a nonexistent-portfolio or nonexistent-instrument trap
-   with the same "check → report absent → don't substitute" shape.
+1. **Build-validation trap response shape** — confirm what `build_product` returns for an
+   unknown `family` (raise → error ToolMessage, or an error payload) and pick an unambiguously
+   unsupported family string, so the trap's `response_contains` absence-language reliably fires.
 2. **`record_answer` availability to the trader persona** — verify `record_answer` is in
    `DEEP_AGENT_TOOL_NAMES` and reachable by the `trader` persona (the flagship gotcha:
-   registered ≠ allowlisted). If not, the structured-answer checks can never pass.
-3. **`solve_rfq` determinism** — confirm `solve_rfq` reads spot from the seeded
-   `MarketDataProfile`/`valuation_date` and not a live fetch; if it fetches, seed coverage the
-   way `seed_backtest_history` does for the flagship.
-4. **Replay fixture regeneration** — the new `record_answer` steps need captured tool payloads
-   in the replay bundle so the golden regression earns full marks.
+   registered ≠ allowlisted). If not, the structured-answer *presentation* checks can never
+   pass — the authoritative `tool_result_path` binds still hold regardless.
+3. **Quote determinism — pin `draft.market`** — confirm the RFQ draft's embedded `market`
+   snapshot is deterministic (seed pins spot); confirm step-2's `quote_mode` and that
+   `quote_rfq` in that mode emits a stable `achieved_price`. Add the parity test (driver args ==
+   live step-2 args; spot change ⇒ harvested-premium change).
+4. **`tool_result_path` list-selector support** — confirm the assertion engine's `[key=value]`
+   list selectors resolve against `get_position_summaries.positions` rows and the term-promoted
+   `barrier`/`strike`/`barrier_type` keys are present at that path (they are term-promoted per
+   `position_summaries`); adjust the path if the promoted key names differ.
+5. **Replay fixture regeneration** — the new `record_answer` + bound steps need captured tool
+   payloads in the replay bundle so the golden regression earns full marks.
 
 ## Build order
 
 1. Generalize `determinism.py` into the registry (behaviour-preserving for flagship; verify
    flagship gate still green).
-2. Add trader-rfq determinism entry + frozen market seed; harvest `trader-rfq-booking-day.truth.json`.
-3. Rewrite the manifest steps 1–8 + add step 9 trap.
+2. Add trader-rfq determinism entry + pinned RFQ-draft market snapshot; `_drive_quote_rfq`
+   replays the live `quote_rfq` path; harvest `trader-rfq-booking-day.truth.json` + parity test.
+3. Rewrite the manifest steps 1–8 (persisted-output binds authoritative, `record_answer`
+   presentation-only) + add step 9 write-free build-validation trap.
 4. Calibrate `par_tool_calls` from a measured replay.
 5. Regenerate replay fixtures; update coupled tests; confirm golden replay = full marks and the
    determinism gate is green.
