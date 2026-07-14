@@ -292,8 +292,8 @@
       "name": "record_answer_tool",
       "args": {
        "answer": {
-        "barrier": 80,
-        "strike": 100
+        "barrier": 80.0,
+        "strike": 100.0
        }
       }
      }
@@ -307,8 +307,8 @@
       "positions": [
        {
         "underlying": "MSFT",
-        "barrier": 80,
-        "strike": 100,
+        "barrier": 80.0,
+        "strike": 100.0,
         "barrier_type": "DOWN_IN",
         "product_type": "BarrierOption"
        }

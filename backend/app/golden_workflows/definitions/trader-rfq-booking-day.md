@@ -136,14 +136,18 @@ steps:
         tool: get_position_summaries
         path: positions[underlying=MSFT].barrier_type
         equals: DOWN_IN
+      # barrier/strike are stored via _num() → float (80.0/100.0). tool_result_path
+      # equals is type-STRICT (_exact requires type(a) is type(b)), so these MUST be
+      # floats or a correct live run (which returns floats) fails while the canned
+      # replay passes. Kept exact to bind the persisted level (a wrong KI/strike fails).
       - type: tool_result_path
         tool: get_position_summaries
         path: positions[underlying=MSFT].barrier
-        equals: 80
+        equals: 80.0
       - type: tool_result_path
         tool: get_position_summaries
         path: positions[underlying=MSFT].strike
-        equals: 100
+        equals: 100.0
       - type: answer_field_quotes
         field: barrier
         value: 80
