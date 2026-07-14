@@ -15,7 +15,9 @@ certify a hollow backtest.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Any
+from dataclasses import dataclass
+from functools import partial
+from typing import Any, Callable
 
 from app.golden_workflows.fixtures import apply_seed
 from app.golden_workflows.registry import get_workflow_bundle
@@ -178,25 +180,91 @@ def _drive_backtest(session, portfolio_id, profile_id):
     return run, run.results or {}
 
 
-def drive_producers(session, ids: dict[str, dict[str, int]]) -> dict[str, Any]:
-    """Drive all four flagship producers synchronously and return canonical
-    (volatile-stripped) payloads keyed risk/landscape/scenario/backtest. Each run
-    is validated complete (status/exclusions/priced) BEFORE its payload is trusted
-    — a deterministic partial/failed run must not be certified."""
-    portfolio_id = ids["portfolios"]["control"]
-    profile_id = ids["pricing_profiles"]["prof"]
+# --- Per-workflow determinism registry -------------------------------------
+#
+# The harness generalizes beyond the flagship: each workflow registers a seed
+# function + a set of producer drivers, each driver carrying its OWN completion
+# validator (the flagship task-run producers use the TaskStatus.COMPLETED guard;
+# an RFQ quote persists ``pending_approval`` and needs a status/price predicate
+# instead). The flagship entry is a behaviour-preserving wrap of the original
+# drive_producers — the ``_drive_*`` functions keep their 3-arg signatures so
+# direct callers (e.g. the offline-guard test) are unaffected.
+
+
+@dataclass(frozen=True)
+class ProducerDriver:
+    # fn(session, ids) -> (run, payload); validate(run, payload) -> canonical payload (or raises)
+    fn: Callable[[Any, dict], tuple]
+    validate: Callable[[Any, dict], dict]
+
+
+@dataclass(frozen=True)
+class WorkflowDeterminism:
+    workflow_id: str
+    seed_fn: Callable[[Any], dict]
+    drivers: dict  # name -> ProducerDriver
+
+
+def _flagship_ids(ids: dict) -> tuple:
+    return ids["portfolios"]["control"], ids["pricing_profiles"]["prof"]
+
+
+# (session, ids) adapters over the unchanged 3-arg _drive_* functions.
+def _adapt_risk(session, ids):
+    return _drive_risk(session, *_flagship_ids(ids))
+
+
+def _adapt_landscape(session, ids):
+    return _drive_landscape(session, *_flagship_ids(ids))
+
+
+def _adapt_scenario(session, ids):
+    return _drive_scenario(session, *_flagship_ids(ids))
+
+
+def _adapt_backtest(session, ids):
+    return _drive_backtest(session, *_flagship_ids(ids))
+
+
+def _validate_task_run(run, payload, *, kind, needs, priced=False):
+    """Flagship producer completion predicate (byte-identical to the old inline
+    checks): optional per-position priced check, then status/exclusion/needs."""
+    if priced:
+        payload = _require_priced(payload)
+    return _require_complete(run, payload, kind=kind, needs=needs)
+
+
+_FLAGSHIP_DETERMINISM = WorkflowDeterminism(
+    workflow_id=FLAGSHIP_ID,
+    seed_fn=seed_flagship,
+    drivers={
+        "risk": ProducerDriver(_adapt_risk,
+            partial(_validate_task_run, kind="risk", needs="positions", priced=True)),
+        "landscape": ProducerDriver(_adapt_landscape,
+            partial(_validate_task_run, kind="landscape", needs="portfolio")),
+        "scenario": ProducerDriver(_adapt_scenario,
+            partial(_validate_task_run, kind="scenario", needs="var_cvar")),
+        "backtest": ProducerDriver(_adapt_backtest,
+            partial(_validate_task_run, kind="backtest", needs="by_underlying")),
+    },
+)
+
+DETERMINISM_REGISTRY: dict = {FLAGSHIP_ID: _FLAGSHIP_DETERMINISM}
+
+
+def seed_workflow(session, workflow_id: str) -> dict:
+    return DETERMINISM_REGISTRY[workflow_id].seed_fn(session)
+
+
+def drive_producers(session, ids: dict, *, workflow_id: str = FLAGSHIP_ID) -> dict[str, Any]:
+    """Drive a workflow's producers synchronously and return canonical
+    (volatile-stripped) payloads. Each driver's OWN validator gates its payload
+    before it is trusted. The default ``workflow_id`` keeps every existing caller
+    (harvester, flagship determinism tests) working unchanged."""
+    wd = DETERMINISM_REGISTRY[workflow_id]
+    out: dict[str, Any] = {}
     with _no_async_dispatch():
-        r_run, r = _drive_risk(session, portfolio_id, profile_id)
-        l_run, l = _drive_landscape(session, portfolio_id, profile_id)
-        s_run, s = _drive_scenario(session, portfolio_id, profile_id)
-        b_run, b = _drive_backtest(session, portfolio_id, profile_id)
-    return {
-        "risk": _require_complete(
-            r_run, _require_priced(r), kind="risk", needs="positions"),
-        "landscape": _require_complete(
-            l_run, l, kind="landscape", needs="portfolio"),
-        "scenario": _require_complete(
-            s_run, s, kind="scenario", needs="var_cvar"),
-        "backtest": _require_complete(
-            b_run, b, kind="backtest", needs="by_underlying"),
-    }
+        for key, drv in wd.drivers.items():
+            run, payload = drv.fn(session, ids)
+            out[key] = drv.validate(run, payload)
+    return out

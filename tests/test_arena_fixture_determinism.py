@@ -60,6 +60,18 @@ def test_producers_are_reproducible(offline_session_factory, block_network):
     assert first == second, "flagship producers drifted across identical seeds"
 
 
+def test_registry_flagship_matches_legacy_drive(offline_session_factory, block_network):
+    from app.golden_workflows.determinism import (
+        DETERMINISM_REGISTRY, FLAGSHIP_ID, seed_workflow, drive_producers,
+    )
+    assert FLAGSHIP_ID in DETERMINISM_REGISTRY
+    with offline_session_factory() as s:
+        via_registry = drive_producers(s, seed_workflow(s, FLAGSHIP_ID),
+                                       workflow_id=FLAGSHIP_ID)
+    assert set(via_registry) == {"risk", "landscape", "scenario", "backtest"}
+    assert via_registry["risk"]["positions"]  # non-empty priced payload
+
+
 def test_offline_guard_trips_without_seeded_history(offline_session_factory, block_network):
     """Without the seeded backtest history, driving the backtest offline must FAIL
     loudly — either ensure_spot_history raises (network disabled) and propagates,
