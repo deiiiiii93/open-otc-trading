@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Arena: `trader-rfq-booking-day` upgraded to flagship discrimination-benchmark parity.**
+  The trader RFQ→booking workflow now grades like `risk-manager-control-day`: harvested-truth
+  grounding on the MSFT quote (the live `quote_rfq` **price** path → `quote_payload.achieved_price`,
+  frozen via a pinned draft market snapshot and guarded by the fixture-determinism gate),
+  **persisted-output correctness binds** (`build_product.product_kwargs.barrier_type`, the booked
+  position's `get_position_summaries` terms, `get_latest_risk_run` delta) so a wrong-direction or
+  wrong-book run fails, structured `record_answer` presentation checks, `max_calls` caps on the
+  stateful build/book/price dispatches, a **write-free build-validation trap** (unsupported product
+  family), and `par_tool_calls: 20` opting it into golf-style EFF scoring. The determinism/harvest
+  harness (`golden_workflows/determinism.py`, `harvest_fixtures.py`) is generalized from
+  flagship-hardcoded into a per-workflow registry; the flagship path is behaviour-preserving
+  (39/39 replay + determinism gate unchanged). New truth file
+  `definitions/trader-rfq-booking-day.truth.json`; the golden replay earns full marks (45/45).
 - **Model Maintenance page** (`/model-maintenance`): add/edit/delete LLM channels and
   models — and set the registry default — from the web UI instead of hand-editing
   `config/agent_channels.yaml`. Backed by a flag-gated CRUD API under `/api/agent`

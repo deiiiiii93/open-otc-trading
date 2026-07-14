@@ -15,7 +15,9 @@ certify a hollow backtest.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Any
+from dataclasses import dataclass
+from functools import partial
+from typing import Any, Callable
 
 from app.golden_workflows.fixtures import apply_seed
 from app.golden_workflows.registry import get_workflow_bundle
@@ -178,25 +180,156 @@ def _drive_backtest(session, portfolio_id, profile_id):
     return run, run.results or {}
 
 
-def drive_producers(session, ids: dict[str, dict[str, int]]) -> dict[str, Any]:
-    """Drive all four flagship producers synchronously and return canonical
-    (volatile-stripped) payloads keyed risk/landscape/scenario/backtest. Each run
-    is validated complete (status/exclusions/priced) BEFORE its payload is trusted
-    — a deterministic partial/failed run must not be certified."""
-    portfolio_id = ids["portfolios"]["control"]
-    profile_id = ids["pricing_profiles"]["prof"]
+# --- Per-workflow determinism registry -------------------------------------
+#
+# The harness generalizes beyond the flagship: each workflow registers a seed
+# function + a set of producer drivers, each driver carrying its OWN completion
+# validator (the flagship task-run producers use the TaskStatus.COMPLETED guard;
+# an RFQ quote persists ``pending_approval`` and needs a status/price predicate
+# instead). The flagship entry is a behaviour-preserving wrap of the original
+# drive_producers — the ``_drive_*`` functions keep their 3-arg signatures so
+# direct callers (e.g. the offline-guard test) are unaffected.
+
+
+@dataclass(frozen=True)
+class ProducerDriver:
+    # fn(session, ids) -> (run, payload); validate(run, payload) -> canonical payload (or raises)
+    fn: Callable[[Any, dict], tuple]
+    validate: Callable[[Any, dict], dict]
+
+
+@dataclass(frozen=True)
+class WorkflowDeterminism:
+    workflow_id: str
+    seed_fn: Callable[[Any], dict]
+    drivers: dict  # name -> ProducerDriver
+
+
+def _flagship_ids(ids: dict) -> tuple:
+    return ids["portfolios"]["control"], ids["pricing_profiles"]["prof"]
+
+
+# (session, ids) adapters over the unchanged 3-arg _drive_* functions.
+def _adapt_risk(session, ids):
+    return _drive_risk(session, *_flagship_ids(ids))
+
+
+def _adapt_landscape(session, ids):
+    return _drive_landscape(session, *_flagship_ids(ids))
+
+
+def _adapt_scenario(session, ids):
+    return _drive_scenario(session, *_flagship_ids(ids))
+
+
+def _adapt_backtest(session, ids):
+    return _drive_backtest(session, *_flagship_ids(ids))
+
+
+def _validate_task_run(run, payload, *, kind, needs, priced=False):
+    """Flagship producer completion predicate (byte-identical to the old inline
+    checks): optional per-position priced check, then status/exclusion/needs."""
+    if priced:
+        payload = _require_priced(payload)
+    return _require_complete(run, payload, kind=kind, needs=needs)
+
+
+_FLAGSHIP_DETERMINISM = WorkflowDeterminism(
+    workflow_id=FLAGSHIP_ID,
+    seed_fn=seed_flagship,
+    drivers={
+        "risk": ProducerDriver(_adapt_risk,
+            partial(_validate_task_run, kind="risk", needs="positions", priced=True)),
+        "landscape": ProducerDriver(_adapt_landscape,
+            partial(_validate_task_run, kind="landscape", needs="portfolio")),
+        "scenario": ProducerDriver(_adapt_scenario,
+            partial(_validate_task_run, kind="scenario", needs="var_cvar")),
+        "backtest": ProducerDriver(_adapt_backtest,
+            partial(_validate_task_run, kind="backtest", needs="by_underlying")),
+    },
+)
+
+DETERMINISM_REGISTRY: dict = {FLAGSHIP_ID: _FLAGSHIP_DETERMINISM}
+
+
+# --- Trader RFQ→Booking determinism -----------------------------------------
+#
+# Grounds on the MSFT down-and-in barrier put QUOTE. The live step-2 tool is
+# ``quote_rfq``; in PRICE mode it emits ``quote_payload.achieved_price`` (the
+# option's model price = the premium). Solve mode is NOT used — its ``solved_value``
+# defaults to a solved *strike*, an input here, not a groundable output. The market
+# snapshot is pinned (fixed spot + the seeded Arena Trader Profile MSFT rate/div/vol),
+# so the price is byte-deterministic offline.
+
+TRADER_RFQ_ID = "trader-rfq-booking-day"
+_TRADER_RFQ_SPOT = 100.0
+_MSFT_RATE, _MSFT_DIV, _MSFT_VOL = 0.04, 0.01, 0.28
+
+
+def _seed_trader_rfq(session) -> dict:
+    ids = apply_seed(get_workflow_bundle(TRADER_RFQ_ID).fixtures, session)
+    session.commit()
+    return ids
+
+
+def _drive_quote_rfq(session, ids, *, spot: float = _TRADER_RFQ_SPOT):
+    """Replay the LIVE quote_rfq PRICE path on a deterministic MSFT down-in barrier
+    put draft; return (rfq, {'achieved_price', 'engine'})."""
+    from app.services import rfq as rfq_svc
+    from app.schemas import RFQRequestDraft, RFQQuoteRequest
+
+    draft = RFQRequestDraft.model_validate({
+        "client_name": "ARENA Determinism",
+        "product_type": "BarrierOption",
+        "product_kwargs": {
+            "strike": 100, "barrier": 80, "maturity": 1.0,
+            "option_type": "PUT", "barrier_type": "DOWN_IN",
+        },
+        "market": {
+            "spot": spot, "rate": _MSFT_RATE, "dividend_yield": _MSFT_DIV,
+            "volatility": _MSFT_VOL, "currency": "USD", "underlying": "MSFT",
+        },
+        "engine_spec": {"engine_name": "BarrierAnalyticalEngine"},
+        "quote_mode": "price",
+    })
+    rfq = rfq_svc.create_rfq_draft(session, draft, channel="arena", actor="arena")
+    rfq = rfq_svc.quote_rfq(session, rfq.id, RFQQuoteRequest(quote_mode="price"))
+    session.refresh(rfq)
+    payload = rfq.quote_payload or {}
+    return rfq, {"achieved_price": payload.get("achieved_price"),
+                 "engine": (payload.get("engine_summary") or {}).get("engine_class")}
+
+
+def _validate_quote(run, payload):
+    """RFQ quote completion predicate: quote_rfq persists status pending_approval
+    (NOT TaskStatus.COMPLETED), so the task-run validator would wrongly reject it.
+    Trust the payload iff a numeric achieved_price is present."""
+    price = payload.get("achieved_price")
+    if not isinstance(price, (int, float)) or isinstance(price, bool):
+        raise AssertionError(f"quote produced no numeric achieved_price: {payload!r}")
+    return payload
+
+
+DETERMINISM_REGISTRY[TRADER_RFQ_ID] = WorkflowDeterminism(
+    workflow_id=TRADER_RFQ_ID,
+    seed_fn=_seed_trader_rfq,
+    drivers={"quote": ProducerDriver(_drive_quote_rfq, _validate_quote)},
+)
+
+
+def seed_workflow(session, workflow_id: str) -> dict:
+    return DETERMINISM_REGISTRY[workflow_id].seed_fn(session)
+
+
+def drive_producers(session, ids: dict, *, workflow_id: str = FLAGSHIP_ID) -> dict[str, Any]:
+    """Drive a workflow's producers synchronously and return canonical
+    (volatile-stripped) payloads. Each driver's OWN validator gates its payload
+    before it is trusted. The default ``workflow_id`` keeps every existing caller
+    (harvester, flagship determinism tests) working unchanged."""
+    wd = DETERMINISM_REGISTRY[workflow_id]
+    out: dict[str, Any] = {}
     with _no_async_dispatch():
-        r_run, r = _drive_risk(session, portfolio_id, profile_id)
-        l_run, l = _drive_landscape(session, portfolio_id, profile_id)
-        s_run, s = _drive_scenario(session, portfolio_id, profile_id)
-        b_run, b = _drive_backtest(session, portfolio_id, profile_id)
-    return {
-        "risk": _require_complete(
-            r_run, _require_priced(r), kind="risk", needs="positions"),
-        "landscape": _require_complete(
-            l_run, l, kind="landscape", needs="portfolio"),
-        "scenario": _require_complete(
-            s_run, s, kind="scenario", needs="var_cvar"),
-        "backtest": _require_complete(
-            b_run, b, kind="backtest", needs="by_underlying"),
-    }
+        for key, drv in wd.drivers.items():
+            run, payload = drv.fn(session, ids)
+            out[key] = drv.validate(run, payload)
+    return out
