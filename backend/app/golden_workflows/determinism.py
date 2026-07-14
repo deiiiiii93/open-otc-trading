@@ -301,12 +301,25 @@ def _drive_quote_rfq(session, ids, *, spot: float = _TRADER_RFQ_SPOT):
 
 
 def _validate_quote(run, payload):
-    """RFQ quote completion predicate: quote_rfq persists status pending_approval
-    (NOT TaskStatus.COMPLETED), so the task-run validator would wrongly reject it.
-    Trust the payload iff a numeric achieved_price is present."""
+    """RFQ quote completion predicate. quote_rfq persists status pending_approval on
+    success (NOT TaskStatus.COMPLETED, so the task-run validator can't be reused) and
+    pricing_failed on failure. A pricing failure emits achieved_price=0.0 via
+    _quote_price, so a bare non-null check would certify a FAILED quote as truth —
+    fail-honest requires the success status + a finite, strictly-positive price + the
+    expected engine (Codex code-review [high])."""
+    import math
+    from app.models import RfqStatus
+
+    status = getattr(run, "status", None)
+    if status != RfqStatus.PENDING_APPROVAL.value:
+        raise AssertionError(f"quote not priced (status={status!r}); refusing to certify")
     price = payload.get("achieved_price")
-    if not isinstance(price, (int, float)) or isinstance(price, bool):
-        raise AssertionError(f"quote produced no numeric achieved_price: {payload!r}")
+    if (not isinstance(price, (int, float)) or isinstance(price, bool)
+            or not math.isfinite(price) or price <= 0):
+        raise AssertionError(f"quote produced no positive finite achieved_price: {payload!r}")
+    engine = payload.get("engine")
+    if engine != "BarrierAnalyticalEngine":
+        raise AssertionError(f"unexpected quote engine {engine!r}")
     return payload
 
 

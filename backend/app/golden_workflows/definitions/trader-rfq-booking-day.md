@@ -32,11 +32,21 @@ steps:
       - type: response_contains
         any_of: ["MSFT"]
       # Adherence bound to the persisted RFQ (not the nested tool args): the draft
-      # was created for the named client.
+      # was created for the named client and — crucially — the requested instrument.
+      # Binding client_name alone let a wrong-underlying/product draft still score
+      # full marks (Codex code-review [high]); these bind the actual terms.
       - type: tool_result_path
         tool: create_or_update_rfq_draft
         path: client_name
         equals: "ARENA Demo Client"
+      - type: tool_result_path
+        tool: create_or_update_rfq_draft
+        path: request_payload.underlying
+        equals: MSFT
+      - type: tool_result_path
+        tool: create_or_update_rfq_draft
+        path: request_payload.product_type
+        equals: BarrierOption
     replay: step-1-intake
 
   - user: "Quote it at fair value using the Arena Trader Profile (price the fixed terms). Record your answer by calling record_answer(answer={\"engine\": <engine>, \"premium\": <number>})."
@@ -57,12 +67,19 @@ steps:
         field: premium
         value: 8.524773988134902
         match: magnitude
-      # Bind to the persisted quote so the number is anchored to a real price, not
-      # only the echoed answer.
+      # Bind the PERSISTED price to the truth band (± ~2%, matching the answer
+      # tolerance), not just non-null: a wrong-instrument or corrupted quote
+      # (achieved_price=999 / 0) must fail here, not score full marks against a
+      # merely-echoed premium (Codex code-review [high]). Two-sided so both a
+      # too-high and a zero/failed price are rejected.
       - type: tool_result_path
         tool: quote_rfq
         path: quote_payload.achieved_price
-        is_not_null: true
+        gte: 8.35
+      - type: tool_result_path
+        tool: quote_rfq
+        path: quote_payload.achieved_price
+        lte: 8.70
     replay: step-2-quote
 
   - user: "Route the quote for approval."
@@ -197,13 +214,26 @@ steps:
     # null: build-product was already routed in step 4 and the runtime never
     # re-reads a loaded SKILL.md, so a skill check here can never pass.
     expected_skill: null
-    expected_tools: []
+    expected_tools:
+      - name: build_product
     outcome: >
-      No such product family is supported by build-product. The agent reports it is
-      unsupported and does NOT book or fabricate a substitute product. (Write-free
-      trap: build_product validate-only persists nothing, so there is no shared
-      state to poison.)
+      No such product family is supported by build-product. The agent actually
+      attempts the build, gets a validation rejection, reports it is unsupported,
+      and does NOT book or fabricate a substitute product. (Write-free trap:
+      build_product validate-only persists nothing, so there is no shared state
+      to poison.)
     assertions:
+      # Require the agent to actually VERIFY via build_product (not hallucinate the
+      # refusal): the family must reach the builder and be rejected. Without these
+      # a no-tool "it's unsupported" claim scored full marks (Codex code-review).
+      - type: tool_called
+        name: build_product
+        args_any_of:
+          - family: phoenix-autocall-rainbow
+      - type: tool_result_path
+        tool: build_product
+        path: ok
+        equals: false
       - type: tool_not_called
         name: book_position
       - type: response_contains

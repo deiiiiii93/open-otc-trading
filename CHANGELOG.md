@@ -16,7 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   position's `get_position_summaries` terms, `get_latest_risk_run` delta) so a wrong-direction or
   wrong-book run fails, structured `record_answer` presentation checks, `max_calls` caps on the
   stateful build/book/price dispatches, a **write-free build-validation trap** (unsupported product
-  family), and `par_tool_calls: 20` opting it into golf-style EFF scoring. The determinism/harvest
+  family — which requires an actual `build_product` rejection, not a hallucinated refusal), and
+  `par_tool_calls: 20` opting it into golf-style EFF scoring. Grounding checks are **discrimination-
+  tested** (negative scorer tests assert a wrong instrument / price / booked direction / no-tool
+  refusal loses points): the intake binds the requested underlying + product type, the quote binds
+  the persisted price to a truth band (not just non-null), and the harvest validator is fail-honest
+  (rejects a pricing-failed / zero-price quote). The determinism/harvest
   harness (`golden_workflows/determinism.py`, `harvest_fixtures.py`) is generalized from
   flagship-hardcoded into a per-workflow registry; the flagship path is behaviour-preserving
   (39/39 replay + determinism gate unchanged). New truth file
