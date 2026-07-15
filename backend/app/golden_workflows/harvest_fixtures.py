@@ -40,8 +40,12 @@ TARGETS: list[tuple[str, str, str]] = [
 # workflow_id -> (truth_filename, targets)
 HARVEST_SPECS: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
     FLAGSHIP_ID: ("risk-manager-control-day.truth.json", TARGETS),
+    # Spot/multiplier-INVARIANT ratios (spec 2026-07-15) — the manifest grounds on
+    # these so grounding survives the live arena's real market fetch.
     TRADER_RFQ_ID: ("trader-rfq-booking-day.truth.json", [
-        ("msft_quote_premium", "quote", "achieved_price"),
+        ("premium_spot_ratio", "quote", "premium_spot_ratio"),
+        ("barrier_strike_ratio", "quote", "barrier_strike_ratio"),
+        ("strike_spot_ratio", "quote", "strike_spot_ratio"),
     ]),
 }
 

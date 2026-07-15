@@ -296,8 +296,20 @@ def _drive_quote_rfq(session, ids, *, spot: float = _TRADER_RFQ_SPOT):
     rfq = rfq_svc.quote_rfq(session, rfq.id, RFQQuoteRequest(quote_mode="price"))
     session.refresh(rfq)
     payload = rfq.quote_payload or {}
-    return rfq, {"achieved_price": payload.get("achieved_price"),
-                 "engine": (payload.get("engine_summary") or {}).get("engine_class")}
+    achieved = payload.get("achieved_price")
+    # Spot- AND multiplier-invariant grounding ratios (the harvest pins spot=100,
+    # multiplier=1; these EQUAL the live ratios at any real spot/multiplier, which is
+    # exactly why the manifest grounds on ratios rather than absolute prices).
+    strike, barrier, mult = 100.0, 80.0, 1.0
+    premium_spot_ratio = (achieved / (spot * mult)
+                          if isinstance(achieved, (int, float)) and spot else None)
+    return rfq, {
+        "achieved_price": achieved,
+        "engine": (payload.get("engine_summary") or {}).get("engine_class"),
+        "premium_spot_ratio": premium_spot_ratio,
+        "barrier_strike_ratio": barrier / strike,
+        "strike_spot_ratio": strike / spot,
+    }
 
 
 def _validate_quote(run, payload):
