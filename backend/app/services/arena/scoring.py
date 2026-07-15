@@ -66,10 +66,17 @@ _AXIS_BY_TYPE = {
     "answer_field_quotes": "grounding",
     "artifact_exists": "synthesis",
     "artifact_contains": "synthesis",
+    "tool_result_ratio": "grounding",
+    # assertion_any_of carries its own required `axis` — see _axis_for_assertion.
 }
 
 
 def _axis_for_assertion(assertion) -> str:
+    # Explicit per-assertion override wins (assertion_any_of's required axis, or an
+    # artifact_contains scored on a non-default axis).
+    override = getattr(assertion, "axis", None)
+    if override:
+        return override
     return _AXIS_BY_TYPE.get(assertion.type, "procedural")
 
 
@@ -368,6 +375,11 @@ def _assertion_label(a) -> str:
         return f"tool NOT called: {a.name}"
     if t == "artifact_contains":
         return f"artifact({a.kind}) contains " + " / ".join(a.any_of)
+    if t == "tool_result_ratio":
+        denom = a.denom if a.denom_mult is None else f"{a.denom}×{a.denom_mult}"
+        return f"{a.tool}[{a.source}] {a.numer}/({denom}) ≈ {a.equals}"
+    if t == "assertion_any_of":
+        return "any of: [" + " | ".join(_assertion_label(m) for m in a.any_of) + "]"
     if t == "response_quotes_tool_value":
         return f"response quotes {a.tool} {a.path}"
     if t == "response_quotes_value":
