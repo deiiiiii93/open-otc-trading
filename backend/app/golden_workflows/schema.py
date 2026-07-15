@@ -106,10 +106,22 @@ class _ToolNotCalled(BaseModel):
     name: str
 
 
+_AXES = {"procedural", "adherence", "grounding", "synthesis"}
+
+
 class _ArtifactContains(BaseModel):
     type: Literal["artifact_contains"]
     kind: str
     any_of: list[str] = Field(min_length=1)
+    # Optional per-assertion axis override (else the global _AXIS_BY_TYPE default).
+    # Used to score ticket-CONTENT checks on the synthesis axis.
+    axis: str | None = None
+
+    @model_validator(mode="after")
+    def _axis_ok(self) -> "_ArtifactContains":
+        if self.axis is not None and self.axis not in _AXES:
+            raise ValueError(f"axis must be one of {_AXES}")
+        return self
 
 
 class _ResponseQuotesToolValue(BaseModel):
@@ -182,13 +194,54 @@ class _AnswerFieldQuotes(BaseModel):
         return self
 
 
+class _ToolResultRatio(BaseModel):
+    # Spot- AND multiplier-invariant grounding: value = dig(numer) / (dig(denom) *
+    # dig(denom_mult if set else 1)), read from the last matching tool RESULT
+    # (source=result) or tool CALL args (source=call). Lets grounding survive the
+    # live arena's real market fetch — e.g. premium/(spot*contract_multiplier).
+    type: Literal["tool_result_ratio"]
+    tool: str
+    numer: str = Field(min_length=1)
+    denom: str = Field(min_length=1)
+    denom_mult: str | None = None
+    equals: float
+    rel_tol: float = 0.02
+    scope: Literal["step", "session"] = "step"
+    source: Literal["result", "call"] = "result"
+
+    @model_validator(mode="after")
+    def _bounds(self) -> "_ToolResultRatio":
+        if not (0 < self.rel_tol < 1):
+            raise ValueError("rel_tol must be in (0, 1)")
+        return self
+
+
+class _AssertionAnyOf(BaseModel):
+    # Composite: scores as ONE check, passes iff any member passes. Expresses an
+    # "either competent path" ground (e.g. a trap the model may refuse two ways)
+    # that independent AND-ed assertions cannot. Carries an explicit axis.
+    type: Literal["assertion_any_of"]
+    axis: str
+    any_of: list["Assertion"] = Field(min_length=2)
+
+    @model_validator(mode="after")
+    def _axis_ok(self) -> "_AssertionAnyOf":
+        if self.axis not in _AXES:
+            raise ValueError(f"axis must be one of {_AXES}")
+        return self
+
+
 Assertion = Annotated[
     Union[_SkillRouted, _SkillsRoutedSequence, _ToolsRoutedSequence, _ToolCalled,
           _TaskReturnedId, _ArtifactExists, _ResponseContains, _ToolResultPath,
           _ToolNotCalled, _ArtifactContains, _ResponseQuotesToolValue,
-          _ResponseQuotesValue, _AnswerFieldEquals, _AnswerFieldQuotes],
+          _ResponseQuotesValue, _AnswerFieldEquals, _AnswerFieldQuotes,
+          _ToolResultRatio, _AssertionAnyOf],
     Field(discriminator="type"),
 ]
+
+# _AssertionAnyOf.any_of forward-references the Assertion union above.
+_AssertionAnyOf.model_rebuild()
 
 
 class ToolExpectation(BaseModel):

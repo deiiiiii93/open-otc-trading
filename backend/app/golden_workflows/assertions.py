@@ -285,6 +285,16 @@ def _last_result(ctx: AssertionContext, tool: str) -> dict | None:
                if normalize_tool_name(r.get("name", "")) == want and not r.get("error")]
     return matches[-1] if matches else None
 
+
+def _last_call(ctx: AssertionContext, tool: str) -> dict | None:
+    """Args of the last matching tool CALL (the authoritative inputs the model
+    passed — e.g. the terms actually sent to book_position)."""
+    from app.golden_workflows.schema import normalize_tool_name
+    want = normalize_tool_name(tool)
+    matches = [c.get("args", {}) or {} for c in ctx.tool_calls
+               if normalize_tool_name(c.get("name", "")) == want]
+    return matches[-1] if matches else None
+
 def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
     t = a.type
     if t == "skill_routed":
@@ -359,6 +369,41 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
             return (isinstance(val, (int, float)) and not isinstance(val, bool) and val >= a.gte, f"{a.path} !>= {a.gte}")
         if a.lte is not None:
             return (isinstance(val, (int, float)) and not isinstance(val, bool) and val <= a.lte, f"{a.path} !<= {a.lte}")
+    if t == "tool_result_ratio":
+        src = _last_call(ctx, a.tool) if a.source == "call" else (
+            (_last_result(ctx, a.tool) or {}).get("content"))
+        if src is None:
+            return False, f"no {a.source} for {a.tool}"
+
+        def _num_at(path: str) -> float | None:
+            found, v = _dig(src, path)
+            if not found or isinstance(v, bool) or not isinstance(v, (int, float)):
+                return None
+            return float(v)
+
+        n = _num_at(a.numer)
+        d = _num_at(a.denom)
+        m = 1.0 if a.denom_mult is None else _num_at(a.denom_mult)
+        if n is None or d is None or m is None:
+            return False, (f"{a.tool} ratio path missing/non-numeric "
+                           f"(numer={a.numer}, denom={a.denom}, denom_mult={a.denom_mult})")
+        denom = d * m
+        if denom == 0:
+            return False, f"{a.tool} ratio denominator is zero"
+        value = n / denom
+        tol = a.rel_tol * abs(a.equals) if a.equals != 0 else a.rel_tol
+        ok = abs(value - a.equals) <= tol
+        return ok, "" if ok else (
+            f"{a.tool} {a.numer}/({a.denom}×{a.denom_mult}) = {value:.6g} "
+            f"!= {a.equals} (rel_tol={a.rel_tol})")
+    if t == "assertion_any_of":
+        reasons = []
+        for member in a.any_of:
+            ok, msg = evaluate_assertion(member, ctx)
+            if ok:
+                return True, ""
+            reasons.append(msg)
+        return False, "no member passed: " + " | ".join(r for r in reasons if r)
     if t == "tool_not_called":
         from app.golden_workflows.schema import normalize_tool_name
         want = normalize_tool_name(a.name)

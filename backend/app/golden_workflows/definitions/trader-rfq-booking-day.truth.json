@@ -1,7 +1,17 @@
 {
-  "msft_quote_premium": {
-    "path": "achieved_price",
+  "barrier_strike_ratio": {
+    "path": "barrier_strike_ratio",
     "producer": "quote",
-    "value": 8.524773988134902
+    "value": 0.8
+  },
+  "premium_spot_ratio": {
+    "path": "premium_spot_ratio",
+    "producer": "quote",
+    "value": 0.08524773988134901
+  },
+  "strike_spot_ratio": {
+    "path": "strike_spot_ratio",
+    "producer": "quote",
+    "value": 1.0
   }
 }
