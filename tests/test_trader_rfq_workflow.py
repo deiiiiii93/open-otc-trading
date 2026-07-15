@@ -100,15 +100,14 @@ def test_wrong_booked_barrier_ratio_loses_points():
     assert passed < total, "off-0.80 booked barrier still scored full marks"
 
 
-def test_failed_risk_greeks_loses_points():
-    """A pricing-failure delta (greeks_ok=false) must NOT earn grounding credit (D3)."""
+def test_duplicate_booking_loses_points():
+    """A second (duplicate) booking must trip the max_calls/all_calls guard (Codex code-review)."""
     def mutate(replay):
-        pos = replay["step-8-impact"].tool_results[0]["content"]["positions"][0]
-        pos["greeks_ok"] = False
-        pos["pricing_ok"] = False
-        pos["delta"] = 0.0
+        calls = replay["step-5-book"].ai["tool_calls"]
+        calls.append(copy.deepcopy(calls[0]))
+        calls[-1]["id"] = "c5b"
     _, passed, total = _score_with_mutation(mutate)
-    assert passed < total, "failed-greeks risk still scored full marks"
+    assert passed < total, "duplicate booking still scored full marks"
 
 
 def test_corrupt_ticket_loses_synthesis_points():
@@ -117,6 +116,24 @@ def test_corrupt_ticket_loses_synthesis_points():
         replay["step-9-ticket"].artifacts[0]["content"] = "empty ticket"
     _, passed, total = _score_with_mutation(mutate)
     assert passed < total, "corrupt ticket still scored full synthesis marks"
+
+
+def test_ticket_missing_underlying_loses_points():
+    """A ticket omitting the underlying must fail synthesis (Codex code-review)."""
+    def mutate(replay):
+        a = replay["step-9-ticket"].artifacts[0]
+        a["content"] = a["content"].replace("MSFT", "the stock")
+    _, passed, total = _score_with_mutation(mutate)
+    assert passed < total, "ticket without MSFT still scored full marks"
+
+
+def test_ticket_missing_barrier_level_loses_points():
+    """A ticket with only the generic word 'knock-in' (no 80% level) must fail (Codex code-review)."""
+    def mutate(replay):
+        a = replay["step-9-ticket"].artifacts[0]
+        a["content"] = a["content"].replace("80% of strike", "of strike")
+    _, passed, total = _score_with_mutation(mutate)
+    assert passed < total, "ticket without the 80% level still scored full marks"
 
 
 def test_trap_pure_prose_refusal_loses_points():

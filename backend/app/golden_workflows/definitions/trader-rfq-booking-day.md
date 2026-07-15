@@ -164,12 +164,16 @@ steps:
       # book_position CALL args), NOT the decoupled build result — a run could build
       # DOWN_IN then book DOWN_OUT/another barrier (Codex plan finding). book_position
       # consumes args.product.terms.
+      # all_calls + max_calls 1: exactly one booking AND it matches DOWN_IN — a second
+      # (duplicate) booking is over-execution and must fail (Codex code-review).
       - type: tool_called
         name: book_position
         args_any_of:
           - product:
               terms:
                 barrier_type: DOWN_IN
+        all_calls: true
+        max_calls: 1
       - type: tool_result_ratio
         tool: book_position
         source: call
@@ -218,26 +222,18 @@ steps:
       - name: calculate_risk
     outcome: >
       The agent runs calculate_risk on the book and reports the new MSFT position's
-      delta — with successfully-computed greeks, not a pricing-failure zero.
+      delta impact.
     assertions:
+      # ADHERENCE only (Codex code-review [high]): calculate_risk grounds on
+      # CALLER-SUPPLIED positions and the stored barrier position cannot be re-priced
+      # (greeks_ok=false; get_latest_risk_run is unready in-match) — so NO robust,
+      # non-gameable numeric delta ground is reachable in the current arena (a genuine
+      # risk-infra limitation, tracked Out of scope). We require the agent to run the
+      # risk read and report a delta, not a fabricated value it could self-supply.
       - type: tool_called
         name: calculate_risk
-      # D3: require SUCCESSFUL risk on the MSFT position — a pricing-failure delta of
-      # 0.0 (greeks_ok=false) must NOT earn grounding credit (Codex plan finding).
-      - type: tool_result_path
-        tool: calculate_risk
-        path: positions[underlying=MSFT].greeks_ok
-        equals: true
-      - type: tool_result_path
-        tool: calculate_risk
-        path: positions[underlying=MSFT].pricing_ok
-        equals: true
-      # The reported delta must be the computed one, bound to the "delta" label, signed.
-      - type: response_quotes_tool_value
-        tool: calculate_risk
-        path: positions[underlying=MSFT].delta
-        near: ["delta"]
-        match: signed
+      - type: response_contains
+        any_of: ["delta"]
     replay: step-8-impact
 
   - user: "Export a trade ticket for the new booked position via write_report_artifact — include the client name, underlying, direction (down-and-in put), the knock-in barrier as a percent of strike, and the quoted premium."
@@ -259,10 +255,15 @@ steps:
         kind: text
       - type: artifact_contains
         kind: text
-        any_of: ["down-and-in", "DOWN_IN"]
+        any_of: ["MSFT"]
       - type: artifact_contains
         kind: text
-        any_of: ["80%", "80 %", "0.8", "knock-in"]
+        any_of: ["down-and-in", "DOWN_IN"]
+      # Strict knock-in LEVEL — the generic word "knock-in" is not a level, so a ticket
+      # that omits the 80% barrier must fail (Codex code-review).
+      - type: artifact_contains
+        kind: text
+        any_of: ["80%", "80 %", "0.8"]
       - type: artifact_contains
         kind: text
         any_of: ["ARENA Demo Client"]
@@ -289,17 +290,21 @@ steps:
       # member must fire, so a no-tool hallucinated refusal fails.
       - type: tool_not_called
         name: book_position
+      # Real tool contracts (verified): build_product(unknown family) returns top-level
+      # ok=false (validation is null); check_term_completeness(unknown class) returns a
+      # non-null "Unknown QuantArk class" error (no `complete` field). Either is valid
+      # positive validation evidence (Codex code-review).
       - type: assertion_any_of
         axis: adherence
         any_of:
           - type: tool_result_path
             tool: build_product
-            path: validation.ok
+            path: ok
             equals: false
           - type: tool_result_path
             tool: check_term_completeness
-            path: complete
-            equals: false
+            path: error
+            is_not_null: true
       - type: response_contains
         any_of: ["not supported", "unsupported", "unknown", "can't build", "cannot build", "not a valid", "no such", "not available", "incomplete", "missing"]
     replay: step-10-trap-unsupported-family

@@ -94,10 +94,9 @@
       "response_text": "Queued batch pricing run 7001 over the Arena Trader Desk book."
     },
     "step-8-impact": {
-      "ai": { "content": "Running the risk calculation on the book.", "tool_calls": [ { "id": "c8", "name": "calculate_risk", "args": { "portfolio_id": 3 } } ] },
+      "ai": { "content": "Running the risk calculation on the book.", "tool_calls": [ { "id": "c8", "name": "calculate_risk", "args": { "positions": [ { "product": { "quantark_class": "BarrierOption", "underlying": "MSFT", "terms": { "strike": 390.99, "barrier": 312.792, "barrier_type": "DOWN_IN", "option_type": "PUT", "maturity": 1.0 } }, "quantity": 1 } ], "market": { "spot": 390.99 } } } ] },
       "tool_results": [ { "tool_call_id": "c8", "name": "calculate_risk", "content": { "totals": { "delta": -0.41638929250939094 }, "positions": [
-        { "position_id": 501, "underlying": "MSFT", "product_type": "BarrierOption", "greeks_ok": true, "pricing_ok": true, "delta": -0.41638929250939094, "spot": 390.99 },
-        { "position_id": 11, "underlying": "AAPL", "product_type": "EuropeanVanillaOption", "greeks_ok": true, "pricing_ok": true, "delta": 120.0, "spot": 390.99 }
+        { "position_id": 501, "underlying": "MSFT", "product_type": "BarrierOption", "greeks_ok": true, "pricing_ok": true, "delta": -0.41638929250939094, "spot": 390.99 }
       ] } } ],
       "skills_routed": ["position-snapshot"],
       "artifacts": [],
@@ -111,11 +110,11 @@
       "response_text": "Exported the trade ticket for the booked MSFT down-and-in barrier put."
     },
     "step-10-trap-unsupported-family": {
-      "ai": { "content": "Validating the requested family before doing anything.", "tool_calls": [ { "id": "c10", "name": "check_term_completeness", "args": { "quantark_class": "phoenix-autocall-rainbow", "terms": {} } } ] },
-      "tool_results": [ { "tool_call_id": "c10", "name": "check_term_completeness", "content": { "complete": false, "missing_required": ["initial_price", "barrier_config.ko_barrier", "coupon_config.coupon_rate"] } } ],
+      "ai": { "content": "Validating the requested family before doing anything.", "tool_calls": [ { "id": "c10", "name": "build_product", "args": { "family": "phoenix-autocall-rainbow", "terms": { "strike": 390.99, "barrier": 312.792 } } } ] },
+      "tool_results": [ { "tool_call_id": "c10", "name": "build_product", "content": { "ok": false, "quantark_class": "phoenix-autocall-rainbow", "product_kwargs": {}, "validation": null, "missing": [], "warnings": [] } } ],
       "skills_routed": [],
       "artifacts": [],
-      "response_text": "'phoenix-autocall-rainbow' is an unsupported family and its terms are incomplete — I won't fabricate or book it. No position was created."
+      "response_text": "'phoenix-autocall-rainbow' is an unsupported family — build_product rejected it (ok=false). I won't fabricate or book it. No position was created."
     }
   }
 }
