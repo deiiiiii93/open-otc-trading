@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Arena: `trader-rfq-booking-day` grounding is now LIVE-REACHABLE (+ synthesis axis).**
+  Run #21 (first live run) scored grounding **5/16** on *benchmark* defects, not model error —
+  the golden replay masked five live-unreachability bugs (spot-100-harvested absolutes vs the
+  live real-spot fetch; a wrong tool name; a dead risk path; mis-pathed intake binds; a trap
+  premise the model could satisfy by building a valid substitute). The fix binds grounding only
+  to **captured live tool shapes**: spot- AND contract-multiplier-invariant **ratios**
+  (`premium/(spot×multiplier)=0.08525`, `barrier/strike=0.80`, `strike/spot=1.00`) via a new
+  `tool_result_ratio` assertion; the booked terms bind to the **authoritative `book_position`
+  call args**; the delta read requires **successful greeks** (`greeks_ok`/`pricing_ok`); the trap
+  accepts **either competent refusal** via a new `assertion_any_of` composite; and a **synthesis
+  step** (export the trade ticket via `write_report_artifact`, with artifact-content checks) gives
+  the workflow true 4-axis flagship parity (procedural 21, adherence 18, grounding 17, synthesis 4).
+  `truth.json` is re-harvested as ratios; the replay bundle is rebuilt from real shapes; **7
+  negative scorer tests** prove each ground discriminates. New workflow-agnostic scoring
+  primitives: `tool_result_ratio` (spot/multiplier-invariant grounding) and `assertion_any_of`
+  (one-check OR composite) with an optional per-assertion `axis` override.
+
 ### Added
 - **Arena: `trader-rfq-booking-day` upgraded to flagship discrimination-benchmark parity.**
   The trader RFQ→booking workflow now grades like `risk-manager-control-day`: harvested-truth
