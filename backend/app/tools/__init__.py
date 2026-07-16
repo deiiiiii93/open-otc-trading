@@ -134,6 +134,7 @@ from .greeks_landscape import (
     run_greeks_landscape_tool,
 )
 from .product_reference import get_product_reference_doc
+from .product_term_schema import get_product_term_schema
 from .term_completeness import check_term_completeness
 from .record_answer import record_answer_tool
 
@@ -141,6 +142,7 @@ from .record_answer import record_answer_tool
 QUANT_AGENT_TOOLS = [
     price_product_tool,
     get_product_reference_doc,
+    get_product_term_schema,
     check_term_completeness,
     solve_rfq_tool,
     get_rfq_catalog_tool,

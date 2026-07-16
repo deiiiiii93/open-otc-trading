@@ -377,6 +377,7 @@ DEEP_AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         # QUANT_AGENT_TOOLS; absent from this allowlist a tool is silently
         # dropped from every persona.
         "get_product_reference_doc",
+        "get_product_term_schema",
         "check_term_completeness",
         "solve_rfq",
         "get_rfq_catalog",

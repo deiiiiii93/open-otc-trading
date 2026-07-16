@@ -81,6 +81,21 @@ _GATED_BOOKING_TYPES = _SNOWBALL_BOOKING_TYPES | {
 # (prebuilt=True) would feed the metadata straight to QuantArk, which rejects it.
 _DELTAONE_BOOKING_TYPES = {"Futures", "SpotInstrument"}
 
+# Tenor/date vocabulary that ONLY the synthesize builders accept (maturity_years or
+# an explicit-date synonym -> maturity/exercise_date). A pre-built QuantArk termsheet
+# (OTC import adapter / build_product output) uses the constructor key `maturity` (and
+# carries validated schedules like Asian observation_records), so it never contains
+# these keys — their presence uniquely marks terms an agent hand-authored, routing them
+# through synthesis. `initial_price` is deliberately EXCLUDED: valid Asian/Snowball
+# prebuilt termsheets carry it, and re-synthesizing such a termsheet would drop its
+# weighted schedule — so the trigger keys on the maturity vocabulary alone (every
+# bookable raw-vocab payload supplies one of them).
+_RAW_TERMSHEET_VOCAB = ("maturity_years", "maturity_date", "expiry_date", "expiry")
+
+
+def _has_raw_termsheet_vocab(terms: dict[str, Any]) -> bool:
+    return any(terms.get(key) not in (None, "") for key in _RAW_TERMSHEET_VOCAB)
+
 
 def normalize_booking_product_spec(product: ProductBookingSpec) -> ProductBookingSpec:
     if product.quantark_class not in _GATED_BOOKING_TYPES:
@@ -107,12 +122,21 @@ def normalize_booking_product_spec(product: ProductBookingSpec) -> ProductBookin
         if not built.ok:
             terms.setdefault("underlying", product.underlying)
             built = build_product(quantark_class, terms, prebuilt=False)
+    elif quantark_class in _SNOWBALL_BOOKING_TYPES:
+        built = build_product(quantark_class, terms, prebuilt=False)
     else:
-        built = build_product(
-            quantark_class,
-            terms,
-            prebuilt=quantark_class not in _SNOWBALL_BOOKING_TYPES,
-        )
+        # Non-snowball gated families normally arrive as complete QuantArk
+        # termsheets (OTC import adapter / a prior build_product call) and
+        # validate-and-wrap verbatim. But an agent may hand-author RAW term-sheet
+        # vocabulary at book_position (initial_price as the S0/validation spot,
+        # maturity_years or maturity_date) that the verbatim path cannot
+        # translate — the build_product TOOL accepts exactly this via synthesis,
+        # so mirror it here (as the DeltaOne pair above does). A genuinely-invalid
+        # PRE-BUILT termsheet carries no such vocabulary, so its precise validation
+        # error is preserved rather than masked by a re-synthesis "missing" list.
+        built = build_product(quantark_class, dict(terms), prebuilt=True)
+        if not built.ok and _has_raw_termsheet_vocab(terms):
+            built = build_product(quantark_class, dict(terms), prebuilt=False)
     if built.missing:
         raise ValueError(
             f"Incomplete {product.quantark_class} booking terms; missing: "

@@ -14,7 +14,12 @@ from pydantic import BaseModel, Field
 
 from app.services.deep_agent.capability_gate import capability_gated
 from app.services.deep_agent.envelopes import ToolGroup
-from app.services.domains.product_contracts import _CONTRACTS, contract_for
+from app.services.domains.product_contracts import (
+    _CONTRACTS,
+    contract_for,
+    one_of_groups,
+    required_fields,
+)
 
 
 class CheckTermCompletenessInput(BaseModel):
@@ -61,30 +66,33 @@ def check_term_completeness(quantark_class: str, terms: dict[str, Any] | None = 
         }
     terms = terms or {}
 
-    required = list(contract.required_bound)
-    # Mirror the builder's one conditional: ko_observation_dates is required
-    # only when observation_frequency is CUSTOM (contract declares the union).
-    freq = _lookup(terms, "observation_frequency")
-    if (
-        "ko_observation_dates" in required
-        and _is_provided(freq)
-        and str(freq).strip().upper() != "CUSTOM"
-    ):
-        required.remove("ko_observation_dates")
-
+    # required_fields encodes the conditional ko_observation_dates rule AND this
+    # family's declared one_of alternatives (e.g. maturity_years|maturity_date), so the
+    # completeness verdict and the schema tool stay in agreement.
+    required = required_fields(contract, terms)
     missing = [key for key in required if not _is_provided(_lookup(terms, key))]
     provided = [key for key in required if key not in missing]
     defaulted_unset = [
         key for key in contract.defaulted if not _is_provided(_lookup(terms, key))
     ]
+    # Mutually-exclusive groups (e.g. maturity_years|maturity_date): supplying more than
+    # one member is a conflict the builder rejects, so completeness must not report it
+    # ready — it would declare invalid terms "complete" and desync from build_product.
+    conflicts = [
+        {"one_of": group, "provided": [m for m in members if _is_provided(_lookup(terms, m))]}
+        for group, members in one_of_groups(contract).items()
+        if sum(1 for m in members if _is_provided(_lookup(terms, m))) > 1
+    ]
     return {
         "quantark_class": quantark_class,
-        "complete": not missing,
+        "complete": not missing and not conflicts,
         "missing_required": missing,
         "provided_required": provided,
         "defaulted_unset": defaulted_unset,
+        "conflicts": conflicts,
         "note": (
             "missing_required must all be collected before pricing/booking; "
+            "conflicts list mutually-exclusive fields supplied together (supply one); "
             "defaulted_unset fields fall back to desk defaults (configurable)."
         ),
     }

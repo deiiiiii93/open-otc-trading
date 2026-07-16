@@ -27,7 +27,8 @@ def test_quant_agent_tools_count_unchanged():
     # +1 product-semantics reader (get_product_reference_doc).
     # +1 contract-grounded completeness checker (check_term_completeness).
     # +1 structured-answer recorder (record_answer) for arena flagship scoring.
-    assert len(QUANT_AGENT_TOOLS) == 98
+    # +1 term-schema surface (get_product_term_schema) — legal fields/enums before build.
+    assert len(QUANT_AGENT_TOOLS) == 99
 
 
 def test_record_answer_is_domain_read():

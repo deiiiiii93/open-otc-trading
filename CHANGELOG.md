@@ -7,7 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Products: `get_product_term_schema(family)` tool — a fillable legal term-sheet
+  template.** Returns builder-facing field names, types, required/optional, defaults, and
+  **legal enum values** per product family so the agent fills `build_product` correctly on
+  the first call instead of guessing enum spellings (`DOWN_AND_IN` → a build-retry loop).
+  Enum values are live-introspected from quant-ark where every member round-trips
+  (`barrier_type`, `option_type`, `barrier_direction`) and builder-faithful literals
+  otherwise (frequencies; `touch_type`, which builds-ok but mis-prices `DOUBLE_*` on a
+  single one-touch). A round-trip fidelity test proves every advertised field/value
+  produces a correct, faithfully-classified build. Also adds a `maturity_years |
+  maturity_date` **one_of** alternative (per-family, derived from FieldSpecs) shared by the
+  schema, `check_term_completeness`, and the synthesize builder — both-present now rejected
+  rather than silently dropping the date. Schema-only — no `build_product` enum aliasing.
+  V1 covers the flat option families; nested-config + DeltaOne families return
+  `schema_available: false`. New tool registered in `QUANT_AGENT_TOOLS` +
+  `DEEP_AGENT_TOOL_NAMES`; the build-product skill now routes fetch-schema-before-build.
+
 ### Fixed
+- **Booking: `book_position` now accepts the same term-sheet vocabulary as the
+  `build_product` tool (no more `initial_price` / `maturity_date` rejection).**
+  Root cause was a two-layer asymmetry surfaced by the Arena Run #22 EFF analysis:
+  quant-ark's concrete equity-option subclasses (`BarrierOption`, `EuropeanVanillaOption`, …)
+  override `__init__` with a **narrower** signature than `BaseEquityOption` — dropping the
+  base's `initial_price` / `initial_date` / `maturity_date` params — so the RFQ registry
+  (which reads `signature(cls.__init__)`) correctly rejects them as `Unsupported kwargs`.
+  The `build_product` **tool** hides this via its synthesize path (translating
+  `initial_price` → S0/validation spot, `maturity_years`/`maturity_date` → `maturity`/
+  `exercise_date`), but `book_position` routed non-Snowball gated families through
+  `build_product(prebuilt=True)` (**validate-and-wrap verbatim**), which skipped that
+  translation — so an agent that hand-authored booking terms instead of passing
+  `build_product`'s output kwargs got rejected, forcing a build→book retry loop.
+  Fix (backend, quant-ark unchanged): `normalize_booking_product_spec` now falls back to
+  the synthesize path when the verbatim path fails **and** the terms carry raw term-sheet
+  vocabulary (mirrors the existing DeltaOne fallback); a genuinely-invalid pre-built
+  termsheet carries no such vocabulary, so its precise validation error is preserved. The
+  synthesize `_common_option` also accepts an explicit-date maturity (`maturity_date`/
+  `exercise_date`) as an alternative to `maturity_years`. 5 new tests (4 unit + 1 DB-backed).
 - **Arena: `trader-rfq-booking-day` grounding is now LIVE-REACHABLE (+ synthesis axis).**
   Run #21 (first live run) scored grounding **5/16** on *benchmark* defects, not model error —
   the golden replay masked five live-unreachability bugs (spot-100-harvested absolutes vs the
