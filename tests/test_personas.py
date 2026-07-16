@@ -367,6 +367,7 @@ def test_book_position_is_wired_into_deep_agent():
 
     # Reachable by personas.
     assert "book_position" in DEEP_AGENT_TOOL_NAMES
+    assert "get_product_term_schema" in DEEP_AGENT_TOOL_NAMES
     tool_names = {t.name for t in select_deep_agent_tools()}
     assert "book_position" in tool_names
 
