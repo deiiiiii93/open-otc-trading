@@ -174,7 +174,11 @@ def test_barrier_schema_shape():
     assert {"one_of": "maturity", "members": ["maturity_years", "maturity_date"]} in out["required_groups"]
 
 
-def test_deferred_family_returns_schema_unavailable():
+def test_unlisted_family_returns_schema_unavailable(monkeypatch):
+    # All contract families are now published; the schema_available:False fallback still guards
+    # any family not in _SCHEMA_FAMILIES (or with empty fields). Exercise it via monkeypatch.
+    import app.tools.product_term_schema as mod
+    monkeypatch.setattr(mod, "_SCHEMA_FAMILIES", frozenset())
     out = _call("SnowballOption")
     assert out["schema_available"] is False
     assert "check_term_completeness" in out["use_instead"]
@@ -238,3 +242,209 @@ def test_tool_is_registered_and_available():
     assert "get_product_term_schema" in DEEP_AGENT_TOOL_NAMES
     assert any(getattr(t, "name", None) == "get_product_term_schema"
                for t in select_deep_agent_tools())
+
+
+# =============================================================================
+# V2 — nested-config + DeltaOne families
+# =============================================================================
+from app.services.domains.product_contracts import (  # noqa: E402
+    FamilyContract,
+    active_required_paths,
+    flat_aliases,
+    _requires_when_active,
+)
+from app.tools.term_completeness import check_term_completeness  # noqa: E402
+from app.tools.product_term_schema import get_product_term_schema, _SCHEMA_FAMILIES  # noqa: E402
+
+_NESTED = ["SnowballOption", "KnockOutResetSnowballOption", "PhoenixOption", "RangeAccrualOption"]
+_V2_ALL = _NESTED + ["Futures", "SpotInstrument"]
+
+
+def _snowball_terms(pct=False):
+    b = {"ko_barrier_pct": 103, "ki_barrier_pct": 70} if pct else {"ko_barrier": 103, "ki_barrier": 70}
+    return {"initial_price": 100, "maturity_years": 2, "trade_start_date": "2026-01-05",
+            "observation_frequency": "MONTHLY", "ko_rate": 0.08, "lockup_months": 3,
+            "ki_convention": "DAILY", **b}
+
+
+# --- Task 1: FieldSpec helpers -----------------------------------------------
+def test_flat_aliases_maps_contract_path_to_all_input_spellings():
+    spec = FieldSpec("ko_barrier", "number", "KO", contract_path="barrier_config.ko_barrier",
+                     input_aliases=("ko_barrier", "ko_barrier_pct"))
+    c = FamilyContract("X", ("barrier_config.ko_barrier",), (), (), fields=(spec,))
+    assert flat_aliases(c) == {"barrier_config.ko_barrier": ("ko_barrier", "ko_barrier_pct")}
+
+
+def test_requires_when_negation_and_equality():
+    unless_none = FieldSpec("ki_barrier", "number", "KI", requires_when=("ki_convention", "!NONE"))
+    only_custom = FieldSpec("ko_observation_dates", "date", "d",
+                            requires_when=("observation_frequency", "CUSTOM"))
+    assert _requires_when_active(unless_none, {"ki_convention": "DAILY"}) is True
+    assert _requires_when_active(unless_none, {"ki_convention": "NONE"}) is False
+    assert _requires_when_active(only_custom, {"observation_frequency": "CUSTOM"}) is True
+    assert _requires_when_active(only_custom, {"observation_frequency": "MONTHLY"}) is False
+    assert _requires_when_active(FieldSpec("x", "number", ""), {}) is True
+
+
+# --- Task 2/3: contracts + alias-aware required_fields -----------------------
+def test_nested_contracts_declare_fields_with_reachable_paths():
+    for fam in _NESTED:
+        c = contract_for(fam)
+        assert c.fields, f"{fam} must declare FieldSpecs"
+        al = flat_aliases(c)
+        for path in c.required_bound:
+            if "." in path:
+                assert path in al, f"{fam}: {path} has no FieldSpec/alias"
+
+
+def test_flat_alias_satisfies_dotted_required_path():
+    c = contract_for("SnowballOption")
+    assert "barrier_config.ko_barrier" not in required_fields(c, {"ko_barrier": 90, "ki_convention": "NONE"})
+    assert "barrier_config.ko_barrier" not in required_fields(c, {"ko_barrier_pct": 90, "ki_convention": "NONE"})
+
+
+def test_requires_when_drops_ki_when_convention_none():
+    c = contract_for("SnowballOption")
+    assert "barrier_config.ki_barrier" not in required_fields(c, {"ko_barrier": 90, "ki_convention": "NONE"})
+    assert "barrier_config.ki_barrier" in required_fields(c, {"ko_barrier": 90, "ki_convention": "DAILY"})
+
+
+# --- Task 4: DeltaOne enum round-trip + completeness alias/conflict ----------
+def test_deltaone_type_enum_round_trips():
+    # Only the published (builder-faithful) members must round-trip; FUTURES is deliberately
+    # excluded because the SpotInstrument builder rejects it (routes to the Futures family).
+    spot_fields = get_product_term_schema.func("SpotInstrument")["fields"]
+    dt_field = next(f for f in spot_fields if f["name"] == "deltaone_type")
+    published = set(dt_field["enum_values"])
+    assert published == {"STOCK", "INDEX", "ETF"} and "FUTURES" not in published
+    for dt in published:
+        r = build_product("SpotInstrument",
+                          {"initial_price": 100.0, "underlying": "AAPL", "deltaone_type": dt},
+                          prebuilt=False)
+        assert r.ok, f"deltaone_type {dt} failed: {getattr(r, 'validation', r)}"
+
+
+def test_completeness_accepts_flat_alias_for_nested_family():
+    res = check_term_completeness.func("SnowballOption", _snowball_terms())
+    assert "barrier_config.ko_barrier" not in res["missing_required"]
+    assert "barrier_config.ki_barrier" not in res["missing_required"]
+    assert res["complete"] is True
+
+
+def test_completeness_flags_both_barrier_spellings_conflict():
+    r1 = check_term_completeness.func("SnowballOption",
+        {"initial_price": 100, "ko_barrier": 103, "ko_barrier_pct": 120})
+    assert any(c.get("alias_conflict") == "barrier_config.ko_barrier" for c in r1["conflicts"])
+    assert r1["complete"] is False
+    # nested/dotted representation + a flat alias is ALSO a conflict (finding 2)
+    r2 = check_term_completeness.func("SnowballOption",
+        {"initial_price": 100, "barrier_config": {"ko_barrier": 103}, "ko_barrier_pct": 120})
+    assert any(c.get("alias_conflict") == "barrier_config.ko_barrier" for c in r2["conflicts"])
+    r3 = check_term_completeness.func("SnowballOption",
+        {"initial_price": 100, "barrier_config.ko_barrier": 103, "ko_barrier": 90})
+    assert any(c.get("alias_conflict") == "barrier_config.ko_barrier" for c in r3["conflicts"])
+
+
+# --- Task 5: builder both-spellings guard + Phoenix without ko_rate ----------
+def test_build_rejects_both_barrier_spellings_flat():
+    r = build_product("SnowballOption", {**_snowball_terms(), "ko_barrier": 103, "ko_barrier_pct": 120},
+                      prebuilt=False)
+    assert not r.ok
+    assert any("ko_barrier" in str(m) for m in (r.missing or []))
+
+
+def test_build_rejects_nested_plus_flat_barrier():
+    r = build_product("SnowballOption",
+                      {**_snowball_terms(), "barrier_config": {"ko_barrier": 103}, "ko_barrier_pct": 120},
+                      prebuilt=False)
+    assert not r.ok
+
+
+def test_phoenix_builds_without_ko_rate():
+    terms = {k: v for k, v in _snowball_terms().items() if k != "ko_rate"}
+    terms.update({"coupon_barrier": 80, "coupon_rate": 0.02})
+    r = build_product("PhoenixOption", terms, prebuilt=False)
+    assert r.ok, getattr(r, "validation", r)
+    assert r.product_kwargs["barrier_config"]["ko_rate"] == 0.0
+
+
+# --- Task 6: schema publishes families + fidelity ----------------------------
+def test_schema_available_for_all_v2_families():
+    for fam in _V2_ALL:
+        out = get_product_term_schema.func(fam)
+        assert out.get("schema_available") is not False and "fields" in out, f"{fam} not published"
+    assert len(_SCHEMA_FAMILIES) == 15
+
+
+def test_schema_barrier_lists_both_input_names():
+    out = get_product_term_schema.func("SnowballOption")
+    ko = next(f for f in out["fields"] if f["name"] == "ko_barrier")
+    assert set(ko["input_names"]) == {"ko_barrier", "ko_barrier_pct"}
+
+
+def test_schema_marks_conditional_fields():
+    out = get_product_term_schema.func("SnowballOption")
+    kod = next(f for f in out["fields"] if f["name"] == "ko_observation_dates")
+    assert kod["requires_when"] == {"field": "observation_frequency", "equals": "CUSTOM"}
+    assert kod["required"] is False
+    ki = next(f for f in out["fields"] if f["name"] == "ki_barrier")
+    assert ki["requires_when"] == {"field": "ki_convention", "not_equals": "NONE"}
+
+
+def test_phoenix_builds_faithful_coupon_config_both_spellings():
+    for pct in (False, True):
+        terms = {**_snowball_terms(pct),
+                 **({"coupon_barrier_pct": 80} if pct else {"coupon_barrier": 80}),
+                 "coupon_rate": 0.02}
+        r = build_product("PhoenixOption", terms, prebuilt=False)
+        assert r.ok, getattr(r, "validation", r)
+        cc = r.product_kwargs["coupon_config"]
+        assert cc["coupon_rate"] == 0.02
+        if pct:
+            assert cc["coupon_barrier"] == 80.0  # 80% of 100
+
+
+def test_koreset_builds_post_barrier_config():
+    terms = {**_snowball_terms(), "post_ko_barrier": 105, "post_ko_rate": 0.09}
+    r = build_product("KnockOutResetSnowballOption", terms, prebuilt=False)
+    assert r.ok, getattr(r, "validation", r)
+    assert r.product_kwargs["post_barrier_config"]["ko_barrier"] == 105
+
+
+def test_range_accrual_builds_range_config_and_exact_obs_count():
+    base = {"initial_price": 100, "maturity_years": 2, "lower_barrier": 90,
+            "upper_barrier": 110, "accrual_rate": 0.05}
+    r = build_product("RangeAccrualOption", {**base, "observation_frequency": "DAILY"}, prebuilt=False)
+    assert r.ok and r.product_kwargs["range_config"]["lower_barrier"] == 90
+    assert r.product_kwargs["num_observations"] == round(2 * 252)
+    r2 = build_product("RangeAccrualOption", {**base, "observation_frequency": "MONTHLY"}, prebuilt=False)
+    assert r2.product_kwargs["num_observations"] == round(2 * 12)
+    r3 = build_product("RangeAccrualOption",
+                       {"initial_price": 100, "maturity_years": 2, "accrual_rate": 0.05,
+                        "lower_barrier_pct": 90, "upper_barrier_pct": 110,
+                        "observation_frequency": "DAILY"}, prebuilt=False)
+    assert r3.product_kwargs["range_config"]["lower_barrier"] == 90.0  # 90% of 100
+
+
+def test_range_accrual_frequency_enum_is_daily_monthly_only():
+    out = get_product_term_schema.func("RangeAccrualOption")
+    freq = next(f for f in out["fields"] if f["name"] == "observation_frequency")
+    assert set(freq["enum_values"]) == {"DAILY", "MONTHLY"}
+
+
+def test_snowball_ki_dropped_when_convention_none():
+    terms = {k: v for k, v in _snowball_terms().items() if k != "ki_barrier"}
+    terms["ki_convention"] = "NONE"
+    r = build_product("SnowballOption", terms, prebuilt=False)
+    assert r.ok, getattr(r, "validation", r)
+    assert "ki_barrier" not in r.product_kwargs.get("barrier_config", {})
+
+
+# --- Task 7: anti-loop regression (the Run #24 Phoenix loop) -----------------
+def test_schema_then_completeness_then_build_agree_for_flat_phoenix():
+    get_product_term_schema.func("PhoenixOption")  # advises flat ko_barrier, coupon_barrier, ...
+    terms = {"initial_price": 100, "maturity_years": 2, "trade_start_date": "2026-01-05",
+             "observation_frequency": "MONTHLY", "ko_barrier": 103, "ki_barrier": 70,
+             "lockup_months": 3, "ki_convention": "DAILY", "coupon_barrier": 80, "coupon_rate": 0.02}
+    assert check_term_completeness.func("PhoenixOption", terms)["complete"] is True
+    assert build_product("PhoenixOption", terms, prebuilt=False).ok is True

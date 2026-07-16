@@ -20,9 +20,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   maturity_date` **one_of** alternative (per-family, derived from FieldSpecs) shared by the
   schema, `check_term_completeness`, and the synthesize builder — both-present now rejected
   rather than silently dropping the date. Schema-only — no `build_product` enum aliasing.
-  V1 covers the flat option families; nested-config + DeltaOne families return
-  `schema_available: false`. New tool registered in `QUANT_AGENT_TOOLS` +
-  `DEEP_AGENT_TOOL_NAMES`; the build-product skill now routes fetch-schema-before-build.
+  New tool registered in `QUANT_AGENT_TOOLS` + `DEEP_AGENT_TOOL_NAMES`; the build-product
+  skill now routes fetch-schema-before-build.
+- **Products: term-schema V2 — nested-config + DeltaOne families.**
+  `get_product_term_schema` now covers the last 6 deferred families — the nested-config
+  autocallables (`SnowballOption`, `KnockOutResetSnowballOption`, `PhoenixOption`,
+  `RangeAccrualOption`) and DeltaOne (`Futures`, `SpotInstrument`) — draining the
+  build-retry loop that survived where V1 punted (Arena Run #24: a model looped 6× building
+  a Phoenix because the schema returned `schema_available: false`). Barriers are published as
+  an **input-alias set** (`ko_barrier | ko_barrier_pct`, …) — flat spellings that resolve to
+  the dotted `barrier_config.*`/`coupon_config.*`/`range_config.*` contract paths across the
+  schema, `check_term_completeness`, and the synthesize builder, so a model that fills flat
+  is no longer told the term is missing. Conditional requirements are expressed structurally
+  (`requires_when`: `ki_barrier` unless `ki_convention=NONE`; `ko_observation_dates` only for
+  `CUSTOM` frequency). Supplying two representations of one barrier that resolve to
+  **different** levels is rejected at both completeness and the builder. Enum values stay
+  builder-faithful literals where the live enum would mis-classify (`observation_frequency`
+  restricted to `DAILY`/`MONTHLY`, which the builder distinguishes; `deltaone_type` drops
+  `FUTURES`, which a spot rejects). Also fixes `_build_phoenix` to default the KO-leg
+  `ko_rate` to 0 when omitted (it previously failed a complete Phoenix on a number the desk
+  never quotes).
 
 ### Fixed
 - **Booking: `book_position` now accepts the same term-sheet vocabulary as the

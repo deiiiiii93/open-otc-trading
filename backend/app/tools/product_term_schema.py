@@ -20,13 +20,16 @@ from app.services.domains.product_contracts import (
     resolve_enum_values,
 )
 
-# V1 covers the flat option families; nested-config + DeltaOne are deferred (their dotted
-# contract paths / underlying threading are handled by a later PR — the FieldSpec
-# contract_path field is retained so they can be added without a redesign).
+# V1 flat option families + V2 nested-config (barrier_config/coupon_config/range_config dotted
+# paths, resolved from flat input aliases) + DeltaOne. Any family with a non-empty ``fields``
+# tuple can be published; the frozenset gates which are exposed.
 _SCHEMA_FAMILIES = frozenset({
     "BarrierOption", "EuropeanVanillaOption", "AmericanOption", "AsianOption",
     "CashOrNothingDigitalOption", "SingleSharkfinOption", "DoubleSharkfinOption",
     "OneTouchOption", "DoubleOneTouchOption",
+    # V2 nested-config + DeltaOne
+    "SnowballOption", "KnockOutResetSnowballOption", "PhoenixOption",
+    "RangeAccrualOption", "Futures", "SpotInstrument",
 })
 
 
@@ -58,7 +61,9 @@ def get_product_term_schema(quantark_class: str) -> dict:
         entry = {
             "name": spec.input_name,
             "kind": spec.kind,
-            "required": spec.one_of is None and path in required_paths,
+            # one_of members and requires_when (conditional) fields are never flatly required.
+            "required": (spec.one_of is None and spec.requires_when is None
+                         and path in required_paths),
             "description": spec.description,
         }
         if spec.default is not None:
@@ -67,6 +72,14 @@ def get_product_term_schema(quantark_class: str) -> dict:
             entry["enum_values"] = list(resolve_enum_values(spec))
         if spec.one_of is not None:
             entry["one_of"] = spec.one_of
+        # abs/pct barrier alias set: surface BOTH spellings the model may fill (not a one_of).
+        if len(spec.input_aliases) > 1:
+            entry["input_names"] = list(spec.input_aliases)
+        if spec.requires_when is not None:
+            field, value = spec.requires_when
+            entry["requires_when"] = ({"field": field, "not_equals": value[1:]}
+                                      if value.startswith("!")
+                                      else {"field": field, "equals": value})
         fields.append(entry)
 
     required_groups = [{"one_of": group, "members": list(members)}
@@ -76,8 +89,10 @@ def get_product_term_schema(quantark_class: str) -> dict:
         "fields": fields,
         "required_groups": required_groups,
         "notes": ("Fill from the RFQ/context. Required fields and one member of each "
-                  "required_groups must be supplied; defaulted fields fall back to desk "
-                  "defaults. Do not guess enum values — use the listed enum_values."),
+                  "required_groups must be supplied; a field with input_names accepts ANY "
+                  "one of those spellings (e.g. absolute or _pct barrier — supply exactly "
+                  "one); a field with requires_when is required only under that condition; "
+                  "defaulted fields fall back to desk defaults. Do not guess enum values."),
     }
 
 

@@ -31,6 +31,10 @@ class FieldSpec:
     from ``enum_ref`` (live-introspected from a quant-ark enum class, ONLY where every
     member round-trips) or ``enum_values`` (builder-faithful literals) — never both.
     ``one_of`` groups mutually-exclusive alternatives (e.g. maturity_years|maturity_date).
+    ``input_aliases`` are additional flat spellings that ALL satisfy this spec's one
+    ``contract_path`` (e.g. ``ko_barrier``/``ko_barrier_pct`` — one value, two spellings;
+    NOT a one_of). ``requires_when`` makes the field required only when a sibling field
+    equals a value; a ``!``-prefixed value means "required UNLESS it equals X".
     """
 
     input_name: str
@@ -41,6 +45,8 @@ class FieldSpec:
     enum_ref: str | None = None
     enum_values: tuple[str, ...] | None = None
     one_of: str | None = None
+    input_aliases: tuple[str, ...] = ()
+    requires_when: tuple[str, str] | None = None
 
 
 def resolve_enum_values(spec: FieldSpec) -> tuple[str, ...]:
@@ -56,6 +62,23 @@ def resolve_enum_values(spec: FieldSpec) -> tuple[str, ...]:
     return ()
 
 
+def _aliases_for(spec: FieldSpec) -> tuple[str, ...]:
+    """Flat input spellings that satisfy this spec's contract_path (>= its input_name)."""
+    return spec.input_aliases or (spec.input_name,)
+
+
+def _requires_when_active(spec: FieldSpec, terms: dict) -> bool:
+    """Is this spec's requirement active given collected terms? Unconditional when
+    requires_when is None. A '!X' value means active UNLESS the field equals X."""
+    if spec.requires_when is None:
+        return True
+    field, value = spec.requires_when
+    actual = str(terms.get(field, "") or "").strip().upper()
+    if value.startswith("!"):
+        return actual != value[1:].strip().upper()
+    return actual == value.strip().upper()
+
+
 @dataclass(frozen=True)
 class FamilyContract:
     quantark_class: str
@@ -63,6 +86,70 @@ class FamilyContract:
     defaulted: tuple[str, ...]
     solvable: tuple[str, ...]
     fields: tuple[FieldSpec, ...] = ()
+
+
+# --- Term-schema FieldSpec building blocks -----------------------------------
+# Defined BEFORE the contracts so nested-config contracts can reference the shared
+# nested field blocks. Enum values are live (`enum_ref`) only where every member
+# round-trips to a correct build; touch_type/frequency/ki_convention use
+# builder-faithful literals (the builder gates on those exact strings — a live enum
+# whose members differ would certify an economically-wrong term sheet).
+_S0 = FieldSpec("initial_price", "number", "Initial fixing S0 / valuation spot.")
+_STRIKE = FieldSpec("strike", "number", "Strike price.")
+_MULT = FieldSpec("contract_multiplier", "number", "Contract multiplier (default 1.0).", default=1.0)
+_OPTION_TYPE = FieldSpec("option_type", "enum", "CALL or PUT.", default="CALL", enum_ref="OptionType")
+_MATURITY_YEARS = FieldSpec("maturity_years", "number",
+                            "Tenor in years. Supply exactly one of the 'maturity' group.",
+                            one_of="maturity")
+_MATURITY_DATE = FieldSpec("maturity_date", "date",
+                           "Explicit expiry date (ISO). Supply exactly one of the 'maturity' group.",
+                           one_of="maturity")
+_TENOR = FieldSpec("maturity_years", "number", "Tenor in years.")
+_VANILLA_FIELDS = (_S0, _MATURITY_YEARS, _MATURITY_DATE, _STRIKE, _OPTION_TYPE, _MULT)
+_VANILLA_TENOR_FIELDS = (_S0, _TENOR, _STRIKE, _OPTION_TYPE, _MULT)
+
+
+def _barrier(name: str, path: str, desc: str, **kw: Any) -> FieldSpec:
+    """A barrier FieldSpec accepting both absolute and `_pct`-of-initial spellings —
+    an input-alias set (one value, two spellings), NOT a one_of."""
+    return FieldSpec(name, "number", desc, contract_path=path,
+                     input_aliases=(name, f"{name}_pct"), **kw)
+
+
+# Nested-config shared blocks. observation_frequency / ki_convention are builder-faithful
+# literals (the snowball synthesizer gates on these exact strings).
+_OBS_FREQ_SNOWBALL = FieldSpec(
+    "observation_frequency", "enum", "KO observation frequency.",
+    enum_values=("MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "CUSTOM"))
+_KI_CONVENTION = FieldSpec(
+    "ki_convention", "enum", "KI monitoring convention (NONE = no knock-in leg).",
+    default="DAILY", enum_values=("DAILY", "EUROPEAN", "NONE"))
+_KO_RATE = FieldSpec("ko_rate", "number", "KO coupon rate.", contract_path="barrier_config.ko_rate")
+
+_SNOWBALL_FIELDS = (
+    _S0, _TENOR,
+    FieldSpec("trade_start_date", "date", "Trade / first-observation start date (ISO)."),
+    _OBS_FREQ_SNOWBALL,
+    _barrier("ko_barrier", "barrier_config.ko_barrier", "Knock-out barrier (abs level or % of initial)."),
+    _barrier("ki_barrier", "barrier_config.ki_barrier", "Knock-in barrier (abs level or % of initial).",
+             requires_when=("ki_convention", "!NONE")),
+    _KO_RATE,
+    FieldSpec("lockup_months", "number", "Lock-up months before the first KO observation.",
+              contract_path="barrier_config.lockup_months"),
+    FieldSpec("ko_observation_dates", "date", "Explicit KO observation dates (list); CUSTOM freq only.",
+              requires_when=("observation_frequency", "CUSTOM")),
+    _KI_CONVENTION,
+)
+# Phoenix defaults the KO-leg rate to 0, so it declares ko_rate as DEFAULTED (not a
+# required field) — otherwise the schema would tell the model to invent an unneeded number.
+_SNOWBALL_FIELDS_NO_KO_RATE = tuple(f for f in _SNOWBALL_FIELDS if f is not _KO_RATE)
+
+# Vanilla family: _build_vanilla descendants require S0 + maturity + strike and
+# default option_type/contract_multiplier. `solvable` is advisory and left empty
+# for the non-snowball families (no consumer reads contract.solvable for them yet;
+# filter_solved uses the runtime solve_target).
+_VANILLA_REQUIRED = ("initial_price", "maturity_years", "strike")
+_VANILLA_DEFAULTED = ("option_type", "contract_multiplier")
 
 
 # Snowball / autocallable base. KO-reset and Phoenix build on the snowball
@@ -84,8 +171,7 @@ _SNOWBALL_CONTRACT = FamilyContract(
         "barrier_config.lockup_months",
         # required_bound is the UNION of keys that can be required; the builder
         # reports ko_observation_dates missing ONLY when observation_frequency ==
-        # CUSTOM. A conditionally-required split is deferred until a consumer
-        # iterates required_bound for prompting.
+        # CUSTOM (encoded on the FieldSpec via requires_when).
         "ko_observation_dates",
     ),
     defaulted=(
@@ -99,6 +185,7 @@ _SNOWBALL_CONTRACT = FamilyContract(
         "barrier_config.ki_barrier",
         "coupon_rate",
     ),
+    fields=_SNOWBALL_FIELDS,
 )
 
 # KO-reset and Phoenix build ON the snowball synthesizer and add their own
@@ -111,41 +198,32 @@ _KO_RESET_CONTRACT = FamilyContract(
     + ("post_barrier_config.ko_barrier", "post_barrier_config.ko_rate"),
     defaulted=_SNOWBALL_CONTRACT.defaulted,
     solvable=_SNOWBALL_CONTRACT.solvable,
+    fields=_SNOWBALL_FIELDS + (
+        _barrier("post_ko_barrier", "post_barrier_config.ko_barrier",
+                 "Post-KI reset KO barrier (abs level or % of initial)."),
+        FieldSpec("post_ko_rate", "number", "Post-reset KO coupon rate.",
+                  contract_path="post_barrier_config.ko_rate"),
+    ),
 )
+# Phoenix defaults barrier_config.ko_rate to 0 (the KO leg pays 0; coupons come from
+# coupon_config), so it drops that key from required_bound and advertises ko_rate as
+# defaulted.
 _PHOENIX_CONTRACT = FamilyContract(
     quantark_class="PhoenixOption",
-    required_bound=_SNOWBALL_CONTRACT.required_bound
-    + ("coupon_config.coupon_barrier", "coupon_config.coupon_rate"),
-    defaulted=_SNOWBALL_CONTRACT.defaulted + ("memory_coupon",),
+    required_bound=tuple(
+        k for k in _SNOWBALL_CONTRACT.required_bound if k != "barrier_config.ko_rate"
+    ) + ("coupon_config.coupon_barrier", "coupon_config.coupon_rate"),
+    defaulted=_SNOWBALL_CONTRACT.defaulted + ("memory_coupon", "barrier_config.ko_rate"),
     solvable=_SNOWBALL_CONTRACT.solvable,
+    fields=_SNOWBALL_FIELDS_NO_KO_RATE + (
+        FieldSpec("ko_rate", "number", "KO-leg coupon rate (Phoenix defaults 0).",
+                  contract_path="barrier_config.ko_rate", default=0.0),
+        _barrier("coupon_barrier", "coupon_config.coupon_barrier",
+                 "Coupon (memory) barrier (abs level or % of initial)."),
+        FieldSpec("coupon_rate", "number", "Coupon rate.", contract_path="coupon_config.coupon_rate"),
+        FieldSpec("memory_coupon", "bool", "Memory coupon (default false).", default=False),
+    ),
 )
-
-# Vanilla family: _build_vanilla descendants require S0 + maturity + strike and
-# default option_type/contract_multiplier. `solvable` is advisory and left empty
-# for the non-snowball families (no consumer reads contract.solvable for them yet;
-# filter_solved uses the runtime solve_target).
-_VANILLA_REQUIRED = ("initial_price", "maturity_years", "strike")
-_VANILLA_DEFAULTED = ("option_type", "contract_multiplier")
-
-# --- Term-schema FieldSpecs (V1: flat option families) -----------------------
-# Only builders routed through `_common_option` (`_build_vanilla` descendants + sharkfin)
-# accept `maturity_date`, so only they advertise the maturity one_of; one-touch/double/
-# asian read `maturity_years` directly and use `_TENOR`. Enum values are live
-# (`enum_ref`) only where every member round-trips to a correct build (barrier_type,
-# option_type, barrier_direction); touch_type/frequency use builder-faithful literals.
-_S0 = FieldSpec("initial_price", "number", "Initial fixing S0 / valuation spot.")
-_STRIKE = FieldSpec("strike", "number", "Strike price.")
-_MULT = FieldSpec("contract_multiplier", "number", "Contract multiplier (default 1.0).", default=1.0)
-_OPTION_TYPE = FieldSpec("option_type", "enum", "CALL or PUT.", default="CALL", enum_ref="OptionType")
-_MATURITY_YEARS = FieldSpec("maturity_years", "number",
-                            "Tenor in years. Supply exactly one of the 'maturity' group.",
-                            one_of="maturity")
-_MATURITY_DATE = FieldSpec("maturity_date", "date",
-                           "Explicit expiry date (ISO). Supply exactly one of the 'maturity' group.",
-                           one_of="maturity")
-_TENOR = FieldSpec("maturity_years", "number", "Tenor in years.")
-_VANILLA_FIELDS = (_S0, _MATURITY_YEARS, _MATURITY_DATE, _STRIKE, _OPTION_TYPE, _MULT)
-_VANILLA_TENOR_FIELDS = (_S0, _TENOR, _STRIKE, _OPTION_TYPE, _MULT)
 
 _CONTRACTS: dict[str, FamilyContract] = {
     "SnowballOption": _SNOWBALL_CONTRACT,
@@ -246,6 +324,20 @@ _CONTRACTS: dict[str, FamilyContract] = {
         ),
         ("observation_frequency", "contract_multiplier"),
         (),
+        fields=(
+            _S0, _TENOR,
+            _barrier("lower_barrier", "range_config.lower_barrier",
+                     "Lower accrual barrier (abs level or % of initial)."),
+            _barrier("upper_barrier", "range_config.upper_barrier",
+                     "Upper accrual barrier (abs level or % of initial)."),
+            FieldSpec("accrual_rate", "number", "Accrual rate.",
+                      contract_path="range_config.accrual_rate"),
+            # The builder prices every non-DAILY value as monthly; only DAILY/MONTHLY are
+            # honored distinctly, so only those are published (economically-faithful).
+            FieldSpec("observation_frequency", "enum", "Accrual observation frequency.",
+                      default="DAILY", enum_values=("DAILY", "MONTHLY")),
+            _MULT,
+        ),
     ),
     "Futures": FamilyContract(
         "Futures",
@@ -253,18 +345,37 @@ _CONTRACTS: dict[str, FamilyContract] = {
         ("contract_multiplier", "maturity_years", "basis", "basis_decay_rate",
          "market_price", "contract_code"),
         (),
+        fields=(_S0, FieldSpec("underlying", "string", "Underlying symbol/name."), _MULT, _TENOR,
+                FieldSpec("basis", "number", "Futures basis over spot (default 0).", default=0.0)),
     ),
     "SpotInstrument": FamilyContract(
         "SpotInstrument",
         ("initial_price", "underlying"),
         ("deltaone_type", "instrument_code", "exchange", "contract_multiplier"),
         (),
+        # deltaone_type uses builder-faithful literals: the live DeltaOneType enum also has
+        # FUTURES, which the SpotInstrument builder REJECTS (routes to the Futures family) — so
+        # only the members that round-trip for a spot are published.
+        fields=(_S0, FieldSpec("underlying", "string", "Underlying symbol/name."),
+                FieldSpec("deltaone_type", "enum", "Delta-one instrument kind.", default="INDEX",
+                          enum_values=("STOCK", "INDEX", "ETF")),
+                _MULT),
     ),
 }
 
 
 def contract_for(quantark_class: str | None) -> FamilyContract | None:
     return _CONTRACTS.get(quantark_class or "")
+
+
+def flat_aliases(contract: FamilyContract) -> dict[str, tuple[str, ...]]:
+    """{dotted contract_path: (flat input spellings)} — list-valued so both barrier
+    spellings (abs + pct) coexist. Used by the alias-aware presence checks."""
+    out: dict[str, tuple[str, ...]] = {}
+    for spec in contract.fields:
+        path = spec.contract_path or spec.input_name
+        out[path] = _aliases_for(spec)
+    return out
 
 
 def one_of_groups(contract: FamilyContract) -> dict[str, tuple[str, ...]]:
@@ -289,18 +400,28 @@ def _present(terms: dict, key: str) -> bool:
     return node not in (None, "")
 
 
-def required_fields(contract: FamilyContract, terms: dict) -> list[str]:
-    """Required contract paths given collected terms: ``required_bound`` minus the
-    conditional ``ko_observation_dates`` rule, with THIS family's declared ``one_of``
-    groups collapsed (a group is satisfied when any member is present)."""
-    required = list(contract.required_bound)
-    freq = terms.get("observation_frequency")
-    if (
-        "ko_observation_dates" in required
-        and freq not in (None, "")
-        and str(freq).strip().upper() != "CUSTOM"
-    ):
-        required.remove("ko_observation_dates")
+def _path_present(terms: dict, path: str, aliases: tuple[str, ...] = ()) -> bool:
+    """True if the dotted `path` is present (nested value or literal dotted key), OR any
+    flat alias key is present."""
+    if _present(terms, path):
+        return True
+    return any(_present(terms, a) for a in aliases)
+
+
+def active_required_paths(contract: FamilyContract, terms: dict) -> list[str]:
+    """Required contract paths that are ACTIVE for these terms — ``required_bound`` minus the
+    conditional ``requires_when`` rules, with this family's ``one_of`` groups collapsed to one
+    slot each. NOT presence-filtered: a one_of group reports its present member if any (so the
+    caller can split provided vs missing), else its canonical first member. This is the shared
+    kernel for ``required_fields`` (missing) and ``check_term_completeness`` (missing+provided)."""
+    aliases = flat_aliases(contract)
+    path_to_spec = {(s.contract_path or s.input_name): s for s in contract.fields}
+    conditional_inactive = {
+        path for path, spec in path_to_spec.items()
+        if spec.requires_when is not None and not _requires_when_active(spec, terms)
+    }
+    required = [p for p in contract.required_bound if p not in conditional_inactive]
+
     groups = one_of_groups(contract)
     member_to_group = {m: g for g, members in groups.items() for m in members}
     out: list[str] = []
@@ -313,9 +434,19 @@ def required_fields(contract: FamilyContract, terms: dict) -> list[str]:
         if group in seen_groups:
             continue
         seen_groups.add(group)
-        if not any(_present(terms, member) for member in groups[group]):
-            out.append(groups[group][0])
+        present_member = next(
+            (m for m in groups[group] if _path_present(terms, m, aliases.get(m, ()))), None)
+        out.append(present_member or groups[group][0])
     return out
+
+
+def required_fields(contract: FamilyContract, terms: dict) -> list[str]:
+    """Genuinely-missing required contract paths given collected terms: ``active_required_paths``
+    with each dotted path satisfiable by its nested value OR any of its flat input aliases
+    (``flat_aliases``) filtered out."""
+    aliases = flat_aliases(contract)
+    return [p for p in active_required_paths(contract, terms)
+            if not _path_present(terms, p, aliases.get(p, ()))]
 
 
 def filter_solved(missing: list[str], *, solve_target: str | None) -> list[str]:

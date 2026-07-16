@@ -72,12 +72,41 @@ def _num(value: Any) -> float | None:
         return None
 
 
-def _abs_barrier(terms: dict, abs_key: str, pct_key: str, initial: float) -> float | None:
+def _nested_num(terms: dict, dotted: str) -> float | None:
+    """Read a numeric value at a nested/literal-dotted path (e.g. barrier_config.ko_barrier)."""
+    if dotted in terms:
+        return _num(terms[dotted])
+    node: Any = terms
+    for part in dotted.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return None
+        node = node[part]
+    return _num(node)
+
+
+def _resolve_barrier(terms: dict, abs_key: str, pct_key: str, path: str,
+                     initial: float, out: "_Out") -> float | None:
+    """Resolve one barrier from its flat absolute/`_pct` spellings AND its canonical
+    nested/dotted path. Supplying more than one distinct representation is ambiguous — the
+    synthesizer would silently prefer one — so record it in ``out.missing`` and return None.
+    Otherwise return the single supplied level (pct → ``pct% × initial``), or None if absent."""
     direct = _num(terms.get(abs_key))
-    if direct is not None:
-        return direct
     pct = _num(terms.get(pct_key))
-    return None if pct is None else round(initial * pct / 100.0, 6)
+    nested = _nested_num(terms, path) if path not in (abs_key, pct_key) else None
+    reps = [
+        v for v in (
+            direct,
+            round(initial * pct / 100.0, 6) if pct is not None else None,
+            nested,
+        )
+        if v is not None
+    ]
+    # Ambiguous only when the supplied representations resolve to DIFFERENT levels — the same
+    # value in two spellings (e.g. legacy nested + flat, both 101) is redundant, not a conflict.
+    if len({round(v, 6) for v in reps}) > 1:
+        out.missing.append(f"{path} (supply ONE of {abs_key}/{pct_key})")
+        return None
+    return reps[0] if reps else None
 
 
 def _initial_price(terms: dict, out: _Out) -> float:
@@ -197,9 +226,17 @@ def _build_snowball(terms: dict, *, quantark_class: str) -> _Out:
     if maturity is None:
         out.missing.append("maturity_years")
 
-    ko_barrier = _abs_barrier(terms, "ko_barrier", "ko_barrier_pct", initial)
-    ki_barrier = _abs_barrier(terms, "ki_barrier", "ki_barrier_pct", initial)
+    ko_barrier = _resolve_barrier(terms, "ko_barrier", "ko_barrier_pct",
+                                  "barrier_config.ko_barrier", initial, out)
+    ki_barrier = _resolve_barrier(terms, "ki_barrier", "ki_barrier_pct",
+                                  "barrier_config.ki_barrier", initial, out)
     ko_rate = _num(terms.get("ko_rate"))
+    # Phoenix's KO leg pays 0 at knock-out (coupons come from coupon_config), so an omitted
+    # ko_rate defaults to 0 rather than being reported missing — else a complete Phoenix would
+    # fail on a number the desk never quotes. Must happen BEFORE the missing-check so the KO
+    # schedule is built with rate 0 (the snowball early-returns a stub on any missing key).
+    if ko_rate is None and quantark_class == "PhoenixOption":
+        ko_rate = 0.0
     lockup = terms.get("lockup_months")
     start = _start_date(terms)
     annualized = bool(terms.get("ko_rate_annualized", False))
@@ -312,7 +349,8 @@ def _build_ko_reset_snowball(terms: dict, *, quantark_class: str) -> _Out:
     out = _build_snowball(terms, quantark_class=quantark_class)
     # _build_snowball already required + recorded initial_price; reuse it.
     initial = _num(out.product_kwargs.get("initial_price")) or 100.0
-    post_ko_barrier = _abs_barrier(terms, "post_ko_barrier", "post_ko_barrier_pct", initial)
+    post_ko_barrier = _resolve_barrier(terms, "post_ko_barrier", "post_ko_barrier_pct",
+                                       "post_barrier_config.ko_barrier", initial, out)
     post_ko_rate = _num(terms.get("post_ko_rate"))
     if post_ko_barrier is None:
         out.missing.append("post_barrier_config.ko_barrier")
@@ -347,7 +385,8 @@ def _build_phoenix(terms: dict, *, quantark_class: str) -> _Out:
     out = _build_snowball(terms, quantark_class=quantark_class)
     # _build_snowball already required + recorded initial_price; reuse it.
     initial = _num(out.product_kwargs.get("initial_price")) or 100.0
-    coupon_barrier = _abs_barrier(terms, "coupon_barrier", "coupon_barrier_pct", initial)
+    coupon_barrier = _resolve_barrier(terms, "coupon_barrier", "coupon_barrier_pct",
+                                      "coupon_config.coupon_barrier", initial, out)
     coupon_rate = _num(terms.get("coupon_rate"))
     if coupon_barrier is None:
         out.missing.append("coupon_config.coupon_barrier")
@@ -360,12 +399,8 @@ def _build_phoenix(terms: dict, *, quantark_class: str) -> _Out:
             "coupon_pay_type": "INSTANT",
             "memory_coupon": bool(terms.get("memory_coupon", False)),
         }
-    # Phoenix KO leg typically pays 0 coupon at KO (coupon comes from coupon_config).
-    bc = out.product_kwargs.get("barrier_config")
-    if isinstance(bc, dict) and "ko_rate" in bc and terms.get("ko_rate") is None:
-        bc["ko_rate"] = 0.0
-        if "barrier_config.ko_rate" in out.missing:
-            out.missing.remove("barrier_config.ko_rate")
+    # The KO-leg rate-0 default is handled inside _build_snowball for PhoenixOption (before its
+    # missing-check), so the KO schedule is built with rate 0 rather than returning a stub.
     return out
 
 
@@ -596,8 +631,10 @@ def _build_range_accrual(terms: dict, *, quantark_class: str) -> _Out:
         freq = str(terms.get("observation_frequency", "DAILY")).upper()
         periods = round(maturity * 252) if freq == "DAILY" else round(maturity * 12)
         pk["num_observations"] = max(1, periods)
-    lower = _abs_barrier(terms, "lower_barrier", "lower_barrier_pct", initial)
-    upper = _abs_barrier(terms, "upper_barrier", "upper_barrier_pct", initial)
+    lower = _resolve_barrier(terms, "lower_barrier", "lower_barrier_pct",
+                             "range_config.lower_barrier", initial, out)
+    upper = _resolve_barrier(terms, "upper_barrier", "upper_barrier_pct",
+                             "range_config.upper_barrier", initial, out)
     accrual_rate = _num(terms.get("accrual_rate"))
     if lower is None:
         out.missing.append("range_config.lower_barrier")
