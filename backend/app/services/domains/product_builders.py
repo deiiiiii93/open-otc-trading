@@ -130,15 +130,18 @@ def _explicit_maturity_date(terms: dict) -> str | None:
 def _common_option(terms: dict, out: _Out) -> dict:
     pk: dict[str, Any] = {"contract_multiplier": _num(terms.get("contract_multiplier")) or 1.0}
     m = _num(terms.get("maturity_years"))
+    explicit_date = _explicit_maturity_date(terms)
+    if m is not None and explicit_date is not None:
+        # Contradictory maturity: fail loudly rather than silently dropping the date.
+        out.missing.append("__maturity_conflict__")
+        return pk
     if m is not None:
         pk["maturity"] = m
-    else:
+    elif explicit_date is not None:
         # Tenor absent: accept an explicit-date maturity before reporting it missing.
-        exercise_date = _explicit_maturity_date(terms)
-        if exercise_date is not None:
-            pk["exercise_date"] = exercise_date
-        else:
-            out.missing.append("maturity_years")
+        pk["exercise_date"] = explicit_date
+    else:
+        out.missing.append("maturity_years")
     return pk
 
 
@@ -782,6 +785,15 @@ def build_product(
     else:
         out = builder(terms, quantark_class=family)
         missing = product_contracts.filter_solved(out.missing, solve_target=solve_target)
+        if "__maturity_conflict__" in missing:
+            return BuildResult(
+                ok=False, quantark_class=family, engine_name=engine_name,
+                missing=[], warnings=out.warnings,
+                validation={"ok": False, "error": (
+                    "maturity_years must not be supplied together with maturity_date; "
+                    "use either explicit dates or tenor maturity, not both")},
+                product_spec=None,
+            )
         if missing:
             return BuildResult(
                 ok=False, quantark_class=family, engine_name=engine_name,
