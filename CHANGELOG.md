@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Products: `get_product_term_schema(family)` tool — a fillable legal term-sheet
+  template.** Returns builder-facing field names, types, required/optional, defaults, and
+  **legal enum values** per product family so the agent fills `build_product` correctly on
+  the first call instead of guessing enum spellings (`DOWN_AND_IN` → a build-retry loop).
+  Enum values are live-introspected from quant-ark where every member round-trips
+  (`barrier_type`, `option_type`, `barrier_direction`) and builder-faithful literals
+  otherwise (frequencies; `touch_type`, which builds-ok but mis-prices `DOUBLE_*` on a
+  single one-touch). A round-trip fidelity test proves every advertised field/value
+  produces a correct, faithfully-classified build. Also adds a `maturity_years |
+  maturity_date` **one_of** alternative (per-family, derived from FieldSpecs) shared by the
+  schema, `check_term_completeness`, and the synthesize builder — both-present now rejected
+  rather than silently dropping the date. Schema-only — no `build_product` enum aliasing.
+  V1 covers the flat option families; nested-config + DeltaOne families return
+  `schema_available: false`. New tool registered in `QUANT_AGENT_TOOLS` +
+  `DEEP_AGENT_TOOL_NAMES`; the build-product skill now routes fetch-schema-before-build.
+
 ### Fixed
 - **Booking: `book_position` now accepts the same term-sheet vocabulary as the
   `build_product` tool (no more `initial_price` / `maturity_date` rejection).**
