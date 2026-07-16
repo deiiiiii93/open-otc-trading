@@ -127,6 +127,16 @@ def _explicit_maturity_date(terms: dict) -> str | None:
     return None
 
 
+def _parse_iso_date(value: str) -> date | None:
+    """Parse an ISO date/datetime string, or None if malformed. A build must never
+    advertise a maturity_date it accepts but cannot price (a bare string that fails a
+    datetime comparison at pricing time)."""
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (ValueError, TypeError):
+        return None
+
+
 def _common_option(terms: dict, out: _Out) -> dict:
     pk: dict[str, Any] = {"contract_multiplier": _num(terms.get("contract_multiplier")) or 1.0}
     m = _num(terms.get("maturity_years"))
@@ -138,8 +148,12 @@ def _common_option(terms: dict, out: _Out) -> dict:
     if m is not None:
         pk["maturity"] = m
     elif explicit_date is not None:
-        # Tenor absent: accept an explicit-date maturity before reporting it missing.
-        pk["exercise_date"] = explicit_date
+        # Tenor absent: accept an explicit-date maturity, but reject a malformed one
+        # rather than passing an unparseable string through to a failed pricing later.
+        if _parse_iso_date(explicit_date) is None:
+            out.missing.append("__maturity_invalid__")
+        else:
+            pk["exercise_date"] = explicit_date
     else:
         out.missing.append("maturity_years")
     return pk
@@ -794,6 +808,14 @@ def build_product(
                     "use either explicit dates or tenor maturity, not both")},
                 product_spec=None,
             )
+        if "__maturity_invalid__" in missing:
+            return BuildResult(
+                ok=False, quantark_class=family, engine_name=engine_name,
+                missing=[], warnings=out.warnings,
+                validation={"ok": False, "error": (
+                    "maturity_date is not a valid ISO date (YYYY-MM-DD)")},
+                product_spec=None,
+            )
         if missing:
             return BuildResult(
                 ok=False, quantark_class=family, engine_name=engine_name,
@@ -803,6 +825,23 @@ def build_product(
         product_kwargs = out.product_kwargs
         warnings = out.warnings
     market = market or _default_market(terms)
+    # An explicit exercise_date at/before the valuation date is an expired option:
+    # QuantArk builds it but it cannot be priced, so reject it here rather than persist
+    # a "validated" but unpriceable position.
+    _exercise = product_kwargs.get("exercise_date")
+    if _exercise is not None:
+        _exp_date = _parse_iso_date(_exercise)
+        _val = getattr(market, "valuation_date", None)
+        _val_date = _val.date() if hasattr(_val, "date") else _val
+        if _exp_date is not None and _val_date is not None and _exp_date <= _val_date:
+            return BuildResult(
+                ok=False, quantark_class=family, engine_name=engine_name,
+                missing=[], warnings=warnings,
+                validation={"ok": False, "error": (
+                    f"maturity_date {_exercise} is not after the valuation date "
+                    f"{_val_date} (expired option)")},
+                product_spec=None,
+            )
     res = validate_quantark_build(family, dict(product_kwargs), market, engine_name)
     spec = (
         ProductSpec(

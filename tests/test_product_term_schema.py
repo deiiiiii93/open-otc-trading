@@ -185,6 +185,51 @@ def test_unknown_class_errors():
     assert "error" in out and "known_classes" in out
 
 
+# --- Code-review findings (Codex, Stage 6) -----------------------------------
+def test_malformed_maturity_date_is_rejected():
+    r = build_product("BarrierOption", {
+        "initial_price": 100.0, "strike": 100.0, "barrier": 80.0,
+        "option_type": "PUT", "barrier_type": "DOWN_IN", "maturity_date": "not-a-date"})
+    assert not r.ok
+    assert "ISO" in ((r.validation or {}).get("error") or "")
+
+
+def test_expired_maturity_date_is_rejected():
+    r = build_product("BarrierOption", {
+        "initial_price": 100.0, "strike": 100.0, "barrier": 80.0,
+        "option_type": "PUT", "barrier_type": "DOWN_IN", "maturity_date": "2000-01-01"})
+    assert not r.ok
+    assert "expired" in ((r.validation or {}).get("error") or "").lower()
+
+
+def test_valid_future_maturity_date_builds():
+    r = build_product("BarrierOption", {
+        "initial_price": 100.0, "strike": 100.0, "barrier": 80.0,
+        "option_type": "PUT", "barrier_type": "DOWN_IN", "maturity_date": "2099-07-15"})
+    assert r.ok, r.validation
+
+
+def test_clean_prebuilt_asian_termsheet_does_not_trigger_synthesis_fallback():
+    # finding 1: a prebuilt Asian termsheet (carries initial_price + a validated schedule
+    # but NOT maturity_years/maturity_date) must not be re-synthesized, which would drop
+    # the weighted observation schedule.
+    from app.services.domains.booking import _has_raw_termsheet_vocab
+    prebuilt_asian = {"maturity": 1.0, "strike": 100.0, "option_type": "CALL",
+                      "initial_price": 100.0, "num_observations": 2,
+                      "observation_records": [{"t": 0.5}, {"t": 1.0}]}
+    assert _has_raw_termsheet_vocab(prebuilt_asian) is False
+
+
+def test_completeness_rejects_conflicting_maturity_members():
+    from app.tools.term_completeness import check_term_completeness
+    out = check_term_completeness.func(
+        "BarrierOption",
+        {"initial_price": 100.0, "strike": 100.0, "barrier": 80.0,
+         "maturity_years": 1.0, "maturity_date": "2027-07-15"})
+    assert out["complete"] is False
+    assert out["conflicts"] and out["conflicts"][0]["one_of"] == "maturity"
+
+
 # --- Task 5: registration ----------------------------------------------------
 def test_tool_is_registered_and_available():
     from app.tools import QUANT_AGENT_TOOLS

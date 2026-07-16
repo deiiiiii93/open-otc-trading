@@ -81,13 +81,16 @@ _GATED_BOOKING_TYPES = _SNOWBALL_BOOKING_TYPES | {
 # (prebuilt=True) would feed the metadata straight to QuantArk, which rejects it.
 _DELTAONE_BOOKING_TYPES = {"Futures", "SpotInstrument"}
 
-# Term-sheet vocabulary the synthesize builders translate into QuantArk
-# constructor kwargs (initial_price -> the S0/validation spot, maturity_years or
-# maturity_date -> maturity/exercise_date). A pre-built QuantArk termsheet (OTC
-# import adapter / build_product output) uses the constructor keys directly and
-# carries none of these, so their presence marks terms an agent hand-authored and
-# routes them through synthesis instead of the verbatim path.
-_RAW_TERMSHEET_VOCAB = ("initial_price", "maturity_years", "maturity_date", "expiry_date", "expiry")
+# Tenor/date vocabulary that ONLY the synthesize builders accept (maturity_years or
+# an explicit-date synonym -> maturity/exercise_date). A pre-built QuantArk termsheet
+# (OTC import adapter / build_product output) uses the constructor key `maturity` (and
+# carries validated schedules like Asian observation_records), so it never contains
+# these keys — their presence uniquely marks terms an agent hand-authored, routing them
+# through synthesis. `initial_price` is deliberately EXCLUDED: valid Asian/Snowball
+# prebuilt termsheets carry it, and re-synthesizing such a termsheet would drop its
+# weighted schedule — so the trigger keys on the maturity vocabulary alone (every
+# bookable raw-vocab payload supplies one of them).
+_RAW_TERMSHEET_VOCAB = ("maturity_years", "maturity_date", "expiry_date", "expiry")
 
 
 def _has_raw_termsheet_vocab(terms: dict[str, Any]) -> bool:
