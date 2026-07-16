@@ -72,35 +72,46 @@ def _num(value: Any) -> float | None:
         return None
 
 
-def _nested_num(terms: dict, dotted: str) -> float | None:
-    """Read a numeric value at a nested/literal-dotted path (e.g. barrier_config.ko_barrier)."""
+def _canonical_reps(terms: dict, dotted: str) -> list[float]:
+    """All numeric values at a canonical path, via BOTH a literal dotted key and a nested-dict
+    walk — collected separately so a literal-dotted value that DISAGREES with a nested-dict
+    value of the same path is caught as a conflict, not silently masked by whichever is read
+    first."""
+    reps: list[float] = []
     if dotted in terms:
-        return _num(terms[dotted])
+        v = _num(terms[dotted])
+        if v is not None:
+            reps.append(v)
     node: Any = terms
     for part in dotted.split("."):
         if not isinstance(node, dict) or part not in node:
-            return None
+            node = None
+            break
         node = node[part]
-    return _num(node)
+    if node is not None:
+        v = _num(node)
+        if v is not None:
+            reps.append(v)
+    return reps
 
 
 def _resolve_barrier(terms: dict, abs_key: str, pct_key: str, path: str,
                      initial: float, out: "_Out") -> float | None:
     """Resolve one barrier from its flat absolute/`_pct` spellings AND its canonical
-    nested/dotted path. Supplying more than one distinct representation is ambiguous — the
-    synthesizer would silently prefer one — so record it in ``out.missing`` and return None.
-    Otherwise return the single supplied level (pct → ``pct% × initial``), or None if absent."""
+    nested/dotted path. Supplying more than one representation that resolves to a DIFFERENT
+    level is ambiguous — the synthesizer would silently prefer one — so record it in
+    ``out.missing`` and return None. Otherwise return the single supplied level (pct →
+    ``pct% × initial``), or None if absent."""
     direct = _num(terms.get(abs_key))
     pct = _num(terms.get(pct_key))
-    nested = _nested_num(terms, path) if path not in (abs_key, pct_key) else None
+    canonical = _canonical_reps(terms, path) if path not in (abs_key, pct_key) else []
     reps = [
         v for v in (
             direct,
             round(initial * pct / 100.0, 6) if pct is not None else None,
-            nested,
         )
         if v is not None
-    ]
+    ] + canonical
     # Ambiguous only when the supplied representations resolve to DIFFERENT levels — the same
     # value in two spellings (e.g. legacy nested + flat, both 101) is redundant, not a conflict.
     if len({round(v, 6) for v in reps}) > 1:

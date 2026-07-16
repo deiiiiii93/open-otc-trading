@@ -448,3 +448,49 @@ def test_schema_then_completeness_then_build_agree_for_flat_phoenix():
              "lockup_months": 3, "ki_convention": "DAILY", "coupon_barrier": 80, "coupon_rate": 0.02}
     assert check_term_completeness.func("PhoenixOption", terms)["complete"] is True
     assert build_product("PhoenixOption", terms, prebuilt=False).ok is True
+
+
+# --- Stage-6 code-review findings: schema/completeness/builder agreement ------
+def test_nested_nonbarrier_field_not_falsely_certified():
+    # ko_rate is read FLAT by the builder; a nested barrier_config.ko_rate must NOT be
+    # certified complete (finding 1) — completeness and the builder must agree.
+    terms = {k: v for k, v in _snowball_terms().items() if k != "ko_rate"}
+    terms["barrier_config"] = {"ko_rate": 0.08}  # nested-only ko_rate
+    res = check_term_completeness.func("SnowballOption", terms)
+    assert "barrier_config.ko_rate" in res["missing_required"]
+    assert res["complete"] is False
+    assert not build_product("SnowballOption", terms, prebuilt=False).ok
+    # flat ko_rate DOES satisfy both
+    flat = {**terms}; del flat["barrier_config"]; flat["ko_rate"] = 0.08
+    assert check_term_completeness.func("SnowballOption", flat)["complete"] is True
+    assert build_product("SnowballOption", flat, prebuilt=False).ok
+
+
+def test_conflicting_literal_dotted_and_nested_dict_barrier_rejected():
+    # literal dotted key 103 + nested dict 120 for the same path → conflict (finding 2)
+    terms = {**_snowball_terms(), "ko_barrier": None}
+    del terms["ko_barrier"]
+    terms["barrier_config.ko_barrier"] = 103
+    terms["barrier_config"] = {"ko_barrier": 120}
+    assert not build_product("SnowballOption", terms, prebuilt=False).ok
+    res = check_term_completeness.func("SnowballOption", terms)
+    assert any(c.get("alias_conflict") == "barrier_config.ko_barrier" for c in res["conflicts"])
+
+
+def test_schema_publishes_optional_price_driving_inputs():
+    # finding 3: strike + ko_rate_annualized must be advertised (else silently dropped)
+    names = {f["name"] for f in get_product_term_schema.func("SnowballOption")["fields"]}
+    assert {"strike", "ko_rate_annualized", "contract_multiplier"} <= names
+
+
+def test_custom_observation_dates_requires_nonempty_list():
+    # finding 4: CUSTOM freq needs a non-empty LIST; a scalar or [] must not read complete
+    base = {k: v for k, v in _snowball_terms().items() if k != "observation_frequency"}
+    base["observation_frequency"] = "CUSTOM"
+    scalar = check_term_completeness.func("SnowballOption", {**base, "ko_observation_dates": "2026-06-01"})
+    assert "ko_observation_dates" in scalar["missing_required"]
+    empty = check_term_completeness.func("SnowballOption", {**base, "ko_observation_dates": []})
+    assert "ko_observation_dates" in empty["missing_required"]
+    ok = check_term_completeness.func("SnowballOption",
+                                      {**base, "ko_observation_dates": ["2026-06-01", "2026-09-01"]})
+    assert "ko_observation_dates" not in ok["missing_required"]

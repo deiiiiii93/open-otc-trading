@@ -48,10 +48,13 @@ def test_dotted_and_nested_keys_are_equivalent() -> None:
 
 
 def test_snowball_custom_frequency_requires_dates() -> None:
+    # Flat term vocabulary — what the synthesize builder actually reads. (Nested-only
+    # barrier_config is a malformed synthesize input; the non-barrier legs ko_rate/
+    # lockup_months are read flat, so completeness must be checked against flat terms.)
     terms = {
         "initial_price": 100, "maturity_years": 1.0, "trade_start_date": "2026-07-02",
-        "barrier_config": {"ko_barrier": 1.0, "ki_barrier": 0.8,
-                           "ko_rate": 0.12, "lockup_months": 3},
+        "ko_barrier": 1.0, "ki_barrier": 0.8, "ko_rate": 0.12, "lockup_months": 3,
+        "ki_convention": "DAILY",
     }
     monthly = _invoke("SnowballOption", {**terms, "observation_frequency": "MONTHLY"})
     assert monthly["complete"] is True

@@ -128,6 +128,8 @@ _KO_RATE = FieldSpec("ko_rate", "number", "KO coupon rate.", contract_path="barr
 
 _SNOWBALL_FIELDS = (
     _S0, _TENOR,
+    # strike defaults to initial_price; advertise it so a non-par strike is not silently dropped.
+    FieldSpec("strike", "number", "Strike price (defaults to initial_price if omitted)."),
     FieldSpec("trade_start_date", "date", "Trade / first-observation start date (ISO)."),
     _OBS_FREQ_SNOWBALL,
     _barrier("ko_barrier", "barrier_config.ko_barrier", "Knock-out barrier (abs level or % of initial)."),
@@ -136,9 +138,18 @@ _SNOWBALL_FIELDS = (
     _KO_RATE,
     FieldSpec("lockup_months", "number", "Lock-up months before the first KO observation.",
               contract_path="barrier_config.lockup_months"),
-    FieldSpec("ko_observation_dates", "date", "Explicit KO observation dates (list); CUSTOM freq only.",
+    # kind=date_list: the builder requires a NON-EMPTY list of ISO dates, not a scalar.
+    FieldSpec("ko_observation_dates", "date_list",
+              "Explicit KO observation dates — a non-empty list of ISO dates; CUSTOM freq only.",
               requires_when=("observation_frequency", "CUSTOM")),
     _KI_CONVENTION,
+    # Optional economic inputs the builder honors — advertised so the schema-driven flow does
+    # not drop them and silently fall back to a default that changes the payoff/schedule.
+    FieldSpec("ko_rate_annualized", "bool", "KO coupon rate is annualized (default false).",
+              default=False),
+    FieldSpec("include_principal", "bool", "Include principal in the payoff (default false).",
+              default=False),
+    _MULT,
 )
 # Phoenix defaults the KO-leg rate to 0, so it declares ko_rate as DEFAULTED (not a
 # required field) — otherwise the schema would tell the model to invent an unneeded number.
@@ -179,6 +190,9 @@ _SNOWBALL_CONTRACT = FamilyContract(
         "ko_rate_annualized",
         "initial_date",
         "settlement_date",
+        "strike",
+        "contract_multiplier",
+        "include_principal",
     ),
     solvable=(
         "barrier_config.ko_rate",
@@ -401,11 +415,17 @@ def _present(terms: dict, key: str) -> bool:
 
 
 def _path_present(terms: dict, path: str, aliases: tuple[str, ...] = ()) -> bool:
-    """True if the dotted `path` is present (nested value or literal dotted key), OR any
-    flat alias key is present."""
-    if _present(terms, path):
+    """True if this field is supplied the way the SYNTHESIZE builder actually reads it: the
+    flat input aliases for every field, plus the nested/dotted contract path ONLY for barrier
+    alias-sets (``len(aliases) > 1``) — which are the only fields the builder resolves via the
+    nested path (``_resolve_barrier``). Crediting the nested path for a flat-only field (e.g.
+    ``barrier_config.ko_rate``, which the builder reads as flat ``ko_rate``) would certify a
+    term the builder then reports missing. With no alias info, fall back to the path itself."""
+    if not aliases:
+        return _present(terms, path)
+    if any(_present(terms, a) for a in aliases):
         return True
-    return any(_present(terms, a) for a in aliases)
+    return len(aliases) > 1 and _present(terms, path)
 
 
 def active_required_paths(contract: FamilyContract, terms: dict) -> list[str]:

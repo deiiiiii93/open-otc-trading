@@ -74,13 +74,41 @@ def check_term_completeness(quantark_class: str, terms: dict[str, Any] | None = 
         }
     terms = terms or {}
     aliases = flat_aliases(contract)
+    path_to_spec = {(s.contract_path or s.input_name): s for s in contract.fields}
+
+    def _canonical_floats(path: str) -> list[float]:
+        """Numeric values at a canonical path via BOTH a literal dotted key and a nested-dict
+        walk (collected separately, so a literal-dotted value disagreeing with a nested-dict
+        value of the same path is caught)."""
+        vals: list[float] = []
+        if path in terms:
+            v = _to_float(terms[path])
+            if v is not None:
+                vals.append(v)
+        node: Any = terms
+        for part in path.split("."):
+            if not isinstance(node, dict) or part not in node:
+                node = None
+                break
+            node = node[part]
+        if node is not None:
+            v = _to_float(node)
+            if v is not None:
+                vals.append(v)
+        return vals
 
     def _provided_path(path: str) -> bool:
-        """A required dotted path is satisfied by its nested value/literal-dotted key OR any
-        of its flat input spellings (e.g. ko_barrier / ko_barrier_pct → barrier_config.ko_barrier)."""
-        if _is_provided(_lookup(terms, path)):
+        """Satisfied the way the SYNTHESIZE builder reads the field: flat input aliases for
+        every field, plus the nested/dotted path only for barrier alias-sets (len>1). A
+        list-shaped field (CUSTOM ko_observation_dates) needs a non-empty list, not a scalar."""
+        al = aliases.get(path, (path,))
+        spec = path_to_spec.get(path)
+        if spec is not None and spec.kind == "date_list":
+            val = next((_lookup(terms, a) for a in al if _is_provided(_lookup(terms, a))), None)
+            return isinstance(val, (list, tuple)) and len(val) > 0
+        if any(_is_provided(_lookup(terms, a)) for a in al):
             return True
-        return any(_is_provided(_lookup(terms, a)) for a in aliases.get(path, ()))
+        return len(al) > 1 and _is_provided(_lookup(terms, path))
 
     # active_required_paths encodes the conditional requires_when rules (ko_observation_dates,
     # ki_barrier) AND this family's one_of alternatives, so the completeness verdict and the
@@ -99,18 +127,14 @@ def check_term_completeness(quantark_class: str, terms: dict[str, Any] | None = 
         if sum(1 for m in members if _is_provided(_lookup(terms, m))) > 1
     ]
     # Representation-complete barrier ambiguity: the distinct ways to express ONE barrier are
-    # {the canonical dotted/nested path} ∪ {flat abs/pct aliases}. Flag a conflict only when the
-    # supplied representations resolve to DIFFERENT levels (the same value in two spellings is
-    # redundant, not contradictory); `_pct` resolves against initial_price, mirroring the builder.
+    # {the canonical dotted/nested path (both literal-dotted and nested-dict)} ∪ {flat abs/pct
+    # aliases}. Flag a conflict only when they resolve to DIFFERENT levels (the same value in
+    # two spellings is redundant); `_pct` resolves against initial_price, mirroring the builder.
     init = _to_float(_lookup(terms, "initial_price"))
     for path, al in aliases.items():
         if len(al) <= 1:
             continue
-        reps: list[tuple[str, float]] = []
-        if path not in al and _is_provided(_lookup(terms, path)):
-            v = _to_float(_lookup(terms, path))
-            if v is not None:
-                reps.append((path, v))
+        reps: list[tuple[str, float]] = [(path, v) for v in _canonical_floats(path)]
         for a in al:
             v = _to_float(_lookup(terms, a))
             if v is None:
