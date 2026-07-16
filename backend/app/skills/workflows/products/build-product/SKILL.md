@@ -36,20 +36,16 @@ See `/skills/references/products/build-contract.md`.
 ## Procedure
 
 1. Identify the family. Call `get_rfq_catalog` if unclear.
-2. Call `get_product_term_schema(family)` for the legal fields, types, required/optional,
-   and **enum values**. Fill `terms` from the RFQ/context using exactly those names and
-   enum values — never guess an enum spelling or omit a required field.
-3. Extract structured `terms` per `build-contract.md`. Do not invent economics.
-4. Call `build_product(family=<class>, terms=<extracted>)`.
-5. If `missing` is non-empty, call `propose_term_form` — one field per key:
-   - Clear label, one-line `help`, typed (`percent`/`number`/`date`/`enum`/`text`).
-   - Convention `choices` (≤5): e.g. KO barrier `100/103/105%`, KI `70/75%/None`,
-     frequency `Monthly/Quarterly/Semi-annual`.
-   - `default` chip but never silently adopted: fetch `fetch_market_snapshot` for
-     `initial_price`; propose today for `trade_start_date`. User confirms/overrides.
-   - Reply once directing the user to fill the card (no bullet lists).
-6. On card response, merge and call `build_product` again; loop until `ok`.
-7. Hand validated terms and `engine_name` to the booking or RFQ step.
+2. Call `get_product_term_schema(family)` for the legal fields, types, required, and
+   **enum values**; extract `terms` from the RFQ/context using those exact names/enums
+   (per `build-contract.md`) — never guess an enum or omit a required field.
+3. Call `build_product(family=<class>, terms=<extracted>)`.
+4. If `missing` is non-empty, call `propose_term_form` — one typed field per key with a
+   label, one-line `help`, convention `choices` (≤5), and a `default` chip (never silently
+   adopted: fetch `fetch_market_snapshot` for `initial_price`, today for `trade_start_date`;
+   user confirms). Reply once directing the user to the card.
+5. On card response, merge and call `build_product` again; loop until `ok`.
+6. Hand validated terms and `engine_name` to the booking or RFQ step.
 
 ## Stop conditions
 
@@ -67,6 +63,5 @@ Built-or-blocked, then family, engine, validated terms, still-missing (card).
 ## Example
 
 User: Book a 1Y CSI 500 Snowball, KO 103% monthly, into portfolio 6.
-Agent: `build_product` reports `initial_price`, `ki_barrier`, `trade_start_date`,
-`observation_frequency` missing → fetch spot, `propose_term_form` (S0, KI
-70/75%/None, start today, Monthly). On submit, re-validate; `ok` → `book-position`.
+Agent: `build_product` reports `initial_price`/`ki_barrier`/`trade_start_date` missing →
+fetch spot, `propose_term_form` (S0, KI 70/75%/None, start today). `ok` → `book-position`.
