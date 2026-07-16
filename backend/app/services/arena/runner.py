@@ -264,8 +264,11 @@ def _purge_seeded_portfolios(session, bundle) -> None:
     before parents) because FK enforcement is ON (see database.py): ``task_runs``
     reference run rows (risk_run_id / scenario_test_run_id / backtest_run_id) as
     well as ``portfolio_id``, so they must be deleted before the run rows they
-    point at. Profiles are purged last (after the run rows that reference
-    ``pricing_parameter_profile_id`` are gone).
+    point at. Profiles are handled last: an arena profile with no surviving
+    run/fx referencer is deleted (owned rows first); one still referenced by a
+    real-book run is RETIRED into the pricing subsystem's archived state
+    (immutable, marker kept for later reclamation) rather than deleted, so that
+    run's provenance is never destroyed — see the inline note.
     """
     import warnings
 
@@ -273,6 +276,8 @@ def _purge_seeded_portfolios(session, bundle) -> None:
     from sqlalchemy.exc import SAWarning
 
     from app import models
+    from app.services.audit import record_audit
+    from app.services.domains.pricing_profiles import ARCHIVED_SOURCE_TYPE
 
     # sorted_tables warns about an unrelated FK cycle among the agent_*/workflows
     # tables; none of those carry portfolio_id/position_id, so they fall outside
@@ -316,13 +321,83 @@ def _purge_seeded_portfolios(session, bundle) -> None:
             p.id for p in prof_candidates if (p.summary or {}).get(ARENA_PROFILE_MARKER)
         ]
         if prof_ids:
-            # Child parameter rows FK the profile (no cascade) and must go first.
-            row_table = models.PricingParameterRow.__table__
-            session.execute(
-                delete(row_table).where(row_table.c.profile_id.in_(prof_ids))
-            )
             prof_table = models.PricingParameterProfile.__table__
-            session.execute(delete(prof_table).where(prof_table.c.id.in_(prof_ids)))
+            row_table = models.PricingParameterRow.__table__
+            # An arena profile can be FK-referenced two ways, distinguished by
+            # column nullability:
+            #   * NOT NULL (pricing_parameter_rows.profile_id) — an owned
+            #     composition child, cascaded on the profile's own delete.
+            #   * NULLABLE (risk_runs / position_valuation_runs / greek_landscape_runs
+            #     / scenario_test_runs / backtest_runs / fx_rates) — an INDEPENDENT
+            #     run/snapshot that merely *used* the profile. A match's LLM may price
+            #     a REAL, non-arena book (portfolio "Default") against the seeded
+            #     profile; that run survives the portfolio-scoped purge above and is a
+            #     genuine audit record.
+            #
+            # Mirror pricing_profiles.delete_profile: a profile a real run/fx snapshot
+            # depends on is provenance we must NOT destroy — so REFUSE to delete it.
+            # Nulling the FK (the earlier approach) silently erased which profile a
+            # real-book run priced against and raced the scenario/backtest/greek
+            # workers that branch on it. Instead RETIRE a referenced profile by moving
+            # it into the SAME archived state the pricing subsystem already uses for
+            # audit artifacts (source_type == ARCHIVED_SOURCE_TYPE): _mutable_profile
+            # then rejects any edit/row-mutation, so it can't be mutated as a live
+            # profile. We KEEP the arena marker (so a later purge reclaims it once its
+            # last reference is gone) and DON'T rename it (the marker + stable name is
+            # how the name-keyed lookup finds it again). This is safe because re-seeding
+            # never needs the row gone — profile names are not unique and apply_seed
+            # always mints a fresh profile row. Unreferenced profiles (the common case —
+            # the LLM only priced the arena book, whose runs were purged with the
+            # portfolio) are deleted cleanly, owned rows first; that same branch also
+            # reclaims a previously-retired profile whose references have since cleared.
+            usage_cols = [
+                col
+                for table in fk_ordered_tables
+                if table not in (prof_table, row_table)
+                for col in table.c
+                if col.nullable
+                and any(fk.column.table is prof_table for fk in col.foreign_keys)
+            ]
+            # NULL never matches an IN predicate, so every value returned here is a
+            # real referencing profile id (no None to filter out).
+            referenced_ids: set[int] = set()
+            for col in usage_cols:
+                referenced_ids.update(
+                    session.scalars(
+                        select(col).where(col.in_(prof_ids)).distinct()
+                    ).all()
+                )
+
+            # Retire referenced profiles (refuse-to-delete; preserve the FK + rows).
+            for prof in prof_candidates:
+                if prof.id not in referenced_ids:
+                    continue
+                if prof.source_type == ARCHIVED_SOURCE_TYPE:
+                    continue  # already retired on a prior purge — idempotent no-op
+                prof.source_type = ARCHIVED_SOURCE_TYPE  # -> immutable via _mutable_profile
+                prof.summary = {**(prof.summary or {}), "arena_retired": True}
+                record_audit(
+                    session,
+                    event_type="pricing_parameter_profile.arena_retired",
+                    actor="arena",
+                    subject_type="pricing_parameter_profile",
+                    subject_id=prof.id,
+                    payload={
+                        "name": prof.name,
+                        "reason": "referenced_by_non_arena_run",
+                    },
+                )
+
+            # Clean-delete unreferenced profiles (owned rows first — no cascade at the
+            # Core layer). Also reclaims previously-retired profiles now unreferenced.
+            unreferenced = [pid for pid in prof_ids if pid not in referenced_ids]
+            if unreferenced:
+                session.execute(
+                    delete(row_table).where(row_table.c.profile_id.in_(unreferenced))
+                )
+                session.execute(
+                    delete(prof_table).where(prof_table.c.id.in_(unreferenced))
+                )
 
     session.commit()
 

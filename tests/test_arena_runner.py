@@ -355,6 +355,154 @@ def test_purge_removes_profile_parameter_rows_before_profile(session):
     assert session.query(PricingParameterRow).count() == 0
 
 
+def test_purge_retires_arena_profile_referenced_by_real_run(session):
+    """A risk/valuation run created DURING a match references the arena PROFILE
+    (``pricing_parameter_profile_id``) but its PORTFOLIO may not be arena-tagged
+    (e.g. the model priced the real Default book). Such a run survives the
+    portfolio-scoped purge and is a genuine audit record. The purge must NOT delete
+    the profile out from under it (that was the recurring "DELETE FROM
+    pricing_parameter_profiles ... FOREIGN KEY constraint failed" that killed Run
+    #24) and must NOT null the run's FK (that would erase which profile the real-book
+    run priced against). Instead it RETIRES the profile into the pricing subsystem's
+    archived state (``source_type == ARCHIVED_SOURCE_TYPE``) so it is immutable, keeps
+    the arena marker so a later purge can reclaim it, and records an audit event —
+    mirroring pricing_profiles.delete_profile's refusal to destroy referenced
+    provenance."""
+    from datetime import datetime, timezone
+
+    from app.services.arena.runner import _purge_seeded_portfolios, ARENA_PROFILE_MARKER
+    from app.services.domains.pricing_profiles import ARCHIVED_SOURCE_TYPE, update_profile
+    from app.services.domains._errors import DomainWriteError
+    from app.models import (
+        PricingParameterProfile, RiskRun, PositionValuationRun, Portfolio, AuditEvent,
+    )
+
+    vd = datetime(2026, 6, 24, tzinfo=timezone.utc)
+    prof = PricingParameterProfile(
+        name="Control Profile", valuation_date=vd, summary={ARENA_PROFILE_MARKER: True}
+    )
+    real_book = Portfolio(name="Default")  # real desk book, NO arena tag
+    session.add_all([prof, real_book])
+    session.flush()
+    prof_id = prof.id
+    session.add(RiskRun(portfolio_id=real_book.id, pricing_parameter_profile_id=prof.id))
+    session.add(PositionValuationRun(
+        portfolio_id=real_book.id, pricing_parameter_profile_id=prof.id
+    ))
+    session.commit()
+
+    bundle = _Bundle({"pricing_profiles": [{"alias": "prof", "name": "Control Profile"}]})
+    _purge_seeded_portfolios(session, bundle)  # must not raise IntegrityError
+
+    # The referenced arena profile is RETAINED (not deleted): its rows' provenance is
+    # preserved. It is moved to the archived state (immutable), keeps the arena marker
+    # (so a later purge reclaims it), and its name is unchanged (so the name-keyed
+    # lookup still finds it). The real Default book AND its runs survive with their
+    # profile FK INTACT — we never destroy or unlink real-book provenance.
+    survivor = session.get(PricingParameterProfile, prof_id)
+    assert survivor is not None
+    assert survivor.source_type == ARCHIVED_SOURCE_TYPE  # immutable audit artifact
+    assert (survivor.summary or {}).get(ARENA_PROFILE_MARKER)  # kept for reclamation
+    assert (survivor.summary or {}).get("arena_retired") is True
+    assert survivor.name == "Control Profile"  # not renamed
+    assert session.query(Portfolio).filter(Portfolio.name == "Default").count() == 1
+    risk_rows = session.query(RiskRun).all()
+    assert len(risk_rows) == 1 and risk_rows[0].pricing_parameter_profile_id == prof_id
+    val_rows = session.query(PositionValuationRun).all()
+    assert len(val_rows) == 1 and val_rows[0].pricing_parameter_profile_id == prof_id
+
+    # A retirement audit event was recorded.
+    assert (
+        session.query(AuditEvent)
+        .filter(AuditEvent.event_type == "pricing_parameter_profile.arena_retired")
+        .count()
+        == 1
+    )
+
+    # Idempotent: a second purge doesn't re-archive or double-audit the same profile.
+    _purge_seeded_portfolios(session, bundle)
+    assert (
+        session.query(AuditEvent)
+        .filter(AuditEvent.event_type == "pricing_parameter_profile.arena_retired")
+        .count()
+        == 1
+    )
+
+    # The retired profile is now immutable via the existing mutation guard (checked
+    # last — the guard raises, which would otherwise disturb the shared test session).
+    with pytest.raises(DomainWriteError):
+        update_profile(profile_id=prof_id, name="hijacked", session=session)
+
+
+def test_purge_reclaims_retired_profile_once_references_clear(session):
+    """A profile retired-while-referenced on an earlier run is DELETED on a later
+    purge once its last real-book referencer is gone — retirement retains cleanup
+    ownership (the arena marker) precisely so the profile is not orphaned forever."""
+    from datetime import datetime, timezone
+
+    from app.services.arena.runner import _purge_seeded_portfolios, ARENA_PROFILE_MARKER
+    from app.services.domains.pricing_profiles import ARCHIVED_SOURCE_TYPE
+    from app.models import PricingParameterProfile, RiskRun, Portfolio
+
+    vd = datetime(2026, 6, 24, tzinfo=timezone.utc)
+    real_book = Portfolio(name="Default")
+    prof = PricingParameterProfile(
+        name="Control Profile", valuation_date=vd, summary={ARENA_PROFILE_MARKER: True}
+    )
+    session.add_all([real_book, prof])
+    session.flush()
+    prof_id = prof.id
+    risk = RiskRun(portfolio_id=real_book.id, pricing_parameter_profile_id=prof.id)
+    session.add(risk)
+    session.commit()
+
+    bundle = _Bundle({"pricing_profiles": [{"alias": "prof", "name": "Control Profile"}]})
+    _purge_seeded_portfolios(session, bundle)  # retires (still referenced)
+    assert session.get(PricingParameterProfile, prof_id).source_type == ARCHIVED_SOURCE_TYPE
+
+    # The referencing run is removed (e.g. real cleanup elsewhere); next purge reclaims.
+    session.delete(session.get(RiskRun, risk.id))
+    session.commit()
+    _purge_seeded_portfolios(session, bundle)
+    # Fresh count query (not session.get, which can serve a stale identity-map row
+    # after a Core-level delete + commit).
+    assert (
+        session.query(PricingParameterProfile)
+        .filter(PricingParameterProfile.id == prof_id)
+        .count()
+        == 0
+    )  # reclaimed
+
+
+def test_purge_deletes_unreferenced_arena_profile(session):
+    """The common case: the match's LLM priced ONLY the arena-seeded book, whose
+    runs were removed with the portfolio, so no surviving run references the arena
+    profile. An unreferenced arena profile is deleted cleanly (owned parameter rows
+    first), leaving no stale arena artifact behind."""
+    from datetime import datetime, timezone
+
+    from app.services.arena.runner import _purge_seeded_portfolios, ARENA_PROFILE_MARKER
+    from app.models import PricingParameterProfile, PricingParameterRow
+
+    vd = datetime(2026, 6, 24, tzinfo=timezone.utc)
+    prof = PricingParameterProfile(
+        name="Control Profile", valuation_date=vd, summary={ARENA_PROFILE_MARKER: True}
+    )
+    session.add(prof)
+    session.flush()
+    session.add(PricingParameterRow(
+        profile_id=prof.id, source_trade_id="", symbol="AAPL",
+        rate=0.04, dividend_yield=0.005, volatility=0.30,
+    ))
+    session.commit()
+
+    bundle = _Bundle({"pricing_profiles": [{"alias": "prof", "name": "Control Profile"}]})
+    _purge_seeded_portfolios(session, bundle)
+
+    assert session.query(PricingParameterProfile).count() == 0
+    assert session.query(PricingParameterRow).count() == 0
+
+
 def test_purge_deletes_task_rows_before_referenced_runs(session):
     """A task_run referencing a purged risk_run must not cause an FK violation:
     deletes run in reverse FK-dependency order (children first)."""

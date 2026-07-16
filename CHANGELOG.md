@@ -42,6 +42,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never quotes).
 
 ### Fixed
+- **Arena: the seed-purge no longer destroys real-book pricing provenance when
+  reclaiming a benchmark profile.** A match's LLM can price a **real, non-arena book**
+  (e.g. the "Default" portfolio) against the arena-seeded pricing profile; that
+  `risk_run` / `position_valuation_run` survives the portfolio-scoped purge and its FK
+  then blocked the profile delete (the `FOREIGN KEY constraint failed` that killed the
+  first Run #24 launch). The earlier interim fix nulled those FKs — silently erasing
+  which profile a real-book run priced against and racing the scenario/backtest/greek
+  workers that branch on it. `_purge_seeded_portfolios` now mirrors
+  `pricing_profiles.delete_profile`'s refusal instead: a profile still referenced by a
+  surviving run/`fx_rate` is **retired in place** into the pricing subsystem's existing
+  archived state (`source_type = ARCHIVED_SOURCE_TYPE` → immutable via `_mutable_profile`),
+  keeping the arena marker (so a later purge **reclaims** it once its last reference
+  clears) and its name, and recording a `pricing_parameter_profile.arena_retired` audit
+  event. Unreferenced profiles (the common case — the LLM only priced the arena book,
+  whose runs were purged with the portfolio) are still deleted cleanly, owned rows first.
+  The FK-referencer discovery is schema-driven (walks nullable columns whose FK targets
+  the profile table), so new run tables are covered automatically.
 - **Booking: `book_position` now accepts the same term-sheet vocabulary as the
   `build_product` tool (no more `initial_price` / `maturity_date` rejection).**
   Root cause was a two-layer asymmetry surfaced by the Arena Run #22 EFF analysis:
