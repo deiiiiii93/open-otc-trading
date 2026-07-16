@@ -369,6 +369,116 @@ def test_booking_gate_rejects_incomplete_spot_missing_s0():
     assert "initial_price" in str(exc.value)
 
 
+# --- Agent-authored RAW term-sheet vocabulary at booking. The intended contract
+# is "call build_product, then book its product_kwargs" (validate-and-wrap). But
+# an agent may hand-author raw vocabulary directly at book_position — the SAME
+# vocabulary the build_product tool accepts (initial_price as the S0/validation
+# spot, maturity_years or maturity_date). The booking gate must translate it via
+# synthesis instead of rejecting it with QuantArk's "Unsupported kwargs".
+def _raw_barrier_spec(maturity_terms: dict) -> ProductBookingSpec:
+    return ProductBookingSpec(
+        asset_class="equity", product_family="barrier",
+        quantark_class="BarrierOption", underlying="MSFT", currency="USD",
+        terms={
+            "strike": 384.93, "option_type": "PUT", "barrier": 307.944,
+            "barrier_type": "DOWN_IN", "initial_price": 384.93,
+            "contract_multiplier": 1.0, **maturity_terms,
+        },
+        components=[], display_name=None, source_payload={},
+    )
+
+
+def test_normalize_translates_raw_termsheet_vocab_barrier():
+    # initial_price + maturity_years (tenor) — the build_product tool's vocabulary.
+    normalized = normalize_booking_product_spec(_raw_barrier_spec({"maturity_years": 1.0}))
+    # initial_price is the S0/validation spot, not a BarrierOption kwarg -> dropped
+    assert "initial_price" not in normalized.terms
+    assert "maturity_years" not in normalized.terms
+    assert normalized.terms.get("maturity") == 1.0
+    assert normalized.terms["barrier_type"] == "DOWN_IN"
+
+
+def test_normalize_translates_maturity_date_barrier():
+    # initial_price + maturity_date (explicit date) — maturity_date threads through
+    # as QuantArk's exercise_date rather than being rejected.
+    normalized = normalize_booking_product_spec(_raw_barrier_spec({"maturity_date": "2027-07-15"}))
+    assert "initial_price" not in normalized.terms
+    assert "maturity_date" not in normalized.terms
+    assert normalized.terms.get("exercise_date")
+
+
+def test_normalize_prebuilt_barrier_kwargs_wrap_unchanged():
+    # Regression: the intended contract (build_product output -> book verbatim)
+    # must still pass through untouched, not be re-synthesized.
+    built = build_product("BarrierOption", {
+        "strike": 384.93, "option_type": "PUT", "barrier": 307.944,
+        "barrier_type": "DOWN_IN", "maturity_years": 1.0, "initial_price": 384.93,
+    })
+    assert built.ok, built.validation
+    spec = ProductBookingSpec(
+        asset_class="equity", product_family="barrier",
+        quantark_class="BarrierOption", underlying="MSFT", currency="USD",
+        terms=dict(built.product_kwargs), components=[], display_name=None, source_payload={},
+    )
+    normalized = normalize_booking_product_spec(spec)
+    assert normalized.terms == spec.terms
+
+
+def test_normalize_preserves_precise_error_for_invalid_prebuilt_barrier():
+    # A genuinely-invalid PRE-BUILT termsheet (clean shape, bad enum value, no raw
+    # term-sheet vocabulary) must keep its precise validation error — the synthesis
+    # fallback must not mask it with an "Incomplete … missing" message.
+    spec = ProductBookingSpec(
+        asset_class="equity", product_family="barrier",
+        quantark_class="BarrierOption", underlying="MSFT", currency="USD",
+        terms={
+            "strike": 384.93, "option_type": "PUT", "barrier": 307.944,
+            "barrier_type": "SIDEWAYS_IN", "maturity": 1.0,
+        },
+        components=[], display_name=None, source_payload={},
+    )
+    with pytest.raises(ValueError) as exc:
+        normalize_booking_product_spec(spec)
+    message = str(exc.value)
+    assert message.startswith("Invalid BarrierOption booking terms:")
+    assert "Incomplete" not in message
+
+
+def test_book_barrier_from_raw_agent_vocab_persists_clean_kwargs(session):
+    # Full persisted path: an agent books a barrier directly with raw term-sheet
+    # vocabulary (the Run #22 step-4 shape). The position persists with the clean
+    # QuantArk kwargs, not the rejected initial_price/maturity_date.
+    portfolio = Portfolio(name="Barrier Book", base_currency="USD",
+                          kind=PortfolioKind.CONTAINER.value)
+    session.add(portfolio)
+    session.flush()
+
+    booked = book_position(
+        session,
+        BookingRequest(
+            portfolio_id=portfolio.id,
+            product=ProductBookingSpec(
+                asset_class="equity", product_family="barrier",
+                quantark_class="BarrierOption", underlying="MSFT", currency="USD",
+                terms={"strike": 384.93, "option_type": "PUT", "barrier": 307.944,
+                       "barrier_type": "DOWN_IN", "maturity_years": 1.0,
+                       "initial_price": 384.93, "contract_multiplier": 1.0},
+            ),
+            quantity=1.0, entry_price=0.0, status="open",
+            engine_name="BlackScholesEngine", engine_kwargs={},
+            actor="desk_user", source="manual",
+        ),
+    )
+    session.flush()
+
+    assert booked.product_id is not None
+    assert booked.product_type == "BarrierOption"
+    assert booked.product_kwargs["maturity"] == 1.0
+    assert booked.product_kwargs["barrier_type"] == "DOWN_IN"
+    assert "initial_price" not in booked.product_kwargs
+    assert session.query(Position).count() == 1
+
+
 def test_booking_gate_rejects_invalid_one_touch():
     # OneTouchOption is now gated: an incomplete termsheet (no barrier) must be
     # rejected by the gate, not persisted unvalidated.

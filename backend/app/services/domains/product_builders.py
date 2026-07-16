@@ -113,13 +113,32 @@ def _require(terms: dict, out: _Out, key: str, *, alias: str | None = None) -> A
     return value
 
 
+def _explicit_maturity_date(terms: dict) -> str | None:
+    """An explicit-date maturity, mapped onto QuantArk's ``exercise_date`` field.
+
+    Accepts term-sheet synonyms (``maturity_date``/``expiry_date``/``expiry``) as
+    an alternative to tenor-style ``maturity_years``; QuantArk derives the year
+    fraction from the date at valuation time.
+    """
+    for key in ("exercise_date", "maturity_date", "expiry_date", "expiry"):
+        val = terms.get(key)
+        if val not in (None, ""):
+            return str(val)
+    return None
+
+
 def _common_option(terms: dict, out: _Out) -> dict:
     pk: dict[str, Any] = {"contract_multiplier": _num(terms.get("contract_multiplier")) or 1.0}
     m = _num(terms.get("maturity_years"))
-    if m is None:
-        out.missing.append("maturity_years")
-    else:
+    if m is not None:
         pk["maturity"] = m
+    else:
+        # Tenor absent: accept an explicit-date maturity before reporting it missing.
+        exercise_date = _explicit_maturity_date(terms)
+        if exercise_date is not None:
+            pk["exercise_date"] = exercise_date
+        else:
+            out.missing.append("maturity_years")
     return pk
 
 
