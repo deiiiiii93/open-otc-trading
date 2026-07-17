@@ -140,3 +140,23 @@ def test_extraction_runs_table_exists(tmp_path: Path) -> None:
     cols = {c["name"] for c in insp.get_columns("memory_extraction_runs")}
     assert {"run_key", "kind", "session_id", "book_scope_id",
             "last_extracted_message_id", "status", "attempts"} <= cols
+
+
+def test_0038_upgrade_is_noop_on_current_orm_schema(tmp_path: Path) -> None:
+    """0001 uses current ORM metadata, so 0038 must tolerate an evolved table."""
+    from app.models import Base
+
+    engine = _fresh_engine(tmp_path, "current.sqlite3")
+    Base.metadata.create_all(engine)
+
+    migration = importlib.import_module(
+        "backend.alembic.versions.0038_memory_entries_evolve"
+    )
+    _run_migration(migration, "upgrade", engine)
+
+    columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("memory_entries")
+    }
+    assert "namespace" not in columns
+    assert {"scope_type", "scope_id", "normalized_content", "status"} <= columns

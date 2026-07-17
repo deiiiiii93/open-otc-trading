@@ -31,8 +31,16 @@ def _has_column(table: str, col: str) -> bool:
     return any(c["name"] == col for c in inspect(op.get_bind()).get_columns(table))
 
 
+def _has_index(table: str, name: str) -> bool:
+    return any(
+        index["name"] == name
+        for index in inspect(op.get_bind()).get_indexes(table)
+    )
+
+
 def upgrade() -> None:
     bind = op.get_bind()
+    has_legacy_namespace = _has_column("memory_entries", "namespace")
     for col, type_, default in [
         ("scope_type", sa.String(), None),
         ("scope_id", sa.String(), None),
@@ -48,6 +56,27 @@ def upgrade() -> None:
         if not _has_column("memory_entries", col):
             op.add_column("memory_entries", sa.Column(col, type_, nullable=True,
                           server_default=default))
+
+    # 0001_initial intentionally creates from current ORM metadata. On a fresh
+    # database that means the typed post-0038 table and its indexes already
+    # exist by the time this historical revision runs. There is no legacy
+    # namespace payload to backfill or column to rebuild in that path.
+    if not has_legacy_namespace:
+        if not _has_index("memory_entries", "ix_memory_scope_status"):
+            op.create_index(
+                "ix_memory_scope_status",
+                "memory_entries",
+                ["scope_type", "scope_id", "status"],
+            )
+        if not _has_index("memory_entries", "ux_memory_dedup"):
+            op.create_index(
+                "ux_memory_dedup",
+                "memory_entries",
+                ["scope_type", "scope_id", "normalized_content"],
+                unique=True,
+                sqlite_where=sa.text("status != 'archived'"),
+            )
+        return
 
     rows = list(bind.execute(sa.text(
         "SELECT id, namespace, content FROM memory_entries"

@@ -236,3 +236,29 @@ def test_0045_adds_and_drops_trials(tmp_path: Path) -> None:
     assert "trials" not in {
         c["name"] for c in inspect(engine).get_columns("arena_run")
     }
+
+
+def test_0045_upgrade_is_idempotent_when_current_orm_created_trials(
+    tmp_path: Path,
+) -> None:
+    engine = _fresh_engine(tmp_path, "test_0045_current.sqlite3")
+    base = importlib.import_module("backend.alembic.versions.0032_arena_runs")
+    migration = importlib.import_module(
+        "backend.alembic.versions.0045_arena_run_trials"
+    )
+
+    _run_migration(base, "upgrade", engine)
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                "ALTER TABLE arena_run "
+                "ADD COLUMN trials INTEGER NOT NULL DEFAULT 1"
+            )
+        )
+
+    _run_migration(migration, "upgrade", engine)
+
+    assert "trials" in {
+        column["name"]
+        for column in inspect(engine).get_columns("arena_run")
+    }
