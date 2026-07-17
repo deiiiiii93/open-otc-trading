@@ -1,6 +1,13 @@
+"""Versioned risk-limit definition governance.
+
+V1 effective dating is deliberately immediate-only. A draft may omit
+``effective_from`` or pin it to the activation instant; past and future
+handovers are rejected. All persisted governance timestamps are UTC-naive:
+aware inputs are converted to UTC and naive inputs are interpreted as UTC.
+"""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import json
 import math
@@ -8,10 +15,12 @@ import re
 from typing import Any
 
 from sqlalchemy import func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ...models import RiskLimit, RiskLimitVersion, utcnow
 from ..audit import record_audit
+from ..currency_codes import is_valid_currency, normalize_currency
 from .contracts import LimitActionContext, LimitVersionSpec
 from .errors import (
     LimitConflictError,
@@ -44,6 +53,22 @@ def _non_empty(value: Any, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         _fail(f"{field} must be a non-empty string")
     return value.strip()
+
+
+def _utc_naive(value: datetime, field: str) -> datetime:
+    if not isinstance(value, datetime):
+        _fail(f"{field} must be a datetime")
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=None)
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _normalized_currency(value: str) -> str:
+    clean = _non_empty(value, "currency")
+    normalized = normalize_currency(clean)
+    if not is_valid_currency(normalized):
+        _fail("currency must be an active ISO 4217 alphabetic code")
+    return normalized
 
 
 def _validate_context(context: LimitActionContext) -> None:
@@ -164,15 +189,38 @@ def _validate_thresholds(spec: LimitVersionSpec) -> None:
         if value is not None and not math.isfinite(value):
             _fail("thresholds must be finite numbers or null")
 
+    if spec.transform in {"absolute", "loss_magnitude"}:
+        if spec.comparator != "upper":
+            _fail("absolute and loss limits require a positive upper comparator")
+        if (
+            spec.warning_lower is not None
+            or spec.hard_lower is not None
+            or spec.warning_upper is None
+            or spec.hard_upper is None
+            or spec.warning_upper < 0
+            or spec.hard_upper <= 0
+            or spec.warning_upper >= spec.hard_upper
+        ):
+            _fail(
+                "absolute and loss limits require "
+                "0 <= warning_upper < hard_upper"
+            )
+        return
+
     if spec.comparator == "upper":
         if (
             spec.warning_lower is not None
             or spec.hard_lower is not None
             or spec.warning_upper is None
             or spec.hard_upper is None
+            or spec.warning_upper < 0
+            or spec.hard_upper <= 0
             or spec.warning_upper >= spec.hard_upper
         ):
-            _fail("upper comparator requires warning_upper < hard_upper")
+            _fail(
+                "signed upper comparator requires "
+                "0 <= warning_upper < hard_upper"
+            )
         return
     if spec.comparator == "lower":
         if (
@@ -180,9 +228,14 @@ def _validate_thresholds(spec: LimitVersionSpec) -> None:
             or spec.hard_upper is not None
             or spec.warning_lower is None
             or spec.hard_lower is None
+            or spec.warning_lower > 0
+            or spec.hard_lower >= 0
             or spec.hard_lower >= spec.warning_lower
         ):
-            _fail("lower comparator requires hard_lower < warning_lower")
+            _fail(
+                "signed lower comparator requires "
+                "hard_lower < warning_lower <= 0"
+            )
         return
     if spec.comparator == "range":
         if any(value is None for value in thresholds):
@@ -190,12 +243,14 @@ def _validate_thresholds(spec: LimitVersionSpec) -> None:
         if not (
             spec.hard_lower
             < spec.warning_lower
+            < 0
             < spec.warning_upper
             < spec.hard_upper
         ):
             _fail(
                 "range thresholds must satisfy "
-                "hard_lower < warning_lower < warning_upper < hard_upper"
+                "hard_lower < warning_lower < 0 < "
+                "warning_upper < hard_upper"
             )
         return
     _fail("comparator is not supported")
@@ -305,9 +360,9 @@ def validate_version_spec(
 
     _non_empty(spec.unit, "unit")
     if spec.currency is not None:
-        _non_empty(spec.currency, "currency")
+        _normalized_currency(spec.currency)
     if spec.metric_kind in _MONETARY_GREEKS | {"var", "cvar", "stress_pnl"}:
-        _non_empty(spec.currency, "currency")
+        _normalized_currency(spec.currency)
     if spec.metric_kind in {"rho", "rho_q"}:
         _non_empty(spec.bump_convention, "bump_convention")
     elif spec.bump_convention is not None:
@@ -332,7 +387,8 @@ def validate_version_spec(
     if (
         spec.effective_from is not None
         and spec.effective_until is not None
-        and spec.effective_from >= spec.effective_until
+        and _utc_naive(spec.effective_from, "effective_from")
+        >= _utc_naive(spec.effective_until, "effective_until")
     ):
         _fail("effective_from must precede effective_until")
     if spec.rationale is not None and not isinstance(spec.rationale, str):
@@ -379,6 +435,12 @@ def _version(session: Session, version_id: int) -> RiskLimitVersion:
     if version is None:
         raise LimitNotFoundError(f"risk limit version {version_id} was not found")
     return version
+
+
+def _key_exists(session: Session, key: str) -> bool:
+    return session.scalar(
+        select(RiskLimit.id).where(RiskLimit.key == key)
+    ) is not None
 
 
 def _conditional_identity_update(
@@ -435,18 +497,46 @@ def _new_version(
         aggregation=spec.aggregation,
         transform=spec.transform,
         comparator=spec.comparator,
-        warning_lower=spec.warning_lower,
-        warning_upper=spec.warning_upper,
-        hard_lower=spec.hard_lower,
-        hard_upper=spec.hard_upper,
+        warning_lower=(
+            float(spec.warning_lower)
+            if spec.warning_lower is not None
+            else None
+        ),
+        warning_upper=(
+            float(spec.warning_upper)
+            if spec.warning_upper is not None
+            else None
+        ),
+        hard_lower=(
+            float(spec.hard_lower)
+            if spec.hard_lower is not None
+            else None
+        ),
+        hard_upper=(
+            float(spec.hard_upper)
+            if spec.hard_upper is not None
+            else None
+        ),
         unit=spec.unit.strip(),
-        currency=spec.currency.strip() if spec.currency else None,
+        currency=(
+            _normalized_currency(spec.currency)
+            if spec.currency is not None
+            else None
+        ),
         bump_convention=(
             spec.bump_convention.strip() if spec.bump_convention else None
         ),
         freshness_policy=dict(spec.freshness_policy),
-        effective_from=spec.effective_from,
-        effective_until=spec.effective_until,
+        effective_from=(
+            _utc_naive(spec.effective_from, "effective_from")
+            if spec.effective_from is not None
+            else None
+        ),
+        effective_until=(
+            _utc_naive(spec.effective_until, "effective_until")
+            if spec.effective_until is not None
+            else None
+        ),
         rationale=spec.rationale,
         created_by_actor=context.actor,
         created_by_persona=context.persona,
@@ -477,7 +567,7 @@ def create_limit(
         tags=tags,
     )
     validate_version_spec(initial_version, category=metadata["category"])
-    if session.scalar(select(RiskLimit.id).where(RiskLimit.key == metadata["key"])):
+    if _key_exists(session, metadata["key"]):
         raise LimitConflictError(f"risk limit key {metadata['key']!r} exists")
 
     identity = RiskLimit(
@@ -485,16 +575,22 @@ def create_limit(
         created_by_actor=context.actor,
         created_by_persona=context.persona,
     )
-    session.add(identity)
-    session.flush()
-    version = _new_version(
-        identity=identity,
-        number=1,
-        spec=initial_version,
-        context=context,
-    )
-    session.add(version)
-    session.flush()
+    try:
+        with session.begin_nested():
+            session.add(identity)
+            session.flush()
+            version = _new_version(
+                identity=identity,
+                number=1,
+                spec=initial_version,
+                context=context,
+            )
+            session.add(version)
+            session.flush()
+    except IntegrityError as exc:
+        raise LimitConflictError(
+            f"risk limit key {metadata['key']!r} conflicts"
+        ) from exc
     _audit(
         session,
         event_type="limit.created",
@@ -628,7 +724,22 @@ def activate_version(
         raise LimitImmutableError(
             f"only a draft can activate; version is {version.state}"
         )
-    when = activated_at or utcnow()
+    when = _utc_naive(activated_at or utcnow(), "activated_at")
+    requested_start = (
+        _utc_naive(version.effective_from, "effective_from")
+        if version.effective_from is not None
+        else None
+    )
+    if requested_start is not None and requested_start != when:
+        _fail(
+            "v1 activation is immediate; effective_from must be absent "
+            "or equal to activated_at"
+        )
+    if version.effective_until is not None:
+        version.effective_until = _utc_naive(
+            version.effective_until,
+            "effective_until",
+        )
     if version.effective_until is not None and when >= version.effective_until:
         _fail("activation must precede effective_until")
 
@@ -637,6 +748,12 @@ def activate_version(
         if identity.active_version_id is not None
         else None
     )
+    if (
+        previous is not None
+        and previous.effective_from is not None
+        and _utc_naive(previous.effective_from, "effective_from") > when
+    ):
+        _fail("activation cannot precede the current active version")
     _conditional_identity_update(
         session,
         identity=identity,
@@ -645,13 +762,9 @@ def activate_version(
     )
     if previous is not None:
         previous.state = "superseded"
-        if (
-            previous.effective_until is None
-            or previous.effective_until > when
-        ):
-            previous.effective_until = when
+        previous.effective_until = when
     version.state = "active"
-    version.effective_from = version.effective_from or when
+    version.effective_from = when
     version.activated_at = when
     version.activated_by_actor = context.actor
     version.activated_by_persona = context.persona
@@ -669,12 +782,38 @@ def activate_version(
     return version
 
 
+def _clamped_effective_until(
+    version: RiskLimitVersion,
+    action_at: datetime,
+) -> datetime:
+    effective_from = (
+        _utc_naive(version.effective_from, "effective_from")
+        if version.effective_from is not None
+        else None
+    )
+    existing_end = (
+        _utc_naive(version.effective_until, "effective_until")
+        if version.effective_until is not None
+        else None
+    )
+    if effective_from is not None and action_at < effective_from:
+        _fail("governance action cannot precede activation")
+    if (
+        effective_from is not None
+        and existing_end is not None
+        and existing_end < effective_from
+    ):
+        _fail("stored effective interval is invalid")
+    return min(existing_end, action_at) if existing_end else action_at
+
+
 def deactivate(
     session: Session,
     *,
     limit_id: int,
     expected_row_version: int,
     context: LimitActionContext,
+    action_at: datetime | None = None,
 ) -> RiskLimit:
     _validate_context(context)
     identity = _identity(session, limit_id)
@@ -683,6 +822,9 @@ def deactivate(
         if identity.active_version_id is not None
         else None
     )
+    when = _utc_naive(action_at or utcnow(), "action_at")
+    if active is not None:
+        clamped_end = _clamped_effective_until(active, when)
     _conditional_identity_update(
         session,
         identity=identity,
@@ -691,7 +833,7 @@ def deactivate(
     )
     if active is not None:
         active.state = "superseded"
-        active.effective_until = active.effective_until or utcnow()
+        active.effective_until = clamped_end
     session.flush()
     _audit(
         session,
@@ -709,21 +851,29 @@ def retire(
     limit_id: int,
     expected_row_version: int,
     context: LimitActionContext,
+    action_at: datetime | None = None,
 ) -> RiskLimit:
     _validate_context(context)
     identity = _identity(session, limit_id)
+    when = _utc_naive(action_at or utcnow(), "action_at")
+    clamped_ends: dict[int, datetime] = {}
+    for version in identity.versions:
+        if version.state == "active":
+            clamped_ends[version.id] = _clamped_effective_until(version, when)
     _conditional_identity_update(
         session,
         identity=identity,
         expected_row_version=expected_row_version,
         values={"active_version_id": None},
     )
-    now = utcnow()
     for version in identity.versions:
         if version.state in {"draft", "active"}:
             version.state = "retired"
-            if version.activated_at is not None and version.effective_until is None:
-                version.effective_until = now
+            if version.activated_at is not None:
+                version.effective_until = clamped_ends.get(
+                    version.id,
+                    _clamped_effective_until(version, when),
+                )
     session.flush()
     _audit(
         session,
@@ -745,27 +895,15 @@ def update_metadata(
     _validate_context(context)
     if not isinstance(patch, dict) or not patch:
         _fail("metadata patch must be a non-empty object")
-    allowed = {"key", "name", "description", "category", "owner", "tags"}
+    allowed = {"name", "description", "owner", "tags"}
     if not set(patch) <= allowed:
         _fail("metadata patch contains unsupported fields")
     identity = _identity(session, limit_id)
     candidate = {
         field: patch.get(field, getattr(identity, field))
-        for field in allowed
+        for field in {"key", "name", "description", "category", "owner", "tags"}
     }
     metadata = _validate_identity(**candidate)
-    if metadata["category"] != identity.category and identity.versions:
-        _fail("category cannot change after versions exist")
-    duplicate = session.scalar(
-        select(RiskLimit.id).where(
-            RiskLimit.key == metadata["key"],
-            RiskLimit.id != limit_id,
-        )
-    )
-    if duplicate is not None:
-        raise LimitConflictError(
-            f"risk limit key {metadata['key']!r} already exists"
-        )
     updated = _conditional_identity_update(
         session,
         identity=identity,
@@ -788,15 +926,16 @@ def effective_version(
     limit_id: int,
     valuation_at: datetime,
 ) -> RiskLimitVersion:
+    normalized_valuation_at = _utc_naive(valuation_at, "valuation_at")
     version = session.scalar(
         select(RiskLimitVersion)
         .where(
             RiskLimitVersion.risk_limit_id == limit_id,
             RiskLimitVersion.activated_at.is_not(None),
-            RiskLimitVersion.effective_from <= valuation_at,
+            RiskLimitVersion.effective_from <= normalized_valuation_at,
             or_(
                 RiskLimitVersion.effective_until.is_(None),
-                RiskLimitVersion.effective_until > valuation_at,
+                RiskLimitVersion.effective_until > normalized_valuation_at,
             ),
         )
         .order_by(
@@ -814,13 +953,22 @@ def effective_version(
 
 def _json_value(value: Any) -> Any:
     if isinstance(value, datetime):
-        return value.isoformat()
+        return (
+            _utc_naive(value, "snapshot datetime")
+            .strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        )
+    if isinstance(value, dict):
+        return {
+            str(key): _json_value(nested)
+            for key, nested in sorted(value.items(), key=lambda item: str(item[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_json_value(nested) for nested in value]
     return value
 
 
 def canonical_version_snapshot(version: RiskLimitVersion) -> dict[str, Any]:
     fields = (
-        "id",
         "risk_limit_id",
         "version",
         "state",
@@ -845,7 +993,18 @@ def canonical_version_snapshot(version: RiskLimitVersion) -> dict[str, Any]:
         "rationale",
         "activated_at",
     )
-    raw = {field: _json_value(getattr(version, field)) for field in fields}
+    threshold_fields = {
+        "warning_lower",
+        "warning_upper",
+        "hard_lower",
+        "hard_upper",
+    }
+    raw = {}
+    for field in fields:
+        value = getattr(version, field)
+        if field in threshold_fields and value is not None:
+            value = float(value)
+        raw[field] = _json_value(value)
     return json.loads(
         json.dumps(raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     )

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -158,6 +158,146 @@ def test_activation_supersedes_previous_and_effective_lookup_is_historical(
     ).id == second.id
 
 
+@pytest.mark.parametrize("offset", [-1, 1])
+def test_activation_rejects_past_and_future_effective_handover(
+    session,
+    offset,
+) -> None:
+    activation_at = datetime(2026, 7, 17, 9)
+    limit_row, draft = _create(
+        session,
+        key=f"handover-{offset}",
+        spec=_spec(
+            effective_from=activation_at + timedelta(seconds=offset),
+        ),
+    )
+
+    with pytest.raises(LimitValidationError):
+        definitions.activate_version(
+            session,
+            limit_id=limit_row.id,
+            version_id=draft.id,
+            expected_row_version=1,
+            activated_at=activation_at,
+            context=HUMAN_CONTEXT,
+        )
+
+    assert draft.state == "draft"
+    assert limit_row.active_version_id is None
+
+
+def test_activation_accepts_equal_utc_instant_and_stores_utc_naive(
+    session,
+) -> None:
+    activation_at = datetime(2026, 7, 17, 9)
+    same_instant = datetime(
+        2026,
+        7,
+        17,
+        17,
+        tzinfo=timezone(timedelta(hours=8)),
+    )
+    limit_row, draft = _create(
+        session,
+        key="handover-equal",
+        spec=_spec(effective_from=same_instant),
+    )
+
+    definitions.activate_version(
+        session,
+        limit_id=limit_row.id,
+        version_id=draft.id,
+        expected_row_version=1,
+        activated_at=activation_at,
+        context=HUMAN_CONTEXT,
+    )
+
+    assert draft.effective_from == activation_at
+    assert draft.activated_at == activation_at
+    assert draft.effective_from.tzinfo is None
+
+
+@pytest.mark.parametrize("operation", ["deactivate", "retire"])
+def test_governance_action_clamps_later_expiry_and_historical_lookup(
+    session,
+    operation,
+) -> None:
+    activation_at = datetime(2026, 7, 17, 9)
+    action_at = activation_at + timedelta(hours=1)
+    limit_row, draft = _create(
+        session,
+        key=f"clamp-{operation}",
+        spec=_spec(
+            effective_from=activation_at,
+            effective_until=action_at + timedelta(days=1),
+        ),
+    )
+    definitions.activate_version(
+        session,
+        limit_id=limit_row.id,
+        version_id=draft.id,
+        expected_row_version=1,
+        activated_at=activation_at,
+        context=HUMAN_CONTEXT,
+    )
+
+    getattr(definitions, operation)(
+        session,
+        limit_id=limit_row.id,
+        expected_row_version=2,
+        action_at=action_at,
+        context=HUMAN_CONTEXT,
+    )
+
+    assert draft.effective_until == action_at
+    assert definitions.effective_version(
+        session,
+        limit_id=limit_row.id,
+        valuation_at=action_at - timedelta(microseconds=1),
+    ).id == draft.id
+    with pytest.raises(definitions.LimitNotFoundError):
+        definitions.effective_version(
+            session,
+            limit_id=limit_row.id,
+            valuation_at=action_at,
+        )
+    with pytest.raises(definitions.LimitNotFoundError):
+        definitions.effective_version(
+            session,
+            limit_id=limit_row.id,
+            valuation_at=action_at + timedelta(microseconds=1),
+        )
+
+
+def test_governance_action_cannot_precede_activation(session) -> None:
+    activation_at = datetime(2026, 7, 17, 9)
+    limit_row, draft = _create(
+        session,
+        key="non-retroactive-action",
+        spec=_spec(effective_from=activation_at),
+    )
+    definitions.activate_version(
+        session,
+        limit_id=limit_row.id,
+        version_id=draft.id,
+        expected_row_version=1,
+        activated_at=activation_at,
+        context=HUMAN_CONTEXT,
+    )
+
+    with pytest.raises(LimitValidationError):
+        definitions.deactivate(
+            session,
+            limit_id=limit_row.id,
+            expected_row_version=2,
+            action_at=activation_at - timedelta(microseconds=1),
+            context=HUMAN_CONTEXT,
+        )
+
+    assert draft.effective_until is None
+    assert draft.state == "active"
+
+
 def test_deactivate_and_retire_preserve_history(session) -> None:
     limit_row, draft = _create(session, key="lifecycle")
     definitions.activate_version(
@@ -253,6 +393,53 @@ def test_canonical_snapshot_and_hash_are_deterministic(session) -> None:
     assert first["scope_config"] == {"portfolio_ids": [7]}
 
 
+def test_canonical_snapshot_is_stable_preflush_reload_and_fresh_session(
+    session,
+) -> None:
+    from app import database
+
+    limit_row, _ = _create(session, key="canonical-lifecycle")
+    effective_from = datetime(
+        2026,
+        7,
+        17,
+        17,
+        tzinfo=timezone(timedelta(hours=8)),
+    )
+    pending = definitions._new_version(
+        identity=limit_row,
+        number=2,
+        spec=_spec(
+            warning_upper=80,
+            hard_upper=100,
+            effective_from=effective_from,
+        ),
+        context=HUMAN_CONTEXT,
+    )
+    session.add(pending)
+    before_flush = definitions.canonical_version_snapshot(pending)
+    before_hash = definitions.canonical_version_hash(pending)
+
+    session.flush()
+    version_id = pending.id
+    after_flush = definitions.canonical_version_snapshot(pending)
+    session.commit()
+    session.expire(pending)
+    after_reload = definitions.canonical_version_snapshot(pending)
+    with database.SessionLocal() as fresh_session:
+        fresh = fresh_session.get(type(pending), version_id)
+        fresh_snapshot = definitions.canonical_version_snapshot(fresh)
+        fresh_hash = definitions.canonical_version_hash(fresh)
+
+    assert before_flush == after_flush == after_reload == fresh_snapshot
+    assert before_hash == fresh_hash
+    assert before_flush["warning_upper"] == 80.0
+    assert isinstance(before_flush["warning_upper"], float)
+    assert before_flush["effective_from"] == "2026-07-17T09:00:00.000000Z"
+    assert pending.effective_from == datetime(2026, 7, 17, 9)
+    assert "id" not in before_flush
+
+
 def test_metadata_update_uses_atomic_expected_row_version(session) -> None:
     limit_row, _ = _create(session, key="metadata")
     updated = definitions.update_metadata(
@@ -305,18 +492,62 @@ def test_identity_metadata_validation(session, field, value) -> None:
         )
 
 
-def test_key_remains_unique_when_metadata_changes(session) -> None:
+def test_key_is_not_mutable_metadata(session) -> None:
     first, _ = _create(session, key="first-key")
-    _create(session, key="second-key")
 
-    with pytest.raises(LimitConflictError):
+    with pytest.raises(LimitValidationError):
         definitions.update_metadata(
             session,
             limit_id=first.id,
             expected_row_version=1,
-            patch={"key": "second-key"},
+            patch={"key": "renamed-key"},
             context=HUMAN_CONTEXT,
         )
+
+    assert first.key == "first-key"
+    assert first.row_version == 1
+
+
+def test_monetary_currency_uses_shared_iso_normalization(session) -> None:
+    _, draft = _create(
+        session,
+        key="currency-normalized",
+        spec=_spec(
+            metric_kind="rho",
+            unit="USD_per_1bp",
+            currency=" usd ",
+            bump_convention="parallel_rate_1bp",
+        ),
+    )
+
+    assert draft.currency == "USD"
+
+    with pytest.raises(LimitValidationError):
+        _create(
+            session,
+            key="currency-invalid",
+            spec=_spec(
+                metric_kind="rho",
+                unit="USD_per_1bp",
+                currency="ZZZ",
+                bump_convention="parallel_rate_1bp",
+            ),
+        )
+
+
+def test_create_unique_key_race_uses_savepoint_and_preserves_session(
+    session,
+    monkeypatch,
+) -> None:
+    _create(session, key="race-key")
+    monkeypatch.setattr(definitions, "_key_exists", lambda *_args: False)
+
+    with pytest.raises(LimitConflictError):
+        _create(session, key="race-key")
+
+    surviving, _ = _create(session, key="after-race")
+    session.flush()
+    assert surviving.key == "after-race"
 
 
 @pytest.mark.parametrize(
@@ -369,6 +600,91 @@ def test_key_remains_unique_when_metadata_changes(session) -> None:
 def test_version_contract_validation(session, spec) -> None:
     with pytest.raises(LimitValidationError):
         _create(session, key=f"invalid-{abs(hash(repr(spec)))}", spec=spec)
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        _spec(
+            transform="signed",
+            comparator="lower",
+            warning_lower=50.0,
+            hard_lower=25.0,
+            warning_upper=None,
+            hard_upper=None,
+        ),
+        _spec(
+            transform="signed",
+            warning_upper=-50.0,
+            hard_upper=-25.0,
+        ),
+        _spec(
+            transform="signed",
+            warning_upper=-1.0,
+            hard_upper=0.0,
+        ),
+        _spec(
+            transform="signed",
+            comparator="range",
+            warning_lower=20.0,
+            hard_lower=10.0,
+            warning_upper=30.0,
+            hard_upper=40.0,
+        ),
+        _spec(
+            transform="absolute",
+            comparator="lower",
+            warning_lower=-80.0,
+            hard_lower=-100.0,
+            warning_upper=None,
+            hard_upper=None,
+        ),
+    ],
+)
+def test_directionally_invalid_threshold_contracts_are_rejected(
+    session,
+    spec,
+) -> None:
+    with pytest.raises(LimitValidationError):
+        _create(
+            session,
+            key=f"direction-{abs(hash(repr(spec)))}",
+            spec=spec,
+        )
+
+
+def test_signed_zero_neutral_threshold_contracts_are_valid(session) -> None:
+    valid_specs = [
+        _spec(
+            transform="signed",
+            warning_upper=0.0,
+            hard_upper=100.0,
+        ),
+        _spec(
+            transform="signed",
+            comparator="lower",
+            warning_lower=0.0,
+            hard_lower=-100.0,
+            warning_upper=None,
+            hard_upper=None,
+        ),
+        _spec(
+            transform="signed",
+            comparator="range",
+            warning_lower=-40.0,
+            hard_lower=-200.0,
+            warning_upper=20.0,
+            hard_upper=80.0,
+        ),
+    ]
+
+    for index, spec in enumerate(valid_specs):
+        _, draft = _create(
+            session,
+            key=f"valid-direction-{index}",
+            spec=spec,
+        )
+        assert draft.transform == "signed"
 
 
 def test_scope_contracts_are_explicit(session) -> None:
