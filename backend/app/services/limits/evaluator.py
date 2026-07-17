@@ -10,7 +10,7 @@ from .metrics import MetricAggregationError, aggregate_values, get_metric
 
 
 _REL_TOL = 1e-12
-_ABS_TOL = 1e-12
+_ABS_TOL = 0.0
 _USABLE_SOURCE_STATUSES = frozenset({"completed", "completed_with_errors"})
 
 
@@ -268,6 +268,12 @@ def _rule_validation_reason(
         return "unsupported metric"
     if rule.source_kind not in descriptor.allowed_sources:
         return "metric source is not registered"
+    if not isinstance(rule.unit, str) or not rule.unit.strip():
+        return "unit must be a non-empty string"
+    if descriptor.monetary and (
+        not isinstance(rule.currency, str) or not rule.currency.strip()
+    ):
+        return "monetary metrics require a non-empty currency"
     if rule.transform not in {"signed", "absolute", "loss_magnitude"}:
         return "transform is not supported"
     if (
@@ -275,14 +281,17 @@ def _rule_validation_reason(
         and rule.transform != descriptor.default_transform
     ):
         return "tail and stress metrics require their registered transform"
+    if (
+        rule.metric_kind not in {"var", "cvar", "stress_pnl"}
+        and rule.transform not in {"signed", "absolute"}
+    ):
+        return "Greek metrics support only signed or absolute transforms"
     if descriptor.requires_bump_convention:
         if (
             not isinstance(rule.bump_convention, str)
             or not rule.bump_convention.strip()
-            or not isinstance(observation.bump_convention, str)
-            or not observation.bump_convention.strip()
         ):
-            return "rho metrics require non-empty bump conventions"
+            return "rho metrics require a non-empty rule bump convention"
 
     thresholds = (
         rule.warning_lower,
@@ -290,16 +299,17 @@ def _rule_validation_reason(
         rule.hard_lower,
         rule.hard_upper,
     )
-    if any(
-        value is not None
-        and (
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(value)
-        )
-        for value in thresholds
-    ):
-        return "thresholds must be finite numbers or null"
+    for value in thresholds:
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return "thresholds must be finite numbers or null"
+        try:
+            finite = math.isfinite(float(value))
+        except (OverflowError, TypeError, ValueError):
+            return "thresholds must be finite numbers or null"
+        if not finite:
+            return "thresholds must be finite numbers or null"
 
     if rule.transform in {"absolute", "loss_magnitude"}:
         if (
@@ -364,23 +374,27 @@ def _preflight_reason(
         return "source_failed", None
     if observation.source_status == "empty":
         return "empty_source", None
-    if observation.source_status not in _USABLE_SOURCE_STATUSES:
-        return "missing_source", None
-    if observation.values is None:
-        return "missing_source", None
     if observation.is_stale:
         return "stale_source", None
     if not observation.is_complete:
         return "incomplete_scope", None
     if observation.coverage_ratio is not None:
+        try:
+            finite_coverage = math.isfinite(float(observation.coverage_ratio))
+        except (OverflowError, TypeError, ValueError):
+            finite_coverage = False
         if (
-            not math.isfinite(observation.coverage_ratio)
+            not finite_coverage
             or observation.coverage_ratio < 0.0
             or observation.coverage_ratio > 1.0
         ):
             return "invalid_coverage", None
         if observation.coverage_ratio < 1.0:
             return "incomplete_scope", None
+    if observation.source_status not in _USABLE_SOURCE_STATUSES:
+        return "missing_source", None
+    if observation.values is None:
+        return "missing_source", None
     invalid_rule = _rule_validation_reason(rule, observation)
     if invalid_rule is not None:
         return "invalid_definition", invalid_rule

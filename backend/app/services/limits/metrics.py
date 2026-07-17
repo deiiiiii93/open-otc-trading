@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fractions import Fraction
 import math
 from typing import Iterable
 
@@ -70,6 +71,48 @@ def get_metric(metric_kind: str) -> MetricDescriptor:
         raise KeyError(f"unsupported limit metric {metric_kind!r}") from None
 
 
+def _coerce_finite_values(values: Iterable[float]) -> tuple[float, ...]:
+    coerced: list[float] = []
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise MetricAggregationError(
+                "invalid_value",
+                "the source returned a non-numeric observation",
+            )
+        try:
+            numeric = float(value)
+        except (OverflowError, TypeError, ValueError) as exc:
+            raise MetricAggregationError(
+                "invalid_value",
+                "the source returned an out-of-range numeric observation",
+            ) from exc
+        if not math.isfinite(numeric):
+            raise MetricAggregationError(
+                "invalid_value",
+                "the source returned a non-finite numeric observation",
+            )
+        coerced.append(numeric)
+    return tuple(coerced)
+
+
+def _deterministic_net(values: tuple[float, ...]) -> float:
+    ordered = tuple(sorted(values, key=lambda value: (abs(value), value)))
+    try:
+        return float(math.fsum(ordered))
+    except OverflowError:
+        exact = sum(
+            (Fraction.from_float(value) for value in ordered),
+            start=Fraction(),
+        )
+        try:
+            return float(exact)
+        except OverflowError as exc:
+            raise MetricAggregationError(
+                "invalid_value",
+                "the exact numeric aggregate is out of range",
+            ) from exc
+
+
 def aggregate_values(values: Iterable[float], aggregation: str) -> float:
     if aggregation not in AGGREGATIONS:
         raise MetricAggregationError(
@@ -82,28 +125,21 @@ def aggregate_values(values: Iterable[float], aggregation: str) -> float:
             "empty_observation",
             "the source returned no numeric observations",
         )
-    if any(
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(value)
-        for value in collected
-    ):
-        raise MetricAggregationError(
-            "invalid_value",
-            "the source returned a non-finite numeric observation",
-        )
+    normalized = _coerce_finite_values(collected)
 
     try:
         if aggregation == "net":
-            result = float(math.fsum(collected))
+            result = _deterministic_net(normalized)
         elif aggregation == "gross_abs":
-            result = float(math.fsum(abs(value) for value in collected))
+            result = float(
+                math.fsum(sorted(abs(value) for value in normalized))
+            )
         elif aggregation == "max_abs":
-            result = float(max(abs(value) for value in collected))
+            result = float(max(abs(value) for value in normalized))
         elif aggregation == "minimum":
-            result = float(min(collected))
+            result = float(min(normalized))
         else:
-            result = float(max(collected))
+            result = float(max(normalized))
     except OverflowError as exc:
         raise MetricAggregationError(
             "invalid_value",

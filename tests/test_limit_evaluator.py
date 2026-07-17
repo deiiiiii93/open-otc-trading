@@ -65,6 +65,29 @@ def test_upper_limit_boundaries(value, expected) -> None:
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
+        (0.0, "ok"),
+        (5e-14, "warning"),
+        (1e-13, "breach"),
+    ],
+)
+def test_small_positive_bands_keep_real_scale_and_exact_boundaries(
+    value,
+    expected,
+) -> None:
+    result = evaluate(
+        _rule(warning_upper=5e-14, hard_upper=1e-13),
+        _observation(value),
+    )
+
+    assert result.status == expected
+    assert result.headroom == pytest.approx(1e-13 - value, abs=0.0)
+    if value == 0.0:
+        assert result.utilization == 0.0
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
         (-79.999, "ok"),
         (-80.0, "warning"),
         (-99.999, "warning"),
@@ -115,8 +138,6 @@ def test_range_boundaries(value, expected, boundary) -> None:
     [
         ("signed", -25.0, -25.0),
         ("absolute", -25.0, 25.0),
-        ("loss_magnitude", -25.0, 25.0),
-        ("loss_magnitude", 25.0, 0.0),
     ],
 )
 def test_transforms_preserve_native_observation(transform, observed, adverse) -> None:
@@ -294,6 +315,10 @@ def test_lower_utilization_and_headroom() -> None:
             _observation(values=None, source_status="empty"),
             "empty_source",
         ),
+        (
+            _observation(values=(10**1000,)),
+            "invalid_value",
+        ),
     ],
 )
 def test_unusable_observations_are_unknown(observation, reason_code) -> None:
@@ -346,6 +371,47 @@ def test_incompatible_observations_are_unknown(rule, observation, reason_code) -
     assert result.reason_code == reason_code
 
 
+@pytest.mark.parametrize("observation_bump", [None, "", "other_1bp"])
+def test_valid_rho_rule_with_incompatible_observation_bump_is_mismatch(
+    observation_bump,
+) -> None:
+    rule = _rule(
+        metric_kind="rho_q",
+        unit="USD_per_1bp",
+        currency="USD",
+        bump_convention="parallel_dividend_yield_1bp",
+    )
+    result = evaluate(
+        rule,
+        _observation(
+            unit="USD_per_1bp",
+            currency="USD",
+            bump_convention=observation_bump,
+        ),
+    )
+
+    assert result.status == "unknown"
+    assert result.reason_code == "bump_convention_mismatch"
+
+
+@pytest.mark.parametrize(
+    ("overrides", "reason_code"),
+    [
+        ({"values": None, "is_stale": True}, "stale_source"),
+        ({"values": None, "is_complete": False}, "incomplete_scope"),
+        ({"values": None, "coverage_ratio": 2.0}, "invalid_coverage"),
+    ],
+)
+def test_source_quality_diagnostics_precede_missing_values(
+    overrides,
+    reason_code,
+) -> None:
+    result = evaluate(_rule(), _observation(**overrides))
+
+    assert result.status == "unknown"
+    assert result.reason_code == reason_code
+
+
 @pytest.mark.parametrize(
     "rule",
     [
@@ -373,6 +439,14 @@ def test_incompatible_observations_are_unknown(rule, observation, reason_code) -
             warning_upper=None,
             hard_upper=None,
         ),
+        _rule(transform="loss_magnitude"),
+        _rule(unit=" "),
+        _rule(
+            metric_kind="vega",
+            unit="USD",
+            currency=None,
+        ),
+        _rule(hard_upper=10**1000),
     ],
 )
 def test_directionally_invalid_rules_fail_closed(rule) -> None:
@@ -426,19 +500,6 @@ def test_directionally_invalid_rules_fail_closed(rule) -> None:
                 unit="USD_per_1bp",
                 currency="USD",
                 bump_convention="",
-            ),
-        ),
-        (
-            _rule(
-                metric_kind="rho_q",
-                unit="USD_per_1bp",
-                currency="USD",
-                bump_convention="parallel_dividend_yield_1bp",
-            ),
-            _observation(
-                unit="USD_per_1bp",
-                currency="USD",
-                bump_convention=None,
             ),
         ),
     ],

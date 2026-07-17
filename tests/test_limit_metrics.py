@@ -52,6 +52,7 @@ def test_aggregations_are_deterministic(aggregation, expected) -> None:
     [
         ((), "net", "empty_observation"),
         ((1.0, float("nan")), "net", "invalid_value"),
+        ((10**1000,), "net", "invalid_value"),
         ((1.0,), "average", "unsupported_aggregation"),
     ],
 )
@@ -88,3 +89,22 @@ def test_non_finite_aggregate_fails_closed(aggregation) -> None:
         aggregate_values((1e308, 1e308), aggregation)
 
     assert exc.value.reason_code == "invalid_value"
+
+
+def test_net_is_stable_when_some_input_orders_overflow_fsum() -> None:
+    values = (1e308, 1e308, -1e308)
+    results = {
+        aggregate_values(permutation, "net")
+        for permutation in permutations(values)
+    }
+
+    assert results == {1e308}
+
+
+def test_gross_abs_still_rejects_genuinely_non_finite_permutations() -> None:
+    values = (1e308, 1e308, -1e308)
+
+    for permutation in permutations(values):
+        with pytest.raises(MetricAggregationError) as exc:
+            aggregate_values(permutation, "gross_abs")
+        assert exc.value.reason_code == "invalid_value"
