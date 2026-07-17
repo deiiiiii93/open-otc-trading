@@ -93,12 +93,25 @@ def aggregate_values(values: Iterable[float], aggregation: str) -> float:
             "the source returned a non-finite numeric observation",
         )
 
-    if aggregation == "net":
-        return float(sum(collected))
-    if aggregation == "gross_abs":
-        return float(sum(abs(value) for value in collected))
-    if aggregation == "max_abs":
-        return float(max(abs(value) for value in collected))
-    if aggregation == "minimum":
-        return float(min(collected))
-    return float(max(collected))
+    try:
+        if aggregation == "net":
+            result = float(math.fsum(collected))
+        elif aggregation == "gross_abs":
+            result = float(math.fsum(abs(value) for value in collected))
+        elif aggregation == "max_abs":
+            result = float(max(abs(value) for value in collected))
+        elif aggregation == "minimum":
+            result = float(min(collected))
+        else:
+            result = float(max(collected))
+    except OverflowError as exc:
+        raise MetricAggregationError(
+            "invalid_value",
+            "the numeric aggregate overflowed",
+        ) from exc
+    if not math.isfinite(result):
+        raise MetricAggregationError(
+            "invalid_value",
+            "the numeric aggregate is non-finite",
+        )
+    return result

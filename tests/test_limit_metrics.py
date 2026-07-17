@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from itertools import permutations
+
 import pytest
 
 from app.services.limits.metrics import (
@@ -66,3 +68,23 @@ def test_aggregation_errors_have_stable_reason_codes(
 def test_unknown_metric_is_rejected() -> None:
     with pytest.raises(KeyError):
         get_metric("dv01")
+
+
+@pytest.mark.parametrize("aggregation", ["net", "gross_abs"])
+def test_sum_aggregations_are_permutation_stable(aggregation) -> None:
+    values = (1e16, 1.0, -1e16)
+    results = {
+        aggregate_values(permutation, aggregation)
+        for permutation in permutations(values)
+    }
+
+    expected = 1.0 if aggregation == "net" else 2e16
+    assert results == {expected}
+
+
+@pytest.mark.parametrize("aggregation", ["net", "gross_abs"])
+def test_non_finite_aggregate_fails_closed(aggregation) -> None:
+    with pytest.raises(MetricAggregationError) as exc:
+        aggregate_values((1e308, 1e308), aggregation)
+
+    assert exc.value.reason_code == "invalid_value"

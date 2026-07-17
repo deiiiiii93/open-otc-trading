@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
+import json
 import math
 from typing import Any
 
@@ -105,8 +107,23 @@ def _unknown(
         reason=reason or _REASONS.get(reason_code, reason_code),
         coverage_count=observation.coverage_count,
         coverage_ratio=observation.coverage_ratio,
-        evidence=dict(observation.evidence),
+        evidence=_snapshot_evidence(observation.evidence),
     )
+
+
+def _snapshot_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return json.loads(
+            json.dumps(
+                evidence,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+        )
+    except (TypeError, ValueError):
+        return copy.deepcopy(evidence)
 
 
 def _at_or_above(value: float, boundary: float) -> bool:
@@ -127,14 +144,16 @@ def _at_or_below(value: float, boundary: float) -> bool:
     )
 
 
-def _transform(value: float, transform: str) -> float:
-    if transform == "signed":
+def _transform(value: float, rule: LimitRule) -> float:
+    if rule.transform == "signed":
         return value
-    if transform == "absolute":
+    if rule.transform == "absolute":
         return abs(value)
-    if transform == "loss_magnitude":
+    if rule.transform == "loss_magnitude":
+        if rule.source_kind == "backtest":
+            return max(value, 0.0)
         return max(-value, 0.0)
-    raise ValueError(f"unsupported transform {transform!r}")
+    raise ValueError(f"unsupported transform {rule.transform!r}")
 
 
 def _ratio(value: float, boundary: float) -> float | None:
@@ -222,21 +241,117 @@ def _threshold_result(
         )
         else "ok"
     )
-    lower_headroom = adverse - hard_lower
-    upper_headroom = hard_upper - adverse
-    if lower_headroom <= upper_headroom:
+    lower_utilization = adverse / hard_lower
+    upper_utilization = adverse / hard_upper
+    if lower_utilization >= upper_utilization:
         return (
             status,
             "lower",
-            _ratio(adverse, hard_lower),
-            lower_headroom,
+            lower_utilization,
+            adverse - hard_lower,
         )
     return (
         status,
         "upper",
-        _ratio(adverse, hard_upper),
-        upper_headroom,
+        upper_utilization,
+        hard_upper - adverse,
     )
+
+
+def _rule_validation_reason(
+    rule: LimitRule,
+    observation: NormalizedObservation,
+) -> str | None:
+    try:
+        descriptor = get_metric(rule.metric_kind)
+    except KeyError:
+        return "unsupported metric"
+    if rule.source_kind not in descriptor.allowed_sources:
+        return "metric source is not registered"
+    if rule.transform not in {"signed", "absolute", "loss_magnitude"}:
+        return "transform is not supported"
+    if (
+        rule.metric_kind in {"var", "cvar", "stress_pnl"}
+        and rule.transform != descriptor.default_transform
+    ):
+        return "tail and stress metrics require their registered transform"
+    if descriptor.requires_bump_convention:
+        if (
+            not isinstance(rule.bump_convention, str)
+            or not rule.bump_convention.strip()
+            or not isinstance(observation.bump_convention, str)
+            or not observation.bump_convention.strip()
+        ):
+            return "rho metrics require non-empty bump conventions"
+
+    thresholds = (
+        rule.warning_lower,
+        rule.warning_upper,
+        rule.hard_lower,
+        rule.hard_upper,
+    )
+    if any(
+        value is not None
+        and (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+        )
+        for value in thresholds
+    ):
+        return "thresholds must be finite numbers or null"
+
+    if rule.transform in {"absolute", "loss_magnitude"}:
+        if (
+            rule.comparator != "upper"
+            or rule.warning_lower is not None
+            or rule.hard_lower is not None
+            or rule.warning_upper is None
+            or rule.hard_upper is None
+            or rule.warning_upper < 0
+            or rule.hard_upper <= 0
+            or rule.warning_upper >= rule.hard_upper
+        ):
+            return "absolute and loss limits require a positive upper boundary"
+        return None
+
+    if rule.comparator == "upper":
+        if (
+            rule.warning_lower is not None
+            or rule.hard_lower is not None
+            or rule.warning_upper is None
+            or rule.hard_upper is None
+            or rule.warning_upper < 0
+            or rule.hard_upper <= 0
+            or rule.warning_upper >= rule.hard_upper
+        ):
+            return "signed upper boundaries must be zero-neutral"
+        return None
+    if rule.comparator == "lower":
+        if (
+            rule.warning_upper is not None
+            or rule.hard_upper is not None
+            or rule.warning_lower is None
+            or rule.hard_lower is None
+            or rule.warning_lower > 0
+            or rule.hard_lower >= 0
+            or rule.hard_lower >= rule.warning_lower
+        ):
+            return "signed lower boundaries must be zero-neutral"
+        return None
+    if rule.comparator == "range":
+        if any(value is None for value in thresholds):
+            return "range boundaries are incomplete"
+        if not (
+            rule.hard_lower
+            < rule.warning_lower
+            < 0
+            < rule.warning_upper
+            < rule.hard_upper
+        ):
+            return "signed range boundaries must straddle zero"
+        return None
+    return "comparator is not supported"
 
 
 def _preflight_reason(
@@ -245,13 +360,13 @@ def _preflight_reason(
 ) -> tuple[str, str | None] | None:
     if observation.reason_code:
         return observation.reason_code, observation.reason
-    if observation.values is None:
-        return "missing_source", None
     if observation.source_status == "failed":
         return "source_failed", None
     if observation.source_status == "empty":
         return "empty_source", None
     if observation.source_status not in _USABLE_SOURCE_STATUSES:
+        return "missing_source", None
+    if observation.values is None:
         return "missing_source", None
     if observation.is_stale:
         return "stale_source", None
@@ -266,12 +381,9 @@ def _preflight_reason(
             return "invalid_coverage", None
         if observation.coverage_ratio < 1.0:
             return "incomplete_scope", None
-    try:
-        descriptor = get_metric(rule.metric_kind)
-    except KeyError:
-        return "invalid_definition", None
-    if rule.source_kind not in descriptor.allowed_sources:
-        return "invalid_definition", None
+    invalid_rule = _rule_validation_reason(rule, observation)
+    if invalid_rule is not None:
+        return "invalid_definition", invalid_rule
     if observation.source_kind != rule.source_kind:
         return "source_kind_mismatch", None
     if observation.unit != rule.unit:
@@ -298,7 +410,7 @@ def evaluate(
             observation.values or (),
             rule.aggregation,
         )
-        adverse = _transform(observed, rule.transform)
+        adverse = _transform(observed, rule)
         status, boundary, utilization, headroom = _threshold_result(
             rule,
             adverse,
@@ -323,5 +435,5 @@ def evaluate(
         reason=None,
         coverage_count=observation.coverage_count,
         coverage_ratio=observation.coverage_ratio,
-        evidence=dict(observation.evidence),
+        evidence=_snapshot_evidence(observation.evidence),
     )

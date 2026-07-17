@@ -128,6 +128,52 @@ def test_transforms_preserve_native_observation(transform, observed, adverse) ->
     assert result.adverse_value == adverse
 
 
+@pytest.mark.parametrize("metric_kind", ["var", "cvar"])
+def test_backtest_tail_losses_are_loss_positive(metric_kind) -> None:
+    rule = _rule(
+        metric_kind=metric_kind,
+        source_kind="backtest",
+        transform="loss_magnitude",
+        unit="USD",
+        currency="USD",
+    )
+    result = evaluate(
+        rule,
+        _observation(
+            25.0,
+            source_kind="backtest",
+            unit="USD",
+            currency="USD",
+        ),
+    )
+
+    assert result.observed_value == 25.0
+    assert result.adverse_value == 25.0
+
+
+@pytest.mark.parametrize("metric_kind", ["var", "cvar", "stress_pnl"])
+def test_scenario_tail_and_stress_losses_are_loss_negative(metric_kind) -> None:
+    rule = _rule(
+        metric_kind=metric_kind,
+        source_kind="scenario_test",
+        transform="loss_magnitude",
+        unit="USD",
+        currency="USD",
+    )
+    result = evaluate(
+        rule,
+        _observation(
+            -25.0,
+            source_kind="scenario_test",
+            unit="USD",
+            currency="USD",
+        ),
+    )
+
+    assert result.observed_value == -25.0
+    assert result.adverse_value == 25.0
+
+
 @pytest.mark.parametrize(
     ("aggregation", "expected"),
     [
@@ -173,6 +219,37 @@ def test_range_uses_nearest_adverse_boundary(value, boundary) -> None:
     assert result.headroom == pytest.approx(10.0)
 
 
+@pytest.mark.parametrize(
+    ("value", "boundary", "utilization", "headroom"),
+    [
+        (-20.0, "lower", 0.1, 180.0),
+        (10.0, "upper", 0.2, 40.0),
+        (-200.0, "lower", 1.0, 0.0),
+        (50.0, "upper", 1.0, 0.0),
+    ],
+)
+def test_asymmetric_range_uses_larger_directional_utilization(
+    value,
+    boundary,
+    utilization,
+    headroom,
+) -> None:
+    result = evaluate(
+        _rule(
+            comparator="range",
+            warning_lower=-80.0,
+            hard_lower=-200.0,
+            warning_upper=20.0,
+            hard_upper=50.0,
+        ),
+        _observation(value),
+    )
+
+    assert result.governing_boundary == boundary
+    assert result.utilization == pytest.approx(utilization)
+    assert result.headroom == pytest.approx(headroom)
+
+
 def test_lower_utilization_and_headroom() -> None:
     result = evaluate(
         _rule(
@@ -205,6 +282,18 @@ def test_lower_utilization_and_headroom() -> None:
             "methodology_mismatch",
         ),
         (_observation(values=(float("inf"),)), "invalid_value"),
+        (
+            _observation(values=(1e308, 1e308)),
+            "invalid_value",
+        ),
+        (
+            _observation(values=None, source_status="failed"),
+            "source_failed",
+        ),
+        (
+            _observation(values=None, source_status="empty"),
+            "empty_source",
+        ),
     ],
 )
 def test_unusable_observations_are_unknown(observation, reason_code) -> None:
@@ -257,6 +346,113 @@ def test_incompatible_observations_are_unknown(rule, observation, reason_code) -
     assert result.reason_code == reason_code
 
 
+@pytest.mark.parametrize(
+    "rule",
+    [
+        _rule(
+            comparator="lower",
+            warning_lower=50.0,
+            hard_lower=25.0,
+            warning_upper=None,
+            hard_upper=None,
+        ),
+        _rule(warning_upper=-50.0, hard_upper=-25.0),
+        _rule(warning_upper=-1.0, hard_upper=0.0),
+        _rule(
+            comparator="range",
+            warning_lower=20.0,
+            hard_lower=10.0,
+            warning_upper=30.0,
+            hard_upper=40.0,
+        ),
+        _rule(
+            transform="absolute",
+            comparator="lower",
+            warning_lower=-80.0,
+            hard_lower=-100.0,
+            warning_upper=None,
+            hard_upper=None,
+        ),
+    ],
+)
+def test_directionally_invalid_rules_fail_closed(rule) -> None:
+    result = evaluate(rule, _observation(10.0))
+
+    assert result.status == "unknown"
+    assert result.reason_code == "invalid_definition"
+
+
+@pytest.mark.parametrize(
+    ("rule", "observation"),
+    [
+        (
+            _rule(
+                metric_kind="var",
+                source_kind="scenario_test",
+                transform="absolute",
+                unit="USD",
+                currency="USD",
+            ),
+            _observation(
+                -10.0,
+                source_kind="scenario_test",
+                unit="USD",
+                currency="USD",
+            ),
+        ),
+        (
+            _rule(
+                metric_kind="stress_pnl",
+                source_kind="scenario_test",
+                transform="signed",
+                unit="USD",
+                currency="USD",
+            ),
+            _observation(
+                -10.0,
+                source_kind="scenario_test",
+                unit="USD",
+                currency="USD",
+            ),
+        ),
+        (
+            _rule(
+                metric_kind="rho",
+                unit="USD_per_1bp",
+                currency="USD",
+                bump_convention="",
+            ),
+            _observation(
+                unit="USD_per_1bp",
+                currency="USD",
+                bump_convention="",
+            ),
+        ),
+        (
+            _rule(
+                metric_kind="rho_q",
+                unit="USD_per_1bp",
+                currency="USD",
+                bump_convention="parallel_dividend_yield_1bp",
+            ),
+            _observation(
+                unit="USD_per_1bp",
+                currency="USD",
+                bump_convention=None,
+            ),
+        ),
+    ],
+)
+def test_registry_safety_metadata_corruption_is_invalid_definition(
+    rule,
+    observation,
+) -> None:
+    result = evaluate(rule, observation)
+
+    assert result.status == "unknown"
+    assert result.reason_code == "invalid_definition"
+
+
 def test_unknown_keeps_coverage_and_evidence() -> None:
     result = evaluate(
         _rule(),
@@ -292,6 +488,31 @@ def test_success_keeps_thresholds_coverage_and_evidence() -> None:
     assert result.evidence["risk_run_id"] == 33
 
 
+@pytest.mark.parametrize("unknown", [False, True])
+def test_evidence_is_a_canonical_deep_snapshot(unknown) -> None:
+    evidence = {
+        "source": {
+            "ids": [3, 1],
+            "diagnostics": {"failed": [9]},
+        }
+    }
+    observation = _observation(
+        values=None if unknown else (10.0,),
+        evidence=evidence,
+    )
+
+    result = evaluate(_rule(), observation)
+    evidence["source"]["ids"].append(7)
+    evidence["source"]["diagnostics"]["failed"].append(10)
+
+    assert result.evidence == {
+        "source": {
+            "diagnostics": {"failed": [9]},
+            "ids": [3, 1],
+        }
+    }
+
+
 @pytest.mark.parametrize(
     ("metric_kind", "source_kind", "value"),
     [
@@ -302,7 +523,7 @@ def test_success_keeps_thresholds_coverage_and_evidence() -> None:
         ("rho", "risk_run", 10.0),
         ("rho_q", "risk_run", 10.0),
         ("var", "scenario_test", -10.0),
-        ("cvar", "backtest", -10.0),
+        ("cvar", "backtest", 10.0),
         ("stress_pnl", "scenario_test", -10.0),
     ],
 )
