@@ -9,7 +9,16 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from ..config import Settings, get_settings
-from ..models import BacktestRun, GreekLandscapeRun, ReportJob, ReportStatus, RiskRun, TaskRun, TaskStatus
+from ..models import (
+    BacktestRun,
+    GreekLandscapeRun,
+    ReportJob,
+    ReportStatus,
+    RiskRun,
+    ScenarioTestRun,
+    TaskRun,
+    TaskStatus,
+)
 
 _EXECUTOR: ThreadPoolExecutor | None = None
 _EXECUTOR_WORKERS: int | None = None
@@ -204,5 +213,9 @@ def _sync_linked_status(session: Session, task: TaskRun, status: str) -> None:
                 job.status = status
     if task.backtest_run_id is not None:
         run = session.get(BacktestRun, task.backtest_run_id)
+        if run is not None:
+            run.status = status
+    if task.scenario_test_run_id is not None:
+        run = session.get(ScenarioTestRun, task.scenario_test_run_id)
         if run is not None:
             run.status = status

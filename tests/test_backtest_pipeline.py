@@ -27,6 +27,13 @@ def test_risk_metrics_too_short():
     }
 
 
+def test_risk_metrics_tail_losses_are_loss_positive():
+    metrics = bt._risk_metrics([100.0, 80.0, 60.0, 90.0, 50.0])
+
+    assert metrics["var_95"] >= 0.0
+    assert metrics["cvar_95"] >= metrics["var_95"]
+
+
 # ---------------------------------------------------------------------------
 # _aggregate_portfolio
 # ---------------------------------------------------------------------------

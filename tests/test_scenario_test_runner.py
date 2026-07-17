@@ -78,6 +78,48 @@ def test_execute_marks_empty_when_no_positions(tmp_path, monkeypatch):
         assert run.status == "empty"
 
 
+def test_mark_stale_task_marks_linked_scenario_failed(tmp_path, monkeypatch):
+    from app.services.task_runner import mark_stale_tasks_failed
+
+    db = _runner_db(tmp_path, monkeypatch)
+    with db.SessionLocal() as session:
+        portfolio = Portfolio(
+            name="Scenario stale recovery",
+            base_currency="USD",
+            kind="container",
+        )
+        session.add(portfolio)
+        session.flush()
+        run = ScenarioTestRun(
+            portfolio_id=portfolio.id,
+            status="running",
+            scenario_spec={"predefined": ["market_crash"]},
+            config={},
+            results={},
+            excluded_positions=[],
+            artifacts={},
+        )
+        session.add(run)
+        session.flush()
+        session.add(
+            TaskRun(
+                kind=TaskKind.SCENARIO_TEST.value,
+                status="running",
+                portfolio_id=portfolio.id,
+                scenario_test_run_id=run.id,
+            )
+        )
+        session.commit()
+        run_id = run.id
+
+    with db.SessionLocal() as session:
+        assert mark_stale_tasks_failed(session) == 1
+        session.commit()
+
+    with db.SessionLocal() as session:
+        assert session.get(ScenarioTestRun, run_id).status == "failed"
+
+
 def test_execute_marks_failed_when_pipeline_raises(tmp_path, monkeypatch):
     from app.services import scenario_test_runner
     import app.services.domains.scenario_test as scenario_test_svc

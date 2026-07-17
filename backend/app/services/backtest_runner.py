@@ -1,7 +1,11 @@
-"""Queue + async execution for backtest runs. Mirrors scenario_test_runner."""
+"""Queue and synchronous execution for persisted backtest sources."""
 from __future__ import annotations
 
-from typing import Any
+from copy import deepcopy
+from dataclasses import dataclass
+from datetime import datetime
+from types import SimpleNamespace
+from typing import Any, Callable
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -16,14 +20,48 @@ from ..models import (
     TaskStatus,
 )
 from .audit import record_audit
-from .domains import positions as positions_svc
 from .domains import backtest as backtest_svc
-from .task_runner import submit_async_task
+from .domains import positions as positions_svc
+from .risk_engine import RiskPositionSnapshot, snapshot_risk_position
+from .task_runner import (
+    mark_task_finished,
+    mark_task_running,
+    submit_async_task,
+    update_task_progress,
+)
 
 _VALID_ENGINES = {"quad", "pde", "mc", "analytical"}
 _VALID_FALLBACK_ENGINES = {"quad", "pde", "mc"}
 _VALID_ENGINE_FAMILIES = {"autocallable", "other"}
 _VALID_VOL = {"realized", "flat"}
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedBacktestSource:
+    backtest_run_id: int
+    portfolio_id: int
+    portfolio_name: str
+    positions: tuple[RiskPositionSnapshot, ...]
+    spec: dict[str, Any]
+    config: dict[str, Any]
+    pricing_parameter_profile_id: int | None
+    engine_config_id: int | None
+    valuation_as_of: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ComputedBacktestSource:
+    resolved: ResolvedBacktestSource
+    status: str
+    results: dict[str, Any]
+    excluded_positions: list[dict[str, Any]]
+    artifacts: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class PersistedBacktestSource:
+    backtest_run_id: int
+    status: str
 
 
 def _validate_spec(spec: dict) -> None:
@@ -38,12 +76,63 @@ def _validate_spec(spec: dict) -> None:
             raise ValueError(f"{key} must be one of {sorted(_VALID_ENGINES)}")
     fallback = spec.get("fallback_engine")
     if fallback is not None and fallback not in _VALID_FALLBACK_ENGINES:
-        raise ValueError(f"fallback_engine must be one of {sorted(_VALID_FALLBACK_ENGINES)}")
+        raise ValueError(
+            f"fallback_engine must be one of {sorted(_VALID_FALLBACK_ENGINES)}"
+        )
     family = spec.get("engine_family")
     if family is not None and family not in _VALID_ENGINE_FAMILIES:
-        raise ValueError(f"engine_family must be one of {sorted(_VALID_ENGINE_FAMILIES)}")
+        raise ValueError(
+            f"engine_family must be one of {sorted(_VALID_ENGINE_FAMILIES)}"
+        )
     if spec.get("vol_source", "realized") not in _VALID_VOL:
         raise ValueError(f"vol_source must be one of {sorted(_VALID_VOL)}")
+
+
+def _create_backtest_run(
+    session: Session,
+    *,
+    portfolio_id: int,
+    spec: dict[str, Any],
+    config: dict[str, Any],
+    pricing_parameter_profile_id: int | None,
+    engine_config_id: int | None,
+    position_ids: list[int] | None,
+    status: str,
+) -> BacktestRun:
+    _validate_spec(spec)
+    portfolio = session.get(Portfolio, portfolio_id)
+    if portfolio is None:
+        raise ValueError(f"Portfolio not found: {portfolio_id}")
+    if engine_config_id is not None:
+        from .engine_configs import get_engine_config
+
+        get_engine_config(session, engine_config_id)
+    if position_ids is not None:
+        from .risk_engine import _resolve_risk_positions
+
+        position_ids = [
+            position.id
+            for position in _resolve_risk_positions(
+                portfolio,
+                session,
+                position_ids=position_ids,
+            )
+        ]
+    run = BacktestRun(
+        portfolio_id=portfolio_id,
+        pricing_parameter_profile_id=pricing_parameter_profile_id,
+        engine_config_id=engine_config_id,
+        status=status,
+        spec=deepcopy(spec),
+        config=deepcopy(config),
+        results={},
+        excluded_positions=[],
+        artifacts={},
+        resolved_position_ids=position_ids,
+    )
+    session.add(run)
+    session.flush()
+    return run
 
 
 def queue_backtest(
@@ -56,37 +145,17 @@ def queue_backtest(
     engine_config_id: int | None = None,
     position_ids: list[int] | None = None,
 ) -> tuple[BacktestRun, TaskRun]:
-    """Create a queued BacktestRun + TaskRun and dispatch the async worker."""
-    _validate_spec(spec)
-    portfolio = session.get(Portfolio, portfolio_id)
-    if portfolio is None:
-        raise ValueError(f"Portfolio not found: {portfolio_id}")
-    if engine_config_id is not None:
-        from app.services.engine_configs import get_engine_config
-
-        get_engine_config(session, engine_config_id)
-    if position_ids is not None:
-        from app.services.risk_engine import _resolve_risk_positions
-
-        resolved_scope = _resolve_risk_positions(
-            portfolio, session, position_ids=position_ids
-        )
-        position_ids = [p.id for p in resolved_scope]
-
-    run = BacktestRun(
+    """Create a queued BacktestRun + TaskRun and dispatch the worker."""
+    run = _create_backtest_run(
+        session,
         portfolio_id=portfolio_id,
-        pricing_parameter_profile_id=pricing_parameter_profile_id,
-        engine_config_id=engine_config_id,
-        status=TaskStatus.QUEUED.value,
         spec=spec,
         config=config,
-        results={},
-        excluded_positions=[],
-        artifacts={},
-        resolved_position_ids=position_ids,
+        pricing_parameter_profile_id=pricing_parameter_profile_id,
+        engine_config_id=engine_config_id,
+        position_ids=position_ids,
+        status=TaskStatus.QUEUED.value,
     )
-    session.add(run)
-    session.flush()
     task = TaskRun(
         kind=TaskKind.BACKTEST.value,
         status=TaskStatus.QUEUED.value,
@@ -109,107 +178,321 @@ def queue_backtest(
     return run, task
 
 
+def run_persisted_backtest_source(
+    *,
+    session_factory: sessionmaker | None = None,
+    portfolio_id: int,
+    spec: dict[str, Any],
+    config: dict[str, Any],
+    pricing_parameter_profile_id: int | None = None,
+    engine_config_id: int | None = None,
+    position_ids: list[int] | None = None,
+    valuation_as_of: datetime | None = None,
+    write_artifacts: bool = True,
+) -> PersistedBacktestSource:
+    """Persist queue-equivalent backtest evidence without creating a TaskRun."""
+    factory = session_factory or database.SessionLocal
+    with factory() as session:
+        run = _create_backtest_run(
+            session,
+            portfolio_id=portfolio_id,
+            spec=spec,
+            config=config,
+            pricing_parameter_profile_id=pricing_parameter_profile_id,
+            engine_config_id=engine_config_id,
+            position_ids=position_ids,
+            status=TaskStatus.RUNNING.value,
+        )
+        if valuation_as_of is not None:
+            run.created_at = valuation_as_of
+        session.commit()
+        run_id = run.id
+
+    try:
+        return _run_persisted_backtest_source(
+            factory,
+            run_id=run_id,
+            task_id=None,
+            write_artifacts=write_artifacts,
+        )
+    except Exception as exc:
+        _mark_backtest_source_failed(
+            factory,
+            run_id=run_id,
+            task_id=None,
+            error=str(exc),
+        )
+        raise
+
+
 def execute_backtest_task(
     task_id: int,
     run_id: int,
     session_factory: sessionmaker | None = None,
 ) -> None:
-    """Entry point for the worker thread. Opens its own session (never reuse the request session)."""
+    """Worker entry point; queued and inline paths share the same phases."""
     database.init_db()
-    session = (session_factory or database.SessionLocal)()
+    factory = session_factory or database.SessionLocal
     try:
-        _execute(session, task_id, run_id)
-    finally:
-        session.close()
+        _run_persisted_backtest_source(
+            factory,
+            run_id=run_id,
+            task_id=task_id,
+            write_artifacts=True,
+        )
+    except Exception as exc:  # noqa: BLE001 - persist failure, never crash worker
+        _mark_backtest_source_failed(
+            factory,
+            run_id=run_id,
+            task_id=task_id,
+            error=str(exc),
+        )
 
 
 def _execute(session: Session, task_id: int, run_id: int) -> None:
-    """Core execution: resolve positions, run pipeline, persist results, mark finished."""
-    from .task_runner import mark_task_finished, mark_task_running
+    """Compatibility wrapper for deterministic in-session producer drivers."""
+    session.commit()
+    factory = sessionmaker(bind=session.get_bind(), expire_on_commit=False)
+    execute_backtest_task(task_id, run_id, session_factory=factory)
+    session.expire_all()
 
-    run = session.get(BacktestRun, run_id)
-    task = session.get(TaskRun, task_id)
-    if run is None or task is None:
-        return
-    try:
-        mark_task_running(session, task_id, message="Running backtest")
-        run.status = TaskStatus.RUNNING.value
-        session.commit()
 
+def _run_persisted_backtest_source(
+    session_factory: Callable[[], Session],
+    *,
+    run_id: int,
+    task_id: int | None,
+    write_artifacts: bool,
+) -> PersistedBacktestSource:
+    resolved = _resolve_backtest_source(session_factory, run_id=run_id)
+    _mark_backtest_source_running(
+        session_factory,
+        resolved=resolved,
+        task_id=task_id,
+    )
+    progress = (
+        _backtest_progress_callback(session_factory, task_id)
+        if task_id is not None
+        else lambda _current, _total: None
+    )
+    computed = _compute_backtest_source(
+        session_factory,
+        resolved=resolved,
+        progress=progress,
+        write_artifacts=write_artifacts,
+    )
+    return _persist_backtest_source(
+        session_factory,
+        computed=computed,
+        task_id=task_id,
+    )
+
+
+def _resolve_backtest_source(
+    session_factory: Callable[[], Session],
+    *,
+    run_id: int,
+) -> ResolvedBacktestSource:
+    with session_factory() as session:
+        run = session.get(BacktestRun, run_id)
+        if run is None:
+            raise ValueError(f"Backtest run not found: {run_id}")
         portfolio = session.get(Portfolio, run.portfolio_id)
+        if portfolio is None:
+            raise ValueError(f"Portfolio not found: {run.portfolio_id}")
+
         all_positions = positions_svc.list_filtered(
-            portfolio_id=run.portfolio_id, session=session
+            portfolio_id=run.portfolio_id,
+            session=session,
         )
-        # `is not None`: an explicitly-scoped run whose ids resolve to no open
-        # positions (e.g. all closed) persists resolved_position_ids=[] and must
-        # stay an EMPTY run — a truthy check would treat [] as unscoped and run
-        # the whole portfolio.
         if run.resolved_position_ids is not None:
             wanted = set(run.resolved_position_ids)
-            positions = [p for p in all_positions if p.id in wanted]
+            positions = [
+                position for position in all_positions if position.id in wanted
+            ]
         else:
             positions = list(all_positions)
-        run.resolved_position_ids = [p.id for p in positions]
 
-        # Profile-bound runs price as-of the profile's valuation date (historical
-        # repricing), mirroring batch pricing; unbound runs use queue time. Without
-        # this, a historical profile would resolve quotes/maturities as-of utcnow.
         valuation_as_of = run.created_at
         if run.pricing_parameter_profile_id is not None:
             profile = session.get(
-                PricingParameterProfile, run.pricing_parameter_profile_id
+                PricingParameterProfile,
+                run.pricing_parameter_profile_id,
             )
             if profile is not None and profile.valuation_date is not None:
                 valuation_as_of = profile.valuation_date
 
-        def _progress(cur: int, total: int) -> None:
-            task.progress_current, task.progress_total = cur, total
-            session.commit()
+        from .engine_configs import get_engine_config, resolve_pricing_engine
 
-        status, results_dict, excluded, raw = backtest_svc.run_pipeline(
-            session,
-            positions=positions,
+        engine_config = get_engine_config(session, run.engine_config_id)
+        snapshots: list[RiskPositionSnapshot] = []
+        for position in positions:
+            try:
+                engine = resolve_pricing_engine(position, engine_config)
+            except ValueError:
+                engine = SimpleNamespace(
+                    engine_name=position.engine_name or "BlackScholesEngine",
+                    engine_kwargs=dict(position.engine_kwargs or {}),
+                )
+            snapshots.append(snapshot_risk_position(position, engine))
+
+        return ResolvedBacktestSource(
+            backtest_run_id=run.id,
+            portfolio_id=portfolio.id,
+            portfolio_name=portfolio.name,
+            positions=tuple(snapshots),
+            spec=deepcopy(run.spec or {}),
+            config=deepcopy(run.config or {}),
             pricing_parameter_profile_id=run.pricing_parameter_profile_id,
             engine_config_id=run.engine_config_id,
-            spec=run.spec,
-            config=run.config,
-            portfolio_name=(portfolio.name if portfolio else "portfolio"),
-            valuation_date=valuation_as_of,
-            progress=_progress,
+            valuation_as_of=valuation_as_of,
         )
-        run.results = results_dict
-        run.excluded_positions = excluded
-        if status == "completed" and raw:
-            settings = get_settings()
-            run.artifacts = backtest_svc.write_artifacts(
-                raw=raw,
-                run_id=run.id,
-                formats=run.config.get("export_formats", ["json", "xlsx", "html"]),
-                base_dir=settings.backtest_output_dir,
+
+
+def _mark_backtest_source_running(
+    session_factory: Callable[[], Session],
+    *,
+    resolved: ResolvedBacktestSource,
+    task_id: int | None,
+) -> None:
+    with session_factory() as session:
+        run = session.get(BacktestRun, resolved.backtest_run_id)
+        if run is None:
+            raise ValueError(f"Backtest run not found: {resolved.backtest_run_id}")
+        run.status = TaskStatus.RUNNING.value
+        run.resolved_position_ids = [position.id for position in resolved.positions]
+        if task_id is not None:
+            mark_task_running(session, task_id, message="Running backtest")
+        session.commit()
+
+
+def _backtest_progress_callback(
+    session_factory: Callable[[], Session],
+    task_id: int,
+) -> Callable[[int, int], None]:
+    def _progress(current: int, total: int) -> None:
+        with session_factory() as session:
+            update_task_progress(
+                session,
+                task_id,
+                current=current,
+                total=total,
             )
-        run.status = status
-        session.commit()
-        mark_task_finished(
+            session.commit()
+
+    return _progress
+
+
+def _compute_backtest_source(
+    session_factory: Callable[[], Session],
+    *,
+    resolved: ResolvedBacktestSource,
+    progress: Callable[[int, int], None],
+    write_artifacts: bool,
+) -> ComputedBacktestSource:
+    # Market-history and configuration reads remain in the authoritative domain
+    # pipeline, but no task/run writes share its transaction.
+    with session_factory() as session:
+        status, results, excluded, raw = backtest_svc.run_pipeline(
             session,
-            task_id,
-            status=TaskStatus.COMPLETED.value,
-            message=f"Backtest {status}",
-            result_payload={"backtest_run_id": run_id},
+            positions=list(resolved.positions),
+            pricing_parameter_profile_id=resolved.pricing_parameter_profile_id,
+            engine_config_id=resolved.engine_config_id,
+            spec=deepcopy(resolved.spec),
+            config=deepcopy(resolved.config),
+            portfolio_name=resolved.portfolio_name,
+            valuation_date=resolved.valuation_as_of,
+            progress=progress,
         )
-        session.commit()
-    except Exception as exc:  # noqa: BLE001 — persist failure, never crash the worker
+        if session.new or session.dirty or session.deleted:
+            session.rollback()
+            raise RuntimeError("backtest source compute attempted database writes")
         session.rollback()
+
+    persisted_results = deepcopy(results)
+    persisted_results["source_metadata"] = {
+        "pricing_parameter_profile_id": resolved.pricing_parameter_profile_id,
+        "engine_config_id": resolved.engine_config_id,
+        "resolved_position_ids": [
+            position.id for position in resolved.positions
+        ],
+        "valuation_as_of": resolved.valuation_as_of.isoformat(),
+    }
+    artifacts: dict[str, Any] = {}
+    if write_artifacts and status == "completed" and raw:
+        settings = get_settings()
+        artifacts = backtest_svc.write_artifacts(
+            raw=raw,
+            run_id=resolved.backtest_run_id,
+            formats=resolved.config.get(
+                "export_formats",
+                ["json", "xlsx", "html"],
+            ),
+            base_dir=settings.backtest_output_dir,
+        )
+    return ComputedBacktestSource(
+        resolved=resolved,
+        status=status,
+        results=persisted_results,
+        excluded_positions=deepcopy(excluded),
+        artifacts=deepcopy(artifacts),
+    )
+
+
+def _persist_backtest_source(
+    session_factory: Callable[[], Session],
+    *,
+    computed: ComputedBacktestSource,
+    task_id: int | None,
+) -> PersistedBacktestSource:
+    resolved = computed.resolved
+    with session_factory() as session:
+        run = session.get(BacktestRun, resolved.backtest_run_id)
+        if run is None:
+            raise ValueError(f"Backtest run not found: {resolved.backtest_run_id}")
+        run.results = deepcopy(computed.results)
+        run.excluded_positions = deepcopy(computed.excluded_positions)
+        run.artifacts = deepcopy(computed.artifacts)
+        run.status = computed.status
+        run.resolved_position_ids = [position.id for position in resolved.positions]
+        if task_id is not None:
+            mark_task_finished(
+                session,
+                task_id,
+                status=TaskStatus.COMPLETED.value,
+                message=f"Backtest {computed.status}",
+                result_payload={"backtest_run_id": run.id},
+            )
+            # TaskRun uses generic terminal states; the producer row retains the
+            # authoritative domain state, including the valid ``empty`` outcome.
+            run.status = computed.status
+        session.commit()
+        return PersistedBacktestSource(
+            backtest_run_id=run.id,
+            status=computed.status,
+        )
+
+
+def _mark_backtest_source_failed(
+    session_factory: Callable[[], Session],
+    *,
+    run_id: int,
+    task_id: int | None,
+    error: str,
+) -> None:
+    with session_factory() as session:
         try:
             run = session.get(BacktestRun, run_id)
             if run is not None:
                 run.status = TaskStatus.FAILED.value
-                run.results = {"error": str(exc)}
-            mark_task_finished(
-                session,
-                task_id,
-                status=TaskStatus.FAILED.value,
-                error=str(exc),
-            )
+                run.results = {"error": error}
+            if task_id is not None:
+                mark_task_finished(
+                    session,
+                    task_id,
+                    status=TaskStatus.FAILED.value,
+                    error=error,
+                )
             session.commit()
         except Exception:
-            session.rollback()  # last resort: never crash the worker thread
+            session.rollback()
