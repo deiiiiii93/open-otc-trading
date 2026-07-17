@@ -2,6 +2,7 @@
 rate with as_of_date <= valuation_date, deriving identity and inverse pairs."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable
 
@@ -10,6 +11,30 @@ from sqlalchemy.orm import Session
 
 from app.models import FxRate
 from app.services.risk_currency import MONEY_METRIC_KEYS
+
+
+@dataclass(frozen=True, slots=True)
+class FxRateEvidence:
+    """Exact point-in-time FX evidence used for one conversion."""
+
+    base_currency: str
+    quote_currency: str
+    rate: float
+    as_of: datetime
+    fx_rate_id: int | None
+    is_inverse: bool
+    source: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "base_currency": self.base_currency,
+            "quote_currency": self.quote_currency,
+            "fx_rate_id": self.fx_rate_id,
+            "is_inverse": self.is_inverse,
+            "rate": self.rate,
+            "as_of": self.as_of.isoformat(),
+            "source": self.source,
+        }
 
 
 def parse_fx_pair_symbol(symbol: str) -> tuple[str, str] | None:
@@ -25,18 +50,77 @@ def parse_fx_pair_symbol(symbol: str) -> tuple[str, str] | None:
     return base, quote
 
 
-def _direct_rate(session: Session, base: str, quote: str, as_of: datetime) -> float | None:
+def _direct_rate_row(
+    session: Session,
+    base: str,
+    quote: str,
+    as_of: datetime,
+) -> FxRate | None:
     stmt = (
-        select(FxRate.rate)
+        select(FxRate)
         .where(
             FxRate.base_currency == base,
             FxRate.quote_currency == quote,
             FxRate.as_of_date <= as_of,
         )
-        .order_by(FxRate.as_of_date.desc())
+        .order_by(FxRate.as_of_date.desc(), FxRate.id.desc())
         .limit(1)
     )
     return session.execute(stmt).scalars().first()
+
+
+def fx_rate_evidence_as_of(
+    session: Session,
+    base: str,
+    quote: str,
+    as_of: datetime,
+) -> FxRateEvidence | None:
+    """Resolve a rate and the exact row/direction used for the conversion."""
+    normalized_base = str(base).strip().upper()
+    normalized_quote = str(quote).strip().upper()
+    if normalized_base == normalized_quote:
+        return FxRateEvidence(
+            base_currency=normalized_base,
+            quote_currency=normalized_quote,
+            rate=1.0,
+            as_of=as_of,
+            fx_rate_id=None,
+            is_inverse=False,
+            source="identity",
+        )
+    direct = _direct_rate_row(
+        session,
+        normalized_base,
+        normalized_quote,
+        as_of,
+    )
+    if direct is not None:
+        return FxRateEvidence(
+            base_currency=normalized_base,
+            quote_currency=normalized_quote,
+            rate=float(direct.rate),
+            as_of=direct.as_of_date,
+            fx_rate_id=direct.id,
+            is_inverse=False,
+            source=direct.source,
+        )
+    inverse = _direct_rate_row(
+        session,
+        normalized_quote,
+        normalized_base,
+        as_of,
+    )
+    if inverse is None or not float(inverse.rate):
+        return None
+    return FxRateEvidence(
+        base_currency=normalized_base,
+        quote_currency=normalized_quote,
+        rate=1.0 / float(inverse.rate),
+        as_of=inverse.as_of_date,
+        fx_rate_id=inverse.id,
+        is_inverse=True,
+        source=inverse.source,
+    )
 
 
 def fx_rate_as_of(
@@ -44,15 +128,8 @@ def fx_rate_as_of(
 ) -> float | None:
     """1 unit of `base` in units of `quote`, as of `as_of` (latest <= as_of).
     Returns 1.0 for identity, 1/rate for the inverse pair, None if unknown."""
-    if base == quote:
-        return 1.0
-    direct = _direct_rate(session, base, quote, as_of)
-    if direct is not None:
-        return float(direct)
-    inverse = _direct_rate(session, quote, base, as_of)
-    if inverse:
-        return 1.0 / float(inverse)
-    return None
+    evidence = fx_rate_evidence_as_of(session, base, quote, as_of)
+    return evidence.rate if evidence is not None else None
 
 
 def convert_risk_currency(

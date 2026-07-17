@@ -1,0 +1,154 @@
+from __future__ import annotations
+
+from datetime import datetime
+
+import pytest
+
+
+def _database(tmp_path, monkeypatch):
+    from app import database
+    from app.config import Settings
+
+    settings = Settings(database_url=f"sqlite:///{tmp_path}/limit-fx.db")
+    monkeypatch.setattr("app.config.get_settings", lambda: settings)
+    database.configure_database(settings)
+    database.init_db()
+    return database
+
+
+def test_fx_evidence_pins_exact_direct_inverse_and_identity_rows(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.models import FxRate
+    from app.services.fx import fx_rate_as_of, fx_rate_evidence_as_of
+
+    with database.SessionLocal() as session:
+        old = FxRate(
+            base_currency="USD",
+            quote_currency="CNY",
+            rate=7.0,
+            as_of_date=datetime(2026, 7, 15),
+            source="manual",
+        )
+        pinned = FxRate(
+            base_currency="USD",
+            quote_currency="CNY",
+            rate=7.2,
+            as_of_date=datetime(2026, 7, 16),
+            source="close",
+        )
+        future = FxRate(
+            base_currency="USD",
+            quote_currency="CNY",
+            rate=7.5,
+            as_of_date=datetime(2026, 7, 18),
+            source="future",
+        )
+        session.add_all([old, pinned, future])
+        session.commit()
+
+        direct = fx_rate_evidence_as_of(
+            session,
+            "USD",
+            "CNY",
+            datetime(2026, 7, 17),
+        )
+        inverse = fx_rate_evidence_as_of(
+            session,
+            "CNY",
+            "USD",
+            datetime(2026, 7, 17),
+        )
+        identity = fx_rate_evidence_as_of(
+            session,
+            "USD",
+            "USD",
+            datetime(2026, 7, 17),
+        )
+
+        assert direct.fx_rate_id == pinned.id
+        assert direct.rate == pytest.approx(7.2)
+        assert direct.as_of == datetime(2026, 7, 16)
+        assert direct.is_inverse is False
+        assert inverse.fx_rate_id == pinned.id
+        assert inverse.rate == pytest.approx(1 / 7.2)
+        assert inverse.is_inverse is True
+        assert identity.fx_rate_id is None
+        assert identity.rate == 1.0
+        assert identity.is_inverse is False
+        assert fx_rate_as_of(
+            session,
+            "USD",
+            "CNY",
+            datetime(2026, 7, 17),
+        ) == pytest.approx(7.2)
+
+
+def test_mixed_currency_risk_observation_pins_fx_evidence(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.models import FxRate
+    from app.services.limits.sources import ObservationScope, adapt_risk_run
+    from test_limit_sources import _risk_run
+
+    with database.SessionLocal() as session:
+        fx = FxRate(
+            base_currency="CNY",
+            quote_currency="USD",
+            rate=0.14,
+            as_of_date=datetime(2026, 7, 16, 15, 0),
+            source="close",
+        )
+        session.add(fx)
+        session.commit()
+        observation = adapt_risk_run(
+            session,
+            _risk_run(),
+            metric_kind="rho_q",
+            aggregation="net",
+            unit="USD/1pct",
+            currency="USD",
+            scope=ObservationScope("portfolio"),
+            valuation_as_of=datetime(2026, 7, 17, 9, 0),
+            bump_convention="per_1pct",
+        )
+
+        assert observation.values == pytest.approx((9.8, 10.0))
+        assert observation.evidence["fx_rates"] == [
+            {
+                "base_currency": "CNY",
+                "quote_currency": "USD",
+                "fx_rate_id": fx.id,
+                "is_inverse": False,
+                "rate": 0.14,
+                "as_of": "2026-07-16T15:00:00",
+                "source": "close",
+            }
+        ]
+
+
+def test_missing_fx_is_unknown(tmp_path, monkeypatch) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.services.limits.sources import ObservationScope, adapt_risk_run
+    from test_limit_sources import _risk_run
+
+    with database.SessionLocal() as session:
+        observation = adapt_risk_run(
+            session,
+            _risk_run(),
+            metric_kind="rho_q",
+            aggregation="net",
+            unit="USD/1pct",
+            currency="USD",
+            scope=ObservationScope("portfolio"),
+            valuation_as_of=datetime(2026, 7, 17, 9, 0),
+            bump_convention="per_1pct",
+        )
+
+    assert observation.values is None
+    assert observation.reason_code == "missing_fx"
+    assert observation.evidence["missing_fx"] == ["CNY->USD"]
