@@ -288,6 +288,53 @@ def test_lower_utilization_and_headroom() -> None:
 
 
 @pytest.mark.parametrize(
+    ("rule", "value"),
+    [
+        (
+            _rule(warning_upper=5e-14, hard_upper=1e-13),
+            1e308,
+        ),
+        (
+            _rule(
+                comparator="lower",
+                warning_lower=-5e-14,
+                warning_upper=None,
+                hard_lower=-1e-13,
+                hard_upper=None,
+            ),
+            -1e308,
+        ),
+        (
+            _rule(
+                comparator="range",
+                warning_lower=-5e-14,
+                warning_upper=5e-14,
+                hard_lower=-1e-13,
+                hard_upper=1e-13,
+            ),
+            1e308,
+        ),
+        (
+            _rule(warning_upper=1e307, hard_upper=1e308),
+            -1e308,
+        ),
+    ],
+)
+def test_non_finite_derived_threshold_outputs_fail_closed(
+    rule,
+    value,
+) -> None:
+    result = evaluate(rule, _observation(value))
+
+    assert result.status == "unknown"
+    assert result.reason_code == "invalid_value"
+    assert result.observed_value is None
+    assert result.adverse_value is None
+    assert result.utilization is None
+    assert result.headroom is None
+
+
+@pytest.mark.parametrize(
     ("observation", "reason_code"),
     [
         (_observation(values=None), "missing_source"),
@@ -409,6 +456,48 @@ def test_source_quality_diagnostics_precede_missing_values(
     result = evaluate(_rule(), _observation(**overrides))
 
     assert result.status == "unknown"
+    assert result.reason_code == reason_code
+
+
+@pytest.mark.parametrize(
+    "coverage_ratio",
+    [
+        True,
+        "0.5",
+        10**1000,
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+    ],
+)
+def test_invalid_coverage_types_and_values_fail_closed(coverage_ratio) -> None:
+    result = evaluate(
+        _rule(),
+        _observation(coverage_ratio=coverage_ratio),
+    )
+
+    assert result.status == "unknown"
+    assert result.reason_code == "invalid_coverage"
+
+
+@pytest.mark.parametrize(
+    ("coverage_ratio", "status", "reason_code"),
+    [
+        (1, "ok", None),
+        (0.5, "unknown", "incomplete_scope"),
+    ],
+)
+def test_valid_numeric_coverage_behavior_is_preserved(
+    coverage_ratio,
+    status,
+    reason_code,
+) -> None:
+    result = evaluate(
+        _rule(),
+        _observation(coverage_ratio=coverage_ratio),
+    )
+
+    assert result.status == status
     assert result.reason_code == reason_code
 
 

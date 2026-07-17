@@ -258,6 +258,25 @@ def _threshold_result(
     )
 
 
+def _require_finite_derived_values(
+    observed: float,
+    adverse: float,
+    utilization: float | None,
+    headroom: float,
+) -> None:
+    for name, value in (
+        ("observed value", observed),
+        ("adverse value", adverse),
+        ("utilization", utilization),
+        ("headroom", headroom),
+    ):
+        if value is not None and not math.isfinite(value):
+            raise MetricAggregationError(
+                "invalid_value",
+                f"threshold evaluation produced non-finite {name}",
+            )
+
+
 def _rule_validation_reason(
     rule: LimitRule,
     observation: NormalizedObservation,
@@ -379,17 +398,23 @@ def _preflight_reason(
     if not observation.is_complete:
         return "incomplete_scope", None
     if observation.coverage_ratio is not None:
-        try:
-            finite_coverage = math.isfinite(float(observation.coverage_ratio))
-        except (OverflowError, TypeError, ValueError):
-            finite_coverage = False
-        if (
-            not finite_coverage
-            or observation.coverage_ratio < 0.0
-            or observation.coverage_ratio > 1.0
+        coverage_ratio = observation.coverage_ratio
+        if isinstance(coverage_ratio, bool) or not isinstance(
+            coverage_ratio,
+            (int, float),
         ):
             return "invalid_coverage", None
-        if observation.coverage_ratio < 1.0:
+        try:
+            normalized_coverage = float(coverage_ratio)
+        except (OverflowError, TypeError, ValueError):
+            return "invalid_coverage", None
+        if (
+            not math.isfinite(normalized_coverage)
+            or normalized_coverage < 0.0
+            or normalized_coverage > 1.0
+        ):
+            return "invalid_coverage", None
+        if normalized_coverage < 1.0:
             return "incomplete_scope", None
     if observation.source_status not in _USABLE_SOURCE_STATUSES:
         return "missing_source", None
@@ -428,6 +453,12 @@ def evaluate(
         status, boundary, utilization, headroom = _threshold_result(
             rule,
             adverse,
+        )
+        _require_finite_derived_values(
+            observed,
+            adverse,
+            utilization,
+            headroom,
         )
     except MetricAggregationError as exc:
         return _unknown(rule, observation, exc.reason_code, str(exc))
