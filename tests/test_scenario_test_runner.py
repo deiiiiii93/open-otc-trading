@@ -17,6 +17,7 @@ def _runner_db(tmp_path, monkeypatch):
 
 def test_queue_creates_run_and_task(tmp_path, monkeypatch):
     from app.services import scenario_test_runner
+    from app.services.domains.scenario_catalog import strip_source_snapshot
 
     db = _runner_db(tmp_path, monkeypatch)
     monkeypatch.setattr(scenario_test_runner, "submit_async_task", lambda *a, **k: None)
@@ -35,7 +36,12 @@ def test_queue_creates_run_and_task(tmp_path, monkeypatch):
         assert run.status == "queued"
         assert task.kind == TaskKind.SCENARIO_TEST.value
         assert task.scenario_test_run_id == run.id
-        assert run.scenario_spec == {"predefined": ["market_crash"]}
+        assert strip_source_snapshot(run.scenario_spec) == {
+            "predefined": ["market_crash"]
+        }
+        assert run.scenario_spec["_source_snapshot_v1"]["sha256"].startswith(
+            "sha256:"
+        )
 
 
 def test_execute_marks_empty_when_no_positions(tmp_path, monkeypatch):

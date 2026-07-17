@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy import func, select
 
 
@@ -75,11 +76,26 @@ def test_inline_backtest_source_matches_queue_without_child_task_and_artifacts(
         lambda *_args, **_kwargs: None,
     )
     pipeline_calls: list[dict] = []
+    prepared = backtest_service.PreparedBacktestPipeline(
+        history={},
+        configs=(),
+        excluded=(),
+        notes=(),
+        evidence_manifest={
+            "schema": "backtest-market-evidence/v1",
+            "window": {"start": "2025-01-02", "end": "2025-12-31"},
+            "positions": [],
+            "underlyings": [],
+        },
+    )
+    monkeypatch.setattr(
+        backtest_service,
+        "prepare_pipeline_inputs",
+        lambda _session, **_kwargs: prepared,
+    )
 
     def fake_pipeline(session, *, positions, progress, **kwargs):
-        assert not session.new
-        assert not session.dirty
-        assert not session.deleted
+        assert session is None
         progress(1, 1)
         pipeline_calls.append(
             {
@@ -164,12 +180,15 @@ def test_inline_backtest_source_matches_queue_without_child_task_and_artifacts(
             == [ids["position"]]
         )
         assert queued.results == inline_run.results
-        assert queued.results["source_metadata"] == {
-            "pricing_parameter_profile_id": ids["profile"],
-            "engine_config_id": ids["engine"],
-            "resolved_position_ids": [ids["position"]],
-            "valuation_as_of": "2026-07-14T15:00:00",
-        }
+        metadata = queued.results["source_metadata"]
+        assert metadata["pricing_parameter_profile_id"] == ids["profile"]
+        assert metadata["engine_config_id"] == ids["engine"]
+        assert metadata["resolved_position_ids"] == [ids["position"]]
+        assert metadata["valuation_as_of"] == "2026-07-14T15:00:00"
+        assert metadata["valuation_origin"] == "profile"
+        assert metadata["effective_market_evidence_id"].startswith(
+            "backtest-market-evidence/v1:"
+        )
         assert queued.artifacts == {"html": "queued-backtest.html"}
         assert inline_run.artifacts == {}
 
@@ -202,6 +221,22 @@ def test_inline_empty_backtest_source_preserves_exclusions_and_warnings(
             [],
         ),
     )
+    monkeypatch.setattr(
+        backtest_service,
+        "prepare_pipeline_inputs",
+        lambda _session, **_kwargs: backtest_service.PreparedBacktestPipeline(
+            history={},
+            configs=(),
+            excluded=(),
+            notes=(),
+            evidence_manifest={
+                "schema": "backtest-market-evidence/v1",
+                "window": {"start": "2025-01-02", "end": "2025-12-31"},
+                "positions": [position_id],
+                "underlyings": [],
+            },
+        ),
+    )
     result = backtest_runner.run_persisted_backtest_source(
         session_factory=database.SessionLocal,
         portfolio_id=portfolio_id,
@@ -218,3 +253,144 @@ def test_inline_empty_backtest_source_preserves_exclusions_and_warnings(
         assert run.excluded_positions == [
             {"position_id": position_id, "reason": "unsupported product"}
         ]
+
+
+def test_backtest_explicit_valuation_is_authoritative_and_compute_has_no_session(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.models import BacktestRun
+    from app.services import backtest_runner
+    from app.services.domains import backtest as backtest_service
+
+    prepared = backtest_service.PreparedBacktestPipeline(
+        history={},
+        configs=(),
+        excluded=(),
+        notes=(),
+        evidence_manifest={
+            "schema": "backtest-market-evidence/v1",
+            "window": {"start": "2025-01-02", "end": "2025-02-03"},
+            "positions": [],
+            "underlyings": [],
+        },
+    )
+    monkeypatch.setattr(
+        backtest_service,
+        "prepare_pipeline_inputs",
+        lambda _session, **_kwargs: prepared,
+    )
+
+    def fake_pipeline(session, **_kwargs):
+        assert session is None
+        return ("completed", {"portfolio": {"var_95": 1.0}}, [], [])
+
+    monkeypatch.setattr(backtest_service, "run_pipeline", fake_pipeline)
+    with database.SessionLocal() as session:
+        portfolio, position, profile, _engine = _fixture(session)
+        session.commit()
+        ids = (portfolio.id, position.id, profile.id)
+
+    mismatch = datetime(2025, 3, 4, 15, 0)
+    explicit = datetime(2026, 7, 14, 23, 0, tzinfo=timezone(timedelta(hours=8)))
+    with pytest.raises(
+        ValueError,
+        match="valuation_as_of must equal the selected profile valuation_date",
+    ):
+        backtest_runner.run_persisted_backtest_source(
+            session_factory=database.SessionLocal,
+            portfolio_id=ids[0],
+            position_ids=[ids[1]],
+            pricing_parameter_profile_id=ids[2],
+            spec={"start": "2025-01-02", "end": "2025-02-03"},
+            config={},
+            valuation_as_of=mismatch,
+            write_artifacts=False,
+        )
+    before = datetime.utcnow() - timedelta(seconds=2)
+    result = backtest_runner.run_persisted_backtest_source(
+        session_factory=database.SessionLocal,
+        portfolio_id=ids[0],
+        position_ids=[ids[1]],
+        pricing_parameter_profile_id=ids[2],
+        spec={"start": "2025-01-02", "end": "2025-02-03"},
+        config={},
+        valuation_as_of=explicit,
+        write_artifacts=False,
+    )
+    after = datetime.utcnow() + timedelta(seconds=2)
+
+    with database.SessionLocal() as session:
+        run = session.get(BacktestRun, result.backtest_run_id)
+        metadata = run.results["source_metadata"]
+        assert before <= run.created_at <= after
+        assert metadata["effective_valuation_as_of"] == "2026-07-14T15:00:00"
+        assert metadata["valuation_origin"] == "profile"
+        assert metadata["profile_valuation_as_of"] == "2026-07-14T15:00:00"
+        assert metadata["effective_market_evidence_id"].startswith(
+            "backtest-market-evidence/v1:"
+        )
+
+
+def test_backtest_rejects_decorative_point_in_time_snapshot(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.models import MarketSnapshot
+    from app.services import backtest_runner
+
+    with database.SessionLocal() as session:
+        portfolio, position, *_rest = _fixture(session)
+        snapshot = MarketSnapshot(
+            name="Point snapshot",
+            source="test",
+            symbol="AAPL",
+            valuation_date=datetime(2026, 7, 14),
+            data={"spot": 100.0},
+            source_metadata={},
+        )
+        session.add(snapshot)
+        session.commit()
+        ids = (portfolio.id, position.id, snapshot.id)
+
+    with pytest.raises(ValueError, match="not supported for historical backtest"):
+        backtest_runner.run_persisted_backtest_source(
+            session_factory=database.SessionLocal,
+            portfolio_id=ids[0],
+            position_ids=[ids[1]],
+            market_snapshot_id=ids[2],
+            spec={"start": "2025-01-02", "end": "2025-02-03"},
+            config={},
+            write_artifacts=False,
+        )
+
+
+def test_backtest_engine_resolution_failure_is_not_replaced_by_black_scholes(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.services import backtest_runner
+
+    with database.SessionLocal() as session:
+        portfolio, position, *_rest = _fixture(session)
+        session.commit()
+        ids = (portfolio.id, position.id)
+
+    monkeypatch.setattr(
+        "app.services.engine_configs.resolve_pricing_engine",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            ValueError("no compatible backtest pricing engine")
+        ),
+    )
+    with pytest.raises(ValueError, match="no compatible backtest pricing engine"):
+        backtest_runner.run_persisted_backtest_source(
+            session_factory=database.SessionLocal,
+            portfolio_id=ids[0],
+            position_ids=[ids[1]],
+            spec={"start": "2025-01-02", "end": "2025-02-03"},
+            config={},
+            write_artifacts=False,
+        )

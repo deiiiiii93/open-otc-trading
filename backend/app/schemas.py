@@ -1620,6 +1620,17 @@ class ScenarioTestRunOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
+    @field_validator("scenario_spec", mode="before")
+    @classmethod
+    def _strip_internal_source_snapshot(cls, value):
+        if not isinstance(value, dict):
+            return value
+        return {
+            key: item
+            for key, item in value.items()
+            if key != "_source_snapshot_v1"
+        }
+
 
 class ScenarioLibraryOut(BaseModel):
     predefined: list[dict]

@@ -14,6 +14,8 @@ The flow per run:
 """
 from __future__ import annotations
 
+from copy import deepcopy
+from dataclasses import dataclass
 import os
 from datetime import datetime
 from typing import Any, Callable
@@ -27,6 +29,22 @@ from app.services import (
     quantark,
 )
 from app.services.underlyings import akshare_asset_class, akshare_symbol
+from app.services.source_evidence import (
+    backtest_position_evidence,
+    canonical_hash,
+    datetime_iso,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedBacktestPipeline:
+    """Frozen output of the bounded DB/cache preparation phase."""
+
+    history: dict[str, tuple]
+    configs: tuple[Any, ...]
+    excluded: tuple[dict[str, Any], ...]
+    notes: tuple[str, ...]
+    evidence_manifest: dict[str, Any]
 
 
 # ---------------------------------------------------------------------------
@@ -378,8 +396,182 @@ def _synthetic_futures_from_spot(spot_df):
 # Pipeline
 # ---------------------------------------------------------------------------
 
-def run_pipeline(
+
+def _frame_evidence(frame: Any) -> list[dict[str, Any]]:
+    if frame is None:
+        return []
+    records = frame.to_dict("records")
+    return _jsonable(records)
+
+
+def prepare_pipeline_inputs(
     session: Session,
+    *,
+    positions: list[Any],
+    spec: dict[str, Any],
+    engine_config_id: int | None = None,
+) -> PreparedBacktestPipeline:
+    """Resolve/cache all historical inputs before the long calculation starts."""
+    from app.models import MarketDataProfile
+
+    start = str(spec.get("start"))
+    end = str(spec.get("end"))
+    vol_source = str(spec.get("vol_source", "flat"))
+    vol_window = int(spec.get("vol_window", 30) or 30)
+    rate = float(spec.get("rate", 0.02) or 0.0)
+    flat_vol = float(spec.get("flat_vol", 0.2) or 0.0)
+    notes: list[str] = []
+    excluded: list[dict[str, Any]] = []
+    history: dict[str, tuple] = {}
+    evidence_rows: list[dict[str, Any]] = []
+    groups = backtest_bridge.group_by_underlying(positions)
+    if groups:
+        quantark.ensure_quantark_path()
+        from quantark.backtest.otc import HedgeSpec, FuturesRollPolicy
+
+    for underlying, plist in groups.items():
+        try:
+            sym = akshare_symbol(underlying)
+            asset_class = akshare_asset_class(underlying)
+            spot_df = mh.ensure_spot_history(
+                session,
+                symbol=sym,
+                asset_class=asset_class,
+                start=start,
+                end=end,
+            )
+            vol_df = mh.derive_vol(
+                spot_df,
+                vol_source=vol_source,
+                vol_window=vol_window,
+                flat_vol=flat_vol,
+            )
+            rate_df = mh.flat_rate(spot_df, rate)
+            hedge_info = _resolve_hedge(underlying, asset_class) or {"kind": "spot"}
+            futures_profile = None
+            if hedge_info.get("kind") == "futures":
+                try:
+                    futures_df = mh.ensure_futures_chain(
+                        session,
+                        prefix=hedge_info["prefix"],
+                        start=start,
+                        end=end,
+                    )
+                    hedge = HedgeSpec(
+                        kind="futures",
+                        multiplier=float(hedge_info["multiplier"]),
+                        roll_policy=FuturesRollPolicy(),
+                    )
+                    futures_profile = (
+                        session.query(MarketDataProfile)
+                        .filter(
+                            MarketDataProfile.symbol == hedge_info["prefix"],
+                            MarketDataProfile.asset_class == "futures",
+                        )
+                        .order_by(MarketDataProfile.id.desc())
+                        .first()
+                    )
+                except (NotImplementedError, RuntimeError) as exc:
+                    notes.append(
+                        f"{underlying}: futures chain for {hedge_info['prefix']} "
+                        f"unavailable ({exc}); fell back to spot hedge"
+                    )
+                    futures_df = _synthetic_futures_from_spot(spot_df)
+                    hedge = HedgeSpec(kind="spot", multiplier=1.0)
+            else:
+                futures_df = _synthetic_futures_from_spot(spot_df)
+                hedge = HedgeSpec(kind="spot", multiplier=1.0)
+
+            spot_profile = (
+                session.query(MarketDataProfile)
+                .filter(
+                    MarketDataProfile.symbol == sym,
+                    MarketDataProfile.asset_class == asset_class,
+                )
+                .order_by(MarketDataProfile.id.desc())
+                .first()
+            )
+            history[underlying] = (
+                spot_df.copy(deep=True),
+                vol_df.copy(deep=True),
+                rate_df.copy(deep=True),
+                futures_df.copy(deep=True),
+                deepcopy(hedge),
+            )
+            evidence_rows.append(
+                {
+                    "underlying": underlying,
+                    "spot_profile": (
+                        {
+                            "id": spot_profile.id,
+                            "symbol": spot_profile.symbol,
+                            "asset_class": spot_profile.asset_class,
+                            "adjust": spot_profile.adjust,
+                            "updated_at": datetime_iso(spot_profile.updated_at),
+                            "data_hash": canonical_hash(spot_profile.data or {}),
+                        }
+                        if spot_profile is not None
+                        else None
+                    ),
+                    "futures_profile": (
+                        {
+                            "id": futures_profile.id,
+                            "symbol": futures_profile.symbol,
+                            "updated_at": datetime_iso(futures_profile.updated_at),
+                            "data_hash": canonical_hash(futures_profile.data or {}),
+                        }
+                        if futures_profile is not None
+                        else None
+                    ),
+                    "spot_rows": _frame_evidence(spot_df),
+                    "vol_rows": _frame_evidence(vol_df),
+                    "rate_rows": _frame_evidence(rate_df),
+                    "futures_rows": _frame_evidence(futures_df),
+                    "hedge": {
+                        "kind": getattr(hedge, "kind", None),
+                        "multiplier": getattr(hedge, "multiplier", None),
+                    },
+                }
+            )
+        except Exception as exc:
+            for position in plist:
+                excluded.append(
+                    {
+                        "position_id": getattr(position, "id", None),
+                        "reason": (
+                            f"market-data prep failed for {underlying}: {exc}"
+                        ),
+                    }
+                )
+    manifest = {
+        "schema": "backtest-market-evidence/v1",
+        "window": {"start": start, "end": end},
+        "positions": [
+            backtest_position_evidence(position)
+            for position in sorted(positions, key=lambda item: int(item.id))
+        ],
+        "underlyings": sorted(evidence_rows, key=lambda row: row["underlying"]),
+    }
+    configs, config_excluded = backtest_bridge.build_books(
+        session,
+        positions,
+        history,
+        engine_types=_engine_types_for_spec(spec),
+        engine_config_id=engine_config_id,
+        start=_dt(start),
+        end=_dt(end),
+    )
+    excluded.extend(config_excluded)
+    return PreparedBacktestPipeline(
+        history=deepcopy(history),
+        configs=tuple(configs),
+        excluded=tuple(deepcopy(excluded)),
+        notes=tuple(notes),
+        evidence_manifest=deepcopy(manifest),
+    )
+
+def run_pipeline(
+    session: Session | None,
     *,
     positions: list[Any],
     spec: dict[str, Any],
@@ -389,6 +581,7 @@ def run_pipeline(
     engine_config_id: int | None = None,
     valuation_date: datetime | None = None,
     progress: Callable[[int, int], None] | None = None,
+    prepared_pipeline: PreparedBacktestPipeline | None = None,
 ) -> tuple[str, dict[str, Any], list[dict], list]:
     """Run a book-level backtest across all underlyings in ``positions``.
 
@@ -413,69 +606,21 @@ def run_pipeline(
     rate = float(spec.get("rate", 0.02) or 0.0)
     flat_vol = float(spec.get("flat_vol", 0.2) or 0.0)
 
-    notes: list[str] = []
-    excluded: list[dict] = []
-
-    # --- 2. Per-underlying market-data prep --------------------------------
-    groups = backtest_bridge.group_by_underlying(positions)
-    history: dict[str, tuple] = {}
-
-    for underlying, plist in groups.items():
-        try:
-            sym = akshare_symbol(underlying)
-            asset_class = akshare_asset_class(underlying)
-            spot_df = mh.ensure_spot_history(
-                session, symbol=sym, asset_class=asset_class, start=start, end=end
-            )
-            vol_df = mh.derive_vol(
-                spot_df, vol_source=vol_source, vol_window=vol_window, flat_vol=flat_vol
-            )
-            rate_df = mh.flat_rate(spot_df, rate)
-
-            hedge_info = _resolve_hedge(underlying, asset_class) or {"kind": "spot"}
-            if hedge_info.get("kind") == "futures":
-                try:
-                    futures_df = mh.ensure_futures_chain(
-                        session, prefix=hedge_info["prefix"], start=start, end=end
-                    )
-                    hedge = HedgeSpec(
-                        kind="futures",
-                        multiplier=float(hedge_info["multiplier"]),
-                        roll_policy=FuturesRollPolicy(),
-                    )
-                except (NotImplementedError, RuntimeError) as exc:
-                    # No stored futures profile yet — fall back to a spot hedge so
-                    # the run still completes. FLAGGED for the smoke step.
-                    notes.append(
-                        f"{underlying}: futures chain for {hedge_info['prefix']} "
-                        f"unavailable ({exc}); fell back to spot hedge"
-                    )
-                    futures_df = _synthetic_futures_from_spot(spot_df)
-                    hedge = HedgeSpec(kind="spot", multiplier=1.0)
-            else:
-                futures_df = _synthetic_futures_from_spot(spot_df)
-                hedge = HedgeSpec(kind="spot", multiplier=1.0)
-
-            history[underlying] = (spot_df, vol_df, rate_df, futures_df, hedge)
-        except Exception as exc:
-            # One bad underlying must not kill the whole run.
-            for pos in plist:
-                excluded.append(
-                    {"position_id": getattr(pos, "id", None),
-                     "reason": f"market-data prep failed for {underlying}: {exc}"}
-                )
+    if prepared_pipeline is None:
+        if session is None:
+            raise ValueError("backtest compute requires prepared pipeline inputs")
+        prepared_pipeline = prepare_pipeline_inputs(
+            session,
+            positions=positions,
+            spec=spec,
+            engine_config_id=engine_config_id,
+        )
+    notes = list(deepcopy(prepared_pipeline.notes))
+    excluded = list(deepcopy(prepared_pipeline.excluded))
+    history = deepcopy(prepared_pipeline.history)
 
     # --- 3. Build books -----------------------------------------------------
-    configs, excluded2 = backtest_bridge.build_books(
-        session,
-        positions,
-        history,
-        engine_types=engine_types,
-        engine_config_id=engine_config_id,
-        start=_dt(start),
-        end=_dt(end),
-    )
-    excluded.extend(excluded2)
+    configs = list(prepared_pipeline.configs)
 
     window = {"start": start, "end": end}
 
@@ -548,6 +693,33 @@ def run_pipeline(
         }
     )
     return "completed", results_dict, excluded, raw
+
+
+def run_prepared_pipeline(
+    prepared: PreparedBacktestPipeline,
+    *,
+    positions: list[Any],
+    spec: dict[str, Any],
+    config: dict[str, Any],
+    portfolio_name: str,
+    pricing_parameter_profile_id: int | None = None,
+    engine_config_id: int | None = None,
+    valuation_date: datetime | None = None,
+    progress: Callable[[int, int], None] | None = None,
+) -> tuple[str, dict[str, Any], list[dict], list]:
+    """Pure long-running phase: no SQLAlchemy Session is accepted."""
+    return run_pipeline(
+        None,
+        positions=positions,
+        spec=spec,
+        config=config,
+        portfolio_name=portfolio_name,
+        pricing_parameter_profile_id=pricing_parameter_profile_id,
+        engine_config_id=engine_config_id,
+        valuation_date=valuation_date,
+        progress=progress,
+        prepared_pipeline=deepcopy(prepared),
+    )
 
 
 def _align_portfolio_pnl(per_underlying: list[dict]) -> list[dict]:

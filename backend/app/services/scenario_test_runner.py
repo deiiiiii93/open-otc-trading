@@ -4,7 +4,6 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
-from types import SimpleNamespace
 from typing import Any, Callable
 
 from sqlalchemy.orm import Session, sessionmaker
@@ -13,7 +12,6 @@ from .. import database
 from ..config import get_settings
 from ..models import (
     Portfolio,
-    PricingParameterProfile,
     ScenarioTestRun,
     TaskKind,
     TaskRun,
@@ -21,8 +19,16 @@ from ..models import (
 )
 from .audit import record_audit
 from .domains import positions as positions_svc
+from .domains import scenario_catalog
 from .domains import scenario_test as scenario_test_svc
 from .risk_engine import RiskPositionSnapshot, snapshot_risk_position
+from .risk_engine import _pricing_position_context
+from .source_evidence import (
+    build_market_evidence_manifest,
+    finalize_market_metadata,
+    utc_naive,
+    valuation_metadata,
+)
 from .task_runner import (
     mark_task_finished,
     mark_task_running,
@@ -41,6 +47,11 @@ class ResolvedScenarioSource:
     pricing_parameter_profile_id: int | None
     engine_config_id: int | None
     valuation_as_of: datetime
+    frozen_scenario_specs: tuple[dict[str, Any], ...]
+    scenario_set_hash: str
+    position_markets: dict[int, Any]
+    pricing_failures: dict[int, dict[str, Any]]
+    source_metadata: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +79,9 @@ def _create_scenario_run(
     engine_config_id: int | None,
     position_ids: list[int] | None,
     status: str,
+    valuation_as_of: datetime | None = None,
+    market_snapshot_id: int | None = None,
+    effective_market_evidence_id: str | None = None,
 ) -> ScenarioTestRun:
     if (
         not scenario_request.get("predefined")
@@ -97,15 +111,13 @@ def _create_scenario_run(
         ]
 
     # Fail synchronously before any run row is persisted.
-    from .domains import scenario_catalog
-
-    scenario_catalog.resolve_scenarios(scenario_request)
+    frozen_request = scenario_catalog.freeze_scenario_request(scenario_request)
     run = ScenarioTestRun(
         portfolio_id=portfolio_id,
         pricing_parameter_profile_id=pricing_parameter_profile_id,
         engine_config_id=engine_config_id,
         status=status,
-        scenario_spec=deepcopy(scenario_request),
+        scenario_spec=frozen_request,
         config=deepcopy(config),
         results={},
         excluded_positions=[],
@@ -114,6 +126,38 @@ def _create_scenario_run(
     )
     session.add(run)
     session.flush()
+    source_metadata = valuation_metadata(
+        session,
+        created_at=run.created_at,
+        pricing_parameter_profile_id=pricing_parameter_profile_id,
+        explicit_valuation_as_of=valuation_as_of,
+        market_snapshot_id=market_snapshot_id,
+        requested_effective_market_evidence_id=effective_market_evidence_id,
+    )
+    frozen_specs, scenario_hash = scenario_catalog.frozen_scenario_specs(
+        frozen_request
+    )
+    source_metadata.update(
+        {
+            "methodology": {
+                "method": "scenario_distribution",
+                "confidence": 0.95,
+                "horizon": "scenario_set",
+                "scaling": "none",
+            },
+            "source_config": {
+                "scenario_request": scenario_catalog.strip_source_snapshot(
+                    frozen_request
+                ),
+                "config": deepcopy(config),
+            },
+            "scenario_set_name": scenario_request.get("scenario_set"),
+            "scenario_set_hash": scenario_hash,
+            "scenario_names": [str(spec["name"]) for spec in frozen_specs],
+            "frozen_scenarios": frozen_specs,
+        }
+    )
+    run.results = {"source_metadata": source_metadata}
     return run
 
 
@@ -126,6 +170,9 @@ def queue_scenario_test(
     pricing_parameter_profile_id: int | None = None,
     engine_config_id: int | None = None,
     position_ids: list[int] | None = None,
+    valuation_as_of: datetime | None = None,
+    market_snapshot_id: int | None = None,
+    effective_market_evidence_id: str | None = None,
 ) -> tuple[ScenarioTestRun, TaskRun]:
     """Create a queued ScenarioTestRun + TaskRun and dispatch the worker."""
     run = _create_scenario_run(
@@ -137,6 +184,9 @@ def queue_scenario_test(
         engine_config_id=engine_config_id,
         position_ids=position_ids,
         status=TaskStatus.QUEUED.value,
+        valuation_as_of=valuation_as_of,
+        market_snapshot_id=market_snapshot_id,
+        effective_market_evidence_id=effective_market_evidence_id,
     )
     task = TaskRun(
         kind=TaskKind.SCENARIO_TEST.value,
@@ -170,6 +220,8 @@ def run_persisted_scenario_source(
     engine_config_id: int | None = None,
     position_ids: list[int] | None = None,
     valuation_as_of: datetime | None = None,
+    market_snapshot_id: int | None = None,
+    effective_market_evidence_id: str | None = None,
     write_artifacts: bool = True,
 ) -> PersistedScenarioSource:
     """Persist queue-equivalent scenario evidence without creating a TaskRun."""
@@ -184,9 +236,10 @@ def run_persisted_scenario_source(
             engine_config_id=engine_config_id,
             position_ids=position_ids,
             status=TaskStatus.RUNNING.value,
+            valuation_as_of=valuation_as_of,
+            market_snapshot_id=market_snapshot_id,
+            effective_market_evidence_id=effective_market_evidence_id,
         )
-        if valuation_as_of is not None:
-            run.created_at = valuation_as_of
         session.commit()
         run_id = run.id
 
@@ -276,6 +329,48 @@ def _resolve_scenario_source(
         portfolio = session.get(Portfolio, run.portfolio_id)
         if portfolio is None:
             raise ValueError(f"Portfolio not found: {run.portfolio_id}")
+        try:
+            frozen_specs, scenario_hash = scenario_catalog.frozen_scenario_specs(
+                run.scenario_spec or {}
+            )
+        except ValueError:
+            if run.status not in {
+                TaskStatus.QUEUED.value,
+                TaskStatus.RUNNING.value,
+            }:
+                raise
+            run.scenario_spec = scenario_catalog.freeze_scenario_request(
+                run.scenario_spec or {}
+            )
+            frozen_specs, scenario_hash = scenario_catalog.frozen_scenario_specs(
+                run.scenario_spec
+            )
+            initial_metadata = valuation_metadata(
+                session,
+                created_at=run.created_at,
+                pricing_parameter_profile_id=run.pricing_parameter_profile_id,
+                explicit_valuation_as_of=None,
+                market_snapshot_id=None,
+                requested_effective_market_evidence_id=None,
+            )
+            initial_metadata.update(
+                {
+                    "methodology": {
+                        "method": "scenario_distribution",
+                        "confidence": 0.95,
+                        "horizon": "scenario_set",
+                        "scaling": "none",
+                    },
+                    "source_config": {
+                        "scenario_request": scenario_catalog.strip_source_snapshot(
+                            run.scenario_spec
+                        ),
+                        "config": deepcopy(run.config or {}),
+                    },
+                }
+            )
+            run.results = {"source_metadata": initial_metadata}
+            session.commit()
 
         all_positions = positions_svc.list_filtered(
             portfolio_id=run.portfolio_id,
@@ -289,39 +384,84 @@ def _resolve_scenario_source(
         else:
             positions = list(all_positions)
 
-        valuation_as_of = run.created_at
-        if run.pricing_parameter_profile_id is not None:
-            profile = session.get(
-                PricingParameterProfile,
-                run.pricing_parameter_profile_id,
-            )
-            if profile is not None and profile.valuation_date is not None:
-                valuation_as_of = profile.valuation_date
+        source_metadata = deepcopy(
+            (run.results or {}).get("source_metadata") or {}
+        )
+        raw_valuation = (
+            source_metadata.get("effective_valuation_as_of")
+            or source_metadata.get("valuation_as_of")
+        )
+        valuation_as_of = (
+            utc_naive(datetime.fromisoformat(raw_valuation))
+            if isinstance(raw_valuation, str)
+            else utc_naive(run.created_at)
+        )
 
         from .engine_configs import get_engine_config, resolve_pricing_engine
 
         engine_config = get_engine_config(session, run.engine_config_id)
         snapshots: list[RiskPositionSnapshot] = []
         for position in positions:
-            try:
-                engine = resolve_pricing_engine(position, engine_config)
-            except ValueError:
-                engine = SimpleNamespace(
-                    engine_name=position.engine_name or "BlackScholesEngine",
-                    engine_kwargs=dict(position.engine_kwargs or {}),
-                )
+            engine = resolve_pricing_engine(position, engine_config)
             snapshots.append(snapshot_risk_position(position, engine))
+        position_markets, pricing_failures, pricing_diagnostics = (
+            _pricing_position_context(
+                session,
+                positions,
+                pricing_parameter_profile_id=run.pricing_parameter_profile_id,
+                valuation_date=valuation_as_of,
+                market_snapshot_id=source_metadata.get("market_snapshot_id"),
+            )
+        )
+        for position in positions:
+            engine = resolve_pricing_engine(position, engine_config)
+            pricing_diagnostics.setdefault(position.id, {})[
+                "resolved_engine"
+            ] = engine.diagnostics()
+        manifest = build_market_evidence_manifest(
+            session,
+            positions=positions,
+            position_markets=position_markets,
+            pricing_diagnostics=pricing_diagnostics,
+            valuation_as_of=valuation_as_of,
+            market_snapshot_id=source_metadata.get("market_snapshot_id"),
+        )
+        source_metadata = finalize_market_metadata(source_metadata, manifest)
+        source_metadata.update(
+            {
+                "scenario_set_hash": scenario_hash,
+                "scenario_names": [str(spec["name"]) for spec in frozen_specs],
+                "frozen_scenarios": frozen_specs,
+                "source_currencies": sorted(
+                    {
+                        str(position.currency).strip().upper()
+                        for position in snapshots
+                        if position.currency
+                    }
+                ),
+            }
+        )
 
         return ResolvedScenarioSource(
             scenario_test_run_id=run.id,
             portfolio_id=portfolio.id,
             portfolio_name=portfolio.name,
             positions=tuple(snapshots),
-            scenario_request=deepcopy(run.scenario_spec or {}),
+            scenario_request=scenario_catalog.strip_source_snapshot(
+                run.scenario_spec or {}
+            ),
             config=deepcopy(run.config or {}),
             pricing_parameter_profile_id=run.pricing_parameter_profile_id,
             engine_config_id=run.engine_config_id,
             valuation_as_of=valuation_as_of,
+            frozen_scenario_specs=tuple(deepcopy(frozen_specs)),
+            scenario_set_hash=scenario_hash,
+            position_markets={
+                key: value.model_copy(deep=True)
+                for key, value in position_markets.items()
+            },
+            pricing_failures=deepcopy(pricing_failures),
+            source_metadata=deepcopy(source_metadata),
         )
 
 
@@ -354,32 +494,28 @@ def _compute_scenario_source(
     resolved: ResolvedScenarioSource,
     write_artifacts: bool,
 ) -> ComputedScenarioSource:
-    # The domain pipeline is authoritative and may read market/profile tables.
-    # It receives a clean, read-only session with no run/task writes pending.
-    with session_factory() as session:
-        status, results, excluded, raw = scenario_test_svc.run_pipeline(
-            session,
-            positions=list(resolved.positions),
-            pricing_parameter_profile_id=resolved.pricing_parameter_profile_id,
-            engine_config_id=resolved.engine_config_id,
-            scenario_request=deepcopy(resolved.scenario_request),
-            config=deepcopy(resolved.config),
-            portfolio_name=f"{resolved.portfolio_name}-scenario",
-            valuation_date=resolved.valuation_as_of,
-        )
-        if session.new or session.dirty or session.deleted:
-            session.rollback()
-            raise RuntimeError("scenario source compute attempted database writes")
-        session.rollback()
+    status, results, excluded, raw = scenario_test_svc.run_pipeline(
+        None,
+        positions=list(resolved.positions),
+        pricing_parameter_profile_id=resolved.pricing_parameter_profile_id,
+        engine_config_id=resolved.engine_config_id,
+        scenario_request=deepcopy(resolved.scenario_request),
+        resolved_scenario_specs=deepcopy(list(resolved.frozen_scenario_specs)),
+        position_markets={
+            key: value.model_copy(deep=True)
+            for key, value in resolved.position_markets.items()
+        },
+        pricing_failures=deepcopy(resolved.pricing_failures),
+        config=deepcopy(resolved.config),
+        portfolio_name=f"{resolved.portfolio_name}-scenario",
+        valuation_date=resolved.valuation_as_of,
+    )
 
     persisted_results = deepcopy(results)
     persisted_results["source_metadata"] = {
-        "pricing_parameter_profile_id": resolved.pricing_parameter_profile_id,
+        **deepcopy(resolved.source_metadata),
         "engine_config_id": resolved.engine_config_id,
-        "resolved_position_ids": [
-            position.id for position in resolved.positions
-        ],
-        "valuation_as_of": resolved.valuation_as_of.isoformat(),
+        "resolved_position_ids": [position.id for position in resolved.positions],
     }
     artifacts: dict[str, Any] = {}
     if write_artifacts and status == "completed" and raw is not None:

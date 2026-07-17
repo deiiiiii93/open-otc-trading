@@ -6,6 +6,7 @@ and assembles a QuantArk EquityPortfolio. No DB / profile logic lives here.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 from app.schemas import PricingEnvironmentSnapshot
@@ -63,7 +64,14 @@ def build_equity_portfolio(
                 # against it. Bounded baseline inconsistency acceptable for v1's
                 # one-env-per-underlying model.
                 portfolio.pricing_environments[underlying] = quantark.build_pricing_env(market)
-            resolved_engine = resolve_pricing_engine(position, engine_config)
+            resolved_engine = (
+                SimpleNamespace(
+                    engine_name=position.engine_name,
+                    engine_kwargs=dict(position.engine_kwargs or {}),
+                )
+                if session is None
+                else resolve_pricing_engine(position, engine_config)
+            )
             engine_position = position_with_engine(position, resolved_engine)
             product = quantark.build_product_for_position(engine_position, market)
             engine = quantark.build_engine_for_position(engine_position, market)

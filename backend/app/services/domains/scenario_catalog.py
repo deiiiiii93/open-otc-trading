@@ -5,12 +5,16 @@ import itertools
 import json
 import math
 import re
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from app.config import get_settings
 from app.services import quantark
+from app.services.source_evidence import canonical_hash
+
+_SOURCE_SNAPSHOT_KEY = "_source_snapshot_v1"
 
 _PARAM_TO_METHOD = {
     "spot": "spot_stress",
@@ -265,6 +269,47 @@ def resolve_scenarios(request: dict[str, Any]) -> list[Any]:
     if not out:
         raise ValueError("No scenarios resolved from request")
     return out
+
+
+def freeze_scenario_request(request: dict[str, Any]) -> dict[str, Any]:
+    """Overwrite the reserved envelope with a trusted canonical scenario snapshot."""
+    public_request = {
+        key: deepcopy(value)
+        for key, value in dict(request or {}).items()
+        if key != _SOURCE_SNAPSHOT_KEY
+    }
+    specs = [serialize_scenario(item) for item in resolve_scenarios(public_request)]
+    public_request[_SOURCE_SNAPSHOT_KEY] = {
+        "scenarios": specs,
+        "sha256": canonical_hash(specs),
+    }
+    return public_request
+
+
+def frozen_scenario_specs(request: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
+    envelope = dict(request or {}).get(_SOURCE_SNAPSHOT_KEY)
+    if not isinstance(envelope, dict):
+        raise ValueError("scenario source snapshot is missing")
+    specs = envelope.get("scenarios")
+    stored_hash = envelope.get("sha256")
+    if not isinstance(specs, list) or not specs:
+        raise ValueError("scenario source snapshot is empty")
+    expected_hash = canonical_hash(specs)
+    if stored_hash != expected_hash:
+        raise ValueError("scenario source snapshot hash mismatch")
+    # Rebuild every spec as validation; the compute phase will rebuild from this
+    # deep copy rather than touching the mutable named-set file.
+    for spec in specs:
+        build_custom(spec)
+    return deepcopy(specs), expected_hash
+
+
+def strip_source_snapshot(request: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: deepcopy(value)
+        for key, value in dict(request or {}).items()
+        if key != _SOURCE_SNAPSHOT_KEY
+    }
 
 
 def _sets_dir() -> Path:

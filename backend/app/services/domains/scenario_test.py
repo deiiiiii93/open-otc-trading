@@ -82,7 +82,7 @@ def shape_results(results: Any) -> dict[str, Any]:
 
 
 def run_pipeline(
-    session: Session,
+    session: Session | None,
     *,
     positions: list[Any],
     scenario_request: dict[str, Any],
@@ -91,6 +91,9 @@ def run_pipeline(
     pricing_parameter_profile_id: int | None = None,
     engine_config_id: int | None = None,
     valuation_date: datetime | None = None,
+    resolved_scenario_specs: list[dict[str, Any]] | None = None,
+    position_markets: dict[int, Any] | None = None,
+    pricing_failures: dict[int, dict[str, Any]] | None = None,
 ) -> tuple[str, dict[str, Any], list[dict], Any | None]:
     """Returns (status, results_dict, excluded, raw). status in {completed, empty}.
 
@@ -100,11 +103,16 @@ def run_pipeline(
     from app.services.risk_engine import _pricing_position_context  # reuse risk resolver
 
     valuation_date = valuation_date or datetime.utcnow()
-    position_markets, failures, _diag = _pricing_position_context(
-        session, positions,
-        pricing_parameter_profile_id=pricing_parameter_profile_id,
-        valuation_date=valuation_date,
-    )
+    if position_markets is None:
+        if session is None:
+            raise ValueError("scenario source requires frozen position markets")
+        position_markets, failures, _diag = _pricing_position_context(
+            session, positions,
+            pricing_parameter_profile_id=pricing_parameter_profile_id,
+            valuation_date=valuation_date,
+        )
+    else:
+        failures = dict(pricing_failures or {})
     # When a selected profile lacks rows for some positions, those positions are
     # still priced off fallback/assumption snapshots (parity with risk runs). Do
     # NOT discard that signal — surface it so a partial-coverage profile can't
@@ -137,7 +145,11 @@ def run_pipeline(
             None,
         )
 
-    scenarios = scenario_catalog.resolve_scenarios(scenario_request)
+    scenarios = (
+        [scenario_catalog.build_custom(spec) for spec in resolved_scenario_specs]
+        if resolved_scenario_specs is not None
+        else scenario_catalog.resolve_scenarios(scenario_request)
+    )
 
     quantark.ensure_quantark_path()
     from quantark.stresstest import StressTestEngine, StressTestConfig

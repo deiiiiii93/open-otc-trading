@@ -4,7 +4,6 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
-from types import SimpleNamespace
 from typing import Any, Callable
 
 from sqlalchemy.orm import Session, sessionmaker
@@ -14,7 +13,6 @@ from ..config import get_settings
 from ..models import (
     BacktestRun,
     Portfolio,
-    PricingParameterProfile,
     TaskKind,
     TaskRun,
     TaskStatus,
@@ -23,6 +21,11 @@ from .audit import record_audit
 from .domains import backtest as backtest_svc
 from .domains import positions as positions_svc
 from .risk_engine import RiskPositionSnapshot, snapshot_risk_position
+from .source_evidence import (
+    finalize_market_metadata,
+    utc_naive,
+    valuation_metadata,
+)
 from .task_runner import (
     mark_task_finished,
     mark_task_running,
@@ -47,6 +50,8 @@ class ResolvedBacktestSource:
     pricing_parameter_profile_id: int | None
     engine_config_id: int | None
     valuation_as_of: datetime
+    prepared_pipeline: Any
+    source_metadata: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +103,9 @@ def _create_backtest_run(
     engine_config_id: int | None,
     position_ids: list[int] | None,
     status: str,
+    valuation_as_of: datetime | None = None,
+    market_snapshot_id: int | None = None,
+    effective_market_evidence_id: str | None = None,
 ) -> BacktestRun:
     _validate_spec(spec)
     portfolio = session.get(Portfolio, portfolio_id)
@@ -107,6 +115,11 @@ def _create_backtest_run(
         from .engine_configs import get_engine_config
 
         get_engine_config(session, engine_config_id)
+    if market_snapshot_id is not None:
+        raise ValueError(
+            "market_snapshot_id is not supported for historical backtest; "
+            "use canonical effective_market_evidence_id"
+        )
     if position_ids is not None:
         from .risk_engine import _resolve_risk_positions
 
@@ -132,6 +145,31 @@ def _create_backtest_run(
     )
     session.add(run)
     session.flush()
+    source_metadata = valuation_metadata(
+            session,
+            created_at=run.created_at,
+            pricing_parameter_profile_id=pricing_parameter_profile_id,
+            explicit_valuation_as_of=valuation_as_of,
+            market_snapshot_id=None,
+            requested_effective_market_evidence_id=effective_market_evidence_id,
+        )
+    source_metadata.update(
+        {
+            "methodology": {
+                "method": "historical",
+                "confidence": 0.95,
+                "horizon": "1_trading_day",
+                "scaling": "none",
+            },
+            "source_config": {
+                "spec": deepcopy(spec),
+                "config": deepcopy(config),
+            },
+        }
+    )
+    run.results = {
+        "source_metadata": source_metadata
+    }
     return run
 
 
@@ -144,6 +182,9 @@ def queue_backtest(
     pricing_parameter_profile_id: int | None = None,
     engine_config_id: int | None = None,
     position_ids: list[int] | None = None,
+    valuation_as_of: datetime | None = None,
+    market_snapshot_id: int | None = None,
+    effective_market_evidence_id: str | None = None,
 ) -> tuple[BacktestRun, TaskRun]:
     """Create a queued BacktestRun + TaskRun and dispatch the worker."""
     run = _create_backtest_run(
@@ -155,6 +196,9 @@ def queue_backtest(
         engine_config_id=engine_config_id,
         position_ids=position_ids,
         status=TaskStatus.QUEUED.value,
+        valuation_as_of=valuation_as_of,
+        market_snapshot_id=market_snapshot_id,
+        effective_market_evidence_id=effective_market_evidence_id,
     )
     task = TaskRun(
         kind=TaskKind.BACKTEST.value,
@@ -188,6 +232,8 @@ def run_persisted_backtest_source(
     engine_config_id: int | None = None,
     position_ids: list[int] | None = None,
     valuation_as_of: datetime | None = None,
+    market_snapshot_id: int | None = None,
+    effective_market_evidence_id: str | None = None,
     write_artifacts: bool = True,
 ) -> PersistedBacktestSource:
     """Persist queue-equivalent backtest evidence without creating a TaskRun."""
@@ -202,9 +248,10 @@ def run_persisted_backtest_source(
             engine_config_id=engine_config_id,
             position_ids=position_ids,
             status=TaskStatus.RUNNING.value,
+            valuation_as_of=valuation_as_of,
+            market_snapshot_id=market_snapshot_id,
+            effective_market_evidence_id=effective_market_evidence_id,
         )
-        if valuation_as_of is not None:
-            run.created_at = valuation_as_of
         session.commit()
         run_id = run.id
 
@@ -313,28 +360,53 @@ def _resolve_backtest_source(
         else:
             positions = list(all_positions)
 
-        valuation_as_of = run.created_at
-        if run.pricing_parameter_profile_id is not None:
-            profile = session.get(
-                PricingParameterProfile,
-                run.pricing_parameter_profile_id,
+        source_metadata = deepcopy(
+            (run.results or {}).get("source_metadata") or {}
+        )
+        if not source_metadata:
+            source_metadata = valuation_metadata(
+                session,
+                created_at=run.created_at,
+                pricing_parameter_profile_id=run.pricing_parameter_profile_id,
+                explicit_valuation_as_of=None,
+                market_snapshot_id=None,
+                requested_effective_market_evidence_id=None,
             )
-            if profile is not None and profile.valuation_date is not None:
-                valuation_as_of = profile.valuation_date
+        raw_valuation = (
+            source_metadata.get("effective_valuation_as_of")
+            or source_metadata.get("valuation_as_of")
+        )
+        valuation_as_of = (
+            utc_naive(datetime.fromisoformat(raw_valuation))
+            if isinstance(raw_valuation, str)
+            else utc_naive(run.created_at)
+        )
 
         from .engine_configs import get_engine_config, resolve_pricing_engine
 
         engine_config = get_engine_config(session, run.engine_config_id)
         snapshots: list[RiskPositionSnapshot] = []
         for position in positions:
-            try:
-                engine = resolve_pricing_engine(position, engine_config)
-            except ValueError:
-                engine = SimpleNamespace(
-                    engine_name=position.engine_name or "BlackScholesEngine",
-                    engine_kwargs=dict(position.engine_kwargs or {}),
-                )
+            engine = resolve_pricing_engine(position, engine_config)
             snapshots.append(snapshot_risk_position(position, engine))
+        prepared = backtest_svc.prepare_pipeline_inputs(
+            session,
+            positions=snapshots,
+            spec=deepcopy(run.spec or {}),
+            engine_config_id=run.engine_config_id,
+        )
+        source_metadata = finalize_market_metadata(
+            source_metadata,
+            prepared.evidence_manifest,
+            namespace="backtest-market-evidence/v1",
+        )
+        source_metadata["source_currencies"] = sorted(
+            {
+                str(position.currency).strip().upper()
+                for position in snapshots
+                if position.currency
+            }
+        )
 
         return ResolvedBacktestSource(
             backtest_run_id=run.id,
@@ -346,6 +418,8 @@ def _resolve_backtest_source(
             pricing_parameter_profile_id=run.pricing_parameter_profile_id,
             engine_config_id=run.engine_config_id,
             valuation_as_of=valuation_as_of,
+            prepared_pipeline=prepared,
+            source_metadata=deepcopy(source_metadata),
         )
 
 
@@ -390,33 +464,23 @@ def _compute_backtest_source(
     progress: Callable[[int, int], None],
     write_artifacts: bool,
 ) -> ComputedBacktestSource:
-    # Market-history and configuration reads remain in the authoritative domain
-    # pipeline, but no task/run writes share its transaction.
-    with session_factory() as session:
-        status, results, excluded, raw = backtest_svc.run_pipeline(
-            session,
-            positions=list(resolved.positions),
-            pricing_parameter_profile_id=resolved.pricing_parameter_profile_id,
-            engine_config_id=resolved.engine_config_id,
-            spec=deepcopy(resolved.spec),
-            config=deepcopy(resolved.config),
-            portfolio_name=resolved.portfolio_name,
-            valuation_date=resolved.valuation_as_of,
-            progress=progress,
-        )
-        if session.new or session.dirty or session.deleted:
-            session.rollback()
-            raise RuntimeError("backtest source compute attempted database writes")
-        session.rollback()
+    status, results, excluded, raw = backtest_svc.run_prepared_pipeline(
+        resolved.prepared_pipeline,
+        positions=list(resolved.positions),
+        pricing_parameter_profile_id=resolved.pricing_parameter_profile_id,
+        engine_config_id=resolved.engine_config_id,
+        spec=deepcopy(resolved.spec),
+        config=deepcopy(resolved.config),
+        portfolio_name=resolved.portfolio_name,
+        valuation_date=resolved.valuation_as_of,
+        progress=progress,
+    )
 
     persisted_results = deepcopy(results)
     persisted_results["source_metadata"] = {
-        "pricing_parameter_profile_id": resolved.pricing_parameter_profile_id,
+        **deepcopy(resolved.source_metadata),
         "engine_config_id": resolved.engine_config_id,
-        "resolved_position_ids": [
-            position.id for position in resolved.positions
-        ],
-        "valuation_as_of": resolved.valuation_as_of.isoformat(),
+        "resolved_position_ids": [position.id for position in resolved.positions],
     }
     artifacts: dict[str, Any] = {}
     if write_artifacts and status == "completed" and raw:

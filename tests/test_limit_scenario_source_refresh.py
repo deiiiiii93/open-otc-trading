@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy import func, select
 
 
@@ -77,9 +78,7 @@ def test_inline_scenario_source_matches_queue_without_child_task_and_artifacts(
     pipeline_calls: list[dict] = []
 
     def fake_pipeline(session, *, positions, **kwargs):
-        assert not session.new
-        assert not session.dirty
-        assert not session.deleted
+        assert session is None
         pipeline_calls.append(
             {
                 "position_ids": [position.id for position in positions],
@@ -151,6 +150,9 @@ def test_inline_scenario_source_matches_queue_without_child_task_and_artifacts(
         inline_run = session.get(ScenarioTestRun, inline.scenario_test_run_id)
         assert queued.status == inline_run.status == "completed"
         assert queued.scenario_spec == inline_run.scenario_spec
+        assert queued.scenario_spec["_source_snapshot_v1"]["sha256"].startswith(
+            "sha256:"
+        )
         assert queued.config == inline_run.config
         assert queued.pricing_parameter_profile_id == ids["profile"]
         assert inline_run.pricing_parameter_profile_id == ids["profile"]
@@ -161,12 +163,16 @@ def test_inline_scenario_source_matches_queue_without_child_task_and_artifacts(
             == [ids["position"]]
         )
         assert queued.results == inline_run.results
-        assert queued.results["source_metadata"] == {
-            "pricing_parameter_profile_id": ids["profile"],
-            "engine_config_id": ids["engine"],
-            "resolved_position_ids": [ids["position"]],
-            "valuation_as_of": "2026-07-15T15:00:00",
-        }
+        metadata = queued.results["source_metadata"]
+        assert metadata["pricing_parameter_profile_id"] == ids["profile"]
+        assert metadata["engine_config_id"] == ids["engine"]
+        assert metadata["resolved_position_ids"] == [ids["position"]]
+        assert metadata["valuation_as_of"] == "2026-07-15T15:00:00"
+        assert metadata["valuation_origin"] == "profile"
+        assert metadata["scenario_set_hash"].startswith("sha256:")
+        assert metadata["effective_market_evidence_id"].startswith(
+            "risk-market-evidence/v1:"
+        )
         assert queued.artifacts == {"report_html_path": "queued-report.html"}
         assert inline_run.artifacts == {}
 
@@ -220,3 +226,218 @@ def test_inline_empty_scenario_source_preserves_exclusions_and_warnings(
         assert run.excluded_positions == [
             {"position_id": position_id, "reason": "unsupported product"}
         ]
+
+
+def test_scenario_run_freezes_named_set_and_valuation_metadata_at_creation(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.models import ScenarioTestRun
+    from app.services import scenario_test_runner
+    from app.services.domains import scenario_catalog
+    from app.services.domains import scenario_test as scenario_service
+
+    frozen_specs = [
+        {
+            "name": "frozen-down",
+            "description": "",
+            "stresses": [
+                {
+                    "param": "spot",
+                    "stress_type": "PERCENTAGE",
+                    "value": -0.1,
+                    "level": "portfolio",
+                    "target": None,
+                }
+            ],
+        }
+    ]
+    monkeypatch.setattr(
+        scenario_catalog,
+        "resolve_scenarios",
+        lambda _request: [scenario_catalog.build_custom(frozen_specs[0])],
+    )
+    seen: list[list[dict]] = []
+
+    def fake_pipeline(_session, *, resolved_scenario_specs, **_kwargs):
+        seen.append(resolved_scenario_specs)
+        return (
+            "completed",
+            {
+                "scenarios": [
+                    {"name": resolved_scenario_specs[0]["name"], "pnl": -10.0}
+                ]
+            },
+            [],
+            None,
+        )
+
+    monkeypatch.setattr(scenario_service, "run_pipeline", fake_pipeline)
+    with database.SessionLocal() as session:
+        portfolio, position, profile, _engine = _fixture(session)
+        session.commit()
+        ids = (portfolio.id, position.id, profile.id)
+
+    mismatch = datetime(2025, 4, 2, 11, 0)
+    explicit = datetime(2026, 7, 15, 23, 0, tzinfo=timezone(timedelta(hours=8)))
+    with pytest.raises(
+        ValueError,
+        match="valuation_as_of must equal the selected profile valuation_date",
+    ):
+        scenario_test_runner.run_persisted_scenario_source(
+            session_factory=database.SessionLocal,
+            portfolio_id=ids[0],
+            position_ids=[ids[1]],
+            pricing_parameter_profile_id=ids[2],
+            scenario_request={"scenario_set": "desk-set"},
+            config={},
+            valuation_as_of=mismatch,
+            write_artifacts=False,
+        )
+    before = datetime.utcnow() - timedelta(seconds=2)
+    result = scenario_test_runner.run_persisted_scenario_source(
+        session_factory=database.SessionLocal,
+        portfolio_id=ids[0],
+        position_ids=[ids[1]],
+        pricing_parameter_profile_id=ids[2],
+        scenario_request={"scenario_set": "desk-set"},
+        config={},
+        valuation_as_of=explicit,
+        write_artifacts=False,
+    )
+    after = datetime.utcnow() + timedelta(seconds=2)
+
+    with database.SessionLocal() as session:
+        run = session.get(ScenarioTestRun, result.scenario_test_run_id)
+        metadata = run.results["source_metadata"]
+        assert before <= run.created_at <= after
+        assert metadata["effective_valuation_as_of"] == "2026-07-15T15:00:00"
+        assert metadata["valuation_origin"] == "profile"
+        assert metadata["profile_valuation_as_of"] == "2026-07-15T15:00:00"
+        assert metadata["scenario_set_name"] == "desk-set"
+        assert metadata["scenario_set_hash"].startswith("sha256:")
+        assert metadata["frozen_scenarios"] == frozen_specs
+        assert seen == [frozen_specs]
+
+
+def test_scenario_engine_resolution_failure_is_not_replaced_by_black_scholes(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.services import scenario_test_runner
+
+    with database.SessionLocal() as session:
+        portfolio, position, *_rest = _fixture(session)
+        session.commit()
+        ids = (portfolio.id, position.id)
+
+    monkeypatch.setattr(
+        "app.services.engine_configs.resolve_pricing_engine",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            ValueError("no compatible engine")
+        ),
+    )
+    with pytest.raises(ValueError, match="no compatible engine"):
+        scenario_test_runner.run_persisted_scenario_source(
+            session_factory=database.SessionLocal,
+            portfolio_id=ids[0],
+            position_ids=[ids[1]],
+            scenario_request={"predefined": ["market_crash"]},
+            config={},
+            write_artifacts=False,
+        )
+
+
+def test_queued_named_set_uses_frozen_snapshot_and_later_content_drift_changes_hash(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.models import ScenarioTestRun
+    from app.services import scenario_test_runner
+    from app.services.domains import scenario_catalog
+    from app.services.domains import scenario_test as scenario_service
+
+    current_specs = [
+        {
+            "name": "desk-down-10",
+            "description": "",
+            "stresses": [
+                {
+                    "param": "spot",
+                    "stress_type": "PERCENTAGE",
+                    "value": -0.1,
+                    "level": "portfolio",
+                    "target": None,
+                }
+            ],
+        }
+    ]
+    monkeypatch.setattr(
+        scenario_catalog,
+        "resolve_scenarios",
+        lambda _request: [
+            scenario_catalog.build_custom(spec) for spec in current_specs
+        ],
+    )
+    monkeypatch.setattr(
+        scenario_test_runner,
+        "submit_async_task",
+        lambda *_args, **_kwargs: None,
+    )
+    executed: list[list[dict]] = []
+
+    def fake_pipeline(_session, *, resolved_scenario_specs, **_kwargs):
+        executed.append(resolved_scenario_specs)
+        return (
+            "completed",
+            {
+                "scenarios": [
+                    {
+                        "name": resolved_scenario_specs[0]["name"],
+                        "pnl": -10.0,
+                    }
+                ]
+            },
+            [],
+            None,
+        )
+
+    monkeypatch.setattr(scenario_service, "run_pipeline", fake_pipeline)
+    with database.SessionLocal() as session:
+        portfolio, position, *_rest = _fixture(session)
+        first, task = scenario_test_runner.queue_scenario_test(
+            session,
+            portfolio_id=portfolio.id,
+            position_ids=[position.id],
+            scenario_request={"scenario_set": "desk-set"},
+            config={},
+        )
+        first_id, task_id = first.id, task.id
+
+    original_specs = [dict(current_specs[0])]
+    original_specs[0]["stresses"] = [dict(current_specs[0]["stresses"][0])]
+    current_specs[0]["name"] = "desk-down-20"
+    current_specs[0]["stresses"][0]["value"] = -0.2
+    scenario_test_runner.execute_scenario_test_task(
+        task_id,
+        first_id,
+        session_factory=database.SessionLocal,
+    )
+
+    with database.SessionLocal() as session:
+        first = session.get(ScenarioTestRun, first_id)
+        second, _task = scenario_test_runner.queue_scenario_test(
+            session,
+            portfolio_id=first.portfolio_id,
+            position_ids=first.resolved_position_ids,
+            scenario_request={"scenario_set": "desk-set"},
+            config={},
+        )
+        first_hash = first.scenario_spec["_source_snapshot_v1"]["sha256"]
+        second_hash = second.scenario_spec["_source_snapshot_v1"]["sha256"]
+
+    assert executed == [original_specs]
+    assert first_hash != second_hash
