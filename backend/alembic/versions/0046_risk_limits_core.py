@@ -49,6 +49,22 @@ def _indexes(table_name: str) -> set[str]:
     }
 
 
+def _has_foreign_key(
+    table_name: str,
+    constrained_columns: list[str],
+    referred_table: str,
+    referred_columns: list[str],
+) -> bool:
+    if table_name not in _tables():
+        return False
+    return any(
+        foreign_key["constrained_columns"] == constrained_columns
+        and foreign_key["referred_table"] == referred_table
+        and foreign_key["referred_columns"] == referred_columns
+        for foreign_key in inspect(op.get_bind()).get_foreign_keys(table_name)
+    )
+
+
 def _create_index(
     name: str,
     table_name: str,
@@ -113,7 +129,7 @@ def upgrade() -> None:
             sa.Column(
                 "risk_limit_id",
                 sa.Integer(),
-                sa.ForeignKey("risk_limits.id", ondelete="CASCADE"),
+                sa.ForeignKey("risk_limits.id", ondelete="RESTRICT"),
                 nullable=False,
             ),
             sa.Column("version", sa.Integer(), nullable=False),
@@ -494,27 +510,38 @@ def upgrade() -> None:
             ),
         )
 
-    if (
+    task_runs_has_link = (
         "task_runs" in _tables()
-        and "limit_monitoring_run_id" not in _columns("task_runs")
+        and "limit_monitoring_run_id" in _columns("task_runs")
+    )
+    task_runs_has_link_fk = task_runs_has_link and _has_foreign_key(
+        "task_runs",
+        ["limit_monitoring_run_id"],
+        "limit_monitoring_runs",
+        ["id"],
+    )
+    if "task_runs" in _tables() and (
+        not task_runs_has_link or not task_runs_has_link_fk
     ):
         with op.batch_alter_table(
             "task_runs",
             naming_convention=_NAMING_CONVENTION,
         ) as batch:
-            batch.add_column(
-                sa.Column(
-                    "limit_monitoring_run_id",
-                    sa.Integer(),
-                    nullable=True,
+            if not task_runs_has_link:
+                batch.add_column(
+                    sa.Column(
+                        "limit_monitoring_run_id",
+                        sa.Integer(),
+                        nullable=True,
+                    )
                 )
-            )
-            batch.create_foreign_key(
-                "fk_task_runs_limit_monitoring_run_id_limit_monitoring_runs",
-                "limit_monitoring_runs",
-                ["limit_monitoring_run_id"],
-                ["id"],
-            )
+            if not task_runs_has_link_fk:
+                batch.create_foreign_key(
+                    "fk_task_runs_limit_monitoring_run_id_limit_monitoring_runs",
+                    "limit_monitoring_runs",
+                    ["limit_monitoring_run_id"],
+                    ["id"],
+                )
 
     _create_index(
         "ix_risk_limits_active_version_id",

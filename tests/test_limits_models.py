@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 
@@ -172,6 +173,28 @@ def test_limit_version_number_is_unique_per_identity(session) -> None:
 
     with pytest.raises(IntegrityError), session.begin_nested():
         _version(session, limit_row.id)
+
+
+def test_limit_identity_and_version_history_cannot_be_hard_deleted(
+    session,
+) -> None:
+    from app.models import RiskLimitVersion
+
+    limit_row = _limit(session, key="immutable-history")
+    version = _version(session, limit_row.id)
+    version.state = "retired"
+    session.commit()
+
+    with pytest.raises(IntegrityError), session.begin_nested():
+        session.delete(limit_row)
+        session.flush()
+
+    session.expire_all()
+    persisted = session.scalar(
+        select(RiskLimitVersion).where(RiskLimitVersion.id == version.id)
+    )
+    assert persisted is not None
+    assert persisted.state == "retired"
 
 
 def test_evaluation_is_unique_per_run_version_scope(session) -> None:

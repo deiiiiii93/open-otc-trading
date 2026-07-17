@@ -244,7 +244,9 @@ def test_orm_first_bootstrap_then_upgrade_head(tmp_path: Path, monkeypatch) -> N
     assert revision == "0046_risk_limits_core"
 
 
-def test_boot_repair_adds_task_monitoring_link(tmp_path: Path) -> None:
+def test_boot_repair_then_upgrade_adds_task_monitoring_foreign_key(
+    tmp_path: Path,
+) -> None:
     from app import database
 
     engine = _engine_with_task_runs(tmp_path, "repair.sqlite3")
@@ -271,6 +273,20 @@ def test_boot_repair_adds_task_monitoring_link(tmp_path: Path) -> None:
     assert "ix_task_runs_limit_monitoring_run_id" in {
         index["name"] for index in inspector.get_indexes("task_runs")
     }
+    assert not any(
+        foreign_key["constrained_columns"] == ["limit_monitoring_run_id"]
+        for foreign_key in inspector.get_foreign_keys("task_runs")
+    )
+
+    _run_migration(_migration(), "upgrade", engine)
+
+    foreign_keys = inspect(engine).get_foreign_keys("task_runs")
+    assert any(
+        foreign_key["constrained_columns"] == ["limit_monitoring_run_id"]
+        and foreign_key["referred_table"] == "limit_monitoring_runs"
+        and foreign_key["referred_columns"] == ["id"]
+        for foreign_key in foreign_keys
+    )
 
 
 def test_upgrade_is_idempotent_for_orm_first_objects(tmp_path: Path) -> None:

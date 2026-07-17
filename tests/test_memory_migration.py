@@ -13,6 +13,8 @@ from pathlib import Path
 import sqlalchemy as sa
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.schema import CreateIndex
 from sqlalchemy import create_engine, inspect, text
 
 
@@ -160,3 +162,53 @@ def test_0038_upgrade_is_noop_on_current_orm_schema(tmp_path: Path) -> None:
     }
     assert "namespace" not in columns
     assert {"scope_type", "scope_id", "normalized_content", "status"} <= columns
+
+
+def test_memory_dedup_orm_index_excludes_archived_rows_on_postgresql() -> None:
+    from app.models import MemoryEntry
+
+    index = next(
+        index
+        for index in MemoryEntry.__table__.indexes
+        if index.name == "ux_memory_dedup"
+    )
+    ddl = str(CreateIndex(index).compile(dialect=postgresql.dialect()))
+
+    assert "WHERE status != 'archived'" in ddl
+
+
+def test_0038_current_schema_repair_sets_both_partial_index_predicates(
+    tmp_path: Path,
+) -> None:
+    from app.models import Base
+
+    engine = _fresh_engine(tmp_path, "current-repair.sqlite3")
+    Base.metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.execute(text("DROP INDEX ux_memory_dedup"))
+
+    migration = importlib.import_module(
+        "backend.alembic.versions.0038_memory_entries_evolve"
+    )
+    connection = engine.connect()
+    original_op = migration.op
+    operations = Operations(MigrationContext.configure(connection))
+    captured: dict[str, object] = {}
+    original_create_index = operations.create_index
+
+    def _capture_create_index(name, *args, **kwargs):
+        if name == "ux_memory_dedup":
+            captured.update(kwargs)
+        return original_create_index(name, *args, **kwargs)
+
+    operations.create_index = _capture_create_index
+    migration.op = operations
+    try:
+        migration.upgrade()
+        connection.commit()
+    finally:
+        migration.op = original_op
+        connection.close()
+
+    assert str(captured["sqlite_where"]) == "status != 'archived'"
+    assert str(captured["postgresql_where"]) == "status != 'archived'"

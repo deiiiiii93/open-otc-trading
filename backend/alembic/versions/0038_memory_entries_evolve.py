@@ -75,6 +75,7 @@ def upgrade() -> None:
                 ["scope_type", "scope_id", "normalized_content"],
                 unique=True,
                 sqlite_where=sa.text("status != 'archived'"),
+                postgresql_where=sa.text("status != 'archived'"),
             )
         return
 
@@ -141,7 +142,9 @@ def upgrade() -> None:
                     ["scope_type", "scope_id", "status"])
     op.create_index("ux_memory_dedup", "memory_entries",
                     ["scope_type", "scope_id", "normalized_content"],
-                    unique=True, sqlite_where=sa.text("status != 'archived'"))
+                    unique=True,
+                    sqlite_where=sa.text("status != 'archived'"),
+                    postgresql_where=sa.text("status != 'archived'"))
 
 
 def downgrade() -> None:

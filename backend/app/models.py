@@ -234,7 +234,9 @@ class MemoryEntry(Base):
         Index("ix_memory_scope_status", "scope_type", "scope_id", "status"),
         Index(
             "ux_memory_dedup", "scope_type", "scope_id", "normalized_content",
-            unique=True, sqlite_where=text("status != 'archived'"),
+            unique=True,
+            sqlite_where=text("status != 'archived'"),
+            postgresql_where=text("status != 'archived'"),
         ),
     )
 
@@ -1668,7 +1670,7 @@ class RiskLimit(Base):
 
     versions: Mapped[list["RiskLimitVersion"]] = relationship(
         back_populates="risk_limit",
-        cascade="all, delete-orphan",
+        passive_deletes=True,
         order_by="RiskLimitVersion.version",
     )
     incidents: Mapped[list["LimitIncident"]] = relationship(
@@ -1685,7 +1687,7 @@ class RiskLimitVersion(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     risk_limit_id: Mapped[int] = mapped_column(
-        ForeignKey("risk_limits.id", ondelete="CASCADE"), index=True
+        ForeignKey("risk_limits.id", ondelete="RESTRICT"), index=True
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     state: Mapped[str] = mapped_column(
