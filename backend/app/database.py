@@ -497,6 +497,20 @@ def _ensure_incremental_schema(active_engine: Engine) -> None:
                         "ON task_runs (greeks_landscape_run_id)"
                     )
                 )
+            if "limit_monitoring_run_id" not in task_run_cols:
+                connection.execute(
+                    text(
+                        "ALTER TABLE task_runs "
+                        "ADD COLUMN limit_monitoring_run_id INTEGER"
+                    )
+                )
+            connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS "
+                    "ix_task_runs_limit_monitoring_run_id "
+                    "ON task_runs (limit_monitoring_run_id)"
+                )
+            )
 
     for table_name in ("position_valuation_runs", "risk_runs", "scenario_test_runs", "backtest_runs"):
         if table_name not in tables:

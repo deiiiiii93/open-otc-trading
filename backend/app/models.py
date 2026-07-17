@@ -56,6 +56,7 @@ class TaskKind(str, Enum):
     BATCH_PRICING = "batch_pricing"
     GREEKS_LANDSCAPE = "greeks_landscape"
     SCENARIO_TEST = "scenario_test"
+    LIMIT_MONITORING = "limit_monitoring"
     # position_pricing / risk_run are legacy kinds: no longer created, kept so
     # historical task rows keep their labels and filters.
     POSITION_PRICING = "position_pricing"
@@ -1638,6 +1639,386 @@ class BacktestRun(Base):
     task_runs: Mapped[list["TaskRun"]] = relationship(back_populates="backtest_run")
 
 
+class RiskLimit(Base):
+    __tablename__ = "risk_limits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(120), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    category: Mapped[str] = mapped_column(String(32), nullable=False)
+    owner: Mapped[str] = mapped_column(String(120), nullable=False)
+    tags: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    active_version_id: Mapped[int | None] = mapped_column(
+        Integer, index=True, nullable=True
+    )
+    created_by_actor: Mapped[str] = mapped_column(
+        String(120), default="system", nullable=False
+    )
+    created_by_persona: Mapped[str | None] = mapped_column(
+        String(40), nullable=True
+    )
+    row_version: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow
+    )
+
+    versions: Mapped[list["RiskLimitVersion"]] = relationship(
+        back_populates="risk_limit",
+        cascade="all, delete-orphan",
+        order_by="RiskLimitVersion.version",
+    )
+    incidents: Mapped[list["LimitIncident"]] = relationship(
+        back_populates="risk_limit"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("key", name="uq_risk_limits_key"),
+    )
+
+
+class RiskLimitVersion(Base):
+    __tablename__ = "risk_limit_versions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    risk_limit_id: Mapped[int] = mapped_column(
+        ForeignKey("risk_limits.id", ondelete="CASCADE"), index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(
+        String(24), default="draft", server_default="draft", index=True
+    )
+    metric_kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    methodology: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    scope_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    scope_config: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    aggregation: Mapped[str] = mapped_column(String(24), nullable=False)
+    transform: Mapped[str] = mapped_column(String(24), nullable=False)
+    comparator: Mapped[str] = mapped_column(String(16), nullable=False)
+    warning_lower: Mapped[float | None] = mapped_column(Float, nullable=True)
+    warning_upper: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hard_lower: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hard_upper: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unit: Mapped[str] = mapped_column(String(40), nullable=False)
+    currency: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    bump_convention: Mapped[str | None] = mapped_column(
+        String(80), nullable=True
+    )
+    freshness_policy: Mapped[dict] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    effective_from: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    effective_until: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_actor: Mapped[str] = mapped_column(
+        String(120), default="system", nullable=False
+    )
+    created_by_persona: Mapped[str | None] = mapped_column(
+        String(40), nullable=True
+    )
+    created_in_mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    created_in_thread_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    activated_by_actor: Mapped[str | None] = mapped_column(
+        String(120), nullable=True
+    )
+    activated_by_persona: Mapped[str | None] = mapped_column(
+        String(40), nullable=True
+    )
+    activated_in_mode: Mapped[str | None] = mapped_column(
+        String(16), nullable=True
+    )
+    activated_in_thread_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    activated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+
+    risk_limit: Mapped[RiskLimit] = relationship(back_populates="versions")
+    monitoring_run_links: Mapped[list["LimitMonitoringRunVersion"]] = relationship(
+        back_populates="limit_version"
+    )
+    evaluations: Mapped[list["LimitEvaluation"]] = relationship(
+        back_populates="limit_version"
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "risk_limit_id",
+            "version",
+            name="uq_risk_limit_versions_limit_version",
+        ),
+    )
+
+
+class LimitMonitoringRun(Base):
+    __tablename__ = "limit_monitoring_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trigger: Mapped[str] = mapped_column(String(24), nullable=False)
+    mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    schedule_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    occurrence_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    portfolio_id: Mapped[int] = mapped_column(
+        ForeignKey("portfolios.id"), index=True
+    )
+    pricing_parameter_profile_id: Mapped[int | None] = mapped_column(
+        ForeignKey("pricing_parameter_profiles.id"), nullable=True
+    )
+    engine_config_id: Mapped[int | None] = mapped_column(
+        ForeignKey("engine_config_variants.id"), nullable=True
+    )
+    market_snapshot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("market_snapshots.id"), nullable=True
+    )
+    valuation_as_of: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    source_policy: Mapped[str] = mapped_column(String(24), nullable=False)
+    max_source_age_seconds: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(40), default="queued", server_default="queued", index=True
+    )
+    summary: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    definition_snapshot: Mapped[dict] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    definition_snapshot_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    task_runs: Mapped[list["TaskRun"]] = relationship(
+        back_populates="limit_monitoring_run"
+    )
+    version_links: Mapped[list["LimitMonitoringRunVersion"]] = relationship(
+        back_populates="monitoring_run",
+        cascade="all, delete-orphan",
+    )
+    source_references: Mapped[list["LimitSourceReference"]] = relationship(
+        back_populates="monitoring_run",
+        cascade="all, delete-orphan",
+    )
+    evaluations: Mapped[list["LimitEvaluation"]] = relationship(
+        back_populates="monitoring_run",
+        cascade="all, delete-orphan",
+    )
+
+
+class LimitMonitoringRunVersion(Base):
+    __tablename__ = "limit_monitoring_run_versions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    monitoring_run_id: Mapped[int] = mapped_column(
+        ForeignKey("limit_monitoring_runs.id", ondelete="CASCADE"), index=True
+    )
+    limit_version_id: Mapped[int] = mapped_column(
+        ForeignKey("risk_limit_versions.id")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    monitoring_run: Mapped[LimitMonitoringRun] = relationship(
+        back_populates="version_links"
+    )
+    limit_version: Mapped[RiskLimitVersion] = relationship(
+        back_populates="monitoring_run_links"
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "monitoring_run_id",
+            "limit_version_id",
+            name="uq_limit_monitoring_run_versions_run_version",
+        ),
+    )
+
+
+class LimitSourceReference(Base):
+    __tablename__ = "limit_source_references"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    monitoring_run_id: Mapped[int] = mapped_column(
+        ForeignKey("limit_monitoring_runs.id", ondelete="CASCADE"), index=True
+    )
+    source_kind: Mapped[str] = mapped_column(String(32), index=True)
+    risk_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("risk_runs.id"), nullable=True
+    )
+    scenario_test_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("scenario_test_runs.id"), nullable=True
+    )
+    backtest_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("backtest_runs.id"), nullable=True
+    )
+    requested_parameters: Mapped[dict] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    source_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    is_fresh: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    completeness_diagnostics: Mapped[dict] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    source_valuation_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    source_created_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    monitoring_run: Mapped[LimitMonitoringRun] = relationship(
+        back_populates="source_references"
+    )
+
+
+class LimitEvaluation(Base):
+    __tablename__ = "limit_evaluations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    monitoring_run_id: Mapped[int] = mapped_column(
+        ForeignKey("limit_monitoring_runs.id", ondelete="CASCADE"), index=True
+    )
+    limit_version_id: Mapped[int] = mapped_column(
+        ForeignKey("risk_limit_versions.id")
+    )
+    scope_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    scope_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    scope_label: Mapped[str] = mapped_column(String(200), nullable=False)
+    observed_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    adverse_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    warning_lower: Mapped[float | None] = mapped_column(Float, nullable=True)
+    warning_upper: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hard_lower: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hard_upper: Mapped[float | None] = mapped_column(Float, nullable=True)
+    utilization: Mapped[float | None] = mapped_column(Float, nullable=True)
+    headroom: Mapped[float | None] = mapped_column(Float, nullable=True)
+    governing_boundary: Mapped[str | None] = mapped_column(
+        String(16), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    coverage_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    coverage_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    evaluated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    monitoring_run: Mapped[LimitMonitoringRun] = relationship(
+        back_populates="evaluations"
+    )
+    limit_version: Mapped[RiskLimitVersion] = relationship(
+        back_populates="evaluations"
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "monitoring_run_id",
+            "limit_version_id",
+            "scope_key",
+            name="uq_limit_evaluations_run_version_scope",
+        ),
+    )
+
+
+class LimitIncident(Base):
+    __tablename__ = "limit_incidents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    risk_limit_id: Mapped[int] = mapped_column(
+        ForeignKey("risk_limits.id"), index=True
+    )
+    scope_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    scope_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    scope_label: Mapped[str] = mapped_column(String(200), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    first_evaluation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("limit_evaluations.id"), nullable=True
+    )
+    last_evaluation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("limit_evaluations.id"), nullable=True
+    )
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    waived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    owner: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    assignee: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    waiver_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    waiver_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    row_version: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow
+    )
+
+    risk_limit: Mapped[RiskLimit] = relationship(back_populates="incidents")
+    events: Mapped[list["LimitIncidentEvent"]] = relationship(
+        back_populates="incident",
+        cascade="all, delete-orphan",
+        order_by="LimitIncidentEvent.created_at",
+    )
+
+    __table_args__ = (
+        Index(
+            "uq_limit_incidents_active_episode",
+            "risk_limit_id",
+            "scope_key",
+            unique=True,
+            sqlite_where=text(
+                "status IN ('open', 'acknowledged', 'assigned', 'waived')"
+            ),
+            postgresql_where=text(
+                "status IN ('open', 'acknowledged', 'assigned', 'waived')"
+            ),
+        ),
+    )
+
+
+class LimitIncidentEvent(Base):
+    __tablename__ = "limit_incident_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    incident_id: Mapped[int] = mapped_column(
+        ForeignKey("limit_incidents.id", ondelete="CASCADE"), index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    evaluation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("limit_evaluations.id"), nullable=True
+    )
+    actor: Mapped[str] = mapped_column(String(120), nullable=False)
+    persona: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    thread_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    audit_ref: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    incident: Mapped[LimitIncident] = relationship(back_populates="events")
+
+
 class TaskRun(Base):
     __tablename__ = "task_runs"
 
@@ -1663,6 +2044,9 @@ class TaskRun(Base):
     )
     report_job_id: Mapped[int | None] = mapped_column(
         ForeignKey("report_jobs.id"), index=True, nullable=True
+    )
+    limit_monitoring_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("limit_monitoring_runs.id"), index=True, nullable=True
     )
     parent_thread_id: Mapped[int | None] = mapped_column(
         ForeignKey("agent_threads.id", ondelete="SET NULL"),
@@ -1690,6 +2074,9 @@ class TaskRun(Base):
     )
     backtest_run: Mapped["BacktestRun | None"] = relationship(back_populates="task_runs")
     report_job: Mapped["ReportJob | None"] = relationship(back_populates="task_runs")
+    limit_monitoring_run: Mapped["LimitMonitoringRun | None"] = relationship(
+        back_populates="task_runs"
+    )
 
 
 class MarketSnapshot(Base):
