@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import func, select
@@ -327,3 +327,200 @@ def test_inline_partial_risk_source_persists_coverage_diagnostics(
             "total_count": 2,
             "coverage_ratio": 0.5,
         }
+
+
+def test_profile_valuation_rejects_mismatch_and_keeps_true_creation_time(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.models import RiskRun
+    from app.services.batch_pricing import run_persisted_risk_source
+
+    mismatch = datetime(2026, 7, 16, 23, 30, tzinfo=timezone(timedelta(hours=8)))
+    explicit = datetime(2026, 7, 16, 23, 0, tzinfo=timezone(timedelta(hours=8)))
+    with database.SessionLocal() as session:
+        portfolio, position, profile, _engine, market, _row = _source_fixture(session)
+        session.commit()
+        ids = (portfolio.id, position.id, profile.id, market.id)
+
+    with pytest.raises(
+        ValueError,
+        match="valuation_as_of must equal the selected profile valuation_date",
+    ):
+        run_persisted_risk_source(
+            session_factory=database.SessionLocal,
+            portfolio_id=ids[0],
+            position_ids=[ids[1]],
+            pricing_parameter_profile_id=ids[2],
+            market_snapshot_id=ids[3],
+            valuation_as_of=mismatch,
+        )
+
+    before = datetime.utcnow() - timedelta(seconds=2)
+    result = run_persisted_risk_source(
+        session_factory=database.SessionLocal,
+        portfolio_id=ids[0],
+        position_ids=[ids[1]],
+        pricing_parameter_profile_id=ids[2],
+        market_snapshot_id=ids[3],
+        valuation_as_of=explicit,
+    )
+    after = datetime.utcnow() + timedelta(seconds=2)
+
+    with database.SessionLocal() as session:
+        run = session.get(RiskRun, result.risk_run_id)
+        metadata = run.metrics["source_metadata"]
+        assert before <= run.created_at <= after
+        assert run.metrics["valuation_as_of"] == "2026-07-16T15:00:00"
+        assert metadata["effective_valuation_as_of"] == "2026-07-16T15:00:00"
+        assert metadata["valuation_origin"] == "profile"
+        assert metadata["profile_valuation_as_of"] == "2026-07-16T15:00:00"
+        assert metadata["market_snapshot_id"] == ids[3]
+        assert metadata["effective_market_evidence_id"].startswith(
+            "risk-market-evidence/v1:"
+        )
+        assert metadata["market_evidence_manifest"]["positions"][0][
+            "market_snapshot_id"
+        ] == ids[3]
+
+
+def test_market_snapshot_is_applied_and_wrong_scope_fails_closed(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.models import MarketSnapshot, RiskRun
+    from app.services.batch_pricing import run_persisted_risk_source
+
+    with database.SessionLocal() as session:
+        portfolio, position, _profile, _engine, market, _row = _source_fixture(session)
+        market.symbol = "AAPL - Apple Inc."
+        market.data = {
+            "spot": 155.0,
+            "rate": 0.03,
+            "dividend_yield": 0.01,
+            "volatility": 0.4,
+        }
+        wrong = MarketSnapshot(
+            name="Wrong scope",
+            source="test",
+            symbol="MSFT",
+            valuation_date=market.valuation_date,
+            data={"spot": 200.0},
+            source_metadata={},
+        )
+        session.add(wrong)
+        session.commit()
+        ids = (portfolio.id, position.id, market.id, wrong.id)
+
+    result = run_persisted_risk_source(
+        session_factory=database.SessionLocal,
+        portfolio_id=ids[0],
+        position_ids=[ids[1]],
+        market_snapshot_id=ids[2],
+    )
+    with database.SessionLocal() as session:
+        run = session.get(RiskRun, result.risk_run_id)
+        row = run.metrics["positions"][0]
+        manifest = run.metrics["source_metadata"]["market_evidence_manifest"]
+        assert row["pricing_ok"] is True
+        assert manifest["positions"][0]["resolved_market"]["spot"] == 155.0
+
+    with pytest.raises(ValueError, match="market_snapshot_scope_mismatch"):
+        run_persisted_risk_source(
+            session_factory=database.SessionLocal,
+            portfolio_id=ids[0],
+            position_ids=[ids[1]],
+            market_snapshot_id=ids[3],
+        )
+
+
+def test_future_market_snapshot_is_rejected_for_historical_valuation(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.services.batch_pricing import run_persisted_risk_source
+
+    with database.SessionLocal() as session:
+        portfolio, position, _profile, _engine, market, _row = _source_fixture(session)
+        session.commit()
+        ids = (portfolio.id, position.id, market.id)
+
+    with pytest.raises(ValueError, match="market_snapshot_future_evidence"):
+        run_persisted_risk_source(
+            session_factory=database.SessionLocal,
+            portfolio_id=ids[0],
+            position_ids=[ids[1]],
+            market_snapshot_id=ids[2],
+            valuation_as_of=datetime(2026, 7, 15, 15, 0),
+        )
+
+
+def test_exact_reuse_breaks_when_a_consumed_pricing_row_changes(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.models import PricingParameterRow, RiskRun
+    from app.services.batch_pricing import run_persisted_risk_source
+    from app.services.limits.source_planner import (
+        SourcePlanKey,
+        find_reusable_source,
+    )
+
+    with database.SessionLocal() as session:
+        portfolio, position, profile, engine, market, pricing_row = _source_fixture(
+            session
+        )
+        session.commit()
+        ids = (
+            portfolio.id,
+            position.id,
+            profile.id,
+            engine.id,
+            market.id,
+            pricing_row.id,
+        )
+    result = run_persisted_risk_source(
+        session_factory=database.SessionLocal,
+        portfolio_id=ids[0],
+        position_ids=[ids[1]],
+        pricing_parameter_profile_id=ids[2],
+        engine_config_id=ids[3],
+        market_snapshot_id=ids[4],
+    )
+
+    with database.SessionLocal() as session:
+        run = session.get(RiskRun, result.risk_run_id)
+        metadata = run.metrics["source_metadata"]
+        key = SourcePlanKey.create(
+            source_kind="risk_run",
+            portfolio_id=ids[0],
+            position_ids=[ids[1]],
+            pricing_parameter_profile_id=ids[2],
+            engine_config_id=ids[3],
+            market_snapshot_id=ids[4],
+            effective_market_evidence_id=metadata[
+                "effective_market_evidence_id"
+            ],
+            methodology=metadata["methodology"],
+            config=metadata["source_config"],
+            valuation_policy={
+                "valuation_as_of": metadata["effective_valuation_as_of"]
+            },
+            freshness_policy={
+                "max_age_seconds": 3600,
+                "allow_profile_dated": True,
+            },
+        )
+        fresh = find_reusable_source(session, key, now=run.created_at)
+        row = session.get(PricingParameterRow, ids[5])
+        row.volatility = 0.35
+        session.commit()
+        changed = find_reusable_source(session, key, now=run.created_at)
+
+        assert fresh.is_fresh is True
+        assert changed.run is None
+        assert changed.reason_code == "missing_source"

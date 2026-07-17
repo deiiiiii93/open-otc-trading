@@ -22,7 +22,6 @@ from ..models import (
     Position,
     PositionValuationResult,
     PositionValuationRun,
-    PricingParameterProfile,
     RiskRun,
     TaskKind,
     TaskRun,
@@ -39,6 +38,12 @@ from .risk_engine import (
     _risk_status_from_metrics,
     RiskPositionSnapshot,
     snapshot_risk_position,
+)
+from .source_evidence import (
+    build_market_evidence_manifest,
+    finalize_market_metadata,
+    utc_naive,
+    valuation_metadata,
 )
 from .task_runner import (
     mark_task_finished,
@@ -59,6 +64,7 @@ class ResolvedRiskSource:
     pricing_failures: dict[int, dict[str, Any]]
     pricing_diagnostics: dict[int, dict[str, Any]]
     valuation_as_of: datetime
+    source_metadata: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +92,8 @@ def _create_risk_run(
     market_snapshot_id: int | None,
     method: str,
     status: str,
+    valuation_as_of: datetime | None = None,
+    effective_market_evidence_id: str | None = None,
 ) -> RiskRun:
     portfolio = session.get(Portfolio, portfolio_id)
     if portfolio is None:
@@ -117,6 +125,19 @@ def _create_risk_run(
     )
     session.add(run)
     session.flush()
+    run.metrics = {
+        "source_metadata": valuation_metadata(
+            session,
+            created_at=run.created_at,
+            pricing_parameter_profile_id=pricing_parameter_profile_id,
+            explicit_valuation_as_of=valuation_as_of,
+            market_snapshot_id=market_snapshot_id,
+            requested_effective_market_evidence_id=effective_market_evidence_id,
+        )
+    }
+    run.metrics["source_metadata"].update(
+        {"methodology": {"method": method}, "source_config": {}}
+    )
     return run
 
 
@@ -198,6 +219,7 @@ def run_persisted_risk_source(
     pricing_parameter_profile_id: int | None = None,
     engine_config_id: int | None = None,
     market_snapshot_id: int | None = None,
+    effective_market_evidence_id: str | None = None,
     valuation_as_of: datetime | None = None,
     method: str = "summary",
 ) -> PersistedRiskSource:
@@ -213,9 +235,9 @@ def run_persisted_risk_source(
             market_snapshot_id=market_snapshot_id,
             method=method,
             status=TaskStatus.RUNNING.value,
+            valuation_as_of=valuation_as_of,
+            effective_market_evidence_id=effective_market_evidence_id,
         )
-        if valuation_as_of is not None:
-            run.created_at = valuation_as_of
         session.commit()
         risk_run_id = run.id
 
@@ -286,13 +308,18 @@ def _resolve_risk_source(
             session,
             position_ids=run.resolved_position_ids,
         )
-        valuation_as_of = run.created_at
-        if run.pricing_parameter_profile_id is not None:
-            profile = session.get(
-                PricingParameterProfile, run.pricing_parameter_profile_id
-            )
-            if profile is not None and profile.valuation_date is not None:
-                valuation_as_of = profile.valuation_date
+        source_metadata = deepcopy(
+            (run.metrics or {}).get("source_metadata") or {}
+        )
+        raw_valuation = (
+            source_metadata.get("effective_valuation_as_of")
+            or source_metadata.get("valuation_as_of")
+        )
+        valuation_as_of = (
+            utc_naive(datetime.fromisoformat(raw_valuation))
+            if isinstance(raw_valuation, str)
+            else utc_naive(run.created_at)
+        )
 
         position_markets, pricing_failures, pricing_diagnostics = (
             _pricing_position_context(
@@ -300,6 +327,7 @@ def _resolve_risk_source(
                 resolved,
                 pricing_parameter_profile_id=run.pricing_parameter_profile_id,
                 valuation_date=valuation_as_of,
+                market_snapshot_id=run.market_snapshot_id,
             )
         )
         from .engine_configs import get_engine_config, resolve_pricing_engine
@@ -319,6 +347,15 @@ def _resolve_risk_source(
                     engine_kwargs=dict(position.engine_kwargs or {}),
                 )
             position_snapshots.append(snapshot_risk_position(position, engine))
+        manifest = build_market_evidence_manifest(
+            session,
+            positions=resolved,
+            position_markets=position_markets,
+            pricing_diagnostics=pricing_diagnostics,
+            valuation_as_of=valuation_as_of,
+            market_snapshot_id=run.market_snapshot_id,
+        )
+        source_metadata = finalize_market_metadata(source_metadata, manifest)
 
         return ResolvedRiskSource(
             risk_run_id=run.id,
@@ -334,6 +371,7 @@ def _resolve_risk_source(
             pricing_failures=deepcopy(pricing_failures),
             pricing_diagnostics=deepcopy(pricing_diagnostics),
             valuation_as_of=valuation_as_of,
+            source_metadata=deepcopy(source_metadata),
         )
 
 
@@ -397,6 +435,7 @@ def _compute_risk_source(
         progress_callback=progress_callback,
     )
     metrics["valuation_as_of"] = resolved.valuation_as_of.isoformat()
+    metrics["source_metadata"] = deepcopy(resolved.source_metadata)
     metrics["coverage"] = risk_coverage_diagnostics(
         metrics,
         requested_position_ids=(
@@ -497,11 +536,20 @@ def _mark_risk_source_failed(
 
 _MARKET_DIAGNOSTIC_KEYS = (
     "market_input_source",
+    "spot_input_source",
+    "parameter_input_source",
+    "market_quote_id",
+    "market_quote_as_of",
+    "market_quote_source",
     "quote_age_days",
     "pricing_parameter_profile_id",
     "pricing_parameter_row_id",
     "pricing_parameter_match_type",
     "missing_pricing_fields",
+    "assumption_set_id",
+    "assumption_row_id",
+    "market_snapshot_id",
+    "market_snapshot_valuation_date",
 )
 
 

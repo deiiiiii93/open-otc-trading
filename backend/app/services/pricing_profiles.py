@@ -341,6 +341,7 @@ def pricing_parameter_resolution_diagnostics(
 ) -> dict[str, Any]:
     return {
         "market_input_source": "pricing_parameter_profile",
+        "parameter_input_source": "pricing_parameter_profile",
         "pricing_parameter_profile_id": profile_id,
         "pricing_parameter_row_id": resolution.row.id if resolution.row is not None else None,
         "pricing_parameter_match_type": resolution.match_type,

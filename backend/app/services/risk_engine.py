@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..models import Portfolio, Position, RiskRun, TaskStatus
+from ..models import MarketSnapshot, Portfolio, Position, RiskRun, TaskStatus
 from ..schemas import PricingEnvironmentSnapshot
 from .assumptions import latest_assumption_row
 from .pricing_profiles import (
@@ -45,6 +45,7 @@ class RiskPositionSnapshot:
     underlying_id: int | None
     underlying: str
     product_type: str
+    product_family: str
     product_kwargs: dict[str, Any]
     engine_name: str
     engine_kwargs: dict[str, Any]
@@ -66,7 +67,10 @@ def snapshot_risk_position(
     resolved_engine: Any,
 ) -> RiskPositionSnapshot:
     """Copy normalized product and engine inputs out of the ORM session."""
-    from .domains.products import compatibility_terms_for_position
+    from .domains.products import (
+        compatibility_terms_for_position,
+        product_family_for_quantark_class,
+    )
 
     terms = compatibility_terms_for_position(position)
     source_payload = getattr(position, "source_payload", None)
@@ -77,6 +81,10 @@ def snapshot_risk_position(
         underlying_id=getattr(position, "underlying_id", None),
         underlying=str(terms.get("underlying") or position.underlying or ""),
         product_type=str(terms.get("product_type") or position.product_type or ""),
+        product_family=product_family_for_quantark_class(
+            str(terms.get("product_type") or position.product_type or ""),
+            components=list(terms.get("components") or []),
+        ),
         product_kwargs=deepcopy(dict(terms.get("product_kwargs") or {})),
         engine_name=str(resolved_engine.engine_name),
         engine_kwargs=deepcopy(dict(resolved_engine.engine_kwargs)),
@@ -130,11 +138,14 @@ def _pricing_position_context(
     *,
     pricing_parameter_profile_id: int | None = None,
     valuation_date: datetime | None = None,
+    market_snapshot_id: int | None = None,
 ) -> tuple[
     dict[int, PricingEnvironmentSnapshot],
     dict[int, dict[str, Any]],
     dict[int, dict[str, Any]],
 ]:
+    from .position_adapter import normalize_symbol
+
     # Profile-row resolution only happens when a profile is selected. The
     # per-position market_snapshot_for_position(... session=session,
     # diagnostics=...) loop below runs in BOTH cases so the quote store reaches
@@ -155,6 +166,33 @@ def _pricing_position_context(
         if valuation_date is not None
         else PricingEnvironmentSnapshot()
     )
+    selected_snapshot = (
+        session.get(MarketSnapshot, market_snapshot_id)
+        if market_snapshot_id is not None
+        else None
+    )
+    if market_snapshot_id is not None and selected_snapshot is None:
+        raise ValueError(f"Market snapshot not found: {market_snapshot_id}")
+    if selected_snapshot is not None:
+        scoped_symbols = {
+            normalize_symbol(position.underlying)
+            for position in positions
+            if position.id is not None
+        }
+        snapshot_symbol = normalize_symbol(selected_snapshot.symbol)
+        if len(scoped_symbols) != 1 or scoped_symbols != {snapshot_symbol}:
+            raise ValueError(
+                "market_snapshot_scope_mismatch: a singular MarketSnapshot must "
+                "match every scoped position's normalized symbol"
+            )
+        if (
+            valuation_date is not None
+            and selected_snapshot.valuation_date > valuation_date
+        ):
+            raise ValueError(
+                "market_snapshot_future_evidence: snapshot valuation_date must "
+                "not be after effective valuation_as_of"
+            )
     markets: dict[int, PricingEnvironmentSnapshot] = {}
     pricing_failures: dict[int, dict[str, Any]] = {}
     pricing_diagnostics: dict[int, dict[str, Any]] = {}
@@ -171,10 +209,16 @@ def _pricing_position_context(
             base_market = market_snapshot_for_position(
                 position, fallback_market, session=session, diagnostics=diagnostics
             )
-            markets[position.id] = _apply_assumption_rqv(
-                session, position, base_market, valuation_date, diagnostics
+            markets[position.id] = _apply_market_snapshot(
+                position,
+                _apply_assumption_rqv(
+                    session, position, base_market, valuation_date, diagnostics
+                ),
+                selected_snapshot,
+                diagnostics,
             )
             diagnostics["pricing_params_required"] = False
+            diagnostics.setdefault("spot_input_source", "synthetic_default")
             pricing_diagnostics[position.id] = diagnostics
             continue
         if pricing_parameter_profile_id is None:
@@ -183,16 +227,24 @@ def _pricing_position_context(
             # recorded quote feeds spot and stamps market_input_source; then fold
             # the instrument-level assumption set on top for r/q/vol.
             diagnostics = {}
+            diagnostics["pricing_params_required"] = True
             base_market = market_snapshot_for_position(
                 position,
                 fallback_market,
                 session=session,
                 diagnostics=diagnostics,
             )
-            markets[position.id] = _apply_assumption_rqv(
-                session, position, base_market, valuation_date, diagnostics
+            markets[position.id] = _apply_market_snapshot(
+                position,
+                _apply_assumption_rqv(
+                    session, position, base_market, valuation_date, diagnostics
+                ),
+                selected_snapshot,
+                diagnostics,
             )
             pricing_diagnostics[position.id] = diagnostics
+            diagnostics.setdefault("spot_input_source", "synthetic_default")
+            diagnostics.setdefault("parameter_input_source", "synthetic_default")
             continue
 
         resolution = resolve_pricing_parameter_row_for_position(pricing_rows, position)
@@ -201,6 +253,7 @@ def _pricing_position_context(
             resolution=resolution,
         )
         pricing_diagnostics[position.id] = diagnostics
+        diagnostics["pricing_params_required"] = True
         # Spot chain (T8): thread the session so the quote store feeds the spot
         # slot; pass the diagnostics dict so a quote-sourced spot stamps
         # market_input_source/quote_age_days onto the risk row.
@@ -210,19 +263,34 @@ def _pricing_position_context(
         if not resolution.ok or resolution.row is None:
             # No usable trade row: fall through to the instrument-level assumption
             # set for r/q/vol before reporting the row-resolution failure.
-            markets[position.id] = _apply_assumption_rqv(
-                session, position, base_market, valuation_date, diagnostics
+            markets[position.id] = _apply_market_snapshot(
+                position,
+                _apply_assumption_rqv(
+                    session, position, base_market, valuation_date, diagnostics
+                ),
+                selected_snapshot,
+                diagnostics,
             )
             pricing_failures[position.id] = {
                 "pricing_error": pricing_parameter_resolution_message(position, resolution),
                 **diagnostics,
             }
+            diagnostics.setdefault("spot_input_source", "synthetic_default")
+            diagnostics.setdefault("parameter_input_source", "synthetic_default")
             continue
 
         # Trade row wins for r/q/vol; spot is observation-only (quote store).
         row = resolution.row
-        markets[position.id] = base_market.model_copy(
-            update={
+        diagnostics["parameter_input_source"] = "pricing_parameter_profile"
+        diagnostics["pricing_parameter_values"] = {
+            "rate": row.rate,
+            "dividend_yield": row.dividend_yield,
+            "volatility": row.volatility,
+        }
+        markets[position.id] = _apply_market_snapshot(
+            position,
+            base_market.model_copy(
+                update={
                 "rate": row.rate if row.rate is not None else base_market.rate,
                 "dividend_yield": (
                     row.dividend_yield
@@ -232,9 +300,47 @@ def _pricing_position_context(
                 "volatility": (
                     row.volatility if row.volatility is not None else base_market.volatility
                 ),
-            }
+                }
+            ),
+            selected_snapshot,
+            diagnostics,
         )
+        diagnostics.setdefault("spot_input_source", "synthetic_default")
     return markets, pricing_failures, pricing_diagnostics
+
+
+def _apply_market_snapshot(
+    position: Position,
+    market: PricingEnvironmentSnapshot,
+    snapshot: MarketSnapshot | None,
+    diagnostics: dict[str, Any],
+) -> PricingEnvironmentSnapshot:
+    from .position_adapter import normalize_symbol
+
+    if snapshot is None:
+        return market
+    if normalize_symbol(snapshot.symbol) != normalize_symbol(position.underlying):
+        raise ValueError(
+            f"Market snapshot {snapshot.id} for {snapshot.symbol!r} does not cover "
+            f"position {position.id} underlying {position.underlying!r}"
+        )
+    data = dict(snapshot.data or {})
+    if data.get("spot") is None:
+        raise ValueError(f"Market snapshot {snapshot.id} has no usable spot")
+    allowed = {"spot": data["spot"]}
+    try:
+        updated = market.model_copy(update=allowed)
+        # Pydantic ``model_copy`` does not validate updates; reconstruct once so
+        # malformed/non-finite snapshot data cannot enter a source manifest.
+        updated = PricingEnvironmentSnapshot(**updated.model_dump())
+    except Exception as exc:
+        raise ValueError(f"Market snapshot {snapshot.id} is invalid: {exc}") from exc
+    diagnostics["market_snapshot_id"] = snapshot.id
+    diagnostics["market_snapshot_valuation_date"] = snapshot.valuation_date.isoformat()
+    diagnostics["market_snapshot_fields"] = sorted(allowed)
+    diagnostics["market_input_source"] = "market_snapshot"
+    diagnostics["spot_input_source"] = "market_snapshot"
+    return updated
 
 
 def _apply_assumption_rqv(
@@ -270,6 +376,7 @@ def _apply_assumption_rqv(
     # The assumption set supplies r/q/vol; it claims the source label even when a
     # market quote also supplied spot (quote_age_days, if any, is preserved).
     diagnostics["market_input_source"] = "assumption_set"
+    diagnostics["parameter_input_source"] = "assumption_set"
     diagnostics["assumption_set_id"] = row.set_id
     diagnostics["assumption_row_id"] = row.id
     return base_market.model_copy(update=update)
@@ -281,12 +388,14 @@ def _pricing_position_markets(
     *,
     pricing_parameter_profile_id: int | None = None,
     valuation_date: datetime | None = None,
+    market_snapshot_id: int | None = None,
 ) -> dict[int, PricingEnvironmentSnapshot]:
     markets, _pricing_failures, _pricing_diagnostics = _pricing_position_context(
         session,
         positions,
         pricing_parameter_profile_id=pricing_parameter_profile_id,
         valuation_date=valuation_date,
+        market_snapshot_id=market_snapshot_id,
     )
     return markets
 
@@ -297,12 +406,14 @@ def pricing_position_markets(
     *,
     pricing_parameter_profile_id: int | None = None,
     valuation_date: datetime | None = None,
+    market_snapshot_id: int | None = None,
 ) -> dict[int, PricingEnvironmentSnapshot]:
     return _pricing_position_markets(
         session,
         positions,
         pricing_parameter_profile_id=pricing_parameter_profile_id,
         valuation_date=valuation_date,
+        market_snapshot_id=market_snapshot_id,
     )
 
 

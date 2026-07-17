@@ -1471,6 +1471,10 @@ def _quote_spot_for_position(
         return None
     if diagnostics is not None:
         diagnostics["market_input_source"] = "market_quote"
+        diagnostics["spot_input_source"] = "market_quote"
+        diagnostics["market_quote_id"] = quote.id
+        diagnostics["market_quote_as_of"] = quote.as_of.isoformat()
+        diagnostics["market_quote_source"] = quote.source
         diagnostics["quote_age_days"] = (valuation_date.date() - quote.as_of.date()).days
     return float(quote.price)
 
@@ -1596,11 +1600,17 @@ def _risk_row(
     spot: float | None = None,
 ) -> dict[str, Any]:
     greek_values = greeks or {greek: 0.0 for greek in RISK_GREEK_KEYS}
+    product_family = getattr(position, "product_family", None)
+    if not product_family:
+        from .domains.products import product_family_for_quantark_class
+
+        product_family = product_family_for_quantark_class(position.product_type)
     row = {
         "position_id": position.id,
         "source_trade_id": getattr(position, "source_trade_id", None),
         "underlying": position.underlying,
         "product_type": position.product_type,
+        "product_family": product_family,
         "quantity": position.quantity,
         "price": price,
         "market_value": market_value,

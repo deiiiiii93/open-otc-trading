@@ -51,6 +51,48 @@ def test_compute_position_greeks_returns_full_set_for_vanilla():
     assert 0.0 < result["delta"] < 1.0
 
 
+def test_quantark_rho_and_rho_q_are_price_changes_per_parallel_one_percent_bump():
+    from app.services.quantark import (
+        build_engine_for_position,
+        build_pricing_env,
+        build_product_for_position,
+    )
+
+    position = _vanilla_position(qty=1.0)
+    market = PricingEnvironmentSnapshot(
+        spot=100.0,
+        rate=0.03,
+        dividend_yield=0.02,
+        volatility=0.2,
+    )
+    result = compute_position_greeks(position, market)
+    product = build_product_for_position(position, market)
+    base_env = build_pricing_env(market)
+    engine = build_engine_for_position(position, market)
+    base_price = engine.price(product, base_env)
+    rate_up = build_pricing_env(
+        market.model_copy(update={"rate": market.rate + 0.0001})
+    )
+    dividend_up = build_pricing_env(
+        market.model_copy(
+            update={"dividend_yield": market.dividend_yield + 0.0001}
+        )
+    )
+    finite_difference_rho = (
+        engine.price(product, rate_up) - base_price
+    ) * 100.0
+    finite_difference_rho_q = (
+        engine.price(product, dividend_up) - base_price
+    ) * 100.0
+
+    assert result["ok"] is True
+    assert result["rho"] == pytest.approx(finite_difference_rho, rel=2e-3)
+    assert result["rho_q"] == pytest.approx(
+        finite_difference_rho_q,
+        rel=2e-3,
+    )
+
+
 def test_compute_position_greeks_trims_phoenix_coupon_barriers_with_past_ko():
     position = Position(
         id=34,
