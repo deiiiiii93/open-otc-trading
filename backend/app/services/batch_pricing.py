@@ -42,6 +42,7 @@ from .risk_engine import (
 from .source_evidence import (
     build_market_evidence_manifest,
     finalize_market_metadata,
+    source_metric_contract,
     utc_naive,
     valuation_metadata,
 )
@@ -136,7 +137,11 @@ def _create_risk_run(
         )
     }
     run.metrics["source_metadata"].update(
-        {"methodology": {"method": method}, "source_config": {}}
+        {
+            "methodology": {"method": method},
+            "source_config": {},
+            "metric_contract": source_metric_contract("risk_run"),
+        }
     )
     return run
 

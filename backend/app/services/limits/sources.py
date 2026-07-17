@@ -5,12 +5,17 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import math
+import re
 from typing import Any, Mapping
 
 from sqlalchemy.orm import Session
 
 from ...models import BacktestRun, RiskRun, ScenarioTestRun
 from ..fx import FxRateEvidence, fx_rate_evidence_as_of
+from ..source_evidence import (
+    has_exact_source_metric_contract,
+    source_metric_contract,
+)
 from .evaluator import NormalizedObservation
 from .metrics import get_metric
 
@@ -29,6 +34,9 @@ BACKTEST_TAIL_METHODOLOGY: dict[str, Any] = {
 }
 
 _USABLE_STATUSES = frozenset({"completed", "completed_with_errors"})
+_MISSING_MARKET_EVIDENCE = re.compile(
+    r"^position:([1-9][0-9]*):missing:[a-z][a-z0-9_-]*$"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +58,96 @@ class ObservationScope:
         if self.position_ids is not None:
             normalized = tuple(sorted({int(value) for value in self.position_ids}))
             object.__setattr__(self, "position_ids", normalized)
+
+
+@dataclass(frozen=True, slots=True)
+class SourceMetricSemantics:
+    unit: str
+    currency: str | None
+    bump_convention: str | None
+    calculation_convention: str
+
+
+def _source_metric_semantics(
+    source_metadata: Mapping[str, Any],
+    *,
+    source_kind: str,
+    metric_kind: str,
+    reporting_currency: str | None,
+) -> SourceMetricSemantics | None:
+    if not has_exact_source_metric_contract(source_metadata, source_kind):
+        return None
+    metric = (
+        source_metric_contract(source_kind)
+        .get("metrics", {})
+        .get(metric_kind)
+    )
+    if not isinstance(metric, dict):
+        return None
+    unit = metric.get("unit")
+    dimension = metric.get("currency_dimension")
+    calculation = metric.get("calculation_convention")
+    bump = metric.get("bump_convention")
+    if (
+        not isinstance(unit, str)
+        or not unit
+        or dimension not in {"none", "reporting"}
+        or not isinstance(calculation, str)
+        or not calculation
+        or (bump is not None and (not isinstance(bump, str) or not bump))
+    ):
+        return None
+    if dimension == "none":
+        resolved_unit = unit
+        resolved_currency = None
+    else:
+        resolved_currency = reporting_currency
+        resolved_unit = unit.replace(
+            "{currency}",
+            reporting_currency if reporting_currency is not None else "{currency}",
+        )
+    return SourceMetricSemantics(
+        unit=resolved_unit,
+        currency=resolved_currency,
+        bump_convention=bump,
+        calculation_convention=calculation,
+    )
+
+
+def granular_market_evidence_position_ids(
+    source_metadata: Mapping[str, Any],
+    *,
+    resolved_position_ids: list[int] | tuple[int, ...] | None,
+) -> set[int] | None:
+    """Return affected positions only for a complete, canonical diagnostic set.
+
+    A global ``market_evidence_complete=False`` is usable for a narrower limit
+    scope only when the producer persisted the precise positions whose inputs
+    were synthetic.  Anything malformed is deliberately treated as unknown for
+    every scope rather than risking a selective false clean result.
+    """
+    raw = source_metadata.get("missing_market_evidence")
+    if not isinstance(raw, list) or not raw:
+        return None
+    try:
+        resolved = {
+            int(position_id)
+            for position_id in (resolved_position_ids or [])
+            if not isinstance(position_id, bool) and int(position_id) > 0
+        }
+    except (TypeError, ValueError):
+        return None
+    if not resolved:
+        return None
+    affected: set[int] = set()
+    for value in raw:
+        if not isinstance(value, str):
+            return None
+        match = _MISSING_MARKET_EVIDENCE.fullmatch(value)
+        if match is None:
+            return None
+        affected.add(int(match.group(1)))
+    return affected if affected and affected <= resolved else None
 
 
 def _unknown(
@@ -82,6 +180,9 @@ def _unknown(
             "missing_scenario": "The requested scenario is absent.",
             "missing_fx": "Required point-in-time FX evidence is absent.",
             "invalid_value": "The source returned an invalid numeric value.",
+            "metric_contract_mismatch": (
+                "The source metric unit or bump contract is missing or incompatible."
+            ),
         }.get(reason_code, reason_code),
         coverage_count=coverage_count,
         coverage_ratio=coverage_ratio,
@@ -202,18 +303,30 @@ def adapt_risk_run(
 ) -> NormalizedObservation:
     """Adapt shared, currency-bucket, or per-position risk-run values."""
     descriptor = get_metric(metric_kind)
-    source_bump_convention = {
-        "rho": "parallel_rate_1pct",
-        "rho_q": "parallel_dividend_yield_1pct",
-    }.get(metric_kind)
-    if source_bump_convention is not None:
-        bump_convention = source_bump_convention
-        if currency:
-            unit = f"{currency}/1pct"
+    metrics = deepcopy(run.metrics or {})
+    source_metadata = dict(metrics.get("source_metadata") or {})
+    semantics = _source_metric_semantics(
+        source_metadata,
+        source_kind="risk_run",
+        metric_kind=metric_kind,
+        reporting_currency=currency,
+    )
+    if semantics is not None:
+        unit = semantics.unit
+        currency = semantics.currency
+        bump_convention = semantics.bump_convention
     evidence: dict[str, Any] = {
         "risk_run_id": run.id,
         "method": run.method,
         "resolved_position_ids": list(run.resolved_position_ids or []),
+        "metric_contract_id": (
+            (source_metadata.get("metric_contract") or {}).get("contract_id")
+            if isinstance(source_metadata.get("metric_contract"), dict)
+            else None
+        ),
+        "calculation_convention": (
+            semantics.calculation_convention if semantics is not None else None
+        ),
     }
     status_unknown = _status_unknown(
         source_kind="risk_run",
@@ -226,23 +339,40 @@ def adapt_risk_run(
     if status_unknown is not None:
         return status_unknown
 
-    metrics = deepcopy(run.metrics or {})
-    source_metadata = dict(metrics.get("source_metadata") or {})
-    if source_metadata.get("market_evidence_complete") is False:
-        evidence["missing_market_evidence"] = deepcopy(
-            source_metadata.get("missing_market_evidence") or []
-        )
+    if semantics is None:
         return _unknown(
             source_kind="risk_run",
             unit=unit,
             currency=currency,
             bump_convention=bump_convention,
             source_status=run.status,
-            reason_code="incomplete_scope",
+            reason_code="metric_contract_mismatch",
             evidence=evidence,
         )
+
+    missing_evidence_ids: set[int] | None = set()
+    if source_metadata.get("market_evidence_complete") is False:
+        missing_evidence_ids = granular_market_evidence_position_ids(
+            source_metadata,
+            resolved_position_ids=run.resolved_position_ids,
+        )
+        if missing_evidence_ids is None:
+            evidence["missing_market_evidence"] = deepcopy(
+                source_metadata.get("missing_market_evidence")
+            )
+            return _unknown(
+                source_kind="risk_run",
+                unit=unit,
+                currency=currency,
+                bump_convention=bump_convention,
+                source_status=run.status,
+                reason_code="incomplete_scope",
+                evidence=evidence,
+            )
     rows = list(metrics.get("positions") or [])
     selected, requested_ids = _risk_rows_for_scope(rows, scope)
+    if requested_ids is None and scope.scope_type == "portfolio":
+        requested_ids = tuple(sorted(run.resolved_position_ids or ()))
     selected_ids = tuple(
         int(row["position_id"])
         for row in selected
@@ -304,6 +434,25 @@ def adapt_risk_run(
             coverage_ratio=coverage_ratio,
             evidence=evidence,
         )
+    scoped_missing_evidence = sorted(set(selected_ids) & missing_evidence_ids)
+    if scoped_missing_evidence:
+        evidence["missing_market_evidence"] = [
+            value
+            for value in source_metadata["missing_market_evidence"]
+            if int(_MISSING_MARKET_EVIDENCE.fullmatch(value).group(1))
+            in scoped_missing_evidence
+        ]
+        return _unknown(
+            source_kind="risk_run",
+            unit=unit,
+            currency=currency,
+            bump_convention=bump_convention,
+            source_status=run.status,
+            reason_code="incomplete_scope",
+            coverage_count=covered_count,
+            coverage_ratio=coverage_ratio,
+            evidence=evidence,
+        )
 
     run_position_ids = tuple(sorted(run.resolved_position_ids or selected_ids))
     scope_is_full_run = (
@@ -338,9 +487,45 @@ def adapt_risk_run(
                 evidence={**evidence, "missing_fx": ["reporting_currency"]},
             )
         evidence["value_source"] = "by_currency"
-        for source_currency, bucket in sorted(
-            (metrics.get("by_currency") or {}).items()
-        ):
+        expected_currency_counts: dict[str, int] = {}
+        for row in selected:
+            source_currency = str(row.get("currency") or "UNKNOWN")
+            expected_currency_counts[source_currency] = (
+                expected_currency_counts.get(source_currency, 0) + 1
+            )
+        buckets = metrics.get("by_currency")
+        actual_currency_counts: dict[str, int] = {}
+        if isinstance(buckets, dict):
+            for source_currency, bucket in buckets.items():
+                if not isinstance(source_currency, str) or not isinstance(bucket, dict):
+                    actual_currency_counts = {}
+                    break
+                position_count = bucket.get("position_count")
+                if (
+                    isinstance(position_count, bool)
+                    or not isinstance(position_count, int)
+                    or position_count < 0
+                ):
+                    actual_currency_counts = {}
+                    break
+                actual_currency_counts[source_currency] = position_count
+        if actual_currency_counts != expected_currency_counts:
+            evidence["currency_coverage"] = {
+                "expected_position_counts": expected_currency_counts,
+                "actual_position_counts": actual_currency_counts,
+            }
+            return _unknown(
+                source_kind="risk_run",
+                unit=unit,
+                currency=currency,
+                bump_convention=bump_convention,
+                source_status=run.status,
+                reason_code="incomplete_scope",
+                coverage_count=covered_count,
+                coverage_ratio=coverage_ratio,
+                evidence=evidence,
+            )
+        for source_currency, bucket in sorted(buckets.items()):
             native = _finite((bucket or {}).get(metric_kind))
             if native is None:
                 invalid_numeric = True
@@ -461,10 +646,29 @@ def adapt_scenario_test_run(
     """Adapt locked scenario-distribution tails or exact stress selections."""
     from ..domains.scenario_catalog import strip_source_snapshot
 
+    results = run.results or {}
+    source_metadata = dict(results.get("source_metadata") or {})
+    semantics = _source_metric_semantics(
+        source_metadata,
+        source_kind="scenario_test",
+        metric_kind=metric_kind,
+        reporting_currency=currency,
+    )
+    if semantics is not None:
+        unit = semantics.unit
+        currency = semantics.currency
     evidence: dict[str, Any] = {
         "scenario_test_run_id": run.id,
         "scenario_spec": strip_source_snapshot(run.scenario_spec or {}),
-        "source_metadata": deepcopy((run.results or {}).get("source_metadata") or {}),
+        "source_metadata": deepcopy(source_metadata),
+        "metric_contract_id": (
+            (source_metadata.get("metric_contract") or {}).get("contract_id")
+            if isinstance(source_metadata.get("metric_contract"), dict)
+            else None
+        ),
+        "calculation_convention": (
+            semantics.calculation_convention if semantics is not None else None
+        ),
     }
     status_unknown = _status_unknown(
         source_kind="scenario_test",
@@ -475,6 +679,15 @@ def adapt_scenario_test_run(
     )
     if status_unknown is not None:
         return status_unknown
+    if semantics is None:
+        return _unknown(
+            source_kind="scenario_test",
+            unit=unit,
+            currency=currency,
+            source_status=run.status,
+            reason_code="metric_contract_mismatch",
+            evidence=evidence,
+        )
     if run.excluded_positions:
         evidence["excluded_positions"] = deepcopy(run.excluded_positions)
         return _unknown(
@@ -485,8 +698,6 @@ def adapt_scenario_test_run(
             reason_code="incomplete_scope",
             evidence=evidence,
         )
-    results = run.results or {}
-    source_metadata = dict(results.get("source_metadata") or {})
     if source_metadata.get("methodology") != SCENARIO_TAIL_METHODOLOGY:
         return _unknown(
             source_kind="scenario_test",
@@ -684,10 +895,29 @@ def adapt_backtest_run(
     valuation_as_of: datetime | None = None,
 ) -> NormalizedObservation:
     """Adapt the live loss-positive historical one-day VaR/CVaR producer."""
+    results = run.results or {}
+    source_metadata = dict(results.get("source_metadata") or {})
+    semantics = _source_metric_semantics(
+        source_metadata,
+        source_kind="backtest",
+        metric_kind=metric_kind,
+        reporting_currency=currency,
+    )
+    if semantics is not None:
+        unit = semantics.unit
+        currency = semantics.currency
     evidence: dict[str, Any] = {
         "backtest_run_id": run.id,
         "spec": deepcopy(run.spec or {}),
-        "source_metadata": deepcopy((run.results or {}).get("source_metadata") or {}),
+        "source_metadata": deepcopy(source_metadata),
+        "metric_contract_id": (
+            (source_metadata.get("metric_contract") or {}).get("contract_id")
+            if isinstance(source_metadata.get("metric_contract"), dict)
+            else None
+        ),
+        "calculation_convention": (
+            semantics.calculation_convention if semantics is not None else None
+        ),
     }
     status_unknown = _status_unknown(
         source_kind="backtest",
@@ -698,6 +928,15 @@ def adapt_backtest_run(
     )
     if status_unknown is not None:
         return status_unknown
+    if semantics is None:
+        return _unknown(
+            source_kind="backtest",
+            unit=unit,
+            currency=currency,
+            source_status=run.status,
+            reason_code="metric_contract_mismatch",
+            evidence=evidence,
+        )
     if run.excluded_positions:
         evidence["excluded_positions"] = deepcopy(run.excluded_positions)
         return _unknown(
@@ -708,7 +947,6 @@ def adapt_backtest_run(
             reason_code="incomplete_scope",
             evidence=evidence,
         )
-    source_metadata = dict((run.results or {}).get("source_metadata") or {})
     if (
         metric_kind not in {"var", "cvar"}
         or dict(methodology) != BACKTEST_TAIL_METHODOLOGY
@@ -722,7 +960,6 @@ def adapt_backtest_run(
             reason_code="methodology_mismatch",
             evidence={**evidence, "methodology": deepcopy(dict(methodology))},
         )
-    results = run.results or {}
     portfolio = results.get("portfolio")
     result_prefix = "portfolio"
     if not isinstance(portfolio, dict):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import func, select
@@ -181,6 +182,8 @@ def test_inline_backtest_source_matches_queue_without_child_task_and_artifacts(
         )
         assert queued.results == inline_run.results
         metadata = queued.results["source_metadata"]
+        from app.services.source_evidence import source_metric_contract
+
         assert metadata["pricing_parameter_profile_id"] == ids["profile"]
         assert metadata["engine_config_id"] == ids["engine"]
         assert metadata["resolved_position_ids"] == [ids["position"]]
@@ -189,6 +192,7 @@ def test_inline_backtest_source_matches_queue_without_child_task_and_artifacts(
         assert metadata["effective_market_evidence_id"].startswith(
             "backtest-market-evidence/v1:"
         )
+        assert metadata["metric_contract"] == source_metric_contract("backtest")
         assert queued.artifacts == {"html": "queued-backtest.html"}
         assert inline_run.artifacts == {}
 
@@ -394,3 +398,104 @@ def test_backtest_engine_resolution_failure_is_not_replaced_by_black_scholes(
             config={},
             write_artifacts=False,
         )
+
+
+def test_backtest_prep_failure_marks_market_evidence_incomplete(monkeypatch) -> None:
+    from app.services.domains import backtest as backtest_service
+    from app.services.source_evidence import finalize_market_metadata
+
+    position = SimpleNamespace(
+        id=7,
+        underlying="AAPL",
+        product_id=None,
+        product_type="EuropeanVanillaOption",
+        product_kwargs={},
+        quantity=1.0,
+        entry_price=0.0,
+        currency="USD",
+        engine_name="BlackScholesEngine",
+        engine_kwargs={},
+    )
+    monkeypatch.setattr(
+        backtest_service.mh,
+        "ensure_spot_history",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("feed down")),
+    )
+    monkeypatch.setattr(
+        backtest_service.backtest_bridge,
+        "build_books",
+        lambda *_args, **_kwargs: ([], []),
+    )
+
+    prepared = backtest_service.prepare_pipeline_inputs(
+        object(),
+        positions=[position],
+        spec={"start": "2025-01-02", "end": "2025-01-03"},
+    )
+
+    manifest = prepared.evidence_manifest
+    metadata = finalize_market_metadata({}, manifest, namespace="backtest-market-evidence/v1")
+    assert manifest["evidence_complete"] is False
+    assert manifest["missing_evidence"] == [
+        "underlying:AAPL:market_data_prep_failed"
+    ]
+    assert manifest["underlyings"][0]["position_ids"] == [7]
+    assert metadata["market_evidence_complete"] is False
+
+
+def test_backtest_engine_failure_excludes_its_position_scope(monkeypatch) -> None:
+    from quantark.backtest import otc
+
+    from app.services.domains import backtest as backtest_service
+
+    failed = SimpleNamespace(
+        underlying="AAPL",
+        products=[SimpleNamespace(position_id=7)],
+    )
+    succeeded = SimpleNamespace(
+        underlying="MSFT",
+        products=[SimpleNamespace(position_id=8)],
+    )
+    prepared = backtest_service.PreparedBacktestPipeline(
+        history={},
+        configs=(failed, succeeded),
+        excluded=(),
+        notes=(),
+        evidence_manifest={},
+    )
+
+    class FakeEngine:
+        def __init__(self, config):
+            self.config = config
+
+        def run(self):
+            if self.config.underlying == "AAPL":
+                raise RuntimeError("engine boom")
+            return object()
+
+    monkeypatch.setattr(otc, "BookAutocallableBacktestEngine", FakeEngine)
+    monkeypatch.setattr(
+        backtest_service,
+        "_shape_underlying",
+        lambda config, _result: {
+            "underlying": config.underlying,
+            "summary": {"total_pnl": 1.0, "hedge_pnl": 0.0, "num_trades": 1},
+            "pnl_series": [{"date": "2025-01-03", "total_pnl": 1.0}],
+        },
+    )
+
+    status, _results, excluded, _raw = backtest_service.run_prepared_pipeline(
+        prepared,
+        positions=[],
+        spec={"start": "2025-01-02", "end": "2025-01-03"},
+        config={},
+        portfolio_name="test",
+    )
+
+    assert status == "completed"
+    assert excluded == [
+        {
+            "position_id": 7,
+            "reason": "backtest engine run failed for AAPL: engine boom",
+        }
+    ]

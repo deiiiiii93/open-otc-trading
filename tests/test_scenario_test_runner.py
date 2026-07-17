@@ -46,6 +46,7 @@ def test_queue_creates_run_and_task(tmp_path, monkeypatch):
 
 def test_execute_marks_empty_when_no_positions(tmp_path, monkeypatch):
     from app.services import scenario_test_runner
+    from app.services.domains import scenario_catalog
 
     db = _runner_db(tmp_path, monkeypatch)
 
@@ -56,7 +57,9 @@ def test_execute_marks_empty_when_no_positions(tmp_path, monkeypatch):
         run = ScenarioTestRun(
             portfolio_id=pf.id,
             status="queued",
-            scenario_spec={"predefined": ["market_crash"]},
+            scenario_spec=scenario_catalog.freeze_scenario_request(
+                {"predefined": ["market_crash"]}
+            ),
             config={},
             results={},
             excluded_positions=[],
@@ -128,6 +131,7 @@ def test_mark_stale_task_marks_linked_scenario_failed(tmp_path, monkeypatch):
 
 def test_execute_marks_failed_when_pipeline_raises(tmp_path, monkeypatch):
     from app.services import scenario_test_runner
+    from app.services.domains import scenario_catalog
     import app.services.domains.scenario_test as scenario_test_svc
 
     db = _runner_db(tmp_path, monkeypatch)
@@ -139,7 +143,9 @@ def test_execute_marks_failed_when_pipeline_raises(tmp_path, monkeypatch):
         run = ScenarioTestRun(
             portfolio_id=pf.id,
             status="queued",
-            scenario_spec={"predefined": ["market_crash"]},
+            scenario_spec=scenario_catalog.freeze_scenario_request(
+                {"predefined": ["market_crash"]}
+            ),
             config={},
             results={},
             excluded_positions=[],

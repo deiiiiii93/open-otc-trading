@@ -23,6 +23,7 @@ from .domains import positions as positions_svc
 from .risk_engine import RiskPositionSnapshot, snapshot_risk_position
 from .source_evidence import (
     finalize_market_metadata,
+    source_metric_contract,
     utc_naive,
     valuation_metadata,
 )
@@ -165,6 +166,7 @@ def _create_backtest_run(
                 "spec": deepcopy(spec),
                 "config": deepcopy(config),
             },
+            "metric_contract": source_metric_contract("backtest"),
         }
     )
     run.results = {

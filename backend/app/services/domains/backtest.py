@@ -422,6 +422,7 @@ def prepare_pipeline_inputs(
     flat_vol = float(spec.get("flat_vol", 0.2) or 0.0)
     notes: list[str] = []
     excluded: list[dict[str, Any]] = []
+    missing_evidence: list[str] = []
     history: dict[str, tuple] = {}
     evidence_rows: list[dict[str, Any]] = []
     groups = backtest_bridge.group_by_underlying(positions)
@@ -534,6 +535,21 @@ def prepare_pipeline_inputs(
                 }
             )
         except Exception as exc:
+            position_ids = sorted(
+                int(getattr(position, "id"))
+                for position in plist
+                if getattr(position, "id", None) is not None
+            )
+            missing_evidence.append(
+                f"underlying:{underlying}:market_data_prep_failed"
+            )
+            evidence_rows.append(
+                {
+                    "underlying": underlying,
+                    "position_ids": position_ids,
+                    "market_data_prep_error": str(exc),
+                }
+            )
             for position in plist:
                 excluded.append(
                     {
@@ -551,6 +567,8 @@ def prepare_pipeline_inputs(
             for position in sorted(positions, key=lambda item: int(item.id))
         ],
         "underlyings": sorted(evidence_rows, key=lambda row: row["underlying"]),
+        "evidence_complete": not missing_evidence,
+        "missing_evidence": sorted(missing_evidence),
     }
     configs, config_excluded = backtest_bridge.build_books(
         session,
@@ -649,7 +667,18 @@ def run_pipeline(
         try:
             results = BookAutocallableBacktestEngine(cfg).run()
         except Exception as exc:
-            notes.append(f"{getattr(cfg, 'underlying', '?')}: engine run failed: {exc}")
+            underlying = getattr(cfg, "underlying", "?")
+            reason = f"backtest engine run failed for {underlying}: {exc}"
+            notes.append(reason)
+            for product in getattr(cfg, "products", []) or []:
+                position_id = getattr(product, "position_id", None)
+                if position_id is not None:
+                    excluded.append(
+                        {
+                            "position_id": position_id,
+                            "reason": reason,
+                        }
+                    )
             if progress:
                 progress(i + 1, total)
             continue

@@ -26,6 +26,7 @@ from .risk_engine import _pricing_position_context
 from .source_evidence import (
     build_market_evidence_manifest,
     finalize_market_metadata,
+    source_metric_contract,
     utc_naive,
     valuation_metadata,
 )
@@ -150,11 +151,13 @@ def _create_scenario_run(
                     frozen_request
                 ),
                 "config": deepcopy(config),
+                "scenario_set_hash": scenario_hash,
             },
             "scenario_set_name": scenario_request.get("scenario_set"),
             "scenario_set_hash": scenario_hash,
             "scenario_names": [str(spec["name"]) for spec in frozen_specs],
             "frozen_scenarios": frozen_specs,
+            "metric_contract": source_metric_contract("scenario_test"),
         }
     )
     run.results = {"source_metadata": source_metadata}
@@ -329,48 +332,13 @@ def _resolve_scenario_source(
         portfolio = session.get(Portfolio, run.portfolio_id)
         if portfolio is None:
             raise ValueError(f"Portfolio not found: {run.portfolio_id}")
-        try:
-            frozen_specs, scenario_hash = scenario_catalog.frozen_scenario_specs(
-                run.scenario_spec or {}
-            )
-        except ValueError:
-            if run.status not in {
-                TaskStatus.QUEUED.value,
-                TaskStatus.RUNNING.value,
-            }:
-                raise
-            run.scenario_spec = scenario_catalog.freeze_scenario_request(
-                run.scenario_spec or {}
-            )
-            frozen_specs, scenario_hash = scenario_catalog.frozen_scenario_specs(
-                run.scenario_spec
-            )
-            initial_metadata = valuation_metadata(
-                session,
-                created_at=run.created_at,
-                pricing_parameter_profile_id=run.pricing_parameter_profile_id,
-                explicit_valuation_as_of=None,
-                market_snapshot_id=None,
-                requested_effective_market_evidence_id=None,
-            )
-            initial_metadata.update(
-                {
-                    "methodology": {
-                        "method": "scenario_distribution",
-                        "confidence": 0.95,
-                        "horizon": "scenario_set",
-                        "scaling": "none",
-                    },
-                    "source_config": {
-                        "scenario_request": scenario_catalog.strip_source_snapshot(
-                            run.scenario_spec
-                        ),
-                        "config": deepcopy(run.config or {}),
-                    },
-                }
-            )
-            run.results = {"source_metadata": initial_metadata}
-            session.commit()
+        # A persisted scenario source is valid only if it retains the exact
+        # snapshot captured at creation.  Never rebuild a queued source from a
+        # mutable named set: a missing, malformed, or hash-mismatched envelope
+        # must fail the producer rather than silently changing its economics.
+        frozen_specs, scenario_hash = scenario_catalog.frozen_scenario_specs(
+            run.scenario_spec or {}
+        )
 
         all_positions = positions_svc.list_filtered(
             portfolio_id=run.portfolio_id,
@@ -429,6 +397,13 @@ def _resolve_scenario_source(
         source_metadata = finalize_market_metadata(source_metadata, manifest)
         source_metadata.update(
             {
+                "source_config": {
+                    "scenario_request": scenario_catalog.strip_source_snapshot(
+                        run.scenario_spec or {}
+                    ),
+                    "config": deepcopy(run.config or {}),
+                    "scenario_set_hash": scenario_hash,
+                },
                 "scenario_set_hash": scenario_hash,
                 "scenario_names": [str(spec["name"]) for spec in frozen_specs],
                 "frozen_scenarios": frozen_specs,

@@ -15,9 +15,11 @@ from ...models import (
     RiskRun,
     ScenarioTestRun,
 )
+from ..source_evidence import has_exact_source_metric_contract
 from .sources import (
     BACKTEST_TAIL_METHODOLOGY,
     SCENARIO_TAIL_METHODOLOGY,
+    granular_market_evidence_position_ids,
 )
 
 
@@ -231,8 +233,19 @@ def _matches_methodology(
     key: SourcePlanKey,
 ) -> bool:
     metadata = _source_metadata(source)
-    if metadata.get("market_evidence_complete") is False:
+    if not has_exact_source_metric_contract(metadata, key.source_kind):
         return False
+    if isinstance(source, (ScenarioTestRun, BacktestRun)) and source.excluded_positions:
+        return False
+    if metadata.get("market_evidence_complete") is False:
+        if not isinstance(source, RiskRun) or (
+            granular_market_evidence_position_ids(
+                metadata,
+                resolved_position_ids=source.resolved_position_ids,
+            )
+            is None
+        ):
+            return False
     if isinstance(source, RiskRun):
         return (
             metadata.get("methodology") == key.methodology
@@ -243,6 +256,8 @@ def _matches_methodology(
             return False
         scenario_hash = metadata.get("scenario_set_hash")
         if not isinstance(scenario_hash, str) or not scenario_hash:
+            return False
+        if key.config.get("scenario_set_hash") != scenario_hash:
             return False
         if key.methodology == SCENARIO_TAIL_METHODOLOGY:
             return True
@@ -292,9 +307,14 @@ def _matches_identity(
     )
     if actual_market_snapshot_id != key.market_snapshot_id:
         return False
-    if (
-        metadata.get("effective_market_evidence_id")
-        != key.effective_market_evidence_id
+    actual_evidence_id = metadata.get("effective_market_evidence_id")
+    if key.effective_market_evidence_id is not None:
+        if actual_evidence_id != key.effective_market_evidence_id:
+            return False
+    elif not (
+        key.market_snapshot_id is not None
+        and isinstance(actual_evidence_id, str)
+        and actual_evidence_id.startswith("risk-market-evidence/v1:")
     ):
         return False
     if not _market_evidence_is_current(session, source, metadata):
@@ -366,8 +386,14 @@ def _market_evidence_is_current(
                 valuation_as_of=valuation,
                 market_snapshot_id=market_snapshot_id,
             )
-            return canonical_hash(manifest) == metadata.get(
-                "market_evidence_hash"
+            manifest_hash = canonical_hash(manifest)
+            return (
+                manifest_hash == metadata.get("market_evidence_hash")
+                and evidence_id
+                == (
+                    "risk-market-evidence/v1:"
+                    f"{manifest_hash.removeprefix('sha256:')}"
+                )
             )
         except Exception:
             return False
@@ -517,8 +543,11 @@ def find_reusable_source(
             is_fresh=False,
             reason_code="missing_source",
         )
-    source = exact[0]
-    fresh = _is_fresh(source, key, now)
+    fresh_sources = [
+        source for source in exact if _is_fresh(source, key, now)
+    ]
+    source = fresh_sources[0] if fresh_sources else exact[0]
+    fresh = bool(fresh_sources)
     return SourceSelection(
         run=source,
         reused=fresh,
@@ -672,6 +701,10 @@ def persist_source_reference(
     diagnostics: Mapping[str, Any],
 ) -> LimitSourceReference:
     """Persist the exact source link and completeness decision for audit."""
+    if source is not None and not isinstance(source, _MODELS[key.source_kind]):
+        raise ValueError(
+            "source instance type does not match requested source kind"
+        )
     source_ids = {
         "risk_run_id": source.id if isinstance(source, RiskRun) else None,
         "scenario_test_run_id": (

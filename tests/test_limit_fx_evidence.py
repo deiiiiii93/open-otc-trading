@@ -209,6 +209,7 @@ def test_scenario_currency_conversion_uses_pinned_source_evidence(
     database = _database(tmp_path, monkeypatch)
     from app.models import FxRate, ScenarioTestRun
     from app.services.limits.sources import adapt_scenario_test_run
+    from app.services.source_evidence import source_metric_contract
 
     set_hash = "sha256:" + ("e" * 64)
     with database.SessionLocal() as session:
@@ -240,6 +241,7 @@ def test_scenario_currency_conversion_uses_pinned_source_evidence(
                     "scenario_set_hash": set_hash,
                     "scenario_names": ["down"],
                     "valuation_as_of": "2026-07-17T09:00:00",
+                    "metric_contract": source_metric_contract("scenario_test"),
                 },
                 "scenarios": [{"name": "down", "pnl": -100.0}],
             },

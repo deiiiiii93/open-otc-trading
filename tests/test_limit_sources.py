@@ -5,6 +5,12 @@ from datetime import datetime
 import pytest
 
 
+def _metric_contract(source_kind: str) -> dict:
+    from app.services.source_evidence import source_metric_contract
+
+    return source_metric_contract(source_kind)
+
+
 def _risk_run(*, status: str = "completed"):
     from app.models import RiskRun
 
@@ -20,6 +26,7 @@ def _risk_run(*, status: str = "completed"):
                 "methodology": {"method": "summary"},
                 "source_config": {},
                 "market_evidence_complete": True,
+                "metric_contract": _metric_contract("risk_run"),
             },
             "shared": {"delta": 12.0, "gamma": 0.3},
             "by_currency": {
@@ -105,6 +112,8 @@ def test_risk_adapter_uses_shared_totals_and_propagates_rho_q() -> None:
     )
 
     assert delta.values == (12.0,)
+    assert delta.unit == "underlying_units"
+    assert delta.currency is None
     assert delta.evidence["value_source"] == "shared"
     assert rho_q.values == (10.0,)
     assert rho_q.bump_convention == "parallel_dividend_yield_1pct"
@@ -112,6 +121,133 @@ def test_risk_adapter_uses_shared_totals_and_propagates_rho_q() -> None:
     assert rho_q.evidence["value_source"] == "by_currency"
     assert gross_rho_q.values == (4.0, 6.0)
     assert gross_rho_q.evidence["value_source"] == "positions"
+
+
+def test_adapters_derive_units_from_source_contract_not_limit_request() -> None:
+    from app.models import BacktestRun, ScenarioTestRun
+    from app.services.limits.evaluator import LimitRule, evaluate
+    from app.services.limits.sources import (
+        BACKTEST_TAIL_METHODOLOGY,
+        SCENARIO_TAIL_METHODOLOGY,
+        ObservationScope,
+        adapt_backtest_run,
+        adapt_risk_run,
+        adapt_scenario_test_run,
+    )
+
+    risk_observation = adapt_risk_run(
+        None,
+        _risk_run(),
+        metric_kind="delta",
+        aggregation="net",
+        unit="bananas",
+        currency="USD",
+        scope=ObservationScope("portfolio"),
+    )
+    evaluated = evaluate(
+        LimitRule(
+            metric_kind="delta",
+            source_kind="risk_run",
+            aggregation="net",
+            transform="signed",
+            comparator="upper",
+            warning_lower=None,
+            warning_upper=15.0,
+            hard_lower=None,
+            hard_upper=20.0,
+            unit="bananas",
+            currency="USD",
+        ),
+        risk_observation,
+    )
+    scenario = ScenarioTestRun(
+        id=501,
+        portfolio_id=1,
+        status="completed",
+        scenario_spec={},
+        config={},
+        results={
+            "source_metadata": {
+                "methodology": SCENARIO_TAIL_METHODOLOGY,
+                "source_currencies": ["USD"],
+                "metric_contract": _metric_contract("scenario_test"),
+            },
+            "var_cvar": {"var": -10.0, "confidence": 0.95},
+        },
+        excluded_positions=[],
+        resolved_position_ids=[1],
+        created_at=datetime(2026, 7, 17, 9, 0),
+    )
+    scenario_observation = adapt_scenario_test_run(
+        scenario,
+        metric_kind="var",
+        methodology=SCENARIO_TAIL_METHODOLOGY,
+        unit="%NAV",
+        currency="USD",
+    )
+    backtest = BacktestRun(
+        id=502,
+        portfolio_id=1,
+        status="completed",
+        spec={},
+        config={},
+        results={
+            "source_metadata": {
+                "methodology": BACKTEST_TAIL_METHODOLOGY,
+                "source_currencies": ["USD"],
+                "metric_contract": _metric_contract("backtest"),
+            },
+            "portfolio": {"var_95": 10.0},
+        },
+        excluded_positions=[],
+        resolved_position_ids=[1],
+        created_at=datetime(2026, 7, 17, 9, 0),
+    )
+    backtest_observation = adapt_backtest_run(
+        backtest,
+        metric_kind="var",
+        methodology=BACKTEST_TAIL_METHODOLOGY,
+        unit="%NAV",
+        currency="USD",
+    )
+
+    assert risk_observation.unit == "underlying_units"
+    assert risk_observation.currency is None
+    assert evaluated.status == "unknown"
+    assert evaluated.reason_code == "unit_mismatch"
+    assert scenario_observation.unit == "USD"
+    assert backtest_observation.unit == "USD"
+
+
+def test_completed_source_without_exact_metric_contract_fails_closed() -> None:
+    from app.services.limits.sources import ObservationScope, adapt_risk_run
+
+    legacy = _risk_run()
+    legacy.metrics["source_metadata"].pop("metric_contract")
+    missing = adapt_risk_run(
+        None,
+        legacy,
+        metric_kind="delta",
+        aggregation="net",
+        unit="underlying_units",
+        scope=ObservationScope("portfolio"),
+    )
+    tampered = _risk_run()
+    tampered.metrics["source_metadata"]["metric_contract"]["metrics"]["rho_q"][
+        "bump_convention"
+    ] = "parallel_dividend_yield_1bp"
+    incompatible = adapt_risk_run(
+        None,
+        tampered,
+        metric_kind="rho_q",
+        aggregation="net",
+        unit="USD/1pct",
+        currency="USD",
+        scope=ObservationScope("portfolio"),
+    )
+
+    assert missing.reason_code == "metric_contract_mismatch"
+    assert incompatible.reason_code == "metric_contract_mismatch"
 
 
 def test_risk_adapter_fails_closed_for_empty_or_partly_invalid_values() -> None:
@@ -148,6 +284,32 @@ def test_risk_adapter_fails_closed_for_empty_or_partly_invalid_values() -> None:
     assert empty_result.reason_code == "empty_source"
     assert invalid_result.values is None
     assert invalid_result.reason_code == "invalid_value"
+
+
+def test_full_run_monetary_bucket_coverage_must_match_successful_rows() -> None:
+    from app.services.limits.sources import ObservationScope, adapt_risk_run
+
+    run = _risk_run()
+    run.metrics["by_currency"] = {
+        "USD": run.metrics["by_currency"]["USD"],
+    }
+    observation = adapt_risk_run(
+        None,
+        run,
+        metric_kind="rho_q",
+        aggregation="net",
+        unit="USD/1pct",
+        currency="USD",
+        scope=ObservationScope("portfolio"),
+        bump_convention="parallel_dividend_yield_1pct",
+    )
+
+    assert observation.values is None
+    assert observation.reason_code == "incomplete_scope"
+    assert observation.evidence["currency_coverage"] == {
+        "expected_position_counts": {"USD": 2, "CNY": 1},
+        "actual_position_counts": {"USD": 2},
+    }
 
 
 def test_risk_adapter_partial_failure_is_scope_aware() -> None:
@@ -199,6 +361,7 @@ def test_scenario_tail_adapter_requires_locked_methodology() -> None:
                 "methodology": SCENARIO_TAIL_METHODOLOGY,
                 "source_currencies": ["USD"],
                 "scenario_set_hash": "sha256:" + ("a" * 64),
+                "metric_contract": _metric_contract("scenario_test"),
             },
             "var_cvar": {"var": -20.0, "cvar": -25.0, "confidence": 0.95},
             "scenarios": [],
@@ -247,6 +410,7 @@ def test_scenario_stress_selects_exact_name_or_explicit_worst_set() -> None:
                 "source_currencies": ["USD"],
                 "scenario_set_hash": "sha256:" + ("b" * 64),
                 "scenario_names": ["down_10", "down_20"],
+                "metric_contract": _metric_contract("scenario_test"),
             },
             "scenarios": [
                 {"name": "down_10", "pnl": -10.0, "pnl_pct": -0.1},
@@ -323,6 +487,7 @@ def test_backtest_tail_adapter_reads_live_portfolio_shape_only_at_locked_method(
             "source_metadata": {
                 "methodology": BACKTEST_TAIL_METHODOLOGY,
                 "source_currencies": ["USD"],
+                "metric_contract": _metric_contract("backtest"),
             },
             "portfolio": {"var_95": 20.0, "cvar_95": 25.0},
             "by_underlying": [],
@@ -372,6 +537,7 @@ def test_scenario_and_backtest_require_persisted_methodology_currency_and_set_id
                 "source_currencies": ["USD"],
                 "scenario_set_hash": "sha256:" + ("c" * 64),
                 "scenario_names": ["down"],
+                "metric_contract": _metric_contract("scenario_test"),
             },
             "scenarios": [{"name": "down", "pnl": -5.0}],
         },
@@ -412,6 +578,7 @@ def test_scenario_and_backtest_require_persisted_methodology_currency_and_set_id
             "source_metadata": {
                 "methodology": {**BACKTEST_TAIL_METHODOLOGY, "horizon": "1d"},
                 "source_currencies": ["USD"],
+                "metric_contract": _metric_contract("backtest"),
             },
             "portfolio": {"var_95": 5.0},
         },
@@ -449,7 +616,7 @@ def test_product_family_scope_uses_canonical_persisted_family() -> None:
     assert observation.evidence["covered_position_ids"] == [3]
 
 
-def test_risk_adapter_fails_closed_when_manifest_marks_synthetic_defaults() -> None:
+def test_risk_adapter_market_evidence_is_scope_aware_when_granular() -> None:
     from app.services.limits.sources import ObservationScope, adapt_risk_run
 
     run = _risk_run()
@@ -462,7 +629,7 @@ def test_risk_adapter_fails_closed_when_manifest_marks_synthetic_defaults() -> N
             ],
         }
     )
-    observation = adapt_risk_run(
+    affected = adapt_risk_run(
         None,
         run,
         metric_kind="delta",
@@ -470,13 +637,52 @@ def test_risk_adapter_fails_closed_when_manifest_marks_synthetic_defaults() -> N
         unit="shares",
         scope=ObservationScope("portfolio"),
     )
+    unaffected = adapt_risk_run(
+        None,
+        run,
+        metric_kind="delta",
+        aggregation="net",
+        unit="shares",
+        scope=ObservationScope("underlying", value="MSFT"),
+    )
 
-    assert observation.values is None
-    assert observation.reason_code == "incomplete_scope"
-    assert observation.evidence["missing_market_evidence"] == [
+    assert affected.values is None
+    assert affected.reason_code == "incomplete_scope"
+    assert affected.evidence["missing_market_evidence"] == [
         "position:1:missing:spot",
         "position:1:missing:parameters",
     ]
+    assert unaffected.values == (7.0,)
+    assert unaffected.is_complete is True
+
+
+@pytest.mark.parametrize(
+    "missing_market_evidence",
+    [None, [], ["position:0:missing:spot"], ["position:99:missing:spot"]],
+)
+def test_risk_adapter_fails_closed_for_invalid_granular_market_evidence(
+    missing_market_evidence,
+) -> None:
+    from app.services.limits.sources import ObservationScope, adapt_risk_run
+
+    run = _risk_run()
+    run.metrics["source_metadata"].update(
+        {
+            "market_evidence_complete": False,
+            "missing_market_evidence": missing_market_evidence,
+        }
+    )
+    observation = adapt_risk_run(
+        None,
+        run,
+        metric_kind="delta",
+        aggregation="net",
+        unit="shares",
+        scope=ObservationScope("underlying", value="MSFT"),
+    )
+
+    assert observation.values is None
+    assert observation.reason_code == "incomplete_scope"
 
 
 @pytest.mark.parametrize(

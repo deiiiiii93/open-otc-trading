@@ -371,6 +371,8 @@ def test_profile_valuation_rejects_mismatch_and_keeps_true_creation_time(
     with database.SessionLocal() as session:
         run = session.get(RiskRun, result.risk_run_id)
         metadata = run.metrics["source_metadata"]
+        from app.services.source_evidence import source_metric_contract
+
         assert before <= run.created_at <= after
         assert run.metrics["valuation_as_of"] == "2026-07-16T15:00:00"
         assert metadata["effective_valuation_as_of"] == "2026-07-16T15:00:00"
@@ -380,6 +382,7 @@ def test_profile_valuation_rejects_mismatch_and_keeps_true_creation_time(
         assert metadata["effective_market_evidence_id"].startswith(
             "risk-market-evidence/v1:"
         )
+        assert metadata["metric_contract"] == source_metric_contract("risk_run")
         assert metadata["market_evidence_manifest"]["positions"][0][
             "market_snapshot_id"
         ] == ids[3]

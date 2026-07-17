@@ -43,6 +43,144 @@ def canonical_hash(value: Any) -> str:
     return f"sha256:{digest}"
 
 
+def _metric_contract_payload(
+    source_kind: str,
+    metrics: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "contract_id": f"limits-{source_kind}-metrics/v1",
+        "version": 1,
+        "source_kind": source_kind,
+        "metrics": dict(metrics),
+    }
+
+
+_SOURCE_METRIC_CONTRACT_JSON = {
+    "risk_run": canonical_json(
+        _metric_contract_payload(
+            "risk_run",
+            {
+                "delta": {
+                    "unit": "underlying_units",
+                    "currency_dimension": "none",
+                    "bump_convention": None,
+                    "calculation_convention": "quantity_weighted_dpv_dspot",
+                },
+                "gamma": {
+                    "unit": "underlying_units_per_spot_unit",
+                    "currency_dimension": "none",
+                    "bump_convention": None,
+                    "calculation_convention": "quantity_weighted_d2pv_dspot2",
+                },
+                "vega": {
+                    "unit": "{currency}/1volpct",
+                    "currency_dimension": "reporting",
+                    "bump_convention": None,
+                    "calculation_convention": (
+                        "parallel_volatility_0.01_absolute_price_change"
+                    ),
+                },
+                "theta": {
+                    "unit": "{currency}/1day",
+                    "currency_dimension": "reporting",
+                    "bump_convention": None,
+                    "calculation_convention": (
+                        "valuation_date_plus_1day_auto_calendar"
+                    ),
+                },
+                "rho": {
+                    "unit": "{currency}/1pct",
+                    "currency_dimension": "reporting",
+                    "bump_convention": "parallel_rate_1pct",
+                    "calculation_convention": (
+                        "parallel_rate_0.01_absolute_price_change"
+                    ),
+                },
+                "rho_q": {
+                    "unit": "{currency}/1pct",
+                    "currency_dimension": "reporting",
+                    "bump_convention": "parallel_dividend_yield_1pct",
+                    "calculation_convention": (
+                        "parallel_dividend_yield_0.01_absolute_price_change"
+                    ),
+                },
+            },
+        )
+    ),
+    "scenario_test": canonical_json(
+        _metric_contract_payload(
+            "scenario_test",
+            {
+                "var": {
+                    "unit": "{currency}",
+                    "currency_dimension": "reporting",
+                    "bump_convention": None,
+                    "calculation_convention": (
+                        "scenario_distribution_negative_pnl_quantile"
+                    ),
+                },
+                "cvar": {
+                    "unit": "{currency}",
+                    "currency_dimension": "reporting",
+                    "bump_convention": None,
+                    "calculation_convention": (
+                        "scenario_distribution_negative_pnl_tail_mean"
+                    ),
+                },
+                "stress_pnl": {
+                    "unit": "{currency}",
+                    "currency_dimension": "reporting",
+                    "bump_convention": None,
+                    "calculation_convention": "selected_scenario_pnl",
+                },
+            },
+        )
+    ),
+    "backtest": canonical_json(
+        _metric_contract_payload(
+            "backtest",
+            {
+                "var": {
+                    "unit": "{currency}",
+                    "currency_dimension": "reporting",
+                    "bump_convention": None,
+                    "calculation_convention": (
+                        "historical_1trading_day_positive_loss_quantile"
+                    ),
+                },
+                "cvar": {
+                    "unit": "{currency}",
+                    "currency_dimension": "reporting",
+                    "bump_convention": None,
+                    "calculation_convention": (
+                        "historical_1trading_day_positive_loss_tail_mean"
+                    ),
+                },
+            },
+        )
+    ),
+}
+
+
+def source_metric_contract(source_kind: str) -> dict[str, Any]:
+    """Return a detached copy of the immutable producer metric contract."""
+    try:
+        payload = _SOURCE_METRIC_CONTRACT_JSON[source_kind]
+    except KeyError:
+        raise ValueError(
+            f"unsupported metric-contract source kind {source_kind!r}"
+        ) from None
+    return json.loads(payload)
+
+
+def has_exact_source_metric_contract(
+    source_metadata: Mapping[str, Any],
+    source_kind: str,
+) -> bool:
+    """Reject missing, legacy, or mutated producer metric semantics."""
+    return source_metadata.get("metric_contract") == source_metric_contract(source_kind)
+
+
 def backtest_position_evidence(
     position: Any,
     resolved_engine: Any | None = None,

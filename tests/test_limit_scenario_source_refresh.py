@@ -164,14 +164,23 @@ def test_inline_scenario_source_matches_queue_without_child_task_and_artifacts(
         )
         assert queued.results == inline_run.results
         metadata = queued.results["source_metadata"]
+        from app.services.source_evidence import source_metric_contract
+
         assert metadata["pricing_parameter_profile_id"] == ids["profile"]
         assert metadata["engine_config_id"] == ids["engine"]
         assert metadata["resolved_position_ids"] == [ids["position"]]
         assert metadata["valuation_as_of"] == "2026-07-15T15:00:00"
         assert metadata["valuation_origin"] == "profile"
         assert metadata["scenario_set_hash"].startswith("sha256:")
+        assert (
+            metadata["source_config"]["scenario_set_hash"]
+            == metadata["scenario_set_hash"]
+        )
         assert metadata["effective_market_evidence_id"].startswith(
             "risk-market-evidence/v1:"
+        )
+        assert metadata["metric_contract"] == source_metric_contract(
+            "scenario_test"
         )
         assert queued.artifacts == {"report_html_path": "queued-report.html"}
         assert inline_run.artifacts == {}
@@ -317,6 +326,10 @@ def test_scenario_run_freezes_named_set_and_valuation_metadata_at_creation(
         assert metadata["profile_valuation_as_of"] == "2026-07-15T15:00:00"
         assert metadata["scenario_set_name"] == "desk-set"
         assert metadata["scenario_set_hash"].startswith("sha256:")
+        assert (
+            metadata["source_config"]["scenario_set_hash"]
+            == metadata["scenario_set_hash"]
+        )
         assert metadata["frozen_scenarios"] == frozen_specs
         assert seen == [frozen_specs]
 
@@ -441,3 +454,50 @@ def test_queued_named_set_uses_frozen_snapshot_and_later_content_drift_changes_h
 
     assert executed == [original_specs]
     assert first_hash != second_hash
+
+
+def test_invalid_queued_scenario_snapshot_fails_closed_without_catalog_refresh(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.models import ScenarioTestRun, TaskRun
+    from app.services import scenario_test_runner
+    from app.services.domains import scenario_catalog
+
+    monkeypatch.setattr(
+        scenario_test_runner,
+        "submit_async_task",
+        lambda *_args, **_kwargs: None,
+    )
+    with database.SessionLocal() as session:
+        portfolio, position, *_rest = _fixture(session)
+        run, task = scenario_test_runner.queue_scenario_test(
+            session,
+            portfolio_id=portfolio.id,
+            position_ids=[position.id],
+            scenario_request={"predefined": ["market_crash"]},
+            config={},
+        )
+        run.scenario_spec = {"predefined": ["market_crash"]}
+        session.commit()
+        run_id, task_id = run.id, task.id
+
+    monkeypatch.setattr(
+        scenario_catalog,
+        "freeze_scenario_request",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("must not rebuild a frozen source")
+        ),
+    )
+    scenario_test_runner.execute_scenario_test_task(
+        task_id,
+        run_id,
+        session_factory=database.SessionLocal,
+    )
+
+    with database.SessionLocal() as session:
+        run = session.get(ScenarioTestRun, run_id)
+        task = session.get(TaskRun, task_id)
+        assert run.status == task.status == "failed"
+        assert "scenario source snapshot is missing" in str(run.results)
