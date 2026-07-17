@@ -7,9 +7,11 @@ with per-position results (Positions page). Replaces the separate
 """
 from __future__ import annotations
 
+from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -32,8 +34,11 @@ from .risk_engine import (
     _pricing_position_context,
     _resolve_risk_positions,
     _risk_completion_message,
+    risk_coverage_diagnostics,
     _risk_error_payload,
     _risk_status_from_metrics,
+    RiskPositionSnapshot,
+    snapshot_risk_position,
 )
 from .task_runner import (
     mark_task_finished,
@@ -42,17 +47,46 @@ from .task_runner import (
 )
 
 
-def queue_batch_pricing(
+@dataclass(frozen=True, slots=True)
+class ResolvedRiskSource:
+    risk_run_id: int
+    portfolio_id: int
+    portfolio_name: str
+    base_currency: str
+    requested_position_ids: tuple[int, ...] | None
+    positions: tuple[RiskPositionSnapshot, ...]
+    position_markets: dict[int, PricingEnvironmentSnapshot]
+    pricing_failures: dict[int, dict[str, Any]]
+    pricing_diagnostics: dict[int, dict[str, Any]]
+    valuation_as_of: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ComputedRiskSource:
+    resolved: ResolvedRiskSource
+    metrics: dict[str, Any]
+    status: str
+
+
+@dataclass(frozen=True, slots=True)
+class PersistedRiskSource:
+    risk_run_id: int
+    valuation_run_id: int
+    status: str
+    coverage: dict[str, Any]
+
+
+def _create_risk_run(
     session: Session,
     *,
     portfolio_id: int,
-    position_ids: list[int] | None = None,
-    pricing_parameter_profile_id: int | None = None,
-    engine_config_id: int | None = None,
-    market_snapshot_id: int | None = None,
-    method: str = "summary",
-) -> tuple[RiskRun, TaskRun]:
-    """Create a queued RiskRun + TaskRun for a batch pricing pass; the executor fills metrics and writes the valuation run."""
+    position_ids: list[int] | None,
+    pricing_parameter_profile_id: int | None,
+    engine_config_id: int | None,
+    market_snapshot_id: int | None,
+    method: str,
+    status: str,
+) -> RiskRun:
     portfolio = session.get(Portfolio, portfolio_id)
     if portfolio is None:
         raise ValueError(f"Portfolio not found: {portfolio_id}")
@@ -76,17 +110,41 @@ def queue_batch_pricing(
         engine_config_id=engine_config_id,
         market_snapshot_id=market_snapshot_id,
         method=method,
-        status=TaskStatus.QUEUED.value,
+        status=status,
         metrics={},
         scenario_cells=None,
         resolved_position_ids=scoped_position_ids,
     )
     session.add(run)
     session.flush()
+    return run
+
+
+def queue_batch_pricing(
+    session: Session,
+    *,
+    portfolio_id: int,
+    position_ids: list[int] | None = None,
+    pricing_parameter_profile_id: int | None = None,
+    engine_config_id: int | None = None,
+    market_snapshot_id: int | None = None,
+    method: str = "summary",
+) -> tuple[RiskRun, TaskRun]:
+    """Create a queued RiskRun + TaskRun for a batch pricing pass; the executor fills metrics and writes the valuation run."""
+    run = _create_risk_run(
+        session,
+        portfolio_id=portfolio_id,
+        position_ids=position_ids,
+        pricing_parameter_profile_id=pricing_parameter_profile_id,
+        engine_config_id=engine_config_id,
+        market_snapshot_id=market_snapshot_id,
+        method=method,
+        status=TaskStatus.QUEUED.value,
+    )
     task = TaskRun(
         kind=TaskKind.BATCH_PRICING.value,
         status=TaskStatus.QUEUED.value,
-        portfolio_id=portfolio.id,
+        portfolio_id=run.portfolio_id,
         risk_run_id=run.id,
         progress_current=0,
         progress_total=0,
@@ -102,74 +160,132 @@ def execute_batch_pricing_task(
     risk_run_id: int,
     session_factory: sessionmaker | None = None,
 ) -> None:
-    session = (session_factory or database.SessionLocal)()
+    factory = session_factory or database.SessionLocal
     try:
-        _execute_batch_pricing_task(session, task_id, risk_run_id)
-    finally:
-        session.close()
+        _run_persisted_risk_source(
+            factory,
+            risk_run_id=risk_run_id,
+            task_id=task_id,
+        )
+    except Exception as exc:
+        _mark_risk_source_failed(
+            factory,
+            risk_run_id=risk_run_id,
+            task_id=task_id,
+            error=str(exc),
+        )
 
 
 def _execute_batch_pricing_task(
     session: Session, task_id: int, risk_run_id: int
 ) -> None:
+    """Compatibility wrapper for deterministic in-session producer drivers."""
+    session.commit()
+    factory = sessionmaker(bind=session.get_bind(), expire_on_commit=False)
+    execute_batch_pricing_task(
+        task_id,
+        risk_run_id,
+        session_factory=factory,
+    )
+    session.expire_all()
+
+
+def run_persisted_risk_source(
+    *,
+    session_factory: sessionmaker | None = None,
+    portfolio_id: int,
+    position_ids: list[int] | None = None,
+    pricing_parameter_profile_id: int | None = None,
+    engine_config_id: int | None = None,
+    market_snapshot_id: int | None = None,
+    valuation_as_of: datetime | None = None,
+    method: str = "summary",
+) -> PersistedRiskSource:
+    """Synchronously persist batch-equivalent risk evidence without a TaskRun."""
+    factory = session_factory or database.SessionLocal
+    with factory() as session:
+        run = _create_risk_run(
+            session,
+            portfolio_id=portfolio_id,
+            position_ids=position_ids,
+            pricing_parameter_profile_id=pricing_parameter_profile_id,
+            engine_config_id=engine_config_id,
+            market_snapshot_id=market_snapshot_id,
+            method=method,
+            status=TaskStatus.RUNNING.value,
+        )
+        if valuation_as_of is not None:
+            run.created_at = valuation_as_of
+        session.commit()
+        risk_run_id = run.id
+
     try:
+        return _run_persisted_risk_source(
+            factory,
+            risk_run_id=risk_run_id,
+            task_id=None,
+        )
+    except Exception as exc:
+        _mark_risk_source_failed(
+            factory,
+            risk_run_id=risk_run_id,
+            task_id=None,
+            error=str(exc),
+        )
+        raise
+
+
+def _run_persisted_risk_source(
+    session_factory: Callable[[], Session],
+    *,
+    risk_run_id: int,
+    task_id: int | None,
+) -> PersistedRiskSource:
+    resolved = _resolve_risk_source(session_factory, risk_run_id=risk_run_id)
+    _mark_risk_source_running(
+        session_factory,
+        resolved=resolved,
+        task_id=task_id,
+    )
+    progress_callback = (
+        _task_progress_callback(session_factory, task_id)
+        if task_id is not None
+        else None
+    )
+    computed = _compute_risk_source(
+        resolved,
+        progress_callback=progress_callback,
+    )
+    return _persist_risk_source(
+        session_factory,
+        computed=computed,
+        task_id=task_id,
+    )
+
+
+def _resolve_risk_source(
+    session_factory: Callable[[], Session],
+    *,
+    risk_run_id: int,
+) -> ResolvedRiskSource:
+    with session_factory() as session:
         run = session.get(RiskRun, risk_run_id)
         if run is None:
-            mark_task_finished(
-                session,
-                task_id,
-                status=TaskStatus.FAILED.value,
-                error=f"Risk run not found: {risk_run_id}",
-            )
-            session.commit()
-            return
+            raise ValueError(f"Risk run not found: {risk_run_id}")
         portfolio = session.get(Portfolio, run.portfolio_id)
         if portfolio is None:
-            mark_task_finished(
-                session,
-                task_id,
-                status=TaskStatus.FAILED.value,
-                error=f"Portfolio not found: {run.portfolio_id}",
-            )
-            session.commit()
-            return
+            raise ValueError(f"Portfolio not found: {run.portfolio_id}")
 
-        # Queue-time value: None = full portfolio, list = user-scoped subset.
-        # Captured before the rewrite below so the valuation run can record
-        # the scoping in overrides (the Positions page keys full-portfolio
-        # header summaries off overrides.position_ids).
-        scoped_position_ids = run.resolved_position_ids
+        scoped_position_ids = (
+            tuple(run.resolved_position_ids)
+            if run.resolved_position_ids is not None
+            else None
+        )
         resolved = _resolve_risk_positions(
             portfolio,
             session,
             position_ids=run.resolved_position_ids,
         )
-        position_ids = [p.id for p in resolved]
-        run.resolved_position_ids = position_ids
-        total = len(position_ids)
-        mark_task_running(
-            session,
-            task_id,
-            message=f"Pricing {total} positions",
-            total=total,
-        )
-        session.commit()
-
-        def _progress(current: int, total_positions: int) -> None:
-            update_task_progress(
-                session,
-                task_id,
-                current=current,
-                total=total_positions,
-                message=f"Priced {current} of {total_positions} positions",
-            )
-            session.commit()
-
-        # Profile-bound runs price as-of the profile's valuation date: the
-        # profile supplies r/q/vol AND the date those parameters were observed,
-        # so maturities, quote as-of, and the persisted valuation-run stamp all
-        # follow it (historical repricing). Unbound runs keep the old contract:
-        # as-of queue time (RiskRun has no valuation_date column; created_at).
         valuation_as_of = run.created_at
         if run.pricing_parameter_profile_id is not None:
             profile = session.get(
@@ -186,84 +302,196 @@ def _execute_batch_pricing_task(
                 valuation_date=valuation_as_of,
             )
         )
-        from .engine_configs import get_engine_config, position_with_engine, resolve_pricing_engine
+        from .engine_configs import get_engine_config, resolve_pricing_engine
 
         engine_config = get_engine_config(session, run.engine_config_id)
-        resolved_for_risk = []
+        position_snapshots: list[RiskPositionSnapshot] = []
         for position in resolved:
             try:
                 engine = resolve_pricing_engine(position, engine_config)
-                wrapped = position_with_engine(position, engine)
-                pricing_diagnostics.setdefault(position.id, {})["resolved_engine"] = engine.diagnostics()
-                resolved_for_risk.append(wrapped)
+                pricing_diagnostics.setdefault(position.id, {})[
+                    "resolved_engine"
+                ] = engine.diagnostics()
             except ValueError as exc:
                 pricing_failures[position.id] = {"pricing_error": str(exc)}
-                resolved_for_risk.append(position)
-        portfolio_like = SimpleNamespace(
-            id=portfolio.id,
-            name=portfolio.name,
+                engine = SimpleNamespace(
+                    engine_name=position.engine_name or "BlackScholesEngine",
+                    engine_kwargs=dict(position.engine_kwargs or {}),
+                )
+            position_snapshots.append(snapshot_risk_position(position, engine))
+
+        return ResolvedRiskSource(
+            risk_run_id=run.id,
+            portfolio_id=portfolio.id,
+            portfolio_name=portfolio.name,
             base_currency=portfolio.base_currency,
-            positions=resolved_for_risk,
+            requested_position_ids=scoped_position_ids,
+            positions=tuple(position_snapshots),
+            position_markets={
+                position_id: market.model_copy(deep=True)
+                for position_id, market in position_markets.items()
+            },
+            pricing_failures=deepcopy(pricing_failures),
+            pricing_diagnostics=deepcopy(pricing_diagnostics),
+            valuation_as_of=valuation_as_of,
         )
-        metrics = calculate_portfolio_risk(
-            portfolio_like,  # type: ignore[arg-type]
-            position_markets=position_markets,
-            pricing_failures=pricing_failures,
-            pricing_diagnostics=pricing_diagnostics,
-            max_workers=get_settings().risk_parallel_workers,
-            progress_callback=_progress,
-        )
-        # Stamp the pricing as-of into the persisted metrics so downstream
-        # latest-risk consumers (agent get_latest_risk_run, hedging freshness)
-        # can distinguish a historical profile-dated run from current risk.
-        metrics["valuation_as_of"] = valuation_as_of.isoformat()
-        status = _risk_status_from_metrics(metrics)
-        run.metrics = metrics
-        run.status = status
+
+
+def _mark_risk_source_running(
+    session_factory: Callable[[], Session],
+    *,
+    resolved: ResolvedRiskSource,
+    task_id: int | None,
+) -> None:
+    with session_factory() as session:
+        run = session.get(RiskRun, resolved.risk_run_id)
+        if run is None:
+            raise ValueError(f"Risk run not found: {resolved.risk_run_id}")
+        run.status = TaskStatus.RUNNING.value
+        run.resolved_position_ids = [position.id for position in resolved.positions]
+        if task_id is not None:
+            mark_task_running(
+                session,
+                task_id,
+                message=f"Pricing {len(resolved.positions)} positions",
+                total=len(resolved.positions),
+            )
+        session.commit()
+
+
+def _task_progress_callback(
+    session_factory: Callable[[], Session],
+    task_id: int,
+) -> Callable[[int, int], None]:
+    def _progress(current: int, total_positions: int) -> None:
+        with session_factory() as session:
+            update_task_progress(
+                session,
+                task_id,
+                current=current,
+                total=total_positions,
+                message=f"Priced {current} of {total_positions} positions",
+            )
+            session.commit()
+
+    return _progress
+
+
+def _compute_risk_source(
+    resolved: ResolvedRiskSource,
+    *,
+    progress_callback: Callable[[int, int], None] | None,
+) -> ComputedRiskSource:
+    portfolio_like = SimpleNamespace(
+        id=resolved.portfolio_id,
+        name=resolved.portfolio_name,
+        base_currency=resolved.base_currency,
+        positions=list(resolved.positions),
+    )
+    metrics = calculate_portfolio_risk(
+        portfolio_like,  # type: ignore[arg-type]
+        position_markets=resolved.position_markets,
+        pricing_failures=resolved.pricing_failures,
+        pricing_diagnostics=resolved.pricing_diagnostics,
+        max_workers=get_settings().risk_parallel_workers,
+        progress_callback=progress_callback,
+    )
+    metrics["valuation_as_of"] = resolved.valuation_as_of.isoformat()
+    metrics["coverage"] = risk_coverage_diagnostics(
+        metrics,
+        requested_position_ids=(
+            list(resolved.requested_position_ids)
+            if resolved.requested_position_ids is not None
+            else None
+        ),
+        resolved_position_ids=[position.id for position in resolved.positions],
+    )
+    return ComputedRiskSource(
+        resolved=resolved,
+        metrics=metrics,
+        status=_risk_status_from_metrics(metrics),
+    )
+
+
+def _persist_risk_source(
+    session_factory: Callable[[], Session],
+    *,
+    computed: ComputedRiskSource,
+    task_id: int | None,
+) -> PersistedRiskSource:
+    resolved = computed.resolved
+    with session_factory() as session:
+        run = session.get(RiskRun, resolved.risk_run_id)
+        if run is None:
+            raise ValueError(f"Risk run not found: {resolved.risk_run_id}")
+        run.metrics = deepcopy(computed.metrics)
+        run.status = computed.status
+        run.resolved_position_ids = [position.id for position in resolved.positions]
 
         valuation_run = _persist_valuation_run(
             session,
             run=run,
-            resolved=resolved,
-            metrics=metrics,
-            position_markets=position_markets,
-            pricing_diagnostics=pricing_diagnostics,
-            scoped_position_ids=scoped_position_ids,
-            valuation_date=valuation_as_of,
+            resolved=list(resolved.positions),
+            metrics=computed.metrics,
+            position_markets=resolved.position_markets,
+            pricing_diagnostics=resolved.pricing_diagnostics,
+            scoped_position_ids=(
+                list(resolved.requested_position_ids)
+                if resolved.requested_position_ids is not None
+                else None
+            ),
+            valuation_date=resolved.valuation_as_of,
         )
 
-        update_task_progress(
-            session,
-            task_id,
-            current=total,
-            total=total,
-            message=_risk_completion_message(metrics, status),
-        )
-        result_payload: dict[str, Any] = {
-            "risk_run_id": run.id,
-            "valuation_run_id": valuation_run.id,
-            **(_risk_error_payload(metrics) or {}),
-        }
-        mark_task_finished(
-            session,
-            task_id,
-            status=status,
-            message=_risk_completion_message(metrics, status),
-            result_payload=result_payload,
-        )
+        message = _risk_completion_message(computed.metrics, computed.status)
+        if task_id is not None:
+            update_task_progress(
+                session,
+                task_id,
+                current=len(resolved.positions),
+                total=len(resolved.positions),
+                message=message,
+            )
+            result_payload: dict[str, Any] = {
+                "risk_run_id": run.id,
+                "valuation_run_id": valuation_run.id,
+                **(_risk_error_payload(computed.metrics) or {}),
+            }
+            mark_task_finished(
+                session,
+                task_id,
+                status=computed.status,
+                message=message,
+                result_payload=result_payload,
+            )
         session.commit()
-    except Exception as exc:
-        session.rollback()
+        return PersistedRiskSource(
+            risk_run_id=run.id,
+            valuation_run_id=valuation_run.id,
+            status=computed.status,
+            coverage=deepcopy(computed.metrics["coverage"]),
+        )
+
+
+def _mark_risk_source_failed(
+    session_factory: Callable[[], Session],
+    *,
+    risk_run_id: int,
+    task_id: int | None,
+    error: str,
+) -> None:
+    with session_factory() as session:
         run = session.get(RiskRun, risk_run_id)
         if run is not None:
             run.status = TaskStatus.FAILED.value
-        mark_task_finished(
-            session,
-            task_id,
-            status=TaskStatus.FAILED.value,
-            message="Batch pricing run failed",
-            error=str(exc),
-        )
+        if task_id is not None:
+            mark_task_finished(
+                session,
+                task_id,
+                status=TaskStatus.FAILED.value,
+                message="Batch pricing run failed",
+                error=error,
+            )
         session.commit()
 
 
@@ -308,7 +536,7 @@ def _persist_valuation_run(
     session: Session,
     *,
     run: RiskRun,
-    resolved: list[Position],
+    resolved: list[Position | RiskPositionSnapshot],
     metrics: dict[str, Any],
     position_markets: dict[int, PricingEnvironmentSnapshot],
     pricing_diagnostics: dict[int, dict[str, Any]],
@@ -331,6 +559,7 @@ def _persist_valuation_run(
     valuation_run = PositionValuationRun(
         portfolio_id=run.portfolio_id,
         pricing_parameter_profile_id=run.pricing_parameter_profile_id,
+        engine_config_id=run.engine_config_id,
         market_source_path=None,
         valuation_date=valuation_date if valuation_date is not None else run.created_at,
         overrides=overrides,

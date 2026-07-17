@@ -106,6 +106,7 @@ def test_queue_batch_pricing_scopes_position_ids(tmp_path, monkeypatch):
 
 def test_execute_batch_pricing_writes_both_outputs(tmp_path, monkeypatch):
     database = _batch_db(tmp_path, monkeypatch)
+    from sqlalchemy import func, select
     from app.models import PositionValuationRun, RiskRun, TaskRun
     from app.services.batch_pricing import (
         execute_batch_pricing_task,
@@ -124,6 +125,12 @@ def test_execute_batch_pricing_writes_both_outputs(tmp_path, monkeypatch):
     execute_batch_pricing_task(task_id, run_id, session_factory=database.SessionLocal)
 
     with database.SessionLocal() as session:
+        assert session.scalar(select(func.count()).select_from(RiskRun)) == 1
+        assert session.scalar(select(func.count()).select_from(TaskRun)) == 1
+        assert (
+            session.scalar(select(func.count()).select_from(PositionValuationRun))
+            == 1
+        )
         # Risk side: metrics persisted, status synced.
         risk_run = session.get(RiskRun, run_id)
         assert risk_run.status == "completed"

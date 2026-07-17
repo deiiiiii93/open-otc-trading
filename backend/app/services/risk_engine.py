@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
@@ -31,6 +33,71 @@ from .quantark import (
     risk_pricing_exclusion,
     usable_model_value,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class RiskPositionSnapshot:
+    """Self-contained position input safe to use after the resolve session closes."""
+
+    id: int
+    portfolio_id: int
+    product_id: int | None
+    underlying_id: int | None
+    underlying: str
+    product_type: str
+    product_kwargs: dict[str, Any]
+    engine_name: str
+    engine_kwargs: dict[str, Any]
+    quantity: float
+    entry_price: float
+    currency: str | None
+    status: str
+    position_kind: str
+    source_trade_id: str | None
+    source_row: int | None
+    mapping_status: str
+    mapping_error: str | None
+    source_payload: dict[str, Any] | None
+    trade_effective_date: Any | None
+
+
+def snapshot_risk_position(
+    position: Position,
+    resolved_engine: Any,
+) -> RiskPositionSnapshot:
+    """Copy normalized product and engine inputs out of the ORM session."""
+    from .domains.products import compatibility_terms_for_position
+
+    terms = compatibility_terms_for_position(position)
+    source_payload = getattr(position, "source_payload", None)
+    return RiskPositionSnapshot(
+        id=int(position.id),
+        portfolio_id=int(position.portfolio_id),
+        product_id=getattr(position, "product_id", None),
+        underlying_id=getattr(position, "underlying_id", None),
+        underlying=str(terms.get("underlying") or position.underlying or ""),
+        product_type=str(terms.get("product_type") or position.product_type or ""),
+        product_kwargs=deepcopy(dict(terms.get("product_kwargs") or {})),
+        engine_name=str(resolved_engine.engine_name),
+        engine_kwargs=deepcopy(dict(resolved_engine.engine_kwargs)),
+        quantity=float(position.quantity or 0.0),
+        entry_price=float(position.entry_price or 0.0),
+        currency=getattr(position, "currency", None),
+        status=str(getattr(position, "status", "open") or "open"),
+        position_kind=str(
+            getattr(position, "position_kind", "otc") or "otc"
+        ),
+        source_trade_id=getattr(position, "source_trade_id", None),
+        source_row=getattr(position, "source_row", None),
+        mapping_status=str(
+            getattr(position, "mapping_status", "manual") or "manual"
+        ),
+        mapping_error=getattr(position, "mapping_error", None),
+        source_payload=(
+            deepcopy(source_payload) if isinstance(source_payload, dict) else None
+        ),
+        trade_effective_date=getattr(position, "trade_effective_date", None),
+    )
 
 
 def _risk_worker_count(job_count: int) -> int:
@@ -551,4 +618,41 @@ def _risk_error_payload(metrics: dict[str, Any]) -> dict[str, Any] | None:
             "failed_count": len(failing),
             "positions": failing,
         }
+    }
+
+
+def risk_coverage_diagnostics(
+    metrics: dict[str, Any],
+    *,
+    requested_position_ids: list[int] | None,
+    resolved_position_ids: list[int],
+) -> dict[str, Any]:
+    """Return deterministic coverage for persisted risk-source reuse."""
+    rows_by_id = {
+        int(row["position_id"]): row
+        for row in (metrics.get("positions") or [])
+        if row.get("position_id") is not None
+    }
+    successful: list[int] = []
+    failed: list[int] = []
+    for position_id in resolved_position_ids:
+        row = rows_by_id.get(position_id)
+        if row is not None and row.get("pricing_ok") and row.get("greeks_ok"):
+            successful.append(position_id)
+        else:
+            failed.append(position_id)
+    total = len(resolved_position_ids)
+    requested = (
+        list(requested_position_ids)
+        if requested_position_ids is not None
+        else list(resolved_position_ids)
+    )
+    return {
+        "requested_position_ids": requested,
+        "resolved_position_ids": list(resolved_position_ids),
+        "successful_position_ids": successful,
+        "failed_position_ids": failed,
+        "coverage_count": len(successful),
+        "total_count": total,
+        "coverage_ratio": len(successful) / total if total else 1.0,
     }
