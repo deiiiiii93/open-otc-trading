@@ -1,9 +1,9 @@
 """Versioned risk-limit definition governance.
 
-V1 effective dating is deliberately immediate-only. A draft may omit
-``effective_from`` or pin it to the activation instant; past and future
-handovers are rejected. All persisted governance timestamps are UTC-naive:
-aware inputs are converted to UTC and naive inputs are interpreted as UTC.
+V1 effective dating is deliberately immediate-only. Public draft input must
+omit ``effective_from``; activation owns and writes the authoritative start.
+All persisted governance timestamps are UTC-naive: aware inputs are converted
+to UTC and naive inputs are interpreted as UTC.
 """
 from __future__ import annotations
 
@@ -384,13 +384,8 @@ def validate_version_spec(
         policy["allow_profile_dated"], bool
     ):
         _fail("allow_profile_dated must be boolean")
-    if (
-        spec.effective_from is not None
-        and spec.effective_until is not None
-        and _utc_naive(spec.effective_from, "effective_from")
-        >= _utc_naive(spec.effective_until, "effective_until")
-    ):
-        _fail("effective_from must precede effective_until")
+    if spec.effective_from is not None:
+        _fail("effective_from must be absent for immediate-only v1 drafts")
     if spec.rationale is not None and not isinstance(spec.rationale, str):
         _fail("rationale must be a string or null")
 
@@ -724,17 +719,9 @@ def activate_version(
         raise LimitImmutableError(
             f"only a draft can activate; version is {version.state}"
         )
+    if version.effective_from is not None:
+        _fail("draft effective_from must be absent before activation")
     when = _utc_naive(activated_at or utcnow(), "activated_at")
-    requested_start = (
-        _utc_naive(version.effective_from, "effective_from")
-        if version.effective_from is not None
-        else None
-    )
-    if requested_start is not None and requested_start != when:
-        _fail(
-            "v1 activation is immediate; effective_from must be absent "
-            "or equal to activated_at"
-        )
     if version.effective_until is not None:
         version.effective_until = _utc_naive(
             version.effective_until,
@@ -762,7 +749,14 @@ def activate_version(
     )
     if previous is not None:
         previous.state = "superseded"
-        previous.effective_until = when
+        existing_end = (
+            _utc_naive(previous.effective_until, "effective_until")
+            if previous.effective_until is not None
+            else None
+        )
+        previous.effective_until = (
+            min(existing_end, when) if existing_end else when
+        )
     version.state = "active"
     version.effective_from = when
     version.activated_at = when

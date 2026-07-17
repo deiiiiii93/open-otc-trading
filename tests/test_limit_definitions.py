@@ -158,35 +158,34 @@ def test_activation_supersedes_previous_and_effective_lookup_is_historical(
     ).id == second.id
 
 
-@pytest.mark.parametrize("offset", [-1, 1])
-def test_activation_rejects_past_and_future_effective_handover(
-    session,
-    offset,
-) -> None:
-    activation_at = datetime(2026, 7, 17, 9)
-    limit_row, draft = _create(
-        session,
-        key=f"handover-{offset}",
-        spec=_spec(
-            effective_from=activation_at + timedelta(seconds=offset),
-        ),
-    )
-
+def test_public_draft_specs_reject_populated_effective_from(session) -> None:
+    populated = _spec(effective_from=datetime(2026, 7, 17, 9))
     with pytest.raises(LimitValidationError):
-        definitions.activate_version(
+        _create(session, key="scheduled-create", spec=populated)
+
+    limit_row, draft = _create(session, key="immediate-only")
+    with pytest.raises(LimitValidationError):
+        definitions.add_version(
             session,
             limit_id=limit_row.id,
-            version_id=draft.id,
             expected_row_version=1,
-            activated_at=activation_at,
+            spec=populated,
             context=HUMAN_CONTEXT,
         )
-
+    with pytest.raises(LimitValidationError):
+        definitions.update_draft(
+            session,
+            version_id=draft.id,
+            expected_row_version=1,
+            spec=populated,
+            context=HUMAN_CONTEXT,
+        )
     assert draft.state == "draft"
     assert limit_row.active_version_id is None
+    assert limit_row.row_version == 1
 
 
-def test_activation_accepts_equal_utc_instant_and_stores_utc_naive(
+def test_activation_owns_start_and_normalizes_aware_instant_to_utc_naive(
     session,
 ) -> None:
     activation_at = datetime(2026, 7, 17, 9)
@@ -200,7 +199,6 @@ def test_activation_accepts_equal_utc_instant_and_stores_utc_naive(
     limit_row, draft = _create(
         session,
         key="handover-equal",
-        spec=_spec(effective_from=same_instant),
     )
 
     definitions.activate_version(
@@ -208,7 +206,7 @@ def test_activation_accepts_equal_utc_instant_and_stores_utc_naive(
         limit_id=limit_row.id,
         version_id=draft.id,
         expected_row_version=1,
-        activated_at=activation_at,
+        activated_at=same_instant,
         context=HUMAN_CONTEXT,
     )
 
@@ -228,7 +226,6 @@ def test_governance_action_clamps_later_expiry_and_historical_lookup(
         session,
         key=f"clamp-{operation}",
         spec=_spec(
-            effective_from=activation_at,
             effective_until=action_at + timedelta(days=1),
         ),
     )
@@ -274,7 +271,6 @@ def test_governance_action_cannot_precede_activation(session) -> None:
     limit_row, draft = _create(
         session,
         key="non-retroactive-action",
-        spec=_spec(effective_from=activation_at),
     )
     definitions.activate_version(
         session,
@@ -296,6 +292,66 @@ def test_governance_action_cannot_precede_activation(session) -> None:
 
     assert draft.effective_until is None
     assert draft.state == "active"
+
+
+def test_replacement_activation_preserves_a_genuine_expired_gap(
+    session,
+) -> None:
+    first_at = datetime(2026, 7, 17, 9)
+    first_end = first_at + timedelta(hours=1)
+    second_at = first_at + timedelta(hours=2)
+    limit_row, first = _create(
+        session,
+        key="expired-gap",
+        spec=_spec(effective_until=first_end),
+    )
+    definitions.activate_version(
+        session,
+        limit_id=limit_row.id,
+        version_id=first.id,
+        expected_row_version=1,
+        activated_at=first_at,
+        context=HUMAN_CONTEXT,
+    )
+    second = definitions.add_version(
+        session,
+        limit_id=limit_row.id,
+        expected_row_version=2,
+        spec=_spec(warning_upper=90.0, hard_upper=120.0),
+        context=HUMAN_CONTEXT,
+    )
+    definitions.activate_version(
+        session,
+        limit_id=limit_row.id,
+        version_id=second.id,
+        expected_row_version=3,
+        activated_at=second_at,
+        context=HUMAN_CONTEXT,
+    )
+
+    assert first.effective_until == first_end
+    assert definitions.effective_version(
+        session,
+        limit_id=limit_row.id,
+        valuation_at=first_at + timedelta(minutes=30),
+    ).id == first.id
+    with pytest.raises(definitions.LimitNotFoundError):
+        definitions.effective_version(
+            session,
+            limit_id=limit_row.id,
+            valuation_at=first_end + timedelta(minutes=30),
+        )
+    assert definitions.effective_version(
+        session,
+        limit_id=limit_row.id,
+        valuation_at=datetime(
+            2026,
+            7,
+            17,
+            19,
+            tzinfo=timezone(timedelta(hours=8)),
+        ),
+    ).id == second.id
 
 
 def test_deactivate_and_retire_preserve_history(session) -> None:
