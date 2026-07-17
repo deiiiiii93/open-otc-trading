@@ -9,6 +9,8 @@ from alembic import command
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.schema import CreateIndex
 from sqlalchemy import inspect
 
 from app.config import Settings
@@ -300,3 +302,74 @@ def test_upgrade_is_idempotent_for_orm_first_objects(tmp_path: Path) -> None:
     _run_migration(_migration(), "upgrade", engine)
 
     assert _TABLES <= set(inspect(engine).get_table_names())
+
+
+def test_forward_upgrade_repairs_pre_fix_postgresql_memory_dedup_index(
+    monkeypatch,
+) -> None:
+    migration = _migration()
+    bind = type("PostgresBind", (), {"dialect": postgresql.dialect()})()
+
+    class _Inspector:
+        def get_table_names(self):
+            return ["memory_entries"]
+
+        def get_indexes(self, table_name):
+            assert table_name == "memory_entries"
+            return [
+                {
+                    "name": "ux_memory_dedup",
+                    "unique": True,
+                    "dialect_options": {},
+                }
+            ]
+
+    class _Operations:
+        def __init__(self):
+            self.dropped = []
+            self.created = []
+
+        def get_bind(self):
+            return bind
+
+        def drop_index(self, name, **kwargs):
+            self.dropped.append((name, kwargs))
+
+        def create_index(self, name, table_name, columns, **kwargs):
+            self.created.append((name, table_name, columns, kwargs))
+
+    operations = _Operations()
+    monkeypatch.setattr(migration, "op", operations)
+    monkeypatch.setattr(migration, "inspect", lambda _bind: _Inspector())
+
+    migration._repair_memory_dedup_postgresql()
+
+    assert operations.dropped == [
+        ("ux_memory_dedup", {"table_name": "memory_entries"})
+    ]
+    assert len(operations.created) == 1
+    name, table_name, columns, kwargs = operations.created[0]
+    assert name == "ux_memory_dedup"
+    assert table_name == "memory_entries"
+    assert columns == ["scope_type", "scope_id", "normalized_content"]
+    assert kwargs["unique"] is True
+
+    metadata = sa.MetaData()
+    memory_entries = sa.Table(
+        "memory_entries",
+        metadata,
+        sa.Column("scope_type", sa.String()),
+        sa.Column("scope_id", sa.String()),
+        sa.Column("normalized_content", sa.String()),
+        sa.Column("status", sa.String()),
+    )
+    repaired = sa.Index(
+        name,
+        memory_entries.c.scope_type,
+        memory_entries.c.scope_id,
+        memory_entries.c.normalized_content,
+        unique=kwargs["unique"],
+        postgresql_where=kwargs["postgresql_where"],
+    )
+    ddl = str(CreateIndex(repaired).compile(dialect=postgresql.dialect()))
+    assert "WHERE status != 'archived'" in ddl

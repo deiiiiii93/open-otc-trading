@@ -88,6 +88,10 @@ class PortfolioNameConflict(PortfolioError):
     pass
 
 
+class RiskLimitHistoryDeletionError(RuntimeError):
+    """Raised when immutable risk-limit history is queued for ORM deletion."""
+
+
 class PortfolioKindError(PortfolioError):
     pass
 
@@ -2326,6 +2330,23 @@ class ArenaMatch(Base):
             name="uq_arena_match_run_workflow_model",
         ),
     )
+
+
+@event.listens_for(OrmSession, "before_flush")
+def _protect_risk_limit_history_from_deletion(
+    session: OrmSession,
+    _flush_context,
+    _instances,
+) -> None:
+    for obj in session.deleted:
+        if isinstance(obj, RiskLimit):
+            raise RiskLimitHistoryDeletionError(
+                "risk limit identities cannot be deleted"
+            )
+        if isinstance(obj, RiskLimitVersion):
+            raise RiskLimitHistoryDeletionError(
+                "risk limit versions cannot be deleted"
+            )
 
 
 @event.listens_for(OrmSession, "before_flush")

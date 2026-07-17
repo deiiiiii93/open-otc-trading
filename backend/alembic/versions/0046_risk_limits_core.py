@@ -82,7 +82,47 @@ def _create_index(
     op.create_index(name, table_name, columns, **kwargs)
 
 
+def _repair_memory_dedup_postgresql() -> None:
+    """Forward-repair the pre-fix full unique index shipped before 0046."""
+    bind = op.get_bind()
+    if bind.dialect.name != "postgresql":
+        return
+    inspector = inspect(bind)
+    if "memory_entries" not in inspector.get_table_names():
+        return
+    existing = next(
+        (
+            index
+            for index in inspector.get_indexes("memory_entries")
+            if index["name"] == "ux_memory_dedup"
+        ),
+        None,
+    )
+    dialect_options = (existing or {}).get("dialect_options") or {}
+    predicate = dialect_options.get("postgresql_where")
+    if predicate is None and existing is not None:
+        predicate = existing.get("postgresql_where")
+    normalized_predicate = str(predicate or "").lower()
+    if (
+        "status" in normalized_predicate
+        and "archived" in normalized_predicate
+        and ("!=" in normalized_predicate or "<>" in normalized_predicate)
+    ):
+        return
+    if existing is not None:
+        op.drop_index("ux_memory_dedup", table_name="memory_entries")
+    op.create_index(
+        "ux_memory_dedup",
+        "memory_entries",
+        ["scope_type", "scope_id", "normalized_content"],
+        unique=True,
+        postgresql_where=sa.text("status != 'archived'"),
+    )
+
+
 def upgrade() -> None:
+    _repair_memory_dedup_postgresql()
+
     if "risk_limits" not in _tables():
         op.create_table(
             "risk_limits",
