@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
 
@@ -245,6 +245,52 @@ def test_limit_version_cannot_be_deleted_through_orm(session) -> None:
 
     assert session.get(RiskLimitVersion, version_id) is not None
     assert session.get(type(limit_row), limit_id).active_version_id == version_id
+
+
+@pytest.mark.parametrize("model_name", ["identity", "version"])
+@pytest.mark.parametrize("delete_style", ["session_execute", "query_delete"])
+def test_bulk_limit_history_deletes_are_rejected_and_session_recovers(
+    session,
+    model_name: str,
+    delete_style: str,
+) -> None:
+    from app.models import (
+        RiskLimit,
+        RiskLimitHistoryDeletionError,
+        RiskLimitVersion,
+    )
+
+    limit_row = _limit(session, key=f"immutable-bulk-{model_name}-{delete_style}")
+    version = _version(session, limit_row.id)
+    limit_id = limit_row.id
+    version_id = version.id
+    session.commit()
+
+    model = RiskLimit if model_name == "identity" else RiskLimitVersion
+    target_id = limit_id if model_name == "identity" else version_id
+    message = (
+        "risk limit identities cannot be deleted"
+        if model_name == "identity"
+        else "risk limit versions cannot be deleted"
+    )
+
+    with pytest.raises(RiskLimitHistoryDeletionError, match=message):
+        if delete_style == "session_execute":
+            session.execute(delete(model).where(model.id == target_id))
+        else:
+            session.query(model).filter(model.id == target_id).delete(
+                synchronize_session=False
+            )
+    session.rollback()
+
+    assert session.get(RiskLimit, limit_id) is not None
+    assert session.get(RiskLimitVersion, version_id) is not None
+
+    recovered = session.get(RiskLimit, limit_id)
+    recovered.owner = "recovered-owner"
+    session.commit()
+    assert session.get(RiskLimit, limit_id).owner == "recovered-owner"
+    assert session.get(RiskLimitVersion, version_id) is not None
 
 
 def test_evaluation_is_unique_per_run_version_scope(session) -> None:

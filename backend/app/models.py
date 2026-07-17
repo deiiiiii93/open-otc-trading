@@ -20,7 +20,13 @@ from sqlalchemy import (
     inspect as sa_inspect,
     text,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
+from sqlalchemy.orm import (
+    Mapped,
+    ORMExecuteState,
+    mapped_column,
+    relationship,
+    synonym,
+)
 from sqlalchemy.orm import Session as OrmSession
 
 from .database import Base
@@ -2347,6 +2353,30 @@ def _protect_risk_limit_history_from_deletion(
             raise RiskLimitHistoryDeletionError(
                 "risk limit versions cannot be deleted"
             )
+
+
+@event.listens_for(OrmSession, "do_orm_execute")
+def _protect_risk_limit_history_from_bulk_deletion(
+    execute_state: ORMExecuteState,
+) -> None:
+    if not execute_state.is_delete:
+        return
+
+    mapper = execute_state.bind_mapper
+    model = mapper.class_ if mapper is not None else None
+    table_name = getattr(
+        getattr(execute_state.statement, "table", None),
+        "name",
+        None,
+    )
+    if model is RiskLimit or table_name == RiskLimit.__tablename__:
+        raise RiskLimitHistoryDeletionError(
+            "risk limit identities cannot be deleted"
+        )
+    if model is RiskLimitVersion or table_name == RiskLimitVersion.__tablename__:
+        raise RiskLimitHistoryDeletionError(
+            "risk limit versions cannot be deleted"
+        )
 
 
 @event.listens_for(OrmSession, "before_flush")
