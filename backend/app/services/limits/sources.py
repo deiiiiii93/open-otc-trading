@@ -24,7 +24,7 @@ SCENARIO_TAIL_METHODOLOGY: dict[str, Any] = {
 BACKTEST_TAIL_METHODOLOGY: dict[str, Any] = {
     "method": "historical",
     "confidence": 0.95,
-    "horizon": "1d",
+    "horizon": "1_trading_day",
     "scaling": "none",
 }
 
@@ -202,6 +202,14 @@ def adapt_risk_run(
 ) -> NormalizedObservation:
     """Adapt shared, currency-bucket, or per-position risk-run values."""
     descriptor = get_metric(metric_kind)
+    source_bump_convention = {
+        "rho": "parallel_rate_1pct",
+        "rho_q": "parallel_dividend_yield_1pct",
+    }.get(metric_kind)
+    if source_bump_convention is not None:
+        bump_convention = source_bump_convention
+        if currency:
+            unit = f"{currency}/1pct"
     evidence: dict[str, Any] = {
         "risk_run_id": run.id,
         "method": run.method,
@@ -219,6 +227,20 @@ def adapt_risk_run(
         return status_unknown
 
     metrics = deepcopy(run.metrics or {})
+    source_metadata = dict(metrics.get("source_metadata") or {})
+    if source_metadata.get("market_evidence_complete") is False:
+        evidence["missing_market_evidence"] = deepcopy(
+            source_metadata.get("missing_market_evidence") or []
+        )
+        return _unknown(
+            source_kind="risk_run",
+            unit=unit,
+            currency=currency,
+            bump_convention=bump_convention,
+            source_status=run.status,
+            reason_code="incomplete_scope",
+            evidence=evidence,
+        )
     rows = list(metrics.get("positions") or [])
     selected, requested_ids = _risk_rows_for_scope(rows, scope)
     selected_ids = tuple(
@@ -433,11 +455,15 @@ def adapt_scenario_test_run(
     methodology: Mapping[str, Any],
     unit: str,
     currency: str | None,
+    session: Session | None = None,
+    valuation_as_of: datetime | None = None,
 ) -> NormalizedObservation:
     """Adapt locked scenario-distribution tails or exact stress selections."""
+    from ..domains.scenario_catalog import strip_source_snapshot
+
     evidence: dict[str, Any] = {
         "scenario_test_run_id": run.id,
-        "scenario_spec": deepcopy(run.scenario_spec or {}),
+        "scenario_spec": strip_source_snapshot(run.scenario_spec or {}),
         "source_metadata": deepcopy((run.results or {}).get("source_metadata") or {}),
     }
     status_unknown = _status_unknown(
@@ -460,6 +486,16 @@ def adapt_scenario_test_run(
             evidence=evidence,
         )
     results = run.results or {}
+    source_metadata = dict(results.get("source_metadata") or {})
+    if source_metadata.get("methodology") != SCENARIO_TAIL_METHODOLOGY:
+        return _unknown(
+            source_kind="scenario_test",
+            unit=unit,
+            currency=currency,
+            source_status=run.status,
+            reason_code="methodology_mismatch",
+            evidence=evidence,
+        )
     if metric_kind in {"var", "cvar"}:
         if dict(methodology) != SCENARIO_TAIL_METHODOLOGY:
             return _unknown(
@@ -497,8 +533,25 @@ def adapt_scenario_test_run(
                 "result_path": f"var_cvar.{metric_kind}",
             }
         )
+        converted = _convert_single_currency_value(
+            session,
+            value=value,
+            source_metadata=source_metadata,
+            target_currency=currency,
+            valuation_as_of=valuation_as_of or _source_valuation(run),
+            evidence=evidence,
+        )
+        if converted[0] is None:
+            return _unknown(
+                source_kind="scenario_test",
+                unit=unit,
+                currency=currency,
+                source_status=run.status,
+                reason_code=converted[1],
+                evidence=evidence,
+            )
         return NormalizedObservation(
-            values=(value,),
+            values=(converted[0],),
             source_kind="scenario_test",
             unit=unit,
             currency=currency,
@@ -521,10 +574,21 @@ def adapt_scenario_test_run(
         if row.get("name") is not None
     }
     method = dict(methodology)
+    if method.get("scenario_set_hash") != source_metadata.get(
+        "scenario_set_hash"
+    ):
+        return _unknown(
+            source_kind="scenario_test",
+            unit=unit,
+            currency=currency,
+            source_status=run.status,
+            reason_code="methodology_mismatch",
+            evidence=evidence,
+        )
     selection = method.get("selection")
     if selection == "named":
         requested_names = [str(method.get("scenario_name") or "")]
-    elif selection == "worst":
+    elif selection == "worst_of_set":
         raw_names = method.get("scenario_names")
         if not isinstance(raw_names, list) or not raw_names:
             requested_names = []
@@ -533,6 +597,19 @@ def adapt_scenario_test_run(
     else:
         requested_names = []
     missing_names = [name for name in requested_names if name not in scenarios]
+    frozen_names = source_metadata.get("scenario_names")
+    if (
+        not isinstance(frozen_names, list)
+        or set(scenarios) != {str(name) for name in frozen_names}
+    ):
+        return _unknown(
+            source_kind="scenario_test",
+            unit=unit,
+            currency=currency,
+            source_status=run.status,
+            reason_code="missing_scenario",
+            evidence={**evidence, "source_scenario_names": frozen_names},
+        )
     if not requested_names or missing_names:
         return _unknown(
             source_kind="scenario_test",
@@ -569,8 +646,25 @@ def adapt_scenario_test_run(
             "scenario_pnl_pct": chosen[2].get("pnl_pct"),
         }
     )
+    converted = _convert_single_currency_value(
+        session,
+        value=chosen[0],
+        source_metadata=source_metadata,
+        target_currency=currency,
+        valuation_as_of=valuation_as_of or _source_valuation(run),
+        evidence=evidence,
+    )
+    if converted[0] is None:
+        return _unknown(
+            source_kind="scenario_test",
+            unit=unit,
+            currency=currency,
+            source_status=run.status,
+            reason_code=converted[1],
+            evidence=evidence,
+        )
     return NormalizedObservation(
-        values=(chosen[0],),
+        values=(converted[0],),
         source_kind="scenario_test",
         unit=unit,
         currency=currency,
@@ -586,6 +680,8 @@ def adapt_backtest_run(
     methodology: Mapping[str, Any],
     unit: str,
     currency: str | None,
+    session: Session | None = None,
+    valuation_as_of: datetime | None = None,
 ) -> NormalizedObservation:
     """Adapt the live loss-positive historical one-day VaR/CVaR producer."""
     evidence: dict[str, Any] = {
@@ -612,9 +708,11 @@ def adapt_backtest_run(
             reason_code="incomplete_scope",
             evidence=evidence,
         )
+    source_metadata = dict((run.results or {}).get("source_metadata") or {})
     if (
         metric_kind not in {"var", "cvar"}
         or dict(methodology) != BACKTEST_TAIL_METHODOLOGY
+        or source_metadata.get("methodology") != BACKTEST_TAIL_METHODOLOGY
     ):
         return _unknown(
             source_kind="backtest",
@@ -650,8 +748,25 @@ def adapt_backtest_run(
             "result_path": f"{result_prefix}.{key}",
         }
     )
+    converted = _convert_single_currency_value(
+        session,
+        value=value,
+        source_metadata=source_metadata,
+        target_currency=currency,
+        valuation_as_of=valuation_as_of or _source_valuation(run),
+        evidence=evidence,
+    )
+    if converted[0] is None:
+        return _unknown(
+            source_kind="backtest",
+            unit=unit,
+            currency=currency,
+            source_status=run.status,
+            reason_code=converted[1],
+            evidence=evidence,
+        )
     return NormalizedObservation(
-        values=(value,),
+        values=(converted[0],),
         source_kind="backtest",
         unit=unit,
         currency=currency,
@@ -679,3 +794,40 @@ def _source_valuation(run: RiskRun | ScenarioTestRun | BacktestRun) -> datetime:
         except ValueError:
             pass
     return run.created_at
+
+
+def _convert_single_currency_value(
+    session: Session | None,
+    *,
+    value: float,
+    source_metadata: Mapping[str, Any],
+    target_currency: str | None,
+    valuation_as_of: datetime,
+    evidence: dict[str, Any],
+) -> tuple[float | None, str]:
+    currencies = source_metadata.get("source_currencies")
+    if (
+        not isinstance(currencies, list)
+        or len(currencies) != 1
+        or not isinstance(currencies[0], str)
+        or not currencies[0].strip()
+    ):
+        evidence["source_currencies"] = deepcopy(currencies)
+        return None, "incomplete_scope"
+    source_currency = currencies[0].strip().upper()
+    evidence["source_currency"] = source_currency
+    if not target_currency:
+        return None, "missing_fx"
+    target = target_currency.strip().upper()
+    converted, fx = _fx_value(
+        session,
+        value=value,
+        base_currency=source_currency,
+        target_currency=target,
+        valuation_as_of=valuation_as_of,
+    )
+    if converted is None:
+        evidence["missing_fx"] = [f"{source_currency}->{target}"]
+        return None, "missing_fx"
+    evidence["fx_rates"] = [fx.as_dict()] if fx is not None else []
+    return converted, ""

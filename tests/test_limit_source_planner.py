@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -89,7 +90,7 @@ def _key(
         "engine_config_id": ids["engine"],
         "market_snapshot_id": ids["market"] if source_kind == "risk_run" else None,
         "effective_market_evidence_id": (
-            None
+            "external-market-evidence/v1:fixture"
         ),
         "methodology": methodologies[source_kind],
         "config": configs[source_kind],
@@ -105,8 +106,14 @@ def _source_run(session, source_kind: str, key, *, status: str, created_at: date
 
     metadata = {
         "valuation_as_of": NOW.isoformat(),
+        "effective_valuation_as_of": NOW.isoformat(),
+        "valuation_origin": "explicit",
         "effective_market_evidence_id": key.effective_market_evidence_id,
+        "methodology": key.methodology,
+        "source_config": key.config,
     }
+    if source_kind == "scenario_test":
+        metadata["scenario_set_hash"] = "sha256:" + ("a" * 64)
     if source_kind == "risk_run":
         row = RiskRun(
             portfolio_id=key.portfolio_id,
@@ -188,9 +195,16 @@ def test_reuse_only_and_force_refresh_for_all_sources(
             policy="reuse_only",
             now=NOW,
         )
-        refreshed_run = object()
-        forced = select_source(
+        refreshed_run = _source_run(
             session,
+            source_kind,
+            key,
+            status="completed",
+            created_at=NOW,
+        )
+        session.commit()
+        forced = select_source(
+            database.SessionLocal,
             key,
             policy="force_refresh",
             now=NOW,
@@ -199,7 +213,7 @@ def test_reuse_only_and_force_refresh_for_all_sources(
 
         assert reused.run.id == reusable.id
         assert reused.reused is True
-        assert forced.run is refreshed_run
+        assert forced.run.id == refreshed_run.id
         assert forced.reused is False
 
 
@@ -341,19 +355,31 @@ def test_refresh_if_stale_and_reuse_only_stale_diagnostics(
             policy="reuse_only",
             now=NOW,
         )
-        fresh_run = object()
-        refreshed = select_source(
-            session,
-            key,
-            policy="refresh_if_stale",
-            now=NOW,
-            refresh=lambda _key: fresh_run,
-        )
+    def refresh(_key):
+        assert database.engine.pool.checkedout() == 0
+        with database.SessionLocal() as refresh_session:
+            fresh_run = _source_run(
+                refresh_session,
+                "risk_run",
+                key,
+                status="completed",
+                created_at=NOW,
+            )
+            refresh_session.commit()
+            return SimpleNamespace(risk_run_id=fresh_run.id)
 
-        assert stale.run is None
-        assert stale.reason_code == "stale_source"
-        assert refreshed.run is fresh_run
-        assert refreshed.reused is False
+    refreshed = select_source(
+        database.SessionLocal,
+        key,
+        policy="refresh_if_stale",
+        now=NOW,
+        refresh=refresh,
+    )
+
+    assert stale.run is not None
+    assert stale.reason_code == "stale_source"
+    assert refreshed.run.created_at == NOW
+    assert refreshed.reused is False
 
 
 def test_canonical_grouping_sorts_scope_and_mapping_keys() -> None:
@@ -452,3 +478,423 @@ def test_persisted_source_reference_contains_requested_and_diagnostics(
         assert persisted.requested_parameters["position_ids"] == [1, 3]
         assert persisted.completeness_diagnostics["covered_position_ids"] == [1, 3]
         assert persisted.source_valuation_at == NOW
+
+
+def test_source_plan_never_fabricates_profile_evidence_identity() -> None:
+    from app.services.limits.source_planner import SourcePlanKey
+
+    with pytest.raises(
+        ValueError,
+        match="market_snapshot_id or effective_market_evidence_id is required",
+    ):
+        SourcePlanKey.create(
+            source_kind="scenario_test",
+            portfolio_id=1,
+            position_ids=[1],
+            pricing_parameter_profile_id=7,
+            engine_config_id=None,
+            market_snapshot_id=None,
+            effective_market_evidence_id=None,
+            methodology={},
+            config={},
+            valuation_policy={},
+            freshness_policy={"max_age_seconds": 30},
+        )
+
+
+def test_freshness_uses_creation_age_and_profile_origin_requires_opt_in(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.services.limits.source_planner import find_reusable_source
+
+    aware_now = NOW.replace(tzinfo=timezone.utc)
+    with database.SessionLocal() as session:
+        portfolio, profile, engine, market = _fixture(session)
+        ids = {
+            "portfolio": portfolio.id,
+            "profile": profile.id,
+            "engine": engine.id,
+            "market": market.id,
+        }
+        disallowed_key = _key(
+            "risk_run",
+            ids,
+            freshness_policy={"max_age_seconds": 60},
+            valuation_policy={"valuation_as_of": "2020-01-02T12:00:00"},
+        )
+        source = _source_run(
+            session,
+            "risk_run",
+            disallowed_key,
+            status="completed",
+            created_at=NOW - timedelta(seconds=10),
+        )
+        metadata = source.metrics["source_metadata"]
+        metadata["valuation_as_of"] = "2020-01-02T12:00:00"
+        metadata["effective_valuation_as_of"] = "2020-01-02T12:00:00"
+        metadata["valuation_origin"] = "profile"
+        source.metrics = {
+            **source.metrics,
+            "valuation_as_of": "2020-01-02T12:00:00",
+            "source_metadata": metadata,
+        }
+        session.commit()
+
+        disallowed = find_reusable_source(
+            session,
+            disallowed_key,
+            now=aware_now,
+        )
+        allowed = find_reusable_source(
+            session,
+            _key(
+                "risk_run",
+                ids,
+                freshness_policy={
+                    "max_age_seconds": 60,
+                    "allow_profile_dated": True,
+                },
+                valuation_policy={"valuation_as_of": "2020-01-02T12:00:00"},
+            ),
+            now=aware_now,
+        )
+        metadata["valuation_origin"] = "explicit"
+        source.metrics = {**source.metrics, "source_metadata": metadata}
+        session.commit()
+        explicit_historical = find_reusable_source(
+            session,
+            disallowed_key,
+            now=aware_now,
+        )
+
+        assert disallowed.is_fresh is False
+        assert disallowed.reason_code == "stale_source"
+        assert allowed.is_fresh is True
+        assert explicit_historical.is_fresh is True
+
+
+@pytest.mark.parametrize(
+    ("refresh_value", "expected_reason"),
+    [
+        (None, "refresh_failed"),
+        ("wrong-kind", "refresh_failed"),
+    ],
+)
+def test_refresh_never_blindly_declares_success(
+    tmp_path,
+    monkeypatch,
+    refresh_value,
+    expected_reason: str,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.services.limits.source_planner import select_source
+
+    with database.SessionLocal() as session:
+        portfolio, profile, engine, market = _fixture(session)
+        ids = {
+            "portfolio": portfolio.id,
+            "profile": profile.id,
+            "engine": engine.id,
+            "market": market.id,
+        }
+        key = _key("risk_run", ids)
+        session.commit()
+
+    selected = select_source(
+        database.SessionLocal,
+        key,
+        policy="force_refresh",
+        now=NOW,
+        refresh=lambda _key: refresh_value,
+    )
+
+    assert selected.run is None
+    assert selected.is_fresh is False
+    assert selected.reason_code == expected_reason
+
+
+def test_missing_source_reference_persists_nullable_evidence(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.models import LimitMonitoringRun, LimitSourceReference
+    from app.services.limits.source_planner import persist_source_reference
+
+    with database.SessionLocal() as session:
+        portfolio, profile, engine, market = _fixture(session)
+        ids = {
+            "portfolio": portfolio.id,
+            "profile": profile.id,
+            "engine": engine.id,
+            "market": market.id,
+        }
+        key = _key("risk_run", ids)
+        monitoring = LimitMonitoringRun(
+            trigger="manual",
+            mode="interactive",
+            portfolio_id=portfolio.id,
+            valuation_as_of=NOW,
+            source_policy="reuse_only",
+            status="running",
+            summary={},
+            definition_snapshot={},
+            definition_snapshot_hash="b" * 64,
+        )
+        session.add(monitoring)
+        session.flush()
+        reference = persist_source_reference(
+            session,
+            monitoring_run_id=monitoring.id,
+            key=key,
+            source=None,
+            source_status="missing",
+            is_fresh=False,
+            diagnostics={"reason_code": "missing_source"},
+        )
+        session.commit()
+
+        row = session.get(LimitSourceReference, reference.id)
+        assert row.source_status == "missing"
+        assert row.risk_run_id is None
+        assert row.source_created_at is None
+        assert row.source_valuation_at is None
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_reason"),
+    [
+        ("failed", "source_failed"),
+        ("empty", "empty_source"),
+    ],
+)
+def test_refresh_failed_or_empty_source_is_not_fresh(
+    tmp_path,
+    monkeypatch,
+    status: str,
+    expected_reason: str,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.services.limits.source_planner import select_source
+
+    with database.SessionLocal() as session:
+        portfolio, profile, engine, market = _fixture(session)
+        ids = {
+            "portfolio": portfolio.id,
+            "profile": profile.id,
+            "engine": engine.id,
+            "market": market.id,
+        }
+        key = _key("risk_run", ids)
+        refreshed = _source_run(
+            session,
+            "risk_run",
+            key,
+            status=status,
+            created_at=NOW,
+        )
+        session.commit()
+        refreshed_id = refreshed.id
+
+    selection = select_source(
+        database.SessionLocal,
+        key,
+        policy="force_refresh",
+        now=NOW,
+        refresh=lambda _key: SimpleNamespace(risk_run_id=refreshed_id),
+    )
+
+    assert selection.run.id == refreshed_id
+    assert selection.is_fresh is False
+    assert selection.reason_code == expected_reason
+
+
+@pytest.mark.parametrize("changed_field", ["product_kwargs", "engine_kwargs"])
+def test_backtest_reuse_revalidates_position_and_engine_content_hashes(
+    tmp_path,
+    monkeypatch,
+    changed_field: str,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.models import BacktestRun, EngineConfigVariant, Portfolio, Position
+    from app.services.limits.source_planner import SourcePlanKey, find_reusable_source
+    from app.services.limits.sources import BACKTEST_TAIL_METHODOLOGY
+    from app.services.source_evidence import canonical_hash
+
+    with database.SessionLocal() as session:
+        portfolio = Portfolio(name="Backtest evidence", base_currency="USD")
+        session.add(portfolio)
+        session.flush()
+        position = Position(
+            portfolio_id=portfolio.id,
+            underlying="AAPL",
+            product_type="EuropeanVanillaOption",
+            product_kwargs={
+                "strike": 100.0,
+                "option_type": "CALL",
+                "maturity": 1.0,
+            },
+            engine_name="BlackScholesEngine",
+            engine_kwargs={"steps": 101},
+            quantity=2.0,
+            entry_price=7.5,
+            currency="USD",
+        )
+        engine = EngineConfigVariant(
+            name="Backtest evidence engines",
+            status="active",
+            is_default=False,
+            rules={"rules": []},
+        )
+        session.add_all([position, engine])
+        session.flush()
+        manifest = {
+            "schema": "backtest-market-evidence/v1",
+            "window": {"start": "2025-01-02", "end": "2025-12-31"},
+            "positions": [
+                {
+                    "position_id": position.id,
+                    "economic_input_hash": canonical_hash(
+                        {
+                            "product_id": position.product_id,
+                            "product_type": position.product_type,
+                            "product_kwargs": position.product_kwargs,
+                            "quantity": position.quantity,
+                            "entry_price": position.entry_price,
+                            "currency": position.currency,
+                        }
+                    ),
+                    "resolved_engine_hash": canonical_hash(
+                        {
+                            "engine_name": position.engine_name,
+                            "engine_kwargs": position.engine_kwargs,
+                        }
+                    ),
+                }
+            ],
+            "underlyings": [],
+        }
+        evidence_hash = canonical_hash(manifest)
+        evidence_id = (
+            "backtest-market-evidence/v1:"
+            f"{evidence_hash.removeprefix('sha256:')}"
+        )
+        config = {
+            "spec": {"start": "2025-01-02", "end": "2025-12-31"},
+            "config": {"export_formats": []},
+        }
+        metadata = {
+            "valuation_as_of": NOW.isoformat(),
+            "effective_valuation_as_of": NOW.isoformat(),
+            "valuation_origin": "explicit",
+            "effective_market_evidence_id": evidence_id,
+            "market_evidence_hash": evidence_hash,
+            "market_evidence_manifest": manifest,
+            "methodology": BACKTEST_TAIL_METHODOLOGY,
+            "source_config": config,
+        }
+        run = BacktestRun(
+            portfolio_id=portfolio.id,
+            engine_config_id=engine.id,
+            resolved_position_ids=[position.id],
+            status="completed",
+            spec=config["spec"],
+            config=config["config"],
+            results={"source_metadata": metadata},
+            excluded_positions=[],
+            artifacts={},
+            created_at=NOW,
+        )
+        session.add(run)
+        session.commit()
+        key = SourcePlanKey.create(
+            source_kind="backtest",
+            portfolio_id=portfolio.id,
+            position_ids=[position.id],
+            pricing_parameter_profile_id=None,
+            engine_config_id=engine.id,
+            market_snapshot_id=None,
+            effective_market_evidence_id=evidence_id,
+            methodology=BACKTEST_TAIL_METHODOLOGY,
+            config=config,
+            valuation_policy={"valuation_as_of": NOW.isoformat()},
+            freshness_policy={"max_age_seconds": 60},
+        )
+
+        assert find_reusable_source(session, key, now=NOW).run.id == run.id
+
+        if changed_field == "product_kwargs":
+            position.product_kwargs = {**position.product_kwargs, "strike": 101.0}
+        else:
+            position.engine_kwargs = {**position.engine_kwargs, "steps": 202}
+        session.commit()
+
+        selection = find_reusable_source(session, key, now=NOW)
+        assert selection.run is None
+        assert selection.reason_code == "missing_source"
+
+
+def test_scenario_stress_reuse_matches_frozen_set_identity_and_names(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.services.limits.source_planner import find_reusable_source
+    from app.services.limits.sources import SCENARIO_TAIL_METHODOLOGY
+
+    scenario_hash = "sha256:" + ("a" * 64)
+    with database.SessionLocal() as session:
+        portfolio, profile, engine, market = _fixture(session)
+        ids = {
+            "portfolio": portfolio.id,
+            "profile": profile.id,
+            "engine": engine.id,
+            "market": market.id,
+        }
+        key = _key(
+            "scenario_test",
+            ids,
+            methodology={
+                "selection": "named",
+                "scenario_set_hash": scenario_hash,
+                "scenario_name": "Market Crash",
+            },
+        )
+        source = _source_run(
+            session,
+            "scenario_test",
+            key,
+            status="completed",
+            created_at=NOW,
+        )
+        metadata = source.results["source_metadata"]
+        metadata.update(
+            {
+                "methodology": SCENARIO_TAIL_METHODOLOGY,
+                "scenario_set_hash": scenario_hash,
+                "scenario_names": ["Market Crash", "Vol Spike"],
+            }
+        )
+        source.results = {**source.results, "source_metadata": metadata}
+        session.commit()
+
+        selected = find_reusable_source(session, key, now=NOW)
+        renamed = find_reusable_source(
+            session,
+            _key(
+                "scenario_test",
+                ids,
+                methodology={
+                    "selection": "named",
+                    "scenario_set_hash": scenario_hash,
+                    "scenario_name": "Renamed Crash",
+                },
+            ),
+            now=NOW,
+        )
+
+        assert selected.run.id == source.id
+        assert renamed.run is None
+        assert renamed.reason_code == "missing_source"

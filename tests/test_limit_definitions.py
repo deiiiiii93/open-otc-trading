@@ -646,6 +646,18 @@ def test_create_unique_key_race_uses_savepoint_and_preserves_session(
             currency="USD",
         ),
         _spec(
+            metric_kind="stress_pnl",
+            source_kind="scenario_test",
+            methodology={
+                "selection": "named",
+                "scenario_set_hash": "sha256:" + ("g" * 64),
+                "scenario_name": "not-canonical",
+            },
+            transform="loss_magnitude",
+            unit="USD",
+            currency="USD",
+        ),
+        _spec(
             metric_kind="rho",
             unit="USD",
             currency="USD",
@@ -829,7 +841,7 @@ def test_exact_named_stress_and_rho_q_are_valid(session) -> None:
             source_kind="scenario_test",
             methodology={
                 "selection": "named",
-                "scenario_set_id": 12,
+                "scenario_set_hash": "sha256:" + ("a" * 64),
                 "scenario_name": "equity-down-10",
             },
             transform="loss_magnitude",

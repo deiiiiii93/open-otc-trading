@@ -31,6 +31,7 @@ from .errors import (
 
 
 _KEY = re.compile(r"^[a-z][a-z0-9_-]{2,119}$")
+_SHA256_ID = re.compile(r"^sha256:[0-9a-f]{64}$")
 _CATEGORIES = frozenset({"greek", "var", "cvar", "stress"})
 _GREEKS = frozenset({"delta", "gamma", "vega", "theta", "rho", "rho_q"})
 _METRICS = _GREEKS | {"var", "cvar", "stress_pnl"}
@@ -294,31 +295,29 @@ def _validate_methodology(spec: LimitVersionSpec) -> None:
     if selection == "named":
         if set(methodology) != {
             "selection",
-            "scenario_set_id",
+            "scenario_set_hash",
             "scenario_name",
         }:
             _fail("named stress selection must be exact")
-        if (
-            isinstance(methodology["scenario_set_id"], bool)
-            or not isinstance(methodology["scenario_set_id"], int)
-            or methodology["scenario_set_id"] <= 0
-        ):
-            _fail("scenario_set_id must be a positive integer")
+        scenario_hash = methodology["scenario_set_hash"]
+        if not isinstance(scenario_hash, str) or _SHA256_ID.fullmatch(
+            scenario_hash
+        ) is None:
+            _fail("scenario_set_hash must be a canonical SHA-256 identity")
         _non_empty(methodology["scenario_name"], "scenario_name")
         return
     if selection == "worst_of_set":
         if set(methodology) != {
             "selection",
-            "scenario_set_id",
+            "scenario_set_hash",
             "scenario_names",
         }:
             _fail("worst-of stress selection must be exact")
-        if (
-            isinstance(methodology["scenario_set_id"], bool)
-            or not isinstance(methodology["scenario_set_id"], int)
-            or methodology["scenario_set_id"] <= 0
-        ):
-            _fail("scenario_set_id must be a positive integer")
+        scenario_hash = methodology["scenario_set_hash"]
+        if not isinstance(scenario_hash, str) or _SHA256_ID.fullmatch(
+            scenario_hash
+        ) is None:
+            _fail("scenario_set_hash must be a canonical SHA-256 identity")
         _validate_string_values(methodology["scenario_names"], "scenario_names")
         return
     _fail("stress_pnl requires named or worst_of_set selection")

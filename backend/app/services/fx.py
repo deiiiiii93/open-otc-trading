@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import math
 from typing import Any, Callable
 
 from sqlalchemy import select
@@ -95,10 +96,13 @@ def fx_rate_evidence_as_of(
         as_of,
     )
     if direct is not None:
+        direct_rate = float(direct.rate)
+        if not math.isfinite(direct_rate) or direct_rate <= 0:
+            return None
         return FxRateEvidence(
             base_currency=normalized_base,
             quote_currency=normalized_quote,
-            rate=float(direct.rate),
+            rate=direct_rate,
             as_of=direct.as_of_date,
             fx_rate_id=direct.id,
             is_inverse=False,
@@ -110,12 +114,15 @@ def fx_rate_evidence_as_of(
         normalized_base,
         as_of,
     )
-    if inverse is None or not float(inverse.rate):
+    if inverse is None:
+        return None
+    inverse_rate = float(inverse.rate)
+    if not math.isfinite(inverse_rate) or inverse_rate <= 0:
         return None
     return FxRateEvidence(
         base_currency=normalized_base,
         quote_currency=normalized_quote,
-        rate=1.0 / float(inverse.rate),
+        rate=1.0 / inverse_rate,
         as_of=inverse.as_of_date,
         fx_rate_id=inverse.id,
         is_inverse=True,

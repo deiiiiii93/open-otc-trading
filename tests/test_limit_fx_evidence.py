@@ -152,3 +152,114 @@ def test_missing_fx_is_unknown(tmp_path, monkeypatch) -> None:
     assert observation.values is None
     assert observation.reason_code == "missing_fx"
     assert observation.evidence["missing_fx"] == ["CNY->USD"]
+
+
+@pytest.mark.parametrize("rate", [0.0, -7.2, float("inf")])
+def test_non_positive_or_non_finite_fx_rows_are_never_used(
+    tmp_path,
+    monkeypatch,
+    rate: float,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.models import FxRate
+    from app.services.fx import fx_rate_evidence_as_of
+
+    with database.SessionLocal() as session:
+        session.add(
+            FxRate(
+                base_currency="USD",
+                quote_currency="CNY",
+                rate=rate,
+                as_of_date=datetime(2026, 7, 16),
+                source="bad",
+            )
+        )
+        session.commit()
+        assert (
+            fx_rate_evidence_as_of(
+                session, "USD", "CNY", datetime(2026, 7, 17)
+            )
+            is None
+        )
+        assert (
+            fx_rate_evidence_as_of(
+                session, "CNY", "USD", datetime(2026, 7, 17)
+            )
+            is None
+        )
+
+
+@pytest.mark.parametrize(
+    ("base", "quote", "stored_base", "stored_quote", "stored_rate", "expected"),
+    [
+        ("CNY", "USD", "CNY", "USD", 0.14, -14.0),
+        ("CNY", "USD", "USD", "CNY", 7.0, -100.0 / 7.0),
+    ],
+)
+def test_scenario_currency_conversion_uses_pinned_source_evidence(
+    tmp_path,
+    monkeypatch,
+    base: str,
+    quote: str,
+    stored_base: str,
+    stored_quote: str,
+    stored_rate: float,
+    expected: float,
+) -> None:
+    database = _database(tmp_path, monkeypatch)
+    from app.models import FxRate, ScenarioTestRun
+    from app.services.limits.sources import adapt_scenario_test_run
+
+    set_hash = "sha256:" + ("e" * 64)
+    with database.SessionLocal() as session:
+        session.add(
+            FxRate(
+                base_currency=stored_base,
+                quote_currency=stored_quote,
+                rate=stored_rate,
+                as_of_date=datetime(2026, 7, 16),
+                source="close",
+            )
+        )
+        session.commit()
+        run = ScenarioTestRun(
+            id=81,
+            portfolio_id=1,
+            status="completed",
+            scenario_spec={},
+            config={},
+            results={
+                "source_metadata": {
+                    "methodology": {
+                        "method": "scenario_distribution",
+                        "confidence": 0.95,
+                        "horizon": "scenario_set",
+                        "scaling": "none",
+                    },
+                    "source_currencies": [base],
+                    "scenario_set_hash": set_hash,
+                    "scenario_names": ["down"],
+                    "valuation_as_of": "2026-07-17T09:00:00",
+                },
+                "scenarios": [{"name": "down", "pnl": -100.0}],
+            },
+            excluded_positions=[],
+            resolved_position_ids=[1],
+            created_at=datetime(2026, 7, 17, 9, 0),
+        )
+        observation = adapt_scenario_test_run(
+            run,
+            metric_kind="stress_pnl",
+            methodology={
+                "selection": "named",
+                "scenario_set_hash": set_hash,
+                "scenario_name": "down",
+            },
+            unit=f"{quote}",
+            currency=quote,
+            session=session,
+        )
+
+        assert observation.values == pytest.approx((expected,))
+        assert observation.evidence["source_currency"] == base
+        assert observation.evidence["fx_rates"][0]["fx_rate_id"] is not None
