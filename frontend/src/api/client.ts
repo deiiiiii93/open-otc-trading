@@ -35,6 +35,22 @@ import type {
   AgentRegistry,
   ChannelWrite,
   ModelWrite,
+  LimitActionInput,
+  LimitCreateInput,
+  LimitDashboard,
+  LimitEvaluation,
+  LimitIncident,
+  LimitIncidentAssignInput,
+  LimitIncidentCommentInput,
+  LimitIncidentWaiveInput,
+  LimitMetadataPatchInput,
+  LimitMonitoringRun,
+  LimitMonitoringRunCreateInput,
+  LimitMonitoringSummary,
+  LimitVersion,
+  LimitVersionCreateInput,
+  MarketSnapshot,
+  RiskLimit,
 } from '../types';
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -81,6 +97,7 @@ export function fetchTraceRun(runId: string): Promise<TraceRunDetail> {
 }
 
 export interface AuditListParams {
+  audit_ref?: string;
   status?: string;
   kind?: string;
   tool_name?: string;
@@ -166,6 +183,244 @@ export const deleteEngineConfig = (id: number) =>
   api<{ ok: boolean }>(`/api/engine-configs/${id}`, { method: 'DELETE' });
 export const setDefaultEngineConfig = (id: number) =>
   api<EngineConfigVariant>(`/api/engine-configs/${id}/default`, { method: 'POST' });
+
+// --- Risk Limits ------------------------------------------------------------
+
+type LimitQueryValue = string | number | null | undefined;
+
+function withLimitQuery(
+  path: string,
+  params: Record<string, LimitQueryValue>,
+): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value != null && value !== '') search.set(key, String(value));
+  }
+  const query = search.toString();
+  return query ? `${path}?${query}` : path;
+}
+
+export type RiskLimitListParams = {
+  category?: string;
+  owner?: string;
+  state?: string;
+  scope_type?: string;
+  tag?: string;
+  portfolio_id?: number;
+  limit?: number;
+  offset?: number;
+};
+
+export const listRiskLimits = (params: RiskLimitListParams = {}) =>
+  api<{ items: RiskLimit[]; total: number }>(withLimitQuery('/api/limits', params));
+
+export const createRiskLimit = (body: LimitCreateInput) =>
+  api<RiskLimit>('/api/limits', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+
+export const getRiskLimit = (limitId: number) =>
+  api<RiskLimit>(`/api/limits/${limitId}`);
+
+export const updateRiskLimitMetadata = (
+  limitId: number,
+  body: LimitMetadataPatchInput,
+) =>
+  api<RiskLimit>(`/api/limits/${limitId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+
+export const createRiskLimitVersion = (
+  limitId: number,
+  body: LimitVersionCreateInput,
+) =>
+  api<RiskLimit>(`/api/limits/${limitId}/versions`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+
+export const listRiskLimitVersions = (limitId: number) =>
+  api<LimitVersion[]>(`/api/limits/${limitId}/versions`);
+
+export const activateRiskLimitVersion = (
+  limitId: number,
+  versionId: number,
+  body: LimitActionInput,
+) =>
+  api<RiskLimit>(`/api/limits/${limitId}/versions/${versionId}/activate`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+
+export const deactivateRiskLimit = (limitId: number, body: LimitActionInput) =>
+  api<RiskLimit>(`/api/limits/${limitId}/deactivate`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+
+export const retireRiskLimit = (limitId: number, body: LimitActionInput) =>
+  api<RiskLimit>(`/api/limits/${limitId}/retire`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+
+export const createLimitMonitoringRun = (body: LimitMonitoringRunCreateInput) =>
+  api<LimitMonitoringRun>('/api/limit-monitoring/runs', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+
+export type LimitMonitoringRunListParams = {
+  portfolio_id: number;
+  status?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export const listLimitMonitoringRuns = (params: LimitMonitoringRunListParams) =>
+  api<{ items: LimitMonitoringRun[]; total: number }>(
+    withLimitQuery('/api/limit-monitoring/runs', params),
+  );
+
+export const getLimitMonitoringRun = (runId: number, portfolioId: number) =>
+  api<LimitMonitoringRun>(
+    withLimitQuery(`/api/limit-monitoring/runs/${runId}`, {
+      portfolio_id: portfolioId,
+    }),
+  );
+
+export type LimitEvaluationListParams = {
+  portfolio_id: number;
+  status?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export const listLimitEvaluations = (
+  runId: number,
+  params: LimitEvaluationListParams,
+) =>
+  api<{ items: LimitEvaluation[]; total: number }>(
+    withLimitQuery(
+      `/api/limit-monitoring/runs/${runId}/evaluations`,
+      params,
+    ),
+  );
+
+export const getLimitEvaluation = (
+  evaluationId: number,
+  portfolioId: number,
+) =>
+  api<LimitEvaluation>(
+    withLimitQuery(`/api/limit-evaluations/${evaluationId}`, {
+      portfolio_id: portfolioId,
+    }),
+  );
+
+export type LimitIncidentListParams = {
+  portfolio_id: number;
+  status?: string;
+  severity?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export const listLimitIncidents = (params: LimitIncidentListParams) =>
+  api<{ items: LimitIncident[]; total: number }>(
+    withLimitQuery('/api/limit-incidents', params),
+  );
+
+export const getLimitIncident = (incidentId: number, portfolioId: number) =>
+  api<LimitIncident>(
+    withLimitQuery(`/api/limit-incidents/${incidentId}`, {
+      portfolio_id: portfolioId,
+    }),
+  );
+
+function mutateLimitIncident<T extends LimitActionInput>(
+  incidentId: number,
+  portfolioId: number,
+  action: string,
+  body: T,
+): Promise<LimitIncident> {
+  return api<LimitIncident>(
+    withLimitQuery(`/api/limit-incidents/${incidentId}/${action}`, {
+      portfolio_id: portfolioId,
+    }),
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export const acknowledgeLimitIncident = (
+  incidentId: number,
+  portfolioId: number,
+  body: LimitActionInput,
+) => mutateLimitIncident(incidentId, portfolioId, 'acknowledge', body);
+
+export const assignLimitIncident = (
+  incidentId: number,
+  portfolioId: number,
+  body: LimitIncidentAssignInput,
+) => mutateLimitIncident(incidentId, portfolioId, 'assign', body);
+
+export const commentLimitIncident = (
+  incidentId: number,
+  portfolioId: number,
+  body: LimitIncidentCommentInput,
+) => mutateLimitIncident(incidentId, portfolioId, 'comments', body);
+
+export const waiveLimitIncident = (
+  incidentId: number,
+  portfolioId: number,
+  body: LimitIncidentWaiveInput,
+) => mutateLimitIncident(incidentId, portfolioId, 'waive', body);
+
+export const resolveLimitIncident = (
+  incidentId: number,
+  portfolioId: number,
+  body: LimitActionInput,
+) => mutateLimitIncident(incidentId, portfolioId, 'resolve', body);
+
+export const reopenLimitIncident = (
+  incidentId: number,
+  portfolioId: number,
+  body: LimitActionInput,
+) => mutateLimitIncident(incidentId, portfolioId, 'reopen', body);
+
+export const getLimitMonitoringDashboard = (
+  portfolioId: number,
+  trendLimit?: number,
+) =>
+  api<LimitDashboard>(
+    withLimitQuery('/api/limit-monitoring/dashboard', {
+      portfolio_id: portfolioId,
+      trend_limit: trendLimit,
+    }),
+  );
+
+export const getLimitMonitoringSummary = (portfolioId: number) =>
+  api<LimitMonitoringSummary>(
+    withLimitQuery('/api/limit-monitoring/summary', {
+      portfolio_id: portfolioId,
+    }),
+  );
+
+export type MarketSnapshotListParams = {
+  source?: string;
+  as_of?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export const listMarketSnapshots = (params: MarketSnapshotListParams = {}) =>
+  api<MarketSnapshot[]>(
+    withLimitQuery('/api/market-data/snapshots', params),
+  );
 
 // --- Skills management -------------------------------------------------
 

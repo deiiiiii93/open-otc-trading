@@ -173,6 +173,7 @@ def _ensure_incremental_schema(active_engine: Engine) -> None:
     inspector = inspect(active_engine)
     tables = set(inspector.get_table_names())
     _ensure_limit_incident_portfolio_schema(active_engine, tables)
+    _ensure_limit_monitoring_active_run_schema(active_engine, tables)
     if "rfqs" in tables and "rfq_quote_versions" not in tables:
         with active_engine.begin() as connection:
             connection.execute(
@@ -529,6 +530,52 @@ def _ensure_incremental_schema(active_engine: Engine) -> None:
             )
 
     _ensure_structured_position_terms_schema(active_engine, inspector, tables)
+
+
+def _ensure_limit_monitoring_active_run_schema(
+    active_engine: Engine,
+    tables: set[str],
+) -> None:
+    """Enforce one queued/running Limits monitor per portfolio.
+
+    Alembic 0048 is authoritative. This mirrors it for local databases that
+    historically boot through ``create_all`` without applying migrations.
+    """
+    if "limit_monitoring_runs" not in tables:
+        return
+    columns = {
+        column["name"]
+        for column in inspect(active_engine).get_columns("limit_monitoring_runs")
+    }
+    if not {"id", "portfolio_id", "status"} <= columns:
+        return
+
+    with active_engine.begin() as connection:
+        duplicates = connection.execute(
+            text(
+                "SELECT portfolio_id "
+                "FROM limit_monitoring_runs "
+                "WHERE status IN ('queued', 'running') "
+                "GROUP BY portfolio_id "
+                "HAVING COUNT(*) > 1 "
+                "ORDER BY portfolio_id "
+                "LIMIT 10"
+            )
+        ).scalars().all()
+        if duplicates:
+            joined = ", ".join(str(value) for value in duplicates)
+            raise RuntimeError(
+                "multiple active limit monitoring runs exist for portfolios: "
+                f"{joined}; finish or fail all but one run before retrying"
+            )
+        connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS "
+                "uq_limit_monitoring_runs_active_portfolio "
+                "ON limit_monitoring_runs (portfolio_id) "
+                "WHERE status IN ('queued', 'running')"
+            )
+        )
 
 
 def _ensure_limit_incident_portfolio_schema(

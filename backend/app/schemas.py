@@ -1319,6 +1319,37 @@ class LimitIncidentOut(BaseModel):
     events: list[LimitIncidentEventOut] = Field(default_factory=list)
 
 
+class LimitDashboardSummaryOut(BaseModel):
+    breaches: int
+    warnings: int
+    unknowns: int
+    ok: int
+    highest_utilization: float | None
+    active_incidents: int
+
+
+class LimitEvaluationGroupOut(BaseModel):
+    category: str
+    evaluations: list[LimitEvaluationOut] = Field(default_factory=list)
+
+
+class LimitTrendPointOut(BaseModel):
+    run_id: int
+    created_at: datetime
+    status: str
+    summary: dict[str, Any]
+
+
+class LimitMonitoringDashboardOut(BaseModel):
+    summary: LimitDashboardSummaryOut
+    current_evaluations: list[LimitEvaluationOut] = Field(default_factory=list)
+    evaluation_groups: list[LimitEvaluationGroupOut] = Field(default_factory=list)
+    current_evidence_run: LimitMonitoringRunOut | None
+    latest_run: LimitMonitoringRunOut | None
+    active_incidents: list[LimitIncidentOut] = Field(default_factory=list)
+    trends: list[LimitTrendPointOut] = Field(default_factory=list)
+
+
 class MarketDataProfileOut(BaseModel):
     id: int
     underlying_id: int | None = None

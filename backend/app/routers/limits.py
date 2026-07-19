@@ -24,6 +24,7 @@ from app.models import (
     Portfolio,
     RiskLimit,
     RiskLimitVersion,
+    TaskStatus,
     TaskRun,
 )
 from app.schemas import (
@@ -35,6 +36,7 @@ from app.schemas import (
     LimitIncidentCommentIn,
     LimitIncidentOut,
     LimitIncidentWaiveIn,
+    LimitMonitoringDashboardOut,
     LimitMetadataPatchIn,
     LimitMonitoringRunCreateIn,
     LimitMonitoringRunOut,
@@ -209,6 +211,25 @@ def _run_with_portfolio(
     )
     if row is None:
         raise HTTPException(status_code=404, detail="limit monitoring run not found")
+    return row
+
+
+def _evaluation_with_portfolio(
+    session: Session, evaluation_id: int, portfolio_id: int
+) -> LimitEvaluation:
+    row = session.scalar(
+        select(LimitEvaluation)
+        .join(
+            LimitMonitoringRun,
+            LimitEvaluation.monitoring_run_id == LimitMonitoringRun.id,
+        )
+        .where(
+            LimitEvaluation.id == evaluation_id,
+            LimitMonitoringRun.portfolio_id == portfolio_id,
+        )
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="limit evaluation not found")
     return row
 
 
@@ -455,7 +476,18 @@ def build_limits_router(
             )
             # The worker is only permitted to see a durable immutable envelope.
             session.commit()
-            dispatch(task.id, run.id)
+            try:
+                dispatch(task.id, run.id)
+            except Exception as dispatch_error:
+                finished_at = datetime.utcnow()
+                run.status = TaskStatus.FAILED.value
+                run.finished_at = finished_at
+                task.status = TaskStatus.FAILED.value
+                task.message = "Limit monitoring dispatch failed"
+                task.error = str(dispatch_error)
+                task.finished_at = finished_at
+                session.commit()
+                raise
             return _run_out(run)
         except Exception as exc:
             session.rollback()
@@ -496,6 +528,15 @@ def build_limits_router(
         run_id: int, portfolio_id: int, session: Session = Depends(db_dependency)
     ):
         return _run_out(_run_with_portfolio(session, run_id, portfolio_id))
+
+    @router.get("/limit-evaluations/{evaluation_id}")
+    def get_evaluation(
+        evaluation_id: int,
+        portfolio_id: int,
+        session: Session = Depends(db_dependency),
+    ):
+        row = _evaluation_with_portfolio(session, evaluation_id, portfolio_id)
+        return LimitEvaluationOut.model_validate(row).model_dump()
 
     @router.get("/limit-monitoring/runs/{run_id}/evaluations")
     def list_evaluations(
@@ -692,7 +733,10 @@ def build_limits_router(
             action=incidents.reopen,
         )
 
-    @router.get("/limit-monitoring/dashboard")
+    @router.get(
+        "/limit-monitoring/dashboard",
+        response_model=LimitMonitoringDashboardOut,
+    )
     def dashboard(
         portfolio_id: int,
         trend_limit: int = Query(20, ge=1, le=100),
@@ -769,8 +813,8 @@ def build_limits_router(
             groups.setdefault(category, []).append(
                 LimitEvaluationOut.model_validate(row).model_dump()
             )
-        return {
-            "summary": {
+        return LimitMonitoringDashboardOut(
+            summary={
                 "breaches": breaches,
                 "warnings": warnings,
                 "unknowns": unknowns,
@@ -778,19 +822,22 @@ def build_limits_router(
                 "highest_utilization": max(utilizations) if utilizations else None,
                 "active_incidents": len(active_incidents),
             },
-            "current_evaluations": [
+            current_evaluations=[
                 LimitEvaluationOut.model_validate(row).model_dump() for row in current
             ],
-            "evaluation_groups": [
+            evaluation_groups=[
                 {"category": category, "evaluations": rows}
                 for category, rows in sorted(groups.items())
             ],
-            "latest_run": _run_out(runs[0]) if runs else None,
-            "active_incidents": [
+            current_evidence_run=(
+                _run_out(latest_terminal) if latest_terminal is not None else None
+            ),
+            latest_run=_run_out(runs[0]) if runs else None,
+            active_incidents=[
                 _incident_out(row, portfolio_id=portfolio_id)
                 for row in active_incidents
             ],
-            "trends": [
+            trends=[
                 {
                     "run_id": row.id,
                     "created_at": row.created_at,
@@ -799,7 +846,7 @@ def build_limits_router(
                 }
                 for row in reversed(runs[:trend_limit])
             ],
-        }
+        ).model_dump()
 
     @router.get("/limit-monitoring/summary")
     def summary(portfolio_id: int, session: Session = Depends(db_dependency)):

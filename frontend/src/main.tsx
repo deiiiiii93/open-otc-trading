@@ -24,6 +24,7 @@ import { RfqApprovalLive } from './routes/RfqApproval.live';
 import { ClientRfqLive } from './routes/ClientRfq.live';
 import { TrySolveLive } from './routes/TrySolve.live';
 import { RiskLive } from './routes/Risk.live';
+import { LimitsLive } from './routes/Limits.live';
 import { GreeksLandscapeLive } from './routes/GreeksLandscape';
 import { TasksLive } from './routes/Tasks.live';
 import { ReportsLive } from './routes/Reports.live';
@@ -56,6 +57,7 @@ const navItems = [
   { route: 'instruments' as const, label: 'Instruments' },
   { route: 'hedging' as const,   label: 'Hedging' },
   { route: 'risk' as const,      label: 'Risk' },
+  { route: 'limits' as const,    label: 'Limits' },
   { route: 'greeks-landscape' as const, label: 'Greeks Landscape' },
   { route: 'scenario-test' as const, label: 'Scenario Test' },
   { route: 'backtest' as const,  label: 'Backtest' },
@@ -92,7 +94,7 @@ function App() {
   const agentChat = useAgentChatController();
   const [agentOpen, setAgentOpen] = useState(false);
   const [accountingDate, setAccountingDate] = useState(() => todayIsoDate());
-  // Last portfolio the user explicitly picked on Risk or Hedging — session
+  // Last portfolio the user explicitly picked on Risk, Limits, or Hedging — session
   // only. Pages treat it as a preference and fall back without writing back.
   const [sharedPortfolioId, setSharedPortfolioId] = useState<number | null>(
     () => portfolioFromLocation(window.location.pathname, window.location.search),
@@ -119,6 +121,14 @@ function App() {
     }
   }, [tracingConfig, navigate]);
 
+  const handleOpenAudit = useCallback((auditRef: string) => {
+    const target = `/audit?audit_ref=${encodeURIComponent(auditRef)}`;
+    if (window.location.pathname + window.location.search !== target) {
+      window.history.pushState(null, '', target);
+    }
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }, []);
+
   const handlePageContextChange = useCallback<PageContextReporter>((context) => {
     const next = { ...context, path: location.pathname };
     const signature = JSON.stringify(next);
@@ -128,10 +138,10 @@ function App() {
   }, []);
 
   // Keep the URL's ?portfolio= in sync with the shared selection: attached only
-  // on Risk/Hedging, stripped everywhere else (no cross-route leak). replaceState,
+  // on Risk/Limits/Hedging, stripped everywhere else (no cross-route leak). replaceState,
   // never push — a filter change must not create Back-history entries.
   useEffect(() => {
-    const target = routeUrl(route, sharedPortfolioId);
+    const target = routeUrl(route, sharedPortfolioId, window.location.search);
     if (window.location.pathname + window.location.search !== target) {
       window.history.replaceState(null, '', target);
     }
@@ -149,7 +159,11 @@ function App() {
         window.location.search,
       );
       setSharedPortfolioId(nextPortfolio);
-      const target = routeUrl(pathToRoute(window.location.pathname), nextPortfolio);
+      const target = routeUrl(
+        pathToRoute(window.location.pathname),
+        nextPortfolio,
+        window.location.search,
+      );
       if (window.location.pathname + window.location.search !== target) {
         window.history.replaceState(null, '', target);
       }
@@ -302,6 +316,15 @@ function App() {
             onPageContextChange={handlePageContextChange}
             portfolioId={sharedPortfolioId}
             onPortfolioIdChange={setSharedPortfolioId}
+          />
+        )}
+        {route === 'limits'    && (
+          <LimitsLive
+            onPageContextChange={handlePageContextChange}
+            portfolioId={sharedPortfolioId}
+            onPortfolioIdChange={setSharedPortfolioId}
+            onAskLimitManager={() => setAgentOpen(true)}
+            onOpenAudit={handleOpenAudit}
           />
         )}
         {route === 'greeks-landscape' && <GreeksLandscapeLive onPageContextChange={handlePageContextChange} />}

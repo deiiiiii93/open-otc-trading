@@ -60,6 +60,7 @@ def build_audit_router() -> APIRouter:
         kind: str | None = None,
         tool_name: str | None = None,
         tool_class: str | None = None,
+        audit_ref: str | None = None,
         mode: str | None = None,
         thread_id: int | None = None,
         since: datetime | None = None,
@@ -73,6 +74,7 @@ def build_audit_router() -> APIRouter:
                 (AgentActionAudit.status, status),
                 (AgentActionAudit.kind, kind),
                 (AgentActionAudit.tool_class, tool_class),
+                (AgentActionAudit.audit_ref, audit_ref),
                 (AgentActionAudit.mode, mode),
                 (AgentActionAudit.thread_id, thread_id),
             ):

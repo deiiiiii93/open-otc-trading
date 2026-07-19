@@ -17,6 +17,7 @@ export const ROUTE_PATHS: Record<NavRoute, string> = {
   instruments: '/instruments',
   hedging: '/hedging',
   risk: '/risk',
+  limits: '/limits',
   'greeks-landscape': '/greeks-landscape',
   'scenario-test': '/scenario-test',
   backtest: '/backtest',
@@ -63,19 +64,47 @@ export function parsePortfolioParam(search: string): number | null {
   return Number.isFinite(n) && String(n) === value ? n : null;
 }
 
-// `?portfolio=` is meaningful ONLY on Risk and Hedging — the only pages that
-// consume a shared portfolio selection.
+// `?portfolio=` is meaningful only on pages that consume the session-shared
+// portfolio selection.
 function usesPortfolioParam(route: NavRoute): boolean {
-  return route === 'risk' || route === 'hedging';
+  return route === 'risk' || route === 'hedging' || route === 'limits';
 }
 
-// Canonical URL for a route + shared portfolio. The query is attached only on
-// portfolio-aware routes, so navigating elsewhere drops it (no cross-route leak).
-export function routeUrl(route: NavRoute, portfolioId: number | null): string {
+export const LIMIT_DEEP_LINK_PARAMS = [
+  'tab',
+  'run',
+  'evaluation',
+  'incident',
+  'limit',
+  'schedule',
+] as const;
+
+// Canonical URL for a route + shared portfolio. Limits and Audit additionally
+// retain only their explicit deep-link allowlists; all other route-scoped
+// query data is dropped so navigation cannot leak stale filters between pages.
+export function routeUrl(
+  route: NavRoute,
+  portfolioId: number | null,
+  currentSearch = '',
+): string {
   const base = ROUTE_PATHS[route];
-  return usesPortfolioParam(route) && portfolioId != null
-    ? `${base}?portfolio=${portfolioId}`
-    : base;
+  const search = new URLSearchParams();
+  if (usesPortfolioParam(route) && portfolioId != null) {
+    search.set('portfolio', String(portfolioId));
+  }
+  if (route === 'limits') {
+    const current = new URLSearchParams(currentSearch);
+    for (const key of LIMIT_DEEP_LINK_PARAMS) {
+      const value = current.get(key);
+      if (value != null && value !== '') search.set(key, value);
+    }
+  }
+  if (route === 'audit') {
+    const auditRef = new URLSearchParams(currentSearch).get('audit_ref');
+    if (auditRef != null && auditRef !== '') search.set('audit_ref', auditRef);
+  }
+  const query = search.toString();
+  return query ? `${base}?${query}` : base;
 }
 
 // The shared portfolio implied by a location — null on routes that don't use it,

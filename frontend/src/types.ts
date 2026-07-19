@@ -24,7 +24,8 @@ export type Route =
   | 'workflows'
   | 'memory'
   | 'model-maintenance'
-  | 'audit';
+  | 'audit'
+  | 'limits';
 
 export interface AgentRegistryModel {
   id: string;
@@ -820,6 +821,7 @@ export type ReportJob = {
   result_payload: Record<string, any>;
   artifact_paths: Record<string, any>;
   task_id?: number | null;
+  limit_monitoring_run_id?: number | null;
   created_at: string;           // ISO timestamp
 };
 
@@ -850,6 +852,7 @@ export type TaskRun = {
   risk_run_id?: number | null;
   greeks_landscape_run_id?: number | null;
   report_job_id?: number | null;
+  limit_monitoring_run_id?: number | null;
   progress_current: number;
   progress_total: number;
   message?: string | null;
@@ -858,6 +861,327 @@ export type TaskRun = {
   created_at: string;
   started_at?: string | null;
   finished_at?: string | null;
+};
+
+// --- Risk Limits ------------------------------------------------------------
+
+export type LimitCategory = 'greek' | 'var' | 'cvar' | 'stress';
+export type LimitMetricKind =
+  | 'delta'
+  | 'gamma'
+  | 'vega'
+  | 'theta'
+  | 'rho'
+  | 'rho_q'
+  | 'var'
+  | 'cvar'
+  | 'stress_pnl';
+export type LimitSourceKind = 'risk_run' | 'scenario_test' | 'backtest';
+export type LimitScopeType = 'portfolio' | 'underlying' | 'product_family' | 'position';
+export type LimitAggregation = 'net' | 'gross_abs' | 'max_abs' | 'minimum' | 'maximum';
+export type LimitTransform = 'signed' | 'absolute' | 'loss_magnitude';
+export type LimitComparator = 'upper' | 'lower' | 'range';
+export type LimitSourcePolicy = 'reuse_only' | 'refresh_if_stale' | 'force_refresh';
+export type LimitVersionState = 'draft' | 'active' | 'superseded' | 'retired';
+export type LimitMonitoringStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'completed_with_unknowns'
+  | 'failed';
+export type LimitEvaluationStatus = 'ok' | 'warning' | 'breach' | 'unknown';
+export type LimitIncidentStatus =
+  | 'open'
+  | 'acknowledged'
+  | 'assigned'
+  | 'waived'
+  | 'recovered'
+  | 'resolved';
+
+export type LimitVersionInput = {
+  metric_kind: LimitMetricKind;
+  source_kind: LimitSourceKind;
+  methodology?: Record<string, unknown>;
+  scope_type: LimitScopeType;
+  scope_config?: Record<string, unknown>;
+  aggregation: LimitAggregation;
+  transform: LimitTransform;
+  comparator: LimitComparator;
+  warning_lower?: number | null;
+  warning_upper?: number | null;
+  hard_lower?: number | null;
+  hard_upper?: number | null;
+  unit: string;
+  currency?: string | null;
+  bump_convention?: string | null;
+  freshness_policy?: Record<string, unknown>;
+  effective_until?: string | null;
+  rationale?: string | null;
+};
+
+export type LimitCreateInput = {
+  key: string;
+  name: string;
+  description?: string;
+  category: LimitCategory;
+  owner: string;
+  tags?: string[];
+  initial_version: LimitVersionInput;
+};
+
+export type LimitMetadataPatchInput = {
+  expected_row_version: number;
+  name?: string;
+  description?: string;
+  owner?: string;
+  tags?: string[];
+};
+
+export type LimitVersionCreateInput = {
+  expected_row_version: number;
+  version: LimitVersionInput;
+};
+
+export type LimitActionInput = {
+  expected_row_version: number;
+};
+
+export type LimitSourceInputs = {
+  risk_run?: {
+    method?: string;
+    [key: string]: unknown;
+  };
+  scenario_test?: {
+    scenario_request: Record<string, unknown>;
+    config?: Record<string, unknown>;
+  };
+  backtest?: {
+    spec: Record<string, unknown>;
+    config?: Record<string, unknown>;
+  };
+};
+
+export type LimitMonitoringRunCreateInput = {
+  portfolio_id: number;
+  pricing_parameter_profile_id?: number | null;
+  engine_config_id?: number | null;
+  market_snapshot_id?: number | null;
+  effective_market_evidence_id?: string | null;
+  valuation_as_of: string;
+  source_policy: LimitSourcePolicy;
+  max_source_age_seconds?: number | null;
+  source_inputs?: LimitSourceInputs;
+};
+
+export type LimitIncidentAssignInput = LimitActionInput & {
+  assignee: string;
+};
+
+export type LimitIncidentCommentInput = LimitActionInput & {
+  comment: string;
+};
+
+export type LimitIncidentWaiveInput = LimitActionInput & {
+  rationale: string;
+  expires_at: string;
+};
+
+export type LimitVersion = {
+  id: number;
+  risk_limit_id: number;
+  version: number;
+  state: LimitVersionState;
+  metric_kind: LimitMetricKind;
+  source_kind: LimitSourceKind;
+  methodology: Record<string, unknown>;
+  scope_type: LimitScopeType;
+  scope_config: Record<string, unknown>;
+  aggregation: LimitAggregation;
+  transform: LimitTransform;
+  comparator: LimitComparator;
+  warning_lower: number | null;
+  warning_upper: number | null;
+  hard_lower: number | null;
+  hard_upper: number | null;
+  unit: string;
+  currency: string | null;
+  bump_convention: string | null;
+  freshness_policy: Record<string, unknown>;
+  effective_from: string | null;
+  effective_until: string | null;
+  rationale: string | null;
+  created_at: string;
+  activated_at: string | null;
+};
+
+export type RiskLimit = {
+  id: number;
+  key: string;
+  name: string;
+  description: string;
+  category: LimitCategory;
+  owner: string;
+  tags: string[];
+  active_version_id: number | null;
+  row_version: number;
+  created_at: string;
+  updated_at: string;
+  versions: LimitVersion[];
+  active_version: LimitVersion | null;
+};
+
+export type LimitSourceReference = {
+  id: number;
+  source_kind: LimitSourceKind;
+  risk_run_id: number | null;
+  scenario_test_run_id: number | null;
+  backtest_run_id: number | null;
+  requested_parameters: Record<string, unknown>;
+  source_status: string;
+  is_fresh: boolean;
+  completeness_diagnostics: Record<string, unknown>;
+  source_valuation_at: string | null;
+  source_created_at: string | null;
+  created_at: string;
+};
+
+export type LimitMonitoringRun = {
+  id: number;
+  trigger: string;
+  mode: 'interactive' | 'auto' | 'yolo';
+  portfolio_id: number;
+  pricing_parameter_profile_id: number | null;
+  engine_config_id: number | null;
+  market_snapshot_id: number | null;
+  effective_market_evidence_id: string | null;
+  valuation_as_of: string;
+  source_policy: LimitSourcePolicy;
+  max_source_age_seconds: number | null;
+  status: LimitMonitoringStatus;
+  summary: Record<string, unknown>;
+  definition_snapshot_hash: string;
+  limit_version_ids: number[];
+  task_id: number | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  source_references: LimitSourceReference[];
+};
+
+export type LimitEvaluation = {
+  id: number;
+  monitoring_run_id: number;
+  limit_version_id: number;
+  scope_type: LimitScopeType;
+  scope_key: string;
+  scope_label: string;
+  observed_value: number | null;
+  adverse_value: number | null;
+  warning_lower: number | null;
+  warning_upper: number | null;
+  hard_lower: number | null;
+  hard_upper: number | null;
+  utilization: number | null;
+  headroom: number | null;
+  governing_boundary: string | null;
+  status: LimitEvaluationStatus;
+  reason_code: string | null;
+  reason: string | null;
+  coverage_count: number | null;
+  coverage_ratio: number | null;
+  evidence: Record<string, unknown>;
+  evaluated_at: string;
+};
+
+export type LimitIncidentEvent = {
+  id: number;
+  incident_id: number;
+  event_type: string;
+  evaluation_id: number | null;
+  actor: string;
+  persona: string | null;
+  mode: string | null;
+  thread_id: number | null;
+  audit_ref: string | null;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
+export type LimitIncident = {
+  id: number;
+  risk_limit_id: number;
+  portfolio_id: number;
+  scope_type: LimitScopeType;
+  scope_key: string;
+  scope_label: string;
+  severity: 'warning' | 'breach';
+  status: LimitIncidentStatus;
+  first_evaluation_id: number | null;
+  last_evaluation_id: number | null;
+  first_seen_at: string;
+  last_seen_at: string;
+  acknowledged_at: string | null;
+  waived_at: string | null;
+  resolved_at: string | null;
+  owner: string | null;
+  assignee: string | null;
+  waiver_expires_at: string | null;
+  waiver_rationale: string | null;
+  row_version: number;
+  created_at: string;
+  updated_at: string;
+  risk_limit: RiskLimit | null;
+  events: LimitIncidentEvent[];
+};
+
+export type LimitDashboardSummary = {
+  breaches: number;
+  warnings: number;
+  unknowns: number;
+  ok: number;
+  highest_utilization: number | null;
+  active_incidents: number;
+};
+
+export type LimitEvaluationGroup = {
+  category: LimitCategory;
+  evaluations: LimitEvaluation[];
+};
+
+export type LimitTrendPoint = {
+  run_id: number;
+  created_at: string;
+  status: LimitMonitoringStatus;
+  summary: Record<string, unknown>;
+};
+
+export type LimitMonitoringDashboard = {
+  summary: LimitDashboardSummary;
+  current_evaluations: LimitEvaluation[];
+  evaluation_groups: LimitEvaluationGroup[];
+  current_evidence_run: LimitMonitoringRun | null;
+  latest_run: LimitMonitoringRun | null;
+  active_incidents: LimitIncident[];
+  trends: LimitTrendPoint[];
+};
+
+export type LimitDashboard = LimitMonitoringDashboard;
+
+export type LimitMonitoringSummary = LimitDashboardSummary & {
+  latest_run: LimitMonitoringRun | null;
+  latest_incident_event_id: number;
+};
+
+export type MarketSnapshot = {
+  id: number;
+  name: string;
+  source: string;
+  symbol: string;
+  asset_class: string;
+  valuation_date: string;
+  data: Record<string, unknown>;
+  source_metadata: Record<string, unknown>;
+  created_at: string;
 };
 
 export type PortfolioKind = 'container' | 'view';

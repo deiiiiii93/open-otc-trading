@@ -17,6 +17,7 @@ from app.models import (
     Portfolio,
     RiskLimit,
     RiskLimitVersion,
+    TaskRun,
 )
 from app.routers.limits import build_limits_router
 
@@ -366,22 +367,28 @@ def test_monitoring_queue_dispatch_and_reads_are_portfolio_scoped(
     )
     assert spoofed_context.status_code == 422
 
-    queued = client.post(
-        "/api/limit-monitoring/runs",
-        json={
-            "portfolio_id": first.id,
-            "market_snapshot_id": snapshot.id,
-            "effective_market_evidence_id": "manual:spx:20260718",
-            "valuation_as_of": NOW.isoformat(),
-            "source_policy": "reuse_only",
-            "max_source_age_seconds": 300,
-        },
-    )
+    queue_payload = {
+        "portfolio_id": first.id,
+        "market_snapshot_id": snapshot.id,
+        "effective_market_evidence_id": "manual:spx:20260718",
+        "valuation_as_of": NOW.isoformat(),
+        "source_policy": "reuse_only",
+        "max_source_age_seconds": 300,
+    }
+    queued = client.post("/api/limit-monitoring/runs", json=queue_payload)
     assert queued.status_code == 202, queued.text
     body = queued.json()
     assert body["task_id"] > 0
     assert body["trigger"] == "manual"
     assert body["mode"] == "interactive"
+    assert dispatched == [(body["task_id"], body["id"])]
+
+    overlapping = client.post(
+        "/api/limit-monitoring/runs",
+        json=queue_payload,
+    )
+    assert overlapping.status_code == 409, overlapping.text
+    assert "already has active limit monitoring run" in overlapping.json()["detail"]
     assert dispatched == [(body["task_id"], body["id"])]
 
     own_list = client.get(
@@ -422,6 +429,160 @@ def test_monitoring_queue_dispatch_and_reads_are_portfolio_scoped(
         params={"portfolio_id": 999999},
     )
     assert missing_portfolio.status_code == 404
+
+
+def test_dispatch_failure_marks_queue_terminal_and_allows_retry(session) -> None:
+    attempts: list[tuple[int, int]] = []
+    app = FastAPI()
+
+    def get_db():
+        with database.SessionLocal() as db:
+            yield db
+
+    def dispatch(task_id: int, run_id: int) -> None:
+        attempts.append((task_id, run_id))
+        if len(attempts) == 1:
+            raise RuntimeError("executor offline")
+
+    app.include_router(
+        build_limits_router(
+            get_db=get_db,
+            dispatch_limit_monitoring_fn=dispatch,
+        )
+    )
+    portfolio = Portfolio(name="Dispatch recovery desk", base_currency="USD")
+    snapshot = MarketSnapshot(
+        name="Dispatch recovery evidence",
+        source="manual",
+        symbol="SPX",
+        asset_class="index",
+        valuation_date=NOW,
+        data={"spot": 6000.0},
+        source_metadata={},
+    )
+    session.add_all([portfolio, snapshot])
+    session.commit()
+    payload = {
+        "portfolio_id": portfolio.id,
+        "market_snapshot_id": snapshot.id,
+        "effective_market_evidence_id": "manual:spx:dispatch-recovery",
+        "valuation_as_of": NOW.isoformat(),
+        "source_policy": "reuse_only",
+        "max_source_age_seconds": 300,
+    }
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        failed = client.post("/api/limit-monitoring/runs", json=payload)
+        assert failed.status_code == 500
+        assert len(attempts) == 1
+
+        failed_task_id, failed_run_id = attempts[0]
+        with database.SessionLocal() as verification:
+            failed_run = verification.get(LimitMonitoringRun, failed_run_id)
+            failed_task = verification.get(TaskRun, failed_task_id)
+            assert failed_run is not None
+            assert failed_run.status == "failed"
+            assert failed_run.finished_at is not None
+            assert failed_task is not None
+            assert failed_task.status == "failed"
+            assert failed_task.message == "Limit monitoring dispatch failed"
+            assert failed_task.error == "executor offline"
+            assert failed_task.finished_at is not None
+
+        retried = client.post("/api/limit-monitoring/runs", json=payload)
+        assert retried.status_code == 202, retried.text
+        assert len(attempts) == 2
+        assert attempts[1] == (retried.json()["task_id"], retried.json()["id"])
+
+
+def test_evaluation_detail_is_typed_and_portfolio_scoped(
+    limits_api, session
+) -> None:
+    client, _dispatched = limits_api
+    first = Portfolio(name="Evaluation desk A", base_currency="USD")
+    second = Portfolio(name="Evaluation desk B", base_currency="USD")
+    session.add_all([first, second])
+    session.flush()
+    limit = RiskLimit(
+        key="evaluation-delta-a",
+        name="Evaluation delta A",
+        description="",
+        category="greek",
+        owner="market-risk",
+        tags=["intraday"],
+    )
+    version = RiskLimitVersion(
+        risk_limit=limit,
+        version=1,
+        state="active",
+        metric_kind="delta",
+        source_kind="risk_run",
+        methodology={},
+        scope_type="portfolio",
+        scope_config={"portfolio_ids": [first.id]},
+        aggregation="net",
+        transform="absolute",
+        comparator="upper",
+        warning_upper=80.0,
+        hard_upper=100.0,
+        unit="underlying_units",
+        freshness_policy={"max_age_seconds": 60},
+        effective_from=NOW - timedelta(days=1),
+    )
+    session.add_all([limit, version])
+    session.flush()
+    limit.active_version_id = version.id
+    run, evaluation, _incident = _seed_monitoring_episode(
+        session,
+        portfolio=first,
+        limit=limit,
+        version=version,
+    )
+
+    detail = client.get(
+        f"/api/limit-evaluations/{evaluation.id}",
+        params={"portfolio_id": first.id},
+    )
+    assert detail.status_code == 200, detail.text
+    assert detail.json() == {
+        "id": evaluation.id,
+        "monitoring_run_id": run.id,
+        "limit_version_id": version.id,
+        "scope_type": "portfolio",
+        "scope_key": "portfolio",
+        "scope_label": first.name,
+        "observed_value": 110.0,
+        "adverse_value": 110.0,
+        "warning_lower": None,
+        "warning_upper": 80.0,
+        "hard_lower": None,
+        "hard_upper": 100.0,
+        "utilization": 1.1,
+        "headroom": -10.0,
+        "governing_boundary": "upper",
+        "status": "breach",
+        "reason_code": None,
+        "reason": None,
+        "coverage_count": 2,
+        "coverage_ratio": 1.0,
+        "evidence": {"source_reference_id": 17, "is_fresh": True},
+        "evaluated_at": NOW.isoformat(),
+    }
+
+    assert client.get(f"/api/limit-evaluations/{evaluation.id}").status_code == 422
+
+    hidden = client.get(
+        f"/api/limit-evaluations/{evaluation.id}",
+        params={"portfolio_id": second.id},
+    )
+    assert hidden.status_code == 404
+    assert hidden.json()["detail"] == "limit evaluation not found"
+
+    missing = client.get(
+        "/api/limit-evaluations/999999",
+        params={"portfolio_id": first.id},
+    )
+    assert missing.status_code == 404
 
 
 def test_incident_ledger_actions_dashboard_and_summary_are_scoped(
@@ -825,9 +986,23 @@ def test_dashboard_uses_one_latest_terminal_run_for_current_state(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["latest_run"]["id"] == backdated_terminal.id
+    assert body["current_evidence_run"]["id"] == latest_terminal.id
     assert body["summary"]["warnings"] == 1
     assert body["summary"]["breaches"] == 0
     assert [row["id"] for row in body["current_evaluations"]] == [current_evaluation.id]
+
+    session.delete(current_evaluation)
+    session.commit()
+    zero_evaluations = client.get(
+        "/api/limit-monitoring/dashboard",
+        params={"portfolio_id": portfolio.id},
+    )
+
+    assert zero_evaluations.status_code == 200, zero_evaluations.text
+    zero_body = zero_evaluations.json()
+    assert zero_body["latest_run"]["id"] == backdated_terminal.id
+    assert zero_body["current_evidence_run"]["id"] == latest_terminal.id
+    assert zero_body["current_evaluations"] == []
 
 
 def test_market_snapshot_selector_is_bounded_filtered_and_newest_first(

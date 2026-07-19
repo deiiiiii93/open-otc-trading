@@ -39,6 +39,8 @@ def test_task_runner_preserves_completed_with_unknowns_domain_status(session) ->
 
 
 def test_dispatch_submits_only_the_composite_worker(monkeypatch, session) -> None:
+    from concurrent.futures import Future
+
     from app.models import LimitMonitoringRun, Portfolio, TaskKind, TaskRun
     from app.services.limits import monitoring
 
@@ -65,15 +67,79 @@ def test_dispatch_submits_only_the_composite_worker(monkeypatch, session) -> Non
     session.add(task)
     session.flush()
     calls = []
+    future: Future[None] = Future()
     monkeypatch.setattr(
         monitoring,
         "submit_async_task",
-        lambda fn, *args: calls.append((fn, args)),
+        lambda fn, *args: calls.append((fn, args)) or future,
     )
 
     monitoring.dispatch_limit_monitoring(task.id, run.id)
+    future.set_result(None)
 
     assert calls == [(monitoring.execute_limit_monitoring_task, (task.id, run.id))]
+
+
+def test_failed_worker_future_releases_queued_portfolio_slot(
+    monkeypatch,
+    session,
+) -> None:
+    from concurrent.futures import Future
+
+    from app.models import LimitMonitoringRun, Portfolio, TaskKind, TaskRun
+    from app.services.limits import monitoring
+
+    portfolio = Portfolio(name="Pre-claim failure book", base_currency="USD")
+    session.add(portfolio)
+    session.flush()
+    run = LimitMonitoringRun(
+        trigger="manual",
+        mode="interactive",
+        portfolio_id=portfolio.id,
+        valuation_as_of=datetime(2026, 7, 18, 9, 30),
+        source_policy="reuse_only",
+        status="queued",
+        summary={},
+        definition_snapshot={"versions": [], "context": {}},
+        definition_snapshot_hash="d" * 64,
+    )
+    task = TaskRun(
+        kind=TaskKind.LIMIT_MONITORING.value,
+        status="queued",
+        portfolio_id=portfolio.id,
+        limit_monitoring_run=run,
+    )
+    session.add(task)
+    session.commit()
+    future: Future[None] = Future()
+    monkeypatch.setattr(
+        monitoring,
+        "submit_async_task",
+        lambda _fn, *_args: future,
+    )
+
+    monitoring.dispatch_limit_monitoring(task.id, run.id)
+    future.set_exception(RuntimeError("worker bootstrap failed"))
+
+    session.expire_all()
+    assert session.get(TaskRun, task.id).status == "failed"
+    assert session.get(TaskRun, task.id).error == "worker bootstrap failed"
+    assert session.get(LimitMonitoringRun, run.id).status == "failed"
+
+    retry = LimitMonitoringRun(
+        trigger="manual",
+        mode="interactive",
+        portfolio_id=portfolio.id,
+        valuation_as_of=datetime(2026, 7, 18, 9, 31),
+        source_policy="reuse_only",
+        status="queued",
+        summary={},
+        definition_snapshot={"versions": [], "context": {}},
+        definition_snapshot_hash="e" * 64,
+    )
+    session.add(retry)
+    session.flush()
+    assert retry.id != run.id
 
 
 def test_stale_monitoring_task_marks_linked_run_failed(session) -> None:

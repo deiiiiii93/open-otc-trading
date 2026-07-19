@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
+
 
 NOW = datetime(2026, 7, 18, 9, 30)
 
@@ -195,6 +197,31 @@ def test_queue_snapshots_active_versions_and_trusted_trigger_context(session) ->
     )
 
 
+def test_queue_rejects_overlapping_runs_until_the_active_run_finishes(session) -> None:
+    from app.services.limits.errors import LimitConflictError
+
+    portfolio, _position, _limit, _version = _active_delta_limit(session)
+    first_run, first_task = _queue(session, portfolio_id=portfolio.id)
+
+    with pytest.raises(
+        LimitConflictError,
+        match=rf"portfolio {portfolio.id} already has active limit monitoring run",
+    ):
+        _queue(session, portfolio_id=portfolio.id, trigger="agent")
+
+    first_run.status = "completed"
+    first_task.status = "completed"
+    session.flush()
+    next_run, next_task = _queue(
+        session,
+        portfolio_id=portfolio.id,
+        trigger="scheduled",
+    )
+
+    assert next_run.id != first_run.id
+    assert next_task.limit_monitoring_run_id == next_run.id
+
+
 def test_worker_persists_unknown_evaluation_without_failing_task(session) -> None:
     from app.models import LimitEvaluation, LimitMonitoringRun, TaskRun
     from app.services.limits.contracts import LimitActionContext
@@ -290,19 +317,20 @@ def test_grouped_source_reuse_serves_versions_and_manual_schedule_match(
         delta=15.0,
     )
     manual, manual_task = _queue(session, portfolio_id=portfolio.id)
-    scheduled, scheduled_task = _queue(
-        session,
-        portfolio_id=portfolio.id,
-        trigger="scheduled",
-    )
     session.commit()
-
     execute_limit_monitoring_task(
         manual_task.id,
         manual.id,
         database.SessionLocal,
         selection_now=NOW,
     )
+
+    scheduled, scheduled_task = _queue(
+        session,
+        portfolio_id=portfolio.id,
+        trigger="scheduled",
+    )
+    session.commit()
     execute_limit_monitoring_task(
         scheduled_task.id,
         scheduled.id,
@@ -423,12 +451,15 @@ def test_duplicate_worker_delivery_is_a_terminal_noop(session) -> None:
 
 def test_mismatched_worker_delivery_cannot_mutate_either_pair(session) -> None:
     from app import database
-    from app.models import LimitEvaluation, LimitSourceReference, TaskRun
+    from app.models import LimitEvaluation, LimitSourceReference, Portfolio, TaskRun
     from app.services.limits import monitoring
 
     portfolio, _position, _limit, _version = _active_delta_limit(session)
+    other = Portfolio(name="Mismatched monitoring book", base_currency="USD")
+    session.add(other)
+    session.flush()
     first_run, first_task = _queue(session, portfolio_id=portfolio.id)
-    second_run, second_task = _queue(session, portfolio_id=portfolio.id)
+    second_run, second_task = _queue(session, portfolio_id=other.id)
     session.commit()
 
     monitoring.execute_limit_monitoring_task(

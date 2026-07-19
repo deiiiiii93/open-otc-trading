@@ -1837,6 +1837,16 @@ class LimitMonitoringRun(Base):
         cascade="all, delete-orphan",
     )
 
+    __table_args__ = (
+        Index(
+            "uq_limit_monitoring_runs_active_portfolio",
+            "portfolio_id",
+            unique=True,
+            sqlite_where=text("status IN ('queued', 'running')"),
+            postgresql_where=text("status IN ('queued', 'running')"),
+        ),
+    )
+
 
 class LimitMonitoringRunVersion(Base):
     __tablename__ = "limit_monitoring_run_versions"

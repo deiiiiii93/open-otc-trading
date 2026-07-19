@@ -92,6 +92,18 @@ def _evaluation(session, version, run, *, status: str, at: datetime, utilization
 def _next_run(session, run, *, at: datetime):
     from app.models import LimitMonitoringRun
 
+    active_runs = (
+        session.query(LimitMonitoringRun)
+        .filter(
+            LimitMonitoringRun.portfolio_id == run.portfolio_id,
+            LimitMonitoringRun.status.in_(("queued", "running")),
+        )
+        .all()
+    )
+    for active_run in active_runs:
+        active_run.status = "completed"
+        active_run.finished_at = at
+    session.flush()
     next_run = LimitMonitoringRun(
         trigger=run.trigger,
         mode=run.mode,

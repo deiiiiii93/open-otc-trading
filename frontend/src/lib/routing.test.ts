@@ -16,8 +16,8 @@ describe('ROUTE_PATHS', () => {
     expect(new Set(paths).size).toBe(paths.length);
   });
 
-  it('covers exactly the 24 navigable routes', () => {
-    expect(Object.keys(ROUTE_PATHS).length).toBe(24);
+  it('covers exactly the 25 navigable routes', () => {
+    expect(Object.keys(ROUTE_PATHS).length).toBe(25);
   });
 
   it('includes the memory route', () => {
@@ -27,6 +27,11 @@ describe('ROUTE_PATHS', () => {
   it('maps the model-maintenance route round-trip', () => {
     expect(routeToPath('model-maintenance')).toBe('/model-maintenance');
     expect(pathToRoute('/model-maintenance')).toBe('model-maintenance');
+  });
+
+  it('maps the limits route round-trip', () => {
+    expect(routeToPath('limits')).toBe('/limits');
+    expect(pathToRoute('/limits')).toBe('limits');
   });
 });
 
@@ -80,9 +85,10 @@ describe('parsePortfolioParam', () => {
 });
 
 describe('routeUrl', () => {
-  it('appends ?portfolio= only on risk/hedging', () => {
+  it('appends ?portfolio= only on portfolio-aware routes', () => {
     expect(routeUrl('risk', 7)).toBe('/risk?portfolio=7');
     expect(routeUrl('hedging', 7)).toBe('/hedging?portfolio=7');
+    expect(routeUrl('limits', 7)).toBe('/limits?portfolio=7');
   });
 
   it('omits the query when portfolio is null', () => {
@@ -93,12 +99,43 @@ describe('routeUrl', () => {
     expect(routeUrl('positions', 7)).toBe('/positions');
     expect(routeUrl('chat', 7)).toBe('/agent-desk');
   });
+
+  it('preserves only allowlisted Limits deep-link params', () => {
+    expect(routeUrl(
+      'limits',
+      7,
+      '?tab=breaches&run=11&evaluation=15&incident=12&limit=13&schedule=14'
+      + '&portfolio=999&unknown=drop-me',
+    )).toBe(
+      '/limits?portfolio=7&tab=breaches&run=11&evaluation=15'
+      + '&incident=12&limit=13&schedule=14',
+    );
+  });
+
+  it('drops empty Limits deep links and all route-specific params elsewhere', () => {
+    expect(routeUrl('limits', null, '?tab=&run=&unknown=x')).toBe('/limits');
+    expect(routeUrl('risk', 7, '?tab=breaches&incident=12')).toBe(
+      '/risk?portfolio=7',
+    );
+    expect(routeUrl('positions', 7, '?tab=breaches')).toBe('/positions');
+  });
+
+  it('preserves audit_ref only on Audit', () => {
+    expect(routeUrl(
+      'audit',
+      7,
+      '?audit_ref=limit%3Aincident%3A81%3Awaived&portfolio=7&unknown=drop-me',
+    )).toBe('/audit?audit_ref=limit%3Aincident%3A81%3Awaived');
+    expect(routeUrl('audit', null, '?audit_ref=&unknown=x')).toBe('/audit');
+    expect(routeUrl('positions', null, '?audit_ref=limit%3A81')).toBe('/positions');
+  });
 });
 
 describe('portfolioFromLocation', () => {
-  it('reads the portfolio only on risk/hedging routes', () => {
+  it('reads the portfolio only on shared-portfolio routes', () => {
     expect(portfolioFromLocation('/risk', '?portfolio=7')).toBe(7);
     expect(portfolioFromLocation('/hedging', '?portfolio=9')).toBe(9);
+    expect(portfolioFromLocation('/limits', '?portfolio=11')).toBe(11);
   });
 
   it('ignores the portfolio param on other routes (no cross-route leak)', () => {

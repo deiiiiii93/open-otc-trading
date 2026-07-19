@@ -7,14 +7,17 @@ and records business ``unknown`` outcomes without failing its TaskRun.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from concurrent.futures import Future
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import logging
 from typing import Any
 
 from sqlalchemy import or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from ... import database
@@ -39,6 +42,7 @@ from ...models import (
 from ..task_runner import mark_task_finished, submit_async_task
 from .contracts import LimitActionContext
 from .definitions import canonical_version_snapshot
+from .errors import LimitConflictError
 from .evaluator import EvaluationResult, LimitRule, NormalizedObservation, evaluate
 from .source_planner import (
     SourcePlanKey,
@@ -58,6 +62,7 @@ from .sources import (
 
 _TRIGGERS = frozenset({"manual", "agent", "scheduled"})
 _POLICIES = frozenset({"reuse_only", "refresh_if_stale", "force_refresh"})
+_LOGGER = logging.getLogger(__name__)
 
 
 IncidentReconciler = Callable[..., Any]
@@ -354,6 +359,22 @@ def queue_limit_monitoring(
     portfolio = session.get(Portfolio, portfolio_id)
     if portfolio is None:
         raise ValueError(f"portfolio not found: {portfolio_id}")
+    active_run_id = session.scalar(
+        select(LimitMonitoringRun.id)
+        .where(
+            LimitMonitoringRun.portfolio_id == portfolio_id,
+            LimitMonitoringRun.status.in_(
+                (TaskStatus.QUEUED.value, TaskStatus.RUNNING.value)
+            ),
+        )
+        .order_by(LimitMonitoringRun.id.desc())
+        .limit(1)
+    )
+    if active_run_id is not None:
+        raise LimitConflictError(
+            f"portfolio {portfolio_id} already has active "
+            f"limit monitoring run {active_run_id}"
+        )
     for model, value, field in (
         (
             PricingParameterProfile,
@@ -412,7 +433,12 @@ def queue_limit_monitoring(
         definition_snapshot_hash=_snapshot_hash(snapshot),
     )
     session.add(run)
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError as exc:
+        raise LimitConflictError(
+            f"portfolio {portfolio_id} already has active limit monitoring"
+        ) from exc
     for snapshot_version in snapshot_versions:
         session.add(
             LimitMonitoringRunVersion(
@@ -434,7 +460,18 @@ def queue_limit_monitoring(
 
 def dispatch_limit_monitoring(task_id: int, monitoring_run_id: int) -> None:
     """Submit the one composite worker after the caller commits its queue rows."""
-    submit_async_task(execute_limit_monitoring_task, task_id, monitoring_run_id)
+    future = submit_async_task(
+        execute_limit_monitoring_task,
+        task_id,
+        monitoring_run_id,
+    )
+    future.add_done_callback(
+        lambda completed: _terminalize_failed_future(
+            completed,
+            task_id=task_id,
+            monitoring_run_id=monitoring_run_id,
+        )
+    )
 
 
 def _version_rule(snapshot: Mapping[str, Any]) -> LimitRule:
@@ -969,13 +1006,23 @@ def _mark_failed(
             task is None
             or task.kind != TaskKind.LIMIT_MONITORING.value
             or task.limit_monitoring_run_id != monitoring_run_id
-            or task.status != TaskStatus.RUNNING.value
+            or task.status not in (
+                TaskStatus.QUEUED.value,
+                TaskStatus.RUNNING.value,
+            )
         ):
             return
         run = session.get(LimitMonitoringRun, monitoring_run_id)
-        if run is not None:
-            run.status = TaskStatus.FAILED.value
-            run.finished_at = datetime.utcnow()
+        if (
+            run is None
+            or run.status not in (
+                TaskStatus.QUEUED.value,
+                TaskStatus.RUNNING.value,
+            )
+        ):
+            return
+        run.status = TaskStatus.FAILED.value
+        run.finished_at = datetime.utcnow()
         mark_task_finished(
             session,
             task_id,
@@ -985,6 +1032,40 @@ def _mark_failed(
             result_payload={"limit_monitoring_run_id": monitoring_run_id},
         )
         session.commit()
+
+
+def _terminalize_failed_future(
+    future: Future[Any],
+    *,
+    task_id: int,
+    monitoring_run_id: int,
+) -> None:
+    """Release a queued/running portfolio slot if the worker Future aborts.
+
+    The worker persists ordinary post-claim failures itself. This callback
+    covers bootstrap and pre-claim exceptions that otherwise only live on the
+    discarded Future.
+    """
+    if future.cancelled():
+        error = "Limit monitoring worker was cancelled before claiming its task"
+    else:
+        failure = future.exception()
+        if failure is None:
+            return
+        error = str(failure) or type(failure).__name__
+    try:
+        _mark_failed(
+            database.SessionLocal,
+            task_id=task_id,
+            monitoring_run_id=monitoring_run_id,
+            error=error,
+        )
+    except Exception:  # noqa: BLE001 - callbacks must not hide the worker failure
+        _LOGGER.exception(
+            "Could not persist failed limit-monitoring Future for task %s / run %s",
+            task_id,
+            monitoring_run_id,
+        )
 
 
 def execute_limit_monitoring_task(

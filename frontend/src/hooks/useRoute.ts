@@ -10,8 +10,8 @@ type UseRoute = {
 export function useRoute(): UseRoute {
   const [route, setRoute] = useState<NavRoute>(() => pathToRoute(window.location.pathname));
 
-  // Mount canonicalization. Preserve location.search so a deep-linked
-  // ?portfolio= is not wiped before main.tsx reads it.
+  // Mount canonicalization preserves location.search long enough for main.tsx
+  // to recover shared portfolio state and sanitize Limits deep-link params.
   useEffect(() => {
     const canonical = routeToPath(route);
     if (window.location.pathname !== canonical) {
@@ -38,8 +38,8 @@ export function useRoute(): UseRoute {
 
   const navigate = useCallback((next: Route) => {
     const path = routeToPath(next);
-    // Keep the query only when re-navigating to the current path; moving to a
-    // different page drops it (non-risk/hedging routes are query-less).
+    // Keep the query only when re-navigating to the current path; main.tsx owns
+    // the route-specific portfolio/deep-link canonicalization after navigation.
     const target = window.location.pathname === path ? path + window.location.search : path;
     if (window.location.pathname + window.location.search !== target) {
       window.history.pushState(null, '', target);

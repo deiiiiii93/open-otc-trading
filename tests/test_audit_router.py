@@ -47,6 +47,8 @@ def test_list_filters_and_pagination(audit_client, session):
     assert audit_client.get("/api/audit/actions?status=denied").json()["total"] == 1
     assert audit_client.get("/api/audit/actions?mode=yolo").json()["total"] == 1
     assert audit_client.get("/api/audit/actions?kind=hitl_decision").json()["total"] == 1
+    assert audit_client.get("/api/audit/actions?audit_ref=r1").json()["total"] == 1
+    assert audit_client.get("/api/audit/actions?audit_ref=r").json()["total"] == 0
     assert (
         audit_client.get("/api/audit/actions?tool_name=book_position").json()["total"]
         == 2
