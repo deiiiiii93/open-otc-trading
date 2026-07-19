@@ -172,6 +172,7 @@ def _ensure_incremental_schema(active_engine: Engine) -> None:
     """
     inspector = inspect(active_engine)
     tables = set(inspector.get_table_names())
+    _ensure_limit_incident_portfolio_schema(active_engine, tables)
     if "rfqs" in tables and "rfq_quote_versions" not in tables:
         with active_engine.begin() as connection:
             connection.execute(
@@ -528,6 +529,237 @@ def _ensure_incremental_schema(active_engine: Engine) -> None:
             )
 
     _ensure_structured_position_terms_schema(active_engine, inspector, tables)
+
+
+def _ensure_limit_incident_portfolio_schema(
+    active_engine: Engine,
+    tables: set[str],
+) -> None:
+    """Repair the pre-0047 incident identity for create_all-booted local DBs.
+
+    Alembic 0047 is the authoritative production migration.  This duplicate
+    exists because ``init_db`` historically repairs additive drift for local
+    databases that were created with ORM metadata and never stamped by
+    Alembic.
+    """
+    required = {
+        "portfolios",
+        "limit_monitoring_runs",
+        "limit_evaluations",
+        "limit_incidents",
+        "limit_incident_events",
+    }
+    if not required <= tables:
+        return
+
+    inspector = inspect(active_engine)
+    columns = {
+        column["name"]: column
+        for column in inspector.get_columns("limit_incidents")
+    }
+    if "portfolio_id" not in columns:
+        with active_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE limit_incidents "
+                    "ADD COLUMN portfolio_id INTEGER"
+                )
+            )
+
+    with active_engine.begin() as connection:
+        conflicts = connection.execute(
+            text(
+                """
+                SELECT incidents.id
+                FROM limit_incidents AS incidents
+                JOIN (
+                    SELECT id AS incident_id,
+                           first_evaluation_id AS evaluation_id
+                    FROM limit_incidents
+                    WHERE first_evaluation_id IS NOT NULL
+                    UNION
+                    SELECT id AS incident_id,
+                           last_evaluation_id AS evaluation_id
+                    FROM limit_incidents
+                    WHERE last_evaluation_id IS NOT NULL
+                    UNION
+                    SELECT incident_id, evaluation_id
+                    FROM limit_incident_events
+                    WHERE evaluation_id IS NOT NULL
+                ) AS links
+                  ON links.incident_id = incidents.id
+                JOIN limit_evaluations AS evaluations
+                  ON evaluations.id = links.evaluation_id
+                JOIN limit_monitoring_runs AS monitoring_runs
+                  ON monitoring_runs.id = evaluations.monitoring_run_id
+                GROUP BY incidents.id, incidents.portfolio_id
+                HAVING COUNT(
+                    DISTINCT monitoring_runs.portfolio_id
+                ) > 1
+                    OR (
+                        incidents.portfolio_id IS NOT NULL
+                        AND MIN(monitoring_runs.portfolio_id)
+                            <> incidents.portfolio_id
+                    )
+                ORDER BY incidents.id
+                LIMIT 10
+                """
+            )
+        ).scalars().all()
+        if conflicts:
+            joined = ", ".join(str(value) for value in conflicts)
+            raise RuntimeError(
+                "limit incident history contains conflicting portfolio "
+                "evidence; split or repair these incidents before retrying: "
+                f"{joined}"
+            )
+        connection.execute(
+            text(
+                """
+                UPDATE limit_incidents
+                SET portfolio_id = COALESCE(
+                    (
+                        SELECT MIN(monitoring_runs.portfolio_id)
+                        FROM limit_evaluations AS evaluations
+                        JOIN limit_monitoring_runs AS monitoring_runs
+                          ON monitoring_runs.id
+                            = evaluations.monitoring_run_id
+                        WHERE evaluations.id IN (
+                            limit_incidents.last_evaluation_id,
+                            limit_incidents.first_evaluation_id
+                        )
+                    ),
+                    (
+                        SELECT MIN(monitoring_runs.portfolio_id)
+                        FROM limit_incident_events AS events
+                        JOIN limit_evaluations AS evaluations
+                          ON evaluations.id = events.evaluation_id
+                        JOIN limit_monitoring_runs AS monitoring_runs
+                          ON monitoring_runs.id
+                            = evaluations.monitoring_run_id
+                        WHERE events.incident_id = limit_incidents.id
+                    )
+                )
+                WHERE portfolio_id IS NULL
+                """
+            )
+        )
+        unresolved = connection.execute(
+            text(
+                "SELECT id FROM limit_incidents "
+                "WHERE portfolio_id IS NULL ORDER BY id LIMIT 10"
+            )
+        ).scalars().all()
+        if unresolved:
+            joined = ", ".join(str(value) for value in unresolved)
+            raise RuntimeError(
+                "cannot infer portfolio_id for limit incident history; "
+                "repair incident evaluation links before retrying: "
+                f"{joined}"
+            )
+
+    inspector = inspect(active_engine)
+    columns = {
+        column["name"]: column
+        for column in inspector.get_columns("limit_incidents")
+    }
+    foreign_keys = inspector.get_foreign_keys("limit_incidents")
+    has_portfolio_foreign_key = any(
+        foreign_key["constrained_columns"] == ["portfolio_id"]
+        and foreign_key["referred_table"] == "portfolios"
+        and foreign_key["referred_columns"] == ["id"]
+        for foreign_key in foreign_keys
+    )
+    indexes = {
+        index["name"]: index
+        for index in inspector.get_indexes("limit_incidents")
+    }
+    active_index = indexes.get("uq_limit_incidents_active_episode")
+    active_index_columns = (
+        list(active_index.get("column_names") or [])
+        if active_index is not None
+        else []
+    )
+
+    with active_engine.begin() as connection:
+        if active_index is not None and active_index_columns != [
+            "portfolio_id",
+            "risk_limit_id",
+            "scope_key",
+        ]:
+            connection.execute(
+                text("DROP INDEX uq_limit_incidents_active_episode")
+            )
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS "
+                "ix_limit_incidents_portfolio_id "
+                "ON limit_incidents (portfolio_id)"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS "
+                "uq_limit_incidents_active_episode "
+                "ON limit_incidents "
+                "(portfolio_id, risk_limit_id, scope_key) "
+                "WHERE status IN "
+                "('open', 'acknowledged', 'assigned', 'waived')"
+            )
+        )
+
+        if active_engine.dialect.name == "postgresql":
+            if columns["portfolio_id"].get("nullable", True):
+                connection.execute(
+                    text(
+                        "ALTER TABLE limit_incidents "
+                        "ALTER COLUMN portfolio_id SET NOT NULL"
+                    )
+                )
+            if not has_portfolio_foreign_key:
+                connection.execute(
+                    text(
+                        "ALTER TABLE limit_incidents "
+                        "ADD CONSTRAINT "
+                        "fk_limit_incidents_portfolio_id_portfolios "
+                        "FOREIGN KEY (portfolio_id) REFERENCES portfolios (id)"
+                    )
+                )
+        elif active_engine.dialect.name == "sqlite" and (
+            columns["portfolio_id"].get("nullable", True)
+            or not has_portfolio_foreign_key
+        ):
+            # SQLite cannot add NOT NULL or FK constraints in place.  The
+            # normal 0047 migration rebuilds the table; this local bootstrap
+            # path enforces the same write contract with triggers.
+            connection.execute(
+                text(
+                    "CREATE TRIGGER IF NOT EXISTS "
+                    "trg_limit_incidents_portfolio_insert "
+                    "BEFORE INSERT ON limit_incidents "
+                    "WHEN NEW.portfolio_id IS NULL OR NOT EXISTS ("
+                    "SELECT 1 FROM portfolios "
+                    "WHERE id = NEW.portfolio_id"
+                    ") BEGIN "
+                    "SELECT RAISE(ABORT, "
+                    "'limit_incidents.portfolio_id is required'); "
+                    "END"
+                )
+            )
+            connection.execute(
+                text(
+                    "CREATE TRIGGER IF NOT EXISTS "
+                    "trg_limit_incidents_portfolio_update "
+                    "BEFORE UPDATE OF portfolio_id ON limit_incidents "
+                    "WHEN NEW.portfolio_id IS NULL OR NOT EXISTS ("
+                    "SELECT 1 FROM portfolios "
+                    "WHERE id = NEW.portfolio_id"
+                    ") BEGIN "
+                    "SELECT RAISE(ABORT, "
+                    "'limit_incidents.portfolio_id is required'); "
+                    "END"
+                )
+            )
 
 
 _KNOCKED_OUT_STATES = {"Knocked Out", "敲出"}

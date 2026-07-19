@@ -1030,6 +1030,295 @@ class MarketSnapshotOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# Limits API contracts.  The domain service owns semantic validation; these
+# request models deliberately only establish a strict HTTP boundary and reject
+# caller-supplied attribution fields.
+class LimitVersionIn(BaseModel):
+    metric_kind: Literal[
+        "delta",
+        "gamma",
+        "vega",
+        "theta",
+        "rho",
+        "rho_q",
+        "var",
+        "cvar",
+        "stress_pnl",
+    ]
+    source_kind: Literal["risk_run", "scenario_test", "backtest"]
+    methodology: dict[str, Any] = Field(default_factory=dict)
+    scope_type: Literal["portfolio", "underlying", "product_family", "position"]
+    scope_config: dict[str, Any] = Field(default_factory=dict)
+    aggregation: Literal["net", "gross_abs", "max_abs", "minimum", "maximum"]
+    transform: Literal["signed", "absolute", "loss_magnitude"]
+    comparator: Literal["upper", "lower", "range"]
+    warning_lower: float | None = None
+    warning_upper: float | None = None
+    hard_lower: float | None = None
+    hard_upper: float | None = None
+    unit: str
+    currency: str | None = None
+    bump_convention: str | None = None
+    freshness_policy: dict[str, Any] = Field(default_factory=dict)
+    effective_until: datetime | None = None
+    rationale: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class LimitCreateIn(BaseModel):
+    key: str
+    name: str
+    description: str = ""
+    category: Literal["greek", "var", "cvar", "stress"]
+    owner: str
+    tags: list[str] = Field(default_factory=list)
+    initial_version: LimitVersionIn
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class LimitMetadataPatchIn(BaseModel):
+    expected_row_version: int = Field(ge=1, strict=True)
+    name: str | None = None
+    description: str | None = None
+    owner: str | None = None
+    tags: list[str] | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def _has_patch(self) -> "LimitMetadataPatchIn":
+        fields = ("name", "description", "owner", "tags")
+        if all(getattr(self, field) is None for field in fields):
+            raise ValueError("at least one metadata field is required")
+        return self
+
+
+class LimitVersionCreateIn(BaseModel):
+    expected_row_version: int = Field(ge=1, strict=True)
+    version: LimitVersionIn
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class LimitActionIn(BaseModel):
+    expected_row_version: int = Field(ge=1, strict=True)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class LimitActivateIn(LimitActionIn):
+    pass
+
+
+class LimitMonitoringRunCreateIn(BaseModel):
+    portfolio_id: int = Field(ge=1, strict=True)
+    pricing_parameter_profile_id: int | None = Field(
+        default=None,
+        ge=1,
+        strict=True,
+    )
+    engine_config_id: int | None = Field(default=None, ge=1, strict=True)
+    market_snapshot_id: int | None = Field(default=None, ge=1, strict=True)
+    effective_market_evidence_id: str | None = None
+    valuation_as_of: datetime
+    source_policy: Literal["reuse_only", "refresh_if_stale", "force_refresh"]
+    max_source_age_seconds: int | None = Field(
+        default=None,
+        ge=0,
+        strict=True,
+    )
+    source_inputs: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def _has_market_evidence(self) -> "LimitMonitoringRunCreateIn":
+        evidence_id = (
+            self.effective_market_evidence_id.strip()
+            if isinstance(self.effective_market_evidence_id, str)
+            else None
+        )
+        if self.market_snapshot_id is None and not evidence_id:
+            raise ValueError(
+                "market_snapshot_id or effective_market_evidence_id is required"
+            )
+        self.effective_market_evidence_id = evidence_id
+        return self
+
+
+class LimitIncidentAssignIn(LimitActionIn):
+    assignee: str
+
+
+class LimitIncidentCommentIn(LimitActionIn):
+    comment: str
+
+
+class LimitIncidentWaiveIn(LimitActionIn):
+    rationale: str
+    expires_at: datetime
+
+
+class LimitVersionOut(BaseModel):
+    id: int
+    risk_limit_id: int
+    version: int
+    state: str
+    metric_kind: str
+    source_kind: str
+    methodology: dict[str, Any]
+    scope_type: str
+    scope_config: dict[str, Any]
+    aggregation: str
+    transform: str
+    comparator: str
+    warning_lower: float | None
+    warning_upper: float | None
+    hard_lower: float | None
+    hard_upper: float | None
+    unit: str
+    currency: str | None
+    bump_convention: str | None
+    freshness_policy: dict[str, Any]
+    effective_from: datetime | None
+    effective_until: datetime | None
+    rationale: str | None
+    created_at: datetime
+    activated_at: datetime | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RiskLimitOut(BaseModel):
+    id: int
+    key: str
+    name: str
+    description: str
+    category: str
+    owner: str
+    tags: list[str]
+    active_version_id: int | None
+    row_version: int
+    created_at: datetime
+    updated_at: datetime
+    versions: list[LimitVersionOut] = Field(default_factory=list)
+    active_version: LimitVersionOut | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LimitMonitoringRunOut(BaseModel):
+    id: int
+    trigger: str
+    mode: str
+    portfolio_id: int
+    pricing_parameter_profile_id: int | None
+    engine_config_id: int | None
+    market_snapshot_id: int | None
+    effective_market_evidence_id: str | None = None
+    valuation_as_of: datetime
+    source_policy: str
+    max_source_age_seconds: int | None
+    status: str
+    summary: dict[str, Any]
+    definition_snapshot_hash: str
+    limit_version_ids: list[int] = Field(default_factory=list)
+    task_id: int | None = None
+    started_at: datetime | None
+    finished_at: datetime | None
+    created_at: datetime
+    source_references: list["LimitSourceReferenceOut"] = Field(default_factory=list)
+
+
+class LimitSourceReferenceOut(BaseModel):
+    id: int
+    source_kind: str
+    risk_run_id: int | None
+    scenario_test_run_id: int | None
+    backtest_run_id: int | None
+    requested_parameters: dict[str, Any]
+    source_status: str
+    is_fresh: bool
+    completeness_diagnostics: dict[str, Any]
+    source_valuation_at: datetime | None
+    source_created_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LimitEvaluationOut(BaseModel):
+    id: int
+    monitoring_run_id: int
+    limit_version_id: int
+    scope_type: str
+    scope_key: str
+    scope_label: str
+    observed_value: float | None
+    adverse_value: float | None
+    warning_lower: float | None
+    warning_upper: float | None
+    hard_lower: float | None
+    hard_upper: float | None
+    utilization: float | None
+    headroom: float | None
+    governing_boundary: str | None
+    status: str
+    reason_code: str | None
+    reason: str | None
+    coverage_count: int | None
+    coverage_ratio: float | None
+    evidence: dict[str, Any]
+    evaluated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LimitIncidentEventOut(BaseModel):
+    id: int
+    incident_id: int
+    event_type: str
+    evaluation_id: int | None
+    actor: str
+    persona: str | None
+    mode: str | None
+    thread_id: int | None
+    audit_ref: str | None
+    payload: dict[str, Any]
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LimitIncidentOut(BaseModel):
+    id: int
+    risk_limit_id: int
+    portfolio_id: int
+    scope_type: str
+    scope_key: str
+    scope_label: str
+    severity: str
+    status: str
+    first_evaluation_id: int | None
+    last_evaluation_id: int | None
+    first_seen_at: datetime
+    last_seen_at: datetime
+    acknowledged_at: datetime | None
+    waived_at: datetime | None
+    resolved_at: datetime | None
+    owner: str | None
+    assignee: str | None
+    waiver_expires_at: datetime | None
+    waiver_rationale: str | None
+    row_version: int
+    created_at: datetime
+    updated_at: datetime
+    risk_limit: RiskLimitOut | None = None
+    events: list[LimitIncidentEventOut] = Field(default_factory=list)
+
+
 class MarketDataProfileOut(BaseModel):
     id: int
     underlying_id: int | None = None
@@ -1356,7 +1645,10 @@ class TaskRunOut(BaseModel):
     portfolio_id: int | None = None
     risk_run_id: int | None = None
     greeks_landscape_run_id: int | None = None
+    scenario_test_run_id: int | None = None
+    backtest_run_id: int | None = None
     report_job_id: int | None = None
+    limit_monitoring_run_id: int | None = None
     progress_current: int
     progress_total: int
     message: str | None = None

@@ -260,6 +260,7 @@ from .routers.arena import build_arena_router
 from .routers.goal import build_goal_router
 from .routers.workflows import build_desk_workflows_router
 from .routers.agent_channels import build_agent_channels_router
+from .routers.limits import build_limits_router
 from .services.deep_agent.goal_mode import (
     GoalRunService,
     goal_grader_tool_allowlist,
@@ -4081,6 +4082,7 @@ def create_app(
     app.include_router(build_tracing_router())
     app.include_router(build_arena_router(settings=active_settings))
     app.include_router(build_desk_workflows_router())
+    app.include_router(build_limits_router(get_db=get_db))
     app.include_router(
         build_agent_channels_router(active_agent_service, settings=active_settings)
     )

@@ -1,4 +1,6 @@
 """Task 8: deterministic coverage reconciliation (the real guarantee)."""
+from datetime import datetime
+
 from app.services.deep_agent.dynamic_subagents import MAX_PTC_CALLS, reconcile_fanout_coverage
 
 
@@ -138,6 +140,90 @@ def test_newer_queued_run_does_not_erase_completed_breaches(session):
     session.add(RiskRun(portfolio_id=pf.id, status="queued", metrics={}))  # newer, non-terminal
     session.flush()
     assert enumerate_limit_breaches(session, str(pf.id)) == ["5"]  # completed run wins
+
+
+def test_enumerate_reads_authoritative_position_limit_evaluations(session):
+    """The compatibility reader must prefer persisted Limits evidence over RiskRun JSON."""
+    from app.models import (
+        LimitEvaluation,
+        LimitMonitoringRun,
+        Portfolio,
+        RiskLimit,
+        RiskLimitVersion,
+        RiskRun,
+    )
+    from app.services.risk_limits import enumerate_limit_breaches
+
+    portfolio = Portfolio(name="authoritative-limits", base_currency="USD")
+    limit = RiskLimit(
+        key="authoritative-position", name="Authoritative", description="",
+        category="greek", owner="risk", tags=[],
+    )
+    session.add_all([portfolio, limit])
+    session.flush()
+    version = RiskLimitVersion(
+        risk_limit_id=limit.id, version=1, state="active", metric_kind="delta",
+        source_kind="risk_run", methodology={}, scope_type="position",
+        scope_config={"position_ids": [7]}, aggregation="net", transform="absolute",
+        comparator="upper", warning_upper=80.0, hard_upper=100.0,
+        unit="underlying_units", freshness_policy={"max_age_seconds": 60},
+    )
+    run = LimitMonitoringRun(
+        trigger="manual", mode="auto", portfolio_id=portfolio.id,
+        valuation_as_of=datetime(2026, 7, 18),
+        source_policy="reuse_only", status="completed", summary={},
+        definition_snapshot={}, definition_snapshot_hash="0" * 64,
+    )
+    session.add_all([version, run])
+    session.flush()
+    session.add(LimitEvaluation(
+        monitoring_run_id=run.id, limit_version_id=version.id,
+        scope_type="position", scope_key="position:7", scope_label="Position 7",
+        observed_value=101.0, adverse_value=101.0, warning_upper=80.0,
+        hard_upper=100.0, utilization=1.01, headroom=-1.0,
+        status="breach", evidence={},
+    ))
+    session.add(RiskRun(
+        portfolio_id=portfolio.id, status="completed",
+        metrics={"limit_breaches": [{"position_id": 999}]},
+    ))
+    session.flush()
+
+    assert enumerate_limit_breaches(session, portfolio.id) == ["7"]
+
+    backdated = LimitMonitoringRun(
+        trigger="manual",
+        mode="auto",
+        portfolio_id=portfolio.id,
+        valuation_as_of=datetime(2026, 7, 17),
+        source_policy="reuse_only",
+        status="completed",
+        summary={},
+        definition_snapshot={},
+        definition_snapshot_hash="1" * 64,
+    )
+    session.add(backdated)
+    session.flush()
+    session.add(
+        LimitEvaluation(
+            monitoring_run_id=backdated.id,
+            limit_version_id=version.id,
+            scope_type="position",
+            scope_key="position:9",
+            scope_label="Position 9",
+            observed_value=101.0,
+            adverse_value=101.0,
+            warning_upper=80.0,
+            hard_upper=100.0,
+            utilization=1.01,
+            headroom=-1.0,
+            status="breach",
+            evidence={},
+        )
+    )
+    session.flush()
+
+    assert enumerate_limit_breaches(session, portfolio.id) == ["7"]
 
 
 def test_tool_uses_server_scope_not_model_records(session, monkeypatch):

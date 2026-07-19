@@ -98,6 +98,14 @@ class RiskLimitHistoryDeletionError(RuntimeError):
     """Raised when immutable risk-limit history is queued for ORM deletion."""
 
 
+class LimitIncidentEventMutationError(RuntimeError):
+    """Raised when append-only incident evidence is changed or deleted."""
+
+
+class LimitIncidentHistoryDeletionError(RuntimeError):
+    """Raised when an incident projection and its timeline would be deleted."""
+
+
 class PortfolioKindError(PortfolioError):
     pass
 
@@ -1951,6 +1959,10 @@ class LimitIncident(Base):
     __tablename__ = "limit_incidents"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    portfolio_id: Mapped[int] = mapped_column(
+        ForeignKey("portfolios.id"),
+        index=True,
+    )
     risk_limit_id: Mapped[int] = mapped_column(
         ForeignKey("risk_limits.id"), index=True
     )
@@ -1990,12 +2002,16 @@ class LimitIncident(Base):
     events: Mapped[list["LimitIncidentEvent"]] = relationship(
         back_populates="incident",
         cascade="all, delete-orphan",
-        order_by="LimitIncidentEvent.created_at",
+        order_by=lambda: (
+            LimitIncidentEvent.created_at,
+            LimitIncidentEvent.id,
+        ),
     )
 
     __table_args__ = (
         Index(
             "uq_limit_incidents_active_episode",
+            "portfolio_id",
             "risk_limit_id",
             "scope_key",
             unique=True,
@@ -2376,6 +2392,59 @@ def _protect_risk_limit_history_from_bulk_deletion(
     if model is RiskLimitVersion or table_name == RiskLimitVersion.__tablename__:
         raise RiskLimitHistoryDeletionError(
             "risk limit versions cannot be deleted"
+        )
+
+
+@event.listens_for(OrmSession, "before_flush")
+def _protect_limit_incident_events_from_mutation(
+    session: OrmSession,
+    _flush_context,
+    _instances,
+) -> None:
+    for obj in session.deleted:
+        if isinstance(obj, LimitIncident):
+            raise LimitIncidentHistoryDeletionError(
+                "limit incident history cannot be deleted"
+            )
+        if isinstance(obj, LimitIncidentEvent):
+            raise LimitIncidentEventMutationError(
+                "limit incident events are append-only"
+            )
+    for obj in session.dirty:
+        if isinstance(obj, LimitIncidentEvent) and session.is_modified(
+            obj,
+            include_collections=False,
+        ):
+            raise LimitIncidentEventMutationError(
+                "limit incident events are append-only"
+            )
+
+
+@event.listens_for(OrmSession, "do_orm_execute")
+def _protect_limit_incident_events_from_bulk_mutation(
+    execute_state: ORMExecuteState,
+) -> None:
+    if not (execute_state.is_update or execute_state.is_delete):
+        return
+    mapper = execute_state.bind_mapper
+    model = mapper.class_ if mapper is not None else None
+    table_name = getattr(
+        getattr(execute_state.statement, "table", None),
+        "name",
+        None,
+    )
+    if execute_state.is_delete and (
+        model is LimitIncident or table_name == LimitIncident.__tablename__
+    ):
+        raise LimitIncidentHistoryDeletionError(
+            "limit incident history cannot be deleted"
+        )
+    if (
+        model is LimitIncidentEvent
+        or table_name == LimitIncidentEvent.__tablename__
+    ):
+        raise LimitIncidentEventMutationError(
+            "limit incident events are append-only"
         )
 
 

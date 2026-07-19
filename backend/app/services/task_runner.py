@@ -12,6 +12,7 @@ from ..config import Settings, get_settings
 from ..models import (
     BacktestRun,
     GreekLandscapeRun,
+    LimitMonitoringRun,
     ReportJob,
     ReportStatus,
     RiskRun,
@@ -219,3 +220,18 @@ def _sync_linked_status(session: Session, task: TaskRun, status: str) -> None:
         run = session.get(ScenarioTestRun, task.scenario_test_run_id)
         if run is not None:
             run.status = status
+    if task.limit_monitoring_run_id is not None:
+        run = session.get(LimitMonitoringRun, task.limit_monitoring_run_id)
+        if run is not None:
+            # Monitoring owns the business terminal split.  A completed task
+            # must never erase a completed_with_unknowns domain outcome.
+            if status == TaskStatus.RUNNING.value:
+                run.status = status
+                run.started_at = run.started_at or datetime.utcnow()
+                run.finished_at = None
+            elif status == TaskStatus.FAILED.value:
+                run.status = status
+                run.finished_at = datetime.utcnow()
+            elif run.status not in {"completed", "completed_with_unknowns"}:
+                run.status = "completed"
+                run.finished_at = datetime.utcnow()

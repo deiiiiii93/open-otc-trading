@@ -132,6 +132,7 @@ def test_limits_model_json_and_enum_like_roundtrip(session) -> None:
     session.add(evaluation)
     session.flush()
     incident = LimitIncident(
+        portfolio_id=portfolio.id,
         risk_limit_id=limit_row.id,
         scope_type="portfolio",
         scope_key=str(portfolio.id),
@@ -321,7 +322,9 @@ def test_only_one_non_terminal_incident_per_limit_scope(session) -> None:
     from app.models import LimitIncident
 
     limit_row = _limit(session, key="unique-incident")
+    portfolio = _portfolio(session)
     kwargs = {
+        "portfolio_id": portfolio.id,
         "risk_limit_id": limit_row.id,
         "scope_type": "portfolio",
         "scope_key": "7",
@@ -335,6 +338,24 @@ def test_only_one_non_terminal_incident_per_limit_scope(session) -> None:
     with pytest.raises(IntegrityError), session.begin_nested():
         session.add(LimitIncident(**kwargs))
         session.flush()
+
+    from app.models import Portfolio
+
+    other_portfolio = Portfolio(
+        name="Other limits model book",
+        base_currency="USD",
+    )
+    session.add(other_portfolio)
+    session.flush()
+    session.add(
+        LimitIncident(
+            **{
+                **kwargs,
+                "portfolio_id": other_portfolio.id,
+            }
+        )
+    )
+    session.flush()
 
     session.add(LimitIncident(**{**kwargs, "status": "resolved"}))
     session.flush()

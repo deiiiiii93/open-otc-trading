@@ -1,16 +1,16 @@
-"""Deterministic, server-side enumeration of limit breaches for a portfolio.
+"""Compatibility reader for server-authoritative position-limit breaches.
 
-Scope for the dynamic-subagents pilot is server-authoritative: it is derived from the
-persisted latest ``RiskRun`` artifact, never from model-supplied text. This keeps the
-fan-out coverage guarantee (``reconcile_fanout_coverage``) honest — the model cannot
-shrink coverage by omitting ids, because it never supplies the breach list.
+The dynamic-subagents pilot still consumes a list of position ids.  Numeric
+truth now lives in persisted Limits evaluations, so this module deliberately
+keeps its historical public function while reading the latest completed Limits
+run.  The legacy ``RiskRun.metrics`` branch remains only for pre-Limits data.
 """
 from __future__ import annotations
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import RiskRun
+from ..models import LimitEvaluation, LimitMonitoringRun, RiskRun
 
 # Only trust terminal-success runs. A freshly-queued run (metrics={}) created by the
 # workflow's own scope step must NOT mask an older completed run's breach data.
@@ -18,22 +18,48 @@ _TERMINAL_STATUSES = ("completed", "completed_with_errors")
 
 
 def enumerate_limit_breaches(session: Session, portfolio_id) -> list[str]:
-    """Return breached position ids (as strings) from a portfolio's latest RiskRun.
+    """Return breached position ids (as strings) from authoritative evaluations.
 
-    Reads ``RiskRun.metrics['limit_breaches']`` (or ``['breaches']``), tolerating both
-    a list of ids and a list of ``{"position_id": ...}`` dicts. Returns ``[]`` when
-    there is no run or no recorded breaches.
-
-    NOTE (pilot follow-up): the batch-pricing producer does not yet persist a
-    ``limit_breaches`` artifact (a portfolio risk-limits system is out of scope for the
-    pilot). Until it does, this returns ``[]`` for real runs — an *honest empty* report,
-    never false coverage. Populating ``metrics['limit_breaches']`` in the risk producer
-    is the required follow-up to make the pilot surface breaches end-to-end.
+    The newest terminal Limits run by valuation time is authoritative.  When
+    no Limits run exists, the pre-module ``RiskRun.metrics`` payload remains a
+    compatibility fallback.  Returns ``[]`` when neither source records a
+    breached position scope.
     """
     try:
         pid = int(portfolio_id)
     except (TypeError, ValueError):
         return []
+    monitoring_run = session.execute(
+        select(LimitMonitoringRun)
+        .where(LimitMonitoringRun.portfolio_id == pid)
+        .where(
+            LimitMonitoringRun.status.in_(
+                ("completed", "completed_with_unknowns")
+            )
+        )
+        .order_by(
+            LimitMonitoringRun.valuation_as_of.desc(),
+            LimitMonitoringRun.id.desc(),
+        )
+        .limit(1)
+    ).scalar_one_or_none()
+    if isinstance(monitoring_run, LimitMonitoringRun):
+        rows = session.execute(
+            select(LimitEvaluation.scope_key)
+            .where(LimitEvaluation.monitoring_run_id == monitoring_run.id)
+            .where(LimitEvaluation.status == "breach")
+            .where(LimitEvaluation.scope_type == "position")
+            .order_by(LimitEvaluation.id.asc())
+        ).scalars()
+        out: list[str] = []
+        for scope_key in rows:
+            if not isinstance(scope_key, str):
+                continue
+            value = scope_key.removeprefix("position:")
+            if value:
+                out.append(value)
+        return list(dict.fromkeys(out))
+
     run = session.execute(
         select(RiskRun)
         .where(RiskRun.portfolio_id == pid)

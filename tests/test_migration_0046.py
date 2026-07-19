@@ -196,7 +196,6 @@ def test_expected_columns_indexes_and_constraints(tmp_path: Path) -> None:
         column["name"]
         for column in inspector.get_columns("limit_evaluations")
     }
-
     version_constraints = {
         constraint["name"]
         for constraint in inspector.get_unique_constraints(
@@ -215,6 +214,9 @@ def test_expected_columns_indexes_and_constraints(tmp_path: Path) -> None:
         for index in inspector.get_indexes("limit_incidents")
     }
     assert incident_indexes["uq_limit_incidents_active_episode"]["unique"]
+    assert incident_indexes["uq_limit_incidents_active_episode"][
+        "column_names"
+    ] == ["risk_limit_id", "scope_key"]
     assert (
         incident_indexes["uq_limit_incidents_active_episode"]
         ["dialect_options"]["sqlite_where"]
@@ -243,7 +245,7 @@ def test_orm_first_bootstrap_then_upgrade_head(tmp_path: Path, monkeypatch) -> N
     assert _TABLES <= set(inspector.get_table_names())
     with sa.create_engine(database_url).connect() as connection:
         revision = MigrationContext.configure(connection).get_current_revision()
-    assert revision == "0046_risk_limits_core"
+    assert revision == "0047_limit_incident_portfolio"
 
 
 def test_boot_repair_then_upgrade_adds_task_monitoring_foreign_key(
