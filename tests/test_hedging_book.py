@@ -4,7 +4,14 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
-from app.models import AgentThread, Instrument, Portfolio, Position, RiskRun
+from app.models import (
+    AgentThread,
+    HedgeBookingClaim,
+    Instrument,
+    Portfolio,
+    Position,
+    RiskRun,
+)
 from app.services.deep_agent.ledger import LedgerWriter
 from app.services.deep_agent.workflow_state import ensure_thread_workflow_state
 from app.services.domains import hedging_strategy as hs
@@ -13,12 +20,20 @@ from app.services.domains import hedging_strategy as hs
 def _fresh_run(session, portfolio_id: int, risk_run_id: int, *, spot: float = 5600.0):
     run = session.get(RiskRun, risk_run_id)
     if run is None:
+        from app.services import hedging_greeks
+        from app.services.risk_engine import _resolve_risk_positions
+
+        portfolio = session.get(Portfolio, portfolio_id)
+        resolved = _resolve_risk_positions(portfolio, session, position_ids=None)
         run = RiskRun(
             id=risk_run_id,
             portfolio_id=portfolio_id,
             status="completed",
             metrics={
                 "valuation_as_of": datetime.utcnow().isoformat(),
+                "position_set_hash": hedging_greeks.resolved_position_set_hash(
+                    resolved
+                ),
                 "positions": [
                     {
                         "underlying": "000905.SH",
@@ -30,6 +45,7 @@ def _fresh_run(session, portfolio_id: int, risk_run_id: int, *, spot: float = 56
                     }
                 ],
             },
+            resolved_position_ids=[position.id for position in resolved],
         )
         session.add(run)
         session.flush()
@@ -43,6 +59,25 @@ def _book(session, **kwargs):
         kwargs["risk_run_id"],
         spot=kwargs.get("spot", 5600.0),
     )
+    if kwargs.get("source_artifact_id") is None:
+        artifact, state = _source_artifact(
+            session,
+            portfolio_id=kwargs["portfolio_id"],
+            risk_run_id=kwargs["risk_run_id"],
+            underlying=kwargs["underlying"],
+            strategy=kwargs["strategy"],
+            spot=kwargs["spot"],
+            legs=kwargs["legs"],
+        )
+        source = json.loads(artifact.payload["content"])
+        kwargs.update(
+            source_artifact_id=artifact.id,
+            workflow_id=state.domain_workflow_id,
+            artifact_generated_at=artifact.payload["generated_at"],
+            valuation_as_of=source["valuation_as_of"],
+            risk_generated_at=source["risk_generated_at"],
+            expires_at=source["expires_at"],
+        )
     return hs.book_hedge(session, **kwargs)
 
 
@@ -247,11 +282,8 @@ def test_book_hedge_rejects_unknown_strategy(session):
                       risk_run_id=1, strategy="detla_neutral", legs=legs, spot=5600.0)
 
 
-def test_book_hedge_continues_leg_numbering_per_run(session):
-    """A second booking against the same risk_run_id must not re-mint
-    HEDGE:{run}:1 — numbering continues past the max existing suffix so
-    source_trade_id stays unique without a DB constraint (which would break
-    OTC re-import refresh)."""
+def test_book_hedge_refuses_second_booking_against_same_risk_run(session):
+    """A booked hedge changes the portfolio, invalidating its source risk."""
     pf = Portfolio(name="book_seq", base_currency="CNY")
     inst = Instrument(
         symbol="IC2406.CFE", kind="futures", exchange="CFFEX", contract_code="IC2406",
@@ -273,12 +305,12 @@ def test_book_hedge_continues_leg_numbering_per_run(session):
 
     first_ids = [session.get(Position, pid).source_trade_id
                  for pid in first["position_ids"]]
-    second_ids = [session.get(Position, pid).source_trade_id
-                  for pid in second["position_ids"]]
     assert first_ids == ["HEDGE:21:1", "HEDGE:21:2"]
-    assert second_ids == ["HEDGE:21:3"]
-    # A different run keeps its own namespace (prefix match must not bleed
-    # across runs sharing a string prefix, e.g. HEDGE:2: vs HEDGE:21:).
+    assert second["status"] == "stale_hedge_proposal"
+    assert "portfolio_snapshot_changed" in second["reasons"]
+
+    # A genuinely new frozen risk snapshot can authorize the next hedge and
+    # keeps its independent source-trade namespace.
     other = _book(session, portfolio_id=pf.id, underlying="000905.SH",
                           risk_run_id=2, strategy="manual", legs=[dict(leg)],
                           spot=5600.0)
@@ -286,6 +318,61 @@ def test_book_hedge_continues_leg_numbering_per_run(session):
     other_ids = [session.get(Position, pid).source_trade_id
                  for pid in other["position_ids"]]
     assert other_ids == ["HEDGE:2:1"]
+
+
+def test_booking_claim_blocks_distinct_proposals_for_same_risk_underlying(session):
+    """A zero-leg first booking leaves the book unchanged, so only the DB claim
+    can stop a concurrently minted proposal for the same risk boundary."""
+    pf = Portfolio(name="atomic claim", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    _fresh_run(session, pf.id, 22)
+
+    first_artifact, first_state = _source_artifact(
+        session,
+        portfolio_id=pf.id,
+        risk_run_id=22,
+        underlying="000905.SH",
+        strategy="manual",
+        spot=5600.0,
+        legs=[],
+    )
+    second_artifact, second_state = _source_artifact(
+        session,
+        portfolio_id=pf.id,
+        risk_run_id=22,
+        underlying="000905.SH",
+        strategy="manual",
+        spot=5600.0,
+        legs=[],
+    )
+
+    def _book_from(artifact, state):
+        source = json.loads(artifact.payload["content"])
+        return hs.book_hedge(
+            session,
+            portfolio_id=pf.id,
+            underlying="000905.SH",
+            risk_run_id=22,
+            strategy="manual",
+            legs=[],
+            spot=5600.0,
+            source_artifact_id=artifact.id,
+            workflow_id=state.domain_workflow_id,
+            artifact_generated_at=artifact.payload["generated_at"],
+            valuation_as_of=source["valuation_as_of"],
+            risk_generated_at=source["risk_generated_at"],
+            expires_at=source["expires_at"],
+        )
+
+    first = _book_from(first_artifact, first_state)
+    second = _book_from(second_artifact, second_state)
+
+    assert first["status"] == "booked"
+    assert first["hedge_booking_claim_id"] > 0
+    assert second["status"] == "stale_hedge_proposal"
+    assert "risk_underlying_already_hedged" in second["reasons"]
+    assert session.query(HedgeBookingClaim).count() == 1
 
 
 def test_book_hedge_rejects_missing_risk_run(session):
@@ -305,6 +392,26 @@ def test_book_hedge_rejects_missing_risk_run(session):
 
     assert out["status"] == "stale_hedge_proposal"
     assert "risk_run_not_found" in out["reasons"]
+
+
+def test_book_hedge_rejects_missing_source_artifact_for_fresh_risk(session):
+    pf = Portfolio(name="missing source evidence", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    _fresh_run(session, pf.id, 69)
+
+    out = hs.book_hedge(
+        session,
+        portfolio_id=pf.id,
+        underlying="000905.SH",
+        risk_run_id=69,
+        strategy="manual",
+        legs=[],
+        spot=5600.0,
+    )
+
+    assert out["status"] == "stale_hedge_proposal"
+    assert "source_artifact_required" in out["reasons"]
 
 
 def test_book_hedge_rejects_superseded_risk_run(session):
@@ -565,6 +672,7 @@ def test_book_hedge_rejects_source_artifact_from_another_workflow(session):
         legs=[],
         tool_name="get_hedgeable_underlyings",
     )
+    assert hs.desk_hedge_artifact_workflow_id(session, artifact.id) is None
     other_thread = AgentThread(title="different workflow", character="trader")
     session.add(other_thread)
     session.flush()

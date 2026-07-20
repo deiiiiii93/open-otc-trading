@@ -144,6 +144,9 @@ def _execute_batch_pricing_task(
             session,
             position_ids=run.resolved_position_ids,
         )
+        from .hedging_greeks import resolved_position_set_hash
+
+        frozen_position_set_hash = resolved_position_set_hash(resolved)
         position_ids = [p.id for p in resolved]
         run.resolved_position_ids = position_ids
         total = len(position_ids)
@@ -217,6 +220,7 @@ def _execute_batch_pricing_task(
         # latest-risk consumers (agent get_latest_risk_run, hedging freshness)
         # can distinguish a historical profile-dated run from current risk.
         metrics["valuation_as_of"] = valuation_as_of.isoformat()
+        metrics["position_set_hash"] = frozen_position_set_hash
         status = _risk_status_from_metrics(metrics)
         run.metrics = metrics
         run.status = status

@@ -61,6 +61,7 @@ def _tree_node(row: dict[str, Any]) -> dict[str, Any]:
 
 def build_tracing_router(
     get_store: Callable[[], TraceStore] | None = None,
+    thread_guard: Callable[[int], None] | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/tracing", tags=["tracing"])
 
@@ -87,6 +88,8 @@ def build_tracing_router(
     def thread_traces(
         thread_id: int, limit: int = 50, offset: int = 0
     ) -> dict[str, Any]:
+        if thread_guard is not None:
+            thread_guard(thread_id)
         rows = _store().list_thread_traces(thread_id, limit=limit, offset=offset)
         return {"thread_id": thread_id, "traces": [_summary(r) for r in rows]}
 

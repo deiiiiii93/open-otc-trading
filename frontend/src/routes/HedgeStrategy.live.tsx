@@ -194,12 +194,30 @@ export function HedgeStrategyLive(props: {
   const bookProposal = async (allowInfeasible: boolean) => {
     if (!proposal || !proposal.legs) return
     if (!allowInfeasible && proposal.status !== 'feasible') return
+    if (
+      proposal.source_artifact_id == null ||
+      !proposal.artifact_generated_at ||
+      !proposal.valuation_as_of ||
+      !proposal.risk_generated_at ||
+      !proposal.expires_at
+    ) {
+      setBookingResult({
+        kind: 'error',
+        message: 'Hedge proposal is missing immutable booking evidence. Solve again before booking.',
+      })
+      return
+    }
     setLoading(true)
     try {
       const res = await api<HedgeBookResponse>('/api/hedging/book', {
         method: 'POST',
         body: JSON.stringify({
           portfolio_id: portfolioId, underlying, risk_run_id: proposal.risk_run_id,
+          source_artifact_id: proposal.source_artifact_id,
+          artifact_generated_at: proposal.artifact_generated_at,
+          valuation_as_of: proposal.valuation_as_of,
+          risk_generated_at: proposal.risk_generated_at,
+          expires_at: proposal.expires_at,
           strategy, spot: proposal.spot, legs: proposal.legs,
         }),
       })

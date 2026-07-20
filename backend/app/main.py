@@ -274,6 +274,7 @@ from .services.task_runner import (
     mark_stale_tasks_failed,
     submit_async_task,
 )
+from .services.thread_access import get_public_thread, public_thread_query
 from .services.try_solve import (
     export_try_solve_workbook,
     import_try_solve_workbook,
@@ -813,7 +814,7 @@ def create_app(
     @app.get("/api/chat/threads", response_model=list[AgentThreadOut])
     def list_threads(session: Session = Depends(get_db)):
         return (
-            session.query(AgentThread)
+            public_thread_query(session)
             .options(selectinload(AgentThread.messages))
             .order_by(AgentThread.updated_at.desc())
             .all()
@@ -821,7 +822,7 @@ def create_app(
 
     def _get_thread_or_404(thread_id: int, session: Session) -> AgentThread:
         thread = (
-            session.query(AgentThread)
+            public_thread_query(session)
             .options(selectinload(AgentThread.messages))
             .filter(AgentThread.id == thread_id)
             .one_or_none()
@@ -829,6 +830,11 @@ def create_app(
         if thread is None:
             raise HTTPException(status_code=404, detail="Thread not found")
         return thread
+
+    def _require_public_thread_id(thread_id: int | str) -> None:
+        with database.SessionLocal() as guard_session:
+            if get_public_thread(guard_session, thread_id) is None:
+                raise HTTPException(status_code=404, detail="Thread not found")
 
     def _clean_thread_title(title: str) -> str:
         cleaned = title.strip()
@@ -935,9 +941,7 @@ def create_app(
         payload: AgentMessageCreate,
         session: Session = Depends(get_db),
     ):
-        thread = session.get(AgentThread, thread_id)
-        if not thread:
-            raise HTTPException(status_code=404, detail="Thread not found")
+        thread = _get_thread_or_404(thread_id, session)
 
         resolved_selection = active_agent_service.normalize_model_selection(
             payload.model.model_dump() if payload.model else None
@@ -1021,9 +1025,7 @@ def create_app(
             validate_workflow_args,
         )
 
-        thread = session.get(AgentThread, thread_id)
-        if not thread:
-            raise HTTPException(status_code=404, detail="Thread not found")
+        thread = _get_thread_or_404(thread_id, session)
         wf = get_desk_workflow(session, slug)
         if wf is None:
             raise HTTPException(status_code=404, detail="Workflow not found")
@@ -1059,6 +1061,7 @@ def create_app(
         session: Session,
     ) -> AgentMessage:
         """Thin wrapper: delegates to service layer with actor='desk_user'."""
+        _get_thread_or_404(thread_id, session)
         try:
             return active_agent_service.resume_pending_action(
                 thread_id=thread_id,
@@ -1127,6 +1130,7 @@ def create_app(
         from .models import TaskRun as _TaskRun
         from .models import TaskStatus as _TaskStatus
 
+        _get_thread_or_404(thread_id, session)
         active_statuses = (_TaskStatus.QUEUED.value, _TaskStatus.RUNNING.value)
         q = session.query(_TaskRun).filter(
             _TaskRun.kind == "async_agent",
@@ -3237,17 +3241,25 @@ def create_app(
     @app.post("/api/hedging/solve")
     def hedging_solve(payload: HedgeSolveRequest, session: Session = Depends(get_db)):
         from .services.domains import hedging_strategy as hs
-        return hs.solve_hedge(session, portfolio_id=payload.portfolio_id,
-                              underlying=payload.underlying, strategy=payload.strategy,
-                              legs=payload.legs, bands=payload.bands)
+        out = hs.solve_hedge(session, portfolio_id=payload.portfolio_id,
+                             underlying=payload.underlying, strategy=payload.strategy,
+                             legs=payload.legs, bands=payload.bands)
+        out = hs.capture_desk_hedge_proposal(session, out)
+        if out.get("source_artifact_id") is not None:
+            session.commit()
+        return out
 
     @app.post("/api/hedging/book")
     def hedging_book(payload: HedgeBookRequest, session: Session = Depends(get_db)):
         from .services.domains import hedging_strategy as hs
         try:
+            workflow_id = hs.desk_hedge_artifact_workflow_id(
+                session, payload.source_artifact_id
+            )
             out = hs.book_hedge(session, portfolio_id=payload.portfolio_id,
                                 underlying=payload.underlying, risk_run_id=payload.risk_run_id,
                                 source_artifact_id=payload.source_artifact_id,
+                                workflow_id=workflow_id,
                                 artifact_generated_at=payload.artifact_generated_at,
                                 valuation_as_of=payload.valuation_as_of,
                                 risk_generated_at=payload.risk_generated_at,
@@ -3256,6 +3268,9 @@ def create_app(
         except Exception:
             session.rollback()
             raise
+        if out.get("status") != "booked":
+            session.rollback()
+            raise HTTPException(status_code=409, detail=out)
         session.commit()
         return out
 
@@ -4083,7 +4098,7 @@ def create_app(
     app.include_router(build_audit_router())
     app.include_router(build_memory_router())
     app.include_router(build_skills_router(active_agent_service))
-    app.include_router(build_tracing_router())
+    app.include_router(build_tracing_router(thread_guard=_require_public_thread_id))
     app.include_router(build_arena_router(settings=active_settings))
     app.include_router(build_desk_workflows_router())
     app.include_router(
@@ -4100,7 +4115,9 @@ def create_app(
         contract_backend=ThreadColumnBackend(database.SessionLocal, "goal_contract"),
     )
     active_agent_service.goal_service = goal_service
-    app.include_router(build_goal_router(goal_service))
+    app.include_router(
+        build_goal_router(goal_service, thread_guard=_require_public_thread_id)
+    )
     return app
 
 

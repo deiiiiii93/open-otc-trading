@@ -260,10 +260,11 @@ function ThreadRail({
   const filteredThreads = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return threads.filter((thread) => {
-      // Builder threads live on the Workflows builder surface, never here.
+      // Builder threads live on the Workflows builder surface, and
+      // hedge-evidence threads are server-owned storage. Neither belongs here.
       // Arena threads stay behind the toggle. Everything else (desk threads,
       // and legacy rows with no source) shows normally.
-      if (thread.source === 'workflow_builder') return false;
+      if (thread.source === 'workflow_builder' || thread.source === 'hedge_evidence') return false;
       if (!showArena && thread.source === 'arena') return false;
       if (!query) return true;
       const haystack = [

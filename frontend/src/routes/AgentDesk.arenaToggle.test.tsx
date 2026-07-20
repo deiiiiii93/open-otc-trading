@@ -35,17 +35,20 @@ describe('AgentDesk arena thread toggle', () => {
     expect(screen.getByText('Arena run')).toBeInTheDocument();
   });
 
-  it('never shows workflow_builder threads, even with the arena toggle on', () => {
+  it('never shows internal workflow or hedge-evidence threads', () => {
     const threads = [
       thread(1, 'Desk one'),
       thread(2, 'Build chat', 'workflow_builder'),
+      thread(3, 'Hedge proposal evidence', 'hedge_evidence'),
     ];
     render(<AgentDesk {...baseProps} threads={threads} />);
 
     expect(screen.getByText('Desk one')).toBeInTheDocument();
     expect(screen.queryByText('Build chat')).not.toBeInTheDocument();
+    expect(screen.queryByText('Hedge proposal evidence')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText(/show arena threads/i));
     expect(screen.queryByText('Build chat')).not.toBeInTheDocument();
+    expect(screen.queryByText('Hedge proposal evidence')).not.toBeInTheDocument();
   });
 });

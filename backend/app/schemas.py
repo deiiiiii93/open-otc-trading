@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.services.currency_codes import ISO_4217_CODES, normalize_currency
+from app.services.thread_access import is_reserved_internal_thread_source
 from app.services.underlyings import resolve_underlying_currency
 
 
@@ -15,6 +16,13 @@ class AgentThreadCreate(BaseModel):
     # "desk" = normal Agent Desk thread; "workflow_builder" = isolated builder
     # conversation, hidden from the Agent Desk thread list.
     source: str = "desk"
+
+    @field_validator("source")
+    @classmethod
+    def _reject_reserved_internal_source(cls, source: str) -> str:
+        if is_reserved_internal_thread_source(source):
+            raise ValueError("Thread source is reserved for internal server use")
+        return source
 
 
 class AgentThreadUpdate(BaseModel):
@@ -1554,11 +1562,11 @@ class HedgeBookRequest(BaseModel):
     portfolio_id: int
     underlying: str
     risk_run_id: int
-    source_artifact_id: int | None = None
-    artifact_generated_at: str | None = None
-    valuation_as_of: str | None = None
-    risk_generated_at: str | None = None
-    expires_at: str | None = None
+    source_artifact_id: int
+    artifact_generated_at: str
+    valuation_as_of: str
+    risk_generated_at: str
+    expires_at: str
     strategy: str
     spot: float
     legs: list[dict[str, Any]]

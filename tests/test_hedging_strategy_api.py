@@ -3,7 +3,17 @@ from datetime import date, datetime
 
 import pytest
 
-from app.models import (HedgeMapEntry, Instrument, Portfolio, RiskRun, Underlying)
+from app.models import (
+    AgentThread,
+    HedgeMapEntry,
+    Instrument,
+    Portfolio,
+    Position,
+    RiskRun,
+    SessionArtifact,
+    Underlying,
+    Workflow,
+)
 from app.services.quotes import record_quote
 
 
@@ -46,6 +56,18 @@ def test_solve_endpoint(client, session):
     body = r.json()
     assert body["status"] == "feasible"
     assert body["legs"][0]["quantity"] == -1
+    assert body["source_artifact_id"] > 0
+    assert body["artifact_generated_at"]
+    artifact = session.get(SessionArtifact, body["source_artifact_id"])
+    assert artifact is not None
+    assert artifact.pinned is True
+    workflow = session.get(Workflow, artifact.workflow_id)
+    evidence_thread = session.get(AgentThread, workflow.thread_id)
+    assert evidence_thread.source == "hedge_evidence"
+    again = client.post("/api/hedging/solve", json={
+        "portfolio_id": pf.id, "underlying": "000905.SH", "strategy": "delta_neutral"})
+    assert again.status_code == 200
+    assert session.query(AgentThread).filter_by(source="hedge_evidence").count() == 1
 
 
 def test_solve_endpoint_explains_integer_lot_band_infeasibility(client, session):
@@ -89,16 +111,76 @@ def test_solve_rejects_unknown_strategy(client, session):
     assert r.status_code == 422
 
 
-def test_book_endpoint(client, session):
+def test_book_endpoint_rejects_missing_evidence(client, session):
     pf, u, inst = _seed(session)
     r = client.post("/api/hedging/book", json={
-        "portfolio_id": pf.id, "underlying": "000905.SH", "risk_run_id": 1,
+        "portfolio_id": pf.id, "underlying": "000905.SH",
+        "risk_run_id": session.query(RiskRun).filter_by(portfolio_id=pf.id).one().id,
         "strategy": "delta_neutral", "spot": 5600.0,
         "legs": [{"instrument_id": inst.id, "contract_code": "IC2406", "exchange": "CFFEX",
                   "family": "index_future", "instrument_type": "future",
                   "multiplier": 200.0, "quantity": -1}]})
-    assert r.status_code == 200
-    assert len(r.json()["position_ids"]) == 1
+    assert r.status_code == 422
+
+
+def test_solve_then_book_endpoint_uses_server_issued_evidence(client, session):
+    pf, _u, _inst = _seed(session)
+    solved = client.post("/api/hedging/solve", json={
+        "portfolio_id": pf.id,
+        "underlying": "000905.SH",
+        "strategy": "delta_neutral",
+    })
+    assert solved.status_code == 200
+    proposal = solved.json()
+
+    booked = client.post("/api/hedging/book", json={
+        "portfolio_id": proposal["portfolio_id"],
+        "underlying": proposal["underlying"],
+        "risk_run_id": proposal["risk_run_id"],
+        "source_artifact_id": proposal["source_artifact_id"],
+        "artifact_generated_at": proposal["artifact_generated_at"],
+        "valuation_as_of": proposal["valuation_as_of"],
+        "risk_generated_at": proposal["risk_generated_at"],
+        "expires_at": proposal["expires_at"],
+        "strategy": proposal["strategy"],
+        "spot": proposal["spot"],
+        "legs": proposal["legs"],
+    })
+
+    assert booked.status_code == 200
+    assert booked.json()["status"] == "booked"
+    assert booked.json()["source_artifact_id"] == proposal["source_artifact_id"]
+    assert len(booked.json()["position_ids"]) == 1
+
+
+def test_book_endpoint_returns_conflict_for_tampered_evidence(client, session):
+    pf, _u, _inst = _seed(session)
+    solved = client.post("/api/hedging/solve", json={
+        "portfolio_id": pf.id,
+        "underlying": "000905.SH",
+        "strategy": "delta_neutral",
+    })
+    proposal = solved.json()
+
+    rejected = client.post("/api/hedging/book", json={
+        "portfolio_id": proposal["portfolio_id"],
+        "underlying": proposal["underlying"],
+        "risk_run_id": proposal["risk_run_id"],
+        "source_artifact_id": proposal["source_artifact_id"],
+        "artifact_generated_at": "2026-01-01T00:00:00Z",
+        "valuation_as_of": proposal["valuation_as_of"],
+        "risk_generated_at": proposal["risk_generated_at"],
+        "expires_at": proposal["expires_at"],
+        "strategy": proposal["strategy"],
+        "spot": proposal["spot"],
+        "legs": proposal["legs"],
+    })
+
+    assert rejected.status_code == 409
+    detail = rejected.json()["detail"]
+    assert detail["status"] == "stale_hedge_proposal"
+    assert "approved_timestamp_mismatch" in detail["reasons"]
+    assert session.query(Position).count() == 0
 
 
 def test_bands_get_and_put(client, session):

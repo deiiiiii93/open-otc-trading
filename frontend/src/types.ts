@@ -1126,6 +1126,12 @@ export interface HedgeProposal {
   underlying: string
   strategy: string
   risk_run_id?: number
+  /** Immutable server-issued evidence required to book feasible/infeasible proposals. */
+  source_artifact_id?: number
+  artifact_generated_at?: string
+  valuation_as_of?: string
+  risk_generated_at?: string
+  expires_at?: string
   spot?: number
   targets?: { delta: number; gamma: number; vega: number }
   bands?: { delta: number; gamma: number; vega: number }

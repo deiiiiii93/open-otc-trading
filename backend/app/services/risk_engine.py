@@ -450,6 +450,9 @@ def run_portfolio_risk(
         pricing_failures=pricing_failures,
         pricing_diagnostics=pricing_diagnostics,
     )
+    from .hedging_greeks import resolved_position_set_hash
+
+    metrics["position_set_hash"] = resolved_position_set_hash(resolved)
     status = _risk_status_from_metrics(metrics)
     run = RiskRun(
         portfolio_id=portfolio.id,
