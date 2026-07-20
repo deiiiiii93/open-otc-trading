@@ -64,6 +64,11 @@ class _EnvironmentSettings(BaseSettings):
             "OPEN_OTC_RISK_PARALLEL_WORKERS", "RISK_PARALLEL_WORKERS"
         ),
     )
+    hedge_risk_max_age_seconds: int = Field(
+        900,
+        ge=1,
+        validation_alias="OPEN_OTC_HEDGE_RISK_MAX_AGE_SECONDS",
+    )
     async_task_workers: int = Field(
         default_factory=_default_async_task_workers,
         validation_alias=AliasChoices(
@@ -228,6 +233,9 @@ class Settings:
     risk_parallel_workers: int = field(
         default_factory=lambda: _env_value("risk_parallel_workers")
     )
+    hedge_risk_max_age_seconds: int = field(
+        default_factory=lambda: _env_value("hedge_risk_max_age_seconds")
+    )
     async_task_workers: int = field(
         default_factory=lambda: _env_value("async_task_workers")
     )
@@ -320,6 +328,12 @@ class Settings:
         object.__setattr__(self, "agent_channels_file", Path(self.agent_channels_file))
         object.__setattr__(
             self, "risk_parallel_workers", max(1, int(self.risk_parallel_workers))
+        )
+        hedge_risk_max_age_seconds = int(self.hedge_risk_max_age_seconds)
+        if hedge_risk_max_age_seconds < 1:
+            raise ValueError("hedge_risk_max_age_seconds must be positive")
+        object.__setattr__(
+            self, "hedge_risk_max_age_seconds", hedge_risk_max_age_seconds
         )
         object.__setattr__(
             self, "async_task_workers", max(1, int(self.async_task_workers))

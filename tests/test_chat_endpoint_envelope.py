@@ -341,7 +341,12 @@ def test_hitl_resume_uses_task_scoped_source_meta_for_workflow_routing(
     assert configurable["workflow_id"] == source_meta["workflow_id"]
     assert configurable["envelope"] == "desk_workflow"
     assert configurable["confirmed_cost_preview"] is True
-    assert configurable["tools_scope"] == ["propose_reply_options"]
+    assert configurable["tools_scope"] == [
+        "inspect_artifact",
+        "list_artifacts",
+        "propose_reply_options",
+        "read_artifact",
+    ]
 
     with database.SessionLocal() as session:
         task = session.get(AgentTask, task_id)

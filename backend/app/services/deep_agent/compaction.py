@@ -1,10 +1,14 @@
 """Ledger-aware compaction controls for task-scoped DeepAgents sessions."""
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+
+from .cas_backend import ARTIFACT_REFERENCE_PROVENANCE
 
 
 def _summarization_middleware_base() -> type:
@@ -48,6 +52,11 @@ Every substantive factual sentence in the summary must end with an existing
 ledger/tool citation: [artifact:N] or [tool_call:id]. If a factual statement has no
 such citation, omit it or rewrite it as an unresolved note.
 
+Do not restate prices, Greeks, positions, run results, report figures, database rows,
+or other ground-truth payloads. Refer only to their supplied artifact capsule. The
+runtime appends the authoritative artifact manifest after your narrative summary;
+you must not recreate, edit, or extend that manifest.
+
 Preserve pending HITL state, user intent, blocker state, and next action. Do not
 invent artifact ids, tool_call ids, prices, risk metrics, trade ids, dates, or
 approval status.
@@ -73,13 +82,17 @@ def select_compaction_batch(
     *,
     keep_recent: int = 6,
     max_messages: int = 8,
+    ground_truth_tool_names: set[str] | frozenset[str] = frozenset(),
 ) -> CompactionBatch | None:
     """Return the first consecutive compactable batch outside the recent tail."""
     limit = max(0, len(messages) - keep_recent)
     start: int | None = None
     end: int | None = None
     for index, message in enumerate(messages[:limit]):
-        if is_compactable_message(message):
+        if is_compactable_message(
+            message,
+            ground_truth_tool_names=ground_truth_tool_names,
+        ):
             if start is None:
                 start = index
             end = index + 1
@@ -94,13 +107,113 @@ def select_compaction_batch(
     return CompactionBatch(start=start, end=end)
 
 
-def is_compactable_message(message: BaseMessage) -> bool:
+def is_compactable_message(
+    message: BaseMessage,
+    *,
+    ground_truth_tool_names: set[str] | frozenset[str] = frozenset(),
+) -> bool:
     if isinstance(message, ToolMessage):
         tool_name = _message_tool_name(message)
-        return tool_name not in PERSISTED_TOOL_NAMES
+        if _message_artifact_ref(message) is not None:
+            return True
+        return tool_name not in (set(ground_truth_tool_names) | PERSISTED_TOOL_NAMES)
     if isinstance(message, AIMessage):
         return _message_artifact_kind(message) not in PROTECTED_ARTIFACT_KINDS
     return True
+
+
+_ARTIFACT_REF_REQUIRED = frozenset(
+    {
+        "artifact_id",
+        "kind",
+        "content_hash",
+        "tool_call_id",
+        "generated_at",
+        "locator",
+    }
+)
+
+
+def _valid_artifact_ref(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict) or not _ARTIFACT_REF_REQUIRED <= value.keys():
+        return None
+    if not isinstance(value.get("artifact_id"), int):
+        return None
+    if not str(value.get("content_hash") or "").startswith("sha256:"):
+        return None
+    if not str(value.get("generated_at") or ""):
+        return None
+    if not str(value.get("locator") or ""):
+        return None
+    return dict(value)
+
+
+def _message_artifact_ref(message: BaseMessage) -> dict[str, Any] | None:
+    metadata = getattr(message, "additional_kwargs", {}) or {}
+    if metadata.get("artifact_ref_provenance") != ARTIFACT_REFERENCE_PROVENANCE:
+        return None
+    return _valid_artifact_ref(metadata.get("artifact_ref"))
+
+
+def project_compaction_messages(
+    messages: list[BaseMessage],
+) -> tuple[list[BaseMessage], list[dict[str, Any]]]:
+    """Replace raw evidence bodies with exact server-generated reference capsules."""
+    projected: list[BaseMessage] = []
+    by_id: dict[int, dict[str, Any]] = {}
+    for message in messages:
+        reference = _message_artifact_ref(message)
+        if not isinstance(message, ToolMessage) or reference is None:
+            projected.append(message)
+            continue
+        by_id.setdefault(int(reference["artifact_id"]), reference)
+        capsule = json.dumps(
+            reference,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        projected.append(
+            message.model_copy(update={"content": f"<artifact_ref>{capsule}</artifact_ref>"})
+        )
+    return projected, [by_id[key] for key in sorted(by_id)]
+
+
+def append_artifact_manifest(
+    summary: str,
+    references: list[dict[str, Any]],
+) -> str:
+    if not references:
+        return summary
+    # Artifact tags are a server-owned channel. Remove any model-authored copy
+    # before appending the one canonical manifest so a prompt/model cannot spoof
+    # an executable reference inside narrative text.
+    narrative = re.sub(
+        r"<artifact_(?:manifest|ref)\b[^>]*>.*?</artifact_(?:manifest|ref)>",
+        "",
+        summary,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    narrative = re.sub(
+        r"</?artifact_(?:manifest|ref)\b[^>]*>",
+        "",
+        narrative,
+        flags=re.IGNORECASE,
+    ).strip()
+    manifest = json.dumps(
+        references,
+        ensure_ascii=False,
+        sort_keys=True,
+        indent=2,
+        default=str,
+    )
+    return (
+        f"{narrative}\n\n"
+        "<artifact_manifest>\n"
+        f"{manifest}\n"
+        "</artifact_manifest>"
+    )
 
 
 def _message_tool_name(message: BaseMessage) -> str | None:
@@ -150,10 +263,12 @@ class LedgerScopedCompactionMiddleware(_summarization_middleware_base()):
         trigger: Any = ("fraction", 0.7),
         keep_recent: int = 6,
         max_messages: int = 8,
+        ground_truth_tool_names: set[str] | frozenset[str] = frozenset(),
     ) -> None:
         self.keep_recent = keep_recent
         self.max_messages = max_messages
         self.requested_trigger = trigger
+        self.ground_truth_tool_names = frozenset(ground_truth_tool_names)
         effective_trigger = (
             DEFAULT_TOKEN_TRIGGER_FALLBACK
             if _requires_model_profile(trigger) and not _has_model_profile(model)
@@ -178,10 +293,23 @@ class LedgerScopedCompactionMiddleware(_summarization_middleware_base()):
             list(messages[:deepagents_cutoff]),
             keep_recent=0,
             max_messages=self.max_messages,
+            ground_truth_tool_names=self.ground_truth_tool_names,
         )
         if batch is None or batch.start != 0:
             return 0
         return batch.end
+
+    def _create_summary(self, messages_to_summarize: list[BaseMessage]) -> str:
+        projected, references = project_compaction_messages(messages_to_summarize)
+        summary = super()._create_summary(projected)
+        return append_artifact_manifest(summary, references)
+
+    async def _acreate_summary(
+        self, messages_to_summarize: list[BaseMessage]
+    ) -> str:
+        projected, references = project_compaction_messages(messages_to_summarize)
+        summary = await super()._acreate_summary(projected)
+        return append_artifact_manifest(summary, references)
 
 
 def _requires_model_profile(trigger: Any) -> bool:

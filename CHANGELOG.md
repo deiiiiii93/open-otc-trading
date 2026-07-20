@@ -8,6 +8,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Long-agent ground truth now survives compaction by immutable reference, with
+  time-safe hedge execution.** Every server-classified deterministic/domain tool result
+  is captured exactly into the content-addressed artifact ledger before it can be
+  compacted; checkpoint history retains an id/hash/tool/timestamp capsule and a
+  server-rendered manifest instead of an LLM rewrite. New workflow-scoped
+  `list_artifacts` / `inspect_artifact` / `read_artifact` tools provide deterministic
+  JSON-pointer and Markdown-section disclosure with no embeddings or semantic RAG.
+  Hedge risk now has an intraday TTL (`OPEN_OTC_HEDGE_RISK_MAX_AGE_SECONDS`, default
+  900), explicit valuation/risk/artifact/expiry timestamps, and a position-set
+  fingerprint. The `book_hedge` approval card displays the immutable source id and
+  timestamps; execution fails closed on stale/superseded risk, expiry, cross-workflow
+  evidence, payload/timestamp drift, portfolio changes, or modified solver legs.
+- **A deterministic compaction A/B gate now proves the claimed advantage over the
+  installed DeepAgents/LangChain default.** `scripts/compaction_ab_benchmark.py` sends
+  identical hashed OTC hedge traces through both middleware implementations with the
+  same controlled lossy summary, gives the default its rendered conversation-history
+  fallback, and scores exact evidence/timestamp recovery, safe continuation decisions,
+  raw ground-truth exposure, retained context, targeted-read bytes, and latency. It emits
+  versioned-schema JSON plus a human-readable Markdown report, uses predeclared
+  metric-by-metric pass criteria, reports the manifest-size tradeoff, and requires no
+  model credentials, database, or network. The pytest gate is reusable for later
+  compaction cases. A `--live` supplement runs the same channel/model/configuration on
+  both arms, alternates order, performs one real summary plus continuation call per arm,
+  grants the default full-history recovery and the candidate targeted proposal plus
+  current-position artifact reads,
+  and retains every prompt, response, timestamp, token count, provider error, and
+  deterministic hedge-action grade in a separate evidence artifact. Both report modes
+  now fingerprint Python/platform, `pyproject.toml`, `uv.lock`, the core agent stack,
+  and the complete installed-distribution list; a lock/version mismatch is a failing
+  predeclared criterion rather than hidden environment drift.
 - **Products: `get_product_term_schema(family)` tool — a fillable legal term-sheet
   template.** Returns builder-facing field names, types, required/optional, defaults, and
   **legal enum values** per product family so the agent fills `build_product` correctly on

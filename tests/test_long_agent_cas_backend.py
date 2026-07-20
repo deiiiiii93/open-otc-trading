@@ -191,6 +191,44 @@ def test_cas_gc_keeps_load_bearing_artifact_blobs(session, settings):
     assert session.query(DomainEvent).filter_by(kind="artifact_gc'd").count() == 0
 
 
+def test_cas_gc_never_evicts_exact_tool_result_even_when_superseded(
+    session, settings
+):
+    from app.services.deep_agent.cas_backend import sweep_cas_blobs
+
+    thread = AgentThread(title="cas-ground-truth-retain", character="trader")
+    session.add(thread)
+    session.flush()
+    state = ensure_thread_workflow_state(session, thread.id)
+    root = settings.artifact_dir / "blobs"
+    old_hash = _write_blob(root, '{"risk_run_id":1}')
+    new_hash = _write_blob(root, '{"risk_run_id":2}')
+    writer = LedgerWriter(session)
+    old = writer.write_artifact(
+        workflow_id=state.domain_workflow_id,
+        session_id=state.orchestrator_session_id,
+        kind="tool_result",
+        title="old exact result",
+        payload={"blob_hash": old_hash, "size": 17, "blob_state": "live"},
+    )
+    newer = writer.write_artifact(
+        workflow_id=state.domain_workflow_id,
+        session_id=state.orchestrator_session_id,
+        kind="tool_result",
+        title="new exact result",
+        payload={"blob_hash": new_hash, "size": 17, "blob_state": "live"},
+    )
+    old.superseded_by = newer.id
+    old.created_at = utcnow() - timedelta(days=365)
+    session.commit()
+
+    result = sweep_cas_blobs(root_dir=root, now=utcnow())
+
+    assert old.id in result.retained_artifact_ids
+    assert old.id not in result.evicted_artifact_ids
+    assert _blob_path(root, old_hash).exists()
+
+
 def test_cas_gc_removes_old_orphan_blobs(session, settings):
     from app.services.deep_agent.cas_backend import sweep_cas_blobs
 

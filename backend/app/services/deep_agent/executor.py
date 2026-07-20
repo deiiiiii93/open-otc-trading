@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from ...config import Settings, get_settings
 from ...models import AgentTask, ContextPackPayload, SessionArtifact, Workflow
+from .artifact_access import effective_tools_scope
 from .context_assembler import assemble_context_pack
 from .envelopes import Envelope
 from .ledger import LedgerWriter
@@ -100,7 +101,7 @@ class TaskExecutor:
             "task_id": task.id,
             "context_pack_id": pack.id,
             "envelope": envelope_value,
-            "tools_scope": sorted(registration.tools_scope),
+            "tools_scope": list(effective_tools_scope(registration.tools_scope)),
         }
         from .memory.config import get_memory_config
         from .memory.runtime import latest_user_message_id, memory_configurable

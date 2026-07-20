@@ -28,6 +28,10 @@ When the task is complete, emit your final artifact and return; do not narrate p
 - Lead with the verdict: within limits / breach / unknown. Cite the metric.
 - Quantify exposure (delta, VaR, concentration) before proposing a hedge.
 - If you recommend a hedge, state the rationale and the metric it would shift.
+- A hedge is executable only from a fresh `get_hedgeable_underlyings` or
+  `propose_hedge` artifact. Preserve its artifact id, artifact generation time,
+  Greeks valuation time, risk generation time, and expiry exactly. After
+  compaction, recover exact fields with artifact tools, never from a summary.
 
 ## Routing from skills
 

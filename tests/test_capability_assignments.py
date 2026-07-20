@@ -12,7 +12,7 @@ from app.services.deep_agent.envelopes import ToolGroup
 from app.tools import QUANT_AGENT_TOOLS
 
 
-def test_quant_agent_tools_count_unchanged():
+def test_quant_agent_tools_count_is_intentional():
     """Keep the exposed tool registry intentional as new gated tools land."""
     # 79 == 80 prior - 1: price_positions and run_risk were unified into the
     # single run_batch_pricing tool (one queued run writes valuations + risk).
@@ -28,7 +28,8 @@ def test_quant_agent_tools_count_unchanged():
     # +1 contract-grounded completeness checker (check_term_completeness).
     # +1 structured-answer recorder (record_answer) for arena flagship scoring.
     # +1 term-schema surface (get_product_term_schema) — legal fields/enums before build.
-    assert len(QUANT_AGENT_TOOLS) == 99
+    # +3 deterministic artifact disclosure tools (list, inspect, targeted read).
+    assert len(QUANT_AGENT_TOOLS) == 102
 
 
 def test_record_answer_is_domain_read():
@@ -64,6 +65,9 @@ def test_capability_group_is_a_valid_tool_group():
         ("run_greeks_landscape", ToolGroup.DOMAIN_WRITE),
         ("get_greeks_landscape_run", ToolGroup.DOMAIN_READ),
         ("get_latest_greeks_landscape_run", ToolGroup.DOMAIN_READ),
+        ("list_artifacts", ToolGroup.DOMAIN_READ),
+        ("inspect_artifact", ToolGroup.DOMAIN_READ),
+        ("read_artifact", ToolGroup.DOMAIN_READ),
         ("calculate_risk", ToolGroup.DOMAIN_READ),
         ("close_position", ToolGroup.DOMAIN_WRITE),
         ("settle_position", ToolGroup.DOMAIN_WRITE),

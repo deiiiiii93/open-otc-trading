@@ -184,7 +184,19 @@ def test_context_assembler_cites_dependency_outputs_and_pinned_artifacts(session
     assert payload["cited_artifact_ids"] == sorted(
         [dep_artifact.id, pinned_artifact.id]
     )
-    assert payload["tools_scope"] == ["get_positions"]
+    assert [ref["artifact_id"] for ref in payload["artifact_refs"]] == sorted(
+        [dep_artifact.id, pinned_artifact.id]
+    )
+    assert {ref["kind"] for ref in payload["artifact_refs"]} == {
+        "deterministic_query",
+        "finding",
+    }
+    assert payload["tools_scope"] == [
+        "get_positions",
+        "inspect_artifact",
+        "list_artifacts",
+        "read_artifact",
+    ]
     assert payload["canonical_snapshot_ids"]["scope_kind"] == "ad_hoc"
     assert payload["canonical_snapshot_ids"]["captured_at"]
 

@@ -1,10 +1,105 @@
 # tests/test_hedging_book.py
+import json
+from datetime import date, datetime, timedelta
+
 import pytest
 
-from datetime import date
-
-from app.models import Instrument, Portfolio, Position
+from app.models import AgentThread, Instrument, Portfolio, Position, RiskRun
+from app.services.deep_agent.ledger import LedgerWriter
+from app.services.deep_agent.workflow_state import ensure_thread_workflow_state
 from app.services.domains import hedging_strategy as hs
+
+
+def _fresh_run(session, portfolio_id: int, risk_run_id: int, *, spot: float = 5600.0):
+    run = session.get(RiskRun, risk_run_id)
+    if run is None:
+        run = RiskRun(
+            id=risk_run_id,
+            portfolio_id=portfolio_id,
+            status="completed",
+            metrics={
+                "valuation_as_of": datetime.utcnow().isoformat(),
+                "positions": [
+                    {
+                        "underlying": "000905.SH",
+                        "delta_cash": 100.0,
+                        "gamma_cash": 0.0,
+                        "vega": 0.0,
+                        "spot": spot,
+                        "greeks_ok": True,
+                    }
+                ],
+            },
+        )
+        session.add(run)
+        session.flush()
+    return run
+
+
+def _book(session, **kwargs):
+    _fresh_run(
+        session,
+        kwargs["portfolio_id"],
+        kwargs["risk_run_id"],
+        spot=kwargs.get("spot", 5600.0),
+    )
+    return hs.book_hedge(session, **kwargs)
+
+
+def _source_artifact(
+    session,
+    *,
+    portfolio_id: int,
+    risk_run_id: int,
+    underlying: str,
+    strategy: str,
+    spot: float,
+    legs: list[dict],
+    tool_name: str = "propose_hedge",
+):
+    thread = AgentThread(title="hedge proposal", character="risk_manager")
+    session.add(thread)
+    session.flush()
+    state = ensure_thread_workflow_state(session, thread.id)
+    from app.services import hedging_greeks
+
+    fingerprint = hedging_greeks.position_set_hash(
+        session, portfolio_id=portfolio_id
+    )
+    generated = datetime.utcnow().isoformat() + "Z"
+    if tool_name == "get_hedgeable_underlyings":
+        content = hedging_greeks.aggregate_by_underlying(
+            session, portfolio_id=portfolio_id
+        )
+    else:
+        content = {
+            "status": "feasible",
+            "portfolio_id": portfolio_id,
+            "underlying": underlying,
+            "strategy": strategy,
+            "risk_run_id": risk_run_id,
+            "spot": spot,
+            "legs": legs,
+            "position_set_hash": fingerprint,
+            "valuation_as_of": datetime.utcnow().isoformat(),
+            "risk_generated_at": generated,
+            "proposed_at": generated,
+            "expires_at": (datetime.utcnow() + timedelta(minutes=15)).isoformat() + "Z",
+        }
+    artifact = LedgerWriter(session).write_artifact(
+        workflow_id=state.domain_workflow_id,
+        session_id=state.orchestrator_session_id,
+        kind="tool_result",
+        title="hedge proposal",
+        tool_name=tool_name,
+        payload={
+            "content": json.dumps(content, separators=(",", ":")),
+            "generated_at": generated,
+            "data_as_of": content["valuation_as_of"],
+        },
+    )
+    session.flush()
+    return artifact, state
 
 
 def test_book_hedge_persists_tagged_legs(session):
@@ -20,7 +115,7 @@ def test_book_hedge_persists_tagged_legs(session):
         "instrument_type": "future", "option_type": None, "strike": None,
         "multiplier": 200.0, "quantity": -3,
     }]
-    out = hs.book_hedge(session, portfolio_id=pf.id, underlying="000905.SH",
+    out = _book(session, portfolio_id=pf.id, underlying="000905.SH",
                         risk_run_id=42, strategy="delta_neutral", legs=legs,
                         spot=5600.0)
     session.flush()
@@ -42,7 +137,7 @@ def test_book_hedge_requires_instrument_id_for_listed_contracts(session):
     }]
 
     with pytest.raises(ValueError, match="must include instrument_id"):
-        hs.book_hedge(session, portfolio_id=pf.id, underlying="000905.SH",
+        _book(session, portfolio_id=pf.id, underlying="000905.SH",
                       risk_run_id=41, strategy="delta_neutral", legs=legs,
                       spot=5600.0)
 
@@ -64,7 +159,7 @@ def test_book_hedge_canonicalizes_futures_leg_from_instrument(session):
         "quantity": -2,
     }]
 
-    out = hs.book_hedge(session, portfolio_id=pf.id, underlying="000905.SH",
+    out = _book(session, portfolio_id=pf.id, underlying="000905.SH",
                         risk_run_id=43, strategy="delta_neutral", legs=legs,
                         spot=8362.16)
     session.flush()
@@ -95,7 +190,7 @@ def test_book_hedge_persists_option_leg(session):
         "instrument_type": "future", "option_type": None, "strike": None,
         "expiry": None, "multiplier": 999.0, "quantity": 2,
     }]
-    out = hs.book_hedge(session, portfolio_id=pf.id, underlying="000905.SH",
+    out = _book(session, portfolio_id=pf.id, underlying="000905.SH",
                         risk_run_id=77, strategy="delta_neutral", legs=legs,
                         spot=5600.0)
     session.flush()
@@ -116,7 +211,7 @@ def test_book_hedge_skips_zero_quantity_legs(session):
     session.add(pf); session.flush()
     legs = [{"contract_code": "IC2406", "exchange": "CFFEX", "family": "index_future",
              "instrument_type": "future", "multiplier": 200.0, "quantity": 0}]
-    out = hs.book_hedge(session, portfolio_id=pf.id, underlying="000905.SH",
+    out = _book(session, portfolio_id=pf.id, underlying="000905.SH",
                         risk_run_id=1, strategy="delta_neutral", legs=legs, spot=5600.0)
     assert out["position_ids"] == []
 
@@ -131,7 +226,7 @@ def test_book_hedge_accepts_manual_strategy_tag(session):
     legs = [{"instrument_id": inst.id,
              "contract_code": "IC2609", "exchange": "CFFEX", "family": "index_future",
              "instrument_type": "future", "multiplier": 200.0, "quantity": -2}]
-    out = hs.book_hedge(session, portfolio_id=pf.id, underlying="000905.SH",
+    out = _book(session, portfolio_id=pf.id, underlying="000905.SH",
                         risk_run_id=20, strategy="manual", legs=legs, spot=8362.16)
     session.flush()
     pos = session.get(Position, out["position_ids"][0])
@@ -148,7 +243,7 @@ def test_book_hedge_rejects_unknown_strategy(session):
     legs = [{"contract_code": "IC2406", "exchange": "CFFEX", "family": "index_future",
              "instrument_type": "future", "multiplier": 200.0, "quantity": -1}]
     with pytest.raises(ValueError, match="Unknown hedge strategy"):
-        hs.book_hedge(session, portfolio_id=pf.id, underlying="000905.SH",
+        _book(session, portfolio_id=pf.id, underlying="000905.SH",
                       risk_run_id=1, strategy="detla_neutral", legs=legs, spot=5600.0)
 
 
@@ -167,11 +262,11 @@ def test_book_hedge_continues_leg_numbering_per_run(session):
            "contract_code": "IC2406", "exchange": "CFFEX", "family": "index_future",
            "instrument_type": "future", "multiplier": 200.0, "quantity": -2}
 
-    first = hs.book_hedge(session, portfolio_id=pf.id, underlying="000905.SH",
+    first = _book(session, portfolio_id=pf.id, underlying="000905.SH",
                           risk_run_id=21, strategy="manual", legs=[leg, dict(leg)],
                           spot=5600.0)
     session.flush()
-    second = hs.book_hedge(session, portfolio_id=pf.id, underlying="000905.SH",
+    second = _book(session, portfolio_id=pf.id, underlying="000905.SH",
                            risk_run_id=21, strategy="manual", legs=[dict(leg)],
                            spot=5600.0)
     session.flush()
@@ -184,10 +279,381 @@ def test_book_hedge_continues_leg_numbering_per_run(session):
     assert second_ids == ["HEDGE:21:3"]
     # A different run keeps its own namespace (prefix match must not bleed
     # across runs sharing a string prefix, e.g. HEDGE:2: vs HEDGE:21:).
-    other = hs.book_hedge(session, portfolio_id=pf.id, underlying="000905.SH",
+    other = _book(session, portfolio_id=pf.id, underlying="000905.SH",
                           risk_run_id=2, strategy="manual", legs=[dict(leg)],
                           spot=5600.0)
     session.flush()
     other_ids = [session.get(Position, pid).source_trade_id
                  for pid in other["position_ids"]]
     assert other_ids == ["HEDGE:2:1"]
+
+
+def test_book_hedge_rejects_missing_risk_run(session):
+    pf = Portfolio(name="missing risk", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+
+    out = hs.book_hedge(
+        session,
+        portfolio_id=pf.id,
+        underlying="000905.SH",
+        risk_run_id=999,
+        strategy="manual",
+        legs=[],
+        spot=5600.0,
+    )
+
+    assert out["status"] == "stale_hedge_proposal"
+    assert "risk_run_not_found" in out["reasons"]
+
+
+def test_book_hedge_rejects_superseded_risk_run(session):
+    pf = Portfolio(name="superseded risk", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    old = _fresh_run(session, pf.id, 70)
+    old.created_at = datetime.utcnow() - timedelta(minutes=1)
+    _fresh_run(session, pf.id, 71)
+    session.flush()
+
+    out = hs.book_hedge(
+        session,
+        portfolio_id=pf.id,
+        underlying="000905.SH",
+        risk_run_id=70,
+        strategy="manual",
+        legs=[],
+        spot=5600.0,
+    )
+
+    assert out["status"] == "stale_hedge_proposal"
+    assert "risk_run_superseded" in out["reasons"]
+
+
+def test_book_hedge_rejects_expired_source_artifact(session):
+    pf = Portfolio(name="expired source", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    _fresh_run(session, pf.id, 80)
+    artifact, state = _source_artifact(
+        session,
+        portfolio_id=pf.id,
+        risk_run_id=80,
+        underlying="000905.SH",
+        strategy="manual",
+        spot=5600.0,
+        legs=[],
+        tool_name="get_hedgeable_underlyings",
+    )
+    content = json.loads(artifact.payload["content"])
+    content["expires_at"] = (datetime.utcnow() - timedelta(seconds=1)).isoformat() + "Z"
+    artifact.payload = {**artifact.payload, "content": json.dumps(content)}
+    session.flush()
+
+    out = hs.book_hedge(
+        session,
+        portfolio_id=pf.id,
+        underlying="000905.SH",
+        risk_run_id=80,
+        strategy="manual",
+        legs=[],
+        spot=5600.0,
+        source_artifact_id=artifact.id,
+        workflow_id=state.domain_workflow_id,
+    )
+
+    assert out["status"] == "stale_hedge_proposal"
+    assert "source_artifact_expired" in out["reasons"]
+
+
+def test_book_hedge_rejects_tampered_solver_legs(session):
+    pf = Portfolio(name="tampered legs", base_currency="CNY")
+    inst = Instrument(
+        symbol="IC2712.CFE",
+        kind="futures",
+        exchange="CFFEX",
+        contract_code="IC2712",
+        series_root="IC",
+        expiry=date(2027, 12, 17),
+        multiplier=200.0,
+        status="active",
+    )
+    session.add_all([pf, inst])
+    session.flush()
+    _fresh_run(session, pf.id, 90)
+    legs = [
+        {
+            "instrument_id": inst.id,
+            "contract_code": "IC2712",
+            "instrument_type": "future",
+            "multiplier": 200.0,
+            "quantity": -1,
+        }
+    ]
+    artifact, state = _source_artifact(
+        session,
+        portfolio_id=pf.id,
+        risk_run_id=90,
+        underlying="000905.SH",
+        strategy="delta_neutral",
+        spot=5600.0,
+        legs=legs,
+    )
+    tampered = [{**legs[0], "quantity": -2}]
+
+    out = hs.book_hedge(
+        session,
+        portfolio_id=pf.id,
+        underlying="000905.SH",
+        risk_run_id=90,
+        strategy="delta_neutral",
+        legs=tampered,
+        spot=5600.0,
+        source_artifact_id=artifact.id,
+        workflow_id=state.domain_workflow_id,
+    )
+
+    assert out["status"] == "stale_hedge_proposal"
+    assert "approved_payload_mismatch" in out["reasons"]
+
+
+def test_book_hedge_rejects_tampered_approval_timestamp(session):
+    pf = Portfolio(name="tampered approval time", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    _fresh_run(session, pf.id, 91)
+    artifact, state = _source_artifact(
+        session,
+        portfolio_id=pf.id,
+        risk_run_id=91,
+        underlying="000905.SH",
+        strategy="manual",
+        spot=5600.0,
+        legs=[],
+        tool_name="get_hedgeable_underlyings",
+    )
+    source = json.loads(artifact.payload["content"])
+
+    out = hs.book_hedge(
+        session,
+        portfolio_id=pf.id,
+        underlying="000905.SH",
+        risk_run_id=91,
+        strategy="manual",
+        legs=[],
+        spot=5600.0,
+        source_artifact_id=artifact.id,
+        workflow_id=state.domain_workflow_id,
+        artifact_generated_at=artifact.payload["generated_at"],
+        valuation_as_of="2026-01-01T00:00:00Z",
+        risk_generated_at=source["risk_generated_at"],
+        expires_at=source["expires_at"],
+    )
+
+    assert out["status"] == "stale_hedge_proposal"
+    assert "approved_timestamp_mismatch" in out["reasons"]
+
+
+def test_book_hedge_persists_exact_source_evidence(session):
+    pf = Portfolio(name="source evidence", base_currency="CNY")
+    inst = Instrument(
+        symbol="IC2712.CFE",
+        kind="futures",
+        exchange="CFFEX",
+        contract_code="IC2712",
+        series_root="IC",
+        expiry=date(2027, 12, 17),
+        multiplier=200.0,
+        status="active",
+    )
+    session.add_all([pf, inst])
+    session.flush()
+    _fresh_run(session, pf.id, 92)
+    legs = [{
+        "instrument_id": inst.id,
+        "contract_code": "IC2712",
+        "instrument_type": "future",
+        "multiplier": 200.0,
+        "quantity": -1,
+    }]
+    artifact, state = _source_artifact(
+        session,
+        portfolio_id=pf.id,
+        risk_run_id=92,
+        underlying="000905.SH",
+        strategy="delta_neutral",
+        spot=5600.0,
+        legs=legs,
+    )
+    source = json.loads(artifact.payload["content"])
+
+    out = hs.book_hedge(
+        session,
+        portfolio_id=pf.id,
+        underlying="000905.SH",
+        risk_run_id=92,
+        strategy="delta_neutral",
+        legs=legs,
+        spot=5600.0,
+        source_artifact_id=artifact.id,
+        workflow_id=state.domain_workflow_id,
+        artifact_generated_at=artifact.payload["generated_at"],
+        valuation_as_of=source["valuation_as_of"],
+        risk_generated_at=source["risk_generated_at"],
+        expires_at=source["expires_at"],
+    )
+
+    assert out["status"] == "booked"
+    position = session.get(Position, out["position_ids"][0])
+    evidence = position.source_payload["hedge"]
+    assert evidence["source_artifact_id"] == artifact.id
+    assert evidence["artifact_generated_at"] == artifact.payload["generated_at"]
+    assert evidence["valuation_as_of"] == source["valuation_as_of"]
+    assert evidence["risk_generated_at"] == source["risk_generated_at"]
+    assert evidence["expires_at"] == source["expires_at"]
+
+
+def test_manual_hedge_accepts_real_guard_artifact_shape(session):
+    pf = Portfolio(name="manual guard evidence", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    _fresh_run(session, pf.id, 93)
+    artifact, state = _source_artifact(
+        session,
+        portfolio_id=pf.id,
+        risk_run_id=93,
+        underlying="000905.SH",
+        strategy="manual",
+        spot=5600.0,
+        legs=[],
+        tool_name="get_hedgeable_underlyings",
+    )
+    source = json.loads(artifact.payload["content"])
+
+    out = hs.book_hedge(
+        session,
+        portfolio_id=pf.id,
+        underlying="000905.SH",
+        risk_run_id=93,
+        strategy="manual",
+        legs=[],
+        spot=5600.0,
+        source_artifact_id=artifact.id,
+        workflow_id=state.domain_workflow_id,
+        artifact_generated_at=artifact.payload["generated_at"],
+        valuation_as_of=source["valuation_as_of"],
+        risk_generated_at=source["risk_generated_at"],
+        expires_at=source["expires_at"],
+    )
+
+    assert out["status"] == "booked"
+    assert out["position_ids"] == []
+
+
+def test_book_hedge_rejects_source_artifact_from_another_workflow(session):
+    pf = Portfolio(name="workflow scoped evidence", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    _fresh_run(session, pf.id, 94)
+    artifact, _source_state = _source_artifact(
+        session,
+        portfolio_id=pf.id,
+        risk_run_id=94,
+        underlying="000905.SH",
+        strategy="manual",
+        spot=5600.0,
+        legs=[],
+        tool_name="get_hedgeable_underlyings",
+    )
+    other_thread = AgentThread(title="different workflow", character="trader")
+    session.add(other_thread)
+    session.flush()
+    other_state = ensure_thread_workflow_state(session, other_thread.id)
+    source = json.loads(artifact.payload["content"])
+
+    out = hs.book_hedge(
+        session,
+        portfolio_id=pf.id,
+        underlying="000905.SH",
+        risk_run_id=94,
+        strategy="manual",
+        legs=[],
+        spot=5600.0,
+        source_artifact_id=artifact.id,
+        workflow_id=other_state.domain_workflow_id,
+        artifact_generated_at=artifact.payload["generated_at"],
+        valuation_as_of=source["valuation_as_of"],
+        risk_generated_at=source["risk_generated_at"],
+        expires_at=source["expires_at"],
+    )
+
+    assert out["status"] == "stale_hedge_proposal"
+    assert "source_artifact_workflow_mismatch" in out["reasons"]
+
+
+def test_book_hedge_rejects_changed_portfolio_snapshot(session):
+    pf = Portfolio(name="changed portfolio evidence", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    _fresh_run(session, pf.id, 95)
+    artifact, state = _source_artifact(
+        session,
+        portfolio_id=pf.id,
+        risk_run_id=95,
+        underlying="000905.SH",
+        strategy="manual",
+        spot=5600.0,
+        legs=[],
+        tool_name="get_hedgeable_underlyings",
+    )
+    source = json.loads(artifact.payload["content"])
+    session.add(Position(
+        portfolio_id=pf.id,
+        underlying="000905.SH",
+        product_type="SpotInstrument",
+        quantity=1.0,
+        entry_price=0.0,
+        status="open",
+        position_kind="listed",
+    ))
+    session.flush()
+
+    out = hs.book_hedge(
+        session,
+        portfolio_id=pf.id,
+        underlying="000905.SH",
+        risk_run_id=95,
+        strategy="manual",
+        legs=[],
+        spot=5600.0,
+        source_artifact_id=artifact.id,
+        workflow_id=state.domain_workflow_id,
+        artifact_generated_at=artifact.payload["generated_at"],
+        valuation_as_of=source["valuation_as_of"],
+        risk_generated_at=source["risk_generated_at"],
+        expires_at=source["expires_at"],
+    )
+
+    assert out["status"] == "stale_hedge_proposal"
+    assert "portfolio_snapshot_changed" in out["reasons"]
+
+
+def test_book_hedge_rejects_risk_run_from_another_portfolio(session):
+    source_pf = Portfolio(name="source portfolio", base_currency="CNY")
+    target_pf = Portfolio(name="target portfolio", base_currency="CNY")
+    session.add_all([source_pf, target_pf])
+    session.flush()
+    _fresh_run(session, source_pf.id, 96)
+
+    out = hs.book_hedge(
+        session,
+        portfolio_id=target_pf.id,
+        underlying="000905.SH",
+        risk_run_id=96,
+        strategy="manual",
+        legs=[],
+        spot=5600.0,
+    )
+
+    assert out["status"] == "stale_hedge_proposal"
+    assert "risk_run_portfolio_mismatch" in out["reasons"]

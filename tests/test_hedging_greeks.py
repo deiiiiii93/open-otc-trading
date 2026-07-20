@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from app.models import (Instrument, Portfolio, Position, PricingParameterProfile,
-                        PricingParameterRow, RiskRun)
+                        PricingParameterRow, RiskRun, TaskRun)
 from app.services import hedging_greeks
 
 
@@ -135,6 +135,151 @@ def test_aggregate_marks_todays_run_fresh(session):
          "spot": 5600.0, "greeks_ok": True}],
         created_at=datetime.utcnow())
     out = hedging_greeks.aggregate_by_underlying(session, portfolio_id=pf.id)
+    assert out["stale"] is False
+    assert out["valuation_as_of"]
+    assert out["risk_generated_at"]
+    assert out["generated_at"].endswith("Z")
+    assert out["expires_at"].endswith("Z")
+    assert out["age_seconds"] >= 0
+    assert out["position_set_hash"].startswith("sha256:")
+
+
+def test_aggregate_marks_same_day_run_stale_after_action_ttl(
+    session, monkeypatch
+):
+    pf = Portfolio(name="pf_intraday_stale", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    _run(
+        session,
+        pf.id,
+        [
+            {
+                "underlying": "000905.SH",
+                "delta_cash": 5.0,
+                "gamma_cash": 1.0,
+                "vega": 1.0,
+                "spot": 5600.0,
+                "greeks_ok": True,
+            }
+        ],
+        created_at=datetime.utcnow() - timedelta(minutes=16),
+    )
+    monkeypatch.setattr(
+        hedging_greeks,
+        "get_settings",
+        lambda: type("Cfg", (), {"hedge_risk_max_age_seconds": 900})(),
+    )
+
+    out = hedging_greeks.aggregate_by_underlying(session, portfolio_id=pf.id)
+
+    assert out["stale"] is True
+    assert "risk_age_exceeded" in out["stale_reasons"]
+
+
+def test_aggregate_marks_historical_valuation_stale_even_when_generated_today(session):
+    pf = Portfolio(name="pf_historical", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    run = _run(
+        session,
+        pf.id,
+        [
+            {
+                "underlying": "000905.SH",
+                "delta_cash": 5.0,
+                "gamma_cash": 1.0,
+                "vega": 1.0,
+                "spot": 5600.0,
+                "greeks_ok": True,
+            }
+        ],
+        created_at=datetime.utcnow(),
+    )
+    run.metrics = {
+        **run.metrics,
+        "valuation_as_of": (datetime.utcnow() - timedelta(days=1)).isoformat(),
+    }
+    session.flush()
+
+    out = hedging_greeks.aggregate_by_underlying(session, portfolio_id=pf.id)
+
+    assert out["stale"] is True
+    assert "historical_valuation" in out["stale_reasons"]
+
+
+def test_aggregate_rejects_invalid_explicit_valuation_time(session):
+    pf = Portfolio(name="pf_bad_valuation_time", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    run = _run(
+        session,
+        pf.id,
+        [{
+            "underlying": "000905.SH",
+            "delta_cash": 5.0,
+            "gamma_cash": 1.0,
+            "vega": 1.0,
+            "spot": 5600.0,
+            "greeks_ok": True,
+        }],
+    )
+    run.metrics = {**run.metrics, "valuation_as_of": "not-a-time"}
+    session.flush()
+
+    out = hedging_greeks.aggregate_by_underlying(session, portfolio_id=pf.id)
+
+    assert out["stale"] is True
+    assert "valuation_time_invalid" in out["stale_reasons"]
+
+
+def test_risk_generation_time_uses_latest_completed_task(session):
+    pf = Portfolio(name="pf_completed_time", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    run = _run(
+        session,
+        pf.id,
+        [{
+            "underlying": "000905.SH",
+            "delta_cash": 5.0,
+            "gamma_cash": 1.0,
+            "vega": 1.0,
+            "spot": 5600.0,
+            "greeks_ok": True,
+        }],
+        created_at=datetime.utcnow() - timedelta(hours=1),
+    )
+    older = datetime.utcnow() - timedelta(minutes=2)
+    latest = datetime.utcnow() - timedelta(minutes=1)
+    session.add_all([
+        TaskRun(
+            kind="batch_pricing",
+            status="completed",
+            portfolio_id=pf.id,
+            risk_run_id=run.id,
+            finished_at=older,
+        ),
+        TaskRun(
+            kind="batch_pricing",
+            status="completed",
+            portfolio_id=pf.id,
+            risk_run_id=run.id,
+            finished_at=latest,
+        ),
+        TaskRun(
+            kind="batch_pricing",
+            status="failed",
+            portfolio_id=pf.id,
+            risk_run_id=run.id,
+            finished_at=datetime.utcnow(),
+        ),
+    ])
+    session.flush()
+
+    out = hedging_greeks.aggregate_by_underlying(session, portfolio_id=pf.id)
+
+    assert out["risk_generated_at"] == latest.isoformat() + "Z"
     assert out["stale"] is False
 
 

@@ -24,6 +24,11 @@ Each task entry is a `TaskSpec`: `task_type`, validated `inputs`, `depends_on`, 
 
 When data the ledger already has is sufficient, cite the existing artifact id instead of scheduling a refetch. When a persona claim must become load-bearing for the next step, schedule a deterministic-query task or a HITL approval first.
 
+When only an artifact reference is in context, recover it progressively with
+`list_artifacts` → `inspect_artifact` → targeted `read_artifact`. Never treat a
+compaction narrative as the canonical payload, and never ask for semantic/RAG
+retrieval of desk evidence.
+
 ## Clarification protocol (run BEFORE every delegation)
 
 Before delegating, do a quick triage of the user's request:
@@ -62,7 +67,9 @@ While clarifying, do NOT call `task`. Reply directly. Delegation resumes after t
   legs or acting on an in-thread hedging recommendation ("book the suggested IC
   futures", "it's a hedging instrument book request") → `trader`. Hedge
   bookings are NEVER quote-first and never `book-position` — only `book_hedge`
-  carries the hedge tag.
+  carries the hedge tag. A booking must carry the exact fresh source-artifact id
+  and its artifact/valuation/risk/expiry timestamps; a compacted narrative is
+  never executable hedge evidence.
 - Portfolio maintenance (create/rename a portfolio, views & their rules or
   sources, membership, deletion) → `trader` with `portfolio-maintenance`.
   "Close out a position" is lifecycle (`close_position`), never removal.

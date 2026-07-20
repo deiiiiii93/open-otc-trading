@@ -31,41 +31,26 @@ routing:
     persona: trader
 ---
 
-## When to use
-
-- Solve entry: desk wants per-underlying greeks neutralized.
-- Manual entry: desk states explicit hedge legs/quantities or acts on an
-  in-thread recommendation.
-
 ## Procedure
 
-1. Guard (both entries): `get_hedgeable_underlyings(portfolio_id)`. On
-   `no_risk_run`, stop — ask to run risk first. Warn if stale. Keep
-   `risk_run_id` and `spot` — `book_hedge` needs them.
-2. Manual entry — user stated instrument(s) + signed quantities: go to step 6
-   with `strategy="manual"` and the stated legs. `underlying` is the hedged
-   exposure's symbol, not the hedge instrument's code.
-3. Solve entry: pick `underlying` + `strategy` (confirm if unspecified); call
-   `propose_hedge(portfolio_id, underlying, strategy)`.
-4. Present legs, bands, quantities, residuals. If `infeasible`, report binding
-   greek(s) + shortfall; suggest an option leg or wider band. Do not book.
-5. Review loop: on comments, re-solve with overridden `legs`/`bands`/`strategy`
-   and re-present. If the user dictates quantities, switch to step 6 with
-   `strategy="manual"`.
-6. Book: `book_hedge(portfolio_id, underlying, risk_run_id, strategy, spot,
-   legs)`. The HITL confirmation card is the booking gate.
-7. Report booked position ids — hedge-tagged, on the Hedging page.
+1. Read `/skills/references/hedging/strategy.md`.
+2. Guard with `get_hedgeable_underlyings(portfolio_id)`. Stop on no/stale risk.
+   Preserve its exact evidence tuple from the result and attached artifact ref.
+3. Manual entry: use the user's signed legs with `strategy="manual"`;
+   `underlying` names the exposure, not the hedge contract.
+4. Solve entry: confirm the underlying/strategy, then call `propose_hedge`. Its
+   artifact supersedes the guard artifact as booking evidence.
+5. Present quantities, bands, residuals, and binding greeks. Never book an
+   infeasible solution. Re-solve after edits.
+6. Before booking, apply the reference's freshness/recovery rules. Call
+   `book_hedge` with the exact evidence tuple, strategy, spot, and legs. HITL is
+   the booking gate.
+7. Report the hedge-tagged position ids.
 
 ## Stop conditions
 
-Never book an infeasible hard-band solution, guess greek targets without a
-completed risk run, or book hedge legs via `book_position` (loses the hedge
-tag).
-
-## Output shape
-
-Feasibility (solve) or stated legs (manual) first; then strategy or `manual`,
-per-leg quantities, residual/binding greeks, booked ids.
+Never guess Greeks, reuse expired/superseded evidence, or use `book_position`.
+`stale_hedge_proposal` is a hard stop: refresh risk and re-solve.
 
 ## References
 
@@ -73,6 +58,6 @@ per-leg quantities, residual/binding greeks, booked ids.
 
 ## Example
 
-User: Book the short 2 IC futures as the CSI500 hedge.
-Assistant: get_hedgeable_underlyings(4) → fresh → book_hedge(4, "000905.SH",
-run_id, "manual", spot, [future IC qty −2]) → HITL card → ids.
+User: Book short 2 IC futures as the CSI500 hedge.
+Assistant: guard → retain fresh artifact tuple → `book_hedge(...,
+strategy="manual", legs=[IC quantity -2])` → HITL → report ids.

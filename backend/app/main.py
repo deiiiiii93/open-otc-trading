@@ -3247,6 +3247,11 @@ def create_app(
         try:
             out = hs.book_hedge(session, portfolio_id=payload.portfolio_id,
                                 underlying=payload.underlying, risk_run_id=payload.risk_run_id,
+                                source_artifact_id=payload.source_artifact_id,
+                                artifact_generated_at=payload.artifact_generated_at,
+                                valuation_as_of=payload.valuation_as_of,
+                                risk_generated_at=payload.risk_generated_at,
+                                expires_at=payload.expires_at,
                                 strategy=payload.strategy, legs=payload.legs, spot=payload.spot)
         except Exception:
             session.rollback()

@@ -61,6 +61,9 @@ def test_select_deep_agent_tools_includes_every_required_tool():
         "cancel_lifecycle_event",
         "query_snowball_ko_from_spot",
         "approve_rfq",
+        "list_artifacts",
+        "inspect_artifact",
+        "read_artifact",
     }.issubset(names)
     assert "price_positions" not in names
     assert "run_risk" not in names
