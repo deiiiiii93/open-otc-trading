@@ -61,7 +61,9 @@ For hedge bookings (hedging instruments against book exposure, or acting on a
 hedging recommendation), read
 `/skills/workflows/hedging/hedge-portfolio/SKILL.md` and book via `book_hedge`
 (HITL — requires confirmation), never `book_position` — only `book_hedge`
-carries the hedge tag onto the Hedging page.
+carries the hedge tag onto the Hedging page. Pass the exact source artifact id,
+artifact generation time, valuation/risk times, and expiry into the approval;
+if any evidence is expired or was only retained as prose, stop and refresh it.
 
 For portfolio maintenance (create/update/delete portfolios, view rules,
 membership, sources), read

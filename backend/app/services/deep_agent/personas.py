@@ -190,6 +190,7 @@ def all_personas(
         return specs
 
     from .audit_trail_middleware import AuditTrailMiddleware
+    from .ground_truth import GroundTruthArtifactMiddleware
     from .cost_preview_hitl import LongRunningCostHITLMiddleware
     from .desk_context import DeskContextMiddleware
     from .term_grounding import TermGroundingMiddleware
@@ -211,10 +212,11 @@ def all_personas(
         # Just inside the boundary: always-on dangerous-action audit (audit spec
         # §5.2a) — must see every persona tool call in every mode.
         middleware.insert(1, AuditTrailMiddleware(tools=tools))
+        middleware.insert(2, GroundTruthArtifactMiddleware(tools=tools))
         # Just inside the audit trail: block writes when this persona runs as a
         # fanned-out subagent of an authorized Case-3 dynamic-subagents run. Pass the
         # tool set so writes are classified by capability group (allow reads).
-        middleware.insert(2, FanoutReadOnlyMiddleware(tools=tools))
+        middleware.insert(3, FanoutReadOnlyMiddleware(tools=tools))
         if yolo_mode:
             middleware.append(LongRunningCostHITLMiddleware(tools=tools))
         # Inject the orchestrator-resolved desk scope (portfolio_id, profile_id,

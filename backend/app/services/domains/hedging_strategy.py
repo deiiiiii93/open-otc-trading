@@ -1,13 +1,15 @@
 # backend/app/services/domains/hedging_strategy.py
 from __future__ import annotations
 
-from datetime import date, datetime
+import hashlib
+import json
+from datetime import UTC, date, datetime, timedelta
 from math import ceil
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from ...models import HedgeBand, Instrument, Position, Underlying
+from ...models import HedgeBand, Instrument, Position, RiskRun, SessionArtifact, Underlying
 from ...schemas import PricingEnvironmentSnapshot
 from .. import hedging_greeks, hedging_legs, hedging_solver
 from ..hedging_strategy_registry import STRATEGIES, tiers_for
@@ -59,6 +61,16 @@ def solve_hedge(
     agg = hedging_greeks.aggregate_by_underlying(session, portfolio_id=portfolio_id)
     if agg["status"] != "ok":
         return {"status": agg["status"], "message": agg.get("message")}
+    if agg.get("stale"):
+        return {
+            "status": "stale_risk_run",
+            "risk_run_id": agg.get("risk_run_id"),
+            "valuation_as_of": agg.get("valuation_as_of"),
+            "risk_generated_at": agg.get("risk_generated_at"),
+            "expires_at": agg.get("expires_at"),
+            "stale_reasons": agg.get("stale_reasons") or [],
+            "message": "Risk evidence is stale; refresh risk before sizing a hedge.",
+        }
     target = next((u for u in agg["underlyings"] if u["underlying"] == underlying), None)
     if target is None:
         return {"status": "no_exposure",
@@ -73,10 +85,10 @@ def solve_hedge(
         # Resolve near-ATM options against the run's valuation date (quotes are
         # as-of dated); fall back to now if the run carries no timestamp.
         as_of = None
-        created_at = agg.get("created_at")
-        if created_at:
+        valuation_as_of = agg.get("valuation_as_of")
+        if valuation_as_of:
             try:
-                as_of = datetime.fromisoformat(created_at)
+                as_of = datetime.fromisoformat(str(valuation_as_of).replace("Z", "+00:00"))
             except (TypeError, ValueError):
                 as_of = None
         legs = hedging_legs.propose(
@@ -117,15 +129,198 @@ def solve_hedge(
     diagnostics = _hard_band_diagnostics(
         bindings=result.binding, targets=target["targets"], bands=resolved_bands,
         residual=result.residual, legs=out_legs)
-    return {
+    proposed_at = datetime.utcnow().isoformat() + "Z"
+    output = {
         "status": result.status, "portfolio_id": portfolio_id, "underlying": underlying,
         "strategy": strategy, "risk_run_id": agg["risk_run_id"],
         "pricing_parameter_profile_id": agg.get("pricing_parameter_profile_id"),
+        "valuation_as_of": agg.get("valuation_as_of"),
+        "risk_generated_at": agg.get("risk_generated_at"),
+        "position_set_hash": agg.get("position_set_hash"),
+        "proposed_at": proposed_at,
+        "expires_at": agg.get("expires_at"),
         "spot": spot,
         "targets": target["targets"], "bands": resolved_bands,
         "legs": out_legs, "residual": result.residual, "in_band": result.in_band,
         "binding": result.binding, "warnings": warnings, "diagnostics": diagnostics,
     }
+    output["proposal_hash"] = _canonical_hash(output)
+    return output
+
+
+def _canonical_hash(value: Any) -> str:
+    body = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return "sha256:" + hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def _parse_time(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+    return parsed
+
+
+def _source_payload(
+    session: Session,
+    *,
+    source_artifact_id: int,
+    workflow_id: int | None,
+) -> tuple[SessionArtifact | None, dict[str, Any] | None, list[str]]:
+    from ..deep_agent.artifact_access import raw_artifact_content
+
+    artifact = session.get(SessionArtifact, source_artifact_id)
+    reasons: list[str] = []
+    if artifact is None:
+        return None, None, ["source_artifact_not_found"]
+    if workflow_id is not None and artifact.workflow_id != workflow_id:
+        reasons.append("source_artifact_workflow_mismatch")
+    if artifact.kind != "tool_result" or artifact.tool_name not in {
+        "get_hedgeable_underlyings",
+        "propose_hedge",
+    }:
+        reasons.append("source_artifact_not_hedge_evidence")
+    try:
+        payload = json.loads(raw_artifact_content(artifact))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        payload = None
+        reasons.append("source_artifact_unreadable")
+    if not isinstance(payload, dict):
+        payload = None
+    return artifact, payload, reasons
+
+
+def _validate_hedge_evidence(
+    session: Session,
+    *,
+    portfolio_id: int,
+    underlying: str,
+    risk_run_id: int,
+    strategy: str,
+    legs: list[dict[str, Any]],
+    spot: float,
+    source_artifact_id: int | None,
+    workflow_id: int | None,
+    artifact_generated_at: str | None,
+    valuation_as_of: str | None,
+    risk_generated_at: str | None,
+    expires_at: str | None,
+) -> list[str]:
+    reasons: list[str] = []
+    run = session.get(RiskRun, risk_run_id)
+    if run is None:
+        return ["risk_run_not_found"]
+    if run.portfolio_id != portfolio_id:
+        reasons.append("risk_run_portfolio_mismatch")
+    if run.status not in {"completed", "completed_with_errors"}:
+        reasons.append("risk_run_not_usable")
+    latest = hedging_greeks.aggregate_by_underlying(
+        session, portfolio_id=portfolio_id
+    )
+    if latest.get("status") != "ok":
+        reasons.append("current_risk_unavailable")
+    elif int(latest.get("risk_run_id") or 0) != risk_run_id:
+        reasons.append("risk_run_superseded")
+    reasons.extend(
+        reason
+        for reason in (latest.get("stale_reasons") or [])
+        if reason not in reasons
+    )
+
+    if source_artifact_id is None:
+        return reasons
+    artifact, source, artifact_reasons = _source_payload(
+        session,
+        source_artifact_id=source_artifact_id,
+        workflow_id=workflow_id,
+    )
+    reasons.extend(reason for reason in artifact_reasons if reason not in reasons)
+    if artifact is None or source is None:
+        return reasons
+
+    expected_timestamps = {
+        "artifact_generated_at": (
+            (artifact.payload or {}).get("generated_at"), artifact_generated_at
+        ),
+        "valuation_as_of": (source.get("valuation_as_of"), valuation_as_of),
+        "risk_generated_at": (source.get("risk_generated_at"), risk_generated_at),
+        "expires_at": (source.get("expires_at"), expires_at),
+    }
+    if any(
+        supplied is not None and authoritative != supplied
+        for authoritative, supplied in expected_timestamps.values()
+    ):
+        reasons.append("approved_timestamp_mismatch")
+
+    expiry = _parse_time(source.get("expires_at"))
+    if expiry is None:
+        expiry = _parse_time((artifact.payload or {}).get("generated_at"))
+        if expiry is not None:
+            from ...config import get_settings
+
+            expiry = expiry + timedelta(
+                seconds=int(get_settings().hedge_risk_max_age_seconds)
+            )
+    if expiry is None or expiry < datetime.utcnow():
+        reasons.append("source_artifact_expired")
+
+    source_values: dict[str, Any] = source
+    if artifact.tool_name == "get_hedgeable_underlyings":
+        source_underlyings = source.get("underlyings")
+        source_target = next(
+            (
+                item
+                for item in source_underlyings
+                if isinstance(item, dict) and item.get("underlying") == underlying
+            ),
+            None,
+        ) if isinstance(source_underlyings, list) else None
+        source_values = {
+            **source,
+            "underlying": source_target.get("underlying") if source_target else None,
+            "spot": source_target.get("spot") if source_target else None,
+        }
+
+    expected = {
+        "portfolio_id": portfolio_id,
+        "underlying": underlying,
+        "risk_run_id": risk_run_id,
+        "spot": float(spot),
+    }
+    for key, value in expected.items():
+        source_value = source_values.get(key)
+        if key == "spot" and source_value is not None:
+            try:
+                matches = abs(float(source_value) - value) <= 1e-12
+            except (TypeError, ValueError):
+                matches = False
+        else:
+            matches = source_value == value
+        if not matches:
+            reasons.append("approved_payload_mismatch")
+            break
+
+    current_fingerprint = hedging_greeks.position_set_hash(
+        session, portfolio_id=portfolio_id
+    )
+    if source.get("position_set_hash") != current_fingerprint:
+        reasons.append("portfolio_snapshot_changed")
+    if artifact.tool_name == "propose_hedge":
+        if source.get("strategy") != strategy or _canonical_hash(
+            source.get("legs") or []
+        ) != _canonical_hash(legs):
+            reasons.append("approved_payload_mismatch")
+    return list(dict.fromkeys(reasons))
 
 
 def _hard_band_diagnostics(
@@ -327,6 +522,12 @@ def book_hedge(
     strategy: str,
     legs: list[dict[str, Any]],
     spot: float,
+    source_artifact_id: int | None = None,
+    workflow_id: int | None = None,
+    artifact_generated_at: str | None = None,
+    valuation_as_of: str | None = None,
+    risk_generated_at: str | None = None,
+    expires_at: str | None = None,
     actor: str = "desk_user",
 ) -> dict[str, Any]:
     """Atomically book each non-zero leg into the portfolio, tagged as a hedge.
@@ -340,6 +541,32 @@ def book_hedge(
         raise ValueError(
             f"Unknown hedge strategy {strategy!r}; expected one of {sorted(allowed)}."
         )
+    reasons = _validate_hedge_evidence(
+        session,
+        portfolio_id=portfolio_id,
+        underlying=underlying,
+        risk_run_id=risk_run_id,
+        strategy=strategy,
+        legs=legs,
+        spot=spot,
+        source_artifact_id=source_artifact_id,
+        workflow_id=workflow_id,
+        artifact_generated_at=artifact_generated_at,
+        valuation_as_of=valuation_as_of,
+        risk_generated_at=risk_generated_at,
+        expires_at=expires_at,
+    )
+    if reasons:
+        return {
+            "ok": False,
+            "status": "stale_hedge_proposal",
+            "portfolio_id": portfolio_id,
+            "underlying": underlying,
+            "risk_run_id": risk_run_id,
+            "source_artifact_id": source_artifact_id,
+            "reasons": reasons,
+            "message": "Hedge evidence is stale or no longer matches the approved payload.",
+        }
     position_ids: list[int] = []
     # Continue numbering past existing legs for this run so a second booking
     # against the same risk_run_id cannot re-mint HEDGE:{run}:1 (the index is
@@ -393,6 +620,11 @@ def book_hedge(
                 "hedge": {
                     "is_hedge": True,
                     "risk_run_id": risk_run_id,
+                    "source_artifact_id": source_artifact_id,
+                    "artifact_generated_at": artifact_generated_at,
+                    "valuation_as_of": valuation_as_of,
+                    "risk_generated_at": risk_generated_at,
+                    "expires_at": expires_at,
                     "strategy": strategy,
                     "leg_role": role,
                     "hedged_underlying": underlying,
@@ -411,5 +643,10 @@ def book_hedge(
         "portfolio_id": portfolio_id,
         "underlying": underlying,
         "risk_run_id": risk_run_id,
+        "source_artifact_id": source_artifact_id,
+        "artifact_generated_at": artifact_generated_at,
+        "valuation_as_of": valuation_as_of,
+        "risk_generated_at": risk_generated_at,
+        "expires_at": expires_at,
         "position_ids": position_ids,
     }

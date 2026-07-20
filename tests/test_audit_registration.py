@@ -17,6 +17,7 @@ def test_orchestrator_stack_has_audit_inside_error_boundary():
     names = _names(mw)
     assert names[0] == "ToolErrorBoundaryMiddleware"
     assert names[1] == "AuditTrailMiddleware"
+    assert names[2] == "GroundTruthArtifactMiddleware"
 
 
 def test_persona_stacks_have_audit_inside_error_boundary():
@@ -28,6 +29,7 @@ def test_persona_stacks_have_audit_inside_error_boundary():
         names = _names(spec["middleware"])
         assert names[0] == "ToolErrorBoundaryMiddleware"
         assert names[1] == "AuditTrailMiddleware"
+        assert names[2] == "GroundTruthArtifactMiddleware"
         assert "FanoutReadOnlyMiddleware" in names
 
 
@@ -47,3 +49,4 @@ def test_async_agent_stack_has_audit(monkeypatch):
         model=MagicMock(), tools=[], checkpointer=None, task_id=1
     )
     assert "AuditTrailMiddleware" in _names(captured["middleware"])
+    assert "GroundTruthArtifactMiddleware" in _names(captured["middleware"])

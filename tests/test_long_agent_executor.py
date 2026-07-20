@@ -75,7 +75,12 @@ def test_task_executor_runs_task_scoped_deepagent_and_writes_ledger(
     assert call["config"]["configurable"]["session_id"] == refreshed.assigned_session_id
     assert call["config"]["configurable"]["task_id"] == task.id
     assert call["config"]["configurable"]["context_pack_id"] == refreshed.context_pack_id
-    assert call["config"]["configurable"]["tools_scope"] == ["get_positions"]
+    assert call["config"]["configurable"]["tools_scope"] == [
+        "get_positions",
+        "inspect_artifact",
+        "list_artifacts",
+        "read_artifact",
+    ]
     prompt = call["payload"]["messages"][0].content
     assert '"portfolio_id": 1' in prompt
     assert "Context pack payload" in prompt

@@ -176,6 +176,7 @@ def test_orchestrator_can_enable_quickjs_code_interpreter_middleware(monkeypatch
     assert [type(item).__name__ for item in middleware] == [
         "ToolErrorBoundaryMiddleware",
         "AuditTrailMiddleware",
+        "GroundTruthArtifactMiddleware",
         "DeskContextMiddleware",
         "RunPythonArtifactHITLMiddleware",
         "LedgerScopedCompactionMiddleware",
@@ -183,7 +184,7 @@ def test_orchestrator_can_enable_quickjs_code_interpreter_middleware(monkeypatch
         "EvalAttributionGateMiddleware",
         "CodeInterpreterMiddleware",
     ]
-    ci = middleware[7]
+    ci = middleware[8]
     # task() is exposed via subagents=True (default), NOT ptc=["task"] (which the
     # lib rejects); the per-eval backstop is lowered to 24.
     assert not getattr(ci, "_ptc")
@@ -221,6 +222,7 @@ def test_orchestrator_installs_ledger_scoped_compaction_middleware(monkeypatch):
     assert middleware_names == [
         "ToolErrorBoundaryMiddleware",
         "AuditTrailMiddleware",
+        "GroundTruthArtifactMiddleware",
         "DeskContextMiddleware",
         "RunPythonArtifactHITLMiddleware",
         "LedgerScopedCompactionMiddleware",
@@ -462,12 +464,14 @@ def test_orchestrator_holds_record_answer_so_it_can_score_answer_fields():
              _orchestrator_tools(QUANT_AGENT_TOOLS, allow_reply_options=True)}
     assert "record_answer" in names
     assert "propose_reply_options" in names
+    assert {"list_artifacts", "inspect_artifact", "read_artifact"} <= names
 
     # headless (YOLO): recorder still present, reply-options card withheld
     names_headless = {getattr(t, "name", None) for t in
                       _orchestrator_tools(QUANT_AGENT_TOOLS, allow_reply_options=False)}
     assert "record_answer" in names_headless
     assert "propose_reply_options" not in names_headless
+    assert {"list_artifacts", "inspect_artifact", "read_artifact"} <= names_headless
 
 
 def test_orchestrator_tools_omits_record_answer_if_toolset_lacks_it():

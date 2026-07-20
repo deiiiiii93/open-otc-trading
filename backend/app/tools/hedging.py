@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
@@ -36,6 +37,21 @@ class BookHedgeInput(BaseModel):
     )
     risk_run_id: int = Field(
         description="Source risk run id, from get_hedgeable_underlyings or the proposal."
+    )
+    source_artifact_id: int = Field(
+        description="Immutable artifact id from get_hedgeable_underlyings or propose_hedge."
+    )
+    artifact_generated_at: str = Field(
+        description="Exact generated_at timestamp from the source artifact reference."
+    )
+    valuation_as_of: str = Field(
+        description="Exact valuation_as_of timestamp carried by the source evidence."
+    )
+    risk_generated_at: str = Field(
+        description="Exact risk_generated_at timestamp carried by the source evidence."
+    )
+    expires_at: str = Field(
+        description="Exact expires_at timestamp carried by the source evidence."
     )
     strategy: str = Field(
         description="delta_neutral|delta_neutral_enhanced|delta_gamma_neutral|full_neutral "
@@ -71,7 +87,8 @@ class SetBandsInput(BaseModel):
 @tool("get_hedgeable_underlyings", args_schema=HedgeableInput)
 def get_hedgeable_underlyings_tool(portfolio_id: int) -> dict[str, Any]:
     """Per-underlying greek exposure + staleness from the latest usable risk run
-    (completed, or completed_with_errors — only rows that priced cleanly aggregate)."""
+    (completed, or completed_with_errors — only clean rows aggregate). Also returns
+    valuation/risk/expiry times and a position-set hash; stale=true is a hard stop."""
     with database.SessionLocal() as session:
         return hedging_greeks.aggregate_by_underlying(session, portfolio_id=portfolio_id)
 
@@ -81,7 +98,8 @@ def get_hedgeable_underlyings_tool(portfolio_id: int) -> dict[str, Any]:
 def propose_hedge_tool(portfolio_id: int, underlying: str, strategy: str,
                        legs: list[dict[str, Any]] | None = None,
                        bands: dict[str, float] | None = None) -> dict[str, Any]:
-    """Propose + size a hedge (staged MILP). No persistence; safe to call repeatedly."""
+    """Propose + size a hedge (staged MILP) from fresh risk. Returns the exact
+    source times/fingerprint needed by book_hedge; stale risk is refused."""
     with database.SessionLocal() as session:
         return hs.solve_hedge(session, portfolio_id=portfolio_id, underlying=underlying,
                               strategy=strategy, legs=legs, bands=bands)
@@ -90,10 +108,16 @@ def propose_hedge_tool(portfolio_id: int, underlying: str, strategy: str,
 @capability_gated(group=ToolGroup.DOMAIN_WRITE)
 @tool("book_hedge", args_schema=BookHedgeInput)
 def book_hedge_tool(portfolio_id: int, underlying: str, risk_run_id: int,
-                    strategy: str, spot: float, legs: list[dict[str, Any]]) -> dict[str, Any]:
+                    source_artifact_id: int, artifact_generated_at: str,
+                    valuation_as_of: str, risk_generated_at: str,
+                    expires_at: str, strategy: str, spot: float,
+                    legs: list[dict[str, Any]],
+                    config: RunnableConfig = None) -> dict[str, Any]:  # type: ignore[assignment]
     """Atomically book hedge legs into the portfolio, hedge-tagged (is_hedge,
     risk_run_id, strategy, leg_role) and visible on the Hedging page. HITL —
-    requires confirmation. Never book hedge legs via book_position. If this
+    requires confirmation. The source artifact/timestamps must be copied exactly
+    from the fresh guard/proposal and are revalidated after approval. Never book
+    hedge legs via book_position. If this
     returns error=underlying_not_registered, call register_underlying(symbol)
     then retry."""
     with database.SessionLocal() as session:
@@ -103,9 +127,18 @@ def book_hedge_tool(portfolio_id: int, underlying: str, risk_run_id: int,
                 "error": "underlying_not_registered",
                 "detail": {"symbol": underlying},
             }
+        from app.services.deep_agent.artifact_access import workflow_id_from_config
+
+        workflow_id = workflow_id_from_config(config)
         out = hs.book_hedge(session, portfolio_id=portfolio_id, underlying=underlying,
-                            risk_run_id=risk_run_id, strategy=strategy, legs=legs,
-                            spot=spot, actor="agent")
+                            risk_run_id=risk_run_id,
+                            source_artifact_id=source_artifact_id,
+                            workflow_id=workflow_id,
+                            artifact_generated_at=artifact_generated_at,
+                            valuation_as_of=valuation_as_of,
+                            risk_generated_at=risk_generated_at,
+                            expires_at=expires_at,
+                            strategy=strategy, legs=legs, spot=spot, actor="agent")
         session.commit()
         return out
 

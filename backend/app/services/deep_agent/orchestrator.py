@@ -140,6 +140,10 @@ def _agent_middleware(
     from .desk_context import DeskContextMiddleware
     from .run_python_hitl import RunPythonArtifactHITLMiddleware
     from .tool_error_boundary import ToolErrorBoundaryMiddleware
+    from .ground_truth import (
+        GroundTruthArtifactMiddleware,
+        compaction_protected_tool_names,
+    )
 
     # Outermost (first = outermost): convert any tool-body exception into an error
     # ToolMessage so the agent recovers instead of crashing the run. Interrupts
@@ -148,6 +152,7 @@ def _agent_middleware(
     middleware: list[Any] = [
         ToolErrorBoundaryMiddleware(),
         AuditTrailMiddleware(tools=tools),
+        GroundTruthArtifactMiddleware(tools=tools),
         # Snoop resolved scope (portfolio_id, profile_id, dates) from the
         # orchestrator's direct domain-tool calls into desk_context state, which
         # propagates to persona subagents so their required_context is satisfied.
@@ -158,7 +163,11 @@ def _agent_middleware(
     middleware.extend(
         [
             RunPythonArtifactHITLMiddleware(enabled=not yolo_mode),
-            LedgerScopedCompactionMiddleware(model=model, backend=backend),
+            LedgerScopedCompactionMiddleware(
+                model=model,
+                backend=backend,
+                ground_truth_tool_names=compaction_protected_tool_names(tools),
+            ),
         ]
     )
     from .memory.config import get_memory_config
@@ -212,7 +221,8 @@ def _orchestrator_tools(
     """Tools the ORCHESTRATOR itself holds (personas get the full ``tools``).
 
     Besides the UI-control ``propose_reply_options`` card (non-headless only),
-    the orchestrator needs ``record_answer``: grounding/answer follow-ups
+    the orchestrator needs progressive artifact disclosure plus ``record_answer``:
+    grounding/answer follow-ups
     ("what's the hotspot?", "what is the CVaR?") are synthesized by the
     orchestrator DIRECTLY from context — it delegates the domain tool-work to a
     persona, then produces the final answer itself. Without the recorder here the
@@ -222,9 +232,11 @@ def _orchestrator_tools(
     re-registering it.
     """
     from ..reply_options.tool import ProposeReplyOptionsTool
+    from .artifact_access import ARTIFACT_DISCLOSURE_TOOL_NAMES
 
     out: list[BaseTool] = [ProposeReplyOptionsTool()] if allow_reply_options else []
-    out += [t for t in tools if getattr(t, "name", None) == "record_answer"]
+    direct_names = ARTIFACT_DISCLOSURE_TOOL_NAMES | {"record_answer"}
+    out += [t for t in tools if getattr(t, "name", None) in direct_names]
     return out
 
 
@@ -248,9 +260,9 @@ def build_orchestrator(
     """
     from deepagents import create_deep_agent
 
-    # Orchestrator has no DOMAIN tools, but it needs propose_reply_options
-    # (non-headless) and record_answer — see _orchestrator_tools. Personas receive
-    # their own copy of everything through ``tools``.
+    # Orchestrator has no business-domain tools, but it needs reply options,
+    # progressive artifact reads, and record_answer — see _orchestrator_tools.
+    # Personas receive their own copy of everything through ``tools``.
     orchestrator_tools = _orchestrator_tools(
         tools, allow_reply_options=allow_reply_options
     )

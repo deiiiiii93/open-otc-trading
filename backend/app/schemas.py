@@ -1877,6 +1877,11 @@ class HedgeBookRequest(BaseModel):
     portfolio_id: int
     underlying: str
     risk_run_id: int
+    source_artifact_id: int | None = None
+    artifact_generated_at: str | None = None
+    valuation_as_of: str | None = None
+    risk_generated_at: str | None = None
+    expires_at: str | None = None
     strategy: str
     spot: float
     legs: list[dict[str, Any]]

@@ -1,25 +1,131 @@
 # backend/app/services/hedging_greeks.py
 from __future__ import annotations
 
-from datetime import datetime
+import hashlib
+import json
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from ..models import Instrument, Position, PricingParameterRow, RiskRun
+from ..config import get_settings
+from ..models import (
+    Instrument,
+    Position,
+    PricingParameterRow,
+    RiskRun,
+    TaskRun,
+    TaskStatus,
+)
 from .domains import risk as risk_svc
 from .pricing_profiles import resolve_underlying_market_params
+
+
+def _utc_timestamp(value: datetime) -> str:
+    normalized = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    return normalized.isoformat().replace("+00:00", "Z")
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+    return parsed
+
+
+def position_set_hash(session: Session, *, portfolio_id: int) -> str:
+    rows = (
+        session.query(
+            Position.id,
+            Position.version,
+            Position.status,
+            Position.quantity,
+            Position.updated_at,
+        )
+        .filter(Position.portfolio_id == portfolio_id)
+        .order_by(Position.id)
+        .all()
+    )
+    payload = [
+        {
+            "id": row.id,
+            "version": int(row.version or 1),
+            "status": row.status,
+            "quantity": float(row.quantity or 0.0),
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        }
+        for row in rows
+    ]
+    body = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def risk_run_time_metadata(
+    session: Session,
+    run: RiskRun,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    anchor = now or datetime.utcnow()
+    finished_row = (
+        session.query(TaskRun.finished_at)
+        .filter(
+            TaskRun.risk_run_id == run.id,
+            TaskRun.finished_at.isnot(None),
+            TaskRun.status.in_((
+                TaskStatus.COMPLETED.value,
+                TaskStatus.COMPLETED_WITH_ERRORS.value,
+            )),
+        )
+        .order_by(TaskRun.finished_at.desc(), TaskRun.id.desc())
+        .first()
+    )
+    finished_at = finished_row[0] if finished_row is not None else None
+    generated = finished_at or run.created_at or anchor
+    valuation_raw = (run.metrics or {}).get("valuation_as_of")
+    parsed_valuation = _parse_datetime(valuation_raw)
+    valuation = parsed_valuation or generated
+    max_age = int(get_settings().hedge_risk_max_age_seconds)
+    age_seconds = max(0.0, (anchor - generated).total_seconds())
+    expires_at = generated + timedelta(seconds=max_age)
+    stale_reasons: list[str] = []
+    if age_seconds > max_age:
+        stale_reasons.append("risk_age_exceeded")
+    if valuation_raw is not None and parsed_valuation is None:
+        stale_reasons.append("valuation_time_invalid")
+    elif valuation.date() < anchor.date():
+        stale_reasons.append("historical_valuation")
+    elif valuation.date() > anchor.date():
+        stale_reasons.append("future_valuation")
+    return {
+        "valuation_as_of": _utc_timestamp(valuation),
+        "risk_generated_at": _utc_timestamp(generated),
+        "age_seconds": age_seconds,
+        "expires_at": _utc_timestamp(expires_at),
+        "stale": bool(stale_reasons),
+        "stale_reasons": stale_reasons,
+        "freshness_policy_seconds": max_age,
+    }
 
 
 def aggregate_by_underlying(session: Session, *, portfolio_id: int) -> dict[str, Any]:
     """Per-underlying {delta_cash, gamma_cash, vega} from the latest usable RiskRun
     (completed or completed_with_errors; only greeks_ok rows aggregate).
 
-    Returns {"status": "ok"|"no_risk_run", "risk_run_id", "created_at", "stale",
-             "underlyings": [{"underlying", "targets": {...}, "spot"}]}.
-
-    ``stale`` is True when the run was created before today (UTC, matching the
-    clock ``created_at`` is stored on) — a cue to re-run risk before hedging.
+    Returns the risk run id, explicit generation/valuation/expiry timestamps,
+    a position-set fingerprint, and per-underlying targets. ``stale`` is based
+    on both the configured intraday action TTL and historical valuation dates.
     """
     run: RiskRun | None = risk_svc.get_latest_run(portfolio_id=portfolio_id, session=session)
     if run is None:
@@ -62,10 +168,14 @@ def aggregate_by_underlying(session: Session, *, portfolio_id: int) -> dict[str,
             "params_ok": params_ok,
             "missing_params": missing_params,
         })
-    stale = bool(run.created_at and run.created_at.date() < datetime.utcnow().date())
+    now = datetime.utcnow()
+    timing = risk_run_time_metadata(session, run, now=now)
     return {"status": "ok", "portfolio_id": portfolio_id, "risk_run_id": run.id,
             "pricing_parameter_profile_id": profile_id,
-            "created_at": run.created_at.isoformat(), "stale": stale,
+            "created_at": run.created_at.isoformat(),
+            "generated_at": _utc_timestamp(now),
+            "position_set_hash": position_set_hash(session, portfolio_id=portfolio_id),
+            **timing,
             "underlyings": underlyings}
 
 

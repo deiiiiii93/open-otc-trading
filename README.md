@@ -57,6 +57,7 @@ The product walkthrough tells it as one continuous flow:
 - **Instant-messaging desk (Feishu/Lark)** — Drive the full agent from IM with web-desk parity: streaming **markdown** replies, human-in-the-loop Approve/Reject **cards** for bookings, pickable reply-option cards, and linking-code enrollment. Runs as a dedicated single-worker gateway behind a `MessageConnector` abstraction (Feishu first), so the same orchestrator, data, and audit trail back both the web desk and chat.
 - **Market data** — AKShare adapter with caching and fallback for A-share / HK markets.
 - **Long-term memory** — A cross-session memory layer distills durable facts — desk preferences, per-book context, and corrections — from closed sessions and injects the relevant ones into later conversations. Facts are scoped (`user` / `book` / `domain` / `correction`), with a propose→approve gate for shared domain knowledge and a dedicated **Memory** console to review, pin, edit, and approve them.
+- **Compaction-safe evidence** — Deterministic tool and database results are captured byte-for-byte in an immutable content-addressed ledger before conversation compaction. The agent can progressively reopen an exact artifact by id and JSON/Markdown selector (no semantic RAG); hedge approvals show and revalidate the source artifact plus valuation, risk-generation, capture, and expiry timestamps.
 - **Audit trail** — An always-on, append-only log of every dangerous action an agent takes — bookings, writes, deletes, async dispatches, artifact writes — **including actions taken in headless YOLO mode**. Distinct from the full `/tracing` transcript viewer, the **Audit** console surfaces just the write-class actions with their outcome, human-in-the-loop approval chain, and redacted arguments.
 - **Model maintenance** — A **Model Maintenance** console (`/model-maintenance`) to add, edit, and delete LLM channels and models — and pick the registry default — without hand-editing `config/agent_channels.yaml`. Edits go through a comment-preserving, validate-then-commit write that hot-reloads the agent live; only the `api_key_env` **name** is stored (never a secret), with a per-channel health badge. Gated by `OPEN_OTC_FEATURE_MODEL_WRITE_API` (default on).
 - **Reproducible & audited** — Every pricing run, risk run, and agent trace is persisted; QuantArk keeps the math deterministic.
@@ -201,6 +202,48 @@ and sending the returned code to the bot in a Feishu DM. Health: `GET /api/gatew
 open-otc --help
 ```
 
+### Compaction A/B proof
+
+Agent-behaviour improvements must carry paired evidence, not only unit tests. The
+offline compaction benchmark passes identical captured OTC traces through the installed
+DeepAgents/LangChain default summarizer and the ledger-aware candidate, then grades both
+with deterministic rules:
+
+```bash
+python scripts/compaction_ab_benchmark.py
+```
+
+The command needs no API key, database, or network access. It writes auditable JSON and
+Markdown reports under `outputs/`, including package versions, generation time, exact
+input hashes, every per-case result, aggregate metrics, tradeoffs, and predeclared pass
+criteria. Each JSON artifact fingerprints Python/platform, `pyproject.toml`, `uv.lock`,
+the complete installed-distribution list, and the core DeepAgents/LangChain/LangGraph
+stack. Lock alignment is a pass criterion, so a drifted environment cannot produce a
+passing report. The benchmark measures structural evidence/timestamp recovery, raw
+evidence exposed to the summarizer, continuation correctness, retained context,
+targeted-read bytes, and observed latency. The controlled lossy summarizer intentionally
+removes remote-model variance; live-model answer quality is outside this cheap PR gate.
+
+For paired live-model evidence, use the same runner with `--live`. This supplements
+the structural gate with real summary and continuation calls while keeping the scorer
+deterministic:
+
+```bash
+uv lock --check --quiet
+uv sync --locked --extra dev
+.venv/bin/python scripts/compaction_ab_benchmark.py \
+  --live --channel deepseek --provider deepseek --model deepseek-v4-flash \
+  --trials 3 --max-tokens 1600
+```
+
+The four-case, three-trial default run makes 48 read-only model requests: one summary
+and one continuation call for each arm and trial. It alternates arm order, gives the
+default its complete rendered history and the candidate exact targeted reads of the
+proposal plus current positions, and stores every prompt, response, call timestamp,
+provider error, token count, and grade in
+`outputs/compaction_ab_live_<model>.json`. The traces are deterministic synthetic OTC
+cases; the run never reads the live portfolio database or executes a booking.
+
 ---
 
 ## Configuration
@@ -221,6 +264,7 @@ mkdir -p data artifacts
 | `OPEN_OTC_TRACING` | Tracing mode: `local` \| `langsmith` \| `both` \| `off` | No |
 | `OPEN_OTC_MEMORY` | Long-term memory capture: `on` (default) \| `off` | No |
 | `OPEN_OTC_MEMORY_RECONCILE_SINCE` | ISO-8601 cutoff — when first enabling memory on an existing DB, only extract sessions closed at/after this instant (avoids mass-extracting the historical backlog) | No |
+| `OPEN_OTC_HEDGE_RISK_MAX_AGE_SECONDS` | Maximum age of risk evidence allowed for hedge sizing/booking (default `900`); historical valuations are rejected regardless | No |
 | `GATEWAY_ENABLED_CONNECTORS` | Comma-separated IM connectors to run (e.g. `feishu`); empty = gateway off | No |
 | `GATEWAY_AGENT_MODEL` | Model for IM-originated turns, `channel:provider:model` (e.g. `zenmux:openai:deepseek/deepseek-v4-flash`); unset = registry default | No |
 | `GATEWAY_WEB_BASE_URL` | Base URL for card deep-links back to the web desk (e.g. `http://localhost:5173`) | No |

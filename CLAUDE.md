@@ -77,6 +77,63 @@ stack can't silently skip it.
 
 ---
 
+## Ground-truth artifacts and compaction
+
+Long-agent compaction may shorten reasoning, but it must never paraphrase away a
+deterministic tool or DB result. `GroundTruthArtifactMiddleware`
+(`services/deep_agent/ground_truth.py`) classifies evidence from server-owned
+`ToolGroup` metadata and captures every such result, including small results, through
+`ContentAddressedFilesystemBackend.capture_tool_result` before compaction. The CAS
+stores exact bytes; `session_artifacts` stores the id, SHA-256, input hash, tool call,
+and `generated_at` / `observed_at` / `data_as_of`. If capture fails, the raw message is
+kept and compaction refuses to evict it.
+
+`services/deep_agent/compaction.py` gives the summariser artifact-reference capsules,
+not raw prices/Greeks/rows, then appends a server-rendered exact manifest. Never treat
+the narrative summary as executable evidence. Recover canonical content through the
+workflow-scoped `list_artifacts` → `inspect_artifact` → targeted `read_artifact`
+sequence (`artifact_access.py`, `tools/artifacts.py`). This is deliberate progressive
+disclosure: no embeddings, vector search, semantic chunking, or RAG ranking. Do not add
+one to this evidence path. `read_artifact` reuses the source artifact reference (it does
+not mint an artifact-of-an-artifact), so a later compaction removes the disclosed body
+back to the original id/hash.
+
+Exact `kind='tool_result'` artifacts are load-bearing CAS entries even when a later
+artifact supersedes them; the normal GC sweep never evicts their bytes.
+
+Hedging adds an action-time gate. `OPEN_OTC_HEDGE_RISK_MAX_AGE_SECONDS` defaults to
+900. `book_hedge`'s HITL payload must show the source artifact id, artifact generation
+time, Greeks `valuation_as_of`, `risk_generated_at`, and `expires_at`; execution also
+revalidates the latest risk run, portfolio fingerprint, exact proposal fields, and
+solver legs. `stale_hedge_proposal` means refresh risk and re-solve, never retry the
+old approval.
+
+### A/B evidence standard for agent-behaviour features
+
+Do not claim that a new agent strategy outperforms its predecessor from regression tests
+alone. Add a paired benchmark with the old production path as arm A and the candidate as
+arm B. Both arms must receive the same input hash and model/configuration; predeclare the
+scorer and pass criteria; retain per-case raw results; report regressions and costs as well
+as wins; and avoid an LLM-only judge when deterministic state or trace checks exist.
+
+The compaction reference implementation is
+`services/deep_agent/compaction_benchmark.py`, exposed by
+`scripts/compaction_ab_benchmark.py`. Its offline controlled-model mode is the cheap PR
+gate for structural guarantees. A live-model probe may supplement that gate for prose or
+planning quality, but may not replace the deterministic proof. Extend its case set when a
+later compaction or hedge-evidence change adds a new claimed advantage or failure mode.
+
+The same runner's `--live` mode is the standard model-behaviour supplement. Use the same
+channel/provider/model, temperature, limits, and input hash for both arms; alternate arm
+order; give each arm its production recovery path; persist full prompts/responses plus
+call and evidence timestamps; and grade with deterministic domain rules. Run from a clean
+`uv sync --locked` environment. The evidence must include the `uv.lock` hash, complete
+installed-distribution fingerprint, and a passing installed-versus-locked version check;
+dependency drift invalidates the benchmark. Never treat a live provider response alone
+as proof without the paired raw artifact and scorer output.
+
+---
+
 ## Long-term memory
 
 A DeerFlow-inspired cross-session memory layer for the deep agent. It distills

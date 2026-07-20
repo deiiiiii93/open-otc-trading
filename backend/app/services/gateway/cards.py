@@ -12,7 +12,8 @@ REQUIRED_FIELDS uses the *actual* tool parameter names (not logical aliases),
 sourced from the concrete tool input schemas:
 
   book_position:           product, quantity, portfolio_id
-  book_hedge:              portfolio_id, underlying, strategy, spot, legs
+  book_hedge:              portfolio_id, underlying, risk/artifact timestamps,
+                           strategy, spot, legs
   quote_rfq:               rfq_id, quote_mode, created_by
   submit_rfq_for_approval: rfq_id, actor
   approve_rfq:             rfq_id, approver
@@ -52,7 +53,11 @@ if TYPE_CHECKING:
 
 REQUIRED_FIELDS: dict[str, list[str]] = {
     "book_position": ["product", "quantity", "portfolio_id"],
-    "book_hedge": ["portfolio_id", "underlying", "risk_run_id", "strategy", "spot", "legs"],
+    "book_hedge": [
+        "portfolio_id", "underlying", "risk_run_id", "source_artifact_id",
+        "artifact_generated_at", "valuation_as_of", "risk_generated_at",
+        "expires_at", "strategy", "spot", "legs",
+    ],
     "quote_rfq": ["rfq_id", "quote_mode", "created_by"],
     "submit_rfq_for_approval": ["rfq_id", "actor"],
     "approve_rfq": ["rfq_id", "approver"],

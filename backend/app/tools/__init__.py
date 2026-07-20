@@ -137,9 +137,13 @@ from .product_reference import get_product_reference_doc
 from .product_term_schema import get_product_term_schema
 from .term_completeness import check_term_completeness
 from .record_answer import record_answer_tool
+from .artifacts import inspect_artifact_tool, list_artifacts_tool, read_artifact_tool
 
 
 QUANT_AGENT_TOOLS = [
+    list_artifacts_tool,
+    inspect_artifact_tool,
+    read_artifact_tool,
     price_product_tool,
     get_product_reference_doc,
     get_product_term_schema,

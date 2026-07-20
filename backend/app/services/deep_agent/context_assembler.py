@@ -21,6 +21,7 @@ from ...models import (
 )
 from .payload_registry import validate_event_payload
 from .task_registry import TOOL_SCOPES_BY_TASK_TYPE, TaskSpec, validate_task_spec
+from .artifact_access import artifact_descriptor, effective_tools_scope
 
 _ASSEMBLER_VERSION = "1.0"
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -103,10 +104,11 @@ def _context_pack_payload(
     task_spec: TaskSpec,
     workflow: Workflow,
     artifact_ids: list[int],
+    artifact_refs: list[dict[str, Any]] | None = None,
     recent_summary: str,
     report_currency: str = "by_position",
 ) -> tuple[str, dict[str, Any]]:
-    tools = sorted(TOOL_SCOPES_BY_TASK_TYPE[task_spec.task_type])
+    tools = list(effective_tools_scope(TOOL_SCOPES_BY_TASK_TYPE[task_spec.task_type]))
     summary_hash = "sha256:" + hashlib.sha256(
         recent_summary.encode("utf-8")
     ).hexdigest()
@@ -118,6 +120,7 @@ def _context_pack_payload(
             workflow.canonical_snapshot_ids or {}
         ),
         "cited_artifact_ids": artifact_ids,
+        "artifact_refs": canonical_jsonify(artifact_refs or []),
         "tools_scope": tools,
         "tool_signature_hash": tool_signature_hash_for(tools),
         "recent_session_summary_hash": summary_hash,
@@ -151,6 +154,15 @@ def assemble_context_pack(
         )
     )
     artifact_ids = curate_relevant_artifacts(session, task=task, workflow=workflow)
+    artifacts = (
+        session.query(SessionArtifact)
+        .filter(SessionArtifact.id.in_(artifact_ids))
+        .order_by(SessionArtifact.id)
+        .all()
+        if artifact_ids
+        else []
+    )
+    artifact_refs = [artifact_descriptor(artifact) for artifact in artifacts]
     summary_text = recent_summary or ""
     thread = session.get(AgentThread, workflow.thread_id)
     report_currency = (
@@ -162,6 +174,7 @@ def assemble_context_pack(
         task_spec=task_spec,
         workflow=workflow,
         artifact_ids=artifact_ids,
+        artifact_refs=artifact_refs,
         recent_summary=summary_text,
         report_currency=report_currency,
     )

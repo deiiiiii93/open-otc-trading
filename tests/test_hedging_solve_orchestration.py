@@ -1,5 +1,5 @@
 # tests/test_hedging_solve_orchestration.py
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from app.models import (HedgeMapEntry, Instrument, Portfolio, Position,
                         PricingParameterProfile, PricingParameterRow, RiskRun,
@@ -77,6 +77,31 @@ def test_solve_hedge_reports_no_risk_run(session):
     out = hs.solve_hedge(session, portfolio_id=pf.id, underlying="000905.SH",
                          strategy="delta_neutral")
     assert out["status"] == "no_risk_run"
+
+
+def test_solve_hedge_refuses_expired_intraday_risk(session, monkeypatch):
+    from app.services import hedging_greeks
+
+    pf, _u, _inst = _setup(session)
+    run = session.query(RiskRun).filter_by(portfolio_id=pf.id).one()
+    run.created_at = datetime.utcnow() - timedelta(seconds=61)
+    session.flush()
+    monkeypatch.setattr(
+        hedging_greeks,
+        "get_settings",
+        lambda: type("Cfg", (), {"hedge_risk_max_age_seconds": 60})(),
+    )
+
+    out = hs.solve_hedge(
+        session,
+        portfolio_id=pf.id,
+        underlying="000905.SH",
+        strategy="delta_neutral",
+    )
+
+    assert out["status"] == "stale_risk_run"
+    assert "risk_age_exceeded" in out["stale_reasons"]
+    assert out["expires_at"].endswith("Z")
 
 
 def test_solve_hedge_prices_option_leg_via_black_scholes(session):

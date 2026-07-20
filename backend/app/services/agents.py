@@ -42,6 +42,7 @@ from .audit_trail import (
     record_hitl_decision,
     record_hitl_proposals,
 )
+from .deep_agent.artifact_access import effective_tools_scope
 from .deep_agent.channel_registry import ChannelRegistry, get_registry
 from .deep_agent.checkpointer import build_async_checkpointer, build_checkpointer
 from .deep_agent.hitl import (
@@ -371,6 +372,9 @@ logger = logging.getLogger("agent.deep")
 
 DEEP_AGENT_TOOL_NAMES: frozenset[str] = frozenset(
     {
+        "list_artifacts",
+        "inspect_artifact",
+        "read_artifact",
         "price_product",
         # product semantics (semantic-layer completion): resolved reference
         # docs for term interpretation — registered here AND in
@@ -3650,7 +3654,7 @@ class AgentService:
                 "context_pack_id": context_pack_id,
                 "envelope": envelope,
                 "confirmed_cost_preview": True,
-                "tools_scope": sorted(registration.tools_scope),
+                "tools_scope": list(effective_tools_scope(registration.tools_scope)),
             },
         )
         try:

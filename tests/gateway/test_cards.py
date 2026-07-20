@@ -16,6 +16,9 @@ book_hedge payload keys (from app/tools/hedging.py BookHedgeInput):
   portfolio_id   int
   underlying     str
   risk_run_id    int    — REQUIRED (source risk run the hedge is based on)
+  source_artifact_id int — REQUIRED immutable proposal/guard artifact
+  artifact_generated_at, valuation_as_of, risk_generated_at, expires_at
+                    str  — REQUIRED decision-time evidence timestamps
   strategy       str
   spot           float
   legs           list[dict]
@@ -115,6 +118,11 @@ _FULL_BOOK_HEDGE_PAYLOAD = {
     "portfolio_id": 42,
     "underlying": "000300.SH",
     "risk_run_id": 7,
+    "source_artifact_id": 101,
+    "artifact_generated_at": "2026-07-16T01:02:03Z",
+    "valuation_as_of": "2026-07-16T01:00:00Z",
+    "risk_generated_at": "2026-07-16T01:01:00Z",
+    "expires_at": "2026-07-16T01:16:00Z",
     "strategy": "delta_hedge",
     "spot": 4100.0,
     "legs": [{"side": "buy", "quantity": 50, "instrument": "futures"}],
@@ -187,6 +195,11 @@ class TestRequiredFieldsContract:
         assert "underlying" in fields
         assert "portfolio_id" in fields
         assert "legs" in fields
+        assert "source_artifact_id" in fields
+        assert "artifact_generated_at" in fields
+        assert "valuation_as_of" in fields
+        assert "risk_generated_at" in fields
+        assert "expires_at" in fields
 
     def test_quote_rfq_required_fields(self):
         fields = REQUIRED_FIELDS["quote_rfq"]
@@ -474,6 +487,12 @@ class TestBuildApprovalCardBookHedgeRiskRunId:
             settings=db_settings,
         )
         assert len(card.actions) == 2
+        parameters = card.sections[0].body
+        assert "source_artifact_id" in parameters
+        assert "artifact_generated_at" in parameters
+        assert "valuation_as_of" in parameters
+        assert "risk_generated_at" in parameters
+        assert "expires_at" in parameters
 
     def test_missing_risk_run_id_is_non_approvable(self, db_session, db_settings):
         payload = dict(_FULL_BOOK_HEDGE_PAYLOAD)

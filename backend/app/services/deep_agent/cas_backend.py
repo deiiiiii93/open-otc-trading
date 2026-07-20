@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import re
 from fnmatch import fnmatch
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterator
 
@@ -39,6 +41,8 @@ _DESK_EXECUTION_CONTEXT: ContextVar[dict[str, Any] | None] = ContextVar(
     default=None,
 )
 
+ARTIFACT_REFERENCE_PROVENANCE = "server_capture_v1"
+
 
 @dataclass(frozen=True)
 class _ResolvedContext:
@@ -63,6 +67,36 @@ class _GcDecision:
     blob_hash: str
     tier: str
     evict: bool
+
+
+@dataclass(frozen=True)
+class ArtifactReference:
+    artifact_id: int
+    kind: str
+    content_hash: str
+    tool_name: str | None
+    tool_call_id: str
+    generated_at: str
+    observed_at: str
+    data_as_of: str | None
+    locator: str
+    byte_size: int
+    summary: dict[str, Any]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "artifact_id": self.artifact_id,
+            "kind": self.kind,
+            "content_hash": self.content_hash,
+            "tool_name": self.tool_name,
+            "tool_call_id": self.tool_call_id,
+            "generated_at": self.generated_at,
+            "observed_at": self.observed_at,
+            "data_as_of": self.data_as_of,
+            "locator": self.locator,
+            "byte_size": self.byte_size,
+            "summary": self.summary,
+        }
 
 
 @contextmanager
@@ -94,39 +128,136 @@ class ContentAddressedFilesystemBackend(BackendProtocol):
     ) -> WriteResult:
         try:
             virtual_path = self._virtual_path(file_path)
-            content_bytes = content.encode("utf-8")
-            blob_hash = hashlib.sha256(content_bytes).hexdigest()
-            blob_path = self._blob_path(blob_hash)
-            blob_path.parent.mkdir(parents=True, exist_ok=True)
-            if not blob_path.exists():
-                blob_path.write_bytes(content_bytes)
-            context = self._resolve_context(config)
-            tool_call_id = _tool_call_id_from_path(virtual_path)
-            with database.SessionLocal() as session:
-                writer = LedgerWriter(session)
-                writer.write_artifact(
+            self.capture_tool_result(
+                tool_call_id=_tool_call_id_from_path(virtual_path),
+                tool_name=None,
+                content=content,
+                tool_args=None,
+                config=config,
+                classification="filesystem_eviction",
+                virtual_path=virtual_path,
+            )
+            return WriteResult(path=file_path)
+        except Exception as exc:
+            return WriteResult(error=f"CAS write failed for {file_path}: {exc}")
+
+    def capture_tool_result(
+        self,
+        *,
+        tool_call_id: str,
+        tool_name: str | None,
+        content: str,
+        tool_args: dict[str, Any] | None,
+        config: RunnableConfig | None,
+        classification: str,
+        virtual_path: str | None = None,
+    ) -> dict[str, Any]:
+        """Persist an exact tool result and return its compact reference.
+
+        Capture is idempotent for ``(workflow_id, tool_call_id, content_hash)`` so
+        proactive ground-truth capture and DeepAgents' later large-result eviction
+        share one immutable ledger row.
+        """
+        call_id = str(tool_call_id)
+        if not call_id:
+            raise ValueError("tool_call_id must not be empty")
+        safe_call_id = _safe_tool_call_id(call_id)
+        path = virtual_path or self._virtual_path(safe_call_id)
+        content_bytes = content.encode("utf-8")
+        blob_hash = hashlib.sha256(content_bytes).hexdigest()
+        blob_path = self._blob_path(blob_hash)
+        blob_path.parent.mkdir(parents=True, exist_ok=True)
+        if blob_path.exists():
+            if blob_path.read_bytes() != content_bytes:
+                raise ValueError(f"CAS blob hash mismatch for {blob_hash}")
+        else:
+            blob_path.write_bytes(content_bytes)
+
+        context = self._resolve_context(config)
+        resolved_tool_name = tool_name or context.tool_name
+        now = _utc_timestamp()
+        parsed = _parse_json_value(content)
+        data_as_of = _extract_data_as_of(parsed if isinstance(parsed, dict) else None)
+        summary = _structural_summary(parsed)
+        input_hash = _canonical_input_hash(tool_args)
+
+        with database.SessionLocal() as session:
+            candidates = (
+                session.query(SessionArtifact)
+                .filter(
+                    SessionArtifact.workflow_id == context.workflow_id,
+                    SessionArtifact.tool_call_id == call_id,
+                    SessionArtifact.kind == "tool_result",
+                )
+                .order_by(SessionArtifact.id.desc())
+                .all()
+            )
+            artifact = next(
+                (
+                    row
+                    for row in candidates
+                    if (row.payload or {}).get("blob_hash") == blob_hash
+                ),
+                None,
+            )
+            if artifact is None:
+                artifact = LedgerWriter(session).write_artifact(
                     workflow_id=context.workflow_id,
                     session_id=context.session_id,
                     task_id=context.task_id,
                     context_pack_id=context.context_pack_id,
                     kind="tool_result",
-                    title=f"Large tool result {tool_call_id}",
+                    title=f"Tool result {call_id}",
                     payload={
                         "blob_hash": blob_hash,
+                        "content_hash": f"sha256:{blob_hash}",
                         "size": len(content_bytes),
-                        "tool_call_id": tool_call_id,
-                        "tool_name": context.tool_name,
+                        "byte_size": len(content_bytes),
+                        "media_type": (
+                            "application/json" if parsed is not None else "text/plain"
+                        ),
+                        "tool_call_id": call_id,
+                        "tool_name": resolved_tool_name,
+                        "input_hash": input_hash,
+                        "generated_at": now,
+                        "observed_at": now,
+                        "data_as_of": data_as_of,
+                        "summary": summary,
+                        "summary_provenance": "deterministic",
+                        "classification": classification,
                         "blob_state": "live",
                         "origin": context.origin,
                     },
-                    rendered_path=virtual_path,
-                    tool_call_id=tool_call_id,
-                    tool_name=context.tool_name,
+                    rendered_path=path,
+                    tool_call_id=call_id,
+                    tool_name=resolved_tool_name,
                 )
                 session.commit()
-            return WriteResult(path=file_path)
-        except Exception as exc:
-            return WriteResult(error=f"CAS write failed for {file_path}: {exc}")
+            payload = dict(artifact.payload or {})
+            reference = ArtifactReference(
+                artifact_id=artifact.id,
+                kind=artifact.kind,
+                content_hash=str(
+                    payload.get("content_hash") or f"sha256:{blob_hash}"
+                ),
+                tool_name=artifact.tool_name or resolved_tool_name,
+                tool_call_id=call_id,
+                generated_at=str(payload.get("generated_at") or now),
+                observed_at=str(payload.get("observed_at") or now),
+                data_as_of=(
+                    str(payload["data_as_of"])
+                    if payload.get("data_as_of") is not None
+                    else None
+                ),
+                locator=path,
+                byte_size=int(payload.get("byte_size") or len(content_bytes)),
+                summary=(
+                    dict(payload.get("summary") or {})
+                    if isinstance(payload.get("summary"), dict)
+                    else {}
+                ),
+            )
+            return reference.as_dict()
 
     def read(
         self,
@@ -139,10 +270,15 @@ class ContentAddressedFilesystemBackend(BackendProtocol):
         if artifact is None:
             return self._legacy_state_read(virtual_path, offset=offset, limit=limit)
         blob_hash = str((artifact.payload or {}).get("blob_hash") or "")
+        if not re.fullmatch(r"[0-9a-f]{64}", blob_hash):
+            return ReadResult(error=f"Blob for '{virtual_path}' has an invalid hash")
         blob_path = self._blob_path(blob_hash)
         if not blob_hash or not blob_path.exists():
             return ReadResult(error=f"Blob for '{virtual_path}' not found")
-        content = blob_path.read_text(encoding="utf-8")
+        content_bytes = blob_path.read_bytes()
+        if hashlib.sha256(content_bytes).hexdigest() != blob_hash:
+            return ReadResult(error=f"Blob for '{virtual_path}' failed hash verification")
+        content = content_bytes.decode("utf-8")
         return ReadResult(
             file_data={
                 "content": _slice_lines(content, offset=offset, limit=limit),
@@ -468,7 +604,7 @@ def sweep_cas_blobs(
 
 
 def _retention_tier(session: Session, artifact: SessionArtifact) -> str:
-    if artifact.pinned or artifact.kind in {"persisted_run", "report"}:
+    if artifact.pinned or artifact.kind in {"persisted_run", "report", "tool_result"}:
         return "load-bearing"
 
     evidence_kinds = {
@@ -586,6 +722,78 @@ def _thread_id_from_config(values: dict[str, Any]) -> int | None:
 def _tool_call_id_from_path(virtual_path: str) -> str:
     name = PurePosixPath(virtual_path).name
     return name.rsplit(".", 1)[0] if "." in name else name
+
+
+def _safe_tool_call_id(value: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value)).strip("._")
+    if not safe:
+        raise ValueError("tool_call_id does not contain a safe path component")
+    return safe[:120]
+
+
+def _utc_timestamp() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _parse_json_value(content: str) -> Any | None:
+    try:
+        return json.loads(content)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _extract_data_as_of(payload: dict[str, Any] | None) -> str | None:
+    if not payload:
+        return None
+    for key in ("valuation_as_of", "data_as_of", "as_of"):
+        value = payload.get(key)
+        if value is not None:
+            return str(value)
+    return None
+
+
+def _structural_summary(payload: Any | None) -> dict[str, Any]:
+    if payload is None:
+        return {"format": "text"}
+    if isinstance(payload, list):
+        return {"format": "json", "top_level_type": "list", "count": len(payload)}
+    if not isinstance(payload, dict):
+        return {"format": "json", "top_level_type": type(payload).__name__}
+    summary: dict[str, Any] = {
+        "format": "json",
+        "top_level_keys": sorted(str(key)[:120] for key in payload)[:40],
+    }
+    status = payload.get("status")
+    if isinstance(status, (bool, int, float)):
+        summary["status"] = status
+    elif isinstance(status, str):
+        summary["status"] = status[:120]
+    ids = {
+        str(key)[:120]: value if isinstance(value, int) else value[:120]
+        for key, value in payload.items()
+        if str(key).endswith("_id") and isinstance(value, (int, str))
+    }
+    if ids:
+        summary["ids"] = ids
+    counts = {
+        str(key): len(value)
+        for key, value in payload.items()
+        if isinstance(value, (list, dict))
+    }
+    if counts:
+        summary["counts"] = counts
+    return summary
+
+
+def _canonical_input_hash(tool_args: dict[str, Any] | None) -> str:
+    body = json.dumps(
+        tool_args or {},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return "sha256:" + hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
 def _slice_lines(content: str, *, offset: int, limit: int) -> str:

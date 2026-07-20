@@ -14,6 +14,7 @@ ENV_KEYS = [
     "OPEN_OTC_ARTIFACT_DIR",
     "OPEN_OTC_ASYNC_TASK_WORKERS",
     "OPEN_OTC_FEATURE_WORKFLOW_ROUTING",
+    "OPEN_OTC_HEDGE_RISK_MAX_AGE_SECONDS",
     "OPEN_OTC_RISK_PARALLEL_WORKERS",
     "RISK_PARALLEL_WORKERS",
 ]
@@ -104,6 +105,19 @@ def test_settings_has_agent_recursion_limit():
 
     s = Settings(agent_recursion_limit="0")
     assert s.agent_recursion_limit == 1
+
+
+def test_settings_has_positive_hedge_risk_ttl(monkeypatch):
+    import pytest
+
+    from app.config import Settings
+
+    assert Settings().hedge_risk_max_age_seconds == 900
+    monkeypatch.setenv("OPEN_OTC_HEDGE_RISK_MAX_AGE_SECONDS", "120")
+    assert Settings().hedge_risk_max_age_seconds == 120
+    monkeypatch.delenv("OPEN_OTC_HEDGE_RISK_MAX_AGE_SECONDS")
+    with pytest.raises(ValueError):
+        Settings(hedge_risk_max_age_seconds=0)
 
 
 def test_settings_defaults_to_v3_streaming_with_code_interpreter_off_and_workflow_routing_on():

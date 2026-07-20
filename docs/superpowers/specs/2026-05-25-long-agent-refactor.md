@@ -1483,7 +1483,7 @@ The fix is a dedicated external content-addressed store:
 
   | Class                     | Defined by                                                   | Retention default                        |
   | ------------------------- | ------------------------------------------------------------ | ---------------------------------------- |
-  | **Load-bearing**          | The artifact has at least one `load-bearing` evidence ref (`deterministic_run`, `snapshot`, `human_approval`), OR the artifact is `kind='persisted_run' \| 'report'`, OR the artifact is explicitly `pinned=TRUE`. | **Indefinite.** Never GC'd.              |
+  | **Load-bearing**          | The artifact has at least one `load-bearing` evidence ref (`deterministic_run`, `snapshot`, `human_approval`), OR the artifact is `kind='tool_result' \| 'persisted_run' \| 'report'`, OR the artifact is explicitly `pinned=TRUE`. | **Indefinite.** Never GC'd.              |
   | **Provisional**           | Artifact is `kind='claim' \| 'finding' \| 'plan'` with only `agent_attestation` / `context_pack` evidence refs, AND no downstream artifact has cited it (no inbound FK from another row's `cited_artifact_ids` or `superseded_by`). | TTL applies (default 180 days; tunable). |
   | **Superseded / unpinned** | Artifact has `superseded_by` set AND the superseding artifact is itself retained AND `pinned=FALSE`. | TTL applies (default 90 days; tunable).  |
   | **Orphan**                | Blob with no live `session_artifacts` row referencing it (e.g. left over from a failed write that didn't reach the ledger insert). | Aggressive (default 24h).                |
@@ -1505,30 +1505,77 @@ to begin with.
 
 ## C.10 Compaction (scoped, narrowed)
 
-With the ledger doing the heavy lifting, compaction's job shrinks dramatically. It
-operates only on a session's ephemeral message history (reasoning + read-tool eviction
-stubs), never on the ledger.
+Compaction owns only the checkpoint copy of conversation history. It can shorten
+reasoning and replace already-captured tool payloads with references; it can never
+rewrite a deterministic result, database result, persisted run, report, or ledger row.
 
-| Layer                                                        | Compactable? |
-| ------------------------------------------------------------ | ------------ |
-| DB tables (positions/runs/reports), structured artifact ledger, evidence refs, domain events, context packs | **Never**    |
-| Files: `/large_tool_results/`, `/trading_desk/`, `/artifacts/`, `/session/findings/` renderings | **Never**    |
-| ToolMessages from persisted-tool runs in any session         | **Never**    |
-| AIMessages that emitted artifacts of `kind` ∈ {`persisted_run`, `deterministic_query`, `finding`, `report`, `plan`} | **Never**    |
-| Most recent N (=6) messages in any session                   | **Never**    |
-| Older read-tool ToolMessages (data is in the ledger anyway)  | Compactable  |
-| Older pure-reasoning AIMessages                              | Compactable  |
-| Older eviction-stub ToolMessages                             | Compactable  |
+### C.10.1 Capture before compaction
 
-Compaction trigger: per session, when message history exceeds 70% of model context.
-Process: same as Section C.6 of the prior draft — batch consecutive compactable
-messages (≤8 messages or ≤4k tokens), summarise with a cheap model, replace in-place
-with a SystemMessage that cites preserved artifact ids.
+`GroundTruthArtifactMiddleware` derives the authoritative tool set from the
+server-owned `ToolGroup` capability classification. Read/detail/poll,
+deterministic-Python, domain read/write, and async-dispatch results are ground truth.
+Artifact-access tools do not create recursive artifacts; `read_artifact` instead
+reattaches the original artifact's server reference so its disclosed body can later
+compact back to that same id/hash.
 
-The summary itself **must** cite artifact ids and `tool_call_id`s for every
-substantive claim; rule of summarisation: "if a sentence makes a factual claim, it
-must end with `[artifact:N]` or `[tool_call:id]`." That's how compaction stays
-non-destructive — re-fetching is always possible.
+Every ground-truth `ToolMessage` is captured synchronously at the tool-call boundary,
+before compaction can see it:
+
+1. Preserve the exact UTF-8 result bytes in the content-addressed store.
+2. Record an immutable `kind='tool_result'` ledger row with `content_hash`, input
+   hash, `tool_call_id`, tool name, byte size, `generated_at`, `observed_at`, and
+   extracted `data_as_of` when present.
+3. Attach a compact `<artifact_ref>` containing those exact fields and a
+   deterministic structural summary to the model-visible result.
+
+Capture is idempotent for `(workflow_id, tool_call_id, content_hash)`. If capture
+fails, the raw `ToolMessage` remains in checkpoint state and is explicitly
+non-compactable. Loss of the compact reference therefore costs context, never truth.
+
+| Layer | Compactable? |
+| --- | --- |
+| Domain DB, artifact/evidence/event ledgers, context packs, CAS blobs | **Never** |
+| Uncaptured result from a server-classified ground-truth tool | **Never** |
+| Captured ground-truth result in checkpoint history | **Reference projection only** |
+| Artifact id/hash/tool/timestamp manifest | **Never rewritten by an LLM** |
+| Older reasoning, orchestration prose, and non-ground-truth messages | Compactable |
+| Most recent N (=6) messages | **Never** |
+
+Before an LLM summarises a compactable window, each captured ground-truth result is
+projected to its exact artifact-reference capsule; raw prices, Greeks, rows, and
+schedules are not sent to the summariser. The narrative prompt is forbidden from
+restating those values. After summarisation, the server appends a deterministic
+artifact manifest rendered from message metadata. The narrative is orientation only;
+the manifest and canonical artifact are the evidence.
+
+### C.10.2 Progressive disclosure, not RAG
+
+Canonical artifacts are recovered through deterministic, workflow-scoped tools:
+
+- `list_artifacts` lists compact descriptors and exact ids/hashes/timestamps.
+- `inspect_artifact` returns metadata plus a JSON-pointer or Markdown-heading map.
+- `read_artifact` reads an exact bounded line slice or an explicit JSON pointer /
+  Markdown section.
+
+There is no embedding index, vector similarity, semantic chunk selection, or
+model-generated retrieval ranking in this path. Context packs carry artifact
+descriptors; an agent discloses more only by choosing a concrete artifact id and
+selector. Cross-workflow artifact reads fail closed.
+
+### C.10.3 Time-sensitive action evidence
+
+Artifact time and data time are distinct and retained together: `generated_at` is
+when the immutable artifact was captured, `observed_at` is when the agent observed it,
+and `data_as_of` / domain timestamps describe the underlying market or valuation.
+
+Hedge execution is stricter. Risk aggregation emits `valuation_as_of`,
+`risk_generated_at`, `expires_at`, the configured freshness window, and a
+`position_set_hash`. A proposal refuses stale or historical risk. `book_hedge` requires
+the source artifact id plus artifact-generation, valuation, risk-generation, and
+expiry timestamps in the HITL payload. At execution it rechecks the latest usable risk
+run, TTL, workflow ownership, portfolio fingerprint, source payload, timestamps, spot,
+strategy, and solver legs. Any mismatch returns `stale_hedge_proposal` without a DB
+write; the only recovery is fresh risk and a new proposal.
 
 User-triggered `/compact` is a future UI affordance and emits a `compaction_run`
 domain event.
