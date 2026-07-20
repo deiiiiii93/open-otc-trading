@@ -60,6 +60,7 @@ class ResolvedRiskSource:
     portfolio_name: str
     base_currency: str
     requested_position_ids: tuple[int, ...] | None
+    position_set_hash: str
     positions: tuple[RiskPositionSnapshot, ...]
     position_markets: dict[int, PricingEnvironmentSnapshot]
     pricing_failures: dict[int, dict[str, Any]]
@@ -313,6 +314,9 @@ def _resolve_risk_source(
             session,
             position_ids=run.resolved_position_ids,
         )
+        from .hedging_greeks import resolved_position_set_hash
+
+        position_set_hash = resolved_position_set_hash(resolved)
         source_metadata = deepcopy(
             (run.metrics or {}).get("source_metadata") or {}
         )
@@ -368,6 +372,7 @@ def _resolve_risk_source(
             portfolio_name=portfolio.name,
             base_currency=portfolio.base_currency,
             requested_position_ids=scoped_position_ids,
+            position_set_hash=position_set_hash,
             positions=tuple(position_snapshots),
             position_markets={
                 position_id: market.model_copy(deep=True)
@@ -440,6 +445,7 @@ def _compute_risk_source(
         progress_callback=progress_callback,
     )
     metrics["valuation_as_of"] = resolved.valuation_as_of.isoformat()
+    metrics["position_set_hash"] = resolved.position_set_hash
     metrics["source_metadata"] = deepcopy(resolved.source_metadata)
     metrics["coverage"] = risk_coverage_diagnostics(
         metrics,

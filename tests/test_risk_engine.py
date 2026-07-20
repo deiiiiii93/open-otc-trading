@@ -480,6 +480,9 @@ def test_risk_run_can_scope_to_position_ids(tmp_path, monkeypatch):
 
         assert captured["position_ids"] == [pos_b.id]
         assert run.resolved_position_ids == [pos_b.id]
+        from app.services.hedging_greeks import resolved_position_set_hash
+
+        assert run.metrics["position_set_hash"] == resolved_position_set_hash([pos_b])
 
 
 def test_risk_run_rejects_position_ids_outside_portfolio(tmp_path, monkeypatch):

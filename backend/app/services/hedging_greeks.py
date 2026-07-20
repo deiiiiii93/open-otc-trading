@@ -11,14 +11,16 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..models import (
     Instrument,
+    Portfolio,
     Position,
     PricingParameterRow,
     RiskRun,
     TaskRun,
     TaskStatus,
 )
-from .domains import risk as risk_svc
+from .portfolio_membership import resolve_positions
 from .pricing_profiles import resolve_underlying_market_params
+from .quantark import closed_position_exclusion
 
 
 def _utc_timestamp(value: datetime) -> str:
@@ -44,31 +46,124 @@ def _parse_datetime(value: Any) -> datetime | None:
     return parsed
 
 
-def position_set_hash(session: Session, *, portfolio_id: int) -> str:
-    rows = (
-        session.query(
-            Position.id,
-            Position.version,
-            Position.status,
-            Position.quantity,
-            Position.updated_at,
-        )
-        .filter(Position.portfolio_id == portfolio_id)
-        .order_by(Position.id)
-        .all()
-    )
+def resolved_position_set_hash(positions: list[Position]) -> str:
+    """Hash the exact economically-open position objects used by a risk run."""
     payload = [
         {
-            "id": row.id,
-            "version": int(row.version or 1),
-            "status": row.status,
-            "quantity": float(row.quantity or 0.0),
-            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+            "id": position.id,
+            "version": int(position.version or 1),
+            "status": position.status,
+            "quantity": float(position.quantity or 0.0),
+            "updated_at": (
+                position.updated_at.isoformat() if position.updated_at else None
+            ),
         }
-        for row in rows
+        for position in sorted(positions, key=lambda item: int(item.id or 0))
     ]
     body = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def _resolved_open_positions(session: Session, *, portfolio_id: int) -> list[Position]:
+    session.flush()
+    portfolio = session.get(Portfolio, portfolio_id)
+    if portfolio is None:
+        raise ValueError(f"Portfolio not found: {portfolio_id}")
+
+    # ``resolve_positions`` intentionally uses the container relationship, which
+    # may already be loaded in a long-lived service session. Refresh those
+    # collections so a just-booked hedge cannot be hidden by SQLAlchemy's
+    # identity-map cache on a subsequent solve in the same unit of work.
+    visited: set[int] = set()
+
+    def _expire_container_membership(candidate: Portfolio) -> None:
+        if candidate.id in visited:
+            return
+        visited.add(candidate.id)
+        if candidate.kind == "container":
+            session.expire(candidate, ["positions"])
+            return
+        for source_id in candidate.source_portfolio_ids or []:
+            source = session.get(Portfolio, source_id)
+            if source is not None:
+                _expire_container_membership(source)
+
+    _expire_container_membership(portfolio)
+    return [
+        position
+        for position in resolve_positions(portfolio, session)
+        if closed_position_exclusion(position) is None
+    ]
+
+
+def position_set_hash(session: Session, *, portfolio_id: int) -> str:
+    """Hash current resolved membership, excluding economically closed positions."""
+    return resolved_position_set_hash(
+        _resolved_open_positions(session, portfolio_id=portfolio_id)
+    )
+
+
+def _legacy_position_set_matches(
+    run: RiskRun,
+    current_positions: list[Position],
+) -> bool:
+    """Best-effort compatibility for pre-fingerprint RiskRun rows.
+
+    Empty synthetic/manual runs remain usable for empty portfolios. For non-empty
+    books, the run must identify the same positions and any persisted row
+    quantities must still match. Position updates after run creation fail closed
+    because older rows cannot prove which economics were calculated.
+    """
+    rows = list((run.metrics or {}).get("positions") or [])
+    current_by_id = {
+        int(position.id): position
+        for position in current_positions
+        if position.id is not None
+    }
+
+    expected_ids: set[int] | None = None
+    if run.resolved_position_ids is not None:
+        try:
+            expected_ids = {int(position_id) for position_id in run.resolved_position_ids}
+        except (TypeError, ValueError):
+            return False
+    else:
+        row_ids: list[int] = []
+        for row in rows:
+            if not isinstance(row, dict) or row.get("position_id") is None:
+                continue
+            try:
+                row_ids.append(int(row["position_id"]))
+            except (TypeError, ValueError):
+                return False
+        if row_ids:
+            expected_ids = set(row_ids)
+
+    if expected_ids is None:
+        return not current_by_id
+    if expected_ids != set(current_by_id):
+        return False
+
+    for row in rows:
+        if not isinstance(row, dict) or row.get("position_id") is None:
+            continue
+        try:
+            position_id = int(row["position_id"])
+        except (TypeError, ValueError):
+            return False
+        if "quantity" not in row:
+            continue
+        try:
+            if float(row["quantity"]) != float(current_by_id[position_id].quantity):
+                return False
+        except (KeyError, TypeError, ValueError):
+            return False
+
+    if run.created_at is not None:
+        for position in current_positions:
+            if position.updated_at is not None and position.updated_at > run.created_at:
+                return False
+    return True
 
 
 def risk_run_time_metadata(
@@ -127,6 +222,8 @@ def aggregate_by_underlying(session: Session, *, portfolio_id: int) -> dict[str,
     a position-set fingerprint, and per-underlying targets. ``stale`` is based
     on both the configured intraday action TTL and historical valuation dates.
     """
+    from .domains import risk as risk_svc
+
     run: RiskRun | None = risk_svc.get_latest_run(portfolio_id=portfolio_id, session=session)
     if run is None:
         return {"status": "no_risk_run", "portfolio_id": portfolio_id,
@@ -170,11 +267,26 @@ def aggregate_by_underlying(session: Session, *, portfolio_id: int) -> dict[str,
         })
     now = datetime.utcnow()
     timing = risk_run_time_metadata(session, run, now=now)
+    current_positions = _resolved_open_positions(session, portfolio_id=portfolio_id)
+    current_position_set_hash = resolved_position_set_hash(current_positions)
+    frozen_position_set_hash = (run.metrics or {}).get("position_set_hash")
+    if isinstance(frozen_position_set_hash, str) and frozen_position_set_hash.startswith(
+        "sha256:"
+    ):
+        snapshot_matches = frozen_position_set_hash == current_position_set_hash
+    else:
+        frozen_position_set_hash = current_position_set_hash
+        snapshot_matches = _legacy_position_set_matches(run, current_positions)
+    if not snapshot_matches:
+        timing["stale"] = True
+        timing["stale_reasons"] = list(
+            dict.fromkeys([*timing["stale_reasons"], "portfolio_snapshot_changed"])
+        )
     return {"status": "ok", "portfolio_id": portfolio_id, "risk_run_id": run.id,
             "pricing_parameter_profile_id": profile_id,
             "created_at": run.created_at.isoformat(),
             "generated_at": _utc_timestamp(now),
-            "position_set_hash": position_set_hash(session, portfolio_id=portfolio_id),
+            "position_set_hash": frozen_position_set_hash,
             **timing,
             "underlyings": underlyings}
 

@@ -52,6 +52,7 @@ def _old_0046_engine(tmp_path: Path, name: str) -> sa.Engine:
                 "id INTEGER NOT NULL PRIMARY KEY, "
                 "portfolio_id INTEGER NOT NULL, "
                 "valuation_as_of DATETIME NOT NULL, "
+                "status VARCHAR(40) NOT NULL DEFAULT 'completed', "
                 "FOREIGN KEY(portfolio_id) REFERENCES portfolios (id))"
             )
         )
@@ -344,7 +345,7 @@ def test_stamped_0046_database_runs_forward_migration(
     with engine.connect() as connection:
         assert (
             MigrationContext.configure(connection).get_current_revision()
-            == "0047_limit_incident_portfolio"
+            == "0049_hedge_booking_claim"
         )
         assert (
             connection.scalar(

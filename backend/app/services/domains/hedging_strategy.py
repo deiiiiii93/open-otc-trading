@@ -7,15 +7,29 @@ from datetime import UTC, date, datetime, timedelta
 from math import ceil
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
-from ...models import HedgeBand, Instrument, Position, RiskRun, SessionArtifact, Underlying
+from ...models import (
+    AgentThread,
+    HedgeBand,
+    HedgeBookingClaim,
+    Instrument,
+    Position,
+    RiskRun,
+    SessionArtifact,
+    Underlying,
+    Workflow,
+)
 from ...schemas import PricingEnvironmentSnapshot
 from .. import hedging_greeks, hedging_legs, hedging_solver
 from ..hedging_strategy_registry import STRATEGIES, tiers_for
 
 # Hard fallback if no defaults row exists yet.
 _BUILTIN_DEFAULTS = {"delta": 500000.0, "gamma": 50000.0, "vega": 10000.0}
+_DESK_HEDGE_EVIDENCE_SOURCE = "hedge_evidence"
+_DESK_HEDGE_EVIDENCE_TITLE = "Desk hedge proposal evidence"
+_DESK_HEDGE_EVIDENCE_ISSUER = "hedging_solve_api"
 
 
 def resolve_bands(session: Session, *, underlying_id: int | None) -> dict[str, float]:
@@ -148,6 +162,111 @@ def solve_hedge(
     return output
 
 
+def capture_desk_hedge_proposal(
+    session: Session,
+    proposal: dict[str, Any],
+) -> dict[str, Any]:
+    """Persist an actionable UI proposal in the immutable workflow ledger.
+
+    Human hedge booking has no client workflow context.  A singleton,
+    server-owned workflow therefore captures the exact solve response and the
+    book endpoint later derives (rather than trusts) its workflow id from the
+    artifact.
+    """
+    required = (
+        "portfolio_id",
+        "underlying",
+        "strategy",
+        "risk_run_id",
+        "valuation_as_of",
+        "risk_generated_at",
+        "expires_at",
+        "spot",
+        "legs",
+        "position_set_hash",
+        "proposal_hash",
+    )
+    if any(proposal.get(field) is None for field in required):
+        return proposal
+
+    from ..deep_agent.ledger import LedgerWriter
+    from ..deep_agent.workflow_state import ensure_thread_workflow_state
+
+    thread = (
+        session.query(AgentThread)
+        .filter(AgentThread.source == _DESK_HEDGE_EVIDENCE_SOURCE)
+        .order_by(AgentThread.id)
+        .first()
+    )
+    if thread is None:
+        thread = AgentThread(
+            title=_DESK_HEDGE_EVIDENCE_TITLE,
+            character="risk_manager",
+            source=_DESK_HEDGE_EVIDENCE_SOURCE,
+        )
+        session.add(thread)
+        session.flush()
+    state = ensure_thread_workflow_state(session, thread.id)
+    generated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    content = json.dumps(
+        proposal,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    content_hash = "sha256:" + hashlib.sha256(content.encode("utf-8")).hexdigest()
+    artifact = LedgerWriter(session).write_artifact(
+        workflow_id=state.domain_workflow_id,
+        session_id=state.orchestrator_session_id,
+        kind="tool_result",
+        title=(
+            f"Hedge proposal for {proposal['underlying']} "
+            f"(risk run {proposal['risk_run_id']})"
+        ),
+        tool_call_id=f"desk:{proposal['proposal_hash'].removeprefix('sha256:')}",
+        tool_name="propose_hedge",
+        payload={
+            "content": content,
+            "content_hash": content_hash,
+            "generated_at": generated_at,
+            "data_as_of": proposal["valuation_as_of"],
+            "issued_by": _DESK_HEDGE_EVIDENCE_ISSUER,
+        },
+        pinned=True,
+    )
+    return {
+        **proposal,
+        "source_artifact_id": artifact.id,
+        "artifact_generated_at": generated_at,
+    }
+
+
+def desk_hedge_artifact_workflow_id(
+    session: Session,
+    source_artifact_id: int,
+) -> int | None:
+    """Return workflow scope only for an artifact issued by the human solve API."""
+    artifact = session.get(SessionArtifact, source_artifact_id)
+    if (
+        artifact is None
+        or artifact.kind != "tool_result"
+        or artifact.tool_name != "propose_hedge"
+        or (artifact.payload or {}).get("issued_by") != _DESK_HEDGE_EVIDENCE_ISSUER
+    ):
+        return None
+    owned_workflow = (
+        session.query(Workflow.id)
+        .join(AgentThread, AgentThread.id == Workflow.thread_id)
+        .filter(
+            Workflow.id == artifact.workflow_id,
+            AgentThread.source == _DESK_HEDGE_EVIDENCE_SOURCE,
+        )
+        .one_or_none()
+    )
+    return int(owned_workflow[0]) if owned_workflow is not None else None
+
+
 def _canonical_hash(value: Any) -> str:
     body = json.dumps(
         value,
@@ -183,7 +302,9 @@ def _source_payload(
     reasons: list[str] = []
     if artifact is None:
         return None, None, ["source_artifact_not_found"]
-    if workflow_id is not None and artifact.workflow_id != workflow_id:
+    if workflow_id is None:
+        reasons.append("source_artifact_workflow_required")
+    elif artifact.workflow_id != workflow_id:
         reasons.append("source_artifact_workflow_mismatch")
     if artifact.kind != "tool_result" or artifact.tool_name not in {
         "get_hedgeable_underlyings",
@@ -238,7 +359,18 @@ def _validate_hedge_evidence(
     )
 
     if source_artifact_id is None:
+        reasons.append("source_artifact_required")
         return reasons
+    if any(
+        value is None
+        for value in (
+            artifact_generated_at,
+            valuation_as_of,
+            risk_generated_at,
+            expires_at,
+        )
+    ):
+        reasons.append("approved_evidence_incomplete")
     artifact, source, artifact_reasons = _source_payload(
         session,
         source_artifact_id=source_artifact_id,
@@ -257,7 +389,7 @@ def _validate_hedge_evidence(
         "expires_at": (source.get("expires_at"), expires_at),
     }
     if any(
-        supplied is not None and authoritative != supplied
+        authoritative != supplied
         for authoritative, supplied in expected_timestamps.values()
     ):
         reasons.append("approved_timestamp_mismatch")
@@ -513,6 +645,62 @@ def _canonical_book_leg(session: Session, leg: dict[str, Any]) -> dict[str, Any]
     }
 
 
+def _claim_hedge_booking(
+    session: Session,
+    *,
+    portfolio_id: int,
+    underlying: str,
+    risk_run_id: int,
+    source_artifact_id: int,
+    workflow_id: int,
+    strategy: str,
+    actor: str,
+) -> tuple[HedgeBookingClaim | None, list[str]]:
+    """Atomically claim one risk-snapshot/underlying before any position write."""
+    claim = HedgeBookingClaim(
+        portfolio_id=portfolio_id,
+        risk_run_id=risk_run_id,
+        underlying=underlying,
+        source_artifact_id=source_artifact_id,
+        workflow_id=workflow_id,
+        strategy=strategy,
+        actor=actor,
+    )
+    try:
+        with session.begin_nested():
+            session.add(claim)
+            session.flush()
+    except IntegrityError:
+        reasons: list[str] = []
+        if (
+            session.query(HedgeBookingClaim.id)
+            .filter(HedgeBookingClaim.source_artifact_id == source_artifact_id)
+            .first()
+            is not None
+        ):
+            reasons.append("source_artifact_already_booked")
+        if (
+            session.query(HedgeBookingClaim.id)
+            .filter(
+                HedgeBookingClaim.portfolio_id == portfolio_id,
+                HedgeBookingClaim.risk_run_id == risk_run_id,
+                HedgeBookingClaim.underlying == underlying,
+            )
+            .first()
+            is not None
+        ):
+            reasons.append("risk_underlying_already_hedged")
+        return None, reasons or ["hedge_booking_claim_conflict"]
+    except OperationalError as exc:
+        # SQLite may surface a concurrent unique-key race as a transient write
+        # lock rather than waiting to report IntegrityError. Treat only that
+        # fail-closed concurrency case as a conflict; propagate real DB faults.
+        if "locked" not in str(exc).lower():
+            raise
+        return None, ["hedge_booking_claim_conflict"]
+    return claim, []
+
+
 def book_hedge(
     session: Session,
     *,
@@ -566,6 +754,29 @@ def book_hedge(
             "source_artifact_id": source_artifact_id,
             "reasons": reasons,
             "message": "Hedge evidence is stale or no longer matches the approved payload.",
+        }
+    assert source_artifact_id is not None
+    assert workflow_id is not None
+    claim, claim_reasons = _claim_hedge_booking(
+        session,
+        portfolio_id=portfolio_id,
+        underlying=underlying,
+        risk_run_id=risk_run_id,
+        source_artifact_id=source_artifact_id,
+        workflow_id=workflow_id,
+        strategy=strategy,
+        actor=actor,
+    )
+    if claim is None:
+        return {
+            "ok": False,
+            "status": "stale_hedge_proposal",
+            "portfolio_id": portfolio_id,
+            "underlying": underlying,
+            "risk_run_id": risk_run_id,
+            "source_artifact_id": source_artifact_id,
+            "reasons": claim_reasons,
+            "message": "This risk snapshot already authorized a hedge booking.",
         }
     position_ids: list[int] = []
     # Continue numbering past existing legs for this run so a second booking
@@ -621,6 +832,7 @@ def book_hedge(
                     "is_hedge": True,
                     "risk_run_id": risk_run_id,
                     "source_artifact_id": source_artifact_id,
+                    "hedge_booking_claim_id": claim.id,
                     "artifact_generated_at": artifact_generated_at,
                     "valuation_as_of": valuation_as_of,
                     "risk_generated_at": risk_generated_at,
@@ -644,6 +856,7 @@ def book_hedge(
         "underlying": underlying,
         "risk_run_id": risk_run_id,
         "source_artifact_id": source_artifact_id,
+        "hedge_booking_claim_id": claim.id,
         "artifact_generated_at": artifact_generated_at,
         "valuation_as_of": valuation_as_of,
         "risk_generated_at": risk_generated_at,

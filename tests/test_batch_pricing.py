@@ -139,6 +139,12 @@ def test_execute_batch_pricing_writes_both_outputs(tmp_path, monkeypatch):
         risk_row = risk_run.metrics["positions"][0]
         assert risk_row["position_id"] == pos_id
         assert risk_row["pricing_ok"] is True
+        from app.models import Position
+        from app.services.hedging_greeks import resolved_position_set_hash
+
+        assert risk_run.metrics["position_set_hash"] == resolved_position_set_hash(
+            [session.get(Position, pos_id)]
+        )
 
         # Task side: terminal status + both run ids in result_payload.
         task = session.get(TaskRun, task_id)

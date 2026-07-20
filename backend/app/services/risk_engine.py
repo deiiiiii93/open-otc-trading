@@ -606,6 +606,9 @@ def run_portfolio_risk(
         session,
         position_ids=position_ids,
     )
+    from .hedging_greeks import resolved_position_set_hash
+
+    position_set_hash = resolved_position_set_hash(resolved)
     # RiskRun has no explicit valuation date; pin assumption/quote resolution to a
     # single instant (utcnow) so every position in this run resolves as-of the same
     # time instead of letting each _apply_assumption_rqv default to its own utcnow.
@@ -628,6 +631,7 @@ def run_portfolio_risk(
         pricing_failures=pricing_failures,
         pricing_diagnostics=pricing_diagnostics,
     )
+    metrics["position_set_hash"] = position_set_hash
     status = _risk_status_from_metrics(metrics)
     run = RiskRun(
         portfolio_id=portfolio.id,

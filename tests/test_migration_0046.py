@@ -245,7 +245,7 @@ def test_orm_first_bootstrap_then_upgrade_head(tmp_path: Path, monkeypatch) -> N
     assert _TABLES <= set(inspector.get_table_names())
     with sa.create_engine(database_url).connect() as connection:
         revision = MigrationContext.configure(connection).get_current_revision()
-    assert revision == "0047_limit_incident_portfolio"
+    assert revision == "0049_hedge_booking_claim"
 
 
 def test_boot_repair_then_upgrade_adds_task_monitoring_foreign_key(

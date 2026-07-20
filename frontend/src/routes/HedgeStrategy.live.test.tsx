@@ -5,6 +5,11 @@ import { HedgeStrategyLive } from './HedgeStrategy.live'
 const proposal = {
   status: 'feasible', portfolio_id: 1, underlying: '000905.SH',
   strategy: 'delta_neutral', risk_run_id: 7, spot: 5600,
+  source_artifact_id: 901,
+  artifact_generated_at: '2026-06-03T08:00:05Z',
+  valuation_as_of: '2026-06-03T08:00:00Z',
+  risk_generated_at: '2026-06-03T08:00:01Z',
+  expires_at: '2026-06-03T08:05:05Z',
   targets: { delta: 1120000, gamma: 0, vega: 0 },
   bands: { delta: 500000, gamma: 50000, vega: 10000 },
   legs: [{ contract_code: 'IC2406', exchange: 'CFFEX', instrument_type: 'future',
@@ -117,8 +122,40 @@ it('books the feasible proposal', async () => {
   const bookBtn = screen.getByRole('button', { name: /book hedge/i })
   await waitFor(() => expect(bookBtn).toBeEnabled())
   fireEvent.click(bookBtn)
-  await waitFor(() =>
-    expect(spy.mock.calls.some(([u]) => String(u).includes('/api/hedging/book'))).toBe(true))
+  await waitFor(() => {
+    const bookCall = spy.mock.calls.find(([u, init]) =>
+      String(u).includes('/api/hedging/book') && init?.method === 'POST')
+    expect(bookCall).toBeTruthy()
+    const body = JSON.parse(String(bookCall![1].body))
+    expect(body).toMatchObject({
+      source_artifact_id: 901,
+      artifact_generated_at: '2026-06-03T08:00:05Z',
+      valuation_as_of: '2026-06-03T08:00:00Z',
+      risk_generated_at: '2026-06-03T08:00:01Z',
+      expires_at: '2026-06-03T08:05:05Z',
+    })
+    expect(body).not.toHaveProperty('workflow_id')
+  })
+})
+
+it('refuses to book a proposal without the immutable evidence tuple', async () => {
+  const spy = vi.fn()
+  mockApi(spy, {
+    '/api/hedging/solve': () => ({
+      ...proposal,
+      source_artifact_id: undefined,
+      artifact_generated_at: undefined,
+      valuation_as_of: undefined,
+      risk_generated_at: undefined,
+      expires_at: undefined,
+    }),
+  })
+  render(<HedgeStrategyLive {...baseProps} />)
+  await screen.findByText('-1')
+  fireEvent.click(screen.getByRole('button', { name: /book hedge/i }))
+
+  expect(await screen.findByText(/missing immutable booking evidence/i)).toBeInTheDocument()
+  expect(spy.mock.calls.some(([u]) => String(u).includes('/api/hedging/book'))).toBe(false)
 })
 
 it('loosens the binding band and re-solves an infeasible proposal', async () => {
@@ -167,7 +204,13 @@ it('confirms before booking an infeasible proposal anyway', async () => {
       portfolio_id: 1,
       underlying: '000905.SH',
       legs: infeasibleProposal.legs,
+      source_artifact_id: 901,
+      artifact_generated_at: '2026-06-03T08:00:05Z',
+      valuation_as_of: '2026-06-03T08:00:00Z',
+      risk_generated_at: '2026-06-03T08:00:01Z',
+      expires_at: '2026-06-03T08:05:05Z',
     })
+    expect(JSON.parse(String(bookCall![1].body))).not.toHaveProperty('workflow_id')
   })
 })
 

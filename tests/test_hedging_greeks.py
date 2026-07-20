@@ -144,6 +144,142 @@ def test_aggregate_marks_todays_run_fresh(session):
     assert out["position_set_hash"].startswith("sha256:")
 
 
+def test_aggregate_marks_frozen_position_snapshot_drift_stale(session):
+    pf = Portfolio(name="pf_position_drift", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    position = Position(
+        portfolio_id=pf.id,
+        underlying="000905.SH",
+        product_type="SpotInstrument",
+        quantity=1.0,
+        entry_price=0.0,
+        status="open",
+    )
+    session.add(position)
+    session.flush()
+    frozen = hedging_greeks.resolved_position_set_hash([position])
+    run = _run(
+        session,
+        pf.id,
+        [{
+            "position_id": position.id,
+            "underlying": "000905.SH",
+            "quantity": 1.0,
+            "delta_cash": 5.0,
+            "gamma_cash": 1.0,
+            "vega": 1.0,
+            "spot": 5600.0,
+            "greeks_ok": True,
+        }],
+    )
+    run.metrics = {**run.metrics, "position_set_hash": frozen}
+    run.resolved_position_ids = [position.id]
+    session.flush()
+
+    assert hedging_greeks.aggregate_by_underlying(
+        session, portfolio_id=pf.id
+    )["stale"] is False
+
+    position.quantity = 2.0
+    session.flush()
+    out = hedging_greeks.aggregate_by_underlying(session, portfolio_id=pf.id)
+
+    assert out["stale"] is True
+    assert "portfolio_snapshot_changed" in out["stale_reasons"]
+    assert out["position_set_hash"] == frozen
+
+
+def test_aggregate_legacy_snapshot_detects_added_position(session):
+    pf = Portfolio(name="pf_legacy_position_drift", base_currency="CNY")
+    session.add(pf)
+    session.flush()
+    position = Position(
+        portfolio_id=pf.id,
+        underlying="000905.SH",
+        product_type="SpotInstrument",
+        quantity=1.0,
+        entry_price=0.0,
+        status="open",
+    )
+    session.add(position)
+    session.flush()
+    run = _run(
+        session,
+        pf.id,
+        [{
+            "position_id": position.id,
+            "underlying": "000905.SH",
+            "quantity": 1.0,
+            "delta_cash": 5.0,
+            "gamma_cash": 1.0,
+            "vega": 1.0,
+            "spot": 5600.0,
+            "greeks_ok": True,
+        }],
+    )
+    run.resolved_position_ids = [position.id]
+    session.flush()
+
+    assert hedging_greeks.aggregate_by_underlying(
+        session, portfolio_id=pf.id
+    )["stale"] is False
+
+    session.add(Position(
+        portfolio_id=pf.id,
+        underlying="000905.SH",
+        product_type="SpotInstrument",
+        quantity=-1.0,
+        entry_price=0.0,
+        status="open",
+    ))
+    session.flush()
+    out = hedging_greeks.aggregate_by_underlying(session, portfolio_id=pf.id)
+
+    assert out["stale"] is True
+    assert "portfolio_snapshot_changed" in out["stale_reasons"]
+
+
+def test_position_set_hash_uses_view_membership_and_ignores_closed_positions(session):
+    from app.models import PortfolioKind
+
+    source = Portfolio(
+        name="hash source",
+        base_currency="CNY",
+        kind=PortfolioKind.CONTAINER.value,
+    )
+    view = Portfolio(
+        name="hash view",
+        base_currency="CNY",
+        kind=PortfolioKind.VIEW.value,
+    )
+    session.add_all([source, view])
+    session.flush()
+    view.source_portfolio_ids = [source.id]
+    live = Position(
+        portfolio_id=source.id,
+        underlying="000905.SH",
+        product_type="SpotInstrument",
+        quantity=1.0,
+        entry_price=0.0,
+        status="open",
+    )
+    closed = Position(
+        portfolio_id=source.id,
+        underlying="000905.SH",
+        product_type="SpotInstrument",
+        quantity=99.0,
+        entry_price=0.0,
+        status="closed",
+    )
+    session.add_all([live, closed])
+    session.flush()
+
+    assert hedging_greeks.position_set_hash(
+        session, portfolio_id=view.id
+    ) == hedging_greeks.resolved_position_set_hash([live])
+
+
 def test_aggregate_marks_same_day_run_stale_after_action_ttl(
     session, monkeypatch
 ):

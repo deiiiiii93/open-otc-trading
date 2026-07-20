@@ -426,6 +426,47 @@ class SessionArtifact(Base):
     )
 
 
+class HedgeBookingClaim(Base):
+    """Atomic one-use claim for a hedge proposal at its source-risk boundary."""
+
+    __tablename__ = "hedge_booking_claims"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    portfolio_id: Mapped[int] = mapped_column(
+        ForeignKey("portfolios.id", ondelete="CASCADE"),
+        index=True,
+    )
+    risk_run_id: Mapped[int] = mapped_column(
+        ForeignKey("risk_runs.id", ondelete="CASCADE"),
+        index=True,
+    )
+    underlying: Mapped[str] = mapped_column(String(80))
+    source_artifact_id: Mapped[int] = mapped_column(
+        ForeignKey("session_artifacts.id", ondelete="CASCADE"),
+        index=True,
+    )
+    workflow_id: Mapped[int] = mapped_column(
+        ForeignKey("workflows.id", ondelete="CASCADE"),
+        index=True,
+    )
+    strategy: Mapped[str] = mapped_column(String(40))
+    actor: Mapped[str] = mapped_column(String(40))
+    claimed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source_artifact_id",
+            name="uq_hedge_booking_claim_source_artifact",
+        ),
+        UniqueConstraint(
+            "portfolio_id",
+            "risk_run_id",
+            "underlying",
+            name="uq_hedge_booking_claim_run_underlying",
+        ),
+    )
+
+
 class ArtifactEvidenceRef(Base):
     __tablename__ = "artifact_evidence_refs"
 
