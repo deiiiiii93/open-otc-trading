@@ -103,7 +103,12 @@ export function useProfileLibrary({
         key: 'position',
         header: 'POSITION',
         width: '1.4fr',
-        render: (row) => (isDormant(row) ? '-' : row.source_trade_id),
+        render: (row) =>
+          row.position_id != null
+            ? `#${row.position_id}`
+            : isDormant(row)
+              ? '-'
+              : row.source_trade_id,
       },
       {
         key: 'symbol',

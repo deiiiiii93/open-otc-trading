@@ -729,6 +729,8 @@ export type PricingParameterRow = {
   source_trade_id: string;
   symbol: string;
   instrument_id?: number | null;
+  /** Set on curve-generated rows: the position this row is bound to. */
+  position_id?: number | null;
   rate?: number | null;
   dividend_yield?: number | null;
   volatility?: number | null;
