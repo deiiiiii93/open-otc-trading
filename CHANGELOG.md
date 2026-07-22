@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Term-structure curves for pricing parameters.** Author per-underlying `r`/`q`/`vol`
+  curves on the Instrument baseline (Instruments → Assumptions tab, with a per-param
+  editor + token-only recharts charts, or via the `set_instrument_pricing_defaults`
+  agent tool). A new *generate* step walks every open OTC trade, linearly interpolates
+  each curve at that trade's ACT/365 time-to-maturity (falling back to the flat
+  Instrument scalar when a param has no curve), and materializes the results into a
+  normal flat `PricingParameterProfile` (`source_type="curve"`). Pricing itself stays
+  flat and unchanged — QuantArk still receives scalars. New: migration `0050` (three
+  nullable JSON curve columns on `instruments`), `POST /api/pricing-parameter-profiles/from-curves`,
+  the HITL agent tool `generate_pricing_parameters_from_curves`, and curve fields on the
+  underlying-pricing-defaults API. Missing curve + missing scalar for a scoped trade is
+  reported as `unfilled_trades` (mirrors the assumption-build gate).
 - **Long-agent ground truth now survives compaction by immutable reference, with
   time-safe hedge execution.** Every server-classified deterministic/domain tool result
   is captured exactly into the content-addressed artifact ledger before it can be
@@ -72,6 +84,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never quotes).
 
 ### Fixed
+- **Arena: the infra gate now recognises mid-stream transport drops and the ZenMux
+  account-gate body, and no longer false-matches source line numbers.** A trial
+  truncated by an httpx `RemoteProtocolError('peer closed connection')` / stalled SSE
+  stream was scored as a genuine low instead of being gated `invalid` (surfaced by Run
+  #33 `longcat-2-0`), because `_PROVIDER_ERROR_RE` only covered `Connection/Proxy/Read`
+  wording. It now also matches `RemoteProtocolError` / `peer closed connection` /
+  `incomplete chunked read` / `StreamChunkTimeout` / `No streaming chunk received` /
+  `APIConnectionError`, plus the ZenMux `reject_no_credit` / `insufficient balance`
+  402 account-gate. Conversely, the bare `\b(?:429|502|503|504)\b` alternative matched
+  traceback line numbers (`factory.py, line 502`) as HTTP status codes — those codes now
+  require an HTTP reason phrase or an `http`/`status`/`Error code:` prefix, so a line
+  number can never be mistaken for a provider failure (the false positive that briefly
+  mis-flagged `kimi-2-7` in the Run #33 transcript audit).
 - **Arena: the seed-purge no longer destroys real-book pricing provenance when
   reclaiming a benchmark profile.** A match's LLM can price a **real, non-arena book**
   (e.g. the "Default" portfolio) against the arena-seeded pricing profile; that

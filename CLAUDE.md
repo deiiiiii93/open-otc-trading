@@ -593,3 +593,56 @@ swap `_REGISTRY` under the same lock, then the router calls
 - **Tests are hermetic against `AGENT_CHANNELS_FILE` leaks** — the writer/router/serializer
   test fixtures source the config from `channel_registry._REPO_ROOT`, not the env-overridable
   `_yaml_path()` (another test in the suite repoints that env var).
+
+---
+
+## Term-structure curves for pricing parameters
+
+Per-underlying `r`/`q`/`vol` **term-structure curves** feed a *materialize-then-price*
+step: curves are interpolated at each open trade's maturity into a normal **flat**
+`PricingParameterProfile`, so the pricing path (QuantArk, `risk_engine`,
+`build_assumptions_set`) is **completely unchanged** — it still consumes scalars.
+
+**Storage.** Three nullable JSON columns on `instruments` (`Instrument` /
+`UnderlyingPricingDefault`, `models.py`): `rate_curve` / `dividend_yield_curve` /
+`volatility_curve`, each `list[{"tenor": <label>, "value": <float>}] | None`. `None`/`[]`
+means "no curve — use the flat scalar". Migration `0050`.
+
+**Interpolation** is a pure, DB-free module: `services/term_structure.py` — `TENOR_YEARS`
+(label→year-fraction map, the single source; extend it to add 1D/4M/7Y/…), `validate_curve`
+(known labels, dedup, finite, vol `>0`), and `interpolate_curve` (linear on the year axis,
+flat extrapolation past the ends, single point → constant, empty/None → None).
+
+**Generate** lives in the domain facade `services/domains/pricing_profiles.py`:
+`generate_curve_param_rows` (read-only compute) walks `open_otc_positions`, skips delta-one
+(`position_requires_pricing_params`), reads each trade's `maturity_date` via
+`compatibility_terms_for_position(...)["product_kwargs"]`, computes `tenor_years` as
+**ACT/365**, interpolates each curve (fallback to the flat Instrument scalar), and raises
+`ValueError({"unfilled_trades": [...]})` when a param has neither curve nor scalar (mirrors
+`build_assumptions_set`'s `unfilled_underlyings`). `generate_profile_from_curves` writes a
+`PricingParameterProfile(source_type="curve")` + one flat row per trade (keyed on
+`source_trade_id`, with per-row interpolation provenance) and audits
+`pricing_parameter_profile.generated_from_curves`.
+
+**Surfaces.** REST: curve fields on `PUT /api/underlying-pricing-defaults/{underlying}` and
+`GET .../underlying-pricing-defaults` (validated server-side via `validate_curve`), plus
+`POST /api/pricing-parameter-profiles/from-curves`. Agent: `set_/get_instrument_pricing_defaults`
+round-trip curves, and the WRITE+HITL tool `generate_pricing_parameters_from_curves`. Frontend:
+Instruments → **Assumptions** tab only — a per-underlying curve editor (tenor `<select>` +
+value input, add/remove) and three token-only recharts line charts (one per param, since r/q
+sit near 0–5% and vol near 15–40% — a shared y-axis would flatten r/q), plus a "Generate
+pricing parameters from curves" button. Pricing Parameters stays a flat table.
+
+### Gotchas
+
+- **Curves feed ONLY the generate step.** `build_assumptions_set` is untouched and still uses
+  the flat scalars — do not wire curves into the assumption-set build (deferred by design).
+- **The generate tool needs four registrations,** not one: `QUANT_AGENT_TOOLS`
+  (`tools/__init__.py`), `DEEP_AGENT_TOOL_NAMES` (`services/agents.py`), and all **three**
+  structures in `services/deep_agent/hitl.py` (`INTERRUPT_TOOL_NAMES` + `_RISK_LEVEL_BY_TOOL`
+  → `"write"` + `_LABEL_BY_TOOL`). `test_hitl.py`'s exact-set guard forces you to update it.
+- **`source_type="curve"` is load-bearing** — the generate path does NOT reuse `create_profile`
+  (which hardcodes `source_type="agent"` and a generic audit event); it has its own write.
+- **`validate_curve` is the single validation seam,** shared by the REST PUT
+  (`upsert_underlying_default`) and the agent setter (`set_instrument_defaults`). Volatility
+  curves require `> 0`; rate/dividend allow any finite value (rates can be negative).
