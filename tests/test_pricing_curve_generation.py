@@ -104,6 +104,38 @@ def test_generate_curve_rows_interpolates_at_trade_tenor(session: Session) -> No
     assert row.source_payload["tenor_years"] == pytest.approx(0.4986, abs=1e-3)
 
 
+def test_generate_curve_rows_resolves_exercise_date_maturity(session: Session) -> None:
+    """Real booked vanillas carry `exercise_date`, not `maturity_date` — the
+    maturity extraction must find it (regression: live book has no maturity_date)."""
+    portfolio = session.query(Portfolio).first() or Portfolio(name="Test")
+    if portfolio.id is None:
+        session.add(portfolio)
+        session.flush()
+    pos = Position(
+        portfolio_id=portfolio.id, product_id=None, underlying="000300.SH",
+        product_type="EuropeanVanillaOption",
+        # No maturity_date key — only exercise_date / settlement_date, as on the live book.
+        product_kwargs={"exercise_date": "2026-07-02", "settlement_date": "2026-07-02",
+                        "option_type": "CALL", "strike": 4931.386},
+        quantity=1.0, source_trade_id="EX-1", status="open", position_kind="otc",
+        engine_name="quantark.vanilla", engine_kwargs={}, source_payload={},
+        mapping_status="supported",
+    )
+    session.add(pos)
+    inst = ensure_underlying(session, "000300.SH", source="manual", status="active")
+    inst.rate_curve = [{"tenor": "3M", "value": 0.02}, {"tenor": "1Y", "value": 0.05}]
+    inst.dividend_yield = 0.01
+    inst.volatility_curve = [{"tenor": "6M", "value": 0.22}]
+    session.flush()
+
+    rows = generate_curve_param_rows(session, valuation_date=datetime(2026, 1, 1))
+    assert len(rows) == 1
+    assert rows[0].source_trade_id == "EX-1"
+    assert rows[0].volatility == pytest.approx(0.22)
+    # 182 days / 365 = 0.4986y from exercise_date.
+    assert rows[0].source_payload["tenor_years"] == pytest.approx(0.4986, abs=1e-3)
+
+
 def test_generate_curve_rows_skips_delta_one(session: Session) -> None:
     pos = _seed_open_option(session, underlying="IF2609.CFE", maturity="2026-09-01")
     pos.engine_name = "DeltaOneEngine"

@@ -119,6 +119,20 @@ class GeneratedParamRow:
     source_payload: dict[str, Any]
 
 
+# Product families store the option's final maturity under different keys — a
+# vanilla booked on the live desk carries `exercise_date`, not `maturity_date`.
+# Priority order = the effective time-to-expiry date (explicit maturity/expiry
+# first, then exercise, then settlement). Mirrors the OptionCoreTerm expiry
+# resolution in domains/position_terms.py.
+_MATURITY_KEYS = (
+    "maturity_date",
+    "expiry_date",
+    "expiry",
+    "exercise_date",
+    "settlement_date",
+)
+
+
 def _coerce_maturity(value: Any) -> date | None:
     if isinstance(value, datetime):
         return value.date()
@@ -129,6 +143,14 @@ def _coerce_maturity(value: Any) -> date | None:
             return date.fromisoformat(value.strip()[:10])
         except ValueError:
             return None
+    return None
+
+
+def _extract_maturity(product_kwargs: dict[str, Any]) -> date | None:
+    for key in _MATURITY_KEYS:
+        coerced = _coerce_maturity(product_kwargs.get(key))
+        if coerced is not None:
+            return coerced
     return None
 
 
@@ -168,7 +190,7 @@ def generate_curve_param_rows(
     for pos in positions:
         instrument = instruments[pos.underlying]
         terms = compatibility_terms_for_position(pos)
-        maturity = _coerce_maturity((terms.get("product_kwargs") or {}).get("maturity_date"))
+        maturity = _extract_maturity(terms.get("product_kwargs") or {})
         if maturity is None:
             unfilled.append({"source_trade_id": pos.source_trade_id,
                              "position_id": pos.id, "reason": "no_maturity_date"})
