@@ -1573,6 +1573,11 @@ class BuildAssumptionsRequest(BaseModel):
     valuation_date: datetime | None = None
 
 
+class GenerateFromCurvesRequest(BaseModel):
+    name: str | None = None
+    valuation_date: datetime | None = None
+
+
 class AssumptionRowOut(BaseModel):
     id: int
     instrument_id: int

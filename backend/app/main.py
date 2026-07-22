@@ -72,6 +72,7 @@ from .schemas import (
     EngineConfigVariantIn,
     EngineConfigVariantOut,
     BuildAssumptionsRequest,
+    GenerateFromCurvesRequest,
     FxRateCreate,
     FxRateOut,
     FxRateAkshareRequest,
@@ -2551,6 +2552,37 @@ def create_app(
             .filter(PricingParameterProfile.id == profile.id)
             .one()
         )
+
+    @app.post(
+        "/api/pricing-parameter-profiles/from-curves",
+        response_model=PricingParameterProfileOut,
+    )
+    def generate_pricing_parameters_from_curves_endpoint(
+        payload: GenerateFromCurvesRequest,
+        session: Session = Depends(get_db),
+    ):
+        try:
+            profile = pricing_profiles_domain.generate_profile_from_curves(
+                name=payload.name,
+                valuation_date=payload.valuation_date,
+                actor="desk_user",
+                session=session,
+            )
+        except DomainWriteError as exc:
+            if exc.error == "unfilled_trades":
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "detail": "trades missing curve/scalar inputs",
+                        "unfilled_trades": (exc.detail or {}).get("unfilled_trades", []),
+                    },
+                ) from exc
+            if exc.error == "no_open_positions":
+                raise HTTPException(
+                    status_code=400, detail="no open positions in scope"
+                ) from exc
+            raise HTTPException(status_code=400, detail=exc.error) from exc
+        return profile
 
     @app.post(
         "/api/portfolios/{portfolio_id}/positions/price",
