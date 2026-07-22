@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import String, cast, desc, or_
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 from app import database
 from app.models import (
     FxRate,
+    Instrument,
     Position,
     PositionValuationRun,
     PricingParameterProfile,
@@ -19,7 +21,11 @@ from app.models import (
     RiskRun,
 )
 from app.services.audit import record_audit
+from app.services.domains.products import compatibility_terms_for_position
 from app.services.instruments import ensure_instrument
+from app.services.pricing_profiles import position_requires_pricing_params
+from app.services.term_structure import interpolate_curve
+from app.services.underlyings import ensure_underlying, open_otc_positions
 
 from ._errors import DomainWriteError
 from ._validation import invalid_param_reason
@@ -94,6 +100,120 @@ __all__ = ["list_profiles", "get_profile", "create_profile", "update_profile", "
 
 ARCHIVED_SOURCE_TYPE = "default_underlying_archived"
 PARAM_FIELDS = ("rate", "dividend_yield", "volatility")
+
+_PARAM_CURVE_ATTR = {
+    "rate": "rate_curve",
+    "dividend_yield": "dividend_yield_curve",
+    "volatility": "volatility_curve",
+}
+
+
+@dataclass(frozen=True)
+class GeneratedParamRow:
+    symbol: str
+    source_trade_id: str
+    instrument_id: int
+    rate: float
+    dividend_yield: float
+    volatility: float
+    source_payload: dict[str, Any]
+
+
+def _coerce_maturity(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            return date.fromisoformat(value.strip()[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def generate_curve_param_rows(
+    session: Session, *, valuation_date: datetime | None = None
+) -> list[GeneratedParamRow]:
+    """Interpolate each open OTC trade's r/q/vol from its underlying's curves.
+
+    Per param: interpolate the curve at the trade's ACT/365 tenor; when there is
+    no curve, fall back to the flat Instrument scalar. A trade with an
+    unresolvable maturity, or any param with neither curve nor scalar, is
+    collected as "unfilled". Nothing is silently dropped.
+
+    Raises ValueError("no open positions in scope") when the scope is empty (or
+    every position is delta-one), and ValueError({"unfilled_trades": [...]})
+    when any scoped trade cannot be fully resolved.
+    """
+    effective = valuation_date or datetime.utcnow()
+    val_date = effective.date()
+    positions = [p for p in open_otc_positions(session)
+                 if position_requires_pricing_params(p)]
+    if not positions:
+        raise ValueError("no open positions in scope")
+
+    instruments: dict[str, Instrument] = {
+        row.symbol: row for row in session.query(Instrument).all()
+    }
+    for pos in positions:
+        if pos.underlying not in instruments:
+            instruments[pos.underlying] = ensure_underlying(
+                session, pos.underlying, source="pricing_profile", status="draft"
+            )
+    session.flush()
+
+    rows: list[GeneratedParamRow] = []
+    unfilled: list[dict] = []
+    for pos in positions:
+        instrument = instruments[pos.underlying]
+        terms = compatibility_terms_for_position(pos)
+        maturity = _coerce_maturity((terms.get("product_kwargs") or {}).get("maturity_date"))
+        if maturity is None:
+            unfilled.append({"source_trade_id": pos.source_trade_id,
+                             "position_id": pos.id, "reason": "no_maturity_date"})
+            continue
+        tenor_years = max(0.0, (maturity - val_date).days / 365.0)
+
+        values: dict[str, float] = {}
+        interp: dict[str, dict] = {}
+        missing: list[str] = []
+        for param, curve_attr in _PARAM_CURVE_ATTR.items():
+            curve = getattr(instrument, curve_attr, None)
+            curve_value = interpolate_curve(curve, tenor_years)
+            if curve_value is not None:
+                values[param] = curve_value
+                interp[param] = {"source": "curve", "value": curve_value, "curve": curve}
+                continue
+            flat = getattr(instrument, param, None)
+            if flat is not None:
+                values[param] = flat
+                interp[param] = {"source": "flat_scalar", "value": flat}
+            else:
+                missing.append(param)
+        if missing:
+            unfilled.append({"source_trade_id": pos.source_trade_id,
+                             "position_id": pos.id, "reason": "missing_params",
+                             "missing_params": missing})
+            continue
+
+        rows.append(GeneratedParamRow(
+            symbol=pos.underlying,
+            source_trade_id=pos.source_trade_id or "",
+            instrument_id=instrument.id,
+            rate=values["rate"],
+            dividend_yield=values["dividend_yield"],
+            volatility=values["volatility"],
+            source_payload={"generated_from": "instrument_curves",
+                            "instrument_id": instrument.id,
+                            "tenor_years": tenor_years, "interp": interp},
+        ))
+
+    if unfilled:
+        raise ValueError({"unfilled_trades": unfilled})
+    if not rows:
+        raise ValueError("no open positions in scope")
+    return rows
 
 
 def _clean(value: Any) -> str:

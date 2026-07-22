@@ -269,6 +269,29 @@ def open_position_underlying_symbols(session: Session) -> list[str]:
     return sorted(underlyings)
 
 
+def open_otc_positions(session: Session) -> list[Position]:
+    """Open OTC positions in the same scope as open_position_underlying_symbols,
+    but returning the Position rows (product eager-loaded for term extraction)."""
+    from sqlalchemy.orm import selectinload
+
+    rows = (
+        session.query(Position)
+        .options(selectinload(Position.product))
+        .filter(Position.underlying.isnot(None))
+        .filter(Position.status == "open")
+        .filter(Position.position_kind == "otc")
+        .all()
+    )
+    live: list[Position] = []
+    for pos in rows:
+        payload = pos.source_payload if isinstance(pos.source_payload, dict) else {}
+        state = payload.get("trade_state")
+        if is_knocked_out(state or ""):
+            continue
+        live.append(pos)
+    return live
+
+
 def sync_underlyings_from_positions(session: Session) -> UnderlyingSyncResult:
     symbols = open_position_underlying_symbols(session)
     existing = {
