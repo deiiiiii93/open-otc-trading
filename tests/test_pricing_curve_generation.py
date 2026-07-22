@@ -136,6 +136,40 @@ def test_generate_curve_rows_resolves_exercise_date_maturity(session: Session) -
     assert rows[0].source_payload["tenor_years"] == pytest.approx(0.4986, abs=1e-3)
 
 
+def test_generate_curve_rows_resolves_numeric_maturity_year_fraction(session: Session) -> None:
+    """Positions can carry maturity as a numeric year-fraction ("maturity": 0.5,
+    the QuantArk T) instead of a date — use it directly as the tenor (regression:
+    live book's US-stock trades store maturity this way, not as a date)."""
+    portfolio = session.query(Portfolio).first() or Portfolio(name="Test")
+    if portfolio.id is None:
+        session.add(portfolio)
+        session.flush()
+    pos = Position(
+        portfolio_id=portfolio.id, product_id=None, underlying="AAPL",
+        product_type="EuropeanVanillaOption",
+        product_kwargs={"maturity": 0.5, "option_type": "CALL", "strike": 100.0,
+                        "contract_multiplier": 1.0},
+        quantity=1.0, source_trade_id="YF-1", status="open", position_kind="otc",
+        engine_name="BlackScholesEngine", engine_kwargs={}, source_payload={},
+        mapping_status="supported",
+    )
+    session.add(pos)
+    inst = ensure_underlying(session, "AAPL", source="manual", status="active")
+    # 6M knot -> value read directly at tenor 0.5.
+    inst.rate_curve = [{"tenor": "3M", "value": 0.02}, {"tenor": "6M", "value": 0.03}]
+    inst.dividend_yield = 0.01
+    inst.volatility_curve = [{"tenor": "6M", "value": 0.25}]
+    session.flush()
+
+    # valuation_date is irrelevant for a numeric year-fraction maturity.
+    rows = generate_curve_param_rows(session, valuation_date=datetime(2026, 1, 1))
+    assert len(rows) == 1
+    assert rows[0].source_trade_id == "YF-1"
+    assert rows[0].source_payload["tenor_years"] == pytest.approx(0.5)
+    assert rows[0].rate == pytest.approx(0.03)        # 6M rate knot
+    assert rows[0].volatility == pytest.approx(0.25)  # single-point vol curve
+
+
 def test_generate_curve_rows_skips_delta_one(session: Session) -> None:
     pos = _seed_open_option(session, underlying="IF2609.CFE", maturity="2026-09-01")
     pos.engine_name = "DeltaOneEngine"

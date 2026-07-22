@@ -154,6 +154,25 @@ def _extract_maturity(product_kwargs: dict[str, Any]) -> date | None:
     return None
 
 
+def _tenor_years_for_position(
+    product_kwargs: dict[str, Any], val_date: date
+) -> float | None:
+    """Time-to-maturity in years, matching the tenor the pricing engine uses.
+
+    Positions carry maturity either as a numeric year-fraction (``"maturity": 1.0``,
+    the QuantArk ``T`` that the engine prices with directly) or as an absolute date
+    (``exercise_date`` / ``maturity_date`` / …). Use the year-fraction directly, else
+    ACT/365 from valuation to the resolved date. Clamp matured/negative to the front.
+    """
+    raw = product_kwargs.get("maturity")
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        return max(0.0, float(raw))
+    maturity = _extract_maturity(product_kwargs)
+    if maturity is not None:
+        return max(0.0, (maturity - val_date).days / 365.0)
+    return None
+
+
 def generate_curve_param_rows(
     session: Session, *, valuation_date: datetime | None = None
 ) -> list[GeneratedParamRow]:
@@ -190,12 +209,11 @@ def generate_curve_param_rows(
     for pos in positions:
         instrument = instruments[pos.underlying]
         terms = compatibility_terms_for_position(pos)
-        maturity = _extract_maturity(terms.get("product_kwargs") or {})
-        if maturity is None:
+        tenor_years = _tenor_years_for_position(terms.get("product_kwargs") or {}, val_date)
+        if tenor_years is None:
             unfilled.append({"source_trade_id": pos.source_trade_id,
-                             "position_id": pos.id, "reason": "no_maturity_date"})
+                             "position_id": pos.id, "reason": "no_maturity"})
             continue
-        tenor_years = max(0.0, (maturity - val_date).days / 365.0)
 
         values: dict[str, float] = {}
         interp: dict[str, dict] = {}
