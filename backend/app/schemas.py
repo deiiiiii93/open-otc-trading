@@ -856,6 +856,7 @@ class PricingParameterRowOut(BaseModel):
     source_trade_id: str
     symbol: str
     instrument_id: int | None = None
+    position_id: int | None = None
     rate: float | None = None
     dividend_yield: float | None = None
     volatility: float | None = None

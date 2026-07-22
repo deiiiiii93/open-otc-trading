@@ -113,6 +113,7 @@ class GeneratedParamRow:
     symbol: str
     source_trade_id: str
     instrument_id: int
+    position_id: int
     rate: float
     dividend_yield: float
     volatility: float
@@ -241,6 +242,7 @@ def generate_curve_param_rows(
             symbol=pos.underlying,
             source_trade_id=pos.source_trade_id or "",
             instrument_id=instrument.id,
+            position_id=pos.id,
             rate=values["rate"],
             dividend_yield=values["dividend_yield"],
             volatility=values["volatility"],
@@ -422,6 +424,7 @@ def generate_profile_from_curves(
                     source_trade_id=generated.source_trade_id,
                     symbol=generated.symbol,
                     instrument_id=generated.instrument_id,
+                    position_id=generated.position_id,
                     rate=generated.rate,
                     dividend_yield=generated.dividend_yield,
                     volatility=generated.volatility,

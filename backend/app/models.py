@@ -1515,6 +1515,12 @@ class PricingParameterRow(Base):
     instrument_id: Mapped[int | None] = mapped_column(
         ForeignKey("instruments.id"), index=True, nullable=True
     )
+    # Direct per-position binding (curve-generated rows set this so they resolve
+    # uniquely even when the position has no source_trade_id). Null for imported
+    # rows, which keep resolving by source_trade_id / underlying.
+    position_id: Mapped[int | None] = mapped_column(
+        ForeignKey("positions.id"), index=True, nullable=True
+    )
     rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     dividend_yield: Mapped[float | None] = mapped_column(Float, nullable=True)
     volatility: Mapped[float | None] = mapped_column(Float, nullable=True)

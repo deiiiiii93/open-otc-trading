@@ -172,7 +172,11 @@ class PricingParameterRowResolution:
 
     @property
     def ok(self) -> bool:
-        return self.row is not None and self.match_type in {"trade_id", "underlying"}
+        return self.row is not None and self.match_type in {
+            "position_id",
+            "trade_id",
+            "underlying",
+        }
 
 
 @dataclass(frozen=True)
@@ -233,7 +237,32 @@ def resolve_pricing_parameter_row_for_position(
     rows: list[PricingParameterRow],
     position: Position,
 ) -> PricingParameterRowResolution:
-    """Resolve profile row by exact trade id, then a unique complete underlying row."""
+    """Resolve profile row by exact position binding, then trade id, then a
+    unique complete underlying row."""
+    # Direct per-position binding wins: curve-generated rows carry position_id,
+    # so they resolve unambiguously even when the position has no trade id.
+    # Imported rows have position_id=None and skip this branch entirely.
+    position_id = getattr(position, "id", None)
+    if position_id is not None:
+        bound = [row for row in rows if getattr(row, "position_id", None) == position_id]
+        if bound:
+            complete = [row for row in bound if not _missing_pricing_fields(row)]
+            if complete:
+                return PricingParameterRowResolution(
+                    row=complete[0],
+                    match_type="position_id",
+                    candidate_count=len(bound),
+                )
+            missing = tuple(
+                sorted({f for row in bound for f in _missing_pricing_fields(row)})
+            )
+            return PricingParameterRowResolution(
+                row=None,
+                match_type="incomplete",
+                missing_pricing_fields=missing,
+                candidate_count=len(bound),
+            )
+
     trade_id = _normalize_pricing_match_key(position.source_trade_id)
     if trade_id:
         exact = next(

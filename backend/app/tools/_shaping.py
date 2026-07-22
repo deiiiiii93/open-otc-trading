@@ -453,6 +453,7 @@ def shape_pricing_parameter_row(row: PricingParameterRow) -> dict[str, Any]:
         "source_trade_id": row.source_trade_id,
         "symbol": row.symbol,
         "instrument_id": row.instrument_id,
+        "position_id": row.position_id,
         "rate": row.rate,
         "dividend_yield": row.dividend_yield,
         "volatility": row.volatility,

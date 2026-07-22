@@ -251,3 +251,56 @@ def test_generate_profile_from_curves_no_positions_raises_domain_error(session: 
     with pytest.raises(DomainWriteError) as exc_info:
         generate_profile_from_curves(valuation_date=datetime(2026, 1, 1), session=session)
     assert exc_info.value.error == "no_open_positions"
+
+
+def test_generate_binds_rows_to_positions_and_resolves_without_trade_id(session: Session) -> None:
+    """Two positions on the SAME underlying with NO source_trade_id: generated
+    rows must bind by position_id so each still resolves uniquely (not ambiguous
+    — the live-book failure mode)."""
+    from app.services.pricing_profiles import resolve_pricing_parameter_row_for_position
+
+    portfolio = session.query(Portfolio).first() or Portfolio(name="Test")
+    if portfolio.id is None:
+        session.add(portfolio)
+        session.flush()
+
+    def _aapl(maturity_yf: float) -> Position:
+        p = Position(
+            portfolio_id=portfolio.id, product_id=None, underlying="AAPL",
+            product_type="EuropeanVanillaOption",
+            product_kwargs={"maturity": maturity_yf, "option_type": "CALL",
+                            "strike": 100.0, "contract_multiplier": 1.0},
+            quantity=1.0, source_trade_id=None,  # <-- no trade id, like the live book
+            status="open", position_kind="otc", engine_name="BlackScholesEngine",
+            engine_kwargs={}, source_payload={}, mapping_status="supported",
+        )
+        session.add(p)
+        session.flush()
+        return p
+
+    p1 = _aapl(0.25)   # 3M tenor
+    p2 = _aapl(1.0)    # 1Y tenor
+    inst = ensure_underlying(session, "AAPL", source="manual", status="active")
+    inst.rate_curve = [{"tenor": "3M", "value": 0.02}, {"tenor": "1Y", "value": 0.05}]
+    inst.dividend_yield = 0.01
+    inst.volatility_curve = [{"tenor": "3M", "value": 0.20}, {"tenor": "1Y", "value": 0.28}]
+    session.flush()
+
+    profile = generate_profile_from_curves(valuation_date=datetime(2026, 1, 1), session=session)
+    rows = list(profile.rows)
+    assert len(rows) == 2
+    # Every generated row is bound to its position, even with no trade id.
+    assert {r.position_id for r in rows} == {p1.id, p2.id}
+    assert all(r.source_trade_id == "" for r in rows)
+    # Distinct interpolated values prove per-trade materialization.
+    by_pos = {r.position_id: r for r in rows}
+    assert by_pos[p1.id].rate == pytest.approx(0.02)   # 3M knot
+    assert by_pos[p2.id].rate == pytest.approx(0.05)   # 1Y knot
+
+    # The resolver binds each position to ITS row — not ambiguous.
+    res1 = resolve_pricing_parameter_row_for_position(rows, p1)
+    res2 = resolve_pricing_parameter_row_for_position(rows, p2)
+    assert res1.ok and res2.ok, (res1.match_type, res2.match_type)
+    assert res1.row.position_id == p1.id
+    assert res2.row.position_id == p2.id
+    assert res1.row.id != res2.row.id
