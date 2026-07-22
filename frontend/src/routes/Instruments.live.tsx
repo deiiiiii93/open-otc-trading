@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, listFxRates, createFxRate, fetchFxRateAkshare, deleteFxRate, createInstrument } from '../api/client';
-import type { FxRate, MarketDataProfile, PageContextReporter, UnderlyingPricingDefault } from '../types';
+import type { CurvePoint, FxRate, MarketDataProfile, PageContextReporter, UnderlyingPricingDefault } from '../types';
 import { Instruments } from './Instruments';
 import type { Instrument, Tab } from './Instruments';
 import type { HedgeMapGroup, HedgeCandidate, CandidateFilters, QuoteInfo } from './InstrumentsAllowedHedges';
@@ -362,6 +362,45 @@ export function InstrumentsLive({ onPageContextChange: _onPageContextChange }: P
     }
   };
 
+  const onCurveUpsert = async (
+    underlying: string,
+    curves: {
+      rate_curve: CurvePoint[] | null;
+      dividend_yield_curve: CurvePoint[] | null;
+      volatility_curve: CurvePoint[] | null;
+    },
+  ) => {
+    if (!assumptionUnderlyingRoleSymbolSet.has(underlying.trim().toLowerCase())) {
+      setAssumptionBuildFeedback(`Skipped ${underlying}: not an UNDERLYING role instrument`);
+      return;
+    }
+    try {
+      await api(`/api/underlying-pricing-defaults/${encodeURIComponent(underlying)}`, {
+        method: 'PUT',
+        body: JSON.stringify(curves),
+      });
+      if (!cancelledRef.current) await loadAssumptionDefaults();
+    } catch (err) {
+      console.error('Failed to upsert curves', err);
+      if (!cancelledRef.current) setAssumptionBuildFeedback(`Curve save failed: ${String(err)}`);
+    }
+  };
+
+  const onGenerateFromCurves = async (name?: string) => {
+    try {
+      const profile = await api<{ id: number; name: string }>(
+        '/api/pricing-parameter-profiles/from-curves',
+        { method: 'POST', body: JSON.stringify({ name: name ?? null }) },
+      );
+      if (!cancelledRef.current) {
+        setAssumptionBuildFeedback(`Generated pricing profile "${profile.name}" (#${profile.id})`);
+      }
+    } catch (err) {
+      // api() throws Error(responseText); a 400 body carries {detail:{unfilled_trades}}.
+      if (!cancelledRef.current) setAssumptionBuildFeedback(`Generate failed: ${String(err)}`);
+    }
+  };
+
   const onAssumptionSelectSet = (id: number | null) => {
     setAssumptionSelectedSetId(id);
   };
@@ -670,6 +709,8 @@ export function InstrumentsLive({ onPageContextChange: _onPageContextChange }: P
       onAssumptionSelectSet={onAssumptionSelectSet}
       onAssumptionRefreshFromPositions={() => { void onAssumptionRefreshFromPositions(); }}
       onAssumptionUpsert={(underlying, fields) => { void onAssumptionUpsert(underlying, fields); }}
+      onCurveUpsert={(underlying, curves) => { void onCurveUpsert(underlying, curves); }}
+      onGenerateFromCurves={(name) => { void onGenerateFromCurves(name); }}
     />
   );
 }

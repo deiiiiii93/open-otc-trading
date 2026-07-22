@@ -31,7 +31,7 @@ import {
 } from './InstrumentsAssumptions';
 import type { AssumptionSet, DefaultsFilters } from './InstrumentsAssumptions';
 import { InstrumentsPager, usePagination } from './InstrumentsPager';
-import type { FxRate, MarketDataProfile, UnderlyingPricingDefault } from '../types';
+import type { CurvePoint, FxRate, MarketDataProfile, UnderlyingPricingDefault } from '../types';
 import { TagEditor } from '../components/TagEditor';
 import './Instruments.css';
 
@@ -144,6 +144,15 @@ type Props = {
     underlying: string,
     fields: { rate: number | null; dividend_yield: number | null; volatility: number | null },
   ) => void;
+  onCurveUpsert: (
+    underlying: string,
+    curves: {
+      rate_curve: CurvePoint[] | null;
+      dividend_yield_curve: CurvePoint[] | null;
+      volatility_curve: CurvePoint[] | null;
+    },
+  ) => void;
+  onGenerateFromCurves: (name?: string) => void;
 };
 
 // ---------------------------------------------------------------------------
@@ -650,6 +659,8 @@ export function Instruments({
   onAssumptionSelectSet,
   onAssumptionRefreshFromPositions,
   onAssumptionUpsert,
+  onCurveUpsert,
+  onGenerateFromCurves,
 }: Props) {
   const registrySearchId = useId();
   const marketSearchId = useId();
@@ -1123,6 +1134,8 @@ export function Instruments({
           onSelectSet={onAssumptionSelectSet}
           onRefreshFromPositions={onAssumptionRefreshFromPositions}
           onUpsert={onAssumptionUpsert}
+          onCurveUpsert={onCurveUpsert}
+          onGenerateFromCurves={onGenerateFromCurves}
         />
       )}
       <InstrumentCreateDialog

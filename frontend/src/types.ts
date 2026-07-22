@@ -1235,11 +1235,17 @@ export type LatestAkshareClose = {
   market_data_profile_id: number | null;
 };
 
+export type CurvePoint = { tenor: string; value: number };
+
 export type UnderlyingPricingDefault = {
   underlying: string;
   rate: number | null;
   dividend_yield: number | null;
   volatility: number | null;
+  /** Term-structure curves (per underlying); null/absent means "no curve — use the flat scalar". */
+  rate_curve?: CurvePoint[] | null;
+  dividend_yield_curve?: CurvePoint[] | null;
+  volatility_curve?: CurvePoint[] | null;
   notes: string | null;
   is_complete: boolean;
   /** True when the underlying is in the open-position scope the build gate validates. */

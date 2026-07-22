@@ -106,6 +106,8 @@ const defaultProps = {
   onAssumptionSelectSet: vi.fn(),
   onAssumptionRefreshFromPositions: vi.fn(),
   onAssumptionUpsert: vi.fn(),
+  onCurveUpsert: vi.fn(),
+  onGenerateFromCurves: vi.fn(),
 };
 
 // ---------------------------------------------------------------------------

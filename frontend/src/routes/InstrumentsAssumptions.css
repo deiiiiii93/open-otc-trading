@@ -324,3 +324,116 @@
     grid-template-columns: max-content 1fr;
   }
 }
+
+/* ── Section head (title + generate action) ── */
+.wl-assumptions__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  flex-wrap: wrap;
+}
+
+/* ── Term-structure curve editor ── */
+.wl-curve {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  border: 1px solid var(--hairline-2);
+  border-radius: 6px;
+  background: var(--paper);
+  padding: var(--gap-3);
+}
+
+.wl-curve__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+}
+
+.wl-curve__title {
+  font: 600 var(--type-small-size) var(--font-ui);
+  color: var(--ink);
+}
+
+.wl-curve__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-1);
+}
+
+.wl-curve__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--gap-3);
+}
+
+.wl-curve__param {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: var(--gap-2);
+  background: var(--paper-2);
+}
+
+.wl-curve__param-head {
+  font: 600 var(--type-caps-size) var(--font-ui);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+}
+
+.wl-curve__points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wl-curve__point {
+  display: grid;
+  grid-template-columns: 3rem 1fr max-content;
+  align-items: center;
+  gap: var(--gap-1);
+  font: 400 var(--type-small-size) var(--font-numeric);
+  color: var(--ink);
+}
+
+.wl-curve__point-value {
+  text-align: right;
+  color: var(--ink-2);
+}
+
+.wl-curve__add {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-1);
+  flex-wrap: wrap;
+}
+
+.wl-curve__tenor,
+.wl-curve__value {
+  border: 1px solid var(--hairline-2);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  padding: var(--input-padding-y) var(--input-padding-x);
+  font: 400 var(--type-small-size) var(--font-numeric);
+}
+
+.wl-curve__tenor {
+  width: 4.5rem;
+}
+
+.wl-curve__value {
+  width: 6rem;
+}
+
+.wl-curve__chart {
+  margin-top: var(--gap-1);
+}

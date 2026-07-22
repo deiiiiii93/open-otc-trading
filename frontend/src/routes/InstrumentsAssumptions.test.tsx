@@ -120,6 +120,8 @@ const defaultBaseProps: InstrumentsAssumptionsProps = {
   onSelectSet: vi.fn(),
   onRefreshFromPositions: vi.fn(),
   onUpsert: vi.fn(),
+  onCurveUpsert: vi.fn(),
+  onGenerateFromCurves: vi.fn(),
 };
 
 // ---------------------------------------------------------------------------
@@ -438,7 +440,7 @@ describe('InstrumentsAssumptions', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: /edit/i }));
-    const rateInput = screen.getByLabelText(/rate/i) as HTMLInputElement;
+    const rateInput = screen.getByLabelText(/^rate$/i) as HTMLInputElement;
     fireEvent.change(rateInput, { target: { value: '0.03' } });
     fireEvent.click(screen.getByRole('button', { name: /save/i }));
     expect(onUpsert).toHaveBeenCalledWith(
@@ -460,11 +462,48 @@ describe('InstrumentsAssumptions', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: /edit/i }));
-    const rateInput = screen.getByLabelText(/rate/i) as HTMLInputElement;
+    const rateInput = screen.getByLabelText(/^rate$/i) as HTMLInputElement;
     fireEvent.change(rateInput, { target: { value: '' } });
     fireEvent.click(screen.getByRole('button', { name: /save/i }));
     const [, fields] = onUpsert.mock.calls[0] as [string, { rate: number | null }];
     expect(fields.rate).toBeNull();
+  });
+
+  // [curve-edit] ───────────────────────────────────────────────────────────────
+
+  it('[curve-edit] adding a rate curve point submits {rate_curve}', () => {
+    const onCurveUpsert = vi.fn();
+    render(
+      <InstrumentsAssumptions
+        {...defaultBaseProps}
+        defaults={[completeDefault]}
+        onCurveUpsert={onCurveUpsert}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /curves for/i }));
+    fireEvent.change(screen.getByLabelText(/rate curve tenor/i), { target: { value: '3M' } });
+    fireEvent.change(screen.getByLabelText(/rate curve value/i), { target: { value: '0.02' } });
+    fireEvent.click(screen.getByRole('button', { name: /add rate point/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save curves/i }));
+    expect(onCurveUpsert).toHaveBeenCalledWith(
+      '000300.SH',
+      expect.objectContaining({ rate_curve: [{ tenor: '3M', value: 0.02 }] }),
+    );
+  });
+
+  it('[curve-generate] the generate button fires onGenerateFromCurves', () => {
+    const onGenerateFromCurves = vi.fn();
+    render(
+      <InstrumentsAssumptions
+        {...defaultBaseProps}
+        defaults={[completeDefault]}
+        onGenerateFromCurves={onGenerateFromCurves}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: /generate pricing parameters from curves/i }),
+    );
+    expect(onGenerateFromCurves).toHaveBeenCalled();
   });
 
   // [udp-refresh] ────────────────────────────────────────────────────────────

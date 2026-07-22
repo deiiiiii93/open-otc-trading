@@ -15,13 +15,41 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Check, Pencil, Search, X } from 'lucide-react';
+import { Check, Pencil, Search, TrendingUp, X } from 'lucide-react';
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { Button } from '../components/Button';
 import { Empty } from '../components/Empty';
 import { Select } from '../components/Select';
-import type { UnderlyingPricingDefault } from '../types';
+import type { CurvePoint, UnderlyingPricingDefault } from '../types';
 import { InstrumentsPager, usePagination } from './InstrumentsPager';
 import './InstrumentsAssumptions.css';
+
+// Tenor labels in year-fraction order — MUST match backend TENOR_YEARS keys.
+const TENOR_ORDER = [
+  '1W', '2W', '1M', '2M', '3M', '6M', '9M', '1Y', '18M', '2Y', '3Y', '5Y',
+] as const;
+
+type CurveField = 'rate_curve' | 'dividend_yield_curve' | 'volatility_curve';
+
+// One chart per param — r/q sit near 0-5% while vol sits near 15-40%, so a
+// shared y-axis would flatten the rate/dividend curves. Colors are tokens.
+const CURVE_PARAMS: { field: CurveField; label: string; color: string }[] = [
+  { field: 'rate_curve', label: 'rate', color: 'var(--info)' },
+  { field: 'dividend_yield_curve', label: 'dividend', color: 'var(--pos)' },
+  { field: 'volatility_curve', label: 'vol', color: 'var(--warn)' },
+];
+
+function tenorRank(tenor: string): number {
+  return TENOR_ORDER.indexOf(tenor as (typeof TENOR_ORDER)[number]);
+}
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -83,6 +111,17 @@ export type InstrumentsAssumptionsProps = {
     underlying: string,
     fields: { rate: number | null; dividend_yield: number | null; volatility: number | null },
   ) => void;
+  /** Save term-structure curve edits → PUT /api/underlying-pricing-defaults/{underlying} */
+  onCurveUpsert: (
+    underlying: string,
+    curves: {
+      rate_curve: CurvePoint[] | null;
+      dividend_yield_curve: CurvePoint[] | null;
+      volatility_curve: CurvePoint[] | null;
+    },
+  ) => void;
+  /** Materialize curves into a pricing profile → POST /api/pricing-parameter-profiles/from-curves */
+  onGenerateFromCurves: (name?: string) => void;
 };
 
 // ---------------------------------------------------------------------------
@@ -254,10 +293,11 @@ type DefaultsGridProps = {
   rows: UnderlyingPricingDefault[];
   filters: DefaultsFilters;
   onUpsert: InstrumentsAssumptionsProps['onUpsert'];
+  onEditCurves: (underlying: string) => void;
   emptyMessage: string;
 };
 
-function DefaultsGrid({ rows, filters, onUpsert, emptyMessage }: DefaultsGridProps) {
+function DefaultsGrid({ rows, filters, onUpsert, onEditCurves, emptyMessage }: DefaultsGridProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftFields | null>(null);
   const filtered = useMemo(() => filterDefaults(rows, filters), [rows, filters]);
@@ -402,13 +442,22 @@ function DefaultsGrid({ rows, filters, onUpsert, emptyMessage }: DefaultsGridPro
                           </Button>
                         </>
                       ) : (
-                        <Button
-                          variant="ghost"
-                          onClick={() => startEdit(row)}
-                          aria-label={`Edit ${row.underlying}`}
-                        >
-                          <Pencil size={14} aria-hidden="true" />
-                        </Button>
+                        <>
+                          <Button
+                            variant="ghost"
+                            onClick={() => startEdit(row)}
+                            aria-label={`Edit ${row.underlying}`}
+                          >
+                            <Pencil size={14} aria-hidden="true" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            onClick={() => onEditCurves(row.underlying)}
+                            aria-label={`Curves for ${row.underlying}`}
+                          >
+                            <TrendingUp size={14} aria-hidden="true" />
+                          </Button>
+                        </>
                       )}
                     </div>
                   </td>
@@ -496,6 +545,191 @@ function SetView({ set, search }: SetViewProps) {
 }
 
 // ---------------------------------------------------------------------------
+// Term-structure curve editor + charts
+// ---------------------------------------------------------------------------
+
+function CurveChart({
+  label,
+  color,
+  points,
+}: {
+  label: string;
+  color: string;
+  points: CurvePoint[];
+}) {
+  const data = useMemo(
+    () => [...points].sort((a, b) => tenorRank(a.tenor) - tenorRank(b.tenor)),
+    [points],
+  );
+  if (data.length === 0) return null;
+  return (
+    <div className="wl-curve__chart">
+      <ResponsiveContainer width="100%" height={140}>
+        <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--hairline)" />
+          <XAxis
+            dataKey="tenor"
+            tick={{ fontSize: 10, fill: 'var(--ink-2)' }}
+            tickLine={false}
+            axisLine={{ stroke: 'var(--hairline)' }}
+          />
+          <YAxis
+            domain={['auto', 'auto']}
+            width={56}
+            tick={{ fontSize: 10, fill: 'var(--ink-2)' }}
+            tickLine={false}
+            axisLine={{ stroke: 'var(--hairline)' }}
+          />
+          <Tooltip
+            contentStyle={{
+              background: 'var(--paper)',
+              border: '1px solid var(--hairline-2)',
+              fontSize: 'var(--type-small-size)',
+              color: 'var(--ink)',
+            }}
+          />
+          <Line type="monotone" dataKey="value" name={label} stroke={color} dot strokeWidth={2} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+type CurveDraft = Record<CurveField, CurvePoint[]>;
+type NewPoint = Record<CurveField, { tenor: string; value: string }>;
+
+function seedCurveDraft(row: UnderlyingPricingDefault): CurveDraft {
+  return {
+    rate_curve: [...(row.rate_curve ?? [])],
+    dividend_yield_curve: [...(row.dividend_yield_curve ?? [])],
+    volatility_curve: [...(row.volatility_curve ?? [])],
+  };
+}
+
+function CurveEditor({
+  row,
+  onSave,
+  onClose,
+}: {
+  row: UnderlyingPricingDefault;
+  onSave: InstrumentsAssumptionsProps['onCurveUpsert'];
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState<CurveDraft>(() => seedCurveDraft(row));
+  const [newPoint, setNewPoint] = useState<NewPoint>({
+    rate_curve: { tenor: '1M', value: '' },
+    dividend_yield_curve: { tenor: '1M', value: '' },
+    volatility_curve: { tenor: '1M', value: '' },
+  });
+
+  const addPoint = (field: CurveField) => {
+    const np = newPoint[field];
+    const value = Number(np.value);
+    if (!np.tenor || np.value.trim() === '' || !Number.isFinite(value)) return;
+    setDraft((prev) => ({
+      ...prev,
+      [field]: [...prev[field].filter((p) => p.tenor !== np.tenor), { tenor: np.tenor, value }],
+    }));
+  };
+
+  const removePoint = (field: CurveField, tenor: string) => {
+    setDraft((prev) => ({ ...prev, [field]: prev[field].filter((p) => p.tenor !== tenor) }));
+  };
+
+  const save = () => {
+    onSave(row.underlying, {
+      rate_curve: draft.rate_curve.length ? draft.rate_curve : null,
+      dividend_yield_curve: draft.dividend_yield_curve.length ? draft.dividend_yield_curve : null,
+      volatility_curve: draft.volatility_curve.length ? draft.volatility_curve : null,
+    });
+    onClose();
+  };
+
+  return (
+    <section className="wl-curve" aria-label={`Curves for ${row.underlying}`}>
+      <header className="wl-curve__header">
+        <span className="wl-curve__title">Term-structure curves · {row.underlying}</span>
+        <div className="wl-curve__header-actions">
+          <Button variant="ghost" onClick={save} aria-label="Save curves">
+            <Check size={14} aria-hidden="true" /> Save curves
+          </Button>
+          <Button variant="ghost" onClick={onClose} aria-label="Cancel curves">
+            <X size={14} aria-hidden="true" />
+          </Button>
+        </div>
+      </header>
+      <div className="wl-curve__grid">
+        {CURVE_PARAMS.map(({ field, label, color }) => {
+          const sorted = [...draft[field]].sort((a, b) => tenorRank(a.tenor) - tenorRank(b.tenor));
+          return (
+            <div key={field} className="wl-curve__param">
+              <div className="wl-curve__param-head">{label}</div>
+              {sorted.length > 0 && (
+                <ul className="wl-curve__points">
+                  {sorted.map((p) => (
+                    <li key={p.tenor} className="wl-curve__point">
+                      <span>{p.tenor}</span>
+                      <span className="wl-curve__point-value">{p.value}</span>
+                      <Button
+                        variant="ghost"
+                        onClick={() => removePoint(field, p.tenor)}
+                        aria-label={`Remove ${label} ${p.tenor}`}
+                      >
+                        <X size={12} aria-hidden="true" />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="wl-curve__add">
+                <select
+                  className="wl-curve__tenor"
+                  aria-label={`${label} curve tenor`}
+                  value={newPoint[field].tenor}
+                  onChange={(e) =>
+                    setNewPoint((prev) => ({
+                      ...prev,
+                      [field]: { ...prev[field], tenor: e.target.value },
+                    }))
+                  }
+                >
+                  {TENOR_ORDER.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  className="wl-curve__value"
+                  type="number"
+                  step="any"
+                  aria-label={`${label} curve value`}
+                  value={newPoint[field].value}
+                  onChange={(e) =>
+                    setNewPoint((prev) => ({
+                      ...prev,
+                      [field]: { ...prev[field], value: e.target.value },
+                    }))
+                  }
+                />
+                <Button
+                  variant="ghost"
+                  onClick={() => addPoint(field)}
+                  aria-label={`Add ${label} point`}
+                >
+                  Add {label} point
+                </Button>
+              </div>
+              <CurveChart label={label} color={color} points={draft[field]} />
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main presentational component
 // ---------------------------------------------------------------------------
 
@@ -516,8 +750,11 @@ export function InstrumentsAssumptions({
   onSelectSet,
   onRefreshFromPositions,
   onUpsert,
+  onCurveUpsert,
+  onGenerateFromCurves,
 }: InstrumentsAssumptionsProps) {
   const standaloneControls = defaultsFilters === undefined;
+  const [curveEditing, setCurveEditing] = useState<string | null>(null);
   const [internalDefaultsFilters, setInternalDefaultsFilters] =
     useState<DefaultsFilters>(EMPTY_DEFAULTS_FILTERS);
   const [internalSetSearch, setInternalSetSearch] = useState('');
@@ -541,6 +778,9 @@ export function InstrumentsAssumptions({
     [selectedSet, underlyingRoleSymbols],
   );
   const unfilledCount = scopedDefaults.filter((r) => defaultsRowState(r) === 'unfilled').length;
+  const curveEditingRow = curveEditing
+    ? scopedDefaults.find((r) => r.underlying === curveEditing) ?? null
+    : null;
   const emptyDefaultsMessage =
     defaults.length === 0
       ? 'No underlying defaults yet. Click Refresh from positions to populate.'
@@ -609,7 +849,17 @@ export function InstrumentsAssumptions({
 
       {/* ── Defaults grid ── */}
       <section className="wl-assumptions__defaults">
-        <h3 className="wl-assumptions__section-title">Instrument defaults</h3>
+        <div className="wl-assumptions__section-head">
+          <h3 className="wl-assumptions__section-title">Instrument defaults</h3>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => onGenerateFromCurves()}
+            aria-label="Generate pricing parameters from curves"
+          >
+            <TrendingUp size={14} aria-hidden="true" /> Generate pricing parameters from curves
+          </Button>
+        </div>
         {standaloneControls && (
           <div className="wl-assumptions__filters">
             <Select
@@ -647,9 +897,19 @@ export function InstrumentsAssumptions({
           rows={scopedDefaults}
           filters={effectiveDefaultsFilters}
           onUpsert={onUpsert}
+          onEditCurves={setCurveEditing}
           emptyMessage={emptyDefaultsMessage}
         />
       </section>
+
+      {/* ── Term-structure curve editor ── */}
+      {curveEditingRow && (
+        <CurveEditor
+          row={curveEditingRow}
+          onSave={onCurveUpsert}
+          onClose={() => setCurveEditing(null)}
+        />
+      )}
 
       {/* ── Selected set view ── */}
       {scopedSelectedSet && (
