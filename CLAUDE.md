@@ -615,14 +615,25 @@ flat extrapolation past the ends, single point → constant, empty/None → None
 
 **Generate** lives in the domain facade `services/domains/pricing_profiles.py`:
 `generate_curve_param_rows` (read-only compute) walks `open_otc_positions`, skips delta-one
-(`position_requires_pricing_params`), reads each trade's `maturity_date` via
-`compatibility_terms_for_position(...)["product_kwargs"]`, computes `tenor_years` as
-**ACT/365**, interpolates each curve (fallback to the flat Instrument scalar), and raises
-`ValueError({"unfilled_trades": [...]})` when a param has neither curve nor scalar (mirrors
-`build_assumptions_set`'s `unfilled_underlyings`). `generate_profile_from_curves` writes a
-`PricingParameterProfile(source_type="curve")` + one flat row per trade (keyed on
-`source_trade_id`, with per-row interpolation provenance) and audits
-`pricing_parameter_profile.generated_from_curves`.
+(`position_requires_pricing_params`), derives each trade's **tenor in years** via
+`_tenor_years_for_position` — a numeric year-fraction `maturity` (the QuantArk `T` the engine
+prices with) is used directly, else an absolute maturity date resolved from
+`compatibility_terms_for_position(...)["product_kwargs"]` under a priority key list
+(`maturity_date` / `expiry_date` / `expiry` / `exercise_date` / `settlement_date`) is turned
+into **ACT/365**. It interpolates each curve (fallback to the flat Instrument scalar) and
+raises `ValueError({"unfilled_trades": [...]})` when a param has neither curve nor scalar
+(mirrors `build_assumptions_set`'s `unfilled_underlyings`). `generate_profile_from_curves`
+writes a `PricingParameterProfile(source_type="curve")` + one flat row per trade — bound to
+the position by **`position_id`** (migration `0051`), with per-row interpolation provenance —
+and audits `pricing_parameter_profile.generated_from_curves`.
+
+**Binding.** Because term-structure rows are per-trade (each maturity → its own r/q/vol),
+they need a per-position key. `resolve_pricing_parameter_row_for_position` prefers a
+`position_id` match before trade-id / underlying, so a curve row resolves uniquely even when
+the position has no `source_trade_id` — the live-book case, where several positions share an
+underlying and underlying-level resolution is otherwise `ambiguous`. Imported rows have
+`position_id=None` and resolve exactly as before (fully backward-compatible). The Pricing
+Parameters **POSITION** column renders the bound `#<position_id>`.
 
 **Surfaces.** REST: curve fields on `PUT /api/underlying-pricing-defaults/{underlying}` and
 `GET .../underlying-pricing-defaults` (validated server-side via `validate_curve`), plus

@@ -19,7 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nullable JSON curve columns on `instruments`), `POST /api/pricing-parameter-profiles/from-curves`,
   the HITL agent tool `generate_pricing_parameters_from_curves`, and curve fields on the
   underlying-pricing-defaults API. Missing curve + missing scalar for a scoped trade is
-  reported as `unfilled_trades` (mirrors the assumption-build gate).
+  reported as `unfilled_trades` (mirrors the assumption-build gate). Trade maturity is
+  resolved from whichever key the product carries (`maturity_date` / `exercise_date` /
+  `expiry` …) or a numeric year-fraction `maturity`. Each generated row is bound to its
+  position by a new `PricingParameterRow.position_id` (migration `0051`); the pricing
+  resolver prefers that binding, so curve rows resolve uniquely even for positions with no
+  `source_trade_id` (imported rows keep `position_id = null` and resolve exactly as before).
 - **Long-agent ground truth now survives compaction by immutable reference, with
   time-safe hedge execution.** Every server-classified deterministic/domain tool result
   is captured exactly into the content-addressed artifact ledger before it can be
