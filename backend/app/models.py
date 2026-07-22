@@ -671,6 +671,12 @@ class Instrument(Base):
     rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     dividend_yield: Mapped[float | None] = mapped_column(Float, nullable=True)
     volatility: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Term-structure curves (per underlying): list[{"tenor": <label>, "value":
+    # <float>}] | None. None/[] means "no curve — use the flat scalar above".
+    # Fed ONLY by generate_pricing_parameters_from_curves; pricing stays flat.
+    rate_curve: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
+    dividend_yield_curve: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
+    volatility_curve: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Listed-contract terms (null for non-contracts).
     contract_code: Mapped[str | None] = mapped_column(String(80), index=True, nullable=True)
@@ -2471,11 +2477,21 @@ def _protect_limit_incident_events_from_mutation(
             )
 
 
+# session.info key that scopes a legitimate exemption from the incident-history
+# guards below: the arena fixture purge owns its seeded portfolios wholesale and
+# must be able to remove their incident rows before deleting the portfolios.
+# Desk/API code paths never set this, so their deletes stay protected.
+ARENA_FIXTURE_PURGE_INFO_KEY = "arena_fixture_purge"
+
+
 @event.listens_for(OrmSession, "do_orm_execute")
 def _protect_limit_incident_events_from_bulk_mutation(
     execute_state: ORMExecuteState,
 ) -> None:
     if not (execute_state.is_update or execute_state.is_delete):
+        return
+    session = execute_state.session
+    if session is not None and session.info.get(ARENA_FIXTURE_PURGE_INFO_KEY):
         return
     mapper = execute_state.bind_mapper
     model = mapper.class_ if mapper is not None else None
