@@ -321,6 +321,24 @@ class PricingEnvironmentSnapshot(BaseModel):
     day_count_convention: str = "ACT_365"
     bus_days_in_year: int = 252
 
+    @field_validator("valuation_date", mode="before")
+    @classmethod
+    def _naive_valuation_date(cls, v):
+        # Agent/API payloads may carry tz-aware ISO strings ("2026-07-16T00:00:00Z").
+        # The desk's date math is uniformly naive (utcnow-style; seeded DB dates are
+        # naive), and a mixed comparison crashes pricing with "can't compare
+        # offset-naive and offset-aware datetimes" (Run #28, terra quote). Normalize
+        # any aware input to its naive UTC instant at the schema boundary.
+        if isinstance(v, str):
+            try:
+                v = datetime.fromisoformat(v.replace("Z", "+00:00"))
+            except ValueError:
+                return v
+        if isinstance(v, datetime) and v.tzinfo is not None:
+            from datetime import timezone
+            return v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
+
 
 class PricingPreviewRequest(BaseModel):
     product_type: str
@@ -1509,11 +1527,19 @@ class QuoteRefreshResultOut(BaseModel):
     failed: list[dict[str, str]]
 
 
+class CurvePoint(BaseModel):
+    tenor: str
+    value: float
+
+
 class UnderlyingPricingDefaultOut(BaseModel):
     underlying: str
     rate: float | None = None
     dividend_yield: float | None = None
     volatility: float | None = None
+    rate_curve: list[CurvePoint] | None = None
+    dividend_yield_curve: list[CurvePoint] | None = None
+    volatility_curve: list[CurvePoint] | None = None
     notes: str | None = None
     is_complete: bool
     # True when the underlying is in the current open-position scope — the same
@@ -1530,6 +1556,9 @@ class UnderlyingPricingDefaultUpdate(BaseModel):
     rate: float | None = None
     dividend_yield: float | None = None
     volatility: float | None = None
+    rate_curve: list[CurvePoint] | None = None
+    dividend_yield_curve: list[CurvePoint] | None = None
+    volatility_curve: list[CurvePoint] | None = None
     notes: str | None = None
 
 

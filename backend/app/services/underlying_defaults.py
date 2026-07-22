@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from ..models import UnderlyingPricingDefault
 from .instruments import sync_hedge_tag
+from .term_structure import validate_curve
 from .underlyings import (
     latest_akshare_close_by_symbol,
     list_underlyings,
@@ -24,6 +25,9 @@ def upsert_underlying_default(
     dividend_yield=...,
     volatility=...,
     notes=...,
+    rate_curve=...,
+    dividend_yield_curve=...,
+    volatility_curve=...,
 ) -> UnderlyingPricingDefault:
     cleaned = (underlying or "").strip()
     if not cleaned:
@@ -37,6 +41,15 @@ def upsert_underlying_default(
         fields["volatility"] = volatility
     if notes is not ...:
         fields["notes"] = notes
+    for column, value in (
+        ("rate_curve", rate_curve),
+        ("dividend_yield_curve", dividend_yield_curve),
+        ("volatility_curve", volatility_curve),
+    ):
+        if value is not ...:
+            fields[column] = validate_curve(
+                value, require_positive=(column == "volatility_curve")
+            )
     return update_underlying(session, cleaned, fields)
 
 
