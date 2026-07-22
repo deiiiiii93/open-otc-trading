@@ -134,3 +134,54 @@ def test_generate_curve_rows_unfilled_when_no_curve_no_scalar(session: Session) 
 def test_generate_curve_rows_no_open_positions_raises(session: Session) -> None:
     with pytest.raises(ValueError, match="no open positions in scope"):
         generate_curve_param_rows(session, valuation_date=datetime(2026, 1, 1))
+
+
+from app.models import PricingParameterProfile, PricingParameterRow
+from app.services.domains._errors import DomainWriteError
+from app.services.domains.pricing_profiles import generate_profile_from_curves
+
+
+def test_generate_profile_from_curves_writes_flat_profile(session: Session) -> None:
+    _seed_open_option(session, underlying="000300.SH", maturity="2026-07-02")
+    inst = ensure_underlying(session, "000300.SH", source="manual", status="active")
+    inst.rate_curve = [{"tenor": "3M", "value": 0.02}, {"tenor": "1Y", "value": 0.05}]
+    inst.dividend_yield = 0.01
+    inst.volatility_curve = [{"tenor": "6M", "value": 0.22}]
+    session.flush()
+
+    profile = generate_profile_from_curves(
+        name="Curve Set", valuation_date=datetime(2026, 1, 1), session=session
+    )
+    assert profile.source_type == "curve"
+    assert profile.name == "Curve Set"
+    assert profile.status == "completed"
+    assert len(profile.rows) == 1
+    row = profile.rows[0]
+    assert row.symbol == "000300.SH"
+    assert row.source_trade_id == "TRD-1"
+    assert row.volatility == pytest.approx(0.22)
+    assert row.source_payload["generated_from"] == "instrument_curves"
+    # Persisted and reloadable.
+    stored = (
+        session.query(PricingParameterProfile)
+        .filter(PricingParameterProfile.id == profile.id)
+        .one()
+    )
+    assert stored.source_type == "curve"
+
+
+def test_generate_profile_from_curves_unfilled_raises_domain_error(session: Session) -> None:
+    _seed_open_option(session, underlying="000905.SH", maturity="2026-07-02",
+                      source_trade_id="U-9")
+    ensure_underlying(session, "000905.SH", source="manual", status="active")
+    session.flush()
+    with pytest.raises(DomainWriteError) as exc_info:
+        generate_profile_from_curves(valuation_date=datetime(2026, 1, 1), session=session)
+    assert exc_info.value.error == "unfilled_trades"
+    assert exc_info.value.detail["unfilled_trades"][0]["source_trade_id"] == "U-9"
+
+
+def test_generate_profile_from_curves_no_positions_raises_domain_error(session: Session) -> None:
+    with pytest.raises(DomainWriteError) as exc_info:
+        generate_profile_from_curves(valuation_date=datetime(2026, 1, 1), session=session)
+    assert exc_info.value.error == "no_open_positions"

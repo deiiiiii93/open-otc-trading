@@ -93,7 +93,7 @@ def get_profile(
         )
 
 
-__all__ = ["list_profiles", "get_profile", "create_profile", "update_profile", "upsert_rows", "delete_rows", "delete_profile", "ARCHIVED_SOURCE_TYPE"]
+__all__ = ["list_profiles", "get_profile", "create_profile", "update_profile", "upsert_rows", "delete_rows", "delete_profile", "generate_curve_param_rows", "generate_profile_from_curves", "GeneratedParamRow", "ARCHIVED_SOURCE_TYPE"]
 
 
 # --- write facade -----------------------------------------------------------
@@ -333,6 +333,64 @@ def create_profile(
         record_audit(
             sess,
             event_type="pricing_parameter_profile.created",
+            actor=actor,
+            subject_type="pricing_parameter_profile",
+            subject_id=profile.id,
+            payload={"row_count": len(rows)},
+        )
+        sess.commit()
+        return _reload_profile(sess, profile.id)
+
+
+def generate_profile_from_curves(
+    *,
+    name: str | None = None,
+    valuation_date: datetime | None = None,
+    actor: str = "agent",
+    session: Session | None = None,
+) -> PricingParameterProfile:
+    """Materialize open-trade r/q/vol from instrument curves into a flat
+    ``source_type="curve"`` pricing profile. Reversible (delete the profile)."""
+    effective = valuation_date or datetime.utcnow()
+    with _session_scope(session) as sess:
+        try:
+            rows = generate_curve_param_rows(sess, valuation_date=effective)
+        except ValueError as exc:
+            arg = exc.args[0] if exc.args else "generate failed"
+            if isinstance(arg, dict) and "unfilled_trades" in arg:
+                raise DomainWriteError(
+                    "unfilled_trades", {"unfilled_trades": list(arg["unfilled_trades"])}
+                ) from exc
+            if arg == "no open positions in scope":
+                raise DomainWriteError("no_open_positions") from exc
+            raise
+        profile = PricingParameterProfile(
+            name=_clean(name) or f"Curve Pricing Parameters {effective:%Y-%m-%d}",
+            valuation_date=effective,
+            source_type="curve",
+            source_path=None,
+            status="completed",
+            summary={"row_count": len(rows), "generated_from": "instrument_curves",
+                     "created_by": actor},
+        )
+        sess.add(profile)
+        sess.flush()
+        for generated in rows:
+            sess.add(
+                PricingParameterRow(
+                    profile_id=profile.id,
+                    source_trade_id=generated.source_trade_id,
+                    symbol=generated.symbol,
+                    instrument_id=generated.instrument_id,
+                    rate=generated.rate,
+                    dividend_yield=generated.dividend_yield,
+                    volatility=generated.volatility,
+                    source_payload=generated.source_payload,
+                )
+            )
+        record_audit(
+            sess,
+            event_type="pricing_parameter_profile.generated_from_curves",
             actor=actor,
             subject_type="pricing_parameter_profile",
             subject_id=profile.id,
