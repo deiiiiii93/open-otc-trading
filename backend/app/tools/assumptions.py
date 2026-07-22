@@ -52,6 +52,18 @@ class SetInstrumentPricingDefaultsInput(BaseModel):
         description="Fields to null out: rate|dividend_yield|volatility. A field "
         "cannot be both set and cleared.",
     )
+    rate_curve: list[dict] | None = Field(
+        default=None,
+        description="Term-structure rate curve: [{tenor: '3M', value: 0.02}]. "
+        "Labels from {1W,2W,1M,2M,3M,6M,9M,1Y,18M,2Y,3Y,5Y}. None=leave "
+        "unchanged; [] clears. Fed only to generate_pricing_parameters_from_curves.",
+    )
+    dividend_yield_curve: list[dict] | None = Field(
+        default=None, description="See rate_curve."
+    )
+    volatility_curve: list[dict] | None = Field(
+        default=None, description="See rate_curve; values must be > 0."
+    )
 
 
 class BuildAssumptionSetInput(BaseModel):
@@ -106,9 +118,13 @@ def set_instrument_pricing_defaults_tool(
     dividend_yield: float | None = None,
     volatility: float | None = None,
     clear: list[str] | None = None,
+    rate_curve: list[dict] | None = None,
+    dividend_yield_curve: list[dict] | None = None,
+    volatility_curve: list[dict] | None = None,
 ) -> dict[str, Any]:
-    """Set/clear an instrument's baseline r/q/vol; run build_assumption_set
-    afterwards to materialize. HITL — requires confirmation."""
+    """Set/clear an instrument's baseline r/q/vol AND term-structure curves; run
+    build_assumption_set or generate_pricing_parameters_from_curves afterwards to
+    materialize. HITL — requires confirmation."""
     try:
         instrument = assumptions_svc.set_instrument_defaults(
             symbol=symbol,
@@ -116,6 +132,9 @@ def set_instrument_pricing_defaults_tool(
             dividend_yield=dividend_yield,
             volatility=volatility,
             clear=clear or [],
+            rate_curve=rate_curve,
+            dividend_yield_curve=dividend_yield_curve,
+            volatility_curve=volatility_curve,
         )
     except DomainWriteError as exc:
         return domain_write_error_response(exc)

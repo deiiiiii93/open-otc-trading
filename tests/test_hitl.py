@@ -38,6 +38,7 @@ def test_interrupt_tool_names_covers_all_state_mutating_tools():
         "add_portfolio_sources",
         "remove_portfolio_sources",
         "create_pricing_parameter_profile",
+        "generate_pricing_parameters_from_curves",
         "update_pricing_parameter_profile",
         "upsert_pricing_parameter_rows",
         "delete_pricing_parameter_rows",
@@ -428,3 +429,16 @@ def test_summarize_register_underlying_distinguishes_create_vs_tag(session):
     tag_summary = hitl._summarize_register_underlying({"symbol": "UNTAGGED.SH"})
     assert "UNTAGGED.SH" in tag_summary
     assert "underlying" in tag_summary.lower()
+
+
+def test_generate_from_curves_is_hitl_write():
+    from app.services.deep_agent.hitl import (
+        INTERRUPT_TOOL_NAMES,
+        _LABEL_BY_TOOL,
+        _RISK_LEVEL_BY_TOOL,
+    )
+
+    name = "generate_pricing_parameters_from_curves"
+    assert name in INTERRUPT_TOOL_NAMES
+    assert _RISK_LEVEL_BY_TOOL[name] == "write"
+    assert name in _LABEL_BY_TOOL

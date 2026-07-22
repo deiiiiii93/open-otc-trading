@@ -18,6 +18,7 @@ from app.models import AssumptionSet, Instrument
 from app.services.assumptions import build_assumptions_set
 from app.services.audit import record_audit
 from app.services.instruments import ensure_instrument
+from app.services.term_structure import validate_curve
 
 from ._errors import DomainWriteError
 from ._validation import invalid_param_reason
@@ -99,6 +100,9 @@ def set_instrument_defaults(
     dividend_yield: float | None = None,
     volatility: float | None = None,
     clear: list[str] | tuple[str, ...] = (),
+    rate_curve: list[dict] | None = None,
+    dividend_yield_curve: list[dict] | None = None,
+    volatility_curve: list[dict] | None = None,
     actor: str = "agent",
     session: Session | None = None,
 ) -> Instrument:
@@ -125,8 +129,6 @@ def set_instrument_defaults(
     conflicting = sorted(set(clear_fields) & set(provided))
     if conflicting:
         raise DomainWriteError("field_set_and_cleared", {"fields": conflicting})
-    if not provided and not clear_fields:
-        raise DomainWriteError("no_fields")
     invalid = {
         field: reason
         for field, value in provided.items()
@@ -134,6 +136,21 @@ def set_instrument_defaults(
     }
     if invalid:
         raise DomainWriteError("invalid_value", {"fields": invalid})
+    curve_updates: dict[str, list[dict] | None] = {}
+    for column, value, positive in (
+        ("rate_curve", rate_curve, False),
+        ("dividend_yield_curve", dividend_yield_curve, False),
+        ("volatility_curve", volatility_curve, True),
+    ):
+        if value is not None:
+            try:
+                curve_updates[column] = validate_curve(value, require_positive=positive)
+            except ValueError as exc:
+                raise DomainWriteError(
+                    "invalid_curve", {"field": column, "reason": str(exc)}
+                )
+    if not provided and not clear_fields and not curve_updates:
+        raise DomainWriteError("no_fields")
     with _session_scope(session) as sess:
         instrument = ensure_instrument(
             sess, symbol, source="pricing_profile", status="draft"
@@ -143,13 +160,16 @@ def set_instrument_defaults(
             setattr(instrument, field, value)
         for field in clear_fields:
             setattr(instrument, field, None)
+        for column, value in curve_updates.items():
+            setattr(instrument, column, value)
         record_audit(
             sess,
             event_type="instrument.pricing_defaults_updated",
             actor=actor,
             subject_type="instrument",
             subject_id=instrument.id,
-            payload={"symbol": instrument.symbol, "set": provided, "cleared": clear_fields},
+            payload={"symbol": instrument.symbol, "set": provided,
+                     "cleared": clear_fields, "curves": sorted(curve_updates)},
         )
         sess.commit()
         return instrument

@@ -50,6 +50,7 @@ INTERRUPT_TOOL_NAMES: tuple[str, ...] = (
     "add_portfolio_sources",
     "remove_portfolio_sources",
     "create_pricing_parameter_profile",
+    "generate_pricing_parameters_from_curves",
     "update_pricing_parameter_profile",
     "upsert_pricing_parameter_rows",
     "delete_pricing_parameter_rows",
@@ -98,6 +99,7 @@ _RISK_LEVEL_BY_TOOL: dict[str, str] = {
     # Pricing parameter writes are reversible (delete/upsert exist) — "write"
     # level. Profile delete is the exception: rows are gone for good.
     "create_pricing_parameter_profile": "write",
+    "generate_pricing_parameters_from_curves": "write",
     "update_pricing_parameter_profile": "write",
     "upsert_pricing_parameter_rows": "write",
     "delete_pricing_parameter_rows": "write",
@@ -140,6 +142,7 @@ _LABEL_BY_TOOL: dict[str, str] = {
     "add_portfolio_sources": "Add view sources",
     "remove_portfolio_sources": "Remove view sources",
     "create_pricing_parameter_profile": "Create pricing profile",
+    "generate_pricing_parameters_from_curves": "Generate pricing params from curves",
     "update_pricing_parameter_profile": "Update pricing profile",
     "upsert_pricing_parameter_rows": "Upsert pricing profile rows",
     "delete_pricing_parameter_rows": "Delete pricing profile rows",

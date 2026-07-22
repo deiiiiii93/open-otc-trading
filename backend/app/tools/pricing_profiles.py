@@ -81,6 +81,15 @@ class DeletePricingParameterProfileInput(BaseModel):
     profile_id: int
 
 
+class GeneratePricingParametersFromCurvesInput(BaseModel):
+    name: str | None = Field(
+        default=None, description="Defaults to 'Curve Pricing Parameters <date>'."
+    )
+    valuation_date: str | None = Field(
+        default=None, description="ISO datetime; defaults to now."
+    )
+
+
 def _profile_with_rows(profile: Any) -> dict[str, Any]:
     shaped = shape_pricing_parameter_profile(profile)
     shaped["rows"] = [shape_pricing_parameter_row(row) for row in profile.rows]
@@ -197,6 +206,29 @@ def delete_pricing_parameter_profile_tool(profile_id: int) -> dict[str, Any]:
     return {"ok": True, "data": result}
 
 
+@capability_gated(group=ToolGroup.DOMAIN_WRITE)
+@tool(
+    "generate_pricing_parameters_from_curves",
+    args_schema=GeneratePricingParametersFromCurvesInput,
+)
+def generate_pricing_parameters_from_curves_tool(
+    name: str | None = None,
+    valuation_date: str | None = None,
+) -> dict[str, Any]:
+    """Interpolate every open trade's r/q/vol from its underlying's
+    term-structure curves (flat-scalar fallback) into a new flat pricing profile
+    (source_type='curve'); pass the returned id to run_batch_pricing. On
+    unfilled_trades, set those instruments' curves or scalars and retry.
+    HITL — requires confirmation."""
+    try:
+        profile = pricing_profiles_svc.generate_profile_from_curves(
+            name=name, valuation_date=parse_valuation_date(valuation_date)
+        )
+    except DomainWriteError as exc:
+        return domain_write_error_response(exc)
+    return {"ok": True, "data": _profile_with_rows(profile)}
+
+
 __all__ = [
     "list_pricing_parameter_profiles_tool",
     "get_pricing_parameter_profile_tool",
@@ -205,4 +237,5 @@ __all__ = [
     "upsert_pricing_parameter_rows_tool",
     "delete_pricing_parameter_rows_tool",
     "delete_pricing_parameter_profile_tool",
+    "generate_pricing_parameters_from_curves_tool",
 ]

@@ -12,6 +12,7 @@ from app.tools.pricing_profiles import (
     create_pricing_parameter_profile_tool,
     delete_pricing_parameter_profile_tool,
     delete_pricing_parameter_rows_tool,
+    generate_pricing_parameters_from_curves_tool,
     get_pricing_parameter_profile_tool,
     list_pricing_parameter_profiles_tool,
     update_pricing_parameter_profile_tool,
@@ -141,3 +142,43 @@ def test_update_upsert_delete_rows_and_profile():
     deleted = delete_pricing_parameter_profile_tool.invoke({"profile_id": profile_id})
     assert deleted["ok"] is True
     assert deleted["data"]["deleted_profile_id"] == profile_id
+
+
+def _seed_open_curve_trade(symbol: str) -> None:
+    from app.models import Portfolio, Position
+    from app.services.underlyings import ensure_underlying
+
+    with database.SessionLocal() as session:
+        portfolio = Portfolio(name=f"Book-{symbol}")
+        session.add(portfolio)
+        session.flush()
+        session.add(Position(
+            portfolio_id=portfolio.id, product_id=None, underlying=symbol,
+            product_type="VanillaCall",
+            product_kwargs={"underlying": symbol, "maturity_date": "2026-07-02"},
+            quantity=1.0, source_trade_id="T-CURVE", status="open",
+            position_kind="otc", engine_name="quantark.vanilla", engine_kwargs={},
+            source_payload={}, mapping_status="supported",
+        ))
+        inst = ensure_underlying(session, symbol, source="manual", status="active")
+        inst.rate = 0.02
+        inst.dividend_yield = 0.01
+        inst.volatility_curve = [{"tenor": "6M", "value": 0.22}]
+        session.commit()
+
+
+def test_generate_pricing_parameters_from_curves_tool():
+    _seed_open_curve_trade("000300.SH")
+    result = generate_pricing_parameters_from_curves_tool.invoke(
+        {"name": "Curve Run", "valuation_date": "2026-01-01T00:00:00"}
+    )
+    assert result["ok"] is True
+    assert result["data"]["source_type"] == "curve"
+    assert result["data"]["rows"][0]["symbol"] == "000300.SH"
+    assert result["data"]["rows"][0]["volatility"] == pytest.approx(0.22)
+
+
+def test_generate_pricing_parameters_from_curves_tool_no_positions():
+    result = generate_pricing_parameters_from_curves_tool.invoke({})
+    assert result["ok"] is False
+    assert result["error"] == "no_open_positions"

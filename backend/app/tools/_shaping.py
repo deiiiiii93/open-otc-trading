@@ -503,6 +503,9 @@ def shape_instrument_defaults(instrument: Instrument) -> dict[str, Any]:
         "rate": instrument.rate,
         "dividend_yield": instrument.dividend_yield,
         "volatility": instrument.volatility,
+        "rate_curve": instrument.rate_curve,
+        "dividend_yield_curve": instrument.dividend_yield_curve,
+        "volatility_curve": instrument.volatility_curve,
     }
 
 

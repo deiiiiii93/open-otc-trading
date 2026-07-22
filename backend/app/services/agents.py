@@ -415,6 +415,7 @@ DEEP_AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         # Pricing parameter writes (persisted / HITL-gated): profile CRUD +
         # assumption pipeline. Bound so HITL cards always execute.
         "create_pricing_parameter_profile",
+        "generate_pricing_parameters_from_curves",
         "update_pricing_parameter_profile",
         "upsert_pricing_parameter_rows",
         "delete_pricing_parameter_rows",

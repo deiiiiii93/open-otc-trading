@@ -90,3 +90,23 @@ def test_structured_refusals():
     assert conflict["error"] == "field_set_and_cleared"
     nothing = build_assumption_set_tool.invoke({})
     assert nothing == {"ok": False, "error": "no_open_positions"}
+
+
+def test_set_and_get_instrument_curves():
+    set_result = set_instrument_pricing_defaults_tool.invoke(
+        {"symbol": "000300.SH",
+         "rate_curve": [{"tenor": "3M", "value": 0.02}, {"tenor": "1Y", "value": 0.05}]}
+    )
+    assert set_result["ok"] is True
+    assert set_result["data"]["rate_curve"][0]["tenor"] == "3M"
+
+    got = get_instrument_pricing_defaults_tool.invoke({"symbols": ["000300.SH"]})
+    assert got["data"][0]["rate_curve"][1]["value"] == 0.05
+
+
+def test_set_instrument_curve_rejects_unknown_label():
+    result = set_instrument_pricing_defaults_tool.invoke(
+        {"symbol": "000300.SH", "volatility_curve": [{"tenor": "4M", "value": 0.2}]}
+    )
+    assert result["ok"] is False
+    assert result["error"] == "invalid_curve"

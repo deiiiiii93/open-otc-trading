@@ -68,6 +68,7 @@ from .pricing_profiles import (
     create_pricing_parameter_profile_tool,
     delete_pricing_parameter_profile_tool,
     delete_pricing_parameter_rows_tool,
+    generate_pricing_parameters_from_curves_tool,
     get_pricing_parameter_profile_tool,
     list_pricing_parameter_profiles_tool,
     update_pricing_parameter_profile_tool,
@@ -220,6 +221,7 @@ QUANT_AGENT_TOOLS = [
     create_report_tool,
     # Pricing parameter writes (persisted / HITL-gated):
     create_pricing_parameter_profile_tool,
+    generate_pricing_parameters_from_curves_tool,
     update_pricing_parameter_profile_tool,
     upsert_pricing_parameter_rows_tool,
     delete_pricing_parameter_rows_tool,
