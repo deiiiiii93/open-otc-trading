@@ -104,19 +104,41 @@ def _is_infra_blank(transcript) -> bool:
 
 
 # Provider/transport failure signatures — quota, rate-limit, upstream 5xx, and
-# connection/proxy errors. Deliberately narrow: a domain tool raising (e.g.
-# "portfolio not found") is a real outcome the agent should handle and must NOT
-# invalidate the trial. These patterns only ever come from the LLM provider or
-# the network path to it.
+# connection/proxy/stream errors. Deliberately narrow: a domain tool raising
+# (e.g. "portfolio not found") is a real outcome the agent should handle and
+# must NOT invalidate the trial. These patterns only ever come from the LLM
+# provider or the network path to it.
+#
+# Bare status codes are matched ONLY via the "Error code:"-prefixed alternative
+# (or the explicit 5xx word-boundary set) — never as a loose \b402\b, because a
+# Python traceback is full of source line numbers ("factory.py, line 402") that
+# would otherwise false-positive as an HTTP 402. 402 in particular appears only
+# behind "Error code:" or as the ZenMux "reject_no_credit" account-gate body.
 _PROVIDER_ERROR_RE = re.compile(
     r"quote_exceeded"
     r"|insufficient[_ ]?quota"
+    r"|insufficient[_ ]?balance"
+    r"|reject_no_credit"
     r"|rate[_ ]?limit"
     r"|Error code:\s*(?:402|429|5\d\d)"
-    r"|\b(?:429|502|503|504)\b"
+    # Bare HTTP codes ONLY with a reason phrase or an explicit http/status
+    # prefix — never a lone \b502\b, which matches "line 502" in a traceback
+    # (the same false positive 402 is guarded against above).
+    r"|\b(?:429|50\d)\s+(?:Bad\s+Gateway|Service\s+Unavailable|Gateway\s+Time"
+    r"|Internal\s+Server\s+Error|Too\s+Many\s+Requests)"
+    r"|(?:HTTP[/ ]\S*\s*|status(?:[_\s-]?code)?[\s=:]+)(?:429|50\d)\b"
     r"|overloaded_error|Overloaded"
     r"|ServiceUnavailable"
-    r"|(?:Connection|Proxy|Read)\s*(?:Error|Timeout|refused|reset|aborted)",
+    r"|(?:Connection|Proxy|Read)\s*(?:Error|Timeout|refused|reset|aborted)"
+    # httpx transport drops mid-stream: a peer-closed connection or a stalled
+    # SSE stream is a network death, not model behaviour. Without these, a trial
+    # truncated by a dropped connection scored as a real low (Run #33 longcat).
+    r"|RemoteProtocolError"
+    r"|peer closed connection"
+    r"|incomplete chunked read"
+    r"|StreamChunkTimeout"
+    r"|No streaming chunk received"
+    r"|APIConnectionError",
     re.IGNORECASE,
 )
 

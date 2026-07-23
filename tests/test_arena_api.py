@@ -846,6 +846,91 @@ def test_domain_tool_error_stays_scored(session, settings):
         assert m["objective_score"] is not None
 
 
+def test_provider_error_regex_classifies_transport_drops_not_line_numbers():
+    """The provider-error signature must catch httpx transport drops and the
+    ZenMux account-gate body, WITHOUT false-matching source line numbers.
+
+    Run #33 surfaced two gaps: ``RemoteProtocolError('peer closed connection')``
+    (a real mid-stream network death) slipped through as a scored low, while a
+    greedy ``\\b402\\b`` would have matched ``factory.py, line 402`` in a
+    traceback. Both directions are locked here so the classifier can't regress.
+    """
+    from app.services.arena.task import _PROVIDER_ERROR_RE as R
+
+    # Transport / account-gate signatures that MUST be treated as infra.
+    for s in (
+        "RemoteProtocolError('peer closed connection without sending complete "
+        "message body (incomplete chunked read)')",
+        "StreamChunkTimeoutError('No streaming chunk received for 120.0s')",
+        "APIStatusError(\"Error code: 402 - {'type': 'reject_no_credit'}\")",
+        "insufficient balance",
+        "httpx.APIConnectionError: Connection error",
+        "Error code: 429 - rate_limit",
+        "503 Service Unavailable",
+    ):
+        assert R.search(s), f"provider signature not detected: {s!r}"
+
+    # Non-infra strings that must NOT match — chiefly bare status-code-shaped
+    # line numbers in tracebacks (the false positive that mis-flagged kimi-2-7),
+    # and genuine domain errors the agent is meant to handle.
+    for s in (
+        'File "…/agents/factory.py", line 402, in composed',
+        'File "…/pricing.py", line 502, in run_batch_pricing',
+        "ValueError('Unsupported kwargs for BarrierOption: initial_price')",
+        "artifact section not found: product_spec",
+        "GraphRecursionError('Recursion limit of 100 reached')",
+    ):
+        assert not R.search(s), f"false-positive infra match on: {s!r}"
+
+
+def test_remote_protocol_drop_marks_invalid(session, settings):
+    """A mid-run ``RemoteProtocolError`` (peer-closed connection) with no
+    completed response is a transport death — recorded 'invalid', judge skipped.
+
+    This is the Run #33 longcat gap: the drop left a step without a response yet
+    the old regex missed the httpx wording, so the trial folded as a scored low
+    instead of being gated. With the widened signature it must gate like a 402.
+    """
+    run_id, task_id = _queue_single_pair_run(settings)
+    from app.golden_workflows.transcript import MatchTranscript, MatchStep
+
+    def dropped(loaded, model, *, artifact_root, run_id=None):
+        steps = [
+            MatchStep(index=0, user="t0", messages=[],
+                      tool_calls=[{"id": "c0", "name": "get_latest_risk_run", "args": {}}],
+                      tool_results=[], skills_routed=[], artifacts=[], task_ids=[],
+                      response_text="Latest risk is X.", errors=[]),
+            MatchStep(index=1, user="t1", messages=[], tool_calls=[],
+                      tool_results=[], skills_routed=[], artifacts=[], task_ids=[],
+                      response_text="",
+                      errors=[{"span": "llm", "name": "ChatOpenAI",
+                               "error": "RemoteProtocolError('peer closed connection "
+                                        "without sending complete message body "
+                                        "(incomplete chunked read)')"}]),
+        ]
+        return MatchTranscript(
+            schema_version=1, run_id=None, workflow_id="wf-a",
+            model_id=model.slug, started_at=None, finished_at=None, steps=steps,
+        )
+
+    def exploding_judge(transcript, loaded, *, post=None):
+        raise AssertionError("judge must not run for a transport-dropped match")
+
+    from app.services.arena.task import execute_arena_run_task
+    execute_arena_run_task(
+        task_id, run_id, database.SessionLocal, settings=settings,
+        run_match_fn=dropped, judge_fn=exploding_judge,
+        get_bundle_fn=_fake_get_bundle,
+    )
+
+    with database.SessionLocal() as s:
+        run_dict = arena_store.get_run(s, run_id)
+        (m,) = run_dict["matches"]
+        assert m["status"] == "invalid"
+        assert m["error"] == "infra_error"
+        assert m["objective_score"] is None
+
+
 def test_toolcall_then_provider_death_marks_invalid(session, settings):
     """A step that issues a tool call but whose FINAL response dies on a 402
     (empty response_text + provider error) is a partial death, not recovery —
