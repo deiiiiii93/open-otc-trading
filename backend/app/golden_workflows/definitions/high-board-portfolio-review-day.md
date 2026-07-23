@@ -13,11 +13,15 @@ objective: >
 fixtures: high-board-portfolio-review-day.fixtures.json
 tags: [flagship, high-board, oversight, reporting, desk-workflow]
 # Designed par for golf-style EFF (spec 2026-07-11): a realistic COUNTED competent
-# run, not the theoretical minimum. PROVISIONAL 18 — recalibrated from the live smoke
-# (8 signature tools + legitimate re-reads of get_portfolio/get_positions/
-# get_latest_risk_run; record_answer calls backing an answer_field_* check are
-# exempt from the count). EFF decays linearly from par to 0 at 2×par. Opts into golf.
-par_tool_calls: 18
+# run, not the theoretical minimum. Calibrated from the pre-merge live smoke
+# (deepseek-v4-flash, DIRECT api.deepseek.com channel, 2026-07-23): the flash run
+# counted 26 raw calls but with clear step-7 artifact-hunting over-execution
+# (10 list_artifacts/glob calls). A lean competent run is ~8 signature tools +
+# legitimate re-reads of get_portfolio/get_positions/get_latest_risk_run ≈ 13-16;
+# record_answer calls backing an answer_field_* check are exempt from the count.
+# Set 16 (lean end of the competent estimate); refine on the multi-model board.
+# EFF decays linearly from par to 0 at 2×par. Opts into golf.
+par_tool_calls: 16
 
 steps:
   - user: "Resolve the desk control book — is it a container or a view?"
