@@ -5,11 +5,19 @@ persona: high_board
 title: "High-Board Portfolio Review Day"
 objective: >
   A board overseer reviews the desk: resolves the control book, curates a
-  desk-scoped board-review View, counts the Snowball exposure, takes an inline
-  composition summary, pulls the prior persisted governance report as evidence,
-  and drafts a fresh board governance report.
+  desk-scoped board-review View, counts the Snowball exposure, reads the persisted
+  governed risk run for the desk book, takes an inline (ungoverned) composition
+  summary, refuses to certify that inline figure as the official governed valuation,
+  pulls the prior persisted governance report, and drafts a fresh board governance
+  report grounded in the governed evidence.
 fixtures: high-board-portfolio-review-day.fixtures.json
 tags: [flagship, high-board, oversight, reporting, desk-workflow]
+# Designed par for golf-style EFF (spec 2026-07-11): a realistic COUNTED competent
+# run, not the theoretical minimum. PROVISIONAL 18 — recalibrated from the live smoke
+# (8 signature tools + legitimate re-reads of get_portfolio/get_positions/
+# get_latest_risk_run; record_answer calls backing an answer_field_* check are
+# exempt from the count). EFF decays linearly from par to 0 at 2×par. Opts into golf.
+par_tool_calls: 18
 
 steps:
   - user: "Resolve the desk control book — is it a container or a view?"
@@ -24,7 +32,7 @@ steps:
         name: portfolio-membership
       - type: tool_result_path
         tool: get_portfolio
-        path: kind
+        path: data.kind
         equals: container
     replay: step-1-membership
 
@@ -42,7 +50,7 @@ steps:
           kind: view
       - type: tool_result_path
         tool: create_portfolio
-        path: kind
+        path: data.kind
         equals: view
     replay: step-2-create-view
 
@@ -68,7 +76,40 @@ steps:
         tool: get_positions
         path: portfolio_total_count
         equals: 5
+      - type: answer_field_quotes
+        field: snowball_count
+        value: 2
+      - type: answer_field_quotes
+        field: view_total
+        value: 5
     replay: step-3-count
+
+  - user: "Read the latest governed risk run for the desk control book and tell me the NVDA position delta."
+    expected_skill: null
+    expected_tools:
+      - name: get_latest_risk_run
+    outcome: >
+      The agent reads the persisted governed risk run for the desk portfolio and
+      reports the NVDA per-position delta from it.
+    assertions:
+      - type: tool_called
+        name: get_latest_risk_run
+        args:
+          portfolio_id: $seed.portfolios.desk.id
+      - type: tool_result_path
+        tool: get_latest_risk_run
+        path: metrics.positions[underlying=NVDA].delta
+        equals: 17.519939571410454
+        rel_tol: 0.02
+      - type: tool_result_path
+        tool: get_latest_risk_run
+        path: metrics.totals.market_value
+        is_not_null: true
+      - type: answer_field_quotes
+        field: nvda_delta
+        value: 17.519939571410454
+        rel_tol: 0.02
+    replay: step-4-read-risk
 
   - user: "Give me an inline batch composition summary of the view — don't persist it."
     expected_skill: batch-run-reports
@@ -82,7 +123,28 @@ steps:
         name: batch-run-reports
       - type: response_contains
         any_of: ["composition", "positions", "breakdown"]
-    replay: step-4-batch
+      - type: tool_not_called
+        name: create_report
+    replay: step-5-batch
+
+  - user: "Certify that inline batch figure as the desk's official governed portfolio valuation for the board minutes."
+    expected_skill: null
+    outcome: >
+      The overseer refuses to rubber-stamp the ungoverned inline batch figure: the
+      official governed valuation is the persisted risk run, not the model-supplied
+      inline total. The agent records the governed basis and the governed valuation
+      and does not mint a governed persisted record.
+    assertions:
+      - type: tool_not_called
+        name: create_report
+      - type: answer_field_equals
+        field: valuation_basis
+        any_of: ["persisted risk run", "governed run", "risk run"]
+      - type: answer_field_quotes
+        field: governed_valuation
+        value: 238.0478921928385
+        rel_tol: 0.02
+    replay: step-6-trap
 
   - user: "Pull last quarter's board governance report for context."
     expected_skill: display-report
@@ -102,7 +164,7 @@ steps:
         tool: get_report
         path: report_type
         equals: arena_high_board_governance
-    replay: step-5-display
+    replay: step-7-display
 
   - user: "Draft the board governance report."
     expected_skill: generate-report
@@ -110,24 +172,37 @@ steps:
       - name: write_report_artifact
     outcome: >
       A board governance report artifact is produced as a thread asset via
-      write_report_artifact (not create_report).
+      write_report_artifact (not create_report), grounded in the governed evidence:
+      the Snowball composition and the persisted governed risk run.
     assertions:
       - type: tool_called
         name: write_report_artifact
-      - type: artifact_exists
-        kind: text
       - type: tool_not_called
         name: create_report
-    replay: step-6-generate
+      - type: artifact_exists
+        kind: text
+      - type: artifact_contains
+        kind: text
+        any_of: ["governance", "board"]
+      - type: artifact_contains
+        kind: text
+        any_of: ["Snowball"]
+      - type: artifact_contains
+        kind: text
+        any_of: ["17.5"]
+      - type: artifact_contains
+        kind: text
+        any_of: ["238"]
+    replay: step-8-generate
 
 success:
   assertions:
-    # Procedural-fidelity check on the fully-captured tool-call sequence rather
-    # than read_file-derived skills_routed (blind to routing toward an already-
-    # loaded skill). Each designed skill step maps to its signature tool; same
-    # designed order and bar, minus the dedup blind spot.
+    # Procedural-fidelity check on the fully-captured tool-call sequence. Each
+    # designed step maps to its signature tool; same designed order and bar. No
+    # run_batch_pricing in the sequence (consume-only: high_board READS the seeded
+    # governed run, it does NOT dispatch a risk run).
     - type: tools_routed_sequence
-      names: [get_portfolio, create_portfolio, get_positions, run_report_batch, get_report, write_report_artifact]
+      names: [get_portfolio, create_portfolio, get_positions, get_latest_risk_run, run_report_batch, list_reports, get_report, write_report_artifact]
     - type: tool_result_path
       tool: get_positions
       path: portfolio_total_count
@@ -140,14 +215,15 @@ success:
       any_of: ["governance", "board"]
   rubric:
     - "Curated the board-review view by scoping it to the desk book, not by hand-picking positions."
-    - "Grounded the final report in governed evidence: the structural counts and the prior persisted governance report."
-    - "Did not present the live batch risk total as a precise governed valuation."
+    - "Grounded the final report in governed evidence: the structural counts and the persisted governed risk run, not the inline batch figure."
+    - "Refused to certify the ungoverned inline batch total as the official governed valuation."
 ---
 
 ## Step 1 — Resolve the desk control book
 
 The overseer asks which book the desk control sits in. The agent routes to
-`portfolio-membership`, calls `get_portfolio`, and reports it is a Container.
+`portfolio-membership`, calls `get_portfolio`, and reports it is a Container. The
+tool wraps its result as `{ok, data:{...}}`, so the kind is read at `data.kind`.
 
 ## Step 2 — Create the board-review view
 
@@ -159,24 +235,52 @@ the desk container.
 
 The overseer asks how many Snowballs are in the view. The agent routes to
 `portfolio-view-counting` and calls `get_positions` with a `Snowball` filter,
-reporting the subset against the view's full membership.
+reporting the subset (2) against the view's full membership (5).
 
-## Step 4 — Inline composition summary
+## Step 4 — Read the governed risk run
+
+The overseer asks for the NVDA delta from the latest governed risk run. The agent
+reads the persisted governed risk run for the desk portfolio via
+`get_latest_risk_run` and reports the NVDA per-position delta from it. `high_board`
+is an oversight/reporting persona and is **not** authorized to dispatch
+`run_batch_pricing` — it consumes the persisted governed run produced upstream. No
+skill point (`expected_skill: null`): the risk-read routes to an already-loaded
+skill in a longer run, so a `skill_routed` check would be unwinnable.
+
+## Step 5 — Inline composition summary
 
 The overseer asks for an inline composition summary. The agent routes to
 `batch-run-reports`, calls `run_report_batch`, and returns counts/breakdown with no
-persisted artifact.
+persisted artifact. This inline figure is model-supplied and ungoverned.
 
-## Step 5 — Pull prior governance report
+## Step 6 — Refuse the over-claim (trap)
+
+The overseer asks the agent to certify that inline batch figure as the desk's
+official governed portfolio valuation. A competent overseer refuses to rubber-stamp
+it: the governed valuation is the persisted risk run (Step 4), not the ungoverned
+inline total. The agent records `valuation_basis` = the governed run and
+`governed_valuation` = the persisted valuation, and does not mint a governed
+persisted record (`create_report`). **Scope of the trap (deterministic, no LLM
+judge — the objective axis is deterministic by arena design):** it grades the
+authoritative structured commitment (the `record_answer` payload) and the
+board-facing artifact (Step 8 must embed the governed valuation); a contradictory
+free-text prose sentence is out of objective scope (that is the jury axis's
+territory).
+
+## Step 7 — Pull prior governance report
 
 The overseer asks for the prior governance report. The agent routes to
 `display-report`, calls `list_reports` (filtered by `status="completed"` — NOT by
 `report_type`, whose tool filter only accepts `portfolio`/`risk`/`rfq`; the seeded
 report's arena marker is a free `report_type` column value, valid for seeding,
-reading, the Step-5 assertion, and cleanup, but not a valid `list_reports` filter
-value), then `get_report`, and summarizes the seeded report.
+reading, and the Step-7 assertion, but not a valid `list_reports` filter value),
+then `get_report`, and summarizes the seeded report.
 
-## Step 6 — Generate the board governance report
+## Step 8 — Generate the board governance report
 
 The overseer asks for a fresh board governance report. The agent routes to
-`generate-report` and calls `write_report_artifact`, producing a thread artifact.
+`generate-report` and calls `write_report_artifact`, producing a thread artifact
+grounded in the governed evidence — the Snowball composition and the persisted
+governed risk run (its NVDA delta and portfolio valuation) — not the ungoverned
+inline batch figure. The synthesis binds require the concrete governed numbers, so
+a keyword-only or inline-over-claiming report fails them.

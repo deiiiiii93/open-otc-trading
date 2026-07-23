@@ -57,3 +57,41 @@ def test_seeded_risk_run_metrics_match_harvest(offline_session_factory, block_ne
         ok_f, fv = _dig(fresh, path)
         assert ok_s and ok_f, path
         assert abs(float(sv) - float(fv)) < 1e-6, (path, sv, fv)
+
+
+# ---------------------------------------------------------------------------
+# Task 3/4 — manifest load, axes, full-marks replay
+# ---------------------------------------------------------------------------
+def test_high_board_bundle_loads():
+    loaded = get_workflow_bundle(WF_ID)
+    wf = loaded.workflow
+    assert wf.persona == "high_board"
+    assert [s.expected_skill for s in wf.steps] == [
+        "portfolio-membership", "portfolio-maintenance", "portfolio-view-counting",
+        None, "batch-run-reports", None, "display-report", "generate-report",
+    ]
+    assert len(wf.steps) == 8
+    assert wf.par_tool_calls is not None
+    for s in wf.steps:
+        assert s.replay in loaded.fixtures.replay
+
+
+def test_high_board_is_par_calibrated():
+    from app.services.arena import scoring
+    assert scoring.par_calibrated(get_workflow_bundle(WF_ID).workflow)
+
+
+def test_high_board_has_four_axes():
+    from app.services.arena.scoring import _axis_for_assertion
+    loaded = get_workflow_bundle(WF_ID)
+    axes = {_axis_for_assertion(a) for s in loaded.workflow.steps for a in s.assertions}
+    assert {"grounding", "synthesis", "adherence", "procedural"} <= axes
+
+
+def test_high_board_golden_replay_scores_full_marks():
+    from app.golden_workflows.transcript import transcript_from_replay
+    from app.services.arena.scoring import objective_score
+    loaded = get_workflow_bundle(WF_ID)
+    score, passed, total = objective_score(transcript_from_replay(loaded), loaded)
+    assert passed == total, f"{passed}/{total} — not full marks"
+    assert score == 100.0
