@@ -98,3 +98,45 @@ def client(session, settings):
     app = create_app(settings=settings)
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture
+def offline_session_factory(tmp_path):
+    """Return a factory producing a fresh, clean, isolated DB per call.
+
+    Shared by the arena determinism gate and the high-board workflow tests.
+    """
+    from contextlib import contextmanager
+
+    from app import database
+    from app.config import Settings
+
+    counter = {"n": 0}
+
+    @contextmanager
+    def factory():
+        counter["n"] += 1
+        n = counter["n"]
+        settings = Settings(
+            database_url=f"sqlite+pysqlite:///{tmp_path / f'det{n}.sqlite3'}",
+            artifact_dir=tmp_path / f"art{n}",
+            agent_checkpoint_db_path=":memory:",
+        )
+        database.configure_database(settings)
+        database.init_db()
+        with database.SessionLocal() as s:
+            yield s
+
+    return factory
+
+
+@pytest.fixture
+def block_network(monkeypatch):
+    """Patch the AkShare fetch entrypoints to hard-fail, so any live market-data
+    fetch on the golden path raises instead of leaking environment data."""
+    def _raise(*_a, **_k):
+        raise RuntimeError("network disabled in determinism gate")
+
+    from app.services import backtest_market_history as hist
+    monkeypatch.setattr(hist, "_fetch_akshare_spot", _raise)
+    monkeypatch.setattr(hist, "_fetch_akshare_futures_contract", _raise)

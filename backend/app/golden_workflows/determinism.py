@@ -342,6 +342,38 @@ DETERMINISM_REGISTRY[TRADER_RFQ_ID] = WorkflowDeterminism(
 )
 
 
+# --- High-Board Portfolio Review determinism -------------------------------
+# high_board is a consume-only oversight persona: it READS a persisted governed
+# risk run (get_latest_risk_run), it does NOT dispatch run_batch_pricing (that
+# authority is trader/risk_manager only). The determinism driver here computes a
+# FRESH risk run over the seeded desk positions purely to HARVEST the truth
+# numbers + the seeded RiskRun.metrics blob; the live match reads the seeded run.
+HIGH_BOARD_ID = "high-board-portfolio-review-day"
+
+
+def _seed_high_board(session) -> dict:
+    ids = apply_seed(get_workflow_bundle(HIGH_BOARD_ID).fixtures, session)
+    session.commit()
+    return ids
+
+
+def _high_board_ids(ids: dict) -> tuple:
+    return ids["portfolios"]["desk"], ids["pricing_profiles"]["prof"]
+
+
+def _adapt_high_board_risk(session, ids):
+    return _drive_risk(session, *_high_board_ids(ids))
+
+
+DETERMINISM_REGISTRY[HIGH_BOARD_ID] = WorkflowDeterminism(
+    workflow_id=HIGH_BOARD_ID,
+    seed_fn=_seed_high_board,
+    drivers={"risk": ProducerDriver(
+        _adapt_high_board_risk,
+        partial(_validate_task_run, kind="risk", needs="positions", priced=True))},
+)
+
+
 def seed_workflow(session, workflow_id: str) -> dict:
     return DETERMINISM_REGISTRY[workflow_id].seed_fn(session)
 

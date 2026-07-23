@@ -7,49 +7,12 @@ fetch or wall-clock dependence on the golden path fails it loudly.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
-from pathlib import Path
-
 import pytest
 
 from app.golden_workflows.determinism import seed_flagship, drive_producers
 
-
-@pytest.fixture
-def offline_session_factory(tmp_path: Path):
-    """Return a factory producing a fresh, clean, isolated DB per call."""
-    from app import database
-    from app.config import Settings
-
-    counter = {"n": 0}
-
-    @contextmanager
-    def factory():
-        counter["n"] += 1
-        n = counter["n"]
-        settings = Settings(
-            database_url=f"sqlite+pysqlite:///{tmp_path / f'det{n}.sqlite3'}",
-            artifact_dir=tmp_path / f"art{n}",
-            agent_checkpoint_db_path=":memory:",
-        )
-        database.configure_database(settings)
-        database.init_db()
-        with database.SessionLocal() as s:
-            yield s
-
-    return factory
-
-
-@pytest.fixture
-def block_network(monkeypatch):
-    """Patch the AkShare fetch entrypoints to hard-fail, so any live market-data
-    fetch on the golden path raises instead of leaking environment data."""
-    def _raise(*_a, **_k):
-        raise RuntimeError("network disabled in determinism gate")
-
-    from app.services import backtest_market_history as hist
-    monkeypatch.setattr(hist, "_fetch_akshare_spot", _raise)
-    monkeypatch.setattr(hist, "_fetch_akshare_futures_contract", _raise)
+# `offline_session_factory` and `block_network` are now shared fixtures in
+# tests/conftest.py (also consumed by the high-board workflow tests).
 
 
 def test_producers_are_reproducible(offline_session_factory, block_network):
@@ -163,3 +126,33 @@ def test_committed_truth_file_is_current(offline_session_factory, block_network)
     assert committed == fresh, (
         "risk-manager-control-day.truth.json is stale — run "
         "`python -m app.golden_workflows.harvest_fixtures`")
+
+
+def test_high_board_risk_is_reproducible(offline_session_factory, block_network):
+    """The high-board consume-only risk producer must reproduce the HARVESTED
+    numbers byte-for-byte across identical clean seeds (block_network would raise
+    on a spot fetch). Three market-evidence *hash* fields (position_set_hash,
+    market_evidence_hash, effective_market_evidence_id) are known-volatile and NOT
+    stripped by `_canonical` — the same pre-existing gap the flagship
+    `test_producers_are_reproducible` hits — so they are excluded here; the
+    grounding truth (per-position Greeks + valuation) must be identical."""
+    from app.golden_workflows.determinism import (
+        HIGH_BOARD_ID, seed_workflow, drive_producers,
+    )
+
+    def _strip(payload):
+        risk = {k: v for k, v in payload["risk"].items() if k != "position_set_hash"}
+        meta = dict(risk.get("source_metadata") or {})
+        meta.pop("effective_market_evidence_id", None)
+        meta.pop("market_evidence_hash", None)
+        risk["source_metadata"] = meta
+        return {**payload, "risk": risk}
+
+    with offline_session_factory() as s1:
+        first = drive_producers(s1, seed_workflow(s1, HIGH_BOARD_ID),
+                                workflow_id=HIGH_BOARD_ID)
+    with offline_session_factory() as s2:
+        second = drive_producers(s2, seed_workflow(s2, HIGH_BOARD_ID),
+                                 workflow_id=HIGH_BOARD_ID)
+    assert _strip(first) == _strip(second)
+    assert first["risk"]["positions"]
