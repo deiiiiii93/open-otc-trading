@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
@@ -502,84 +501,84 @@ def run_portfolio_scenarios(
     spot_shifts_pct: list[float],
     vol_shifts_abs: list[float],
 ) -> dict[str, Any]:
-    """Reprices the portfolio under a grid of (spot_shift, vol_shift)."""
-    from .quantark import price_product
+    """Reprices the portfolio under a grid of (spot_shift, vol_shift).
+
+    Cells execute through quantark.execution (PricingSession
+    run_scenario_plans); the shift math, exclusion/usability gates, and the
+    per-cell failure-to-0.0 semantics match the legacy thread-pool path.
+    """
+    from quantark.execution.contracts import PricingFailure
+
+    from .quantark_execution import run_market_shift_grid
 
     positions = [
         (_position_snapshot(pos), market_snapshot_for_position(pos, market))
         for pos in list(getattr(portfolio, "positions", []) or [])
     ]
 
-    def _position_value(pos: Position, env: PricingEnvironmentSnapshot) -> float:
+    def _position_value(
+        pos: Position, env: PricingEnvironmentSnapshot, unit_price: float
+    ) -> float:
         if risk_pricing_exclusion(pos):
             return 0.0
-        priced = price_product(
-            pos.product_type,
-            pos.product_kwargs,
-            env,
-            pos.engine_name,
-            pos.engine_kwargs,
-        )
-        price = float(priced.data.get("price", 0.0))
-        value = price * float(pos.quantity)
-        if not priced.ok or not usable_model_value(
-            value, gross_notional_for_position(pos, env)
-        ):
+        value = float(unit_price) * float(pos.quantity)
+        if not usable_model_value(value, gross_notional_for_position(pos, env)):
             return 0.0
         return value
 
-    def _portfolio_value(spot_shift_pct: float, vol_shift: float) -> float:
-        total = 0.0
-        for pos, base_market in positions:
-            shifted = base_market.model_copy(
-                update={
-                    "spot": base_market.spot * (1.0 + spot_shift_pct / 100.0),
-                    "volatility": max(base_market.volatility + vol_shift, 1e-6),
-                }
-            )
-            total += _position_value(pos, shifted)
-        return total
+    def _unit_price(cell_result: Any) -> float:
+        if isinstance(cell_result, PricingFailure):
+            return 0.0
+        return float(cell_result.value)
 
-    value_jobs: list[tuple[int | None, int | None, float, float]] = [
-        (None, None, 0.0, 0.0)
+    grid_cells: list[tuple[int, int, float, float]] = [
+        (row_index, column_index, spot_shift_pct, vol_shift)
+        for row_index, vol_shift in enumerate(vol_shifts_abs)
+        for column_index, spot_shift_pct in enumerate(spot_shifts_pct)
     ]
-    for row_index, vol_shift in enumerate(vol_shifts_abs):
-        for column_index, spot_shift_pct in enumerate(spot_shifts_pct):
-            value_jobs.append((row_index, column_index, spot_shift_pct, vol_shift))
 
-    def _portfolio_value_job(
-        job: tuple[int | None, int | None, float, float],
-    ) -> tuple[int | None, int | None, float, float, float]:
-        row_index, column_index, spot_shift_pct, vol_shift = job
-        return (
-            row_index,
-            column_index,
-            spot_shift_pct,
-            vol_shift,
-            _portfolio_value(spot_shift_pct, vol_shift),
-        )
-
-    workers = _risk_worker_count(len(value_jobs))
-    if workers > 1:
+    if positions:
+        items = [
+            {
+                "product_type": pos.product_type,
+                "product_kwargs": pos.product_kwargs,
+                "market": base_market.model_dump(mode="json"),
+                "engine_name": pos.engine_name,
+                "engine_kwargs": pos.engine_kwargs,
+            }
+            for pos, base_market in positions
+        ]
         ensure_quantark_path()
-        with ThreadPoolExecutor(
-            max_workers=workers, thread_name_prefix="scenario-pricer"
-        ) as executor:
-            values = list(executor.map(_portfolio_value_job, value_jobs))
+        workers = _risk_worker_count(len(positions) * (1 + len(grid_cells)))
+        outcomes = run_market_shift_grid(
+            items, spot_shifts_pct, vol_shifts_abs, workers=workers
+        )
     else:
-        values = [_portfolio_value_job(job) for job in value_jobs]
+        outcomes = []
 
-    base_value = next(
-        value
-        for row_index, _column_index, _spot, _vol, value in values
-        if row_index is None
+    base_value = sum(
+        _position_value(pos, base_market, _unit_price(plan_outcomes[0]))
+        for (pos, base_market), plan_outcomes in zip(positions, outcomes)
     )
     rows: list[list[dict[str, Any]]] = [
         [{} for _spot_shift in spot_shifts_pct] for _vol_shift in vol_shifts_abs
     ]
-    for row_index, column_index, spot_shift_pct, vol_shift, value in values:
-        if row_index is None or column_index is None:
-            continue
+    for cell_offset, (row_index, column_index, spot_shift_pct, vol_shift) in enumerate(
+        grid_cells, start=1
+    ):
+        value = sum(
+            _position_value(
+                pos,
+                base_market.model_copy(
+                    update={
+                        "spot": base_market.spot * (1.0 + spot_shift_pct / 100.0),
+                        "volatility": max(base_market.volatility + vol_shift, 1e-6),
+                    }
+                ),
+                _unit_price(plan_outcomes[cell_offset]),
+            )
+            for (pos, base_market), plan_outcomes in zip(positions, outcomes)
+        )
         rows[row_index][column_index] = {
             "spot_shift_pct": spot_shift_pct,
             "vol_shift_abs": vol_shift,

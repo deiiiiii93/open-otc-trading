@@ -2550,7 +2550,7 @@ wheels = [
 
 [[package]]
 name = "quantark"
-version = "0.2.5"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "kaleido" },
@@ -2566,9 +2566,9 @@ dependencies = [
     { name = "scipy" },
     { name = "seaborn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cb/a4/5fad1e1d57fbe297b210a7b22f72ac161b075ee25e6b5ca9ea87830eb57d/quantark-0.2.5.tar.gz", hash = "sha256:904a06b6e4f0bb26dd567050f01652ba97d8a3be0bd7af0002df9a659cb7f2b5", size = 1168877, upload-time = "2026-07-03T07:28:08.434Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3d/3b/36d1d231fdb542ff4f4536a3e6873fe8b9bad890f3357902b08a75a226ff/quantark-0.3.0.tar.gz", hash = "sha256:2c873a906deaf91ebb76885cc5eee4a2396bc893be8c3948afdf5863fcf91a97", size = 1389549, upload-time = "2026-07-20T08:01:51.98Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/26/db/205437dd5685048487dd7a0e248c64cfadedb5cebfa0fa7f8affdc5baad8/quantark-0.2.5-py3-none-any.whl", hash = "sha256:31c25a059cb4445ed87077ee3c6e8b3d7adaa57658886b00153f9290b82dfbff", size = 1614562, upload-time = "2026-07-03T07:28:06.752Z" },
+    { url = "https://files.pythonhosted.org/packages/5e/9c/acc037cea91df43d62242fa1fc427fc581cfbaaf887a54e26139ef0c3e50/quantark-0.3.0-py3-none-any.whl", hash = "sha256:54d8e0ac48029479d46dd83721acd2f6c5bb6072a31e146485543cbc6d43a4c1", size = 1870321, upload-time = "2026-07-20T08:01:49.325Z" },
 ]
 
 [[package]]

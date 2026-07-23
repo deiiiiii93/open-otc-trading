@@ -64,6 +64,10 @@ class _EnvironmentSettings(BaseSettings):
             "OPEN_OTC_RISK_PARALLEL_WORKERS", "RISK_PARALLEL_WORKERS"
         ),
     )
+    quantark_execution_backend: str = Field(
+        "processes",
+        validation_alias="OPEN_OTC_QUANTARK_EXECUTION_BACKEND",
+    )
     hedge_risk_max_age_seconds: int = Field(
         900,
         ge=1,
@@ -232,6 +236,9 @@ class Settings:
     )
     risk_parallel_workers: int = field(
         default_factory=lambda: _env_value("risk_parallel_workers")
+    )
+    quantark_execution_backend: str = field(
+        default_factory=lambda: _env_value("quantark_execution_backend")
     )
     hedge_risk_max_age_seconds: int = field(
         default_factory=lambda: _env_value("hedge_risk_max_age_seconds")
