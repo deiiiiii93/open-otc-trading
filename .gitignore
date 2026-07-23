@@ -32,6 +32,10 @@ coverage/
 config/agent_channels.yaml
 /marketing/
 
+# local Claude/zenmux tooling packages — not project source
+.agents/skills/*
+.context/prompts/*
+
 # stray root sqlite (real DB lives in data/, gitignored)
 open_otc.sqlite
 
