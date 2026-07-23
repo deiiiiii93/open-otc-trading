@@ -59,6 +59,62 @@ def test_seeded_risk_run_metrics_match_harvest(offline_session_factory, block_ne
         assert abs(float(sv) - float(fv)) < 1e-6, (path, sv, fv)
 
 
+def test_seeded_risk_run_does_not_accumulate_across_matches(
+    offline_session_factory, block_network
+):
+    """The consume-only seed adds a governed RiskRun bound to the arena portfolio.
+    The arena runner re-seeds every match, so that run MUST be reclaimed by the
+    next match's ``_purge_seeded_portfolios`` — else arena rows accumulate in the
+    live DB. Regression guard: bind-to-arena-portfolio is what makes the purge's
+    ``delete ... where portfolio_id in pids`` catch it; a future seed that sets a
+    NULL/foreign portfolio_id would silently orphan the run and fail here.
+    """
+    from app import database, models
+    from app.golden_workflows.fixtures import apply_seed
+    from app.services.arena import runner
+    from app.services.arena.runner import ARENA_PORTFOLIO_TAG, ARENA_PROFILE_MARKER
+    from sqlalchemy import func, select
+
+    loaded = get_workflow_bundle(WF_ID)
+
+    def _seed_and_mark(session):
+        # Mirror runner.run_match's post-seed arena-ownership marking.
+        ids = apply_seed(loaded.fixtures, session)
+        for p in session.query(models.Portfolio).filter(
+            models.Portfolio.id.in_(ids.get("portfolios", {}).values())
+        ):
+            p.tags = sorted({*(p.tags or []), ARENA_PORTFOLIO_TAG})
+        for pr in session.query(models.PricingParameterProfile).filter(
+            models.PricingParameterProfile.id.in_(ids.get("pricing_profiles", {}).values())
+        ):
+            pr.summary = {**(pr.summary or {}), ARENA_PROFILE_MARKER: True}
+        session.commit()
+
+    def _count(session, model):
+        return session.scalar(select(func.count()).select_from(model))
+
+    with offline_session_factory():  # configures a fresh isolated DB
+        # Match 1: first seed (nothing to purge yet).
+        with database.SessionLocal() as s:
+            _seed_and_mark(s)
+            assert _count(s, models.RiskRun) == 1
+
+        # Matches 2..4: each opens a fresh session, purges the prior match, re-seeds.
+        for _ in range(3):
+            with database.SessionLocal() as s:
+                runner._purge_seeded_portfolios(s, loaded.fixtures)
+                s.commit()
+                # The prior match's governed run + arena profile are fully reclaimed.
+                assert _count(s, models.RiskRun) == 0
+                assert _count(s, models.PricingParameterProfile) == 0
+                _seed_and_mark(s)
+
+        # No accumulation: exactly one governed run and one profile survive.
+        with database.SessionLocal() as s:
+            assert _count(s, models.RiskRun) == 1
+            assert _count(s, models.PricingParameterProfile) == 1
+
+
 # ---------------------------------------------------------------------------
 # Task 3/4 — manifest load, axes, full-marks replay
 # ---------------------------------------------------------------------------
