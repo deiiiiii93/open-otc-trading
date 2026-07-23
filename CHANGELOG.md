@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **High-Board Portfolio Review — flagship arena parity.** Upgraded the
+  `high-board-portfolio-review-day` golden workflow from a shallow 6-step routing
+  check to an 8-step, 4-axis discrimination benchmark (50 checks: procedural /
+  grounding 12 / adherence 13 / synthesis 6) with golf-scored EFF (`par_tool_calls`).
+  Because `high_board` is an oversight persona **not** authorized to dispatch
+  `run_batch_pricing`, the numeric risk grounding is **consume-only**: the fixtures
+  seed a completed governed `RiskRun` (metrics harvested offline into
+  `high-board-portfolio-review-day.truth.json` — NVDA per-position delta + portfolio
+  valuation) and the workflow reads it via `get_latest_risk_run`. Adds a write-free
+  over-claim trap (refuse to certify the ungoverned inline batch figure as the
+  official governed valuation), graded deterministically on the structured
+  commitment + the board-facing report artifact. Registered in the determinism +
+  harvest registries with reproducibility, priceability, drift-guard, and negative
+  scorer (discrimination) tests. No arena scoring-kernel, persona-authority, or
+  flagship-manifest change.
 - **Term-structure curves for pricing parameters.** Author per-underlying `r`/`q`/`vol`
   curves on the Instrument baseline (Instruments → Assumptions tab, with a per-param
   editor + token-only recharts charts, or via the `set_instrument_pricing_defaults`
