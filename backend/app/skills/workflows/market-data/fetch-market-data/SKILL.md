@@ -45,6 +45,8 @@ Use a list of underlyings and the accounting date window. Read `/skills/referenc
 
 Do not pass a list as one `symbol`. Ask for date range or asset class when symbol conventions are ambiguous.
 
+Never fabricate market data and never substitute another date's data for the requested window: if a snapshot comes back empty or with `source_metadata.fallback=true` for the requested date, report the miss for that symbol instead of silently re-querying a different date and presenting its prices as the requested ones. Fetch the accounting-anchor date by default; a same-day window for a not-yet-concluded session legitimately returns no rows — treat that as "data not yet published", not as a missing symbol.
+
 ## Output shape
 
 Return fetched count, failed count, date window, symbol mapping, and the next workflow that needs the snapshot.
