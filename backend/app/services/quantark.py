@@ -17,6 +17,7 @@ from ..models import Portfolio, Position
 from ..schemas import PricingEnvironmentSnapshot, RFQRequestDraft
 from .import_schema import is_terminal_status, read_notional_unit, read_trade_status
 from .domains.products import compatibility_terms_for_position
+from .engine_configs import DEFAULT_ENGINE_BY_PRODUCT_TYPE
 
 MAX_MODEL_VALUE_MULTIPLE = 10.0
 ABS_MODEL_VALUE_LIMIT = 1_000_000_000_000.0
@@ -837,11 +838,18 @@ def _build_termsheet_for_position(
     """
     snapshot = market or PricingEnvironmentSnapshot()
     compat = compatibility_terms_for_position(position)
+    # A booked position may carry no pinned engine (book_position default). Fall
+    # back to the product type's default engine — mirroring the engine-config
+    # ANALYTICAL rule — instead of blindly forcing BlackScholesEngine, which
+    # silently zeroes Greeks for exotics it cannot price (e.g. BarrierOption).
+    engine_name = position.engine_name or DEFAULT_ENGINE_BY_PRODUCT_TYPE.get(
+        compat["product_type"], "BlackScholesEngine"
+    )
     return _build_termsheet(
         product_type=compat["product_type"],
         product_kwargs=compat["product_kwargs"] or {},
         market=snapshot,
-        engine_name=position.engine_name or "BlackScholesEngine",
+        engine_name=engine_name,
         engine_kwargs=position.engine_kwargs or {},
     )
 

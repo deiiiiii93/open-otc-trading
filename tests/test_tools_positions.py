@@ -817,3 +817,86 @@ def test_import_otc_positions_tool_delegates():
     }
 
 
+
+
+def test_book_position_tool_omits_engine_for_config_resolution():
+    """Booking without engine_name must store None so engine-config rules pick
+    the product-appropriate engine at pricing time. Regression for the Run #30
+    delta-0.0 bug: the tool's old BlackScholesEngine default was stored on the
+    position and shadowed rule resolution, so a booked BarrierOption priced 0.
+    """
+    pid = _make_portfolio()
+    _tag_underlying("MSFT")
+
+    result = book_position_tool.invoke(
+        {
+            "portfolio_id": pid,
+            "quantity": -1.0,
+            "product": {
+                "asset_class": "equity",
+                "product_family": "barrier",
+                "quantark_class": "BarrierOption",
+                "underlying": "MSFT",
+                "currency": "USD",
+                "terms": {
+                    "strike": 401.10,
+                    "option_type": "PUT",
+                    "barrier": 320.88,
+                    "barrier_type": "DOWN_IN",
+                    "initial_price": 401.10,
+                    "maturity_years": 1.0,
+                    "contract_multiplier": 1.0,
+                },
+            },
+        }
+    )
+
+    assert result["ok"] is True
+    from app.services.engine_configs import (
+        ensure_default_engine_config,
+        resolve_pricing_engine,
+    )
+
+    with database.SessionLocal() as session:
+        position = session.get(Position, result["position"]["id"])
+        assert position is not None
+        assert position.engine_name is None
+        config = ensure_default_engine_config(session)
+        resolved = resolve_pricing_engine(position, config)
+        assert resolved.engine_name == "BarrierAnalyticalEngine"
+        assert resolved.source == "engine_config"
+
+
+def test_build_termsheet_for_position_falls_back_to_product_default_engine(monkeypatch):
+    """quantark._build_termsheet_for_position must not force BlackScholesEngine
+    when the position pins no engine (the calculate_risk path of the same Run
+    #30 bug) — fall back to the product type's default engine instead.
+    """
+    from app.services import quantark as quantark_svc
+
+    captured: dict = {}
+
+    def fake_build_termsheet(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(), {}
+
+    monkeypatch.setattr(quantark_svc, "_build_termsheet", fake_build_termsheet)
+    monkeypatch.setattr(
+        quantark_svc,
+        "compatibility_terms_for_position",
+        lambda position: {
+            "product_type": "BarrierOption",
+            "product_kwargs": {"strike": 1.0},
+        },
+    )
+
+    position = SimpleNamespace(engine_name=None, engine_kwargs=None)
+    quantark_svc._build_termsheet_for_position(position)
+    assert captured["engine_name"] == "BarrierAnalyticalEngine"
+
+    # An explicit engine pin still wins over the product-type default.
+    captured.clear()
+    position = SimpleNamespace(engine_name="BarrierQuadEngine", engine_kwargs={"n": 32})
+    quantark_svc._build_termsheet_for_position(position)
+    assert captured["engine_name"] == "BarrierQuadEngine"
+    assert captured["engine_kwargs"] == {"n": 32}

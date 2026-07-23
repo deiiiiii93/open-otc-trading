@@ -172,7 +172,11 @@ class BookPositionInput(BaseModel):
     source_trade_id: str | None = None
     source_row: int | None = None
     trade_effective_date: datetime | date | str | None = None
-    engine_name: str = "BlackScholesEngine"
+    # None (or "auto") defers to engine-config resolution at pricing time
+    # (BarrierOption -> BarrierAnalyticalEngine, …). Pinning a concrete engine
+    # here stores it on the position and shadows that resolution forever — a
+    # mismatched pin (e.g. BlackScholesEngine on a barrier) then prices 0.
+    engine_name: str | None = None
 
 
 class PositionIdsInput(BaseModel):
@@ -606,11 +610,13 @@ def book_position_tool(
     source_trade_id: str | None = None,
     source_row: int | None = None,
     trade_effective_date: datetime | date | str | None = None,
-    engine_name: str = "BlackScholesEngine",
+    engine_name: str | None = None,
 ) -> dict[str, Any]:
     """Create a normalized product and book a position against it. If this
     returns error=underlying_not_registered, call register_underlying(symbol)
-    then retry."""
+    then retry. Leave engine_name unset unless a specific engine is required —
+    when omitted it resolves automatically from the product type at pricing
+    time (e.g. BarrierOption -> BarrierAnalyticalEngine)."""
     if isinstance(product, dict):
         product = ProductBookingInput.model_validate(product)
 
