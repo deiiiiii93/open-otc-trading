@@ -148,11 +148,19 @@ def _persist_user_turn(thread_id: int, content: str, selection: dict) -> None:
 ARENA_MODE = "yolo"
 
 
-def _default_drive(thread_id: int, content: str, selection: dict) -> None:
+def _drive_step(
+    thread_id: int,
+    content: str,
+    selection: dict,
+    *,
+    accounting_date: str | None,
+) -> None:
     """Drive one desk turn to completion via stream_and_persist in YOLO mode.
 
     The transcript is harvested from the trace afterwards, so the streamed SSE
-    events are consumed and discarded here.
+    events are consumed and discarded here. ``accounting_date`` pins the agent's
+    Accounting anchor (a workflow-seeded concluded trading day); None leaves the
+    service default (real current date).
     """
     _persist_user_turn(thread_id, content, selection)
     svc = _get_arena_service()
@@ -164,10 +172,30 @@ def _default_drive(thread_id: int, content: str, selection: dict) -> None:
             model_selection=selection,
             mode=ARENA_MODE,
             confirmed_cost_preview=True,
+            accounting_date=accounting_date,
         ):
             pass
 
     asyncio.run(_run())
+
+
+def _default_drive(thread_id: int, content: str, selection: dict) -> None:
+    """Drive one step with no accounting-date override (service default anchor)."""
+    _drive_step(thread_id, content, selection, accounting_date=None)
+
+
+def _make_default_drive(accounting_date: str | None):
+    """Build the default step driver pinning the workflow's accounting date.
+
+    A workflow may seed ``accounting_date`` (a concluded past trading day) so
+    live market-data fetches on the anchor date always return rows — anchoring
+    on the real run date lets a model query a not-yet-concluded session and
+    stall on an empty window (Run #26).
+    """
+    def _drive(thread_id: int, content: str, selection: dict) -> None:
+        _drive_step(thread_id, content, selection, accounting_date=accounting_date)
+
+    return _drive
 
 
 ARENA_PORTFOLIO_TAG = "arena"
@@ -207,6 +235,26 @@ def _purge_arena_rfqs(session, rfq_ids) -> None:
 
     for rfq in session.query(models.RFQ).filter(models.RFQ.id.in_(list(rfq_ids))):
         session.delete(rfq)
+    session.commit()
+
+
+def _purge_arena_market_quotes(session) -> None:
+    """Delete EVERY market_quotes row carrying the arena-seed origin tag.
+
+    Seeded quotes pin a real historical close so profile-bound pricing/risk
+    reads the right market (Run #26 follow-up), but they are benchmark-private
+    rows — not fetcher-written observations — and must never leak into the
+    desk's live quote store. Safe: nothing FK-references market_quotes.id.
+    Runs pre-seed (a prior match's residue) and in the post-match finally.
+    """
+    from sqlalchemy import delete
+
+    from app import models
+    from app.golden_workflows.fixtures import ARENA_MARKET_SOURCE
+
+    session.execute(
+        delete(models.MarketQuote).where(models.MarketQuote.source == ARENA_MARKET_SOURCE)
+    )
     session.commit()
 
 
@@ -299,15 +347,24 @@ def _purge_seeded_portfolios(session, bundle) -> None:
                     select(models.Position.id).where(models.Position.portfolio_id.in_(pids))
                 )
             )
-            portfolio_table = models.Portfolio.__table__
-            for table in fk_ordered_tables:
-                if table is portfolio_table:
-                    continue
-                if posids and "position_id" in table.c:
-                    session.execute(delete(table).where(table.c.position_id.in_(posids)))
-                if "portfolio_id" in table.c:
-                    session.execute(delete(table).where(table.c.portfolio_id.in_(pids)))
-            session.execute(delete(portfolio_table).where(portfolio_table.c.id.in_(pids)))
+            # The limit-incident tables are append-only for every desk path
+            # (models._protect_limit_incident_events_from_bulk_mutation), but this
+            # purge owns the arena-seeded portfolios wholesale — incident rows on
+            # them are fixture state, not compliance history. Flag the session so
+            # the guard exempts exactly this cleanup scope.
+            session.info[models.ARENA_FIXTURE_PURGE_INFO_KEY] = True
+            try:
+                portfolio_table = models.Portfolio.__table__
+                for table in fk_ordered_tables:
+                    if table is portfolio_table:
+                        continue
+                    if posids and "position_id" in table.c:
+                        session.execute(delete(table).where(table.c.position_id.in_(posids)))
+                    if "portfolio_id" in table.c:
+                        session.execute(delete(table).where(table.c.portfolio_id.in_(pids)))
+                session.execute(delete(portfolio_table).where(portfolio_table.c.id.in_(pids)))
+            finally:
+                session.info.pop(models.ARENA_FIXTURE_PURGE_INFO_KEY, None)
 
     # --- pricing profiles (arena-marked only) ---
     prof_names = [r["name"] for r in bundle.seed.get("pricing_profiles", []) if r.get("name")]
@@ -511,10 +568,10 @@ def run_match(
             background tasks finish before the next step reads their results.
             Defaults to a DB-polling waiter; tests inject a no-op.
     """
-    drive = drive or _default_drive
+    workflow = loaded.workflow
+    drive = drive or _make_default_drive(getattr(workflow, "accounting_date", None))
     harvest = harvest or transcript_from_trace
 
-    workflow = loaded.workflow
     from app.config import get_settings
     _settings = get_settings()
     # Self-heal first: clear any reserved trap set a prior match fabricated, then
@@ -529,6 +586,7 @@ def run_match(
     seeded_report_ids: list[int] = []
     with database.SessionLocal() as session:
         _purge_seeded_portfolios(session, loaded.fixtures)
+        _purge_arena_market_quotes(session)  # reclaim prior match's seeded quotes
         _purge_seeded_reports(session)   # recovery: reclaim prior crash orphans (commits)
         seed_ids = apply_seed(loaded.fixtures, session)
         seeded_report_ids = list(seed_ids.get("reports", {}).values())
@@ -584,6 +642,8 @@ def run_match(
         transcript = harvest(thread_id, workflow, model)
     finally:
         _purge_match_rfqs(thread_id, rfq_id_baseline)
+        with database.SessionLocal() as session:
+            _purge_arena_market_quotes(session)  # no seeded quote outlives the match
         if seeded_report_ids:
             # Ownership-precise: delete only THIS match's seeded ReportJob rows.
             from sqlalchemy import delete

@@ -219,6 +219,129 @@ def test_default_drive_uses_yolo_mode(monkeypatch):
     assert calls[0]["content"] == "Run a fresh risk calc"
 
 
+def test_make_default_drive_pins_accounting_date(monkeypatch):
+    """A workflow-seeded accounting date must reach stream_and_persist so the
+    agent's Accounting anchor is the pinned concluded trading day (Run #26)."""
+    from app.services.arena import runner
+
+    calls = []
+
+    class _FakeSvc:
+        def stream_and_persist(self, **kwargs):
+            calls.append(kwargs)
+
+            async def _agen():
+                if False:
+                    yield None
+            return _agen()
+
+    monkeypatch.setattr(runner, "_get_arena_service", lambda: _FakeSvc())
+    monkeypatch.setattr(runner, "_persist_user_turn", lambda *a, **k: None)
+
+    drive = runner._make_default_drive("2026-07-16")
+    drive(99, "Build the product", {"channel": "zenmux"})
+    assert len(calls) == 1
+    assert calls[0]["accounting_date"] == "2026-07-16"
+    assert calls[0]["mode"] == "yolo"
+
+    # No pin (legacy workflows) → None, i.e. the service default anchor.
+    runner._make_default_drive(None)(99, "Build the product", {"channel": "zenmux"})
+    assert calls[1]["accounting_date"] is None
+
+
+def test_run_match_default_drive_end_to_end(tmp_path, monkeypatch):
+    """run_match WITHOUT an injected drive must build the default driver from the
+    workflow's accounting_date and drive every step with it (regression: the
+    drive factory once referenced `workflow` before assignment and only live
+    runs — never the injected-drive tests — hit it)."""
+    from app.services.arena import runner
+
+    class _WFDated(_WF):
+        accounting_date = "2026-07-16"
+
+    class _LoadedDated:
+        workflow = _WFDated()
+        fixtures = object()
+
+    monkeypatch.setattr(
+        "app.services.arena.runner.apply_seed",
+        lambda b, s: {"portfolios": {}},
+    )
+    monkeypatch.setattr(
+        "app.services.arena.runner._purge_seeded_portfolios", lambda s, b: None,
+    )
+
+    class _Thread:
+        def __init__(self, **kw):
+            self.__dict__.update(kw)
+            self.id = 4343
+
+    monkeypatch.setattr("app.services.arena.runner.AgentThread", _Thread)
+
+    class _Q:
+        def scalar(self):
+            return 0
+
+    class _Sess:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def add(self, obj):
+            pass
+
+        def commit(self):
+            pass
+
+        def execute(self, *a, **k):
+            return None
+
+        def query(self, *a, **k):
+            return _Q()
+
+    monkeypatch.setattr(
+        "app.services.arena.runner.database",
+        type("D", (), {"SessionLocal": staticmethod(lambda *a, **k: _Sess())})(),
+    )
+    monkeypatch.setattr(
+        "app.services.arena.runner.collect_rfq_ids_touched", lambda thread_id: set()
+    )
+
+    calls = []
+
+    class _FakeSvc:
+        def stream_and_persist(self, **kwargs):
+            calls.append(kwargs)
+
+            async def _agen():
+                if False:
+                    yield None
+            return _agen()
+
+    monkeypatch.setattr(runner, "_get_arena_service", lambda: _FakeSvc())
+    monkeypatch.setattr(runner, "_persist_user_turn", lambda *a, **k: None)
+
+    from app.golden_workflows.transcript import MatchTranscript
+
+    def fake_harvest(thread_id, workflow, model, **kw):
+        return MatchTranscript(
+            schema_version=1, run_id=None, workflow_id=workflow.id,
+            model_id=model.slug, started_at=None, finished_at=None, steps=[],
+        )
+
+    transcript = run_match(
+        _LoadedDated(), get_model("gpt-5-5"), artifact_root=tmp_path, run_id=9,
+        harvest=fake_harvest, settle=lambda: None,
+    )
+
+    assert transcript.workflow_id == "wf-test"
+    assert [c["content"] for c in calls] == ["first ask", "second ask"]
+    assert all(c["accounting_date"] == "2026-07-16" for c in calls)
+    assert all(c["mode"] == "yolo" for c in calls)
+
+
 class _Bundle:
     """Minimal FixtureBundle-like object with a .seed dict."""
     def __init__(self, seed):
@@ -284,6 +407,37 @@ def test_purge_removes_named_portfolio_and_dependents_only(session):
     assert session.query(Position).filter(Position.portfolio_id == ctrl_id).count() == 0
     assert session.query(RiskRun).filter(RiskRun.portfolio_id == ctrl_id).count() == 0
     assert session.query(Portfolio).filter(Portfolio.name == "Keep Me").count() == 1
+
+
+def test_purge_removes_arena_portfolio_with_limit_incidents(session):
+    """Regression (Run #31): the limit-incident append-only guard
+    (models._protect_limit_incident_events_from_bulk_mutation) must not block the
+    arena fixture purge from deleting an arena-seeded portfolio that has incident
+    rows — the purge owns its seeded state; desk paths stay protected."""
+    from app.services.arena.runner import _purge_seeded_portfolios
+    from app.golden_workflows.fixtures import apply_seed
+    from app.models import LimitIncident, Portfolio, RiskLimit
+
+    bundle = _Bundle({"portfolios": [{"alias": "control", "name": "Control Desk Portfolio"}]})
+    apply_seed(bundle, session)
+    ctrl_id = _tag_arena(session, "Control Desk Portfolio")
+    limit = RiskLimit(
+        key="arena-delta", name="Arena delta", description="",
+        category="greek", owner="market-risk", tags=[],
+    )
+    session.add(limit)
+    session.flush()
+    session.add(LimitIncident(
+        portfolio_id=ctrl_id, risk_limit_id=limit.id,
+        scope_type="portfolio", scope_key=str(ctrl_id), scope_label="Control",
+        severity="breach", status="open",
+    ))
+    session.commit()
+
+    _purge_seeded_portfolios(session, bundle)
+
+    assert session.query(LimitIncident).filter(LimitIncident.portfolio_id == ctrl_id).count() == 0
+    assert session.query(Portfolio).filter(Portfolio.name == "Control Desk Portfolio").count() == 0
 
 
 def test_purge_spares_untagged_real_portfolio(session):

@@ -732,3 +732,26 @@ def test_incident_parent_rejects_bulk_delete(session) -> None:
 
     with pytest.raises(LimitIncidentHistoryDeletionError):
         session.execute(delete(LimitIncident).where(LimitIncident.id == incident.id))
+
+
+def test_incident_bulk_delete_allowed_during_arena_fixture_purge(session) -> None:
+    """The arena fixture purge owns its seeded portfolios wholesale: with
+    ARENA_FIXTURE_PURGE_INFO_KEY set on session.info the bulk-delete guard
+    exempts that cleanup scope (desk paths without the flag stay protected —
+    see test_incident_parent_rejects_bulk_delete)."""
+    from sqlalchemy import delete
+
+    from app.models import ARENA_FIXTURE_PURGE_INFO_KEY, LimitIncident
+
+    _limit, version, run = _fixture(session)
+    breach = _evaluation(session, version, run, status="breach", at=NOW)
+    incident = _reconcile(session, run, [breach]).incidents[0]
+    session.commit()
+
+    session.info[ARENA_FIXTURE_PURGE_INFO_KEY] = True
+    try:
+        session.execute(delete(LimitIncident).where(LimitIncident.id == incident.id))
+    finally:
+        session.info.pop(ARENA_FIXTURE_PURGE_INFO_KEY, None)
+
+    assert session.query(LimitIncident).filter_by(id=incident.id).count() == 0
