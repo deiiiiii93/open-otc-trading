@@ -13,15 +13,21 @@ objective: >
 fixtures: high-board-portfolio-review-day.fixtures.json
 tags: [flagship, high-board, oversight, reporting, desk-workflow]
 # Designed par for golf-style EFF (spec 2026-07-11): a realistic COUNTED competent
-# run, not the theoretical minimum. Calibrated from the pre-merge live smoke
-# (deepseek-v4-flash, DIRECT api.deepseek.com channel, 2026-07-23): the flash run
-# counted 26 raw calls but with clear step-7 artifact-hunting over-execution
-# (10 list_artifacts/glob calls). A lean competent run is ~8 signature tools +
-# legitimate re-reads of get_portfolio/get_positions/get_latest_risk_run ≈ 13-16;
+# run, not the theoretical minimum. RECALIBRATED 2026-07-23 from clean measured
+# runs on an isolated-trace harness (deepseek-v4-flash, DIRECT api.deepseek.com):
+# competent runs (34/50, 27/50, 0 errors) counted 39 and 46 tool calls — but that
+# is inflated by step-7 artifact-hunting thrash (20+ glob/ls/list_artifacts calls
+# before the model finally uses list_reports, which finds the report directly). A
+# lean competent run is ~8 signature tools + legitimate re-reads of
+# get_portfolio/get_positions/get_latest_risk_run + modest report discovery; the
+# thrash is over-execution EFF SHOULD penalize. Set 24 (flagship-consistent:
+# ~8 expected + ~16 realistic overhead) so EFF decays for the thrash (39→~0.63,
+# 46→~0.46 of correctness) while staying achievable by a disciplined model.
 # record_answer calls backing an answer_field_* check are exempt from the count.
-# Set 16 (lean end of the competent estimate); refine on the multi-model board.
 # EFF decays linearly from par to 0 at 2×par. Opts into golf.
-par_tool_calls: 16
+# (Note: step-7 glob-thrash is a workflow-quality follow-up — steering models to
+#  list_reports directly would lower the competent band and let par tighten.)
+par_tool_calls: 24
 
 steps:
   - user: "Resolve the desk control book — is it a container or a view?"

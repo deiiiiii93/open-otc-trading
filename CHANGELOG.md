@@ -23,6 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   harvest registries with reproducibility, priceability, drift-guard, and negative
   scorer (discrimination) tests. No arena scoring-kernel, persona-authority, or
   flagship-manifest change.
+
+### Changed
+- **High-Board par recalibration + purge-hygiene guard.** Recalibrated
+  `high-board-portfolio-review-day` `par_tool_calls` from a provisional **16** to a
+  flagship-consistent **24**, measured from clean competent runs (deepseek-v4-flash
+  34/50 & 27/50, 0 errors, 39/46 counted calls) on a trace-isolated harness — 16 was
+  an estimate below even disciplined execution and floored EFF for every competent
+  model. par=24 keeps EFF discriminating (step-7 artifact-hunting thrash decays,
+  disciplined runs score full) without accepting the thrash wholesale. Added a
+  regression test proving the consume-only seeded governed `RiskRun` is reclaimed by
+  the next match's portfolio-scoped purge (no cross-match orphan accumulation).
 - **Term-structure curves for pricing parameters.** Author per-underlying `r`/`q`/`vol`
   curves on the Instrument baseline (Instruments → Assumptions tab, with a per-param
   editor + token-only recharts charts, or via the `set_instrument_pricing_defaults`
