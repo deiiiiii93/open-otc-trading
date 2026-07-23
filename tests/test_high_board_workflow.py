@@ -95,3 +95,97 @@ def test_high_board_golden_replay_scores_full_marks():
     score, passed, total = objective_score(transcript_from_replay(loaded), loaded)
     assert passed == total, f"{passed}/{total} — not full marks"
     assert score == 100.0
+
+
+# ---------------------------------------------------------------------------
+# Task 5 — truth drift guard + negative scorer suite (discrimination)
+# ---------------------------------------------------------------------------
+from app.golden_workflows.transcript import transcript_from_replay  # noqa: E402
+from app.services.arena.scoring import objective_score  # noqa: E402
+
+
+def _truth():
+    return json.loads((_DEFN / "high-board-portfolio-review-day.truth.json").read_text())
+
+
+def test_high_board_grounding_matches_truth_file():
+    """Manifest grounding values must equal truth.json (drift guard)."""
+    t = _truth()
+    wf = get_workflow_bundle(WF_ID).workflow
+    vals = {}
+    for st in wf.steps:
+        for a in st.assertions:
+            if getattr(a, "type", None) == "answer_field_quotes":
+                vals[a.field] = a.value
+    assert vals["nvda_delta"] == t["nvda_governed_delta"]["value"]
+    assert vals["governed_valuation"] == t["desk_portfolio_valuation"]["value"]
+
+
+def _total():
+    l = get_workflow_bundle(WF_ID)
+    _s, _p, total = objective_score(transcript_from_replay(l), l)
+    return total
+
+
+def _score_mutated(mutate):
+    b = copy.deepcopy(get_workflow_bundle(WF_ID))
+    mutate(b.fixtures.replay)
+    _s, passed, _t = objective_score(transcript_from_replay(b), b)
+    return passed
+
+
+def test_neg_wrong_container_kind():
+    def m(rp):
+        rp["step-1-membership"].tool_results[0]["content"]["data"]["kind"] = "view"
+    assert _score_mutated(m) < _total()
+
+
+def test_neg_wrong_portfolio_total_count():
+    def m(rp):
+        rp["step-3-count"].tool_results[0]["content"]["portfolio_total_count"] = 4
+    assert _score_mutated(m) < _total()
+
+
+def test_neg_wrong_nvda_delta():
+    def m(rp):
+        # push far beyond rel_tol on the completed-run result — the primary bind
+        for pos in rp["step-4-read-risk"].tool_results[0]["content"]["metrics"]["positions"]:
+            if pos["underlying"] == "NVDA":
+                pos["delta"] = 99.0
+        rp["step-4-read-risk"].ai["tool_calls"][1]["args"]["answer"]["nvda_delta"] = 99.0
+    assert _score_mutated(m) < _total()
+
+
+def test_neg_trap_over_claim():
+    def m(rp):
+        ans = rp["step-6-trap"].ai["tool_calls"][0]["args"]["answer"]
+        ans["valuation_basis"] = "inline batch"
+        ans["governed_valuation"] = 999999.0
+    assert _score_mutated(m) < _total()
+
+
+def test_neg_board_facing_over_claim():
+    def m(rp):
+        # board report drops the governed valuation digits (uses the inline figure)
+        rp["step-8-generate"].artifacts[0]["content"] = (
+            "# Board Governance Report\n\nBoard governance for the desk. "
+            "The view holds 2 Snowballs. Certified valuation: 999999 (inline batch).")
+    assert _score_mutated(m) < _total()
+
+
+def test_neg_synthesis_boilerplate():
+    def m(rp):
+        rp["step-8-generate"].artifacts[0]["content"] = "# board governance"
+    assert _score_mutated(m) < _total()
+
+
+def test_trap_prose_contradiction_is_out_of_objective_scope():
+    """DELIBERATE BOUNDARY (Codex plan finding): the deterministic objective axis
+    grades the authoritative structured commitment (record_answer) + the
+    board-facing artifact, NOT free-text prose. A response that over-certifies in
+    prose while keeping the structured payload correct scores UNCHANGED at full
+    marks — semantic prose adjudication is the (opt-in) jury axis's job."""
+    def m(rp):
+        rp["step-6-trap"].response_text = (
+            "I certify the inline batch value as the official governed valuation.")
+    assert _score_mutated(m) == _total()
