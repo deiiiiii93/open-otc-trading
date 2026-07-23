@@ -19,7 +19,7 @@ from app import database
 from app.config import Settings
 from app.golden_workflows.assertions import _dig
 from app.golden_workflows.determinism import (
-    FLAGSHIP_ID, TRADER_RFQ_ID, seed_workflow, drive_producers,
+    FLAGSHIP_ID, TRADER_RFQ_ID, HIGH_BOARD_ID, seed_workflow, drive_producers,
 )
 
 _DEFN = Path(__file__).parent / "definitions"
@@ -46,6 +46,13 @@ HARVEST_SPECS: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
         ("premium_spot_ratio", "quote", "premium_spot_ratio"),
         ("barrier_strike_ratio", "quote", "barrier_strike_ratio"),
         ("strike_spot_ratio", "quote", "strike_spot_ratio"),
+    ]),
+    # high_board consume-only grounding: NVDA per-position delta (primary anchor,
+    # unambiguous single position) + portfolio market_value (the over-claim trap
+    # target). Absolute numbers are deterministic under the seeded quote (spot 100).
+    HIGH_BOARD_ID: ("high-board-portfolio-review-day.truth.json", [
+        ("nvda_governed_delta", "risk", "positions[underlying=NVDA].delta"),
+        ("desk_portfolio_valuation", "risk", "totals.market_value"),
     ]),
 }
 

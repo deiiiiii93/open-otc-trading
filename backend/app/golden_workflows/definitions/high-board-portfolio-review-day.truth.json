@@ -1,0 +1,12 @@
+{
+  "desk_portfolio_valuation": {
+    "path": "totals.market_value",
+    "producer": "risk",
+    "value": 238.0478921928385
+  },
+  "nvda_governed_delta": {
+    "path": "positions[underlying=NVDA].delta",
+    "producer": "risk",
+    "value": 17.519939571410454
+  }
+}
