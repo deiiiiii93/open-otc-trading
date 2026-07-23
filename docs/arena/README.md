@@ -16,12 +16,46 @@ with an LLM judge.
 
 | Run | Date | Task | Field | Headline | Read |
 |:---:|:---:|---|---|---|---|
+| **#33** | 2026-07-20 | `trader-rfq-booking-day` | 17 models × 2 trials | **GPT-5.6 Terra defends (OVR 91)** — the Ability Card verdict **replicates on a 2nd workflow**: objective saturates (14/17 ≥ 86), Grok tops objective (98.4) but takes ~64 tool calls → EFF 15 → OVR #5; new **Gemini 3.6 Flash** matches its 3.5 sibling's 96.8 objective in 54 calls not 82 → OVR #4 vs #12 | [📄 Markdown](2026-07-20-run33-otc-desk-agent-arena.md) · [🌐 HTML](https://htmlpreview.github.io/?https://github.com/deiiiiii93/open-otc-trading/blob/main/docs/arena/2026-07-20-run33-otc-desk-agent-arena.html) · [📕 PDF](2026-07-20-run33-otc-desk-agent-arena.pdf) |
+| **#20** | 2026-07-13 | `risk-manager-control-day` | 16 models × 2 trials | **GPT-5.6 Terra (OVR 86)** — the **Model Ability Card**: objective capability saturates, **EFF + CON** decide the long-run operator; the Grok inversion (obj 91.0, OVR T-10) | [📄 Markdown](2026-07-13-run20-otc-desk-agent-arena.md) · [🌐 HTML](https://htmlpreview.github.io/?https://github.com/deiiiiii93/open-otc-trading/blob/main/docs/arena/2026-07-13-run20-otc-desk-agent-arena.html) · [📕 PDF](2026-07-13-run20-otc-desk-agent-arena.pdf) |
 | **#9** | 2026-06-28 | `risk-manager-control-day` | 9 **flash** models × 5 trials | **Gemini 3.5 Flash (59.1) ≈ Step 3.7 Flash (57.9)** — but Step costs **1/14th** as much; "flash" ≠ cheap | [📄 Markdown](2026-06-28-run9-otc-desk-agent-arena.md) · [🌐 HTML](https://htmlpreview.github.io/?https://github.com/deiiiiii93/open-otc-trading/blob/main/docs/arena/2026-06-28-run9-otc-desk-agent-arena.html) · [📕 PDF](2026-06-28-run9-otc-desk-agent-arena.pdf) |
 | **#8** | 2026-06-27 | `risk-manager-control-day` | 10 models × 5 trials | **Claude Opus 4.8 (66.4) ≈ GPT-5.5 (66.3)** — a statistical tie at the top | [📄 Markdown](2026-06-27-run8-otc-desk-agent-arena.md) · [🌐 HTML](https://htmlpreview.github.io/?https://github.com/deiiiiii93/open-otc-trading/blob/main/docs/arena/2026-06-27-run8-otc-desk-agent-arena.html) · [📕 PDF](2026-06-27-run8-otc-desk-agent-arena.pdf) |
 
-> **Coming soon.** Additional **long-workflow match designs** are in progress and
-> will be published here as they're released. Detailed per-model **usage and cost
-> accounting** will be added in future reports.
+> **Note.** From Run #20 the score is a **Model Ability Card** (six stats + OVR,
+> ranked on the deterministic objective axes; the LLM jury is opt-in and off by
+> default). Detailed per-model **usage and cost accounting** will be added in future
+> reports — Run #33 uses tool-call counts as the cost/latency proxy.
+
+## Run #33 at a glance — the ranking replicates
+
+*The sixteen Run #20 models — plus a new flash entrant, **Gemini 3.6 Flash** —
+same Ability Card, a **new** flagship: a trader taking a client RFQ to a booked,
+verified position (`trader-rfq-booking-day`, 10-step / 63-point).*
+
+| Rank | Model | OVR | EFF | CON | Obj | note |
+|:---:|---|:---:|:---:|:---:|:---:|---|
+| 🥇 | GPT-5.6 Terra | **91** | 84 | 79 | 96.0 | leanest (37 calls) — **defends its Run #20 title** |
+| 🥈 | GPT-5.6 Luna | 89 | 59 | 89 | 95.2 | |
+| 🥉 | DeepSeek V4 Pro | 86 | 52 | 92 | 92.8 | steadiest of the top |
+| 4 | Gemini 3.6 Flash | 84 | 44 | 66 | 96.8 | **new** — 3.5's 96.8 objective in 54 calls not 82 |
+| 5 | Grok 4.5 | 84 | **15** | 96 | **98.4** | **objective #1**, ~64 calls vs par 35 |
+| 12 | Gemini 3.5 Flash | 80 | **3** | 86 | 96.8 | objective #2, ~82 calls/run |
+| 17 | LongCat 2.0 | 46 | 0 | 63 | 67.4 | 186 calls/trial — the floor |
+
+- **The Run #20 verdict holds on a second workflow.** Objective capability saturates
+  again (14 of 17 clear 86; nine cluster 92.1–98.4), so **efficiency (EFF, spread
+  0–84)** and **consistency (CON, 0–99)** decide the operator ranking — not raw
+  capability.
+- **The inversion is sharper here — and now generational.** **Grok 4.5** posts the
+  field's best objective score (98.4, **62 of 63 checks**) yet ranks **OVR #5** (EFF
+  15); **Gemini 3.5 Flash** is objective #2 (96.8) and **OVR #12** (EFF 3, ~82 tool
+  calls a run). The new **Gemini 3.6 Flash** reaches the *identical* 96.8 objective in
+  54 calls (EFF 44, **OVR #4**) — an eight-rank jump over its predecessor, bought
+  purely with efficiency. The models that win raw capability are the ones you should
+  not automate — until a leaner successor fixes exactly that.
+- **GPT-5.6 Terra wins again (OVR 91)** on a task it had never seen — near-top
+  capability, delivered leanest. **Claude Sonnet 5** (elite ceiling, CON 56) and the
+  **MiMo Pro-vs-base pair** (CON 96 vs 0) reproduce Run #20's consistency findings.
 
 ## Run #9 at a glance — the flash tier
 

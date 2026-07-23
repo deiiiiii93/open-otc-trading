@@ -1,0 +1,74 @@
+[
+  [
+    "Overall rating (OVR) — ranked board",
+    100,
+    "OVR",
+    [
+      ["🥇 GPT-5.6 Terra", 91, "gold", "91"],
+      ["🥈 GPT-5.6 Luna", 89, "silver", "89"],
+      ["🥉 DeepSeek V4 Pro", 86, "bronze", "86"],
+      ["Gemini 3.6 Flash", 84, "mid", "84 · obj #2 · new"],
+      ["Grok 4.5", 84, "mid", "84 · obj #1"],
+      ["GLM 5.2", 84, "mid", "84"],
+      ["MiMo V2.5 Pro", 84, "mid", "84"],
+      ["DeepSeek V4 Flash", 84, "mid", "84"],
+      ["Hunyuan 3", 82, "mid", "82"],
+      ["Qwen 3.7 Max", 81, "mid", "81"],
+      ["Claude Sonnet 5", 81, "mid", "81"],
+      ["Gemini 3.5 Flash", 80, "mid", "80 · obj #2"],
+      ["Kimi 2.7", 72, "floor", "72"],
+      ["Step 3.7 Flash", 68, "floor", "68"],
+      ["MiniMax M3", 62, "floor", "62"],
+      ["MiMo V2.5", 62, "floor", "62"],
+      ["LongCat 2.0", 46, "floor", "46"]
+    ]
+  ],
+  [
+    "Objective score — the capability view (saturated at the top)",
+    100,
+    "obj/100",
+    [
+      ["🥇 Grok 4.5", 98.4, "gold", "98.4 · OVR #5"],
+      ["Gemini 3.6 Flash", 96.8, "mid", "96.8 · OVR #4 · new"],
+      ["Gemini 3.5 Flash", 96.8, "mid", "96.8 · OVR #12"],
+      ["GPT-5.6 Terra", 96.0, "mid", "96.0 · OVR #1"],
+      ["GPT-5.6 Luna", 95.2, "mid", "95.2"],
+      ["Qwen 3.7 Max", 95.2, "mid", "95.2"],
+      ["GLM 5.2", 93.7, "mid", "93.7"],
+      ["DeepSeek V4 Pro", 92.8, "mid", "92.8"],
+      ["Claude Sonnet 5", 92.1, "mid", "92.1"],
+      ["MiMo V2.5 Pro", 91.3, "mid", "91.3"],
+      ["DeepSeek V4 Flash", 88.9, "mid", "88.9"],
+      ["Hunyuan 3", 88.9, "mid", "88.9"],
+      ["Kimi 2.7", 88.8, "mid", "88.8"],
+      ["MiMo V2.5", 86.5, "mid", "86.5"],
+      ["Step 3.7 Flash", 84.2, "floor", "84.2"],
+      ["MiniMax M3", 79.3, "floor", "79.3"],
+      ["LongCat 2.0", 67.4, "floor", "67.4"]
+    ]
+  ],
+  [
+    "Efficiency (EFF) — the discriminator · par 35, zero at 70 calls",
+    100,
+    "EFF",
+    [
+      ["GPT-5.6 Terra", 84, "good", "84 · 37 calls"],
+      ["GPT-5.6 Luna", 59, "good", "59 · 48"],
+      ["Claude Sonnet 5", 53, "good", "53 · 50"],
+      ["DeepSeek V4 Pro", 52, "good", "52 · 50"],
+      ["Kimi 2.7", 48, "neutral", "48 · 50"],
+      ["Gemini 3.6 Flash", 44, "neutral", "44 · 54 · new · obj #2"],
+      ["MiMo V2.5 Pro", 40, "neutral", "40 · 55"],
+      ["DeepSeek V4 Flash", 40, "neutral", "40 · 54"],
+      ["GLM 5.2", 34, "neutral", "34 · 58"],
+      ["MiMo V2.5", 31, "neutral", "31 · 72"],
+      ["Hunyuan 3", 30, "neutral", "30 · 59"],
+      ["MiniMax M3", 26, "warn", "26 · 58"],
+      ["Qwen 3.7 Max", 25, "warn", "25 · 61"],
+      ["Grok 4.5", 15, "bad", "15 · 64 · obj #1"],
+      ["Step 3.7 Flash", 4, "bad", "4 · 70"],
+      ["Gemini 3.5 Flash", 3, "bad", "3 · 82"],
+      ["LongCat 2.0", 0, "bad", "0 · 186 calls"]
+    ]
+  ]
+]

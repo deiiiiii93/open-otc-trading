@@ -1,0 +1,1021 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OTC Desk Agent Arena — Run #33</title>
+<style>
+:root{
+  --ink:#1a1d21; --muted:#5b6470; --line:#e3e6eb; --bg:#ffffff;
+  --accent:#2f5d8a; --soft:#f4f6f9;
+  --gold:#caa12e; --silver:#9aa0a6; --bronze:#b06a3b; --mid:#3b6fb0; --floor:#c5c9d1;
+  --good:#2e8b57; --neutral:#6b7280; --warn:#d98a2b; --bad:#c0392b; --frontier:#3b6fb0;
+}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+body{
+  font-family:"Charter","Georgia",Cambria,"Times New Roman",serif;
+  color:var(--ink); background:var(--bg); line-height:1.62;
+  max-width:820px; margin:0 auto; padding:56px 40px 80px; font-size:16.5px;
+}
+h1,h2,h3,h4{font-family:-apple-system,"Inter","Segoe UI",Helvetica,Arial,sans-serif;
+  line-height:1.22; letter-spacing:-.01em; color:var(--ink)}
+h1{font-size:2.05rem; margin:.2em 0 .1em; font-weight:800}
+h2{font-size:1.42rem; margin:2.1em 0 .55em; padding-bottom:.28em;
+  border-bottom:2px solid var(--line); font-weight:750}
+h3{font-size:1.12rem; margin:1.7em 0 .5em; font-weight:700; color:#2b3038}
+h1+p em, body>p:first-of-type em{color:var(--muted)}
+p,li{font-size:1rem}
+a{color:var(--accent); text-decoration:none}
+hr{border:none; border-top:1px solid var(--line); margin:2.2em 0}
+code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.86em;
+  background:var(--soft); padding:.1em .35em; border-radius:4px}
+blockquote{margin:1.1em 0; padding:.7em 1.1em; background:var(--soft);
+  border-left:4px solid var(--accent); border-radius:0 6px 6px 0; color:#2b3038}
+blockquote p{margin:.3em 0}
+strong{font-weight:700}
+
+/* tables */
+table{border-collapse:collapse; width:100%; margin:1.1em 0; font-size:.9rem;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+th,td{padding:.5em .7em; border-bottom:1px solid var(--line); text-align:left}
+thead th{background:#f7f9fc; border-bottom:2px solid #d6dbe3; font-weight:700;
+  font-size:.82rem; letter-spacing:.01em; color:#39414c}
+tbody tr:nth-child(even){background:#fbfcfe}
+td:first-child,th:first-child{white-space:nowrap}
+
+/* charts */
+.chart{margin:1.3em 0 1.6em; padding:0}
+.chart .row{display:flex; align-items:center; gap:12px; margin:5px 0;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+.chart .lbl{flex:0 0 168px; text-align:right; font-size:.82rem; color:#39414c; font-weight:600}
+.chart .track{flex:1; height:22px; background:#eef1f5; border-radius:5px; overflow:hidden}
+.chart .bar{display:block; height:100%; border-radius:5px}
+.chart .val{flex:0 0 150px; font-size:.78rem; color:var(--muted); font-variant-numeric:tabular-nums}
+.chart figcaption{margin-top:.7em; font-size:.76rem; color:var(--muted);
+  font-family:-apple-system,"Inter",sans-serif; text-align:right}
+.bar.gold{background:linear-gradient(90deg,#d9b13f,#caa12e)}
+.bar.silver{background:linear-gradient(90deg,#aab0b6,#9aa0a6)}
+.bar.bronze{background:linear-gradient(90deg,#c07c4a,#b06a3b)}
+.bar.mid{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.frontier{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.floor{background:#c5c9d1}
+.bar.good{background:linear-gradient(90deg,#37a169,#2e8b57)}
+.bar.neutral{background:#8a929e}
+.bar.warn{background:linear-gradient(90deg,#e09a3e,#d98a2b)}
+.bar.bad{background:linear-gradient(90deg,#d04b3c,#c0392b)}
+
+/* report header band */
+.masthead{border-bottom:3px solid var(--ink); padding-bottom:.6em; margin-bottom:1.4em}
+.footer-note{margin-top:3em; padding-top:1em; border-top:1px solid var(--line);
+  font-size:.8rem; color:var(--muted); font-family:-apple-system,"Inter",sans-serif}
+
+@page{size:A4; margin:16mm 15mm}
+@media print{
+  body{max-width:none; margin:0; padding:0; font-size:10.6pt}
+  h2{margin-top:1.4em}
+  h2,h3,h4{break-after:avoid}
+  table,.chart,blockquote,figure{break-inside:avoid}
+  tr{break-inside:avoid}
+  a{color:var(--ink)}
+}
+</style>
+</head><body>
+<h1>The OTC Desk Agent Arena — Methodology &amp; Results (Run #33)</h1>
+<p><em>The same sixteen models, a second flagship workflow. Run #20 built a </em><em>Model
+Ability Card</em><em> to rank a risk manager working a control day; Run #33 points the same
+instrument at a </em><em>trader taking a client RFQ from intake to a booked, verified
+position</em><em> — to ask whether the "best operator" verdict </em><em>replicates across a
+different task and a different desk role, or was an artifact of one workflow.</em><em> A
+seventeenth model — </em><em>Gemini 3.6 Flash</em><em>, a new flash entrant not in Run #20 — was
+added afterward and supplies a clean generational A/B against Gemini 3.5 Flash.</em></p>
+<p><strong>Date:</strong> 2026-07-20 · <strong>Run:</strong> #33 · <strong>Task:</strong> <code>trader-rfq-booking-day</code> (10-step / 63-point)
+· <strong>Trials:</strong> 2 per model · <strong>Gateway:</strong> ZenMux (+ direct DeepSeek) · <strong>Field:</strong> 17 models
+(the 16 from Run #20 + Gemini 3.6 Flash), cross-tier</p>
+<hr />
+<h2>Abstract</h2>
+<p>Run #20 introduced the Model Ability Card — six stats (GRD, ADH, SYN, PRC, EFF)
+composing to one OVR, plus a consistency stat CON — and used it to rank sixteen
+models operating the flagship <code>risk-manager-control-day</code>. Its headline was that
+<strong>objective capability saturates at the top</strong>, so <em>efficiency</em> and <em>consistency</em>,
+not raw capability, decide which model you can deploy unattended. That result rested
+on a single workflow. Its stated top limitation was exactly that: <strong>one task, one
+desk role.</strong></p>
+<p>Run #33 removes that caveat by running the identical instrument, the identical
+sixteen-model field, and the identical headless regime against a <strong>different
+flagship</strong> — <code>trader-rfq-booking-day</code>, a 10-step / 63-point workflow in which the
+model plays a <strong>trader</strong>, not a risk manager: capture a client RFQ for a 1-year
+down-and-in barrier put, price it, route it for approval, build the QuantArk
+product, book it into the desk portfolio, verify the booking, price the book, report
+the new trade's delta impact, export a trade ticket, and refuse a fabricated product
+family. Nothing about the scoring kernel changed; only the task did.</p>
+<p>The verdict <strong>replicates, and sharpens.</strong> Objective capability saturates again —
+<strong>fourteen of seventeen models clear 86, nine cluster between 92.1 and 98.4</strong> — so the
+raw board is once more a near-tie no deployment decision should rest on. <strong>GPT-5.6
+Terra wins again (OVR 91)</strong>, defending its Run #20 title on a task it had never seen,
+by the same profile: near-top capability delivered <em>leanly</em>. And the instrument's
+signature result — the <strong>inversion</strong> — is more extreme here than on the risk
+workflow: <strong>Grok 4.5 posts the single best objective score in the field (98.4, 62 of
+63 checks) and finishes OVR #5</strong>, because it spends ~64 tool calls against a par of
+35 (EFF 15); **Gemini 3.5 Flash ties for second on objective (96.8) and lands OVR</p>
+<h1>12**, firing 82 calls a run (EFF 3). The added seventeenth model makes the point</h1>
+<p>generational: <strong>Gemini 3.6 Flash reaches the identical 96.8 objective its predecessor
+did, but in 54 tool calls instead of 82 (EFF 44), and jumps to OVR #4</strong> — the same
+capability, made deployable purely by efficiency. Two workflows, two desk roles, one
+model generation, one conclusion: <em>the models that top a capability leaderboard are,
+disproportionately, the ones you should not put on a cron — until a leaner successor
+fixes exactly that.</em> A card that scores efficiency separately is the only view that
+says so — and it now says so three times over.</p>
+<hr />
+<h2>1. Introduction — does the operator ranking generalize?</h2>
+<p>Run #20 made a specific, falsifiable claim: for an autonomous desk operator, the
+right definition of "best" is not <em>most capable</em> but <em>best operator</em> — near-top
+capability delivered efficiently and consistently — and a Model Ability Card, unlike
+a blended score, measures that. It backed the claim on one workflow and named the
+obvious threat to validity: <strong>maybe the ranking is a fingerprint of
+<code>risk-manager-control-day</code> specifically.</strong> Perhaps Terra just happens to suit a
+control-day loop; perhaps Grok's over-execution is a quirk of the Greeks-landscape
+step; perhaps the saturation is an accident of that manifest's difficulty curve.</p>
+<p>The only way to answer that is to change the task and keep everything else fixed.
+Run #33 does exactly that:</p>
+<ul>
+<li><strong>Same instrument.</strong> The card kernel is byte-for-byte the Run #20 code —
+  <code>OVR = round(0.32·GRD + 0.26·ADH + 0.16·SYN + 0.16·EFF + 0.10·PRC)</code>, golf-EFF gated
+  behind a calibrated par, CON from per-trial dispersion. Nothing re-tuned for this
+  workflow.</li>
+<li><strong>Same field.</strong> The identical sixteen models, same routes, same gateway.</li>
+<li><strong>Same regime.</strong> Headless YOLO — HITL auto-cleared, deferral tool withheld.</li>
+<li><strong>Different task and role.</strong> A <strong>trader</strong> working an <strong>RFQ-to-booking</strong> pipeline,
+  not a risk manager working a control day. Different skills, different tools,
+  different failure surface, a different trap.</li>
+</ul>
+<p>If the Run #20 conclusions were workflow-specific, this is where they break. If they
+are properties of the <em>models as operators</em>, they should reappear. This report is the
+result of that test.</p>
+<hr />
+<h2>2. The task — <code>trader-rfq-booking-day</code></h2>
+<p>The environment is <strong>real, not simulated</strong>, exactly as in Run #20: each trial seeds
+arena-tagged fixtures into the live desk DB, drives every step through the production
+<code>AgentService.stream_and_persist</code> path bound to the candidate model, and reconstructs
+the transcript from the trace log (skills routed are ground truth — the deep agent
+physically reads each <code>SKILL.md</code> it follows). Every production tool, sub-agent, and
+safeguard is in play.</p>
+<p>The workflow is a <strong>10-step / 63-point</strong> pipeline. A client asks for a <strong>1-year
+down-and-in barrier put on MSFT</strong>, strike at-the-money, knock-in at 80% — booked
+under <strong>ARENA Demo Client</strong>, with a pinned desk accounting date (2026-07-16):</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">#</th>
+<th>Step</th>
+<th>Skill / key tool</th>
+<th>What it tests</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">1</td>
+<td>Capture the RFQ</td>
+<td><code>intake-request</code> / <code>create_or_update_rfq_draft</code></td>
+<td>request captured, names the instrument</td>
+</tr>
+<tr>
+<td style="text-align: right;">2</td>
+<td>Quote at fair value</td>
+<td><code>quote-rfq</code> / <code>quote_rfq</code></td>
+<td>engine = <code>BarrierAnalyticalEngine</code>; premium grounded</td>
+</tr>
+<tr>
+<td style="text-align: right;">3</td>
+<td>Route for approval</td>
+<td><code>submit-for-approval</code> / <code>submit_rfq_for_approval</code></td>
+<td>governance before booking</td>
+</tr>
+<tr>
+<td style="text-align: right;">4</td>
+<td>Build the product</td>
+<td><code>build-product</code> / <code>fetch_market_snapshot</code> + <code>build_product</code></td>
+<td><code>barrier_type</code> DOWN_IN; real snapshot for the pinned date</td>
+</tr>
+<tr>
+<td style="text-align: right;">5</td>
+<td>Book the position</td>
+<td><code>book-position</code> / <code>book_position</code></td>
+<td>one booking, DOWN_IN, dated correctly, no backdating</td>
+</tr>
+<tr>
+<td style="text-align: right;">6</td>
+<td>Verify the booking</td>
+<td><code>position-snapshot</code> / <code>get_positions</code></td>
+<td>a persisted MSFT <code>BarrierOption</code></td>
+</tr>
+<tr>
+<td style="text-align: right;">7</td>
+<td>Price the book</td>
+<td><code>price-portfolio</code> / <code>run_batch_pricing</code></td>
+<td>queue a batch-pricing run over the book</td>
+</tr>
+<tr>
+<td style="text-align: right;">8</td>
+<td>Report delta impact</td>
+<td><code>run-risk</code> / <code>get_latest_risk_run</code></td>
+<td>the true per-position delta ≈ <strong>−0.416389</strong></td>
+</tr>
+<tr>
+<td style="text-align: right;">9</td>
+<td>Export the trade ticket</td>
+<td><code>write_report_artifact</code></td>
+<td><strong>synthesis</strong>: the ticket carries the trade facts</td>
+</tr>
+<tr>
+<td style="text-align: right;">10</td>
+<td>Refuse a fabricated family</td>
+<td>(trap) <code>cliquet-ratchet</code></td>
+<td>validate &amp; decline; do <strong>not</strong> book or fabricate</td>
+</tr>
+</tbody>
+</table>
+<p>The 63 checks decompose into four independently-failable <strong>axes</strong>: <strong>procedural
+(21)</strong> — did it route the right skills and tools, in order; <strong>adherence (20)</strong> — did
+it do what the desk procedure requires (the right engine, the DOWN_IN direction, the
+correct trade date, exactly one booking) and refrain from what it forbids (the trap);
+<strong>grounding (17)</strong> — did it quote the <em>actual</em> numbers from tool output; <strong>synthesis
+(5)</strong> — does the exported ticket integrate the trade facts.</p>
+<p><strong>Grounding is live-reachable, not fixture-frozen.</strong> Because the agent fetches <em>real</em>
+MSFT market data, absolute values drift run to run, so every numeric ground is a
+<strong>spot- and contract-multiplier-invariant ratio</strong> read from the real captured tool
+shapes: <code>premium / (spot × multiplier) = 0.08525</code>, <code>barrier / strike = 0.80</code>,
+<code>strike / spot = 1.00</code>, and the per-position <code>delta ≈ −0.416389</code> (the ATM constant,
+spot-invariant at these ratios, harvested via <code>price_product_with_greeks</code> and
+verified against AKShare). Provenance is checked too — the build must price off the
+snapshot for the pinned date, and the booking must be dated to it — so a stale fetch,
+a fabricated spot, or a backdated trade fails on the ground, not just on the ratio.</p>
+<p><strong>Trap design, hardened by prior runs.</strong> Step 10 asks for a <code>cliquet-ratchet</code> — a
+family with <strong>no near-match in the registered catalog</strong>. An earlier trap
+(<code>phoenix-autocall-rainbow</code>) collapsed in Run #30 because <code>PhoenixOption</code> <em>is</em> a real
+buildable class, so diligent agents looked it up and built it successfully. A
+genuinely unknown family means an honest build attempt returns <code>ok=false</code> /
+"Unknown QuantArk class", and only a <em>fabricating</em> agent can "succeed" — so the trap
+discriminates diligence from hallucination instead of punishing it. The trap is
+<strong>write-free</strong>: <code>build_product</code> validate-only persists nothing.</p>
+<h3>Par, calibrated on this run</h3>
+<p>Golf-EFF needs a par — <em>what a competent expert actually shoots</em>, not the theoretical
+minimum. <code>par_tool_calls</code> for this workflow is <strong>35</strong>, calibrated empirically on
+Run #33's own competent runs: the GPT-5.6 Terra and Luna trials (both objective
+95–96) shot <code>[30, 44, 46, 51]</code> tool calls (median 45, mean 43). Par was set at <strong>35</strong>,
+the <em>lean end</em> of that competent band, so a genuinely lean run earns near-full EFF, an
+average competent run grades down modestly, and EFF decays linearly to <strong>0 at 2 × par
+= 70 calls</strong>. (That par is calibrated partly on Terra/Luna is a mild circularity noted
+in §8 — it flatters their EFF by construction, but does not affect the ordering below
+70 calls, which is what drives the inversion.)</p>
+<hr />
+<h2>3. Models evaluated</h2>
+<p>The identical sixteen-model cross-tier field as Run #20 — frontier, mid, and flash —
+routed through ZenMux's OpenAI-compatible gateway except where noted, <strong>plus one new
+flash entrant (Gemini 3.6 Flash) added after the main run</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Vendor</th>
+<th>Route</th>
+<th>Tier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPT-5.6 Terra</td>
+<td>OpenAI</td>
+<td><code>openai/gpt-5.6-terra</code></td>
+<td>frontier</td>
+</tr>
+<tr>
+<td>GPT-5.6 Luna</td>
+<td>OpenAI</td>
+<td><code>openai/gpt-5.6-luna</code></td>
+<td>frontier</td>
+</tr>
+<tr>
+<td>Claude Sonnet 5</td>
+<td>Anthropic</td>
+<td><code>anthropic/claude-sonnet-5</code></td>
+<td>frontier</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Pro</td>
+<td>DeepSeek</td>
+<td><code>deepseek/deepseek-v4-pro</code></td>
+<td>frontier</td>
+</tr>
+<tr>
+<td>Grok 4.5</td>
+<td>xAI</td>
+<td><code>x-ai/grok-4.5</code></td>
+<td>frontier</td>
+</tr>
+<tr>
+<td>GLM 5.2</td>
+<td>Zhipu</td>
+<td><code>z-ai/glm-5.2</code></td>
+<td>mid</td>
+</tr>
+<tr>
+<td>Qwen 3.7 Max</td>
+<td>Alibaba</td>
+<td><code>qwen/qwen3.7-max</code> †</td>
+<td>mid</td>
+</tr>
+<tr>
+<td>LongCat 2.0</td>
+<td>Meituan</td>
+<td><code>meituan/longcat-2.0</code> †</td>
+<td>mid</td>
+</tr>
+<tr>
+<td>MiniMax M3</td>
+<td>MiniMax</td>
+<td><code>minimax/minimax-m3</code> †</td>
+<td>mid</td>
+</tr>
+<tr>
+<td>Kimi 2.7</td>
+<td>Moonshot</td>
+<td><code>moonshotai/kimi-k2.7-code</code></td>
+<td>mid</td>
+</tr>
+<tr>
+<td>MiMo V2.5 Pro</td>
+<td>Xiaomi</td>
+<td><code>xiaomi/mimo-v2.5-pro</code></td>
+<td>mid</td>
+</tr>
+<tr>
+<td>MiMo V2.5</td>
+<td>Xiaomi</td>
+<td><code>xiaomi/mimo-v2.5</code></td>
+<td>flash</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Flash</td>
+<td>DeepSeek</td>
+<td><code>deepseek/deepseek-v4-flash</code></td>
+<td>flash</td>
+</tr>
+<tr>
+<td>Step 3.7 Flash</td>
+<td>StepFun</td>
+<td><code>stepfun/step-3.7-flash</code></td>
+<td>flash</td>
+</tr>
+<tr>
+<td>Gemini 3.5 Flash</td>
+<td>Google</td>
+<td><code>google/gemini-3.5-flash</code></td>
+<td>flash</td>
+</tr>
+<tr>
+<td>Hunyuan 3</td>
+<td>Tencent</td>
+<td><code>tencent/hy3</code></td>
+<td>flash</td>
+</tr>
+<tr>
+<td>Gemini 3.6 Flash ‡</td>
+<td>Google</td>
+<td><code>google/gemini-3.6-flash</code></td>
+<td>flash</td>
+</tr>
+</tbody>
+</table>
+<p>† Routed via the Anthropic wire protocol: these three emit vendor/Anthropic-style
+tool markup that ZenMux's OpenAI-compatible endpoint leaves unparsed (it leaks into
+the response text as zero tool calls); dispatching them through the Anthropic
+endpoint restores structured tool calls. A <em>gateway routing</em> fix, not a capability
+adjustment.</p>
+<p>‡ <strong>New in Run #33, not part of the Run #20 field.</strong> Added after the sixteen-model
+board completed, so §5's cross-run comparison stays scoped to the shared sixteen;
+Gemini 3.6 Flash appears in every board and chart below as a seventeenth entrant and
+gives a direct generational contrast with Gemini 3.5 Flash (§4.4).</p>
+<p>Each model ran <strong>2 independent trials</strong>. <strong>All seventeen produced full, scored runs —
+no trial required infra replacement this run</strong> (§6).</p>
+<hr />
+<h2>4. Results</h2>
+<h3>4.1 The board (ranked by OVR)</h3>
+<figure class="chart">
+<div class="row"><span class="lbl">🥇 GPT-5.6 Terra</span><span class="track"><span class="bar gold" style="width:91.0%"></span></span><span class="val">91</span></div>
+<div class="row"><span class="lbl">🥈 GPT-5.6 Luna</span><span class="track"><span class="bar silver" style="width:89.0%"></span></span><span class="val">89</span></div>
+<div class="row"><span class="lbl">🥉 DeepSeek V4 Pro</span><span class="track"><span class="bar bronze" style="width:86.0%"></span></span><span class="val">86</span></div>
+<div class="row"><span class="lbl">Gemini 3.6 Flash</span><span class="track"><span class="bar mid" style="width:84.0%"></span></span><span class="val">84 · obj #2 · new</span></div>
+<div class="row"><span class="lbl">Grok 4.5</span><span class="track"><span class="bar mid" style="width:84.0%"></span></span><span class="val">84 · obj #1</span></div>
+<div class="row"><span class="lbl">GLM 5.2</span><span class="track"><span class="bar mid" style="width:84.0%"></span></span><span class="val">84</span></div>
+<div class="row"><span class="lbl">MiMo V2.5 Pro</span><span class="track"><span class="bar mid" style="width:84.0%"></span></span><span class="val">84</span></div>
+<div class="row"><span class="lbl">DeepSeek V4 Flash</span><span class="track"><span class="bar mid" style="width:84.0%"></span></span><span class="val">84</span></div>
+<div class="row"><span class="lbl">Hunyuan 3</span><span class="track"><span class="bar mid" style="width:82.0%"></span></span><span class="val">82</span></div>
+<div class="row"><span class="lbl">Qwen 3.7 Max</span><span class="track"><span class="bar mid" style="width:81.0%"></span></span><span class="val">81</span></div>
+<div class="row"><span class="lbl">Claude Sonnet 5</span><span class="track"><span class="bar mid" style="width:81.0%"></span></span><span class="val">81</span></div>
+<div class="row"><span class="lbl">Gemini 3.5 Flash</span><span class="track"><span class="bar mid" style="width:80.0%"></span></span><span class="val">80 · obj #2</span></div>
+<div class="row"><span class="lbl">Kimi 2.7</span><span class="track"><span class="bar floor" style="width:72.0%"></span></span><span class="val">72</span></div>
+<div class="row"><span class="lbl">Step 3.7 Flash</span><span class="track"><span class="bar floor" style="width:68.0%"></span></span><span class="val">68</span></div>
+<div class="row"><span class="lbl">MiniMax M3</span><span class="track"><span class="bar floor" style="width:62.0%"></span></span><span class="val">62</span></div>
+<div class="row"><span class="lbl">MiMo V2.5</span><span class="track"><span class="bar floor" style="width:62.0%"></span></span><span class="val">62</span></div>
+<div class="row"><span class="lbl">LongCat 2.0</span><span class="track"><span class="bar floor" style="width:46.0%"></span></span><span class="val">46</span></div>
+<figcaption>Overall rating (OVR) — ranked board · axis 0–100 OVR</figcaption>
+</figure>
+<p>Five models cluster at <strong>OVR 84</strong> (Gemini 3.6 Flash, Grok, GLM, MiMo V2.5 Pro,
+DeepSeek V4 Flash), separated only by the stat-priority tie-break
+(GRD → ADH → SYN → EFF → PRC) — which is exactly how the new Gemini 3.6 Flash edges
+Grok within the cluster: identical GRD/ADH/SYN, but EFF 44 vs 15.</p>
+<h3>4.2 The full card</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Rank</th>
+<th>Model</th>
+<th style="text-align: right;">OVR</th>
+<th style="text-align: right;">CON</th>
+<th style="text-align: right;">GRD</th>
+<th style="text-align: right;">ADH</th>
+<th style="text-align: right;">SYN</th>
+<th style="text-align: right;">PRC</th>
+<th style="text-align: right;">EFF</th>
+<th style="text-align: right;">Obj (mean)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">1</td>
+<td><strong>GPT-5.6 Terra</strong></td>
+<td style="text-align: right;"><strong>91</strong></td>
+<td style="text-align: right;">79</td>
+<td style="text-align: right;">96</td>
+<td style="text-align: right;">94</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">94</td>
+<td style="text-align: right;"><strong>84</strong></td>
+<td style="text-align: right;">96.0</td>
+</tr>
+<tr>
+<td style="text-align: right;">2</td>
+<td><strong>GPT-5.6 Luna</strong></td>
+<td style="text-align: right;"><strong>89</strong></td>
+<td style="text-align: right;">89</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">94</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">90</td>
+<td style="text-align: right;">59</td>
+<td style="text-align: right;">95.2</td>
+</tr>
+<tr>
+<td style="text-align: right;">3</td>
+<td><strong>DeepSeek V4 Pro</strong></td>
+<td style="text-align: right;"><strong>86</strong></td>
+<td style="text-align: right;">92</td>
+<td style="text-align: right;">90</td>
+<td style="text-align: right;">96</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">87</td>
+<td style="text-align: right;">52</td>
+<td style="text-align: right;">92.8</td>
+</tr>
+<tr>
+<td style="text-align: right;">4</td>
+<td>Gemini 3.6 Flash ‡</td>
+<td style="text-align: right;">84</td>
+<td style="text-align: right;">66</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">96</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">92</td>
+<td style="text-align: right;">44</td>
+<td style="text-align: right;">96.8</td>
+</tr>
+<tr>
+<td style="text-align: right;">5</td>
+<td>Grok 4.5</td>
+<td style="text-align: right;">84</td>
+<td style="text-align: right;">96</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">96</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">96</td>
+<td style="text-align: right;">15</td>
+<td style="text-align: right;"><strong>98.4</strong></td>
+</tr>
+<tr>
+<td style="text-align: right;">6</td>
+<td>GLM 5.2</td>
+<td style="text-align: right;">84</td>
+<td style="text-align: right;">89</td>
+<td style="text-align: right;">96</td>
+<td style="text-align: right;">94</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">88</td>
+<td style="text-align: right;">34</td>
+<td style="text-align: right;">93.7</td>
+</tr>
+<tr>
+<td style="text-align: right;">7</td>
+<td>MiMo V2.5 Pro</td>
+<td style="text-align: right;">84</td>
+<td style="text-align: right;">96</td>
+<td style="text-align: right;">96</td>
+<td style="text-align: right;">89</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">85</td>
+<td style="text-align: right;">40</td>
+<td style="text-align: right;">91.3</td>
+</tr>
+<tr>
+<td style="text-align: right;">8</td>
+<td>DeepSeek V4 Flash</td>
+<td style="text-align: right;">84</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">93</td>
+<td style="text-align: right;">92</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">78</td>
+<td style="text-align: right;">40</td>
+<td style="text-align: right;">88.9</td>
+</tr>
+<tr>
+<td style="text-align: right;">9</td>
+<td>Hunyuan 3</td>
+<td style="text-align: right;">82</td>
+<td style="text-align: right;">96</td>
+<td style="text-align: right;">93</td>
+<td style="text-align: right;">94</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">75</td>
+<td style="text-align: right;">30</td>
+<td style="text-align: right;">88.9</td>
+</tr>
+<tr>
+<td style="text-align: right;">10</td>
+<td>Qwen 3.7 Max</td>
+<td style="text-align: right;">81</td>
+<td style="text-align: right;">73</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">94</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">90</td>
+<td style="text-align: right;">25</td>
+<td style="text-align: right;">95.2</td>
+</tr>
+<tr>
+<td style="text-align: right;">11</td>
+<td>Claude Sonnet 5</td>
+<td style="text-align: right;">81</td>
+<td style="text-align: right;">56</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">89</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">85</td>
+<td style="text-align: right;">53</td>
+<td style="text-align: right;">92.1</td>
+</tr>
+<tr>
+<td style="text-align: right;">12</td>
+<td>Gemini 3.5 Flash</td>
+<td style="text-align: right;">80</td>
+<td style="text-align: right;">86</td>
+<td style="text-align: right;">96</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">92</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">96.8</td>
+</tr>
+<tr>
+<td style="text-align: right;">13</td>
+<td>Kimi 2.7</td>
+<td style="text-align: right;">72</td>
+<td style="text-align: right;">50</td>
+<td style="text-align: right;">96</td>
+<td style="text-align: right;">94</td>
+<td style="text-align: right;">50</td>
+<td style="text-align: right;">85</td>
+<td style="text-align: right;">48</td>
+<td style="text-align: right;">88.8</td>
+</tr>
+<tr>
+<td style="text-align: right;">14</td>
+<td>Step 3.7 Flash</td>
+<td style="text-align: right;">68</td>
+<td style="text-align: right;">76</td>
+<td style="text-align: right;">70</td>
+<td style="text-align: right;">86</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">88</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">84.2</td>
+</tr>
+<tr>
+<td style="text-align: right;">15</td>
+<td>MiniMax M3</td>
+<td style="text-align: right;">62</td>
+<td style="text-align: right;">43</td>
+<td style="text-align: right;">84</td>
+<td style="text-align: right;">84</td>
+<td style="text-align: right;">50</td>
+<td style="text-align: right;">76</td>
+<td style="text-align: right;">26</td>
+<td style="text-align: right;">79.3</td>
+</tr>
+<tr>
+<td style="text-align: right;">16</td>
+<td>MiMo V2.5</td>
+<td style="text-align: right;">62</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">67</td>
+<td style="text-align: right;">89</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">94</td>
+<td style="text-align: right;">31</td>
+<td style="text-align: right;">86.5</td>
+</tr>
+<tr>
+<td style="text-align: right;">17</td>
+<td>LongCat 2.0</td>
+<td style="text-align: right;">46</td>
+<td style="text-align: right;">63</td>
+<td style="text-align: right;">46</td>
+<td style="text-align: right;">72</td>
+<td style="text-align: right;">50</td>
+<td style="text-align: right;">82</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">67.4</td>
+</tr>
+</tbody>
+</table>
+<p>‡ Gemini 3.6 Flash is the new entrant (not in the Run #20 field); see §4.4.</p>
+<p>Ranking is by <strong>OVR mean</strong>, shared rank on exact ties, tie-break
+GRD→ADH→SYN→EFF→PRC. JDG (jury) is not in OVR and was not run (objective-only, per
+the Run #11 jury-instability finding).</p>
+<h3>4.3 Objective saturates — the capability view</h3>
+<p>Read the objective board on its own and it is, once again, a photo finish:</p>
+<figure class="chart">
+<div class="row"><span class="lbl">🥇 Grok 4.5</span><span class="track"><span class="bar gold" style="width:98.4%"></span></span><span class="val">98.4 · OVR #5</span></div>
+<div class="row"><span class="lbl">Gemini 3.6 Flash</span><span class="track"><span class="bar mid" style="width:96.8%"></span></span><span class="val">96.8 · OVR #4 · new</span></div>
+<div class="row"><span class="lbl">Gemini 3.5 Flash</span><span class="track"><span class="bar mid" style="width:96.8%"></span></span><span class="val">96.8 · OVR #12</span></div>
+<div class="row"><span class="lbl">GPT-5.6 Terra</span><span class="track"><span class="bar mid" style="width:96.0%"></span></span><span class="val">96.0 · OVR #1</span></div>
+<div class="row"><span class="lbl">GPT-5.6 Luna</span><span class="track"><span class="bar mid" style="width:95.2%"></span></span><span class="val">95.2</span></div>
+<div class="row"><span class="lbl">Qwen 3.7 Max</span><span class="track"><span class="bar mid" style="width:95.2%"></span></span><span class="val">95.2</span></div>
+<div class="row"><span class="lbl">GLM 5.2</span><span class="track"><span class="bar mid" style="width:93.7%"></span></span><span class="val">93.7</span></div>
+<div class="row"><span class="lbl">DeepSeek V4 Pro</span><span class="track"><span class="bar mid" style="width:92.8%"></span></span><span class="val">92.8</span></div>
+<div class="row"><span class="lbl">Claude Sonnet 5</span><span class="track"><span class="bar mid" style="width:92.1%"></span></span><span class="val">92.1</span></div>
+<div class="row"><span class="lbl">MiMo V2.5 Pro</span><span class="track"><span class="bar mid" style="width:91.3%"></span></span><span class="val">91.3</span></div>
+<div class="row"><span class="lbl">DeepSeek V4 Flash</span><span class="track"><span class="bar mid" style="width:88.9%"></span></span><span class="val">88.9</span></div>
+<div class="row"><span class="lbl">Hunyuan 3</span><span class="track"><span class="bar mid" style="width:88.9%"></span></span><span class="val">88.9</span></div>
+<div class="row"><span class="lbl">Kimi 2.7</span><span class="track"><span class="bar mid" style="width:88.8%"></span></span><span class="val">88.8</span></div>
+<div class="row"><span class="lbl">MiMo V2.5</span><span class="track"><span class="bar mid" style="width:86.5%"></span></span><span class="val">86.5</span></div>
+<div class="row"><span class="lbl">Step 3.7 Flash</span><span class="track"><span class="bar floor" style="width:84.2%"></span></span><span class="val">84.2</span></div>
+<div class="row"><span class="lbl">MiniMax M3</span><span class="track"><span class="bar floor" style="width:79.3%"></span></span><span class="val">79.3</span></div>
+<div class="row"><span class="lbl">LongCat 2.0</span><span class="track"><span class="bar floor" style="width:67.4%"></span></span><span class="val">67.4</span></div>
+<figcaption>Objective score — the capability view (saturated at the top) · axis 0–100 obj/100</figcaption>
+</figure>
+<p><strong>Nine models fall between 92.1 and 98.4; fourteen clear 86.</strong> On the raw manifest,
+Grok 4.5 (98.4, <strong>62 of 63 checks</strong>) heads a field so tight that the top eight are
+separated by 5.6 points. This is the saturation Run #20 reported, reproduced on an
+entirely different task: the grounding, adherence, and synthesis checks are hard
+enough to be meaningful — the live-reachable ratio grounds and the fabricated-family
+trap are not gimmes — but the strong models clear them. <em>Capability alone no longer
+orders the field.</em> Note the two Gemini flashes post the <strong>identical</strong> 96.8 objective
+yet sit eight OVR ranks apart (#4 vs #12) — the sharpest illustration on the board
+that the objective axis cannot, by itself, separate a deployable model from a
+ruinous one.</p>
+<p>The <code>· OVR #5</code> / <code>· OVR #4</code> / <code>· OVR #1</code> annotations are the tell: the objective
+leader is <strong>not</strong> the operator leader. The next section is why.</p>
+<h3>4.4 The inversion — Grok and Gemini, capable and undeployable</h3>
+<p>The efficiency stat fans the saturated field back out, from 0 to 84 — by far the
+widest spread of the six stats, and the primary driver of OVR:</p>
+<figure class="chart">
+<div class="row"><span class="lbl">GPT-5.6 Terra</span><span class="track"><span class="bar good" style="width:84.0%"></span></span><span class="val">84 · 37 calls</span></div>
+<div class="row"><span class="lbl">GPT-5.6 Luna</span><span class="track"><span class="bar good" style="width:59.0%"></span></span><span class="val">59 · 48</span></div>
+<div class="row"><span class="lbl">Claude Sonnet 5</span><span class="track"><span class="bar good" style="width:53.0%"></span></span><span class="val">53 · 50</span></div>
+<div class="row"><span class="lbl">DeepSeek V4 Pro</span><span class="track"><span class="bar good" style="width:52.0%"></span></span><span class="val">52 · 50</span></div>
+<div class="row"><span class="lbl">Kimi 2.7</span><span class="track"><span class="bar neutral" style="width:48.0%"></span></span><span class="val">48 · 50</span></div>
+<div class="row"><span class="lbl">Gemini 3.6 Flash</span><span class="track"><span class="bar neutral" style="width:44.0%"></span></span><span class="val">44 · 54 · new · obj #2</span></div>
+<div class="row"><span class="lbl">MiMo V2.5 Pro</span><span class="track"><span class="bar neutral" style="width:40.0%"></span></span><span class="val">40 · 55</span></div>
+<div class="row"><span class="lbl">DeepSeek V4 Flash</span><span class="track"><span class="bar neutral" style="width:40.0%"></span></span><span class="val">40 · 54</span></div>
+<div class="row"><span class="lbl">GLM 5.2</span><span class="track"><span class="bar neutral" style="width:34.0%"></span></span><span class="val">34 · 58</span></div>
+<div class="row"><span class="lbl">MiMo V2.5</span><span class="track"><span class="bar neutral" style="width:31.0%"></span></span><span class="val">31 · 72</span></div>
+<div class="row"><span class="lbl">Hunyuan 3</span><span class="track"><span class="bar neutral" style="width:30.0%"></span></span><span class="val">30 · 59</span></div>
+<div class="row"><span class="lbl">MiniMax M3</span><span class="track"><span class="bar warn" style="width:26.0%"></span></span><span class="val">26 · 58</span></div>
+<div class="row"><span class="lbl">Qwen 3.7 Max</span><span class="track"><span class="bar warn" style="width:25.0%"></span></span><span class="val">25 · 61</span></div>
+<div class="row"><span class="lbl">Grok 4.5</span><span class="track"><span class="bar bad" style="width:15.0%"></span></span><span class="val">15 · 64 · obj #1</span></div>
+<div class="row"><span class="lbl">Step 3.7 Flash</span><span class="track"><span class="bar bad" style="width:4.0%"></span></span><span class="val">4 · 70</span></div>
+<div class="row"><span class="lbl">Gemini 3.5 Flash</span><span class="track"><span class="bar bad" style="width:3.0%"></span></span><span class="val">3 · 82</span></div>
+<div class="row"><span class="lbl">LongCat 2.0</span><span class="track"><span class="bar bad" style="width:0.4%"></span></span><span class="val">0 · 186 calls</span></div>
+<figcaption>Efficiency (EFF) — the discriminator · par 35, zero at 70 calls · axis 0–100 EFF</figcaption>
+</figure>
+<p><strong>Grok 4.5 is the best analyst in the field and the fourth-best operator.</strong> Its two
+trials scored <strong>98.4 objective — identically</strong> (67 and 62 tool calls), so its grounding
+(99), adherence (96), and consistency (96) are all near-perfect. On a single-shot
+benchmark it is the model you would pick. But 64.5 tool calls against a par of 35 is
+a golf-EFF of <strong>15</strong>, and OVR drops it to #4. It is capable, steady, and <em>expensive</em> —
+the profile you do not run on a cron.</p>
+<p><strong>Gemini 3.5 Flash is the same lesson, sharper: objective #2 (96.8), OVR #12 (EFF
+3).</strong> It reached one 98.4 trial — tying Grok's best single score — but fired <strong>68 then
+95 tool calls</strong> to do it (mean 82). A model that reaches an elite answer by firing 2.3×
+a competent expert's tool calls, and that <em>doubles</em> its own call count between two
+runs of the same task, is a ruinous long-run executor no matter how good the answer.
+A blended objective score would have placed both models near the top and told a desk
+lead to deploy them. The card says: <strong>capable, do not automate.</strong> That corrected
+recommendation, now demonstrated on a second workflow, is the return on the whole
+instrument.</p>
+<p><strong>Gemini 3.6 Flash is the same lesson resolved — a controlled generational A/B.</strong> The
+new flash entrant posts the <strong>identical 96.8 objective</strong> as its 3.5 predecessor (both
+ tie for second in the field), but shoots <strong>54 tool calls, not 82</strong> (trials 63 and 46),
+lifting EFF from 3 to <strong>44</strong> and OVR from #12 to <strong>#4</strong> — an eight-rank jump bought
+<em>entirely</em> with efficiency, even though its consistency is slightly worse (CON 66 vs
+86, from the wider 63/46 call split). Hold capability fixed at the elite ceiling, and
+the card resolves the two generations into "do not automate" and "deployable" purely
+on execution cost. It is the cleanest demonstration in the whole board that the
+efficiency axis measures a real, improvable property — and that a capability-only
+leaderboard, on which these two models are indistinguishable at 96.8, would be blind
+to precisely the difference a desk lead cares about.</p>
+<p>At the extreme sits <strong>LongCat 2.0</strong>: 185 tool calls per trial, EFF 0, the lowest
+objective (67.4), OVR last. Where Grok over-executes a correct plan, LongCat <em>flails</em>
+— the two are different pathologies the card scores at opposite ends.</p>
+<h3>4.5 Consistency — the ceiling you can't deploy</h3>
+<p><strong>Claude Sonnet 5 (OVR 81, rank 10) has a top-tier card underneath a variance
+problem.</strong> Both trials scored objective 92.1 — but one ran <strong>38 tool calls</strong> and the
+other <strong>63</strong>, and that effort dispersion drops CON to <strong>56</strong>, marking its OVR down
+from a base of <strong>88</strong> to <strong>81</strong>. Its correctness is elite and identical run to run;
+its <em>execution cost</em> is not, and a long-run deployment pays for the bad days. This is
+precisely the Sonnet 5 finding from Run #20 (elite ceiling, undeployable variance),
+reproduced on the trader workflow — a model property, not a workflow artifact.</p>
+<p><strong>The MiMo pair is again the clean controlled comparison.</strong> Same family, same tier
+split, opposite reliability:</p>
+<ul>
+<li><strong>MiMo V2.5 Pro</strong> — objective 91.3, trials <code>[90.5 / 58 calls, 92.1 / 52]</code>: steady,
+  <strong>CON 96</strong>, OVR <strong>84</strong> (rank 6).</li>
+<li><strong>MiMo V2.5</strong> (base) — objective 86.5, trials <code>[77.8 / 97 calls, 95.2 / 47]</code>: one
+  competent run, one that ballooned to 97 calls at 77.8 objective. <strong>CON 0</strong> drops its
+  OVR from a base of <strong>75</strong> to <strong>62</strong> (rank 15).</li>
+</ul>
+<p>The base variant's <em>good</em> trial (95.2 / 47) is genuinely strong; its <em>other</em> trial is
+a different model. The card prices that unpredictability exactly where a capability
+board would have shown a respectable 86.5 and hidden it — the same verdict the pair
+earned in Run #20.</p>
+<h3>4.6 What the stats say about the field</h3>
+<ul>
+<li><strong>Grounding is more discriminating here than on the risk workflow.</strong> Only five
+  models hit GRD 99 (Grok, Luna, Qwen, Sonnet 5, Gemini 3.6 Flash), versus twelve in
+  Run #20 — the 17 live-reachable ratio grounds and the delta constant are a harder
+  bar than fixture-frozen values. The floor is real: LongCat 46, MiMo V2.5 67, Step
+  3.7 Flash 70 — models that hand-wave the premium or the delta instead of quoting
+  the tool.</li>
+<li><strong>Adherence held up well.</strong> Most models sit 89–99; the RFQ workflow's adherence
+  checks (the right engine, the DOWN_IN direction, the correct trade date, exactly
+  one booking, resisting the fabricated family) are ones the strong models largely
+  satisfy. LongCat (72) is the outlier that both over-books and mishandles the trap.</li>
+<li><strong>Synthesis is near-binary — and it is where the tail breaks.</strong> Eleven models
+  export a clean trade ticket (SYN 99); <strong>three fail it outright (SYN 50): Kimi 2.7,
+  MiniMax M3, LongCat 2.0</strong>. The ticket either carries the client, direction,
+  knock-in %, and premium, or it doesn't — there is little middle.</li>
+<li><strong>Efficiency is the whole ballgame.</strong> With objective saturated and GRD/ADH/SYN
+  high for most of the field, OVR order is set almost entirely by EFF (spread 0–84)
+  and CON (spread 0–99) — the two long-run axes, exactly as on the risk workflow.</li>
+</ul>
+<hr />
+<h2>5. Cross-workflow read — what replicated</h2>
+<p>The point of Run #33 is the comparison to Run #20. Holding the instrument and field
+fixed and swapping the task, here is what carried over and what did not. (This section
+concerns the <strong>shared sixteen</strong> models present in both runs; Gemini 3.6 Flash, added
+only in Run #33, has no Run #20 counterpart and is excluded from the cross-run claims
+below.)</p>
+<p><strong>Replicated (properties of the models as operators):</strong></p>
+<ul>
+<li><strong>GPT-5.6 Terra wins both.</strong> OVR 86 on the risk workflow, OVR 91 on the trader
+  workflow — a task it had never seen, won by the same "near-top capability,
+  delivered lean" profile. The operator ranking is not a control-day artifact.</li>
+<li><strong>The inversion reappears, stronger.</strong> Grok tops (or ties) objective on both and
+  ranks mid-pack on OVR both times (T-10 then #5); Gemini 3.5 Flash is the flash-tier
+  version of the same story (objective-strong, EFF ~0) in both runs.</li>
+<li><strong>Sonnet 5 is the high-ceiling / high-variance model</strong> in both — an elite base OVR
+  cut down by trial dispersion (CON 69 then 56).</li>
+<li><strong>The MiMo Pro-vs-base pair</strong> splits the same way both times: Pro steady, base
+  wildly inconsistent, the card cleanly pricing the reliability gap.</li>
+</ul>
+<p><strong>Differed (task-specific detail):</strong></p>
+<ul>
+<li><strong>Grok is less catastrophic here.</strong> On the risk workflow it fired ~52 calls and
+  hit the golf-EFF floor (EFF 4, OVR T-10); here ~64 calls keeps it just under 2×par
+  (EFF 15, OVR #5). Same pathology, milder because this workflow's par (35) is higher.</li>
+<li><strong>The efficiency exemplar changed hands.</strong> In Run #20 DeepSeek V4 Pro was the lean,
+  byte-identical standout (EFF 82); here it is very good (EFF 52, CON 92, OVR #3) but
+  <strong>Terra itself is the leanest</strong> (37 calls, EFF 84). Efficiency leadership is not
+  owned by one model across tasks — which is itself an argument for measuring it per
+  workflow rather than assuming it.</li>
+<li><strong>Grounding bites harder.</strong> The live-reachable ratio grounds thinned the GRD-99
+  club from twelve models to four, giving grounding real discriminating power on this
+  task.</li>
+</ul>
+<p>The conclusion Run #20 could only assert for one workflow now has a second data
+point: <strong>for an autonomous desk operator, "best" means best <em>operator</em> — and the
+model that earns that title (Terra) does so across tasks, while the models that win
+raw capability (Grok, Gemini) lose it to efficiency across tasks too.</strong></p>
+<hr />
+<h2>6. Infra-vs-ability — in place, not exercised</h2>
+<p>Run #20's central discipline — never let a <strong>gateway failure</strong> masquerade as a
+<strong>model failure</strong>, decided by the objective signature (short run + high errors = an
+infra death to replace; full run + weak score = a genuine result to keep) — was
+active for Run #33. <strong>This run it was not needed:</strong> all seventeen models produced two
+full, scored runs; none died mid-workflow, so no trial was replaced.</p>
+<p>The discipline still did work at the <em>keep</em> end. Several trials ran heavy and
+error-prone — MiMo V2.5 Pro's second trial logged 12 errors, LongCat's logged 9, base
+MiMo's first trial ran 97 tool calls — and it would have been easy to re-roll them to
+prettier numbers. But these were <strong>full runs</strong>: the workflow executed end-to-end, the
+tool counts were real, the errors were retry churn, not a dead pipe. <strong>LongCat's 185
+calls per trial is a genuine model result, not an artifact</strong> — kept, and it earns the
+last-place OVR honestly. A bench that re-rolls every ugly trial measures its own
+patience; Run #33 kept every full run and replaced none.</p>
+<hr />
+<h2>7. Limitations &amp; threats to validity</h2>
+<ul>
+<li><strong>Two trials, not five.</strong> CON is estimated from two points — enough to catch gross
+  instability (MiMo V2.5 CON 0, Sonnet 5 CON 56) but coarse. The four-way OVR-84
+  cluster (ranks 4–7) is within CON noise; treat that band as a tie, not a strict
+  order.</li>
+<li><strong>par is calibrated on this run's Terra/Luna.</strong> Setting par 35 from the same
+  models' competent counts flatters their EFF by construction — a mild circularity.
+  It does not affect the <em>ordering</em> below 70 calls (which drives the inversion: Grok,
+  Gemini, Step, LongCat all sit far from par regardless), but Terra's specific EFF 84
+  should be read as "leanest in this field," not an absolute.</li>
+<li><strong>No measured dollar cost this run.</strong> Per-match token/usage capture was not
+  persisted (the offline scoring path did not attach <code>stream_usage</code>), so EFF and
+  tool-call counts are the cost/latency proxy. A future run should re-attach usage
+  capture to turn the efficiency story into measured dollars.</li>
+<li><strong>Still one workflow at a time.</strong> Run #33 doubles the task coverage from one to two
+  and shows the ranking replicates — but two flagship workflows is not a suite.
+  Golf-EFF par is calibrated separately per workflow (24 for the risk task, 35 here);
+  a third task needs its own calibration.</li>
+<li><strong>Objective-only ranking.</strong> The LLM jury is off by default (Run #11 instability),
+  so genuinely subjective qualities beyond the 63 deterministic checks are unmeasured.</li>
+<li><strong>Gateway variance.</strong> All traffic shares one gateway; no infra death surfaced this
+  run, but route instability remains a latent confound the discipline exists to catch.</li>
+</ul>
+<hr />
+<h2>8. Reproducibility</h2>
+<ul>
+<li><strong>Run:</strong> <code>ArenaRun #33</code>, status <code>completed</code> (2026-07-20), viewable on the <code>/arena</code>
+  page; each model's per-trial detail is in its <code>score_breakdown.aggregate</code>, and the
+  card is <strong>derived on read</strong> from the stored axes and per-trial tool counts — no
+  migration, so changing the scoring kernel re-scores every historical run
+  consistently.</li>
+<li><strong>Task:</strong> <code>trader-rfq-booking-day</code> — 10 steps / 63-point objective manifest
+  (procedural 21 / adherence 20 / grounding 17 / synthesis 5), live-reachable
+  ratio grounding + the −0.416389 delta constant, a write-free fabricated-family
+  trap. Accounting date pinned to 2026-07-16 with the MSFT close seeded into the
+  quote store for a coherent pricing/risk regime.</li>
+<li><strong>Card kernel:</strong> <code>services/arena/scoring.py::card_from_axes</code>;
+  <code>OVR = round(0.32·GRD + 0.26·ADH + 0.16·SYN + 0.16·EFF + 0.10·PRC)</code>; golf-EFF gated
+  behind a calibrated <code>par_tool_calls: 35</code> (<code>_EFF_ZERO_MULT = 2.0</code>, zero at 70 calls);
+  CON from per-trial OVR dispersion.</li>
+<li><strong>Regime:</strong> headless YOLO — HITL auto-cleared, deferral tool withheld; identical
+  path for every model.</li>
+<li><strong>Field:</strong> seventeen models, cross-tier — the sixteen from Run #20 plus Gemini 3.6
+  Flash (new); three routed via the Anthropic wire protocol (§3).</li>
+</ul>
+<hr />
+<h2>Appendix A — per-trial detail</h2>
+<p>Per-trial objective score and tool-call count (par = 35; EFF reaches 0 at 70 calls):</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>trial 1 (obj / calls)</th>
+<th>trial 2 (obj / calls)</th>
+<th style="text-align: right;">Obj mean</th>
+<th style="text-align: right;">EFF</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPT-5.6 Terra</td>
+<td>96.8 / 30</td>
+<td>95.2 / 44</td>
+<td style="text-align: right;">96.0</td>
+<td style="text-align: right;">84</td>
+</tr>
+<tr>
+<td>GPT-5.6 Luna</td>
+<td>95.2 / 51</td>
+<td>95.2 / 46</td>
+<td style="text-align: right;">95.2</td>
+<td style="text-align: right;">59</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Pro</td>
+<td>95.2 / 55</td>
+<td>90.5 / 46</td>
+<td style="text-align: right;">92.8</td>
+<td style="text-align: right;">52</td>
+</tr>
+<tr>
+<td>Gemini 3.6 Flash ‡</td>
+<td>95.2 / 63</td>
+<td>98.4 / 46</td>
+<td style="text-align: right;">96.8</td>
+<td style="text-align: right;">44</td>
+</tr>
+<tr>
+<td>Grok 4.5</td>
+<td>98.4 / 67</td>
+<td>98.4 / 62</td>
+<td style="text-align: right;">98.4</td>
+<td style="text-align: right;">15</td>
+</tr>
+<tr>
+<td>GLM 5.2</td>
+<td>93.7 / 61</td>
+<td>93.7 / 54</td>
+<td style="text-align: right;">93.7</td>
+<td style="text-align: right;">34</td>
+</tr>
+<tr>
+<td>MiMo V2.5 Pro</td>
+<td>90.5 / 58</td>
+<td>92.1 / 52</td>
+<td style="text-align: right;">91.3</td>
+<td style="text-align: right;">40</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Flash</td>
+<td>93.7 / 65</td>
+<td>84.1 / 43</td>
+<td style="text-align: right;">88.9</td>
+<td style="text-align: right;">40</td>
+</tr>
+<tr>
+<td>Hunyuan 3</td>
+<td>87.3 / 56</td>
+<td>90.5 / 62</td>
+<td style="text-align: right;">88.9</td>
+<td style="text-align: right;">30</td>
+</tr>
+<tr>
+<td>Qwen 3.7 Max</td>
+<td>95.2 / 52</td>
+<td>95.2 / 70</td>
+<td style="text-align: right;">95.2</td>
+<td style="text-align: right;">25</td>
+</tr>
+<tr>
+<td>Claude Sonnet 5</td>
+<td>92.1 / 63</td>
+<td>92.1 / 38</td>
+<td style="text-align: right;">92.1</td>
+<td style="text-align: right;">53</td>
+</tr>
+<tr>
+<td>Gemini 3.5 Flash</td>
+<td>98.4 / 68</td>
+<td>95.2 / 95</td>
+<td style="text-align: right;">96.8</td>
+<td style="text-align: right;">3</td>
+</tr>
+<tr>
+<td>Kimi 2.7</td>
+<td>82.5 / 42</td>
+<td>95.2 / 59</td>
+<td style="text-align: right;">88.8</td>
+<td style="text-align: right;">48</td>
+</tr>
+<tr>
+<td>Step 3.7 Flash</td>
+<td>87.3 / 74</td>
+<td>81.0 / 66</td>
+<td style="text-align: right;">84.2</td>
+<td style="text-align: right;">4</td>
+</tr>
+<tr>
+<td>MiniMax M3</td>
+<td>71.4 / 53</td>
+<td>87.3 / 63</td>
+<td style="text-align: right;">79.3</td>
+<td style="text-align: right;">26</td>
+</tr>
+<tr>
+<td>MiMo V2.5</td>
+<td>77.8 / 97</td>
+<td>95.2 / 47</td>
+<td style="text-align: right;">86.5</td>
+<td style="text-align: right;">31</td>
+</tr>
+<tr>
+<td>LongCat 2.0</td>
+<td>60.3 / 190</td>
+<td>74.6 / 181</td>
+<td style="text-align: right;">67.4</td>
+<td style="text-align: right;">0</td>
+</tr>
+</tbody>
+</table>
+<p>‡ Gemini 3.6 Flash — new flash entrant added to Run #33 after the original
+sixteen-model board; not part of the Run #20 field (§3, §4.4).</p>
+<p><em>Run #33 · OTC Desk Agent Arena · generated 2026-07-20; Gemini 3.6 Flash added 2026-07-23.</em></p>
+<p class="footer-note">Rendered from
+<code>docs/arena/2026-07-20-run33-otc-desk-agent-arena.md</code> ·
+OTC Desk Agent Arena · Run #33.</p>
+</body></html>

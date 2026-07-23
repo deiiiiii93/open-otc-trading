@@ -106,6 +106,10 @@ channels:
         provider: openai
         label: Gemini 3.5 Flash
         tags: [fast, tool-use]
+      - id: google/gemini-3.6-flash
+        provider: openai
+        label: Gemini 3.6 Flash
+        tags: [fast, tool-use]
       - id: openai/chat-latest
         provider: openai
         label: GPT-5.5 Instant

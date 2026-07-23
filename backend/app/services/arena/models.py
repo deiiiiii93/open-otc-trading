@@ -223,6 +223,13 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         provider="openai",
     ),
     ArenaModel(
+        slug="gemini-3-6-flash",
+        zenmux_name="google/gemini-3.6-flash",
+        display_name="Gemini 3.6 Flash",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
+    ArenaModel(
         slug="gpt-5-5-instant",
         zenmux_name="openai/chat-latest",
         display_name="GPT-5.5 Instant",
