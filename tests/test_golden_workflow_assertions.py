@@ -577,3 +577,66 @@ def test_response_quotes_value_miss_reports_no_number_near_anchor():
     ok, detail = evaluate_assertion(a, ctx(response_text="gamma looks elevated today"))
     assert not ok
     assert "no number" in detail
+
+
+def test_tool_result_path_equals_with_rel_tol():
+    # Numeric equals + rel_tol: tolerance-banded compare for engine-computed
+    # constants (e.g. a harvested delta) — within band passes, outside fails.
+    a = _ToolResultPath(type="tool_result_path", tool="get_latest_risk_run",
+                        path="metrics.positions[underlying=MSFT].delta",
+                        equals=-0.99005, rel_tol=0.02)
+    within = ctx(tool_results=[{"name": "get_latest_risk_run", "content": {
+        "metrics": {"positions": [{"underlying": "MSFT", "delta": -0.9896}]}}}])
+    ok, _ = evaluate_assertion(a, within)
+    assert ok
+    outside = ctx(tool_results=[{"name": "get_latest_risk_run", "content": {
+        "metrics": {"positions": [{"underlying": "MSFT", "delta": -0.4164}]}}}])
+    ok, detail = evaluate_assertion(a, outside)
+    assert not ok and "rel_tol" in detail
+
+
+def test_tool_result_path_rel_tol_rejects_non_numeric_value():
+    a = _ToolResultPath(type="tool_result_path", tool="get_latest_risk_run",
+                        path="metrics.positions[underlying=MSFT].delta",
+                        equals=-0.99005, rel_tol=0.02)
+    ok, _ = evaluate_assertion(a, ctx(tool_results=[{"name": "get_latest_risk_run", "content": {
+        "metrics": {"positions": [{"underlying": "MSFT", "delta": "deep ITM"}]}}}]))
+    assert not ok  # string value can never satisfy a numeric band
+
+
+def test_tool_result_path_rel_tol_requires_numeric_equals():
+    import pytest
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        _ToolResultPath(type="tool_result_path", tool="t", path="p",
+                        equals="DOWN_IN", rel_tol=0.05)
+    with pytest.raises(ValidationError):
+        _ToolResultPath(type="tool_result_path", tool="t", path="p",
+                        gte=1.0, rel_tol=0.05)  # rel_tol only modifies equals
+    with pytest.raises(ValidationError):
+        _ToolResultPath(type="tool_result_path", tool="t", path="p",
+                        equals=1.0, rel_tol=1.5)  # band must be in (0, 1)
+
+
+def test_tool_result_path_equals_without_rel_tol_stays_exact():
+    # Back-compat: numeric equals without rel_tol still uses exact compare.
+    a = _ToolResultPath(type="tool_result_path", tool="t", path="p", equals=2)
+    ok, _ = evaluate_assertion(a, ctx(tool_results=[{"name": "t", "content": {"p": 2}}]))
+    assert ok
+    ok, _ = evaluate_assertion(a, ctx(tool_results=[{"name": "t", "content": {"p": 2.0000001}}]))
+    assert not ok  # 1e-7 off fails without a tolerance band
+
+
+def test_numeric_scanner_handles_unicode_minus():
+    # U+2212 (MINUS SIGN) must scan as a negative — LLM markdown routinely uses
+    # it; a true negative quote must not read as positive (Run #26, luna).
+    from app.golden_workflows.assertions import _quote_value_report
+    from app.golden_workflows.schema import _ResponseQuotesValue
+    a = _ResponseQuotesValue(type="response_quotes_value", value=-0.99005,
+                             near=["delta"], match="signed", rel_tol=0.02)
+    ok, _ = evaluate_assertion(a, ctx(response_text="**New trade delta:** **−0.990049**"))
+    assert ok
+    # En/em dashes stay punctuation — "delta — 0.5" must NOT scan as -0.5.
+    ok, quoted = _quote_value_report("delta — 0.5 today", -0.5, rel_tol=0.02,
+                                     mode="signed", near=["delta"])
+    assert not ok

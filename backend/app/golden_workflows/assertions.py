@@ -202,8 +202,16 @@ def _dig(obj: Any, path: str) -> tuple[bool, Any]:
     return True, cur
 
 
+# U+2212 MINUS SIGN is unambiguously a minus (unlike en/em dashes, which double
+# as punctuation and must NOT be translated): LLM markdown routinely uses U+2212
+# for negatives (Run #26: luna's true "−0.990049" scanned as +0.990049). One-to-one
+# char mapping, so token offsets are preserved.
+_MINUS_TRANSLATION = str.maketrans({"−": "-"})
+
+
 def _scan_numeric_tokens(text: str) -> list[tuple[int, float]]:
     """(start_offset, value) per numeric token; % tokens also yield value/100."""
+    text = text.translate(_MINUS_TRANSLATION)
     out: list[tuple[int, float]] = []
     for m in _NUM_TOKEN.finditer(text):
         body = m.group(0)
@@ -364,7 +372,15 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
         found, val = _dig(r.get("content", {}), a.path)
         if not found: return False, f"path {a.path} missing"
         if a.is_not_null is not None: return (val is not None, f"{a.path} is null")
-        if a.equals is not None: return (_exact(a.equals, val), f"{a.path}={val!r} != {a.equals!r}")
+        if a.equals is not None:
+            if a.rel_tol is not None:
+                numeric = isinstance(val, (int, float)) and not isinstance(val, bool)
+                target = float(a.equals)
+                tol = a.rel_tol * abs(target) if target != 0 else a.rel_tol
+                ok = numeric and abs(float(val) - target) <= tol
+                return ok, "" if ok else (
+                    f"{a.path}={val!r} != {a.equals!r} (rel_tol={a.rel_tol})")
+            return (_exact(a.equals, val), f"{a.path}={val!r} != {a.equals!r}")
         if a.gte is not None:
             return (isinstance(val, (int, float)) and not isinstance(val, bool) and val >= a.gte, f"{a.path} !>= {a.gte}")
         if a.lte is not None:

@@ -29,9 +29,12 @@ def test_trader_rfq_bundle_loads():
     loaded = get_workflow_bundle("trader-rfq-booking-day")
     wf = loaded.workflow
     assert wf.persona == "trader"
+    # Accounting date pinned to a concluded trading day (Run #26): the runner
+    # passes it to stream_and_persist so live snapshot fetches always return rows.
+    assert wf.accounting_date == "2026-07-16"
     assert [s.expected_skill for s in wf.steps] == [
         "intake-request", "quote-rfq", "submit-for-approval", "build-product",
-        "book-position", "position-snapshot", "price-portfolio", "position-snapshot",
+        "book-position", "position-snapshot", "price-portfolio", "run-risk",
         None,  # step 9: synthesis trade-ticket export
         None,  # step 10: write-free build-validation trap
     ]
@@ -134,6 +137,83 @@ def test_ticket_missing_barrier_level_loses_points():
         a["content"] = a["content"].replace("80% of strike", "of strike")
     _, passed, total = _score_with_mutation(mutate)
     assert passed < total, "ticket without the 80% level still scored full marks"
+
+
+def test_stale_snapshot_date_loses_points():
+    """A build priced off a non-accounting-date snapshot must fail the data-
+    provenance ground (Run #26: luna fetched a 2025-01-02 close for the build)."""
+    def mutate(replay):
+        replay["step-4-build"].tool_results[0]["content"]["data"]["latest"]["date"] = "2025-01-02"
+    _, passed, total = _score_with_mutation(mutate)
+    assert passed < total, "stale-date snapshot still scored full marks"
+
+
+def test_backdated_booking_loses_points():
+    """A booking dated to the stale snapshot date instead of the accounting date
+    must fail the anti-backdating adherence check (Run #26: luna's
+    trade_effective_date=2025-01-02)."""
+    def mutate(replay):
+        replay["step-5-book"].ai["tool_calls"][0]["args"]["trade_effective_date"] = "2025-01-02"
+    _, passed, total = _score_with_mutation(mutate)
+    assert passed < total, "backdated booking still scored full marks"
+
+
+def test_no_risk_read_loses_points():
+    """Answering the delta question with NO risk read at all (no stored-run read,
+    no in-memory calc) must fail both step-7 any_of checks (Run #26 redesign:
+    the read is required, a prose-only delta is ungrounded)."""
+    def mutate(replay):
+        replay["step-8-impact"].ai["tool_calls"] = []
+        replay["step-8-impact"].tool_results.clear()
+    _, passed, total = _score_with_mutation(mutate)
+    assert passed < total, "prose-only delta answer still scored full marks"
+
+
+def test_in_memory_calculate_risk_still_passes_step7():
+    """The ad-hoc in-memory path stays an accepted alternative: swapping the
+    canonical get_latest_risk_run read for a caller-supplied-snapshot
+    calculate_risk must keep step 7 fully scored."""
+    def mutate(replay):
+        replay["step-8-impact"].ai["tool_calls"] = [
+            {"id": "c8", "name": "calculate_risk",
+             "args": {"positions": [{"product": {"quantark_class": "BarrierOption", "underlying": "MSFT",
+                                                 "terms": {"strike": 502.06, "barrier": 401.648,
+                                                           "barrier_type": "DOWN_IN", "option_type": "PUT",
+                                                           "maturity": 1.0}}, "quantity": 1}],
+                      "market": {"spot": 502.06}}}]
+        replay["step-8-impact"].tool_results[:] = [
+            {"tool_call_id": "c8", "name": "calculate_risk",
+             "content": {"totals": {"delta": -0.41638929250939094},
+                         "positions": [{"underlying": "MSFT", "product_type": "BarrierOption",
+                                        "delta": -0.41638929250939094, "greeks_ok": True}]}}]
+        replay["step-8-impact"].response_text = (
+            "Net book impact from the new MSFT put — its delta -0.4164 lowers the desk's net delta.")
+    score, passed, total = _score_with_mutation(mutate)
+    # Exactly the two canonical-path checks drop — the step's expected_tool
+    # (get_latest_risk_run) and the success-level tools_routed_sequence. Both
+    # step-7 numeric/quote grounds must pass on the calculate_risk evidence.
+    assert total - passed == 2, f"in-memory risk read lost {total - passed} checks"
+
+
+def test_wrong_delta_number_loses_points():
+    """A risk read whose MSFT delta is NOT the true engine constant must fail
+    the numeric ground — and a response parroting the golden number then also
+    fails the quote-binding (it no longer matches the tool truth)."""
+    def mutate(replay):
+        metrics = replay["step-8-impact"].tool_results[0]["content"]["metrics"]
+        metrics["positions"][0]["delta"] = -0.10
+    _, passed, total = _score_with_mutation(mutate)
+    assert total - passed >= 2, "wrong delta number cost fewer than 2 checks"
+
+
+def test_ungrounded_delta_prose_loses_points():
+    """A response quoting a plausible-but-self-supplied delta (no matching tool
+    value) must fail the quote-binding ground even though the word 'delta'
+    appears."""
+    def mutate(replay):
+        replay["step-8-impact"].response_text = "The new trade's delta impact is -0.99."
+    _, passed, total = _score_with_mutation(mutate)
+    assert passed < total, "self-supplied delta prose still scored full marks"
 
 
 def test_trap_pure_prose_refusal_loses_points():

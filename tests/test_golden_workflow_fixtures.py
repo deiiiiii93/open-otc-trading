@@ -154,3 +154,79 @@ def test_apply_seed_inserts_pricing_parameter_rows_under_profile(tmp_path, sessi
     assert (row.rate, row.dividend_yield, row.volatility) == (0.04, 0.005, 0.30)
     # source_trade_id is NOT NULL on the model; the seeder defaults it to "".
     assert row.source_trade_id == ""
+
+
+# ---------------------------------------------------------------------------
+# instruments + market_quotes namespaces (2026-07-17, Run #26 quote seeding)
+# ---------------------------------------------------------------------------
+
+def _quote_seed_bundle(tmp_path: Path) -> Path:
+    return _write(tmp_path, {
+        "schema_version": 1,
+        "seed": {
+            "instruments": [
+                {"alias": "ins_msft", "symbol": "MSFT", "tags": ["underlying"]},
+            ],
+            "market_quotes": [
+                {"alias": "q", "instrument": "ins_msft", "as_of": "2026-07-16",
+                 "price": 401.10, "price_type": "close"},
+            ],
+            "pricing_profiles": [
+                {"alias": "prof", "name": "Prof", "valuation_date": "2026-07-16"},
+            ],
+            "pricing_parameter_rows": [
+                {"alias": "pr", "profile": "prof", "symbol": "MSFT",
+                 "instrument": "ins_msft", "rate": 0.04, "volatility": 0.28},
+            ],
+        },
+        "replay": {},
+    })
+
+
+def test_apply_seed_instruments_ensure_by_symbol_and_wire_quote(tmp_path, session):
+    """Instruments are ensured (idempotent), quotes + pricing rows FK-wired."""
+    from app import models
+    from app.golden_workflows.fixtures import apply_seed, ARENA_MARKET_SOURCE
+
+    ids = apply_seed(load_fixtures(_quote_seed_bundle(tmp_path)), session)
+    ins_id = ids["instruments"]["ins_msft"]
+    ins = session.get(models.Instrument, ins_id)
+    assert ins.symbol == "MSFT" and "underlying" in (ins.tags or [])
+
+    quote = session.get(models.MarketQuote, ids["market_quotes"]["q"])
+    assert quote.instrument_id == ins_id
+    assert quote.price == 401.10 and quote.price_type == "close"
+    assert quote.source == ARENA_MARKET_SOURCE  # arena-tagged for the purge
+
+    row = session.get(models.PricingParameterRow, ids["pricing_parameter_rows"]["pr"])
+    assert row.instrument_id == ins_id
+
+
+def test_apply_seed_instruments_reuses_existing_row(tmp_path, session):
+    """A pre-existing desk instrument is REUSED (no duplicate) — a blind insert
+    would break ensure_underlying's one_or_none lookup."""
+    from app import models
+    from app.golden_workflows.fixtures import apply_seed
+
+    first = apply_seed(load_fixtures(_quote_seed_bundle(tmp_path)), session)
+    second = apply_seed(load_fixtures(_quote_seed_bundle(tmp_path)), session)
+    assert second["instruments"]["ins_msft"] == first["instruments"]["ins_msft"]
+    count = session.query(models.Instrument).filter_by(symbol="MSFT").count()
+    assert count == 1
+
+
+def test_trader_rfq_seeded_quote_resolves_at_profile_valuation(session):
+    """The trader-rfq seed wires MSFT so latest_quote at the profile's
+    valuation date returns the pinned 2026-07-16 close (401.10)."""
+    from app.golden_workflows.fixtures import apply_seed
+    from app.golden_workflows.registry import get_workflow_bundle
+    from app.services.quotes import latest_quote
+
+    ids = apply_seed(get_workflow_bundle("trader-rfq-booking-day").fixtures, session)
+    ins_id = ids["instruments"]["ins_msft"]
+    prof_id = ids["pricing_profiles"]["prof"]
+    from app import models
+    prof = session.get(models.PricingParameterProfile, prof_id)
+    assert prof.valuation_date.date().isoformat() == "2026-07-16"
+    quote = latest_quote(session, ins_id, as_of=prof.valuation_date)
+    assert quote is not None and float(quote.price) == 401.10

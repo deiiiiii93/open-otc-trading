@@ -35,21 +35,33 @@ _NAMESPACES: dict[str, set[str]] = {
     "risk_runs": {"alias", "portfolio"},
     "rfqs": {"alias", "status"},
     "reports": {"alias", "report_type"},
+    # Underlying registry rows (2026-07-17, Run #26 follow-up): seeded ENSURE-
+    # by-symbol (idempotent) so a pre-existing desk instrument is reused, never
+    # duplicated — a blind insert would break ensure_underlying's one_or_none.
+    # "tags": ["underlying"] passes the book_position registration gate.
+    "instruments": {"alias", "symbol"},
+    # Quote-store rows pinning a real close for the seeded instrument (as_of <=
+    # the profile's valuation date), so profile-bound pricing/risk reads the
+    # RIGHT market quote instead of the env-default fallback spot 100. Always
+    # stamped source=ARENA_MARKET_SOURCE so the arena purge can reclaim them.
+    "market_quotes": {"alias", "instrument", "as_of", "price"},
 }
 
 # FK edges: {child_ns: {field_in_row: parent_ns}}. The positions.rfq edge is
 # OPTIONAL — a position row may omit it (validated by the skip-when-absent branch
-# in load_fixtures).
+# in load_fixtures). The instrument edges on positions/pricing_parameter_rows are
+# likewise optional (workflows without seeded instruments simply omit them).
 _FK: dict[str, dict[str, str]] = {
-    "positions": {"portfolio": "portfolios", "rfq": "rfqs"},
-    "pricing_parameter_rows": {"profile": "pricing_profiles"},
+    "positions": {"portfolio": "portfolios", "rfq": "rfqs", "instrument": "instruments"},
+    "pricing_parameter_rows": {"profile": "pricing_profiles", "instrument": "instruments"},
     "risk_runs": {"portfolio": "portfolios"},
+    "market_quotes": {"instrument": "instruments"},
 }
 
 # Insertion order so FK parents exist before children (rfqs before positions).
 _INSERT_ORDER = [
-    "portfolios", "reports", "pricing_profiles", "pricing_parameter_rows",
-    "rfqs", "positions", "risk_runs",
+    "instruments", "portfolios", "reports", "pricing_profiles",
+    "pricing_parameter_rows", "market_quotes", "rfqs", "positions", "risk_runs",
 ]
 
 # Origin tag stamped on arena-seeded market data (backtest history) so it is never
@@ -224,10 +236,47 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
                 extra = {
                     k: v
                     for k, v in row.items()
-                    if k not in ("alias", "profile")
+                    if k not in ("alias", "profile", "instrument")
                 }
                 extra.setdefault("source_trade_id", "")
+                if "instrument" in row:
+                    extra["instrument_id"] = _parent_id("instruments", row["instrument"])
                 obj = models.PricingParameterRow(profile_id=profile_id, **extra)
+
+            elif ns == "instruments":
+                # ENSURE-by-symbol (idempotent), never a blind insert: the desk DB
+                # may already carry the instrument, and a duplicate breaks
+                # ensure_underlying's one_or_none lookup. ensure_underlying stamps
+                # source=ARENA_MARKET_SOURCE only when it CREATES the row; a
+                # pre-existing desk row is reused untouched apart from merging
+                # the fixture's tags (e.g. ["underlying"] for the booking gate).
+                from app.services.underlyings import ensure_underlying
+                obj = ensure_underlying(session, row["symbol"], source=ARENA_MARKET_SOURCE)
+                want_tags = sorted({*(obj.tags or []), *(row.get("tags") or [])})
+                if want_tags != sorted(obj.tags or []):
+                    obj.tags = want_tags
+                    session.flush()
+
+            elif ns == "market_quotes":
+                instrument_id = _parent_id("instruments", row["instrument"])
+                as_of = row["as_of"]
+                if isinstance(as_of, str):
+                    as_of = (
+                        datetime.strptime(as_of, "%Y-%m-%d")
+                        if len(as_of) == 10
+                        else datetime.fromisoformat(as_of)
+                    )
+                obj = models.MarketQuote(
+                    instrument_id=instrument_id,
+                    as_of=as_of,
+                    price=float(row["price"]),
+                    price_type=row.get("price_type", "close"),
+                    # Always arena-tagged so the runner purge reclaims the quote
+                    # after the match — a seeded quote must never leak into the
+                    # desk's live quote store as if a real fetcher wrote it.
+                    source=ARENA_MARKET_SOURCE,
+                    meta=row.get("meta") or {"arena_seed": True},
+                )
 
             elif ns == "rfqs":
                 # Pass through only real RFQ columns; model defaults cover the rest.
@@ -243,14 +292,17 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
             elif ns == "positions":
                 portfolio_id = _parent_id("portfolios", row["portfolio"])
                 # Pass through any extra keys (e.g. engine_name) the test provides.
-                # The optional "rfq" alias resolves to Position.rfq_id.
+                # The optional "rfq" alias resolves to Position.rfq_id; the
+                # optional "instrument" alias to Position.underlying_id.
                 extra = {
                     k: v
                     for k, v in row.items()
-                    if k not in ("alias", "portfolio", "rfq")
+                    if k not in ("alias", "portfolio", "rfq", "instrument")
                 }
                 if "rfq" in row:
                     extra["rfq_id"] = _parent_id("rfqs", row["rfq"])
+                if "instrument" in row:
+                    extra["underlying_id"] = _parent_id("instruments", row["instrument"])
                 obj = models.Position(portfolio_id=portfolio_id, **extra)
 
             elif ns == "risk_runs":

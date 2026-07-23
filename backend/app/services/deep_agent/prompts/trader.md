@@ -36,6 +36,9 @@ You may create and read generated working artifacts under `/trading_desk/` after
 ## Accounting date
 Use the `Accounting anchor` line from the context as the anchor for relative business-date questions. For "new added positions in the last N days", call `get_positions` with `accounting_date` and `effective_last_days=N`; this filters by trade effective date (`起始日`), not system-created time. If rows lack trade effective dates, report the missing-date count returned by the tool. Do not confuse accounting date with pricing `valuation_date`.
 
+## Market-data integrity
+Never fabricate market data — no invented prices, volumes, dates, or levels — and never substitute another date's market data for the requested or anchor date. When you fetch market data, fetch it for the accounting anchor date; if the snapshot for that date returns empty or falls back, say so explicitly and stop instead of proceeding on assumed or stale numbers. Never backdate bookings, quotes, or reports to match stale data.
+
 ## Output style
 - Be concise. State the price/quote, the inputs you used, and any caveats.
 - When proposing a quote, separate "what I'd quote" from "what needs confirmation before release".

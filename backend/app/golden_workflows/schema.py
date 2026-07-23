@@ -91,6 +91,9 @@ class _ToolResultPath(BaseModel):
     gte: float | None = None
     lte: float | None = None
     is_not_null: Literal[True] | None = None
+    # Tolerance band for a NUMERIC equals (e.g. an engine-computed delta that
+    # absorbs maturity-encoding variance). Optional; absent → exact _exact compare.
+    rel_tol: float | None = None
 
     @model_validator(mode="after")
     def _exactly_one_comparator(self) -> "_ToolResultPath":
@@ -98,6 +101,12 @@ class _ToolResultPath(BaseModel):
                  self.lte is not None, self.is_not_null is not None]
         if sum(comps) != 1:
             raise ValueError("tool_result_path needs exactly one comparator")
+        if self.rel_tol is not None:
+            if self.equals is None or isinstance(self.equals, bool) \
+                    or not isinstance(self.equals, (int, float)):
+                raise ValueError("tool_result_path: rel_tol requires a numeric equals")
+            if not (0 < self.rel_tol < 1):
+                raise ValueError("tool_result_path: rel_tol must be in (0, 1)")
         return self
 
 
@@ -287,6 +296,13 @@ class GoldenWorkflow(BaseModel):
     # Optional so existing manifests still load; when absent, scoring.designed_par
     # derives it from sum(len(step.expected_tools)). Overridable per-workflow.
     par_tool_calls: int | None = Field(default=None, ge=1)
+    # Pinned accounting date for live matches (ISO, e.g. "2025-07-16"). When set,
+    # the arena runner passes it to stream_and_persist so the agent's Accounting
+    # anchor is a CONCLUDED trading day — a live fetch_market_snapshot on the
+    # anchor then always returns data (Run #26: anchoring on the real run date let
+    # models query a not-yet-concluded US session and stall on empty windows).
+    # Optional; unset workflows keep the real current date as the anchor.
+    accounting_date: str | None = None
 
     @field_validator("id")
     @classmethod
