@@ -293,7 +293,14 @@ def test_model_created_portfolio_is_purged_but_baseline_rows_survive(
             baseline = pre.id
 
         with database.SessionLocal() as s:
-            mine = models.Portfolio(name="Board Review", kind="view", tags=[])
+            # Self-tagged "arena" ON PURPOSE: the tag is MODEL-writable (a live smoke
+            # produced exactly this), so ownership must rest on the trace + baseline
+            # pair alone. An earlier version skipped arena-tagged rows and leaked this
+            # one, and the next match then reused the leftover view instead of creating
+            # its own — the very contamination this purge exists to prevent.
+            mine = models.Portfolio(
+                name="Board Review", kind="view", tags=["board-review", "arena"]
+            )
             s.add(mine)
             s.commit()
             mine_id = mine.id

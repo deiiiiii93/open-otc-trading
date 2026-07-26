@@ -423,14 +423,22 @@ def _purge_match_portfolios(thread_id: int, portfolio_id_baseline: int) -> None:
         if not pids:
             return
         with database.SessionLocal() as session:
-            # Re-read under the session: only delete rows that still exist and are
-            # NOT arena fixture rows (a fixture row is the seeded-purge's business).
-            owned = [
+            # Ownership is the TRACE + BASELINE pair, and deliberately NOT the tag.
+            # An earlier version skipped rows carrying ARENA_PORTFOLIO_TAG (meaning to
+            # leave fixture rows to the seeded purge) — but the tag is MODEL-WRITABLE:
+            # a live smoke created "Board Review View" tagged ["board-review","arena"],
+            # so its own creation was skipped and leaked. The NEXT match then found the
+            # leftover view, REUSED it instead of creating one, and cascaded into
+            # failures. The tag check was also redundant: `create_portfolio` mints a NEW
+            # id, so a fixture row can never appear in the harvest, and `id > baseline`
+            # already excludes everything that predates the match.
+            existing = [
                 p.id
-                for p in session.query(models.Portfolio).filter(models.Portfolio.id.in_(pids))
-                if ARENA_PORTFOLIO_TAG not in (p.tags or [])
+                for p in session.query(models.Portfolio.id).filter(
+                    models.Portfolio.id.in_(pids)
+                )
             ]
-            _delete_portfolios_with_dependents(session, owned)
+            _delete_portfolios_with_dependents(session, existing)
             session.commit()
     except Exception:  # noqa: BLE001 — best-effort; never mask the match outcome
         logger.warning(
