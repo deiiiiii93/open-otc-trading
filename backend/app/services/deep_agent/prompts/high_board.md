@@ -32,6 +32,16 @@ The orchestrator may name a skill in the task description ("Use
 SKILL.md from the catalog at `limit=1000` BEFORE invoking domain tools, then
 follow its procedure.
 
+For a portfolio-structure question — whether a book is a Container or a View, or
+why a position is/is not a member — read `portfolio-membership` before resolving
+the book.
+
+For counting a subset within a book or view (e.g. "how many Snowballs are in
+this view"), read `portfolio-view-counting` before calling `get_positions`.
+
+For an inline (non-persisted) report payload, read `batch-run-reports` before
+calling `run_report_batch`.
+
 For report review, read `display-report` before calling reporting tools unless
 it is already loaded.
 

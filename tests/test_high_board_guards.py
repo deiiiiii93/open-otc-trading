@@ -31,8 +31,11 @@ def test_leaking_view_fails_scope_discriminator():
 def test_calling_create_report_fails_tool_not_called():
     loaded = _loaded()
     loaded = copy.deepcopy(loaded)
-    # Step 6 also calls create_report before write_report_artifact.
-    entry = loaded.fixtures.replay["step-6-generate"]
+    # The generate step also calls create_report before write_report_artifact.
+    # (Replay key is step-8-generate since the 6→8 step expansion; this guard
+    # referenced the pre-expansion key and was silently dead on main until the
+    # 2026-07-25 validity audit.)
+    entry = loaded.fixtures.replay["step-8-generate"]
     entry.ai["tool_calls"].insert(
         0, {"id": "tc6x", "name": "create_report", "args": {"report_type": "portfolio_governance"}}
     )
@@ -55,13 +58,15 @@ def test_planned_list_reports_args_validate_against_real_tool(session):
     assert "reports" in out
 
 
-def test_wrong_report_selection_fails_step5_discriminator():
+def test_wrong_report_selection_fails_display_discriminator():
     """The marker report_type is the SELECTION enforcer: list_reports filters only
     by status (the marker is not a valid tool filter), so if the agent fetches the
-    wrong completed report, get_report's report_type != marker and Step 5 fails."""
+    wrong completed report, get_report's report_type != marker and the display step
+    fails. (Replay key is step-7-display since the 6→8 step expansion; this guard
+    referenced the pre-expansion key and was silently dead on main.)"""
     loaded = _loaded()
     loaded = copy.deepcopy(loaded)
-    gr = loaded.fixtures.replay["step-5-display"].tool_results[1]["content"]
+    gr = loaded.fixtures.replay["step-7-display"].tool_results[1]["content"]
     gr["report_type"] = "portfolio"  # not the arena marker
     tx = transcript_from_replay(loaded)
     _, passed, total = objective_score(tx, loaded)

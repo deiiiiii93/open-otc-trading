@@ -180,6 +180,39 @@ def load_fixtures(path: Path) -> FixtureBundle:
     return FixtureBundle(seed=seed, replay=replay, seed_map=seed_map)
 
 
+def _write_seeded_artifact_bodies(row: dict[str, Any]) -> None:
+    """Materialize a seeded report's referenced artifact FILES.
+
+    ``artifact_paths`` is only a JSON column: seeding a row does NOT create a file.
+    The deep_agent backend mounts ``settings.artifact_dir`` at ``/artifacts/`` and
+    ``_shaping.normalize_artifact_paths`` reduces each stored path to
+    ``/artifacts/<basename>``, so the body must land at
+    ``artifact_dir/<basename>`` to be readable by the agent.
+
+    Bodies come from an ``artifact_bodies`` map keyed the same as ``artifact_paths``
+    (``{"markdown": "…text…"}``). Absent key → nothing written (backward compatible:
+    a fixture that declares no bodies behaves exactly as before). Overwrites on
+    every match so a re-seed is idempotent.
+    """
+    bodies = row.get("artifact_bodies") or {}
+    paths = row.get("artifact_paths") or {}
+    if not bodies or not paths:
+        return
+
+    from app.config import get_settings
+
+    root = Path(get_settings().artifact_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    for key, body in bodies.items():
+        declared = paths.get(key)
+        if not declared or not isinstance(body, str):
+            continue
+        basename = Path(str(declared)).name
+        if not basename:
+            continue
+        (root / basename).write_text(body, encoding="utf-8")
+
+
 def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
     """Insert all seed rows via ORM models in FK-safe order.
 
@@ -331,6 +364,17 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
                     if k != "alias" and k in _REPORT_COLS
                 }
                 obj = models.ReportJob(**extra)
+                # A seeded report that declares artifact_paths but has no FILE hands
+                # the agent a dangling pointer: get_report returns the path (as
+                # /artifacts/<basename> — see _shaping.normalize_artifact_paths),
+                # read_file fails, and the model burns calls hunting a file that was
+                # never written. Observed live 2026-07-26 on high-board step 7, where
+                # the hunt surfaced unrelated real reports and the model's LAST
+                # get_report became the wrong one, failing a grounding check it had
+                # already satisfied. So a fixture that REFERENCES an artifact must
+                # also CREATE it: `artifact_bodies: {<key>: <text>}` writes the body
+                # to artifact_dir under the same basename the agent will resolve.
+                _write_seeded_artifact_bodies(row)
 
             else:  # pragma: no cover
                 raise WorkflowError(f"apply_seed: unhandled namespace {ns!r}")

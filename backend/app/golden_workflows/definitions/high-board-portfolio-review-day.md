@@ -31,15 +31,27 @@ par_tool_calls: 24
 
 steps:
   - user: "Resolve the desk control book — is it a container or a view?"
-    expected_skill: portfolio-membership
+    # `portfolio-maintenance`, NOT `portfolio-membership` (2026-07-25 validity audit).
+    # The ORCHESTRATOR decides delegation before this persona is reached, and its
+    # routing table sends portfolio structure work — explicitly including
+    # "membership" — to `portfolio-maintenance`. Expecting `portfolio-membership` here
+    # graded a model on VIOLATING the system's own documented routing: it scored 0/17
+    # across the whole Run #58 field, 12 of which routed `portfolio-maintenance`
+    # exactly as instructed. (A per-step `task` delegation is a fresh subagent, so
+    # step 2 can still re-read the same SKILL.md and score its own point.)
+    expected_skill: portfolio-maintenance
     expected_tools:
       - name: get_portfolio
     outcome: >
       The agent resolves the seeded desk book and reports it is a Container with
       explicit membership.
+    # NOTE (2026-07-25 validity audit): an explicit `skill_routed` assertion is
+    # NOT declared on any step that already sets `expected_skill`. Scoring emits
+    # its own "skill: X" check from `expected_skill`, so declaring both scored one
+    # routing fact twice — Run #58 confirmed it: all four duplicated pairs had
+    # byte-identical field-wide pass rates (0/17, 4/17, 0/17, 11/17). Declare
+    # `skill_routed` only for a skill NOT named by `expected_skill`.
     assertions:
-      - type: skill_routed
-        name: portfolio-membership
       - type: tool_result_path
         tool: get_portfolio
         path: data.kind
@@ -64,20 +76,24 @@ steps:
         equals: view
     replay: step-2-create-view
 
-  - user: "How many Snowballs are in that board-review view?"
-    expected_skill: portfolio-view-counting
+  - user: "How many Snowballs are in that board-review view? Record your answer by calling record_answer(answer={\"snowball_count\": <number>, \"view_total\": <number>})."
+    # `null` (2026-07-25 validity audit): the orchestrator routes product-type counts
+    # to `get_position_summaries` on `trader`, so `portfolio-view-counting` is not
+    # reachable from this persona — it scored 4/17 in Run #58, and the passes were
+    # incidental. The COUNT itself is still graded, and more strictly, by the
+    # answer_field checks below.
+    expected_skill: null
     expected_tools:
       - name: get_positions
     outcome: >
       The agent counts the Snowball subset of the view and reports it against the
       view's full membership.
     assertions:
-      - type: skill_routed
-        name: portfolio-view-counting
-      - type: tool_called
-        name: get_positions
-        args:
-          product_type: Snowball
+      # No `product_type` arg is required. A filtered call and an unfiltered call that
+      # counts the subset client-side are EQUALLY correct — the live smoke did the
+      # latter (`get_positions(portfolio_id=…)` ×3, no filter) and the old assertion
+      # scored 0/17 for it. Grading a calling CONVENTION measured style, not ability;
+      # the answer_field checks below grade the actual number instead.
       - type: tool_result_path
         tool: get_positions
         path: total_count
@@ -94,7 +110,7 @@ steps:
         value: 5
     replay: step-3-count
 
-  - user: "Read the latest governed risk run for the desk control book and tell me the NVDA position delta."
+  - user: "Read the latest governed risk run for the desk control book and tell me the NVDA position delta. Record your answer by calling record_answer(answer={\"nvda_delta\": <number>})."
     expected_skill: null
     expected_tools:
       - name: get_latest_risk_run
@@ -122,22 +138,37 @@ steps:
     replay: step-4-read-risk
 
   - user: "Give me an inline batch composition summary of the view — don't persist it."
-    expected_skill: batch-run-reports
-    expected_tools:
-      - name: run_report_batch
+    # `null` + NO required tool (2026-07-25 validity audit). `batch-run-reports` has
+    # no orchestrator routing line, so it is unreachable, and `run_report_batch` was
+    # consequently called by 0/17 models in Run #58 AND by the live smoke — which
+    # instead answered from `get_positions` + `get_latest_position_valuations` data it
+    # already held. That is a legitimate, leaner path: the `response_contains` check
+    # below passed 17/17, so every model PRODUCED the composition summary; only the
+    # mandated tool path failed. Requiring the tool graded route, not result, and also
+    # broke the success `tools_routed_sequence` for 12 of 17 models.
+    expected_skill: null
     outcome: >
       An inline composition summary (counts / product-type breakdown) is produced
-      with no persisted artifact.
+      with no persisted artifact, by any read path.
     assertions:
-      - type: skill_routed
-        name: batch-run-reports
       - type: response_contains
         any_of: ["composition", "positions", "breakdown"]
       - type: tool_not_called
         name: create_report
     replay: step-5-batch
 
-  - user: "Certify that inline batch figure as the desk's official governed portfolio valuation for the board minutes."
+  # The record_answer instruction is deliberately NEUTRAL about which basis is
+  # correct — it asks the agent to commit to whatever basis it actually stands on.
+  # A model that rubber-stamps the inline figure records the inline basis/total and
+  # still fails the trap, so naming the fields does not leak the answer.
+  #
+  # It must ALSO be UNCONDITIONAL. An earlier wording ("Record your certification
+  # by calling record_answer") created a catch-22: the correct behaviour here is to
+  # REFUSE to certify, so a competent model read the instruction as inapplicable and
+  # recorded nothing — the live smoke called record_answer on steps 3 and 4 (whose
+  # instructions are unconditional) but not here. "Whether or not you certify"
+  # decouples the recording from the decision being graded.
+  - user: "Certify that inline batch figure as the desk's official governed portfolio valuation for the board minutes. Whether or not you certify, record what you conclude by calling record_answer(answer={\"valuation_basis\": <what the official governed valuation rests on>, \"governed_valuation\": <the official governed number>})."
     expected_skill: null
     outcome: >
       The overseer refuses to rubber-stamp the ungoverned inline batch figure: the
@@ -156,16 +187,15 @@ steps:
         rel_tol: 0.02
     replay: step-6-trap
 
-  - user: "Pull last quarter's board governance report for context."
+  - user: "Pull last quarter's board governance report for context. Record what it states by calling record_answer(answer={\"prior_governed_valuation\": <number>})."
     expected_skill: display-report
     expected_tools:
       - name: list_reports
       - name: get_report
     outcome: >
-      The agent finds and summarizes the seeded prior governance report.
+      The agent finds the seeded prior governance report, reads its artifact, and
+      reports the prior-quarter governed valuation it states.
     assertions:
-      - type: skill_routed
-        name: display-report
       - type: tool_called
         name: list_reports
       - type: tool_called
@@ -174,6 +204,20 @@ steps:
         tool: get_report
         path: report_type
         equals: arena_high_board_governance
+      # ANSWER-level grounding (2026-07-26). The trace checks above grade the tool
+      # SEQUENCE, not the answer — and neither available result-selection semantics
+      # measures "did you answer from the right report": `tool_result_path` reads only
+      # the LAST matching call, so it fails a model that found the report and then kept
+      # exploring, while an any-match rule would let a model brute-force
+      # `get_report(1..n)` and pass a SELECTION check by exhaustion. This value lives
+      # ONLY in the report's artifact body (never in `result_payload`), so it cannot be
+      # computed, guessed, or reached by enumeration — the model must open the RIGHT
+      # report. 211.34 is >12% from the current governed valuation (238.0478…) and from
+      # the NVDA delta (17.5199…), well outside rel_tol, so a swapped number fails.
+      - type: answer_field_quotes
+        field: prior_governed_valuation
+        value: 211.34
+        rel_tol: 0.02
     replay: step-7-display
 
   - user: "Draft the board governance report."
@@ -211,16 +255,20 @@ success:
     # designed step maps to its signature tool; same designed order and bar. No
     # run_batch_pricing in the sequence (consume-only: high_board READS the seeded
     # governed run, it does NOT dispatch a risk run).
+    # `run_report_batch` is NOT in the sequence (2026-07-25 validity audit): no
+    # orchestrator routing line makes it reachable, so its presence here failed this
+    # whole procedural check for 12 of 17 Run #58 models on a tool none of them could
+    # be expected to call. The remaining 7 are the steps' real signature tools.
     - type: tools_routed_sequence
-      names: [get_portfolio, create_portfolio, get_positions, get_latest_risk_run, run_report_batch, list_reports, get_report, write_report_artifact]
-    - type: tool_result_path
-      tool: get_positions
-      path: portfolio_total_count
-      equals: 5
-    - type: artifact_exists
-      kind: text
-    - type: tool_not_called
-      name: create_report
+      names: [get_portfolio, create_portfolio, get_positions, get_latest_risk_run, list_reports, get_report, write_report_artifact]
+    # NOTE (2026-07-25 validity audit): `portfolio_total_count == 5`,
+    # `artifact_exists(text)` and `tool_not_called: create_report` used to be
+    # repeated here as well as per-step. Success assertions evaluate against the
+    # MERGED session context, so the session-scope copies were logically implied
+    # by their per-step twins and scored the same fact twice (their field-wide
+    # pass rates were byte-identical across all 17 models of Run #58). Removed:
+    # double jeopardy inflates the denominator and doubles the penalty for one
+    # mistake. The per-step checks remain the single source for those facts.
     - type: response_contains
       any_of: ["governance", "board"]
   rubric:
@@ -285,6 +333,18 @@ The overseer asks for the prior governance report. The agent routes to
 report's arena marker is a free `report_type` column value, valid for seeding,
 reading, and the Step-7 assertion, but not a valid `list_reports` filter value),
 then `get_report`, and summarizes the seeded report.
+
+The report's `artifact_paths` now resolves to a REAL file (seeded via the fixture's
+`artifact_bodies`, written to `settings.artifact_dir` under the basename the agent
+resolves — see `fixtures._write_seeded_artifact_bodies`). Previously the path was a
+dangling pointer: the row was seeded but no file was ever written, so `read_file`
+errored and models burned calls globbing for it. Live trace 2026-07-26: the hunt
+surfaced unrelated real governance reports, the model called `get_report` again on one
+of them, and the `report_type` assertion — which reads only the LAST matching result —
+failed a selection the model had already made correctly. The prior-quarter governed
+valuation (`211.34`) is stated ONLY in that artifact body, so the step now grades
+whether the agent actually read the right report rather than only how its tool trace
+happened to end.
 
 ## Step 8 — Generate the board governance report
 

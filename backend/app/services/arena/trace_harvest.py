@@ -204,6 +204,58 @@ def _extract_rfq_id(content: Any) -> int | None:
     return None
 
 
+_PORTFOLIO_CREATE_TOOLS = {"create_portfolio"}
+
+
+def _extract_portfolio_id(content: Any) -> int | None:
+    """Dig the minted portfolio id out of a create_portfolio result.
+
+    The tool wraps its payload as ``{ok, data:{...}}`` (same convention the
+    workflow's ``data.kind`` assertions read), so the id lives at ``data.id``;
+    the unwrapped form is accepted too for robustness.
+    """
+    if isinstance(content, dict):
+        for scope in (content.get("data"), content):
+            if isinstance(scope, dict) and isinstance(scope.get("id"), int):
+                return scope["id"]
+    return None
+
+
+def collect_portfolio_ids_created(thread_id, store=None) -> set[int]:
+    """Return the portfolio ids this thread's ``create_portfolio`` calls MINTED.
+
+    Mirrors ``collect_rfq_ids_touched``: the caller intersects these with an
+    "id > pre-match baseline" guard so only portfolios created BY THIS MATCH are
+    ever deleted.
+
+    Needed because a model-created portfolio is invisible to
+    ``_purge_seeded_portfolios``, which is scoped to rows carrying
+    ``ARENA_PORTFOLIO_TAG`` *and* sharing a current-bundle fixture name: the
+    agent's own ``create_portfolio`` call tags nothing and names the row whatever
+    the model chose. Run #58 accordingly left 23 orphan "Board Review" views in the
+    real DB. That is not merely cosmetic — the golden workflows resolve books BY
+    NAME, so every leaked near-homonym makes the NEXT match's name resolution
+    harder than the last, biasing scores by position in the field.
+    """
+    if store is None:
+        from app.config import get_settings
+        from app.services.tracing.store import get_trace_store
+        store = get_trace_store(get_settings())
+    if hasattr(store, "flush"):
+        store.flush()
+
+    out: set[int] = set()
+    for root in store.list_thread_traces(thread_id, limit=1000):
+        for sp in store.get_trace(root["trace_id"]):
+            if sp.get("run_type") != "tool" or sp.get("name") not in _PORTFOLIO_CREATE_TOOLS:
+                continue
+            content, _name, _tcid = _parse_tool_output(sp.get("outputs"))
+            pid = _extract_portfolio_id(content)
+            if pid is not None:
+                out.add(pid)
+    return out
+
+
 def collect_rfq_ids_touched(thread_id, store=None) -> set[int]:
     """Return the rfq ids appearing in this thread's RFQ-tool span outputs.
 

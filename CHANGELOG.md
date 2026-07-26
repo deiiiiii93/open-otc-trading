@@ -7,6 +7,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A seeded report that references an artifact now actually creates it.**
+  `artifact_paths` is only a JSON column, so seeding a report wrote no file — the agent
+  was handed a dangling pointer. Live trace: the model found the right report
+  (`get_report(5)` → `arena_high_board_governance`), read the artifact path it was just
+  given → `Error: File '/q3-governance.md' not found`, globbed 4× hunting it, surfaced
+  unrelated real governance reports, and called `get_report(2)` → `'risk'`. Since
+  `tool_result_path` reads only the LAST matching result, that failed a selection the
+  model had already made correctly. Fixture bodies now come from an `artifact_bodies`
+  map written to `settings.artifact_dir` under the basename the agent resolves
+  (`fixtures._write_seeded_artifact_bodies`; absent key = previous behaviour). This also
+  revises the earlier "step-7 glob-thrash is a discriminator, no fix needed" call: the
+  behavioural spread was real, but its cause was a broken fixture, and `par_tool_calls:
+  24` was calibrated on runs the par comment itself notes were inflated by that thrash —
+  so par is now loose and should be re-measured.
+- **Step 7 grades the ANSWER, not just the tool trace.** It was the only
+  grounding-bearing step with no `answer_field_*` check, so neither result-selection
+  semantics could measure "did you answer from the right report": last-only fails a model
+  that found it and kept exploring, while an any-match rule would let a model brute-force
+  `get_report(1..n)` and pass a *selection* check by exhaustion. The prior-quarter
+  governed valuation (`211.34`) is now stated ONLY in the artifact body — never in
+  `result_payload` — so it cannot be computed, guessed, or reached by enumeration, and is
+  >12% from both the current governed valuation and the NVDA delta (outside `rel_tol`).
+  Denominator 39 → **40**; replay earns 40/40. `tool_result_path` semantics unchanged, so
+  the shared scoring kernel is untouched.
+- **High-board workflow expectations now match the system's real routing policy.**
+  A live smoke (deepseek-v4-flash, direct channel) disproved the first fix attempt:
+  adding routing lines to the *persona* prompt changes nothing, because the
+  **orchestrator** decides delegation before the persona is reached — and
+  `orchestrator.md` routes portfolio structure work (explicitly including "membership")
+  to `portfolio-maintenance` on `trader`, routes product-type counts to
+  `get_position_summaries`, and never mentions `batch-run-reports` at all. So ~7 points
+  were grading models on **violating** the system's own documented routing. Step 1 now
+  expects `portfolio-maintenance`; steps 3 and 5 take `expected_skill: null`; the
+  step-3 `product_type` arg check is gone (the smoke showed the model calls
+  `get_positions(portfolio_id=…)` with no filter and counts client-side — equally
+  correct, and `args_any_of` was therefore irrelevant); step 5 no longer requires
+  `run_report_batch`, which is also removed from the success `tools_routed_sequence`
+  (its presence failed that check for 12 of 17 models). Denominator 43 → **39**; the
+  golden replay still earns 39/39. Same recorded smoke trace: **33/43 → 35/39 (89.7%),
+  procedural 12/12** — against 72.0 for the best of 17 models on the original manifest.
+- **The step-6 trap's `record_answer` instruction was self-defeating.** "Record your
+  certification by calling record_answer" is CONDITIONAL on certifying — which is
+  exactly what the trap wants refused, so a correct model recorded nothing. The smoke
+  called `record_answer` on steps 3 and 4 (unconditional wording) but not step 6. Now
+  reads "Whether or not you certify, record what you conclude".
+- **High-board arena scoring validity (Run #58 audit).** A per-check pass-rate tally
+  across the full 17-model board showed **15 of 50 checks carried no ability signal**
+  (10 never passed for anyone, 6 passed for everyone, 7 were duplicates). Rescoring on
+  the valid subset moved the top score from 72 to 88.6 and **reordered the board**
+  (Spearman 0.789; #1 flipped, one model moved 8 ranks) — so the defects biased
+  ranking, not just scale. Root causes, each fixed:
+  - Five `answer_field_*` checks graded a `record_answer` payload **no prompt asked
+    for**. The flagship puts `record_answer(answer={...})` with explicit field names in
+    the `user:` turn; high-board's only mentions were a comment and design prose. The
+    field names are now requested in steps 3/4/6 — step 6's wording stays neutral about
+    *which* basis is correct so the over-claim trap still discriminates.
+  - Three skill checks targeted skills with **no routing line in `high_board.md`**
+    (its routing section named only `display-report` / `generate-report`). Pass rate
+    correlated exactly with the routing line: 64–88% with, 0–23% without. Added
+    routing lines for `portfolio-membership`, `portfolio-view-counting`, and
+    `batch-run-reports` (whose absence also meant `run_report_batch` was called by
+    0/17 models, which additionally failed the `tools_routed_sequence` check).
+  - `tool_called get_positions` demanded the literal `product_type: "Snowball"` while
+    the stored vocabulary is `SnowballOption`. The filter is substring +
+    case-insensitive so both are functionally correct, but arg matching is exact — so
+    every model that used the value the system itself reports scored 0. Now
+    `args_any_of` accepts either.
+  - Four skill facts were scored **twice** (`expected_skill` emits a check *and* the
+    manifest declared `skill_routed` for the same skill; all four pairs had identical
+    field-wide pass rates), plus three assertions duplicated across step and success
+    scope. Removed — denominator 50 → **43** — with a new guard test
+    (`test_no_step_scores_the_same_skill_twice`).
+- **Arena DB contamination made the benchmark non-stationary.** Two leaks, both fixed:
+  - `_purge_seeded_portfolios` was scoped to the *current* bundle's fixture names, so
+    every other workflow's seeded book survived. The trader-rfq fixture "Arena Trader
+    Desk" (3 positions, including NVDA) therefore competed with high-board's "Desk
+    Control Book" (5 positions) for the phrase "the desk control book" — a model
+    resolving the wrong one got a **plausible, well-formed** delta and was silently
+    graded wrong (Run #58: ~7/17 lost NVDA grounding, 5–6/17 lost the membership
+    count). Now scoped to the arena tag **and** any registered workflow's fixture name.
+  - Model-created portfolios were never purged at all (no arena tag, model-chosen
+    name), leaking 22 orphan "Board Review" views. Because the workflows resolve books
+    **by name**, each leak made the next match's resolution harder than the last —
+    biasing scores by position in the field. New `_purge_match_portfolios` reclaims
+    them on trace + baseline evidence (`collect_portfolio_ids_created`), mirroring
+    `_purge_match_rfqs`. The arena tag is deliberately **not** sufficient ownership
+    proof: it is not server-owned, and Run #58 caught two model-created views that
+    spontaneously tagged themselves `arena`.
+- **Arena purge could not delete a VIEW portfolio that had a valuation run** —
+  `FOREIGN KEY constraint failed`. The dependent sweep assumed every dependent is
+  reachable by `portfolio_id` or `position_id`, but RUN-CHILD tables key off a run's
+  PK: `position_valuation_results.valuation_run_id` → `position_valuation_runs.id`,
+  with no `portfolio_id` column. Its `position_id` only helps when the purged portfolio
+  OWNS positions, so the gap is invisible for a container and fatal for a view — and
+  models create views. The Run #58 orphans were therefore unreachable in both
+  directions: never selected by the purge, and uncleanable if they had been. The sweep
+  now walks referencing children recursively before deleting each level (found while
+  clearing the real orphans, guarded by
+  `test_purging_a_view_with_a_valuation_run_does_not_trip_a_foreign_key`).
+- **High-board test gates were stale and partly dead.** The exact-count pins still
+  described the pre-expansion 6-step/35-point manifest (red on `main`), and their
+  formula counted `len(wf.steps)` for skills, ignoring `expected_skill: null`. Two
+  discrimination guards referenced pre-expansion replay keys (`step-5-display`,
+  `step-6-generate`) and so had been silently dead — including the one proving the
+  `create_report` trap discriminates. `test_high_board_has_four_axes` now reads the
+  axes scoring actually emits rather than only manifest assertions.
+
 ### Added
 - **High-Board Portfolio Review — flagship arena parity.** Upgraded the
   `high-board-portfolio-review-day` golden workflow from a shallow 6-step routing
