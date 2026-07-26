@@ -150,6 +150,27 @@ describe('ArenaLive', () => {
 
     // Run ID rendered as String(1).slice(0,8) === '1'
     expect(await screen.findByText('1')).toBeInTheDocument();
+    expect(arenaApi.listArenaRuns).toHaveBeenCalledWith(200, 0);
+  });
+
+  it('loads every runs page so older history remains reachable', async () => {
+    const newestRuns = [
+      { ...mockRuns[0], id: 3 },
+      { ...mockRuns[0], id: 2 },
+    ];
+    const oldestRuns = [{ ...mockRuns[0], id: 1 }];
+    vi.mocked(arenaApi.listArenaRuns)
+      .mockResolvedValueOnce({ runs: newestRuns, total: 3 })
+      .mockResolvedValueOnce({ runs: oldestRuns, total: 3 });
+    vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({ rows: mockLeaderboard });
+    vi.mocked(arenaApi.listArenaModels).mockResolvedValue({ models: mockModels });
+
+    render(<ArenaLive />);
+
+    expect(await screen.findByText('3 runs')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(arenaApi.listArenaRuns).toHaveBeenNthCalledWith(1, 200, 0);
+    expect(arenaApi.listArenaRuns).toHaveBeenNthCalledWith(2, 200, 2);
   });
 
   it('clicking a run loads run detail and shows match grid', async () => {

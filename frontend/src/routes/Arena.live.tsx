@@ -585,6 +585,20 @@ function modelDisplayName(modelId: string, models: ArenaModel[]): string {
 // (rather than a `!== 'completed'` denylist) so a terminal 'failed' run
 // doesn't keep the status-poll interval alive forever.
 const IN_PROGRESS_STATUSES: ReadonlySet<string> = new Set(['queued', 'pending', 'running']);
+const RUNS_PAGE_SIZE = 200;
+
+async function listAllArenaRuns(): Promise<ArenaRunSummary[]> {
+  const firstPage = await listArenaRuns(RUNS_PAGE_SIZE, 0);
+  const allRuns = [...firstPage.runs];
+
+  while (allRuns.length < firstPage.total) {
+    const page = await listArenaRuns(RUNS_PAGE_SIZE, allRuns.length);
+    if (page.runs.length === 0) break;
+    allRuns.push(...page.runs);
+  }
+
+  return allRuns;
+}
 
 export function ArenaLive() {
   const [leaderboard, setLeaderboard] = useState<ArenaLeaderboardRow[]>([]);
@@ -620,12 +634,12 @@ export function ArenaLive() {
   const refresh = useCallback(() => {
     setError(null);
     Promise.all([
-      listArenaRuns(),
+      listAllArenaRuns(),
       getArenaLeaderboard(selectedRunId ?? undefined),
       listArenaModels(),
     ])
-      .then(([runsResp, lbResp, modelsResp]) => {
-        setRuns(runsResp.runs);
+      .then(([allRuns, lbResp, modelsResp]) => {
+        setRuns(allRuns);
         setLeaderboard(lbResp.rows);
         setModels(modelsResp.models);
       })
@@ -643,8 +657,8 @@ export function ArenaLive() {
     const anyRunning = runs.some((r) => IN_PROGRESS_STATUSES.has(r.status));
     if (!anyRunning) return;
     const t = setInterval(() => {
-      listArenaRuns()
-        .then((resp) => setRuns(resp.runs))
+      listAllArenaRuns()
+        .then(setRuns)
         .catch((e: unknown) => setError(String(e)));
     }, 4000);
     return () => clearInterval(t);
