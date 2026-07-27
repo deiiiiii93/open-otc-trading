@@ -34,8 +34,8 @@ def test_high_board_objective_point_manifest():
     tools = sum(len(s.expected_tools) for s in wf.steps)
     step_assertions = sum(len(s.assertions) for s in wf.steps)
     success_assertions = len(wf.success.assertions)
-    assert (skills, tools, step_assertions, success_assertions) == (4, 7, 27, 2)
-    assert skills + tools + step_assertions + success_assertions == 40
+    assert (skills, tools, step_assertions, success_assertions) == (4, 6, 26, 2)
+    assert skills + tools + step_assertions + success_assertions == 38
 
 
 def test_no_step_scores_the_same_skill_twice():

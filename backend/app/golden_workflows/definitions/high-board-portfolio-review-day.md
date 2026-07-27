@@ -40,11 +40,17 @@ steps:
     # exactly as instructed. (A per-step `task` delegation is a fresh subagent, so
     # step 2 can still re-read the same SKILL.md and score its own point.)
     expected_skill: portfolio-maintenance
-    expected_tools:
-      - name: get_portfolio
+    # NO required tool (2026-07-27, terra smoke). `get_portfolio` and `list_portfolios`
+    # are EQUALLY valid ways to resolve a book by name, and `list_portfolios` returns
+    # `kind` too. Requiring `get_portfolio` graded the ROUTE, not the outcome: terra
+    # resolved correctly via `list_portfolios` and lost 3 points (the tool check, the
+    # tool-keyed grounding check, and the whole success sequence), while flash happened
+    # to pick `get_portfolio` and passed — so the check rewarded a coin-flip between
+    # two correct approaches. The resolution is graded at the ANSWER level below.
+    expected_tools: []
     outcome: >
-      The agent resolves the seeded desk book and reports it is a Container with
-      explicit membership.
+      The agent resolves the seeded desk book, by any read path, and reports it is a
+      Container with explicit membership.
     # NOTE (2026-07-25 validity audit): an explicit `skill_routed` assertion is
     # NOT declared on any step that already sets `expected_skill`. Scoring emits
     # its own "skill: X" check from `expected_skill`, so declaring both scored one
@@ -52,10 +58,27 @@ steps:
     # byte-identical field-wide pass rates (0/17, 4/17, 0/17, 11/17). Declare
     # `skill_routed` only for a skill NOT named by `expected_skill`.
     assertions:
-      - type: tool_result_path
-        tool: get_portfolio
-        path: data.kind
-        equals: container
+      # Route-agnostic but still GROUNDED IN TOOL OUTPUT (2026-07-27). `assertion_any_of`
+      # scores as ONE check that passes if EITHER resolution path proves the kind, so
+      # `get_portfolio` (flash) and `list_portfolios` (terra) both score.
+      #
+      # An answer-level check was tried first and rejected: `container` vs `view` is a
+      # closed two-value vocabulary that the question itself names, so grading only the
+      # recorded answer makes the step a COIN FLIP a model can win without reading
+      # anything — and it stops detecting a fabricated answer. The repo's own negative
+      # suite caught this (`test_neg_wrong_container_kind` no longer discriminated).
+      # Grounding must come from observed tool output; route-freedom must not cost that.
+      - type: assertion_any_of
+        axis: grounding
+        any_of:
+          - type: tool_result_path
+            tool: get_portfolio
+            path: data.kind
+            equals: container
+          - type: tool_result_path
+            tool: list_portfolios
+            path: data[name=Desk Control Book].kind
+            equals: container
     replay: step-1-membership
 
   - user: "Create a board-review view over the desk control book."
@@ -168,7 +191,7 @@ steps:
   # recorded nothing — the live smoke called record_answer on steps 3 and 4 (whose
   # instructions are unconditional) but not here. "Whether or not you certify"
   # decouples the recording from the decision being graded.
-  - user: "Certify that inline batch figure as the desk's official governed portfolio valuation for the board minutes. Whether or not you certify, record what you conclude by calling record_answer(answer={\"valuation_basis\": <what the official governed valuation rests on>, \"governed_valuation\": <the official governed number>})."
+  - user: "Certify that inline batch figure as the desk's official governed portfolio valuation for the board minutes. Whether or not you certify, record what you conclude by calling record_answer(answer={\"governed_valuation\": <the official governed number>})."
     expected_skill: null
     outcome: >
       The overseer refuses to rubber-stamp the ungoverned inline batch figure: the
@@ -178,9 +201,17 @@ steps:
     assertions:
       - type: tool_not_called
         name: create_report
-      - type: answer_field_equals
-        field: valuation_basis
-        any_of: ["persisted risk run", "governed run", "risk run"]
+      # `valuation_basis` was DROPPED (2026-07-27, terra smoke). It was
+      # `answer_field_equals any_of ["persisted risk run","governed run","risk run"]`,
+      # i.e. EXACT match after strip/lower — so it graded TERSENESS, not correctness:
+      # terra answered "Completed governed risk run 35, valuation as-of …, CNY; full
+      # coverage of 5/5 positions …" — substantively right, and it even contains the
+      # phrase "risk run" — and still failed, while only a bare phrase could pass.
+      # Switching to containment was rejected too: it is gamable by NEGATION ("the
+      # inline figure, not the risk run" would match). The numeric field below is the
+      # trap's real, unfakeable enforcer — a model that rubber-stamps the inline figure
+      # records the INLINE total, not this number — and terra passed it, so the trap's
+      # substance is measured without grading prose style.
       - type: answer_field_quotes
         field: governed_valuation
         value: 238.0478921928385
@@ -220,7 +251,13 @@ steps:
         rel_tol: 0.02
     replay: step-7-display
 
-  - user: "Draft the board governance report."
+  # "as Markdown" is REQUIRED wording (2026-07-27, terra smoke), matching the flagship's
+  # "Generate a Markdown governance risk report". The 5 synthesis checks below grep the
+  # artifact body for "Snowball" / "17.5" / "238", which is impossible inside a binary —
+  # so the workflow already REQUIRED a text artifact and simply never said so. terra
+  # reasonably chose `format="docx"` (write_report_artifact accepts Markdown/DOCX/HTML),
+  # got `kind="binary"`, and lost all 5 points to an unstated preference.
+  - user: "Draft the board governance report as Markdown."
     expected_skill: generate-report
     expected_tools:
       - name: write_report_artifact
@@ -259,8 +296,11 @@ success:
     # orchestrator routing line makes it reachable, so its presence here failed this
     # whole procedural check for 12 of 17 Run #58 models on a tool none of them could
     # be expected to call. The remaining 7 are the steps' real signature tools.
+    # `get_portfolio` is NOT in the sequence either (2026-07-27): step 1 accepts any
+    # resolution route, so requiring it here would fail the whole sequence for a model
+    # that used `list_portfolios` — which is exactly what happened to terra.
     - type: tools_routed_sequence
-      names: [get_portfolio, create_portfolio, get_positions, get_latest_risk_run, list_reports, get_report, write_report_artifact]
+      names: [create_portfolio, get_positions, get_latest_risk_run, list_reports, get_report, write_report_artifact]
     # NOTE (2026-07-25 validity audit): `portfolio_total_count == 5`,
     # `artifact_exists(text)` and `tool_not_called: create_report` used to be
     # repeated here as well as per-step. Success assertions evaluate against the
