@@ -433,6 +433,96 @@ map 1:1 to the objective axes plus a computed EFF; JDG is the advisory jury scor
   `truth.json` values; `test_flagship_grounding_targets_match_truth_file` guards drift.
   The denominator stays 39 (1:1 assertion swap); the golden replay still earns 39/39.
 
+### Scoring-validity audit (the per-check field tally) — 2026-07-25
+
+Before trusting any board, ask whether the score measures the MODEL or the WORKFLOW.
+The instrument is a **per-check pass-rate tally across the whole field** (walk
+`objective.steps[].checks[]` + `objective.success[]` in `arena_match.score_breakdown`,
+keyed by `label`). A discriminating check produces a SPREAD; **a check at 0/N or N/N
+carries zero ability signal while still occupying the denominator.** The high-board
+Run #58 audit found 15 of 50 checks non-discriminating; rescoring on the valid subset
+moved the top from 72 → 88.6 **and reordered the board** (Spearman 0.789) — the
+defects biased ranking, not just scale.
+
+- **The golden replay CANNOT catch this.** The replay fixture is a hand-written
+  perfect transcript: it satisfies each assertion by construction (it hand-provided the
+  `record_answer` payloads and the exact `"Snowball"` literal), so it proves
+  **satisfiability, never reachability**. It earned 50/50 while live models capped at
+  35/50. Only a live board reveals an unwinnable check — same lesson as the trader-rfq
+  live-reachability fix.
+- **A check graded on output the prompt never requests is unwinnable.** `answer_field_*`
+  requires the `record_answer(answer={...})` call **with field names spelled out in the
+  `user:` turn** (the flagship does this; high-board did not, costing 5 checks). Trap
+  steps must word that instruction NEUTRALLY so naming the fields doesn't leak which
+  answer is correct.
+- **A skill with no routing line in the persona prompt is unroutable.** Pass rate
+  tracked the routing line exactly: 64–88% with, 0–23% without. Same class as
+  `assemble_breach_report` — registered ≠ discoverable. **When no model ever routes to a
+  skill or calls a tool, suspect discoverability before capability.**
+- **Never grade an arbitrary lexical choice.** `product_type: "Snowball"` vs the stored
+  `SnowballOption` are both functionally correct (the filter is substring +
+  case-insensitive) but arg matching is EXACT, so all 17 models scored 0 for using the
+  value the system itself reports. Use `args_any_of` for every legitimate convention.
+- **Don't declare `skill_routed` for a skill already named by `expected_skill`** —
+  scoring emits its own check, so the fact is scored twice (double jeopardy inflates the
+  denominator AND doubles one mistake's cost). Guarded by
+  `test_no_step_scores_the_same_skill_twice`. Same for repeating a per-step assertion in
+  `success.assertions`, which evaluates the merged session context and so already
+  implies it.
+
+### Seed what you reference, and grade the ANSWER not the trace
+
+- **A fixture that declares an artifact must CREATE it.** `artifact_paths` is only a JSON
+  column; seeding a report writes no file. The agent resolves `/artifacts/<basename>`
+  against the mounted `settings.artifact_dir` (`_shaping.normalize_artifact_paths`
+  flattens to the basename), so a declared-but-unwritten path is a **dangling pointer**:
+  `read_file` errors and the model burns calls hunting the file, wandering into unrelated
+  real rows. Put bodies in `artifact_bodies` (keyed like `artifact_paths`) and
+  `fixtures._write_seeded_artifact_bodies` materializes them. **A behavioural spread
+  caused by a broken fixture is not a capability signal** — high-board's step-7
+  "glob-thrash", once called a discriminator, was models rationally following a pointer
+  the system handed them, and it both leaked into the GRD axis and inflated `par`.
+- **Neither result-selection semantics can grade "did you answer from the right row".**
+  `tool_result_path` reads only the LAST matching call, so it fails a model that obtained
+  the evidence and kept exploring; an any-match rule would let a model brute-force
+  `get_report(1..n)` and pass a **selection** check by exhaustion. Grade it at the
+  **answer** level instead (`answer_field_quotes`), keyed to a value that lives ONLY in
+  the artifact body — never in `result_payload`, or `get_report` alone reveals it. Pick a
+  value that cannot be computed or guessed and sits well outside `rel_tol` of every other
+  graded number, so a swapped answer fails.
+- **Over-execution is ADH's and EFF's job, not GRD's.** The over-execution primitives
+  (`max_calls` — "duplicate dispatch is over-execution" — plus `all_calls` /
+  `exclusive_keys`) live on `tool_called`, i.e. **adherence**, and are deliberately
+  opt-in; EFF penalizes volume globally via the golf curve. Letting execution style leak
+  into a grounding check charges one behaviour at GRD's weight (0.32, twice EFF's 0.16),
+  and — because `_correctness` gates EFF on GRD+ADH+SYN — leaks back into EFF as well.
+  Worse, grounding is the FIRST objective tie-breaker (annotated "hardest to fake"), so
+  contaminating it corrupts ranking, not just score.
+
+### Arena DB hygiene: two purge scopes, two ownership proofs
+
+Golden workflows resolve books **by name**, so leftover rows don't just accumulate —
+they make each successive match's name resolution harder than the last, which biases
+scores **by position in the field**. Worse, the failure is SILENT: a model that resolves
+the wrong same-named book gets a plausible, well-formed number and is graded wrong with
+no error anywhere.
+
+- **`_purge_seeded_portfolios`** reclaims FIXTURE rows: arena tag **AND** a name from
+  **any registered workflow's** fixtures (`list_workflow_bundles()`). Scoping it to the
+  current bundle only is the bug that let trader-rfq's "Arena Trader Desk" (3 positions,
+  incl. NVDA) shadow high-board's "Desk Control Book" (5 positions).
+- **`_purge_match_portfolios`** reclaims MODEL-CREATED rows on trace + baseline evidence
+  (`collect_portfolio_ids_created` ∩ `id > pre-match baseline`), mirroring
+  `_purge_match_rfqs`. Runs in a `finally`, because a leak here is **permanent**: the
+  next baseline is taken above the leaked row, so its guard can never re-catch it.
+- **`ARENA_PORTFOLIO_TAG` is NOT server-owned** — a model picks its own tags via
+  `create_portfolio`, and Run #58 caught two model-created views that spontaneously
+  tagged themselves `arena`. So the tag alone is never sufficient ownership proof for
+  deletion; pair it with a known fixture name, or use trace+baseline evidence instead.
+- Both share `_delete_portfolios_with_dependents`, which sweeps dependents by
+  introspecting mapped tables for `portfolio_id` / `position_id` in reverse
+  FK-dependency order. **Ownership is the caller's job** — that helper re-checks nothing.
+
 ### Judge fairness & scoring methodology (2026-07-05 reform)
 
 The score has **two axes reported separately**: a deterministic **objective** score

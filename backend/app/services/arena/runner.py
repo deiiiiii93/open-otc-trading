@@ -22,7 +22,11 @@ from app import database
 from app.golden_workflows.fixtures import apply_seed
 from app.models import AgentThread
 from app.services.arena.models import arena_model_to_selection
-from app.services.arena.trace_harvest import collect_rfq_ids_touched, transcript_from_trace
+from app.services.arena.trace_harvest import (
+    collect_portfolio_ids_created,
+    collect_rfq_ids_touched,
+    transcript_from_trace,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -287,6 +291,161 @@ def _purge_match_rfqs(thread_id: int, rfq_id_baseline: int) -> None:
         logger.warning("arena RFQ cleanup failed for thread %s", thread_id, exc_info=True)
 
 
+def _delete_portfolios_with_dependents(session, pids, fk_ordered_tables=None) -> None:
+    """Delete portfolios ``pids`` plus every row referencing them, children first.
+
+    Dependents are found by introspecting every mapped table for a ``portfolio_id``
+    or ``position_id`` column, which covers risk runs, valuations, scenario/backtest
+    runs, hedge rows and position children without hard-coding table names. Deletes
+    run in reverse FK-dependency order because FK enforcement is ON (see
+    database.py): ``task_runs`` reference run rows (risk_run_id /
+    scenario_test_run_id / backtest_run_id) as well as ``portfolio_id``, so they
+    must go before the run rows they point at.
+
+    OWNERSHIP IS THE CALLER'S JOB — this helper re-checks no tag, name or baseline.
+    Shared by ``_purge_seeded_portfolios`` (tag + fixture-name scoped) and
+    ``_purge_match_portfolios`` (trace-harvested + baseline scoped).
+    """
+    import warnings
+
+    from sqlalchemy import delete, select
+    from sqlalchemy.exc import SAWarning
+
+    from app import models
+
+    if not pids:
+        return
+    if fk_ordered_tables is None:
+        # sorted_tables warns about an unrelated FK cycle among the agent_*/workflows
+        # tables; none of those carry portfolio_id/position_id, so they fall outside
+        # the purge scope and the ordering of the tables we touch stays correct.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", SAWarning)
+            fk_ordered_tables = list(reversed(models.Base.metadata.sorted_tables))
+    posids = list(
+        session.scalars(
+            select(models.Position.id).where(models.Position.portfolio_id.in_(pids))
+        )
+    )
+    # The limit-incident tables are append-only for every desk path
+    # (models._protect_limit_incident_events_from_bulk_mutation), but this purge owns
+    # the arena rows wholesale — incident rows on them are fixture state, not
+    # compliance history. Flag the session so the guard exempts exactly this scope.
+    session.info[models.ARENA_FIXTURE_PURGE_INFO_KEY] = True
+    try:
+        portfolio_table = models.Portfolio.__table__
+
+        def _delete_referencing_children(parent_table, doomed_ids, seen) -> None:
+            """Recursively delete rows pointing at ``doomed_ids`` in ``parent_table``.
+
+            RUN-CHILD tables key off a run row's PK, NOT the portfolio — e.g.
+            ``position_valuation_results.valuation_run_id`` →
+            ``position_valuation_runs.id``, with no ``portfolio_id`` column at all.
+            Their ``position_id`` only helps when the purged portfolio OWNS positions,
+            so the gap is invisible for a container and fatal for a VIEW (which owns
+            none): the results rows survive and the run delete dies on FOREIGN KEY
+            constraint failed. Models create VIEWS here, so this is the common case.
+            """
+            if not doomed_ids:
+                return
+            for child in fk_ordered_tables:
+                if child is parent_table or child is portfolio_table:
+                    continue
+                for fk in child.foreign_keys:
+                    if fk.column.table is not parent_table:
+                        continue
+                    col = child.c[fk.parent.name]
+                    if "id" in child.c:  # descend before deleting this level
+                        grand = list(
+                            session.scalars(select(child.c.id).where(col.in_(doomed_ids)))
+                        )
+                        key = (child.name, tuple(sorted(grand)))
+                        if grand and key not in seen:
+                            seen.add(key)
+                            _delete_referencing_children(child, grand, seen)
+                    session.execute(delete(child).where(col.in_(doomed_ids)))
+
+        # Sweep run-children first, so the portfolio_id/position_id passes below can
+        # delete the run rows themselves without tripping an FK.
+        seen: set = set()
+        for table in fk_ordered_tables:
+            if table is portfolio_table or "id" not in table.c:
+                continue
+            doomed: list = []
+            if "portfolio_id" in table.c:
+                doomed += list(
+                    session.scalars(select(table.c.id).where(table.c.portfolio_id.in_(pids)))
+                )
+            if posids and "position_id" in table.c:
+                doomed += list(
+                    session.scalars(select(table.c.id).where(table.c.position_id.in_(posids)))
+                )
+            _delete_referencing_children(table, doomed, seen)
+
+        for table in fk_ordered_tables:
+            if table is portfolio_table:
+                continue
+            if posids and "position_id" in table.c:
+                session.execute(delete(table).where(table.c.position_id.in_(posids)))
+            if "portfolio_id" in table.c:
+                session.execute(delete(table).where(table.c.portfolio_id.in_(pids)))
+        session.execute(delete(portfolio_table).where(portfolio_table.c.id.in_(pids)))
+    finally:
+        session.info.pop(models.ARENA_FIXTURE_PURGE_INFO_KEY, None)
+
+
+def _purge_match_portfolios(thread_id: int, portfolio_id_baseline: int) -> None:
+    """Best-effort cleanup of portfolios CREATED BY THIS MATCH: ids harvested from
+    this thread's ``create_portfolio`` spans AND above the pre-match baseline.
+
+    Runs in a ``finally`` so an aborted match still cleans up, and for the same
+    reason as ``_purge_match_rfqs``: a leak here is PERMANENT, because the next
+    match's baseline is taken after the leaked row already exists so its
+    ``id > baseline`` guard can never re-catch it.
+
+    Why this matters beyond tidiness: ``_purge_seeded_portfolios`` is scoped to rows
+    carrying ``ARENA_PORTFOLIO_TAG`` *and* sharing a current-bundle fixture name, but
+    a model's own ``create_portfolio`` tags nothing and picks its own name — so those
+    rows were never purged at all. Run #58 left 23 orphan "Board Review" views in the
+    real DB. The golden workflows resolve books BY NAME, so each leaked near-homonym
+    makes the NEXT match's name resolution harder than the last: the benchmark stops
+    being stationary and scores get biased by position in the field.
+
+    Fail-safe: requires BOTH the trace evidence and the baseline, so a pre-existing
+    real or seeded portfolio the agent merely read is never touched. Never raises —
+    cleanup is hygiene and must not mask a match failure.
+    """
+    from app import models
+
+    try:
+        created = collect_portfolio_ids_created(thread_id)
+        pids = sorted(pid for pid in created if pid > portfolio_id_baseline)
+        if not pids:
+            return
+        with database.SessionLocal() as session:
+            # Ownership is the TRACE + BASELINE pair, and deliberately NOT the tag.
+            # An earlier version skipped rows carrying ARENA_PORTFOLIO_TAG (meaning to
+            # leave fixture rows to the seeded purge) — but the tag is MODEL-WRITABLE:
+            # a live smoke created "Board Review View" tagged ["board-review","arena"],
+            # so its own creation was skipped and leaked. The NEXT match then found the
+            # leftover view, REUSED it instead of creating one, and cascaded into
+            # failures. The tag check was also redundant: `create_portfolio` mints a NEW
+            # id, so a fixture row can never appear in the harvest, and `id > baseline`
+            # already excludes everything that predates the match.
+            existing = [
+                p.id
+                for p in session.query(models.Portfolio.id).filter(
+                    models.Portfolio.id.in_(pids)
+                )
+            ]
+            _delete_portfolios_with_dependents(session, existing)
+            session.commit()
+    except Exception:  # noqa: BLE001 — best-effort; never mask the match outcome
+        logger.warning(
+            "arena portfolio cleanup failed for thread %s", thread_id, exc_info=True
+        )
+
+
 def _purge_seeded_portfolios(session, bundle) -> None:
     """Delete prior arena-seeded fixture rows sharing a fixture name (portfolios
     and pricing profiles), plus their dependents, so a re-seed for the next match
@@ -334,37 +493,41 @@ def _purge_seeded_portfolios(session, bundle) -> None:
         warnings.simplefilter("ignore", SAWarning)
         fk_ordered_tables = list(reversed(models.Base.metadata.sorted_tables))
 
-    # --- portfolios + dependents (arena-tagged only) ---
-    names = [r["name"] for r in bundle.seed.get("portfolios", []) if r.get("name")]
-    if names:
+    # --- portfolios + dependents (arena-tagged fixture names, ALL workflows) ---
+    #
+    # Scoped to EVERY registered workflow's fixture names, not just this bundle's
+    # (2026-07-25 validity audit). A this-bundle-only scope left every OTHER
+    # workflow's seeded book alive: high-board matches never reclaimed the trader-rfq
+    # fixture "Arena Trader Desk", which then competed for the phrase "the desk
+    # control book" against the high-board fixture "Desk Control Book". Because it too
+    # holds an NVDA position, a model that resolved the wrong book got a PLAUSIBLE,
+    # well-formed delta and was graded wrong with no error anywhere — Run #58 lost ~7
+    # of 17 models' NVDA grounding and 5-6 models' membership count that way. Lossless:
+    # each match re-seeds its own bundle, so another workflow's fixtures come back when
+    # that workflow next runs.
+    #
+    # The arena TAG alone is deliberately NOT sufficient. It is not server-owned — a
+    # model picks its own tags via create_portfolio and Run #58 caught two views that
+    # spontaneously tagged themselves "arena". Requiring tag AND a known fixture name
+    # keeps a model-created (or user-tagged) row out of this purge's blast radius;
+    # model-created rows are reclaimed by _purge_match_portfolios instead, on
+    # unforgeable trace + baseline evidence.
+    from app.golden_workflows.registry import list_workflow_bundles
+
+    fixture_names = {
+        r["name"]
+        for other in list_workflow_bundles()
+        for r in other.fixtures.seed.get("portfolios", [])
+        if r.get("name")
+    }
+    if fixture_names:
         candidates = session.scalars(
-            select(models.Portfolio).where(models.Portfolio.name.in_(names))
+            select(models.Portfolio).where(models.Portfolio.name.in_(sorted(fixture_names)))
         ).all()
         pids = [p.id for p in candidates if ARENA_PORTFOLIO_TAG in (p.tags or [])]
-        if pids:
-            posids = list(
-                session.scalars(
-                    select(models.Position.id).where(models.Position.portfolio_id.in_(pids))
-                )
-            )
-            # The limit-incident tables are append-only for every desk path
-            # (models._protect_limit_incident_events_from_bulk_mutation), but this
-            # purge owns the arena-seeded portfolios wholesale — incident rows on
-            # them are fixture state, not compliance history. Flag the session so
-            # the guard exempts exactly this cleanup scope.
-            session.info[models.ARENA_FIXTURE_PURGE_INFO_KEY] = True
-            try:
-                portfolio_table = models.Portfolio.__table__
-                for table in fk_ordered_tables:
-                    if table is portfolio_table:
-                        continue
-                    if posids and "position_id" in table.c:
-                        session.execute(delete(table).where(table.c.position_id.in_(posids)))
-                    if "portfolio_id" in table.c:
-                        session.execute(delete(table).where(table.c.portfolio_id.in_(pids)))
-                session.execute(delete(portfolio_table).where(portfolio_table.c.id.in_(pids)))
-            finally:
-                session.info.pop(models.ARENA_FIXTURE_PURGE_INFO_KEY, None)
+        # Ownership established above (arena tag + a registered fixture name); the
+        # shared helper handles the FK-ordered dependent sweep.
+        _delete_portfolios_with_dependents(session, pids, fk_ordered_tables)
 
     # --- pricing profiles (arena-marked only) ---
     prof_names = [r["name"] for r in bundle.seed.get("pricing_profiles", []) if r.get("name")]
@@ -629,6 +792,12 @@ def run_match(
 
     with database.SessionLocal() as session:
         rfq_id_baseline = session.query(func.max(models.RFQ.id)).scalar() or 0
+        # Same baseline discipline for portfolios: the agent's own create_portfolio
+        # calls mint UNTAGGED rows with model-chosen names, so the tag+name-scoped
+        # _purge_seeded_portfolios cannot reach them (see _purge_match_portfolios).
+        portfolio_id_baseline = (
+            session.query(func.max(models.Portfolio.id)).scalar() or 0
+        )
 
     # Drive every workflow step as one YOLO turn on the same thread, waiting for
     # queued background tasks to finish before the next step reads their results.
@@ -642,6 +811,7 @@ def run_match(
         transcript = harvest(thread_id, workflow, model)
     finally:
         _purge_match_rfqs(thread_id, rfq_id_baseline)
+        _purge_match_portfolios(thread_id, portfolio_id_baseline)
         with database.SessionLocal() as session:
             _purge_arena_market_quotes(session)  # no seeded quote outlives the match
         if seeded_report_ids:

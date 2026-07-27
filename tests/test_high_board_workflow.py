@@ -115,6 +115,213 @@ def test_seeded_risk_run_does_not_accumulate_across_matches(
             assert _count(s, models.PricingParameterProfile) == 1
 
 
+def test_seeded_governance_report_artifact_is_readable_and_states_the_truth_value(
+    offline_session_factory, block_network, tmp_path, monkeypatch
+):
+    """The seeded report's artifact_paths must resolve to a REAL file.
+
+    Regression guard for the dangling-pointer defect (live trace 2026-07-26): the row
+    was seeded but no file was ever written, so `get_report` handed the agent a path
+    that `read_file` could not open. Models then burned calls globbing for it, surfaced
+    unrelated real governance reports, called `get_report` again on one of them, and the
+    `report_type` assertion — which reads only the LAST matching result — failed a
+    selection they had already made correctly.
+
+    Also pins that the prior-quarter valuation lives ONLY in the artifact body, never in
+    `result_payload`. That is what makes step 7 immune to brute force: a model cannot
+    reach the number by enumerating `get_report(1..n)`, it has to open the RIGHT report.
+    """
+    import dataclasses
+
+    from app import database
+    from app.config import get_settings
+    from app.golden_workflows.fixtures import apply_seed
+    from app.tools._shaping import normalize_artifact_paths
+
+    loaded = get_workflow_bundle(WF_ID)
+    seeded = [r for r in loaded.fixtures.seed.get("reports", [])]
+    assert seeded, "fixture must seed a prior governance report"
+    row = seeded[0]
+
+    truth = "211.34"
+    body = (row.get("artifact_bodies") or {}).get("markdown", "")
+    assert truth in body, "the graded value must be stated in the artifact body"
+    assert truth not in json.dumps(row.get("result_payload") or {}), (
+        "the value must NOT be in result_payload — otherwise get_report alone reveals "
+        "it and enumeration can score without reading the right report"
+    )
+
+    art_dir = tmp_path / "artifacts"
+    monkeypatch.setattr(
+        "app.config.get_settings",
+        lambda: dataclasses.replace(get_settings(), artifact_dir=art_dir),
+    )
+    with offline_session_factory():
+        with database.SessionLocal() as s:
+            apply_seed(loaded.fixtures, s)
+
+    # The agent resolves /artifacts/<basename> against the mounted artifact_dir.
+    virtual = normalize_artifact_paths(row["artifact_paths"])["markdown"]
+    assert virtual == "/artifacts/q3-governance.md"
+    on_disk = art_dir / Path(virtual).name
+    assert on_disk.exists(), f"seeded artifact was never written to {on_disk}"
+    assert truth in on_disk.read_text()
+
+
+def test_foreign_workflow_arena_fixture_is_reclaimed(
+    offline_session_factory, block_network
+):
+    """A DIFFERENT workflow's arena-seeded book must be purged too.
+
+    Regression guard for the Run #58 contamination: the purge used to intersect the
+    arena tag with THIS bundle's fixture names, so the trader-rfq fixture "Arena
+    Trader Desk" survived every high-board match and competed for the phrase "the
+    desk control book" against "Desk Control Book". It also holds an NVDA position,
+    so a model resolving the wrong book got a plausible well-formed delta and was
+    silently graded wrong. A real (untagged) desk book must still be untouchable.
+    """
+    from app import database, models
+    from app.services.arena import runner
+    from app.services.arena.runner import ARENA_PORTFOLIO_TAG
+
+    loaded = get_workflow_bundle(WF_ID)
+
+    with offline_session_factory():
+        with database.SessionLocal() as s:
+            foreign = models.Portfolio(
+                name="Arena Trader Desk", kind="container", tags=[ARENA_PORTFOLIO_TAG]
+            )
+            real = models.Portfolio(name="Real Desk Book", kind="container", tags=[])
+            s.add_all([foreign, real])
+            s.commit()
+            foreign_id, real_id = foreign.id, real.id
+
+        with database.SessionLocal() as s:
+            runner._purge_seeded_portfolios(s, loaded.fixtures)
+            s.commit()
+
+        with database.SessionLocal() as s:
+            assert s.get(models.Portfolio, foreign_id) is None, (
+                "a foreign workflow's arena fixture survived the purge — it will "
+                "shadow this workflow's book on name resolution"
+            )
+            assert s.get(models.Portfolio, real_id) is not None, (
+                "purge must never delete an untagged real desk book"
+            )
+
+
+def test_purging_a_view_with_a_valuation_run_does_not_trip_a_foreign_key(
+    offline_session_factory, block_network
+):
+    """The dependent sweep must reach RUN-CHILD rows, which key off a run's PK.
+
+    ``position_valuation_results.valuation_run_id`` → ``position_valuation_runs.id``,
+    and that child table has NO ``portfolio_id``. Its ``position_id`` only helps when
+    the purged portfolio OWNS positions — so the gap is invisible for a container and
+    fatal for a VIEW, which owns none. Models create VIEWS here, so purging one used
+    to die on ``FOREIGN KEY constraint failed``: the orphans were unreachable in both
+    directions (never selected, and uncleanable if they had been).
+    """
+    from app import database, models
+    from app.services.arena.runner import _delete_portfolios_with_dependents
+
+    with offline_session_factory():
+        with database.SessionLocal() as s:
+            owner = models.Portfolio(name="Owner Book", kind="container", tags=[])
+            view = models.Portfolio(name="A View", kind="view", tags=[])
+            s.add_all([owner, view])
+            s.flush()
+            pos = models.Position(
+                portfolio_id=owner.id,
+                product_type="SnowballOption",
+                underlying="NVDA",
+                quantity=1.0,
+            )
+            s.add(pos)
+            s.flush()
+            # A valuation run bound to the VIEW, whose results reference a position the
+            # view does NOT own — precisely the shape that blocked the delete.
+            run = models.PositionValuationRun(portfolio_id=view.id, status="completed")
+            s.add(run)
+            s.flush()
+            s.add(
+                models.PositionValuationResult(
+                    valuation_run_id=run.id, position_id=pos.id, ok=True
+                )
+            )
+            s.commit()
+            view_id, run_id, owner_id, pos_id = view.id, run.id, owner.id, pos.id
+
+        with database.SessionLocal() as s:
+            _delete_portfolios_with_dependents(s, [view_id])  # must not raise
+            s.commit()
+
+        with database.SessionLocal() as s:
+            assert s.get(models.Portfolio, view_id) is None
+            assert s.get(models.PositionValuationRun, run_id) is None
+            assert (
+                s.query(models.PositionValuationResult)
+                .filter_by(valuation_run_id=run_id)
+                .count()
+                == 0
+            ), "run-child rows leaked, leaving dangling references"
+            # The purge owns only the view: the other book and its position survive.
+            assert s.get(models.Portfolio, owner_id) is not None
+            assert s.get(models.Position, pos_id) is not None
+
+
+def test_model_created_portfolio_is_purged_but_baseline_rows_survive(
+    offline_session_factory, block_network, monkeypatch
+):
+    """``_purge_match_portfolios`` must reclaim ONLY portfolios this match minted.
+
+    Run #58 leaked 23 orphan "Board Review" views because a model-created portfolio
+    carries no arena tag and a model-chosen name, so the tag+name-scoped purge could
+    not see it. Since the workflows resolve books BY NAME, each leak made the next
+    match's resolution harder — an ordering bias. Ownership needs BOTH the trace
+    evidence and the id > baseline guard, so a pre-existing row the agent merely read
+    is never deleted.
+    """
+    from app import database, models
+    from app.services.arena import runner
+
+    with offline_session_factory():
+        with database.SessionLocal() as s:
+            pre = models.Portfolio(name="Pre-existing Book", kind="container", tags=[])
+            s.add(pre)
+            s.commit()
+            baseline = pre.id
+
+        with database.SessionLocal() as s:
+            # Self-tagged "arena" ON PURPOSE: the tag is MODEL-writable (a live smoke
+            # produced exactly this), so ownership must rest on the trace + baseline
+            # pair alone. An earlier version skipped arena-tagged rows and leaked this
+            # one, and the next match then reused the leftover view instead of creating
+            # its own — the very contamination this purge exists to prevent.
+            mine = models.Portfolio(
+                name="Board Review", kind="view", tags=["board-review", "arena"]
+            )
+            s.add(mine)
+            s.commit()
+            mine_id = mine.id
+
+        # The agent's create_portfolio spans reported BOTH ids (it read the
+        # pre-existing book and created its own); only the post-baseline one is ours.
+        monkeypatch.setattr(
+            runner, "collect_portfolio_ids_created", lambda _tid: {baseline, mine_id}
+        )
+        runner._purge_match_portfolios(thread_id=1, portfolio_id_baseline=baseline)
+
+        with database.SessionLocal() as s:
+            assert s.get(models.Portfolio, mine_id) is None, (
+                "model-created portfolio leaked — it will pollute the next match's "
+                "name resolution permanently (the next baseline is taken above it)"
+            )
+            assert s.get(models.Portfolio, baseline) is not None, (
+                "a row at/below the baseline is NOT this match's to delete"
+            )
+
+
 # ---------------------------------------------------------------------------
 # Task 3/4 — manifest load, axes, full-marks replay
 # ---------------------------------------------------------------------------
@@ -123,8 +330,8 @@ def test_high_board_bundle_loads():
     wf = loaded.workflow
     assert wf.persona == "high_board"
     assert [s.expected_skill for s in wf.steps] == [
-        "portfolio-membership", "portfolio-maintenance", "portfolio-view-counting",
-        None, "batch-run-reports", None, "display-report", "generate-report",
+        "portfolio-maintenance", "portfolio-maintenance", None,
+        None, None, None, "display-report", "generate-report",
     ]
     assert len(wf.steps) == 8
     assert wf.par_tool_calls is not None
@@ -138,10 +345,23 @@ def test_high_board_is_par_calibrated():
 
 
 def test_high_board_has_four_axes():
-    from app.services.arena.scoring import _axis_for_assertion
+    """All four axes must be scored — asserted over the checks scoring actually
+    EMITS, not just over manifest assertions.
+
+    The old form scanned ``step.assertions`` only, so it silently depended on a
+    ``skill_routed`` assertion being present to supply the procedural axis. Those
+    were duplicates of the ``expected_skill`` checks and were removed in the
+    2026-07-25 validity audit; procedural coverage comes from the
+    ``expected_skill`` / ``expected_tools`` checks, which are emitted by the scorer
+    rather than declared as Assertion objects. Reading the real breakdown keeps
+    this test honest about what lands on the card.
+    """
+    from app.golden_workflows.transcript import transcript_from_replay
+    from app.services.arena.scoring import objective_breakdown
     loaded = get_workflow_bundle(WF_ID)
-    axes = {_axis_for_assertion(a) for s in loaded.workflow.steps for a in s.assertions}
-    assert {"grounding", "synthesis", "adherence", "procedural"} <= axes
+    axes = objective_breakdown(transcript_from_replay(loaded), loaded)["axes"]
+    assert {"grounding", "synthesis", "adherence", "procedural"} <= set(axes)
+    assert all(v["total"] > 0 for v in axes.values())
 
 
 def test_high_board_golden_replay_scores_full_marks():

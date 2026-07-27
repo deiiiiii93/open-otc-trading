@@ -940,6 +940,9 @@
         },
         "artifact_paths": {
           "markdown": "reports/q3-governance.md"
+        },
+        "artifact_bodies": {
+          "markdown": "# Board Governance Review \u2014 Prior Quarter\n\nStatus: closed and board-approved.\n\n## Governed valuation of record\n\nThe board-approved governed portfolio valuation for the desk control book at\nprior-quarter close was **211.34**. This figure was taken from the persisted\ngoverned risk run of record, not from an inline batch summary.\n\n## Standing resolutions\n\n1. The official governed valuation is the persisted risk run. Inline batch totals\n   are working figures and are never minuted as the governed valuation.\n2. Board-review views are scoped to the desk control book, never hand-picked.\n3. Snowball concentration is reported as a subset of full view membership.\n\n## Carry-forward\n\nRe-confirm the governed valuation against the current persisted risk run and note\nthe quarter-on-quarter movement in the next board governance report.\n"
         }
       }
     ]
@@ -972,7 +975,7 @@
         }
       ],
       "skills_routed": [
-        "portfolio-membership"
+        "portfolio-maintenance"
       ],
       "artifacts": [],
       "response_text": "The Desk Control Book (id 9101) is a Container with explicit membership."
@@ -1196,6 +1199,15 @@
             "args": {
               "report_id": 9400
             }
+          },
+          {
+            "id": "tc7c",
+            "name": "record_answer",
+            "args": {
+              "answer": {
+                "prior_governed_valuation": 211.34
+              }
+            }
           }
         ]
       },
@@ -1231,7 +1243,7 @@
         "display-report"
       ],
       "artifacts": [],
-      "response_text": "Pulled the prior governance report (arena_high_board_governance) for context."
+      "response_text": "Pulled the prior governance report (arena_high_board_governance) for context. It states a prior-quarter board-approved governed valuation of 211.34, taken from the persisted governed risk run of record."
     },
     "step-8-generate": {
       "ai": {
