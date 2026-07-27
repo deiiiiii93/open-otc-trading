@@ -34,8 +34,39 @@ def test_high_board_objective_point_manifest():
     tools = sum(len(s.expected_tools) for s in wf.steps)
     step_assertions = sum(len(s.assertions) for s in wf.steps)
     success_assertions = len(wf.success.assertions)
-    assert (skills, tools, step_assertions, success_assertions) == (4, 6, 26, 2)
-    assert skills + tools + step_assertions + success_assertions == 38
+    assert (skills, tools, step_assertions, success_assertions) == (4, 6, 23, 2)
+    assert skills + tools + step_assertions + success_assertions == 35
+
+
+def test_no_step_scores_the_same_tool_twice():
+    """A bare ``tool_called`` must not duplicate an ``expected_tools`` entry.
+
+    ``expected_tools`` already emits a "tool: X" check, so an argument-free
+    ``tool_called`` for the same tool scores one fact twice — the tool form of the
+    skill double-jeopardy guarded below. Found 2026-07-27: terra's single missed
+    ``get_report`` was charged THREE times (the tool check, a bare duplicate, and the
+    success sequence). ``tool_called`` earns its point only when it CONSTRAINS the call
+    (args / args_any_of / exclusive_keys / max_calls); a prohibition
+    (``tool_not_called``) is never a duplicate since it has no expected_tools analogue.
+    """
+    wf = _wf()
+    for i, step in enumerate(wf.steps):
+        expected = {t.name for t in step.expected_tools}
+        for a in step.assertions:
+            if getattr(a, "type", None) != "tool_called":
+                continue
+            constrains = bool(
+                getattr(a, "args", None)
+                or getattr(a, "args_any_of", None)
+                or getattr(a, "exclusive_keys", None)
+                or getattr(a, "max_calls", None)
+                or getattr(a, "all_calls", False)
+            )
+            assert not (a.name in expected and not constrains), (
+                f"step {i + 1} scores tool {a.name!r} twice: expected_tools already "
+                "emits a check; either drop the bare tool_called or give it args/"
+                "exclusive_keys/max_calls so it constrains the call"
+            )
 
 
 def test_no_step_scores_the_same_skill_twice():

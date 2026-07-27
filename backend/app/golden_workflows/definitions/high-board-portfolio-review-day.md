@@ -227,10 +227,13 @@ steps:
       The agent finds the seeded prior governance report, reads its artifact, and
       reports the prior-quarter governed valuation it states.
     assertions:
-      - type: tool_called
-        name: list_reports
-      - type: tool_called
-        name: get_report
+      # No BARE `tool_called` for list_reports / get_report (2026-07-27): both are in
+      # `expected_tools`, which already emits a "tool: X" check, so an argument-free
+      # `tool_called` scored the same fact twice — defect 6's double jeopardy, in its
+      # tool form. It mattered here: terra's single missed `get_report` was charged
+      # THREE times (the tool check, this duplicate, and the success sequence). Declare
+      # `tool_called` only when it CONSTRAINS the call (args / args_any_of /
+      # exclusive_keys / max_calls), as steps 2 and 4 do.
       - type: tool_result_path
         tool: get_report
         path: report_type
@@ -266,8 +269,9 @@ steps:
       write_report_artifact (not create_report), grounded in the governed evidence:
       the Snowball composition and the persisted governed risk run.
     assertions:
-      - type: tool_called
-        name: write_report_artifact
+      # No bare `tool_called: write_report_artifact` — `expected_tools` already emits
+      # that check (see the step-7 note). `tool_not_called: create_report` stays: a
+      # PROHIBITION has no `expected_tools` equivalent, so it is not a duplicate.
       - type: tool_not_called
         name: create_report
       - type: artifact_exists
