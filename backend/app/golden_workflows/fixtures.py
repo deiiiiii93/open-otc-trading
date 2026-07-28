@@ -213,6 +213,40 @@ def _write_seeded_artifact_bodies(row: dict[str, Any]) -> None:
         (root / basename).write_text(body, encoding="utf-8")
 
 
+def _resolve_inserted_ids(value: Any, ids: dict[str, dict[str, int]]) -> Any:
+    """Replace ``$seed.<ns>.<alias>.id`` tokens with the id the DB actually assigned.
+
+    Recurses through dicts and lists so a token resolves at ANY depth — a seed
+    row's own FK column, or a provenance id embedded deep in a JSON blob.
+
+    Distinct from the load-time ``$seed`` map in :func:`load_fixtures`, which
+    substitutes values *declared in the fixture file* into assertions. That map
+    can only see an id the fixture PINNED, and a pinned id is not re-seedable in
+    every namespace: the arena purge REFUSES to delete a pricing profile that a
+    real (non-arena) run priced against — retiring it instead, to preserve that
+    run's provenance — so the row survives still holding its id and the next
+    match's insert dies on a UNIQUE violation. Omitting the id fixes the
+    collision but leaves anything that pointed at it dangling; this resolver is
+    how those references follow the real row.
+
+    Only ``.id`` is resolvable here (that is all ``ids`` records). A token naming
+    an unknown namespace/alias is left untouched rather than silently nulled, so
+    a typo surfaces as a visible ``$seed...`` string instead of a missing FK.
+    """
+    if isinstance(value, dict):
+        return {k: _resolve_inserted_ids(v, ids) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_resolve_inserted_ids(v, ids) for v in value]
+    if isinstance(value, str) and value.startswith("$seed."):
+        parts = value.split(".")
+        if len(parts) == 4 and parts[3] == "id":
+            _, ns, alias, _field = parts
+            resolved = ids.get(ns, {}).get(alias)
+            if resolved is not None:
+                return resolved
+    return value
+
+
 def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
     """Insert all seed rows via ORM models in FK-safe order.
 
@@ -234,6 +268,15 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
     for ns in _INSERT_ORDER:
         rows = bundle.seed.get(ns, [])
         for row in rows:
+            # Resolve any "$seed.<ns>.<alias>.<field>" token against the id the DB
+            # ACTUALLY assigned, at any nesting depth. The load-time $seed map
+            # (load_fixtures) resolves against values DECLARED in the fixture file,
+            # so it can only see an id the fixture PINNED — and pinning an id is
+            # exactly what a re-seed cannot rely on (see the pricing_profiles note
+            # below). This late pass is the seam for referencing an autoincremented
+            # parent, including ids buried inside a JSON blob such as a risk run's
+            # metrics provenance. _INSERT_ORDER guarantees the parent is already in.
+            row = _resolve_inserted_ids(row, ids)
             if ns == "portfolios":
                 # ``id`` is optional: omit it to let the DB autoincrement, so the
                 # same fixture can be seeded repeatedly (e.g. once per arena match)
