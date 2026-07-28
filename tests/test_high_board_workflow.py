@@ -465,3 +465,91 @@ def test_trap_prose_contradiction_is_out_of_objective_scope():
         rp["step-6-trap"].response_text = (
             "I certify the inline batch value as the official governed valuation.")
     assert _score_mutated(m) == _total()
+
+
+def test_reseed_survives_a_retired_profile_holding_the_seeded_id(
+    offline_session_factory, block_network
+):
+    """A board must not die on match N+1 because match N retired the profile.
+
+    ``_purge_seeded_portfolios`` deliberately REFUSES to delete an arena profile a
+    real (non-arena) run priced against — that run's provenance is not ours to
+    destroy — and RETIRES it instead, so the row survives holding its id. If the
+    fixture PINS that id, the next match's ``apply_seed`` insert dies on
+    ``UNIQUE constraint failed: pricing_parameter_profiles.id`` and every
+    remaining match in the board dies with it. Observed on Run #34 and worked
+    around by hand with a per-match pre-clean; this is the code fix.
+
+    Reproduces the exact live sequence: seed → a real book's run references the
+    seeded profile → purge (retires it) → re-seed.
+    """
+    from app import database, models
+    from app.golden_workflows.fixtures import apply_seed
+    from app.golden_workflows.registry import get_workflow_bundle
+    from app.services.arena.runner import (
+        ARENA_PORTFOLIO_TAG,
+        ARENA_PROFILE_MARKER,
+        _purge_seeded_portfolios,
+    )
+
+    bundle = get_workflow_bundle("high-board-portfolio-review-day").fixtures
+
+    def _seed_like_run_match(s):
+        """apply_seed + the ownership markers run_match stamps on the seeded rows.
+
+        The markers are what scopes the purge, so a test that only calls
+        apply_seed silently exercises a no-op purge.
+        """
+        ids = apply_seed(bundle, s)
+        for p in s.query(models.Portfolio).filter(
+            models.Portfolio.id.in_(list(ids["portfolios"].values()))
+        ):
+            p.tags = sorted({*(p.tags or []), ARENA_PORTFOLIO_TAG})
+        for prof in s.query(models.PricingParameterProfile).filter(
+            models.PricingParameterProfile.id.in_(list(ids["pricing_profiles"].values()))
+        ):
+            prof.summary = {**(prof.summary or {}), ARENA_PROFILE_MARKER: True}
+        s.commit()
+        return ids
+
+    with offline_session_factory():
+        with database.SessionLocal() as s:
+            # A REAL desk book, untouched by the arena purge.
+            real = models.Portfolio(name="Default", kind="container", tags=[])
+            s.add(real)
+            s.flush()
+            ids = _seed_like_run_match(s)
+            profile_id = ids["pricing_profiles"]["prof"]
+            # The match's model prices the REAL book against the seeded profile.
+            s.add(
+                models.RiskRun(
+                    portfolio_id=real.id,
+                    status="completed",
+                    pricing_parameter_profile_id=profile_id,
+                )
+            )
+            s.commit()
+
+        with database.SessionLocal() as s:
+            _purge_seeded_portfolios(s, bundle)
+            s.commit()
+            retired = s.get(models.PricingParameterProfile, profile_id)
+            # Provenance preserved: retired, not deleted.
+            assert retired is not None
+            assert (retired.summary or {}).get("arena_retired") is True
+
+        # The next match re-seeds. This must NOT raise.
+        with database.SessionLocal() as s:
+            ids2 = _seed_like_run_match(s)
+            assert ids2["pricing_profiles"]["prof"] != profile_id
+
+        # And the re-seeded risk run must point at the NEW profile, not the
+        # retired one — a stale FK would hand the agent a dangling pointer.
+        with database.SessionLocal() as s:
+            run = s.get(models.RiskRun, ids2["risk_runs"]["gov"])
+            assert run.pricing_parameter_profile_id == ids2["pricing_profiles"]["prof"]
+            # The provenance ids embedded in the metrics blob must agree too.
+            meta = (run.metrics or {}).get("source_metadata") or {}
+            assert meta.get("pricing_parameter_profile_id") == (
+                ids2["pricing_profiles"]["prof"]
+            )

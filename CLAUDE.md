@@ -472,6 +472,20 @@ defects biased ranking, not just scale.
 
 ### Seed what you reference, and grade the ANSWER not the trace
 
+- **Never pin a fixture `id` in the `pricing_profiles` namespace.** It is the one namespace
+  whose purge can leave a row ALIVE: `_purge_seeded_portfolios` refuses to delete an arena
+  profile a real (non-arena) run priced against and **retires** it instead (preserving that
+  run's provenance), so it keeps squatting on the pinned PK. The next match's `apply_seed`
+  then dies on `UNIQUE constraint failed: pricing_parameter_profiles.id` — and so does
+  **every remaining match in the board** (Run #34). Portfolios are safe to pin (always
+  deleted, never retired) and the flagship's `$seed.portfolios.desk.id` assertion needs the
+  pin. To point at an **autoincremented** parent — a FK column, or provenance ids nested
+  inside a JSON blob like a `risk_runs.metrics` payload — use a
+  `$seed.<ns>.<alias>.id` token: `fixtures._resolve_inserted_ids` resolves it at any depth
+  **after** insertion. The load-time `$seed` map in `load_fixtures` cannot, because it
+  substitutes values **declared in the fixture file** and so only ever sees a pinned id.
+  A stale reference to a purged profile is a **dangling pointer** of the same class as the
+  unwritten-artifact defect below.
 - **A fixture that declares an artifact must CREATE it.** `artifact_paths` is only a JSON
   column; seeding a report writes no file. The agent resolves `/artifacts/<basename>`
   against the mounted `settings.artifact_dir` (`_shaping.normalize_artifact_paths`

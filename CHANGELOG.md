@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **A board no longer dies mid-field when a match retires the seeded pricing profile.**
+  `high-board-portfolio-review-day` was the ONLY workflow pinning fixture PKs, and
+  `pricing_parameter_profiles` is the ONLY namespace whose purge can leave a row alive:
+  `_purge_seeded_portfolios` deliberately REFUSES to delete an arena profile that a real
+  (non-arena) run priced against — retiring it instead, so that run's provenance survives
+  — which leaves the row squatting on the pinned id `9110` forever. The next match's
+  `apply_seed` then dies on `UNIQUE constraint failed: pricing_parameter_profiles.id`,
+  and so does every remaining match in the board. Hit on Run #34 and worked around by
+  hand with a per-match pre-clean; this is the code fix. The profile id is now
+  unpinned (autoincrement, matching `risk-manager-control-day` and
+  `trader-rfq-booking-day`, which never had the bug because they pin nothing), and the 12
+  references to it — the `risk_runs` FK plus the provenance ids buried in that run's
+  `metrics` blob — became `$seed.pricing_profiles.prof.id` tokens resolved by the new
+  `fixtures._resolve_inserted_ids` **after** insertion, against the id the DB actually
+  assigned. Portfolio ids stay pinned on purpose: portfolios are always deleted (never
+  retired), and the manifest's `$seed.portfolios.desk.id` assertion depends on the pin.
+  Verified on a copy of the live DB: 3 consecutive matches each retiring their profile,
+  all surviving, FK and metrics provenance both tracking the real row. Replay still 35/35.
+  - Why the load-time `$seed` map could not do this: it resolves against values
+    **declared in the fixture file**, so it can only ever see a *pinned* id — the exact
+    thing a re-seed cannot rely on. Late resolution is the missing third case.
 - **A seeded report that references an artifact now actually creates it.**
   `artifact_paths` is only a JSON column, so seeding a report wrote no file — the agent
   was handed a dangling pointer. Live trace: the model found the right report

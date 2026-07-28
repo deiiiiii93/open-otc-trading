@@ -72,7 +72,6 @@
     "pricing_profiles": [
       {
         "alias": "prof",
-        "id": 9110,
         "name": "Board Review Profile",
         "valuation_date": "2026-06-24"
       }
@@ -429,7 +428,7 @@
         "alias": "gov",
         "portfolio": "desk",
         "status": "completed",
-        "pricing_parameter_profile_id": 9110,
+        "pricing_parameter_profile_id": "$seed.pricing_profiles.prof.id",
         "metrics": {
           "by_currency": {
             "CNY": {
@@ -506,7 +505,7 @@
               },
               "market_input_source": "market_quote",
               "quote_age_days": 0,
-              "pricing_parameter_profile_id": 9110,
+              "pricing_parameter_profile_id": "$seed.pricing_profiles.prof.id",
               "pricing_parameter_row_id": 1,
               "pricing_parameter_match_type": "underlying",
               "missing_pricing_fields": []
@@ -546,7 +545,7 @@
               },
               "market_input_source": "market_quote",
               "quote_age_days": 0,
-              "pricing_parameter_profile_id": 9110,
+              "pricing_parameter_profile_id": "$seed.pricing_profiles.prof.id",
               "pricing_parameter_row_id": 2,
               "pricing_parameter_match_type": "underlying",
               "missing_pricing_fields": []
@@ -586,7 +585,7 @@
               },
               "market_input_source": "market_quote",
               "quote_age_days": 0,
-              "pricing_parameter_profile_id": 9110,
+              "pricing_parameter_profile_id": "$seed.pricing_profiles.prof.id",
               "pricing_parameter_row_id": 1,
               "pricing_parameter_match_type": "underlying",
               "missing_pricing_fields": []
@@ -626,7 +625,7 @@
               },
               "market_input_source": "market_quote",
               "quote_age_days": 0,
-              "pricing_parameter_profile_id": 9110,
+              "pricing_parameter_profile_id": "$seed.pricing_profiles.prof.id",
               "pricing_parameter_row_id": 3,
               "pricing_parameter_match_type": "underlying",
               "missing_pricing_fields": []
@@ -666,7 +665,7 @@
               },
               "market_input_source": "market_quote",
               "quote_age_days": 0,
-              "pricing_parameter_profile_id": 9110,
+              "pricing_parameter_profile_id": "$seed.pricing_profiles.prof.id",
               "pricing_parameter_row_id": 4,
               "pricing_parameter_match_type": "underlying",
               "missing_pricing_fields": []
@@ -679,7 +678,7 @@
             "effective_valuation_as_of": "2026-06-24T00:00:00",
             "valuation_origin": "profile",
             "profile_valuation_as_of": "2026-06-24T00:00:00",
-            "pricing_parameter_profile_id": 9110,
+            "pricing_parameter_profile_id": "$seed.pricing_profiles.prof.id",
             "market_snapshot_id": null,
             "requested_effective_market_evidence_id": null,
             "methodology": {
@@ -747,7 +746,7 @@
                   "position_id": 1,
                   "pricing_parameter_row": {
                     "dividend_yield": 0.005,
-                    "profile_id": 9110,
+                    "profile_id": "$seed.pricing_profiles.prof.id",
                     "rate": 0.04,
                     "source_trade_id": "",
                     "symbol": "AAPL",
@@ -778,7 +777,7 @@
                   "position_id": 2,
                   "pricing_parameter_row": {
                     "dividend_yield": 0.005,
-                    "profile_id": 9110,
+                    "profile_id": "$seed.pricing_profiles.prof.id",
                     "rate": 0.04,
                     "source_trade_id": "",
                     "symbol": "MSFT",
@@ -809,7 +808,7 @@
                   "position_id": 3,
                   "pricing_parameter_row": {
                     "dividend_yield": 0.005,
-                    "profile_id": 9110,
+                    "profile_id": "$seed.pricing_profiles.prof.id",
                     "rate": 0.04,
                     "source_trade_id": "",
                     "symbol": "AAPL",
@@ -840,7 +839,7 @@
                   "position_id": 4,
                   "pricing_parameter_row": {
                     "dividend_yield": 0.0,
-                    "profile_id": 9110,
+                    "profile_id": "$seed.pricing_profiles.prof.id",
                     "rate": 0.04,
                     "source_trade_id": "",
                     "symbol": "TSLA",
@@ -871,7 +870,7 @@
                   "position_id": 5,
                   "pricing_parameter_row": {
                     "dividend_yield": 0.0,
-                    "profile_id": 9110,
+                    "profile_id": "$seed.pricing_profiles.prof.id",
                     "rate": 0.04,
                     "source_trade_id": "",
                     "symbol": "NVDA",
