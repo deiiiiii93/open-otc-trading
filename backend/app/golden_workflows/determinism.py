@@ -31,10 +31,32 @@ FROZEN_SPOT = 100.0
 # Volatile keys stripped before equality (Codex plan-review [high]): queued-run
 # metadata (created_at/ids) and wall-clock timing fields that vary run-to-run even
 # when every computed number is identical.
+#
+# The second group is DERIVED volatility: provenance fingerprints computed over a
+# raw payload that legitimately contains the wall-clock fields above, so they can
+# never be stable even when every computed number is. Two clean-DB drives differ
+# ONLY in `pricing_parameter_row.updated_at` (seed instants ~0.4s apart) and in
+# these three hashes taken over it — prices, Greeks and resolved markets are
+# byte-identical. Stripping `updated_at` but not a hash OF `updated_at` was simply
+# an inconsistency in the original strip set.
+#
+# Deliberately NOT fixed by making the hashes deterministic: `position_set_hash`
+# embeds `updated_at` so a position mutated IN PLACE (same id, same quantity) still
+# changes the hash, which is how a stale risk run is detected. Dropping that input
+# would trade a production safety invariant for a green test.
+#
+# This costs no coverage: the substance behind both hashes —
+# `source_metadata.market_evidence_manifest` — is still compared field by field
+# (minus its own volatile keys), so a REAL change in resolved market evidence still
+# fails the gate. `_require_evidence_manifest` keeps that guarantee honest by
+# refusing a payload where the manifest is missing.
 _VOLATILE_KEYS = {"created_at", "updated_at", "task_id", "run_id", "id",
                   "queued_at", "completed_at", "as_of", "timestamp",
                   "execution_time", "elapsed", "elapsed_ms", "duration",
-                  "duration_ms", "runtime", "generated_at"}
+                  "duration_ms", "runtime", "generated_at",
+                  # derived-over-volatile provenance fingerprints
+                  "position_set_hash", "market_evidence_hash",
+                  "effective_market_evidence_id"}
 
 
 def _canonical(payload: Any) -> Any:
@@ -65,6 +87,25 @@ def _require_complete(run, payload: dict, *, kind: str, needs: str) -> dict:
     return _canonical(payload)
 
 
+def _require_evidence_manifest(payload: dict, *, kind: str) -> None:
+    """Fail if the market-evidence manifest is absent from a payload.
+
+    ``market_evidence_hash`` / ``effective_market_evidence_id`` are stripped as
+    derived-over-volatile (see ``_VOLATILE_KEYS``), which is only safe while the
+    manifest they fingerprint is itself compared. If a refactor ever drops the
+    manifest from the payload, stripping the hash would silently leave market
+    evidence UNGUARDED — the gate would pass on any market change at all. This
+    keeps that failure loud instead.
+    """
+    manifest = (payload.get("source_metadata") or {}).get("market_evidence_manifest")
+    if not manifest or not manifest.get("positions"):
+        raise AssertionError(
+            f"{kind}: market_evidence_manifest missing/empty — the evidence hashes "
+            "are stripped as volatile, so the manifest is the ONLY thing still "
+            "guarding market evidence. Restore it before trusting this gate."
+        )
+
+
 def _require_priced(risk_metrics: dict) -> dict:
     """Risk has no excluded_positions column; a partial run surfaces as per-position
     greeks_ok/pricing_ok=False. Reject any un-priced position."""
@@ -72,6 +113,7 @@ def _require_priced(risk_metrics: dict) -> dict:
            if not (p.get("greeks_ok") and p.get("pricing_ok"))]
     if bad:
         raise AssertionError(f"risk positions failed pricing/greeks: {bad}")
+    _require_evidence_manifest(risk_metrics, kind="risk")
     return risk_metrics
 
 

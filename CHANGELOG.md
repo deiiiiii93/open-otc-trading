@@ -8,6 +8,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **QuantArk pinned to an exact PyPI version — the golden fixtures were being priced by a
+  live working tree.** `pyproject.toml` declared `quantark>=0.1.0` (a floor, not a pin) and
+  the venv had it installed **editable** from `/Users/fuxinyao/quant-ark`, so a commit in
+  that repo changed pricing here instantly. QuantArk `fdf3a70`
+  (*"fix(autocallables): stabilize PDE and QUAD grids"*, 2026-07-28) rewrote
+  `snowball_quad_engine.py`; every `SnowballQuadEngine` number moved with no change in this
+  repo — high-board's governed valuation `238.0478921928385 → 237.72581292974365`, portfolio
+  `gamma_cash −6.64 → −287.04` — turning the drift guard red. Only Snowballs moved; vanillas
+  (`BlackScholesEngine`) and the barrier (`BarrierAnalyticalEngine`) were exact, which is what
+  localised it. Now `quantark==0.3.0` installed from PyPI: it reproduces the harvested truth
+  EXACTLY (both values, to the last digit), so **no re-harvest and no graded constant changed**
+  — board 94 stays comparable. Verified the downgrade introduces zero regressions by running
+  the 16 full-suite failures under both installs: all 16 fail under the editable 0.4.0 too
+  (pre-existing `.env`/`AGENT_CHANNELS_FILE` leak traps, migrations, compaction benchmark).
+  - Also fixed a metadata lie: the venv reported dist version **0.1.2** while running **0.4.0**
+    code, so any installed-version check was being fooled. `__version__` and dist now agree.
+  - **Trade-off, deliberate:** 0.3.0 forgoes QuantArk's QUAD/PDE stabilisation fix, so the desk
+    runs pre-fix autocallable Greeks. Benchmark reproducibility was chosen over engine
+    recency; moving up is a pin bump + `harvest_fixtures` + graded-constant update, all in ONE
+    commit.
+- **`test_producers_are_reproducible` fixed — the flagship gate was comparing hashes of
+  wall-clock, not results.** Two clean-DB drives differed ONLY in
+  `pricing_parameter_row.updated_at` (seed instants ~0.4s apart) and in the three provenance
+  fingerprints taken over it: `position_set_hash`, `market_evidence_hash`,
+  `effective_market_evidence_id`. Every price, Greek, resolved market and P&L was
+  byte-identical. `_VOLATILE_KEYS` already stripped `updated_at`; it just never extended that
+  to a hash OF `updated_at`, so the three derived keys are now stripped too.
+  - **Not** fixed by making the hashes deterministic: `position_set_hash` embeds `updated_at`
+    on purpose, so a position mutated IN PLACE (same id, same quantity) still changes the hash
+    — that is how a stale risk run is detected. Freezing that input would trade a production
+    safety invariant for a green test.
+  - Costs no coverage: `source_metadata.market_evidence_manifest` is still compared field by
+    field, so a real market-evidence change still fails the gate. New
+    `_require_evidence_manifest` keeps that honest by refusing a payload whose manifest is
+    missing/empty — otherwise a later refactor could drop the manifest and leave the stripped
+    hashes guarding nothing.
 - **`z-ai/glm-5.2` pinned to `protocol: anthropic` — it was scoring a broken integration,
   not ability.** On the 18-model high-board field it came last at objective **14.3**
   (OVR 22, GRD/SYN/PRC all 0), reproducibly across both trials (CON 99). The raw trace
