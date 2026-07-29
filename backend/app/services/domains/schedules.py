@@ -76,6 +76,100 @@ FREQUENCY_MONTHS: dict[str, int] = {
 }
 
 
+def periodic_observation_dates_between(
+    *,
+    start: date,
+    end: date,
+    lockup_months: int,
+    months_step: int = 1,
+    day_of_month: int | None = None,
+) -> list[date]:
+    """Build a periodic schedule inside an absolute lifecycle window.
+
+    ``end`` is the already-resolved contractual exercise date and is always the
+    terminal observation. Following rolls that would exceed it are discarded.
+    """
+    _validate_absolute_window(start=start, end=end)
+    if lockup_months < 0:
+        raise ValueError("lockup_months must not be negative")
+    if months_step <= 0:
+        raise ValueError("months_step must be positive")
+
+    anchor = start if day_of_month is None else start.replace(
+        day=min(day_of_month, calendar.monthrange(start.year, start.month)[1])
+    )
+    rolled: list[date] = []
+    month = lockup_months
+    while True:
+        candidate = add_months(anchor, month)
+        if candidate > end:
+            break
+        adjusted = roll_to_business_day(candidate)
+        if adjusted <= end:
+            rolled.append(adjusted)
+        month += months_step
+
+    rolled.append(end)
+    return list(dict.fromkeys(rolled))
+
+
+def asian_observation_records_between(
+    *,
+    start: date,
+    end: date,
+    frequency: str,
+    weights: list[float] | None = None,
+) -> list[dict]:
+    """Build an Asian averaging schedule from explicit economic dates."""
+    _validate_absolute_window(start=start, end=end)
+    freq = frequency.upper()
+    if freq == "DAILY":
+        dates = china_sse_business_days(start + timedelta(days=1), end)
+    elif freq == "WEEKLY":
+        anchors: list[date] = []
+        current = start + timedelta(days=7)
+        while current <= end:
+            anchors.append(current)
+            current += timedelta(days=7)
+        dates = [
+            adjusted
+            for day in anchors
+            if (adjusted := roll_to_business_day(day)) <= end
+        ]
+        dates.append(end)
+    elif freq in FREQUENCY_MONTHS:
+        step = FREQUENCY_MONTHS[freq]
+        dates = periodic_observation_dates_between(
+            start=start,
+            end=end,
+            lockup_months=step,
+            months_step=step,
+        )
+    else:
+        raise ValueError(f"unsupported averaging frequency: {frequency!r}")
+
+    dates = list(dict.fromkeys(dates))
+    if weights is not None and len(weights) != len(dates):
+        raise ValueError(
+            f"weights length {len(weights)} does not match observation count {len(dates)}"
+        )
+    return [
+        {
+            "observation_date": day,
+            "sequence": index + 1,
+            "weight": weights[index] if weights is not None else None,
+        }
+        for index, day in enumerate(dates)
+    ]
+
+
+def _validate_absolute_window(*, start: date, end: date) -> None:
+    if end <= start:
+        raise ValueError("end must be after start")
+    if roll_to_business_day(end) != end:
+        raise ValueError("end must already be business-day adjusted")
+
+
 def periodic_observation_dates(
     *,
     start: date,
@@ -91,6 +185,9 @@ def periodic_observation_dates(
     lockup..total inclusive). Larger steps give quarterly (3) / semi-annual (6).
     ``lockup_months=0`` includes month 0 — the trade-start date itself — as the
     first observation (inherited monthly behavior).
+
+    Legacy numeric compatibility helper. New Product builders must call
+    :func:`periodic_observation_dates_between`.
     """
     total_months = round(maturity_years * 12)
     anchor = start if day_of_month is None else start.replace(
@@ -121,6 +218,9 @@ def asian_observation_records(
     Returns records ``{observation_date, sequence, weight}`` (1-based sequence;
     ``weight`` is ``None`` for a uniform schedule). When ``weights`` is given its
     length must match the generated observation count.
+
+    Legacy numeric compatibility helper. New Product builders must call
+    :func:`asian_observation_records_between`.
     """
     freq = frequency.upper()
     end = add_months(start, round(maturity_years * 12))

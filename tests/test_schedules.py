@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from app.services.domains import schedules
 
 
@@ -73,3 +75,93 @@ def test_monthly_observation_dates_unchanged_as_step_one():
         start=date(2026, 1, 5), maturity_years=1.0, lockup_months=3
     )
     assert len(dates) == 10  # months 3..12 inclusive
+
+
+def test_periodic_dates_end_exactly_on_exercise():
+    dates = schedules.periodic_observation_dates_between(
+        start=date(2026, 7, 29),
+        end=date(2027, 7, 29),
+        lockup_months=3,
+        months_step=1,
+    )
+
+    assert dates[-1] == date(2027, 7, 29)
+    assert all(day <= date(2027, 7, 29) for day in dates)
+
+
+def test_periodic_dates_append_terminal_when_frequency_misses_it():
+    dates = schedules.periodic_observation_dates_between(
+        start=date(2026, 7, 29),
+        end=date(2027, 7, 29),
+        lockup_months=3,
+        months_step=3,
+    )
+
+    assert dates == [
+        date(2026, 10, 29),
+        date(2027, 1, 29),
+        date(2027, 4, 29),
+        date(2027, 7, 29),
+    ]
+
+
+def test_periodic_dates_collapse_duplicates_after_business_day_roll(monkeypatch):
+    def coalescing_roll(day: date) -> date:
+        if day in {date(2026, 2, 1), date(2026, 3, 1)}:
+            return date(2026, 3, 2)
+        return day
+
+    monkeypatch.setattr(schedules, "roll_to_business_day", coalescing_roll)
+
+    dates = schedules.periodic_observation_dates_between(
+        start=date(2026, 1, 1),
+        end=date(2026, 4, 1),
+        lockup_months=1,
+    )
+
+    assert dates == [date(2026, 3, 2), date(2026, 4, 1)]
+
+
+def test_periodic_dates_with_lockup_beyond_expiry_keep_contractual_terminal():
+    dates = schedules.periodic_observation_dates_between(
+        start=date(2026, 7, 29),
+        end=date(2026, 10, 29),
+        lockup_months=6,
+    )
+
+    assert dates == [date(2026, 10, 29)]
+
+
+def test_periodic_dates_reject_unadjusted_terminal():
+    # 2026-08-01 is Saturday. Lifecycle resolution must happen before schedule
+    # synthesis so a following roll can never move an observation past expiry.
+    with pytest.raises(ValueError, match="business-day adjusted"):
+        schedules.periodic_observation_dates_between(
+            start=date(2026, 7, 29),
+            end=date(2026, 8, 1),
+            lockup_months=1,
+        )
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "lockup_months", "months_step"),
+    [
+        (date(2026, 7, 29), date(2026, 7, 29), 1, 1),
+        (date(2026, 7, 30), date(2026, 7, 29), 1, 1),
+        (date(2026, 7, 29), date(2027, 7, 29), -1, 1),
+        (date(2026, 7, 29), date(2027, 7, 29), 1, 0),
+    ],
+)
+def test_periodic_dates_reject_invalid_windows_and_steps(
+    start: date,
+    end: date,
+    lockup_months: int,
+    months_step: int,
+):
+    with pytest.raises(ValueError):
+        schedules.periodic_observation_dates_between(
+            start=start,
+            end=end,
+            lockup_months=lockup_months,
+            months_step=months_step,
+        )

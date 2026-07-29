@@ -4,6 +4,7 @@ from datetime import date, timedelta
 import pytest
 
 from app.services.domains.schedules import (
+    asian_observation_records_between,
     asian_observation_records,
     china_sse_business_days,
     add_months,
@@ -67,4 +68,89 @@ def test_weights_length_mismatch_rejected():
         asian_observation_records(
             start=START, maturity_years=1.0, frequency="QUARTERLY",
             weights=[1.0, 2.0],  # only 2 for 4 observations
+        )
+
+
+def test_asian_records_never_exceed_exercise():
+    records = asian_observation_records_between(
+        start=date(2026, 7, 29),
+        end=date(2027, 7, 29),
+        frequency="MONTHLY",
+    )
+
+    assert records[-1]["observation_date"] == date(2027, 7, 29)
+    assert all(
+        record["observation_date"] <= date(2027, 7, 29)
+        for record in records
+    )
+
+
+def test_asian_daily_records_use_absolute_end():
+    start = date(2026, 7, 29)
+    end = date(2026, 8, 5)
+
+    records = asian_observation_records_between(
+        start=start,
+        end=end,
+        frequency="DAILY",
+    )
+
+    assert [record["observation_date"] for record in records] == (
+        china_sse_business_days(start + timedelta(days=1), end)
+    )
+    assert records[-1]["observation_date"] == end
+
+
+def test_asian_weekly_records_append_absolute_end_and_remain_unique():
+    records = asian_observation_records_between(
+        start=date(2024, 2, 5),
+        end=date(2024, 8, 5),
+        frequency="WEEKLY",
+    )
+    dates = [record["observation_date"] for record in records]
+
+    assert dates[-1] == date(2024, 8, 5)
+    assert dates == sorted(set(dates))
+
+
+def test_asian_weights_apply_after_rolled_date_deduplication(monkeypatch):
+    import app.services.domains.schedules as schedules
+
+    def coalescing_roll(day: date) -> date:
+        if day in {date(2026, 2, 1), date(2026, 3, 1)}:
+            return date(2026, 3, 2)
+        return day
+
+    monkeypatch.setattr(schedules, "roll_to_business_day", coalescing_roll)
+
+    records = asian_observation_records_between(
+        start=date(2026, 1, 1),
+        end=date(2026, 4, 1),
+        frequency="MONTHLY",
+        weights=[0.4, 0.6],
+    )
+
+    assert [record["observation_date"] for record in records] == [
+        date(2026, 3, 2),
+        date(2026, 4, 1),
+    ]
+    assert [record["weight"] for record in records] == [0.4, 0.6]
+
+
+@pytest.mark.parametrize("frequency", ["DAILY", "WEEKLY", "MONTHLY"])
+def test_asian_between_rejects_invalid_window(frequency: str):
+    with pytest.raises(ValueError, match="end must be after start"):
+        asian_observation_records_between(
+            start=date(2026, 7, 29),
+            end=date(2026, 7, 29),
+            frequency=frequency,
+        )
+
+
+def test_asian_between_rejects_unadjusted_terminal():
+    with pytest.raises(ValueError, match="business-day adjusted"):
+        asian_observation_records_between(
+            start=date(2026, 7, 29),
+            end=date(2026, 8, 1),
+            frequency="DAILY",
         )
