@@ -103,14 +103,25 @@ checkout changes.
 
 1. Pure lifecycle resolver and conventions.
 2. Absolute-date schedule synthesis.
-3. Date-first family contracts and tools schema.
-4. Scalar, touch, futures, scheduled, and autocallable builders.
+3. Scalar, touch, futures, scheduled, and autocallable builders.
+4. Date-first family contracts and tools schema.
 5. Central Booking enforcement and Product identity.
 6. API/read models and human Booking.
 7. RFQ, import, and hedge ingress parity.
 8. Agent tools, prompts, skills, HITL, and golden workflows.
 9. Durable legacy migration and cutover telemetry.
 10. Full regression and documentation.
+
+The numbered task sections retain their design-document numbering, but the
+required execution order is:
+
+```text
+1, 2, 4, 5, 6, 3, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17
+```
+
+Tasks 4-6 must precede Task 3 because the existing contract↔builder consistency
+tests require every published required field to be accepted by its builder at
+each green commit.
 
 ---
 
