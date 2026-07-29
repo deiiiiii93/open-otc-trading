@@ -612,6 +612,29 @@ never by subjective), and exposes `subjective_mean/stdev/mode`.
   manifest means updating all of them — and the golden replay fixtures must keep
   earning full marks (fixture-consistency gate).
 
+### QuantArk is pinned — never install it editable
+
+`pyproject.toml` pins **`quantark==0.3.0`** exactly, not `>=`. QuantArk is the engine the
+golden fixtures are harvested against, so its version is part of the benchmark's evidence
+(the same rule `CLAUDE.md` already states for the compaction A/B: *dependency drift
+invalidates the benchmark*). **Never `pip install -e /path/to/quant-ark`** — that makes a
+live working tree the pricing engine, so an uncommitted edit in a sibling repo silently
+changes benchmark numbers here, and it leaves stale dist metadata (this venv once reported
+`0.1.2` while running `0.4.0` code, defeating any version check).
+
+This is not hypothetical: QuantArk `fdf3a70` *"stabilize PDE and QUAD grids"* rewrote
+`snowball_quad_engine.py` and moved every `SnowballQuadEngine` number — high-board's governed
+valuation `238.0478921928385 → 237.72581292974365`, `gamma_cash −6.64 → −287.04` — with **no
+change in this repo**. Diagnosis shortcut: if only `SnowballOption` rows drift while vanillas
+(`BlackScholesEngine`) and barriers (`BarrierAnalyticalEngine`) stay exact, suspect the QUAD
+engine version before anything in this repo.
+
+To move to a newer QuantArk: bump the pin, re-run
+`python -m app.golden_workflows.harvest_fixtures`, and update the graded constants in the
+affected manifests **in the same commit** — never separately, or fixtures and engine disagree
+and every grounding check silently mis-scores. Note 0.3.0 forgoes 0.4.0's QUAD/PDE
+stabilisation fix: reproducibility was chosen over engine recency, deliberately.
+
 ### Fixture determinism (Spec A — enables the Model Ability Card)
 
 The flagship producers must yield **byte-identical** numbers across runs so grounding

@@ -1809,7 +1809,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "quantark", specifier = ">=0.1.0" },
+    { name = "quantark", specifier = "==0.3.0" },
     { name = "ruamel-yaml", specifier = ">=0.18.0" },
     { name = "scipy", specifier = ">=1.14.0" },
     { name = "seaborn", specifier = ">=0.13.0" },
