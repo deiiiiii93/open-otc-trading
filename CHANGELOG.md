@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`z-ai/glm-5.2` pinned to `protocol: anthropic` — it was scoring a broken integration,
+  not ability.** On the 18-model high-board field it came last at objective **14.3**
+  (OVR 22, GRD/SYN/PRC all 0), reproducibly across both trials (CON 99). The raw trace
+  shows why: through ZenMux's OpenAI-compatible gateway it emits tool calls whose `id` is
+  an **empty string** (`{"type": "tool_call", "id": "", "name": "task", ...}`), and
+  deepagents' `atask` guards `if not runtime.tool_call_id: raise ValueError(...)`. So
+  **every** persona delegation raised before a subagent started — 15 failures across 8
+  steps, no persona ever ran. It is the fourth model needing this pin and was the only one
+  of the four still on `openai`; `minimax-m3` / `qwen3.7-max` / `longcat-2.0` were pinned
+  in 5810e52. After the pin, the same workflow: task spans **15 error → 7 success**,
+  empty-id tool calls **82 → 0**, objective **14.3 → 62.9** (OVR 22 → 64), and the model
+  reaches `get_positions` / `get_portfolio` / `get_latest_risk_run` it previously never
+  called. Board re-merged as run **94** (run 92 superseded).
+  - **Not reproducible on an isolated probe.** Simple, streaming, parallel and direct
+    `task()` calls all returned valid ids (`call_51d61bb2…`); only the real match — full
+    orchestrator prompt, full toolset, deep history — triggers it. Verify any change to
+    this pin against a live match, never a probe (same lesson as the trader-rfq
+    live-reachability fix).
+  - **The `invalid` gate did not catch it**, because `_is_infra_blank` only fires on a
+    BLANK transcript and this one had 7 tool calls plus articulate responses — it
+    correctly diagnosed the spawner failure and honestly declined the trap step rather
+    than fabricating. A transcript where EVERY delegation fails is infra contamination and
+    currently still scores as ability; that gap is a known follow-up, not fixed here.
 - **A board no longer dies mid-field when a match retires the seeded pricing profile.**
   `high-board-portfolio-review-day` was the ONLY workflow pinning fixture PKs, and
   `pricing_parameter_profiles` is the ONLY namespace whose purge can leave a row alive:
