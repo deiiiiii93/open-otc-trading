@@ -52,6 +52,19 @@ channels:
       # in the id. Keep in sync with CANDIDATE_MODELS in services/arena/models.py.
       - id: z-ai/glm-5.2
         provider: openai
+        # Fourth model needing this pin (2026-07-29, board 92). Through the
+        # OpenAI-compatible gateway glm-5.2 emits tool calls whose "id" is an
+        # EMPTY STRING under full orchestrator load. deepagents' task() guards
+        # `if not runtime.tool_call_id: raise` -- so EVERY persona delegation
+        # raised before a subagent started, no persona ever ran, and the model
+        # scored GRD 0 / SYN 0 / PRC 0 (obj 14.3) despite reasoning correctly
+        # about the failure and honestly declining the trap step. Same class as
+        # minimax / qwen3.7-max / longcat below.
+        # NOTE: not reproducible on an isolated probe -- simple, streaming,
+        # parallel and direct task() calls all return valid ids. It needs the
+        # real match (full prompt + toolset + history), so verify any change to
+        # this line against a live match, never a probe.
+        protocol: anthropic
         label: GLM 5.2
         tags: [tool-use, reasoning]
       - id: moonshotai/kimi-k2.7-code
@@ -94,6 +107,15 @@ channels:
         provider: openai
         label: Doubao Seed 2.1 Turbo
         tags: [fast, tool-use]
+      - id: bytedance/doubao-seed-2.1-pro
+        provider: openai
+        # Frontier-tier Doubao sibling of the 2.1-turbo flash route. Live-probed
+        # on the OpenAI-compatible gateway: tool calls arrive parsed with
+        # non-empty ids, so it needs NO protocol: anthropic pin (unlike
+        # minimax-m3 / qwen3.7-max / longcat-2.0 above). Deliberately NOT tagged
+        # 'fast' — that tag is load-bearing for the memory extractor fallback.
+        label: Doubao Seed 2.1 Pro
+        tags: [tool-use, reasoning]
       - id: qwen/qwen3.7-plus
         provider: openai
         label: Qwen 3.7 Plus

@@ -4,7 +4,6 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .playwright-mcp/
-.superpowers/
 .claude/
 .codegraph/
 .understand-anything/
@@ -32,9 +31,16 @@ coverage/
 config/agent_channels.yaml
 /marketing/
 
-# local Claude/zenmux tooling packages — not project source
-.agents/skills/*
-.context/prompts/*
+# local Claude/zenmux tooling packages — not project source.
+# Whole directories, not just the former .agents/skills/* + .context/prompts/*
+# subpaths: those narrower rules were already in place, yet 11 files under them
+# stayed TRACKED (a .gitignore entry never untracks something already in the
+# index — the files were force-added or predate the rule). They were removed
+# from the index with `git rm -r --cached` when these lines landed; the working
+# copies are untouched on disk.
+.agents/
+.context/
+.superpowers/
 
 # stray root sqlite (real DB lives in data/, gitignored)
 open_otc.sqlite

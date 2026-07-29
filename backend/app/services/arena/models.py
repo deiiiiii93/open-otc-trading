@@ -202,6 +202,18 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         provider="openai",
     ),
     ArenaModel(
+        # Frontier-tier Doubao sibling of the two flash routes above — added to
+        # backfill the Run #20 (flagship) and Run #33 (trader-rfq) boards. Its
+        # tool calls parse cleanly on the OpenAI-compatible gateway (live-probed:
+        # non-empty call ids, no vendor markup), so unlike minimax-m3 /
+        # qwen-3-7-max / longcat-2-0 it needs no protocol: anthropic pin.
+        slug="doubao-seed-2-1-pro",
+        zenmux_name="bytedance/doubao-seed-2.1-pro",
+        display_name="Doubao Seed 2.1 Pro",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
+    ArenaModel(
         slug="qwen-3-7-plus",
         zenmux_name="qwen/qwen3.7-plus",
         display_name="Qwen 3.7 Plus",

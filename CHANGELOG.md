@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`z-ai/glm-5.2` pinned to `protocol: anthropic` — it was scoring a broken integration,
+  not ability.** On the 18-model high-board field it came last at objective **14.3**
+  (OVR 22, GRD/SYN/PRC all 0), reproducibly across both trials (CON 99). The raw trace
+  shows why: through ZenMux's OpenAI-compatible gateway it emits tool calls whose `id` is
+  an **empty string** (`{"type": "tool_call", "id": "", "name": "task", ...}`), and
+  deepagents' `atask` guards `if not runtime.tool_call_id: raise ValueError(...)`. So
+  **every** persona delegation raised before a subagent started — 15 failures across 8
+  steps, no persona ever ran. It is the fourth model needing this pin and was the only one
+  of the four still on `openai`; `minimax-m3` / `qwen3.7-max` / `longcat-2.0` were pinned
+  in 5810e52. After the pin, the same workflow: task spans **15 error → 7 success**,
+  empty-id tool calls **82 → 0**, objective **14.3 → 62.9** (OVR 22 → 64), and the model
+  reaches `get_positions` / `get_portfolio` / `get_latest_risk_run` it previously never
+  called. Board re-merged as run **94** (run 92 superseded).
+  - **Not reproducible on an isolated probe.** Simple, streaming, parallel and direct
+    `task()` calls all returned valid ids (`call_51d61bb2…`); only the real match — full
+    orchestrator prompt, full toolset, deep history — triggers it. Verify any change to
+    this pin against a live match, never a probe (same lesson as the trader-rfq
+    live-reachability fix).
+  - **The `invalid` gate did not catch it**, because `_is_infra_blank` only fires on a
+    BLANK transcript and this one had 7 tool calls plus articulate responses — it
+    correctly diagnosed the spawner failure and honestly declined the trap step rather
+    than fabricating. A transcript where EVERY delegation fails is infra contamination and
+    currently still scores as ability; that gap is a known follow-up, not fixed here.
 - **A board no longer dies mid-field when a match retires the seeded pricing profile.**
   `high-board-portfolio-review-day` was the ONLY workflow pinning fixture PKs, and
   `pricing_parameter_profiles` is the ONLY namespace whose purge can leave a row alive:
@@ -137,6 +160,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   axes scoring actually emits rather than only manifest assertions.
 
 ### Added
+- **`bytedance/doubao-seed-2.1-pro` added to the arena field, and backfilled onto the
+  Run #20 (flagship) and Run #33 (trader-rfq) boards** at 2 trials each, matching every
+  peer row. Registered as `ArenaModel(slug="doubao-seed-2-1-pro")` in
+  `services/arena/models.py` plus `config/agent_channels.yaml` and its tracked
+  `.example.yml` (tagged `[tool-use, reasoning]` — deliberately **not** `fast`, which is
+  load-bearing for the memory extractor's fallback tag resolution). A live probe confirmed
+  its tool calls arrive parsed with non-empty ids on ZenMux's OpenAI-compatible gateway,
+  so unlike `minimax-m3` / `qwen-3-7-max` / `longcat-2-0` it needs **no**
+  `protocol: anthropic` pin. Results — flagship: objective **87.2** (34/39), OVR **75**
+  (GRD 99 / ADH 68 / SYN 99 / PRC 88 / EFF 17, CON 89), rank 9/17. trader-rfq: objective
+  **95.2** (60/63), OVR **80** (GRD 93 / ADH 99 / SYN 99 / PRC 90 / EFF 0, CON 99), rank
+  13/18 — its ADH and CON are the joint-highest on that board, and only the golf EFF
+  (125 and 71 tool calls against `par` 35, which zeroes at 2×par) keeps the OVR down.
+  Both rows were produced by the normal `queue_arena_run` + `execute_arena_run_task` path
+  and folded with the shipped `scoring.fold_trial_breakdowns` kernel, so they card on read
+  exactly like their peers; each fold was verified to leave every pre-existing row
+  byte-identical and the board fully carded.
 - **High-Board Portfolio Review — flagship arena parity.** Upgraded the
   `high-board-portfolio-review-day` golden workflow from a shallow 6-step routing
   check to an 8-step, 4-axis discrimination benchmark (50 checks: procedural /
