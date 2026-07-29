@@ -117,7 +117,7 @@ def build_arena_router(
             raise HTTPException(status_code=422, detail="model_ids must not be empty")
 
         try:
-            run, task = _queue_fn(
+            run_id, task = _queue_fn(
                 session,
                 workflow_ids=payload.workflow_ids,
                 model_ids=payload.model_ids,
@@ -138,12 +138,12 @@ def build_arena_router(
         _settings = settings
 
         if submit_async_task_fn is not None:
-            submit_async_task_fn(_exec_fn, task.id, run.id, _sf, settings=_settings)
+            submit_async_task_fn(_exec_fn, task.id, run_id, _sf, settings=_settings)
         else:
             from app.services.task_runner import submit_async_task
-            submit_async_task(_exec_fn, task.id, run.id, _sf, settings=_settings)
+            submit_async_task(_exec_fn, task.id, run_id, _sf, settings=_settings)
 
-        return {"run_id": run.id, "status": "queued"}
+        return {"run_id": run_id, "status": "queued"}
 
     # ------------------------------------------------------------------
     # POST /api/arena/runs/delete

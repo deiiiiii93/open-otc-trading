@@ -82,10 +82,10 @@ def queue_arena_run(
     session.add(task)
     session.flush()
 
-    # Return a simple namespace so callers can access .id and the task
-    from types import SimpleNamespace
-    run_obj = SimpleNamespace(id=run_id)
-    return run_obj, task
+    # Plain int, as the docstring promises. An ORM-shaped wrapper here once let
+    # a launcher pass it into execute_arena_run_task, which str()-rendered it
+    # into an artifact dir literally named "namespace(id=NN)".
+    return run_id, task
 
 
 def _is_infra_blank(transcript) -> bool:
@@ -466,17 +466,6 @@ def _execute(
     _cfg = settings if settings is not None else get_settings()
     _run_match_fn = run_match_fn or _run_match
 
-    # Resolve artifact root
-    if settings is not None:
-        artifact_root = Path(settings.artifact_dir) / "arena" / str(run_id)
-    else:
-        try:
-            from app.config import get_settings
-            artifact_root = Path(get_settings().artifact_dir) / "arena" / str(run_id)
-        except Exception:
-            artifact_root = Path("/tmp/arena") / str(run_id)
-    artifact_root.mkdir(parents=True, exist_ok=True)
-
     # Load the run to get workflow_ids and model_ids
     run_dict = store.get_run(session, run_id)
     if run_dict is None:
@@ -487,6 +476,18 @@ def _execute(
         )
         session.commit()
         return
+
+    # Resolve artifact root — only after the run is known to exist, so an
+    # invalid run_id leaves no orphan directory behind.
+    if settings is not None:
+        artifact_root = Path(settings.artifact_dir) / "arena" / str(run_id)
+    else:
+        try:
+            from app.config import get_settings
+            artifact_root = Path(get_settings().artifact_dir) / "arena" / str(run_id)
+        except Exception:
+            artifact_root = Path("/tmp/arena") / str(run_id)
+    artifact_root.mkdir(parents=True, exist_ok=True)
 
     workflow_ids: list[str] = run_dict["workflow_ids"]
     model_ids: list[str] = run_dict["model_ids"]

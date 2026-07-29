@@ -340,8 +340,7 @@ def test_post_runs_valid_returns_202_and_task_run(session, settings):
         )
         sess.add(task)
         sess.flush()
-        run_obj = SimpleNamespace(id=run_id)
-        return run_obj, task
+        return run_id, task
 
     client = _make_arena_app(
         session, settings,
@@ -1294,16 +1293,56 @@ def test_queue_arena_run_threads_trials(session):
     progress_total by pairs × trials."""
     from app.services.arena.task import queue_arena_run
 
-    run_obj, task = queue_arena_run(
+    run_id, task = queue_arena_run(
         session, workflow_ids=["risk-manager-control-day"],
         model_ids=["gpt-5-5", "claude-opus-4-8"],
         trials=4,
     )
     session.commit()
 
-    run_dict = arena_store.get_run(session, run_obj.id)
+    run_dict = arena_store.get_run(session, run_id)
     assert run_dict["trials"] == 4
     assert task.progress_total == 2 * 4
+
+
+def test_queue_arena_run_returns_int_run_id(session):
+    """The first tuple element is the ArenaRun.id as a plain int, exactly as
+    the docstring promises. A namespace/ORM-shaped wrapper here once let a
+    launcher pass the wrapper into execute_arena_run_task, which str()-rendered
+    it into an artifact dir literally named 'namespace(id=NN)'."""
+    from app.services.arena.task import queue_arena_run
+
+    run_id, task = queue_arena_run(
+        session, workflow_ids=["risk-manager-control-day"],
+        model_ids=["gpt-5-5"],
+    )
+    session.commit()
+
+    assert isinstance(run_id, int)
+    assert arena_store.get_run(session, run_id) is not None
+
+
+def test_execute_unknown_run_id_creates_no_artifact_dir(session, settings):
+    """A run_id that resolves to no ArenaRun must fail the task WITHOUT
+    creating the artifact directory — no filesystem side effects before the
+    run is validated."""
+    database.configure_database(settings)
+    database.init_db()
+
+    with database.SessionLocal() as s:
+        task = TaskRun(kind=TaskKind.ARENA_RUN.value, status="queued")
+        s.add(task)
+        s.flush()
+        task_id = task.id
+        s.commit()
+
+    from app.services.arena.task import execute_arena_run_task
+    execute_arena_run_task(task_id, 424242, database.SessionLocal, settings=settings)
+
+    with database.SessionLocal() as s:
+        task_row = s.get(TaskRun, task_id)
+        assert task_row.status == "failed"
+    assert not (Path(settings.artifact_dir) / "arena" / "424242").exists()
 
 
 # ---------------------------------------------------------------------------
