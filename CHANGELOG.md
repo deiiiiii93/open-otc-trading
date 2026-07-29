@@ -44,6 +44,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `_require_evidence_manifest` keeps that honest by refusing a payload whose manifest is
     missing/empty — otherwise a later refactor could drop the manifest and leave the stripped
     hashes guarding nothing.
+- **`queue_arena_run` now returns a plain `int` run id, matching its docstring.** It
+  returned a `SimpleNamespace(id=run_id)` (an ORM-shaped leftover), while the docstring
+  promised `(run_id_int, task_run)` — a launcher that trusted the docs passed the wrapper
+  into `execute_arena_run_task`, which `str()`-rendered it into nine empty artifact
+  directories literally named `artifacts/arena/namespace(id=81..89)` (2026-07-28, tasks
+  259–267). Those dirs were invisible to run-delete cleanup, which derives paths from the
+  integer id. Callers updated (arena router, tests); regression test pins the int contract.
+- **`execute_arena_run_task` no longer creates the artifact directory before validating
+  the run exists.** The `mkdir` ran ahead of the `get_run` check, so any invalid `run_id`
+  (e.g. a just-deleted run) left an orphan directory behind. Resolution + `mkdir` now sit
+  after the existence check; regression test asserts a failed unknown-run execution leaves
+  no directory.
 - **`z-ai/glm-5.2` pinned to `protocol: anthropic` — it was scoring a broken integration,
   not ability.** On the 18-model high-board field it came last at objective **14.3**
   (OVR 22, GRD/SYN/PRC all 0), reproducibly across both trials (CON 99). The raw trace
