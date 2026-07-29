@@ -107,6 +107,15 @@ channels:
         provider: openai
         label: Doubao Seed 2.1 Turbo
         tags: [fast, tool-use]
+      - id: bytedance/doubao-seed-2.1-pro
+        provider: openai
+        # Frontier-tier Doubao sibling of the 2.1-turbo flash route. Live-probed
+        # on the OpenAI-compatible gateway: tool calls arrive parsed with
+        # non-empty ids, so it needs NO protocol: anthropic pin (unlike
+        # minimax-m3 / qwen3.7-max / longcat-2.0 above). Deliberately NOT tagged
+        # 'fast' — that tag is load-bearing for the memory extractor fallback.
+        label: Doubao Seed 2.1 Pro
+        tags: [tool-use, reasoning]
       - id: qwen/qwen3.7-plus
         provider: openai
         label: Qwen 3.7 Plus

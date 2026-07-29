@@ -160,6 +160,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   axes scoring actually emits rather than only manifest assertions.
 
 ### Added
+- **`bytedance/doubao-seed-2.1-pro` added to the arena field, and backfilled onto the
+  Run #20 (flagship) and Run #33 (trader-rfq) boards** at 2 trials each, matching every
+  peer row. Registered as `ArenaModel(slug="doubao-seed-2-1-pro")` in
+  `services/arena/models.py` plus `config/agent_channels.yaml` and its tracked
+  `.example.yml` (tagged `[tool-use, reasoning]` — deliberately **not** `fast`, which is
+  load-bearing for the memory extractor's fallback tag resolution). A live probe confirmed
+  its tool calls arrive parsed with non-empty ids on ZenMux's OpenAI-compatible gateway,
+  so unlike `minimax-m3` / `qwen-3-7-max` / `longcat-2-0` it needs **no**
+  `protocol: anthropic` pin. Results — flagship: objective **87.2** (34/39), OVR **75**
+  (GRD 99 / ADH 68 / SYN 99 / PRC 88 / EFF 17, CON 89), rank 9/17. trader-rfq: objective
+  **95.2** (60/63), OVR **80** (GRD 93 / ADH 99 / SYN 99 / PRC 90 / EFF 0, CON 99), rank
+  13/18 — its ADH and CON are the joint-highest on that board, and only the golf EFF
+  (125 and 71 tool calls against `par` 35, which zeroes at 2×par) keeps the OVR down.
+  Both rows were produced by the normal `queue_arena_run` + `execute_arena_run_task` path
+  and folded with the shipped `scoring.fold_trial_breakdowns` kernel, so they card on read
+  exactly like their peers; each fold was verified to leave every pre-existing row
+  byte-identical and the board fully carded.
 - **High-Board Portfolio Review — flagship arena parity.** Upgraded the
   `high-board-portfolio-review-day` golden workflow from a shallow 6-step routing
   check to an 8-step, 4-axis discrimination benchmark (50 checks: procedural /
