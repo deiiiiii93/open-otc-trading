@@ -30,31 +30,43 @@ def test_resolve_enum_values_non_enum_is_empty():
     assert resolve_enum_values(spec) == ()
 
 
-# --- Task 2: maturity one_of -------------------------------------------------
-def test_barrier_builds_with_maturity_date_only():
+# --- Task 2: date-first scalar lifecycle ------------------------------------
+def test_barrier_builds_with_exercise_and_settlement_dates():
     r = build_product("BarrierOption", {
         "initial_price": 100.0, "strike": 100.0, "barrier": 80.0,
-        "option_type": "PUT", "barrier_type": "DOWN_IN", "maturity_date": "2027-07-15"})
+        "option_type": "PUT", "barrier_type": "DOWN_IN",
+        "exercise_date": "2099-07-30", "settlement_date": "2099-08-03"})
     assert r.ok, r.validation
+    assert r.product_kwargs["exercise_date"] == "2099-07-30"
+    assert r.product_kwargs["settlement_date"] == "2099-08-03"
 
 
-def test_completeness_accepts_maturity_date_only():
+def test_completeness_accepts_exercise_date_and_optional_settlement_date():
     from app.tools.term_completeness import check_term_completeness
     out = check_term_completeness.func(
         "BarrierOption",
         {"initial_price": 100.0, "strike": 100.0, "barrier": 80.0,
-         "maturity_date": "2027-07-15"})
-    assert "maturity_years" not in out["missing_required"]
+         "exercise_date": "2099-07-30", "settlement_date": "2099-08-03"})
+    assert "exercise_date" not in out["missing_required"]
     assert out["complete"] is True
 
 
-def test_barrier_rejects_both_maturity_representations():
-    r = build_product("BarrierOption", {
-        "initial_price": 100.0, "strike": 100.0, "barrier": 80.0,
-        "option_type": "PUT", "barrier_type": "DOWN_IN",
-        "maturity_years": 1.0, "maturity_date": "2027-07-15"})
-    assert not r.ok
-    assert "maturity" in ((r.validation or {}).get("error") or "").lower()
+@pytest.mark.parametrize("legacy_key,legacy_value", [
+    ("maturity", 1.0),
+    ("maturity_years", 1.0),
+    ("maturity_date", "2099-07-30"),
+    ("expiry_date", "2099-07-30"),
+    ("expiry", "2099-07-30"),
+])
+def test_completeness_rejects_legacy_scalar_lifecycle_inputs(legacy_key, legacy_value):
+    from app.tools.term_completeness import check_term_completeness
+    out = check_term_completeness.func(
+        "BarrierOption",
+        {"initial_price": 100.0, "strike": 100.0, "barrier": 80.0,
+         legacy_key: legacy_value})
+    assert out["complete"] is False
+    assert "exercise_date" in out["missing_required"]
+    assert {"code": "lifecycle_mixed_expiry", "provided": [legacy_key]} in out["conflicts"]
 
 
 def test_completeness_maturity_date_does_not_satisfy_deferred_family():
@@ -76,12 +88,12 @@ V1_FAMILIES = [
 ]
 
 PROBE = {
-    "EuropeanVanillaOption": {"initial_price": 100.0, "maturity_years": 1.0, "strike": 100.0},
-    "AmericanOption": {"initial_price": 100.0, "maturity_years": 1.0, "strike": 100.0},
-    "CashOrNothingDigitalOption": {"initial_price": 100.0, "maturity_years": 1.0, "strike": 100.0, "cash_payoff": 10.0},
-    "BarrierOption": {"initial_price": 100.0, "maturity_years": 1.0, "strike": 100.0, "barrier": 80.0},
-    "SingleSharkfinOption": {"initial_price": 100.0, "maturity_years": 1.0, "strike": 100.0, "barrier": 120.0},
-    "DoubleSharkfinOption": {"initial_price": 100.0, "maturity_years": 1.0, "strike": 100.0, "lower_barrier": 80.0, "upper_barrier": 120.0},
+    "EuropeanVanillaOption": {"initial_price": 100.0, "exercise_date": "2099-07-30", "settlement_date": "2099-08-03", "strike": 100.0},
+    "AmericanOption": {"initial_price": 100.0, "exercise_date": "2099-07-30", "settlement_date": "2099-08-03", "strike": 100.0},
+    "CashOrNothingDigitalOption": {"initial_price": 100.0, "exercise_date": "2099-07-30", "settlement_date": "2099-08-03", "strike": 100.0, "cash_payoff": 10.0},
+    "BarrierOption": {"initial_price": 100.0, "exercise_date": "2099-07-30", "settlement_date": "2099-08-03", "strike": 100.0, "barrier": 80.0},
+    "SingleSharkfinOption": {"initial_price": 100.0, "exercise_date": "2099-07-30", "settlement_date": "2099-08-03", "strike": 100.0, "barrier": 120.0},
+    "DoubleSharkfinOption": {"initial_price": 100.0, "exercise_date": "2099-07-30", "settlement_date": "2099-08-03", "strike": 100.0, "lower_barrier": 80.0, "upper_barrier": 120.0},
     "AsianOption": {"initial_price": 100.0, "maturity_years": 1.0, "strike": 100.0, "averaging_frequency": "MONTHLY"},
     "OneTouchOption": {"initial_price": 100.0, "maturity_years": 1.0, "barrier": 120.0, "cash_payoff": 10.0, "barrier_direction": "UP", "touch_type": "ONE_TOUCH"},
     "DoubleOneTouchOption": {"initial_price": 100.0, "maturity_years": 1.0, "upper_barrier": 120.0, "lower_barrier": 80.0, "cash_payoff": 10.0, "touch_type": "DOUBLE_ONE_TOUCH"},
@@ -128,18 +140,25 @@ def test_every_enum_value_round_trips_faithfully(family):
                     f"{family}.{spec.input_name}={value} classified as {r.product_kwargs[spec.input_name]}"
 
 
-_MATURITY_ALT_FAMILIES = ["EuropeanVanillaOption", "AmericanOption",
-                          "CashOrNothingDigitalOption", "BarrierOption",
-                          "SingleSharkfinOption", "DoubleSharkfinOption"]
+_DATE_FIRST_FAMILIES = ["EuropeanVanillaOption", "AmericanOption",
+                        "CashOrNothingDigitalOption", "BarrierOption",
+                        "SingleSharkfinOption", "DoubleSharkfinOption"]
 
 
-@pytest.mark.parametrize("family", _MATURITY_ALT_FAMILIES)
-def test_maturity_alternative_is_faithful(family):
-    base = {k: v for k, v in PROBE[family].items() if k != "maturity_years"}
+@pytest.mark.parametrize("family", _DATE_FIRST_FAMILIES)
+def test_scalar_contract_advertises_dates_while_builder_keeps_legacy_compatibility(family):
+    contract_names = {field.input_name for field in contract_for(family).fields}
+    assert {"exercise_date", "settlement_date"} <= contract_names
+    assert not ({"maturity", "maturity_years", "maturity_date", "expiry_date", "expiry"}
+                & contract_names)
+
+    base = {
+        key: value
+        for key, value in PROBE[family].items()
+        if key not in {"exercise_date", "settlement_date"}
+    }
     assert build_product(family, {**base, "maturity_years": 1.0}).ok
-    assert build_product(family, {**base, "maturity_date": "2027-07-15"}).ok
-    both = build_product(family, {**base, "maturity_years": 1.0, "maturity_date": "2027-07-15"})
-    assert not both.ok
+    assert build_product(family, {**base, "maturity_date": "2099-07-30"}).ok
 
 
 @pytest.mark.parametrize("family", ["AsianOption", "OneTouchOption", "DoubleOneTouchOption"])
@@ -169,9 +188,11 @@ def test_barrier_schema_shape():
     assert names["barrier_type"]["enum_values"] == ["UP_IN", "UP_OUT", "DOWN_IN", "DOWN_OUT"]
     assert "DOWN_AND_IN" not in names["barrier_type"]["enum_values"]
     assert names["initial_price"]["required"] is True
-    assert names["maturity_years"]["required"] is False
-    assert names["maturity_years"]["one_of"] == "maturity"
-    assert {"one_of": "maturity", "members": ["maturity_years", "maturity_date"]} in out["required_groups"]
+    assert names["exercise_date"]["required"] is True
+    assert names["settlement_date"]["required"] is False
+    assert not ({"maturity", "maturity_years", "maturity_date", "expiry_date", "expiry"}
+                & names.keys())
+    assert out["required_groups"] == []
 
 
 def test_unlisted_family_returns_schema_unavailable(monkeypatch):
@@ -190,26 +211,37 @@ def test_unknown_class_errors():
 
 
 # --- Code-review findings (Codex, Stage 6) -----------------------------------
-def test_malformed_maturity_date_is_rejected():
+def test_malformed_exercise_date_is_rejected():
     r = build_product("BarrierOption", {
         "initial_price": 100.0, "strike": 100.0, "barrier": 80.0,
-        "option_type": "PUT", "barrier_type": "DOWN_IN", "maturity_date": "not-a-date"})
+        "option_type": "PUT", "barrier_type": "DOWN_IN", "exercise_date": "not-a-date"})
     assert not r.ok
     assert "ISO" in ((r.validation or {}).get("error") or "")
 
 
-def test_expired_maturity_date_is_rejected():
+def test_malformed_settlement_date_is_rejected():
     r = build_product("BarrierOption", {
         "initial_price": 100.0, "strike": 100.0, "barrier": 80.0,
-        "option_type": "PUT", "barrier_type": "DOWN_IN", "maturity_date": "2000-01-01"})
+        "option_type": "PUT", "barrier_type": "DOWN_IN",
+        "exercise_date": "2099-07-30", "settlement_date": "not-a-date"})
+    assert not r.ok
+    assert "settlement_date" in ((r.validation or {}).get("error") or "")
+    assert "ISO" in ((r.validation or {}).get("error") or "")
+
+
+def test_expired_exercise_date_is_rejected():
+    r = build_product("BarrierOption", {
+        "initial_price": 100.0, "strike": 100.0, "barrier": 80.0,
+        "option_type": "PUT", "barrier_type": "DOWN_IN", "exercise_date": "2000-01-01"})
     assert not r.ok
     assert "expired" in ((r.validation or {}).get("error") or "").lower()
 
 
-def test_valid_future_maturity_date_builds():
+def test_valid_future_exercise_and_settlement_dates_build():
     r = build_product("BarrierOption", {
         "initial_price": 100.0, "strike": 100.0, "barrier": 80.0,
-        "option_type": "PUT", "barrier_type": "DOWN_IN", "maturity_date": "2099-07-15"})
+        "option_type": "PUT", "barrier_type": "DOWN_IN",
+        "exercise_date": "2099-07-30", "settlement_date": "2099-08-03"})
     assert r.ok, r.validation
 
 
@@ -224,14 +256,14 @@ def test_clean_prebuilt_asian_termsheet_does_not_trigger_synthesis_fallback():
     assert _has_raw_termsheet_vocab(prebuilt_asian) is False
 
 
-def test_completeness_rejects_conflicting_maturity_members():
+def test_completeness_rejects_legacy_maturity_even_with_exercise_date():
     from app.tools.term_completeness import check_term_completeness
     out = check_term_completeness.func(
         "BarrierOption",
         {"initial_price": 100.0, "strike": 100.0, "barrier": 80.0,
-         "maturity_years": 1.0, "maturity_date": "2027-07-15"})
+         "exercise_date": "2099-07-30", "maturity_years": 1.0})
     assert out["complete"] is False
-    assert out["conflicts"] and out["conflicts"][0]["one_of"] == "maturity"
+    assert {"code": "lifecycle_mixed_expiry", "provided": ["maturity_years"]} in out["conflicts"]
 
 
 # --- Task 5: registration ----------------------------------------------------

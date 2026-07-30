@@ -16,10 +16,11 @@ premium priced by the engine, not by convention.
 
 ## Pricing Inputs
 
-Required: initial price (spot), maturity in years, strike.
-Defaulted: option type (call or put; desk default, configurable) and
-contract multiplier. American and European variants share the same term
-set; the family choice itself selects the exercise style.
+Required: initial price (spot), exercise date, strike.
+Defaulted: settlement date (server-derived when omitted), option type
+(call or put; desk default, configurable), and contract multiplier.
+American and European variants share the same term set; the family choice
+itself selects the exercise style.
 
 ## Diagnostics
 

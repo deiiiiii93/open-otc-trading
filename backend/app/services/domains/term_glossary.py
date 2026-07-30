@@ -9,6 +9,7 @@ from __future__ import annotations
 TERM_GLOSSARY: dict[str, tuple[str, ...]] = {
     "initial_price": ("initial price", "spot"),
     "maturity_years": ("maturity", "tenor"),
+    "exercise_date": ("exercise date",),
     "trade_start_date": ("trade start date",),
     "observation_frequency": ("observation frequency", "observation schedule"),
     "barrier_config.ko_barrier": ("KO barrier", "knock-out barrier"),

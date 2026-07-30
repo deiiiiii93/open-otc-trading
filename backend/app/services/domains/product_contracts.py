@@ -98,14 +98,17 @@ _S0 = FieldSpec("initial_price", "number", "Initial fixing S0 / valuation spot."
 _STRIKE = FieldSpec("strike", "number", "Strike price.")
 _MULT = FieldSpec("contract_multiplier", "number", "Contract multiplier (default 1.0).", default=1.0)
 _OPTION_TYPE = FieldSpec("option_type", "enum", "CALL or PUT.", default="CALL", enum_ref="OptionType")
-_MATURITY_YEARS = FieldSpec("maturity_years", "number",
-                            "Tenor in years. Supply exactly one of the 'maturity' group.",
-                            one_of="maturity")
-_MATURITY_DATE = FieldSpec("maturity_date", "date",
-                           "Explicit expiry date (ISO). Supply exactly one of the 'maturity' group.",
-                           one_of="maturity")
 _TENOR = FieldSpec("maturity_years", "number", "Tenor in years.")
-_VANILLA_FIELDS = (_S0, _MATURITY_YEARS, _MATURITY_DATE, _STRIKE, _OPTION_TYPE, _MULT)
+_EXERCISE_DATE = FieldSpec(
+    "exercise_date", "date", "Final exercise date (ISO)."
+)
+_SETTLEMENT_DATE = FieldSpec(
+    "settlement_date", "date",
+    "Optional explicit settlement date (ISO); otherwise server-derived.",
+)
+_VANILLA_FIELDS = (
+    _S0, _EXERCISE_DATE, _SETTLEMENT_DATE, _STRIKE, _OPTION_TYPE, _MULT
+)
 _VANILLA_TENOR_FIELDS = (_S0, _TENOR, _STRIKE, _OPTION_TYPE, _MULT)
 
 
@@ -155,12 +158,13 @@ _SNOWBALL_FIELDS = (
 # required field) — otherwise the schema would tell the model to invent an unneeded number.
 _SNOWBALL_FIELDS_NO_KO_RATE = tuple(f for f in _SNOWBALL_FIELDS if f is not _KO_RATE)
 
-# Vanilla family: _build_vanilla descendants require S0 + maturity + strike and
-# default option_type/contract_multiplier. `solvable` is advisory and left empty
-# for the non-snowball families (no consumer reads contract.solvable for them yet;
-# filter_solved uses the runtime solve_target).
-_VANILLA_REQUIRED = ("initial_price", "maturity_years", "strike")
-_VANILLA_DEFAULTED = ("option_type", "contract_multiplier")
+# Scalar option families publish their stable legal dates. The builder retains
+# unadvertised maturity compatibility during the staged migration. Asian remains
+# tenor-based until its observation schedule is migrated to absolute dates.
+_VANILLA_REQUIRED = ("initial_price", "exercise_date", "strike")
+_VANILLA_DEFAULTED = ("option_type", "contract_multiplier", "settlement_date")
+_VANILLA_TENOR_REQUIRED = ("initial_price", "maturity_years", "strike")
+_VANILLA_TENOR_DEFAULTED = ("option_type", "contract_multiplier")
 
 
 # Snowball / autocallable base. KO-reset and Phoenix build on the snowball
@@ -252,7 +256,8 @@ _CONTRACTS: dict[str, FamilyContract] = {
         fields=_VANILLA_FIELDS,
     ),
     "AsianOption": FamilyContract(
-        "AsianOption", _VANILLA_REQUIRED, _VANILLA_DEFAULTED + ("averaging_frequency",), (),
+        "AsianOption", _VANILLA_TENOR_REQUIRED,
+        _VANILLA_TENOR_DEFAULTED + ("averaging_frequency",), (),
         fields=_VANILLA_TENOR_FIELDS + (
             FieldSpec("averaging_frequency", "enum", "Averaging observation frequency.",
                       default="MONTHLY",

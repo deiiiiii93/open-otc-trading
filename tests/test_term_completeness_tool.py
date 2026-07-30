@@ -23,7 +23,7 @@ def test_sharkfin_missing_barrier_only() -> None:
     # confabulate from priors).
     result = _invoke(
         "SingleSharkfinOption",
-        {"initial_price": 100, "maturity_years": 1.0, "strike": 100,
+        {"initial_price": 100, "exercise_date": "2099-07-30", "strike": 100,
          "participation_rate": 1.0},
     )
     assert result["complete"] is False

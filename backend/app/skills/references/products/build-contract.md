@@ -58,10 +58,10 @@ to 0 because coupons accrue via the coupon leg, not the KO leg).
 
 | Family | Engine | Required terms |
 |---|---|---|
-| `EuropeanVanillaOption` | `BlackScholesEngine` | `strike`, `maturity_years` (+ `option_type` CALL/PUT) |
-| `AmericanOption` | `AmericanOptionAnalyticalEngine` | `strike`, `maturity_years` (+ `option_type`) |
-| `CashOrNothingDigitalOption` | `DigitalOptionAnalyticalEngine` | `strike`, `cash_payoff`, `maturity_years` (+ `option_type`) |
-| `BarrierOption` | `BarrierAnalyticalEngine` | `strike`, `barrier`, `maturity_years`; optional `barrier_type` (default `DOWN_OUT`), `rebate` |
+| `EuropeanVanillaOption` | `BlackScholesEngine` | `strike`, `exercise_date`; optional `settlement_date`, `option_type` (CALL/PUT) |
+| `AmericanOption` | `AmericanOptionAnalyticalEngine` | `strike`, `exercise_date`; optional `settlement_date`, `option_type` |
+| `CashOrNothingDigitalOption` | `DigitalOptionAnalyticalEngine` | `strike`, `cash_payoff`, `exercise_date`; optional `settlement_date`, `option_type` |
+| `BarrierOption` | `BarrierAnalyticalEngine` | `strike`, `barrier`, `exercise_date`; optional `settlement_date`, `barrier_type` (default `DOWN_OUT`), `rebate` |
 | `OneTouchOption` | `OneTouchAnalyticalEngine` | `barrier`, `cash_payoff`, `maturity_years`; optional `barrier_direction` (`UP` default/`DOWN`), `touch_type` (`ONE_TOUCH` default/`NO_TOUCH`) |
 | `DoubleOneTouchOption` | `OneTouchAnalyticalEngine` | `upper_barrier`, `lower_barrier`, `cash_payoff`, `maturity_years`; optional `touch_type` (`DOUBLE_ONE_TOUCH` default/`DOUBLE_NO_TOUCH`) |
 | `Futures` | `DeltaOneEngine` | `underlying`, `maturity_years`; optional `contract_multiplier` |
@@ -72,8 +72,8 @@ to 0 because coupons accrue via the coupon leg, not the KO leg).
 | Family | Engine | Required terms |
 |---|---|---|
 | `AsianOption` | `AsianOptionAnalyticalEngine` | `strike`, `maturity_years`; optional `averaging_frequency` (`MONTHLY` default/`DAILY`) → observation count, `option_type` |
-| `SingleSharkfinOption` | `SingleSharkfinOptionAnalyticalEngine` | `strike`, `barrier`, `maturity_years`; optional `participation_rate` (default 1.0), `option_type` |
-| `DoubleSharkfinOption` | `DoubleSharkfinOptionAnalyticalEngine` | `strike`, `lower_barrier`, `upper_barrier`, `maturity_years`; optional `participation_rate`, `option_type` |
+| `SingleSharkfinOption` | `SingleSharkfinOptionAnalyticalEngine` | `strike`, `barrier`, `exercise_date`; optional `settlement_date`, `participation_rate` (default 1.0), `option_type` |
+| `DoubleSharkfinOption` | `DoubleSharkfinOptionAnalyticalEngine` | `strike`, `lower_barrier`, `upper_barrier`, `exercise_date`; optional `settlement_date`, `participation_rate`, `option_type` |
 | `RangeAccrualOption` | `RangeAccrualAnalyticalEngine` | `maturity_years`, `lower_barrier`|`lower_barrier_pct`, `upper_barrier`|`upper_barrier_pct`, `accrual_rate`; optional `observation_frequency` (`DAILY` default/`MONTHLY`) |
 
 ## Already-built termsheets (OTC import)

@@ -18,8 +18,9 @@ lower barrier. Touch type controls pay-at-touch versus pay-at-maturity.
 
 ## Pricing Inputs
 
-Digital - required: initial price (spot), maturity in years, strike, cash
-payoff. Defaulted: option type, contract multiplier.
+Digital - required: initial price (spot), exercise date, strike, cash
+payoff. Defaulted: settlement date (server-derived when omitted), option
+type, contract multiplier.
 One-touch - required: initial price, maturity in years, barrier, cash
 payoff. Defaulted: barrier direction, touch type.
 Double one-touch - required: initial price, maturity in years, upper

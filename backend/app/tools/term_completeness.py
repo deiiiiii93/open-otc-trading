@@ -126,6 +126,20 @@ def check_term_completeness(quantark_class: str, terms: dict[str, Any] | None = 
         for group, members in one_of_groups(contract).items()
         if sum(1 for m in members if _is_provided(_lookup(terms, m))) > 1
     ]
+    # Date-first scalar contracts intentionally do not advertise maturity aliases.
+    # Flag them rather than letting a legacy key appear complete or be silently ignored.
+    field_names = {spec.input_name for spec in contract.fields}
+    if "exercise_date" in field_names and "maturity_years" not in field_names:
+        legacy_lifecycle = [
+            key
+            for key in ("maturity", "maturity_years", "maturity_date", "expiry_date", "expiry")
+            if _is_provided(_lookup(terms, key))
+        ]
+        if legacy_lifecycle:
+            conflicts.append({
+                "code": "lifecycle_mixed_expiry",
+                "provided": legacy_lifecycle,
+            })
     # Representation-complete barrier ambiguity: the distinct ways to express ONE barrier are
     # {the canonical dotted/nested path (both literal-dotted and nested-dict)} ∪ {flat abs/pct
     # aliases}. Flag a conflict only when they resolve to DIFFERENT levels (the same value in

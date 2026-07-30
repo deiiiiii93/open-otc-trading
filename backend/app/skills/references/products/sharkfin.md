@@ -17,10 +17,11 @@ variant carries an upper barrier and a lower barrier around the strike.
 
 ## Pricing Inputs
 
-Single - required: initial price (spot), maturity in years, strike,
-barrier. Double - required: initial price, maturity in years, strike,
-lower barrier, upper barrier. Both default: option type, contract
-multiplier, participation rate (desk default, configurable).
+Single - required: initial price (spot), exercise date, strike, barrier.
+Double - required: initial price, exercise date, strike, lower barrier,
+upper barrier. Both default: settlement date (server-derived when omitted),
+option type, contract multiplier, participation rate (desk default,
+configurable).
 
 ## Diagnostics
 

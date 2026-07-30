@@ -16,9 +16,10 @@ sticky lifecycle facts once observed.
 
 ## Pricing Inputs
 
-Required: initial price (spot), maturity in years, strike, barrier.
-Defaulted: option type, contract multiplier, barrier type (desk default,
-configurable), rebate (amount paid on knock-out; defaults to none).
+Required: initial price (spot), exercise date, strike, barrier.
+Defaulted: settlement date (server-derived when omitted), option type,
+contract multiplier, barrier type (desk default, configurable), rebate
+(amount paid on knock-out; defaults to none).
 
 ## Diagnostics
 

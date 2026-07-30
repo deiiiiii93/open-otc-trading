@@ -138,6 +138,44 @@ def test_scalar_families_build_and_validate(family, terms, engine):
     assert result.validation["ok"] is True, result.validation
 
 
+@pytest.mark.parametrize(
+    "family,terms",
+    [
+        ("EuropeanVanillaOption",
+         {"initial_price": 100.0, "strike": 100.0, "option_type": "CALL"}),
+        ("AmericanOption",
+         {"initial_price": 100.0, "strike": 100.0, "option_type": "PUT"}),
+        ("CashOrNothingDigitalOption",
+         {"initial_price": 100.0, "strike": 100.0, "cash_payoff": 10.0,
+          "option_type": "CALL"}),
+        ("BarrierOption",
+         {"initial_price": 100.0, "strike": 100.0, "option_type": "CALL",
+          "barrier": 75.0, "barrier_type": "DOWN_OUT"}),
+        ("SingleSharkfinOption",
+         {"initial_price": 100.0, "strike": 100.0, "option_type": "CALL",
+          "barrier": 120.0}),
+        ("DoubleSharkfinOption",
+         {"initial_price": 100.0, "strike": 100.0, "option_type": "CALL",
+          "lower_barrier": 80.0, "upper_barrier": 120.0}),
+    ],
+)
+def test_scalar_option_families_preserve_explicit_lifecycle_dates(family, terms):
+    result = build_product(
+        family,
+        {
+            **terms,
+            "exercise_date": "2099-07-30",
+            "settlement_date": "2099-08-03",
+        },
+    )
+
+    assert result.ok is True, result.validation
+    assert result.product_kwargs["exercise_date"] == "2099-07-30"
+    assert result.product_kwargs["settlement_date"] == "2099-08-03"
+    assert "maturity" not in result.product_kwargs
+    assert "maturity_years" not in result.product_kwargs
+
+
 # --- DeltaOne (Spot/Futures): persistence-only metadata is carried as _otc_ so
 # it survives in stored terms (for the equity_spot/futures_products side-tables)
 # but is popped before QuantArk construction. The QuantArk constructor surfaces
@@ -223,6 +261,16 @@ def test_deltaone_position_prices_with_otc_metadata_stripped():
 def test_vanilla_missing_strike_reported():
     result = build_product("EuropeanVanillaOption", {"option_type": "CALL", "maturity_years": 1.0})
     assert "strike" in result.missing
+    assert result.ok is False
+
+
+def test_date_first_scalar_missing_exercise_date_reported():
+    result = build_product(
+        "EuropeanVanillaOption",
+        {"initial_price": 100.0, "strike": 100.0, "option_type": "CALL"},
+    )
+    assert "exercise_date" in result.missing
+    assert "maturity_years" not in result.missing
     assert result.ok is False
 
 

@@ -153,12 +153,11 @@ def _require(terms: dict, out: _Out, key: str, *, alias: str | None = None) -> A
     return value
 
 
-def _explicit_maturity_date(terms: dict) -> str | None:
-    """An explicit-date maturity, mapped onto QuantArk's ``exercise_date`` field.
+def _explicit_exercise_date(terms: dict) -> str | None:
+    """An explicit exercise date, including legacy term-sheet spellings.
 
-    Accepts term-sheet synonyms (``maturity_date``/``expiry_date``/``expiry``) as
-    an alternative to tenor-style ``maturity_years``; QuantArk derives the year
-    fraction from the date at valuation time.
+    The date-first contract advertises only ``exercise_date``. The maturity/expiry
+    aliases remain accepted here temporarily for non-agent legacy callers.
     """
     for key in ("exercise_date", "maturity_date", "expiry_date", "expiry"):
         val = terms.get(key)
@@ -177,10 +176,11 @@ def _parse_iso_date(value: str) -> date | None:
         return None
 
 
-def _common_option(terms: dict, out: _Out) -> dict:
+def _common_option(terms: dict, out: _Out, *, date_first: bool = True) -> dict:
     pk: dict[str, Any] = {"contract_multiplier": _num(terms.get("contract_multiplier")) or 1.0}
     m = _num(terms.get("maturity_years"))
-    explicit_date = _explicit_maturity_date(terms)
+    explicit_date = _explicit_exercise_date(terms) if date_first else None
+    settlement_date = terms.get("settlement_date") if date_first else None
     if m is not None and explicit_date is not None:
         # Contradictory maturity: fail loudly rather than silently dropping the date.
         out.missing.append("__maturity_conflict__")
@@ -195,7 +195,12 @@ def _common_option(terms: dict, out: _Out) -> dict:
         else:
             pk["exercise_date"] = explicit_date
     else:
-        out.missing.append("maturity_years")
+        out.missing.append("exercise_date" if date_first else "maturity_years")
+    if settlement_date not in (None, ""):
+        if _parse_iso_date(str(settlement_date)) is None:
+            out.missing.append("__settlement_invalid__")
+        else:
+            pk["settlement_date"] = str(settlement_date)
     return pk
 
 
@@ -415,10 +420,15 @@ def _build_phoenix(terms: dict, *, quantark_class: str) -> _Out:
     return out
 
 
-def _build_vanilla(terms: dict, *, quantark_class: str) -> _Out:
+def _build_vanilla(
+    terms: dict,
+    *,
+    quantark_class: str,
+    date_first: bool = True,
+) -> _Out:
     out = _Out()
     _initial_price(terms, out)  # required as the position's S0 / validation spot
-    pk = _common_option(terms, out)
+    pk = _common_option(terms, out, date_first=date_first)
     strike = _num(_require(terms, out, "strike"))
     if strike is not None:
         pk["strike"] = strike
@@ -562,7 +572,7 @@ _AVERAGING_PERIODS_PER_YEAR = {
 def _build_asian(terms: dict, *, quantark_class: str) -> _Out:
     # AsianOption averages over `num_observations` evenly spaced points; the
     # count is derived from maturity + frequency (no explicit dates needed).
-    out = _build_vanilla(terms, quantark_class=quantark_class)
+    out = _build_vanilla(terms, quantark_class=quantark_class, date_first=False)
     maturity = _num(terms.get("maturity_years"))
     freq = str(terms.get("averaging_frequency", "MONTHLY")).upper()
     if maturity is not None:
@@ -861,7 +871,15 @@ def build_product(
                 ok=False, quantark_class=family, engine_name=engine_name,
                 missing=[], warnings=out.warnings,
                 validation={"ok": False, "error": (
-                    "maturity_date is not a valid ISO date (YYYY-MM-DD)")},
+                    "exercise_date is not a valid ISO date (YYYY-MM-DD)")},
+                product_spec=None,
+            )
+        if "__settlement_invalid__" in missing:
+            return BuildResult(
+                ok=False, quantark_class=family, engine_name=engine_name,
+                missing=[], warnings=out.warnings,
+                validation={"ok": False, "error": (
+                    "settlement_date is not a valid ISO date (YYYY-MM-DD)")},
                 product_spec=None,
             )
         if missing:
@@ -886,7 +904,7 @@ def build_product(
                 ok=False, quantark_class=family, engine_name=engine_name,
                 missing=[], warnings=warnings,
                 validation={"ok": False, "error": (
-                    f"maturity_date {_exercise} is not after the valuation date "
+                    f"exercise_date {_exercise} is not after the valuation date "
                     f"{_val_date} (expired option)")},
                 product_spec=None,
             )
