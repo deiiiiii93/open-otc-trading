@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Scalar option booking now uses stable legal dates instead of mutable maturity
+  inputs.** European, American, cash-digital, barrier, and single/double-sharkfin
+  builders and agent schemas require `exercise_date`, preserve optional
+  `settlement_date`, and no longer advertise maturity aliases. Contract
+  completeness rejects legacy scalar maturity fields, while internal builder
+  compatibility remains available for staged migration callers.
 - **QuantArk pinned to an exact PyPI version — the golden fixtures were being priced by a
   live working tree.** `pyproject.toml` declared `quantark>=0.1.0` (a floor, not a pin) and
   the venv had it installed **editable** from `/Users/fuxinyao/quant-ark`, so a commit in
