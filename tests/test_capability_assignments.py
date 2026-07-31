@@ -29,7 +29,9 @@ def test_quant_agent_tools_count_is_intentional():
     # +1 structured-answer recorder (record_answer) for arena flagship scoring.
     # +1 term-schema surface (get_product_term_schema) — legal fields/enums before build.
     # +3 deterministic artifact disclosure tools (list, inspect, targeted read).
-    assert len(QUANT_AGENT_TOOLS) == 102
+    # +1 curve-generate tool (generate_pricing_parameters_from_curves).
+    # +9 limits tools (4 reads + 5 HITL monitoring/incident writes).
+    assert len(QUANT_AGENT_TOOLS) == 112
 
 
 def test_record_answer_is_domain_read():
