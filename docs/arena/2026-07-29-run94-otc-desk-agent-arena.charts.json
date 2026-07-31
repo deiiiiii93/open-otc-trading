@@ -1,0 +1,38 @@
+[
+  ["Overall rating (OVR) — ranked board", 100, "OVR", [
+    ["🥇 Gemini 3.6 Flash", 99, "gold", "99 · first perfect card"],
+    ["🥈 Grok 4.5", 96, "silver", "96"],
+    ["🥉 DeepSeek V4 Flash", 91, "bronze", "91"],
+    ["DeepSeek V4 Pro", 88, "mid", "88"],
+    ["Qwen 3.7 Max", 88, "mid", "88"],
+    ["LongCat 2.0", 83, "mid", "83 · CON 50"],
+    ["GPT-5.6 Terra", 83, "mid", "83 · was #1 twice"],
+    ["Step 3.7 Flash", 81, "mid", "81"],
+    ["Claude Sonnet 5", 79, "mid", "79"],
+    ["GPT-5.6 Luna", 74, "mid", "74 · CON 30"],
+    ["Gemini 3.5 Flash", 74, "mid", "74 · n=1"],
+    ["Hunyuan 3", 71, "mid", "71"],
+    ["Kimi 2.7", 68, "mid", "68"],
+    ["MiMo 2.5", 68, "mid", "68"],
+    ["Doubao Seed 2.1 Pro", 66, "mid", "66 · CON 0"],
+    ["MiMo 2.5 Pro", 65, "mid", "65"],
+    ["GLM 5.2", 64, "mid", "64 · post-pin re-run"],
+    ["MiniMax M3", 42, "low", "42"]
+  ]],
+  ["The signal migration — which axis ranks the board (Spearman ρ of axis stat vs OVR)", 1.0, "ρ", [
+    ["Run #20 · EFF", 0.63, "good", "0.63 · field 1.50×par"],
+    ["Run #20 · SYN", 0.43, "mid", "0.43"],
+    ["Run #33 · EFF", 0.66, "good", "0.66 · field 1.74×par"],
+    ["Run #33 · SYN", 0.58, "mid", "0.58"],
+    ["Run #94 · EFF", 0.44, "mid", "0.44 · field 0.96×par"],
+    ["Run #94 · SYN", 0.87, "gold", "0.87 · σ 28.3 — the new discriminator"],
+    ["Run #94 · GRD", 0.81, "good", "0.81"]
+  ]],
+  ["Step 7 — the evidence-persistence split (13 banked transcripts + Sol A/B)", 14, "models", [
+    ["Recovered → opened the report → 211.34", 7, "good", "7 · Luna retried ×5; Sol hunted via artifacts+grep"],
+    ["Gave up after filtered-empty → null", 4, "low", "4 · incl. Terra (1 try, both trials)"],
+    ["Never opened it → wrong number (238.05)", 1, "low", "1 · the swap trap"],
+    ["Bypassed registry → read artifact file → 211.34", 1, "mid", "1 · answer ✓, procedure ✗"],
+    ["No retrieval at all", 1, "low", "1"]
+  ]]
+]

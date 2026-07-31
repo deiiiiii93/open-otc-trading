@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`openai/gpt-5.6-sol` registered as an arena contestant** (the three sites per the
+  doubao precedent: `CANDIDATE_MODELS`, live `agent_channels.yaml`, tracked
+  `.example.yml`; tags `[tool-use, reasoning]`, not `fast`). Added for the Run #94
+  report's family A/B: Sol ran the high-board manifest as run #95 and posted a perfect
+  **objective 100.0 in both trials** (35/35, 45+30 calls vs par 24 → EFF 43, OVR 85),
+  hitting the same step-7 filtered-`list_reports` empty result as Terra and recovering
+  via a 19-call artifact/grep/registry hunt — refuting the "OpenAI turned the family
+  down" reading of Terra's #7 finish and isolating Terra's one-shot-lookup policy as
+  variant-specific, not family-wide. Live tool-call-id probe clean (`ChatOpenAI`, no
+  protocol pin).
+- **Run #94 report** — `docs/arena/2026-07-29-run94-otc-desk-agent-arena.{md,charts.json,html,pdf}`:
+  the high-board board (Gemini 3.6 Flash posts the arena's first perfect card; the
+  OpenAI pair inverts), the signal-migration analysis across the three flagships
+  (median calls/par 1.50/1.74/**0.96**; EFF rank-correlation 0.63/0.66→0.44 while SYN
+  goes to σ28.3/ρ**0.87**), the step-7 evidence-persistence taxonomy, and the Sol A/B.
+
 ### Fixed
 - **Scalar option booking now uses stable legal dates instead of mutable maturity
   inputs.** European, American, cash-digital, barrier, and single/double-sharkfin

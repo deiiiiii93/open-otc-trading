@@ -39,6 +39,10 @@ channels:
         provider: openai
         label: GPT-5.6 Luna
         tags: [tool-use, reasoning]
+      - id: openai/gpt-5.6-sol
+        provider: openai
+        label: GPT-5.6 Sol
+        tags: [tool-use, reasoning]
       - id: google/gemini-2.5-pro
         provider: openai
         label: Gemini 2.5 Pro

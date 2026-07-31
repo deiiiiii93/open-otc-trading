@@ -1,0 +1,821 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OTC Desk Agent Arena — Run #94</title>
+<style>
+:root{
+  --ink:#1a1d21; --muted:#5b6470; --line:#e3e6eb; --bg:#ffffff;
+  --accent:#2f5d8a; --soft:#f4f6f9;
+  --gold:#caa12e; --silver:#9aa0a6; --bronze:#b06a3b; --mid:#3b6fb0; --floor:#c5c9d1;
+  --good:#2e8b57; --neutral:#6b7280; --warn:#d98a2b; --bad:#c0392b; --frontier:#3b6fb0;
+}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+body{
+  font-family:"Charter","Georgia",Cambria,"Times New Roman",serif;
+  color:var(--ink); background:var(--bg); line-height:1.62;
+  max-width:820px; margin:0 auto; padding:56px 40px 80px; font-size:16.5px;
+}
+h1,h2,h3,h4{font-family:-apple-system,"Inter","Segoe UI",Helvetica,Arial,sans-serif;
+  line-height:1.22; letter-spacing:-.01em; color:var(--ink)}
+h1{font-size:2.05rem; margin:.2em 0 .1em; font-weight:800}
+h2{font-size:1.42rem; margin:2.1em 0 .55em; padding-bottom:.28em;
+  border-bottom:2px solid var(--line); font-weight:750}
+h3{font-size:1.12rem; margin:1.7em 0 .5em; font-weight:700; color:#2b3038}
+h1+p em, body>p:first-of-type em{color:var(--muted)}
+p,li{font-size:1rem}
+a{color:var(--accent); text-decoration:none}
+hr{border:none; border-top:1px solid var(--line); margin:2.2em 0}
+code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.86em;
+  background:var(--soft); padding:.1em .35em; border-radius:4px}
+blockquote{margin:1.1em 0; padding:.7em 1.1em; background:var(--soft);
+  border-left:4px solid var(--accent); border-radius:0 6px 6px 0; color:#2b3038}
+blockquote p{margin:.3em 0}
+strong{font-weight:700}
+
+/* tables */
+table{border-collapse:collapse; width:100%; margin:1.1em 0; font-size:.9rem;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+th,td{padding:.5em .7em; border-bottom:1px solid var(--line); text-align:left}
+thead th{background:#f7f9fc; border-bottom:2px solid #d6dbe3; font-weight:700;
+  font-size:.82rem; letter-spacing:.01em; color:#39414c}
+tbody tr:nth-child(even){background:#fbfcfe}
+td:first-child,th:first-child{white-space:nowrap}
+
+/* charts */
+.chart{margin:1.3em 0 1.6em; padding:0}
+.chart .row{display:flex; align-items:center; gap:12px; margin:5px 0;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+.chart .lbl{flex:0 0 168px; text-align:right; font-size:.82rem; color:#39414c; font-weight:600}
+.chart .track{flex:1; height:22px; background:#eef1f5; border-radius:5px; overflow:hidden}
+.chart .bar{display:block; height:100%; border-radius:5px}
+.chart .val{flex:0 0 150px; font-size:.78rem; color:var(--muted); font-variant-numeric:tabular-nums}
+.chart figcaption{margin-top:.7em; font-size:.76rem; color:var(--muted);
+  font-family:-apple-system,"Inter",sans-serif; text-align:right}
+.bar.gold{background:linear-gradient(90deg,#d9b13f,#caa12e)}
+.bar.silver{background:linear-gradient(90deg,#aab0b6,#9aa0a6)}
+.bar.bronze{background:linear-gradient(90deg,#c07c4a,#b06a3b)}
+.bar.mid{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.frontier{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.floor{background:#c5c9d1}
+.bar.good{background:linear-gradient(90deg,#37a169,#2e8b57)}
+.bar.neutral{background:#8a929e}
+.bar.warn{background:linear-gradient(90deg,#e09a3e,#d98a2b)}
+.bar.bad{background:linear-gradient(90deg,#d04b3c,#c0392b)}
+
+/* report header band */
+.masthead{border-bottom:3px solid var(--ink); padding-bottom:.6em; margin-bottom:1.4em}
+.footer-note{margin-top:3em; padding-top:1em; border-top:1px solid var(--line);
+  font-size:.8rem; color:var(--muted); font-family:-apple-system,"Inter",sans-serif}
+
+@page{size:A4; margin:16mm 15mm}
+@media print{
+  body{max-width:none; margin:0; padding:0; font-size:10.6pt}
+  h2{margin-top:1.4em}
+  h2,h3,h4{break-after:avoid}
+  table,.chart,blockquote,figure{break-inside:avoid}
+  tr{break-inside:avoid}
+  a{color:var(--ink)}
+}
+</style>
+</head><body>
+<h1>The OTC Desk Agent Arena — Methodology &amp; Results (Run #94)</h1>
+<p><em>The third workflow of the triptych. Run #20 built the </em><em>Model Ability Card</em><em> and ranked
+a risk manager's control day; Run #33 replicated the verdict on a trader's RFQ-to-booking
+day and crowned the same winner. Run #94 points the instrument at a </em><em>board-governance
+review day</em>* — and the board reorders. GPT-5.6 Terra, #1 on both prior workflows, lands</p>
+<h1>7; GPT-5.6 Luna falls from the podium to #10; Gemini 3.6 Flash posts the first perfect</h1>
+<p>card in arena history. This report explains why — and why the explanation is neither
+"the workflow is broken" nor "OpenAI turned the models down," but something more useful:
+<strong>the ranking signal itself migrated, and the card lets you watch it move.</strong>*</p>
+<p><strong>Date:</strong> 2026-07-29 · <strong>Run:</strong> #94 · <strong>Task:</strong> <code>high-board-portfolio-review-day</code>
+(8-step / 35-check, post-audit manifest) · <strong>Trials:</strong> 2 per model · <strong>Gateway:</strong> ZenMux
+· <strong>Field:</strong> 18 models, cross-tier (the Run #33 seventeen + Doubao Seed 2.1 Pro)</p>
+<hr />
+<h2>Abstract</h2>
+<p>Two workflows and two desk roles had produced one conclusion: objective capability
+saturates at the top, so <em>efficiency</em> (EFF) and <em>consistency</em> (CON) decide deployment —
+and GPT-5.6 Terra, the leanest near-top operator, won both boards. Run #94 runs the same
+instrument, field, and headless regime against <code>high-board-portfolio-review-day</code>, a
+governance workflow rebuilt after the Run #58 scoring-validity audit: 35 checks, zero
+non-discriminating, answer-level grounding keyed to values that exist <strong>only inside a
+persisted report artifact</strong>, and a calibrated par of 24 that the field — for the first
+time — actually meets (median calls/par <strong>0.96</strong>, vs 1.50 on Run #20 and 1.74 on
+Run #33).</p>
+<p>That last number is the whole story. On the first two boards, 85–97% of trials
+over-executed par, EFF spread across a 0–84 range, and EFF was the strongest single
+rank-correlate of OVR (ρ≈0.63–0.66): the boards rewarded exactly the trait Terra has in
+extremis. On high-board the field runs <em>at</em> par, EFF compresses (ρ 0.44), and the
+ranking signal migrates to <strong>synthesis</strong> (σ 28.3, <strong>ρ 0.87</strong> — the widest, most
+rank-decisive axis on any board to date) and <strong>grounding</strong> (ρ 0.81). Terra's profile is
+the mirror image of that signal: both trials, identically (CON 99, objective stdev 0.0),
+it issued <strong>one</strong> portfolio-scoped <code>list_reports</code> call, received an honest empty result,
+declared last quarter's governance report nonexistent, recorded <code>null</code>, and shipped a
+terse final artifact missing the required evidence — losing 6 checks across GRD, SYN,
+and PRC while running 9–12 tool calls against a par of 24. The efficiency that won two
+titles and the evidence-abandonment that lost this one are <strong>the same behavioral
+policy</strong> measured under different task demands. Luna's drop is a different mechanism:
+one near-perfect trial (97.1) and one that whiffed the opening skill routing (77.1) —
+CON 30, the consistency discount doing its job.</p>
+<p>To separate "OpenAI family trait" from "Terra-specific policy," we added <strong>GPT-5.6
+Sol</strong> to the registry and ran it through the identical board (run #95). Sol hit the
+identical trap — the very same filtered-first <code>list_reports</code> call, the same honest
+empty result — and did the opposite: a nineteen-call evidence hunt across the artifact
+store, grep, and the report registry that found the report, quoted 211.34, and closed
+out <strong>two perfect trials (35/35, objective 100.0, stdev 0.0)</strong> at 45 and 30 calls
+against par 24 (EFF 43, OVR 85). The abandonment is not a family trait; it is Terra's
+policy. The three GPT-5.6 variants share the same opening move and then span the
+lean↔thorough spectrum nearly end to end — which reads as deliberate productization of
+behavioral policies, not a capability change. The harness could be strengthened to <em>remove</em> this discriminator —
+seeding the fixture report's <code>request_payload.portfolio_id</code> would make Terra's filtered
+query succeed — but the audit's own standard cuts the other way: filtered-first was the
+<em>majority</em> opening move (9 of 13 transcripts), the recovery path is real and cheap (six
+models retried unfiltered and found the report), and "persistence when a presupposed
+document fails to surface on the first query" is a trait a desk genuinely selects on.
+Three boards, one instrument, and the triptych's refined conclusion: <strong>there is no
+workflow-independent "best operator" — there are behavioral policies, and a card that
+decomposes them is what lets you match a model to the job.</strong></p>
+<hr />
+<h2>1. Introduction — the question the first two boards begged</h2>
+<p>Run #33's abstract closed on a confident replication: same winner, same profile, two
+desk roles. It also quietly assumed the profile itself — <em>near-top capability delivered
+leanly</em> — was workflow-independent. High-board was built to stress exactly the part of
+desk work the first two flagships under-sampled: <strong>evidence retrieval against persisted
+state, and synthesis of that evidence into a governance deliverable.</strong> A control day
+and a booking day are procedural gauntlets — do the steps, in order, without inventing
+numbers. A board-review day is an <em>evidential</em> gauntlet: the numbers you must quote
+live in a prior quarter's report artifact, a persisted risk run, and a view you
+yourself constructed three steps ago; the deliverable is judged on whether that
+evidence actually arrives inside it.</p>
+<p>If the "best operator" verdict were workflow-independent, high-board should re-elect
+Terra. It did not — and the decomposed card turns that upset from an anecdote into a
+mechanism.</p>
+<h2>2. The task — <code>high-board-portfolio-review-day</code></h2>
+<p>The model plays the desk's <strong>board-review operator</strong> on a governance day: build a
+board-scoped review view over the Desk Control Book, count its Snowball concentration,
+read the <strong>persisted governed risk run</strong> (consume-only: the workflow seeds a completed
+<code>RiskRun</code>; dispatching a fresh one is off-script), quote the governed NVDA delta,
+resist an over-claim trap, retrieve <strong>last quarter's board governance report</strong> and
+quote the prior governed valuation it states, and draft the new quarter's governance
+report as Markdown, grounded in the day's evidence.</p>
+<p>Scoring runs on the post-audit manifest — the Run #58 validity audit found 15 of the
+original 50 checks carried no signal (dead, free, or double-scored); the rebuilt
+manifest has <strong>35 checks</strong> (12 grounding / 11 procedural / 7 adherence / 5 synthesis),
+a live-verified <strong>zero</strong> of which are non-discriminating (field pass rates span
+7/18–17/18, with a handful of deliberate floors). Two properties matter for this
+report's headline:</p>
+<ul>
+<li><strong>Answer-level grounding, keyed to artifact-only values.</strong> The prior governed
+  valuation (<strong>211.34</strong>) is stated <em>only</em> in the seeded report's artifact body — never
+  in <code>result_payload</code> — so it cannot be computed, guessed, or brute-forced by
+  enumeration; the model must find and open the right report. The value sits &gt;12% from
+  every other graded number, far outside <code>rel_tol</code>, so a swapped answer fails.</li>
+<li><strong>A calibrated par of 24</strong> (measured from competent runs, not the theoretical
+  minimum), which the field met: this is the first board where EFF stopped being the
+  scarcest stat.</li>
+</ul>
+<p>The manifest was <strong>de-biased twice on 2026-07-27 — both times in Terra's favor</strong> —
+before this board ran: a double-jeopardy fix (its missed <code>get_report</code> had been charged
+three times: the expected-tool check, a bare duplicate <code>tool_called</code>, and the success
+sequence) and an explicit "as Markdown" in the final prompt (Terra had reasonably
+chosen DOCX, got <code>kind="binary"</code>, and lost all five synthesis greps to an unstated
+format preference). What Terra loses on this board, it loses to checks that survived
+an audit <em>and</em> two rounds of fairness repair.</p>
+<h2>3. Field &amp; conditions</h2>
+<p>The Run #33 seventeen plus <strong>Doubao Seed 2.1 Pro</strong> (added to the field 2026-07-29,
+backfilled onto both prior boards). Two trials per model, jury <strong>off</strong> (objective axis
+only; <code>subjective_mode="disabled"</code>), banked as per-model runs #85–#93 and folded with
+the shipped <code>scoring.fold_trial_breakdowns</code> kernel into board #94. One infrastructure
+note: <strong>GLM 5.2's</strong> initial rows were scored across a broken integration — through
+ZenMux's OpenAI-compatible gateway it emits tool calls with empty-string ids, so every
+persona delegation failed before starting; after pinning it to <code>protocol: anthropic</code>
+(the fourth model needing the pin) it was re-run clean and the board re-merged. Its row
+below reflects the pinned re-run. Gemini 3.5 Flash lost one trial to infra (skipped,
+not retried, per the trials design) and is scored on n=1.</p>
+<h2>4. Results</h2>
+<h3>4.1 The board</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Model</th>
+<th>OVR</th>
+<th>CON</th>
+<th>GRD</th>
+<th>ADH</th>
+<th>SYN</th>
+<th>EFF</th>
+<th>PRC</th>
+<th>Objective</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Gemini 3.6 Flash</td>
+<td><strong>99</strong></td>
+<td>99</td>
+<td>99</td>
+<td>99</td>
+<td>99</td>
+<td>99</td>
+<td>99</td>
+<td>100.0</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Grok 4.5</td>
+<td>96</td>
+<td>99</td>
+<td>99</td>
+<td>99</td>
+<td>99</td>
+<td>80</td>
+<td>99</td>
+<td>100.0</td>
+</tr>
+<tr>
+<td>3</td>
+<td>DeepSeek V4 Flash</td>
+<td>91</td>
+<td>96</td>
+<td>91</td>
+<td>99</td>
+<td>89</td>
+<td>81</td>
+<td>94</td>
+<td>94.3</td>
+</tr>
+<tr>
+<td>4</td>
+<td>DeepSeek V4 Pro</td>
+<td>88</td>
+<td>76</td>
+<td>95</td>
+<td>99</td>
+<td>99</td>
+<td>68</td>
+<td>86</td>
+<td>94.3</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Qwen 3.7 Max</td>
+<td>88</td>
+<td>92</td>
+<td>82</td>
+<td>99</td>
+<td>99</td>
+<td>76</td>
+<td>90</td>
+<td>91.4</td>
+</tr>
+<tr>
+<td>6</td>
+<td>LongCat 2.0</td>
+<td>83</td>
+<td>50</td>
+<td>90</td>
+<td>99</td>
+<td>99</td>
+<td>72</td>
+<td>94</td>
+<td>95.7</td>
+</tr>
+<tr>
+<td>7</td>
+<td>GPT-5.6 Terra</td>
+<td>83</td>
+<td>99</td>
+<td>82</td>
+<td>99</td>
+<td><strong>59</strong></td>
+<td>82</td>
+<td>81</td>
+<td>82.9</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Step 3.7 Flash</td>
+<td>81</td>
+<td>86</td>
+<td>74</td>
+<td>99</td>
+<td>79</td>
+<td>74</td>
+<td>90</td>
+<td>85.8</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Claude Sonnet 5</td>
+<td>79</td>
+<td>59</td>
+<td>74</td>
+<td>92</td>
+<td>99</td>
+<td>84</td>
+<td>81</td>
+<td>84.2</td>
+</tr>
+<tr>
+<td>10</td>
+<td>GPT-5.6 Luna</td>
+<td>74</td>
+<td><strong>30</strong></td>
+<td>78</td>
+<td>99</td>
+<td>69</td>
+<td>82</td>
+<td>94</td>
+<td>87.1</td>
+</tr>
+<tr>
+<td>11</td>
+<td>Gemini 3.5 Flash</td>
+<td>74</td>
+<td>n/1</td>
+<td>74</td>
+<td>99</td>
+<td>59</td>
+<td>33</td>
+<td>99</td>
+<td>85.7</td>
+</tr>
+<tr>
+<td>12</td>
+<td>Hunyuan 3</td>
+<td>71</td>
+<td>40</td>
+<td>82</td>
+<td>99</td>
+<td>40</td>
+<td>78</td>
+<td>81</td>
+<td>80.0</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Kimi 2.7</td>
+<td>68</td>
+<td>33</td>
+<td>78</td>
+<td>99</td>
+<td>40</td>
+<td>76</td>
+<td>76</td>
+<td>77.2</td>
+</tr>
+<tr>
+<td>14</td>
+<td>MiMo 2.5</td>
+<td>68</td>
+<td>40</td>
+<td>74</td>
+<td>99</td>
+<td>50</td>
+<td>76</td>
+<td>68</td>
+<td>74.3</td>
+</tr>
+<tr>
+<td>15</td>
+<td>Doubao Seed 2.1 Pro</td>
+<td>66</td>
+<td>0</td>
+<td>78</td>
+<td>99</td>
+<td>50</td>
+<td>78</td>
+<td>90</td>
+<td>82.8</td>
+</tr>
+<tr>
+<td>16</td>
+<td>MiMo 2.5 Pro</td>
+<td>65</td>
+<td>10</td>
+<td>78</td>
+<td>99</td>
+<td>50</td>
+<td>76</td>
+<td>68</td>
+<td>75.7</td>
+</tr>
+<tr>
+<td>17</td>
+<td>GLM 5.2</td>
+<td>64</td>
+<td>99</td>
+<td>70</td>
+<td>99</td>
+<td>0</td>
+<td>64</td>
+<td>58</td>
+<td>62.9</td>
+</tr>
+<tr>
+<td>18</td>
+<td>MiniMax M3</td>
+<td>42</td>
+<td>0</td>
+<td>50</td>
+<td>78</td>
+<td>40</td>
+<td>35</td>
+<td>32</td>
+<td>48.6</td>
+</tr>
+</tbody>
+</table>
+<p>Headlines the prior two boards make legible:</p>
+<ul>
+<li><strong>Gemini 3.6 Flash posts the arena's first perfect card</strong> — 35/35 checks in both
+  trials, 21–24 calls against par 24, CON 99. On Run #33 the same model was the
+  "capability made deployable" story (identical objective to its predecessor at 2/3 the
+  calls); here it simply has no weakness for any axis to find.</li>
+<li><strong>Grok 4.5's rehabilitation is the EFF story inverted.</strong> Its profile barely changed —
+  it remains a maximally correct, somewhat verbose executor (100.0 objective, 28–29
+  calls). What changed is the denominator: 28 calls against par 35 on trader-rfq earned
+  EFF 15 and OVR #5; 28 against par 24 here is only 1.2×par on the golf curve — EFF 80,
+  OVR #2. Two boards agree on what Grok <em>is</em>; they price it differently.</li>
+<li><strong>The OpenAI pair inverts.</strong> Terra #1 → #7 and Luna #2/#3 → #10 — examined next.</li>
+</ul>
+<h3>4.2 Why Terra fell — one policy, six checks</h3>
+<p>Terra's card reads GRD 82 · ADH 99 · <strong>SYN 59</strong> · EFF 82 · PRC 81, <strong>CON 99, objective
+stdev 0.0</strong> — both trials failed the <em>same</em> six checks. That consistency is the
+diagnosis: this is not noise, not infra, not a bad day; it is a policy.</p>
+<p>The transcript shows the policy in one exchange. Step 7 asks: <em>"Pull last quarter's
+board governance report for context"</em> and requires <code>record_answer</code> of the valuation it
+states. Terra called <code>list_reports(portfolio_id=9101, limit=100)</code> — a reasonable,
+<em>documented</em> filter (the tool's <code>portfolio_id</code> matches against <code>request_payload</code>) —
+and received <code>{"reports": [], "total": 0}</code>, because the seeded report is a desk-level
+row whose <code>request_payload</code> carries no portfolio id. A scoped filter <strong>cannot</strong> surface
+it. Terra's response, verbatim:</p>
+<blockquote>
+<p><em>"No prior-quarter board governance report is persisted for Desk Control Book: the
+report registry returned zero reports for portfolio 9101. Therefore, there is no
+report-stated prior governed valuation to quote; I recorded it as <code>null</code>."</em></p>
+</blockquote>
+<p>One call, one empty result, one confident declaration of nonexistence — against a user
+turn that <em>presupposes the report exists</em>. The miss cascades through six checks: the
+<code>get_report</code> expected-tool check, the report-type grounding check, the 211.34 answer
+quote, two synthesis greps on the final artifact (which, in Terra's characteristically
+terse rendition, omits "Snowball" and the 17.5 NVDA delta), and the success-sequence
+check. Twelve and nine tool calls in its two trials — half of par — is the same
+leanness that won Runs #20 and #33, now operating as evidence-abandonment.</p>
+<p>The field context makes it a fair loss. Opening with a <em>filtered</em> query was the
+majority move — 9 of the 13 banked transcripts did — so the trap is not "you filtered";
+it is "what did you do when the filter came back empty against a presupposition."
+Six models retried unfiltered, found report #5, and quoted 211.34. Three (Terra, Kimi,
+MiMo 2.5 Pro) declared defeat. Qwen never opened the report and recorded the <em>current</em>
+valuation (238.05) — precisely the swapped-answer failure the 211.34 keying was
+designed to catch. MiniMax, remarkably, quoted 211.34 <em>without</em> ever calling
+<code>get_report</code> — it read the materialized artifact file directly, and the answer-level
+check credited the answer while the trace checks scored the skipped procedure: the
+two-layer grading working exactly as designed.</p>
+<h3>4.3 Why Luna fell — variance, not weakness</h3>
+<p>Luna's two trials: <strong>97.1</strong> (one missed check — the same artifact-grep on "17.5") and
+<strong>77.1</strong> (missed the <code>portfolio-maintenance</code> skill routing at the <em>opening</em> step,
+muddled the container-vs-view distinction, and dragged wrong counts through every
+downstream answer). At step 7 — Terra's stumbling block — Luna is actually the field's
+most dogged retrier: four filtered variants, then unfiltered, then <code>get_report</code>, then
+the correct 211.34. Luna at full strength is a top-3 operator on this board; Luna's
+problem is that you get that operator one trial in two. CON 30 applies the card's
+inconsistency discount (up to −18% of OVR at CON 0) and lands it #10. On a governance
+task run unattended, that discount is the instrument saying something true.</p>
+<h3>4.4 GPT-5.6 Sol — family trait, or Terra's policy?</h3>
+<p>Terra's collapse invites a vendor-level reading: did OpenAI quietly turn the family
+down? The falsifiable version of that question is an A/B inside the family. We
+registered <strong>GPT-5.6 Sol</strong> (the third 5.6 variant on ZenMux, absent from all prior
+boards), probed its tool-call ids clean through the production factory path, and ran
+it through the identical manifest as run #95 — same fixtures, same par, same jury-off
+regime, same day.</p>
+<p><strong>Sol: objective 100.0 in both trials (stdev 0.0), 35/35 checks — the board's third
+perfect objective — at 45 and 30 tool calls (par 24).</strong> Folded card: GRD 99 · ADH 99 ·
+SYN 99 · PRC 99 · <strong>EFF 43</strong>, CON 66 (the 45→30 call swing), <strong>OVR 85</strong> — which would
+slot ~#4 on the board, between the DeepSeek pair and LongCat.</p>
+<p>The step-7 transcript is the experiment's payoff. Sol opened with <strong>the exact same
+call Terra did</strong> — <code>list_reports(portfolio_id=9101, limit=100)</code> — and received the
+same <code>{"reports": [], "total": 0}</code>. Then, where Terra declared nonexistence, Sol
+launched a nineteen-call hunt: two <code>list_artifacts</code> sweeps, five <code>inspect_artifact</code> /
+six <code>read_artifact</code> probes into its own session evidence, a <code>grep</code> for "governance"
+over large tool results, <code>get_report(report_id=5)</code>, and a correct
+<code>record_answer(prior_governed_valuation=211.34)</code> with the source cited.</p>
+<p>So the family picture across three siblings on one manifest:</p>
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>Opening move</th>
+<th>Recovery policy</th>
+<th>Calls (par 24)</th>
+<th>Objective</th>
+<th>OVR</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Terra</td>
+<td>filtered <code>list_reports</code></td>
+<td><strong>none</strong> — declares absence, records null</td>
+<td>9–12</td>
+<td>82.9</td>
+<td>83</td>
+</tr>
+<tr>
+<td>Luna</td>
+<td>filtered <code>list_reports</code></td>
+<td>4 filtered retries → bare → found</td>
+<td>21–23</td>
+<td>87.1 (97.1/77.1)</td>
+<td>74</td>
+</tr>
+<tr>
+<td>Sol</td>
+<td>filtered <code>list_reports</code></td>
+<td>exhaustive multi-modal hunt → found</td>
+<td>30–45</td>
+<td><strong>100.0</strong></td>
+<td>85</td>
+</tr>
+</tbody>
+</table>
+<p>The shared opening (all three filter first, as did most of the field) looks like
+common heritage. The recovery policies diverge completely — and they are each
+variant's <em>signature across the whole day</em>, not a step-7 quirk: Terra runs every step
+at half par, Sol runs every step heavy, Luna sits at par with an unstable opening.
+Three conclusions follow. <strong>First, the "intelligence turned down" hypothesis is
+refuted</strong>: a same-family, same-gateway, same-day variant just posted a perfect board.
+<strong>Second, Terra's loss is a policy, not a defect</strong> — its two prior titles and this
+defeat are one coherent behavior priced by different tasks. <strong>Third, the variants
+read as deliberate productization</strong> — OpenAI appears to ship the lean/balanced/
+thorough trade-off as a product line, and the card measures exactly the axis they
+differentiate on: Sol buys +17 objective points over Terra for ~3× the tool calls;
+EFF 82 vs 43 is that invoice, itemized.</p>
+<h2>5. The signal migration — how this workflow differs from the other two</h2>
+<p>The cross-workflow comparison is the report's core finding. Same instrument, same
+field, three tasks:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Run #20 (risk-mgr)</th>
+<th>Run #33 (trader-rfq)</th>
+<th>Run #94 (high-board)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Median calls / par</td>
+<td>1.50</td>
+<td>1.74</td>
+<td><strong>0.96</strong></td>
+</tr>
+<tr>
+<td>Trials over par</td>
+<td>85%</td>
+<td>97%</td>
+<td>31%</td>
+</tr>
+<tr>
+<td>Trials over 2×par</td>
+<td>24%</td>
+<td>19%</td>
+<td>3%</td>
+</tr>
+<tr>
+<td>EFF: field σ / ρ vs OVR</td>
+<td>24.1 / <strong>0.63</strong></td>
+<td>22.2 / <strong>0.66</strong></td>
+<td>15.5 / 0.44</td>
+</tr>
+<tr>
+<td>SYN: field σ / ρ vs OVR</td>
+<td>12.8 / 0.43</td>
+<td>18.3 / 0.58</td>
+<td><strong>28.3 / 0.87</strong></td>
+</tr>
+<tr>
+<td>GRD: ρ vs OVR</td>
+<td>0.73</td>
+<td>0.56</td>
+<td><strong>0.81</strong></td>
+</tr>
+<tr>
+<td>CON: field mean</td>
+<td>80</td>
+<td>75</td>
+<td><strong>56</strong></td>
+</tr>
+<tr>
+<td>Check mix (dominant axis)</td>
+<td>22/39 procedural</td>
+<td>21+20/63 proc+adh</td>
+<td><strong>12/35 grounding</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Read down the columns and the mechanism is explicit:</p>
+<ul>
+<li><strong>On the first two boards, EFF was the scarcest stat and the strongest single rank
+  signal.</strong> Nearly the whole field over-executed par; the axis with the widest spread
+  and highest OVR correlation was efficiency. A lean-by-policy model banks a large,
+  reliable edge — Terra's two titles.</li>
+<li><strong>High-board pays out on different axes.</strong> The field runs at par (so EFF compresses
+  and decorrelates), adherence saturates (mean 97.4 — the prohibitions are easy here),
+  and what varies is whether models <em>retrieve and carry evidence</em>: synthesis spreads
+  across the full 0–99 range with ρ 0.87, grounding ρ 0.81. The task changed which
+  behaviors are scarce; the ranking followed the scarcity.</li>
+<li><strong>High-board also destabilizes.</strong> Field-mean CON drops from ~80/75 to 56 — seven
+  models show CON ≤ 40 here. The opening step (route to <code>portfolio-maintenance</code>,
+  respect the container/view distinction) is a variance generator the procedural
+  workflows didn't have: miss it and every downstream count is wrong (Luna's bad
+  trial; Doubao's CON 0).</li>
+</ul>
+<p>The refined triptych conclusion, then, is not "Run #33's verdict was wrong" — on
+procedural workflows it stands — but that it was <strong>scoped</strong>: <em>"best operator" is a
+match between a model's behavioral policy and a workflow's scarce axis, not a total
+order over models.</em> Terra remains the model you want on a well-mapped procedural
+pipeline where every extra call is waste. It is demonstrably not the model you want
+walking into a governance review where the evidence must be hunted down. The card —
+because it decomposes — is what lets a desk make that assignment; a single-number
+leaderboard would have hidden the migration entirely.</p>
+<h2>6. Harness vs. behavior — what we deliberately did not "fix"</h2>
+<p>Every upset invites the question: strengthen the harness until the upset disappears?
+Three decisions in this run drew that line, and the audit doctrine drew it for us:</p>
+<ol>
+<li><strong>The step-7 discriminator stays.</strong> Seeding the fixture report's
+   <code>request_payload.portfolio_id</code> (a one-line <code>$seed</code> change) would make Terra's
+   filtered query succeed — and flip a check that currently splits the field 15/3
+   into a free pass. The audit standard condemns spreads caused by <em>broken fixtures</em>;
+   this fixture is not broken: the report is discoverable by the default call, the
+   recovery costs one tool call, and most of the field executes it. Persistence under
+   a failed first query is desk-relevant behavior, measured fairly.</li>
+<li><strong>The unfairness that <em>was</em> found was already repaired — in Terra's favor.</strong> The
+   2026-07-27 double-jeopardy and "as Markdown" fixes (§2) are the model of the right
+   harness response: charge one mistake once, never grade an unstated preference.
+   Post-repair, what remains of Terra's deficit is behavior, not instrumentation.</li>
+<li><strong>Behavioral diversity is the finding, not the bug.</strong> The per-check field tally —
+   the same instrument that condemned 15 checks on Run #58 — certifies every check on
+   this board discriminates or floors deliberately. When a healthy instrument reorders
+   a board across tasks, the correct inference is that the <em>tasks</em> differ, and model
+   selection should too.</li>
+</ol>
+<h2>7. Limitations &amp; threats to validity</h2>
+<ul>
+<li><strong>n=2 trials.</strong> CON from two samples is coarse (one bad trial → CON 30); the stat is
+  honest about disagreement but cannot distinguish a 50%-variance model from an
+  unlucky one. The banked-runs design makes topping up cheap.</li>
+<li><strong>Step-7 taxonomy is last-trial-only</strong> for models whose earlier trial transcript was
+  superseded; aggregate check pass-rates (15/18 on <code>get_report</code>) carry the both-trials
+  signal.</li>
+<li><strong>Cross-board comparisons ride on par calibration.</strong> Par 24 here is measured;
+  Run #33's par 35 was recalibrated once already. EFF's cross-workflow meaning is only
+  as stable as those measurements.</li>
+<li><strong>One model scored on n=1</strong> (Gemini 3.5 Flash, infra-skipped trial) and is flagged
+  in place.</li>
+<li><strong>Scores are manifest-relative.</strong> Terra's 62.0 on the pre-audit high-board (Runs
+  #34/#58) vs 82.9 here is instrument repair, not model change; no cross-manifest
+  comparison appears in this report.</li>
+</ul>
+<h2>8. Reproducibility</h2>
+<p>Ground truth is the live DB: <code>store.leaderboard(run_id=94)</code> (aggregates), per-trial
+breakdowns in <code>arena_match.score_breakdown</code> (runs #85–#93), transcripts under
+<code>artifacts/arena/&lt;run&gt;/high-board-portfolio-review-day/&lt;model&gt;/transcript.json</code>.
+The Sol A/B is run #95 via the standard <code>queue_arena_run</code> + <code>execute_arena_run_task</code>
+path. Axis-spread and Spearman numbers derive from the stored cards exactly as
+<code>_derive_card</code> serves them; the discrimination table's script is checked into the
+session record. QuantArk is pinned (<code>quantark==0.3.0</code>) as of <code>ea07986</code>, so every
+graded constant in this run reproduces from a clean environment.</p>
+<h2>Appendix A — step-7 behavioral taxonomy (banked transcripts)</h2>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>First call filtered?</th>
+<th><code>list_reports</code> calls</th>
+<th>Retried bare?</th>
+<th>Opened report?</th>
+<th>Recorded answer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gemini 3.6 Flash</td>
+<td>yes</td>
+<td>2</td>
+<td>yes</td>
+<td>yes</td>
+<td>211.34 ✓</td>
+</tr>
+<tr>
+<td>GLM 5.2</td>
+<td>yes</td>
+<td>2</td>
+<td>yes</td>
+<td>yes</td>
+<td>211.34 ✓</td>
+</tr>
+<tr>
+<td>GPT-5.6 Luna</td>
+<td>yes</td>
+<td>5</td>
+<td>yes</td>
+<td>yes</td>
+<td>211.34 ✓</td>
+</tr>
+<tr>
+<td>LongCat 2.0</td>
+<td>no (bare)</td>
+<td>3</td>
+<td>—</td>
+<td>yes</td>
+<td>211.34 ✓</td>
+</tr>
+<tr>
+<td>Hunyuan 3</td>
+<td>no (bare)</td>
+<td>1</td>
+<td>—</td>
+<td>yes</td>
+<td>211.34 ✓</td>
+</tr>
+<tr>
+<td>Claude Sonnet 5</td>
+<td>yes</td>
+<td>2</td>
+<td>yes</td>
+<td>yes</td>
+<td>null ✗ (opened, then declined to quote)</td>
+</tr>
+<tr>
+<td>Step 3.7 Flash</td>
+<td>yes</td>
+<td>4</td>
+<td>yes</td>
+<td>no</td>
+<td>null ✗</td>
+</tr>
+<tr>
+<td><strong>GPT-5.6 Terra</strong></td>
+<td><strong>yes</strong></td>
+<td><strong>1</strong></td>
+<td><strong>no</strong></td>
+<td><strong>no</strong></td>
+<td><strong>null ✗ (declared nonexistent)</strong></td>
+</tr>
+<tr>
+<td>Kimi 2.7</td>
+<td>yes</td>
+<td>2</td>
+<td>no</td>
+<td>no</td>
+<td>null ✗</td>
+</tr>
+<tr>
+<td>MiMo 2.5 Pro</td>
+<td>yes</td>
+<td>2</td>
+<td>no</td>
+<td>no</td>
+<td>null ✗</td>
+</tr>
+<tr>
+<td>Qwen 3.7 Max</td>
+<td>yes</td>
+<td>1</td>
+<td>no</td>
+<td>no</td>
+<td>238.05 ✗ (current valuation — the swap trap)</td>
+</tr>
+<tr>
+<td>MiMo 2.5</td>
+<td>(0 calls)</td>
+<td>0</td>
+<td>—</td>
+<td>no</td>
+<td>null ✗</td>
+</tr>
+<tr>
+<td>MiniMax M3</td>
+<td>(0 calls)</td>
+<td>0</td>
+<td>—</td>
+<td>no</td>
+<td>211.34 ✓ (read the artifact file directly)</td>
+</tr>
+<tr>
+<td><em>GPT-5.6 Sol (run #95)</em></td>
+<td>yes</td>
+<td>1</td>
+<td>no — hunted via artifacts + grep instead</td>
+<td>yes</td>
+<td>211.34 ✓</td>
+</tr>
+</tbody>
+</table>
+<p class="footer-note">Rendered from
+<code>docs/arena/2026-07-29-run94-otc-desk-agent-arena.md</code> ·
+OTC Desk Agent Arena · Run #94.</p>
+</body></html>
