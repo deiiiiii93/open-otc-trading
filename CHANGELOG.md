@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   verifying limits after a book change requires a fresh `run_batch_pricing` first.
 - **`limits` skill domain for risk_manager** — `monitor-limits` and
   `handle-limit-incident` workflow skills with orchestrator routing lines.
-- **Arena golden workflow `risk-limit-breach-day` (36 points, uncalibrated par).**
+- **Arena golden workflow `risk-limit-breach-day` (39 points, uncalibrated par).**
   A risk manager works an overnight portfolio net-delta cap breach to verified
   closure: triage → driver analysis → acknowledge/comment → governance report →
   waiver probe (session-wide `waive` ban) → refresh-then-re-monitor → verify the

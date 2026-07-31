@@ -637,7 +637,7 @@ stabilisation fix: reproducibility was chosen over engine recency, deliberately.
 
 ### risk-limit-breach-day (limits workflow) + the limits agent tools
 
-The fourth golden workflow (7 steps / 36 points, persona `risk_manager`,
+The fourth golden workflow (7 steps / 39 points, persona `risk_manager`,
 **uncalibrated par** — hyperbolic EFF until a live board calibrates it): work an
 overnight portfolio net-delta cap breach to verified closure on the governed Limits
 module. It ships WITH the limits agent surface: `backend/app/tools/limits.py`

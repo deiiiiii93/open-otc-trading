@@ -138,6 +138,18 @@ steps:
       - type: tool_called
         name: run_limit_monitoring
         max_calls: 1
+      # Result-sensitive verification: the clean net delta is arithmetically
+      # derivable (breach − 400-delta hedge), so answer grounding alone cannot
+      # prove the model actually read the completed run — these can only pass
+      # against a genuine completed/ok read-back.
+      - type: tool_result_path
+        tool: get_limit_monitoring_run
+        path: "status"
+        equals: "completed"
+      - type: tool_result_path
+        tool: get_limit_monitoring_run
+        path: "evaluations[limit_key=arena-limit-breach-net-delta].status"
+        equals: "ok"
       - type: answer_field_quotes
         field: net_delta_now
         value: 402.6853882273173
@@ -159,6 +171,12 @@ steps:
       - type: answer_field_equals
         field: incident_status
         equals: recovered
+      # The read-back must GENUINELY show recovered — a model asserting
+      # closure over a still-open incident read must fail here.
+      - type: tool_result_path
+        tool: get_limit_incident
+        path: "status"
+        equals: "recovered"
       - type: tool_not_called
         name: resolve_limit_incident
     replay: step-7-closure

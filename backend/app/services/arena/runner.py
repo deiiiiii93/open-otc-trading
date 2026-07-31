@@ -736,33 +736,46 @@ def _assert_no_foreign_active_limits(session, bundle) -> None:
     from app import models
     from app.golden_workflows.fixtures import _seed_datetime
 
+    # Every valuation instant the match can monitor at: the seeded breach
+    # run's valuation AND each seeded profile's valuation_date (the live
+    # re-monitor derives its valuation from the model's fresh profile-dated
+    # risk run, not from the seeded run). A foreign limit effective at ANY of
+    # them would contaminate.
     valuations = [
         _seed_datetime(r.get("valuation_as_of"))
         for r in seed.get("limit_monitoring_runs", [])
         if r.get("valuation_as_of")
+    ] + [
+        _seed_datetime(p.get("valuation_date"))
+        for p in seed.get("pricing_profiles", [])
+        if p.get("valuation_date")
     ]
-    valuation = max(valuations) if valuations else datetime.utcnow()
-    rows = session.execute(
-        select(models.RiskLimit.key)
-        .join(
-            models.RiskLimitVersion,
-            models.RiskLimitVersion.risk_limit_id == models.RiskLimit.id,
-        )
-        .where(
-            models.RiskLimitVersion.activated_at.is_not(None),
-            models.RiskLimitVersion.effective_from <= valuation,
-            or_(
-                models.RiskLimitVersion.effective_until.is_(None),
-                models.RiskLimitVersion.effective_until > valuation,
-            ),
-            models.RiskLimitVersion.scope_type != "portfolio",
-            models.RiskLimit.key.not_in(seeded_keys),
-        )
-    ).scalars().all()
-    if rows:
+    if not valuations:
+        valuations = [datetime.utcnow()]
+    offending: set[str] = set()
+    for valuation in valuations:
+        rows = session.execute(
+            select(models.RiskLimit.key)
+            .join(
+                models.RiskLimitVersion,
+                models.RiskLimitVersion.risk_limit_id == models.RiskLimit.id,
+            )
+            .where(
+                models.RiskLimitVersion.activated_at.is_not(None),
+                models.RiskLimitVersion.effective_from <= valuation,
+                or_(
+                    models.RiskLimitVersion.effective_until.is_(None),
+                    models.RiskLimitVersion.effective_until > valuation,
+                ),
+                models.RiskLimitVersion.scope_type != "portfolio",
+                models.RiskLimit.key.not_in(seeded_keys),
+            )
+        ).scalars().all()
+        offending.update(rows)
+    if offending:
         raise RuntimeError(
             "arena setup: foreign active non-portfolio limit versions would "
-            f"join this match's monitoring run: {sorted(set(rows))} — retire or "
+            f"join this match's monitoring run: {sorted(offending)} — retire or "
             "deactivate them before running this workflow"
         )
 

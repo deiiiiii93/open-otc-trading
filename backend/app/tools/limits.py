@@ -92,30 +92,26 @@ def list_risk_limits_tool(portfolio_id: int) -> dict[str, Any]:
     active version boundaries (warning/hard), metric, scope, and unit."""
     database.init_db()
     with database.SessionLocal() as session:
-        versions = list(
+        # Select through RiskLimit.active_version_id (never historical
+        # versions): a retired identity has no active pointer and must not be
+        # reported as governing, and scope filtering must apply to the EXACT
+        # version that would evaluate.
+        limits_rows = list(
             session.execute(
-                select(RiskLimitVersion)
-                .join(RiskLimit, RiskLimit.id == RiskLimitVersion.risk_limit_id)
-                .where(RiskLimitVersion.activated_at.is_not(None))
-                .order_by(RiskLimitVersion.id)
+                select(RiskLimit)
+                .where(RiskLimit.active_version_id.is_not(None))
+                .order_by(RiskLimit.id)
             ).scalars()
         )
         limits: list[dict[str, Any]] = []
-        seen: set[int] = set()
-        for version in versions:
-            if version.scope_type == "portfolio":
-                ids = (version.scope_config or {}).get("portfolio_ids") or []
+        for limit in limits_rows:
+            active = session.get(RiskLimitVersion, limit.active_version_id)
+            if active is None or active.activated_at is None:
+                continue
+            if active.scope_type == "portfolio":
+                ids = (active.scope_config or {}).get("portfolio_ids") or []
                 if portfolio_id not in {int(v) for v in ids}:
                     continue
-            limit = session.get(RiskLimit, version.risk_limit_id)
-            if limit is None or limit.id in seen:
-                continue
-            seen.add(limit.id)
-            active = version
-            if limit.active_version_id is not None:
-                active = session.get(
-                    RiskLimitVersion, limit.active_version_id
-                ) or version
             limits.append(
                 {
                     "id": limit.id,
@@ -310,8 +306,15 @@ def _tool_context(config: RunnableConfig | None) -> LimitActionContext:
     actor = values.get("actor")
     if not isinstance(actor, str) or not actor.strip():
         actor = "agent"
+    audit_ref = values.get("audit_ref")
+    if not isinstance(audit_ref, str) or not audit_ref.strip():
+        audit_ref = None
     return LimitActionContext(
-        actor=actor, persona=None, mode=mode, thread_id=thread_id
+        actor=actor,
+        persona=None,
+        mode=mode,
+        thread_id=thread_id,
+        audit_ref=audit_ref,
     )
 
 

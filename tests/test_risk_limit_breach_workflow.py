@@ -40,14 +40,14 @@ def test_bundle_loads(loaded):
         assert step.replay in loaded.fixtures.replay
 
 
-def test_point_manifest_is_36(loaded):
+def test_point_manifest_is_39(loaded):
     wf = loaded.workflow
     skills = sum(1 for s in wf.steps if s.expected_skill is not None)
     tools = sum(len(s.expected_tools) for s in wf.steps)
     step_assertions = sum(len(s.assertions) for s in wf.steps)
     success = len(wf.success.assertions)
-    assert (skills, tools, step_assertions, success) == (5, 11, 19, 1)
-    assert skills + tools + step_assertions + success == 36
+    assert (skills, tools, step_assertions, success) == (5, 11, 22, 1)
+    assert skills + tools + step_assertions + success == 39
 
 
 def test_not_par_calibrated(loaded):

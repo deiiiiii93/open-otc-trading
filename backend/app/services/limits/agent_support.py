@@ -48,7 +48,10 @@ def derive_monitoring_envelope(session: Session, portfolio_id: int) -> dict[str,
     return {
         "pricing_parameter_profile_id": run.pricing_parameter_profile_id,
         "engine_config_id": run.engine_config_id,
-        "market_snapshot_id": None,
+        # Mirror the run's snapshot verbatim: _matches_identity requires exact
+        # equality, so a hardcoded None would make snapshot-backed runs
+        # unreusable (missing_source under reuse_only).
+        "market_snapshot_id": run.market_snapshot_id,
         "effective_market_evidence_id": evidence_id,
         "valuation_as_of": source_valuation_at(run),
         "max_source_age_seconds": None,
