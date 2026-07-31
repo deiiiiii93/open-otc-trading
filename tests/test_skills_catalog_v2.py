@@ -53,6 +53,7 @@ def test_persona_sources_are_workflow_only() -> None:
     assert risk_sources == [
         "/skills/workflows/positions/",
         "/skills/workflows/risk/",
+        "/skills/workflows/limits/",
         "/skills/workflows/hedging/",
         "/skills/workflows/pricing/",
         "/skills/workflows/market-data/",
@@ -169,8 +170,10 @@ def test_risk_manager_total_workflow_catalog(
 ) -> None:
     catalog = _persona_catalog(_build_backend(), _source_list(risk_spec(object(), [])))
 
-    assert len(catalog) == 27, f"Expected 27 entries, got {len(catalog)}: {catalog}"  # +asian-fixings (positions domain) +build-workflow
+    assert len(catalog) == 29, f"Expected 29 entries, got {len(catalog)}: {catalog}"  # +asian-fixings (positions domain) +build-workflow +limits (monitor-limits, handle-limit-incident)
     assert {
+        "monitor-limits",
+        "handle-limit-incident",
         "position-diagnosis",
         "run-risk",
         "run-greeks-landscape",

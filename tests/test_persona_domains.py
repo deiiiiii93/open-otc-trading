@@ -28,6 +28,7 @@ def test_risk_manager_sources_unchanged() -> None:
     assert workflow_skill_sources("risk_manager") == [
         "/skills/workflows/positions/",
         "/skills/workflows/risk/",
+        "/skills/workflows/limits/",
         "/skills/workflows/hedging/",
         "/skills/workflows/pricing/",
         "/skills/workflows/market-data/",

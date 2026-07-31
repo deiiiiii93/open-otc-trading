@@ -25,6 +25,7 @@ PERSONA_WORKFLOW_DOMAINS: Final[dict[str, tuple[str, ...]]] = {
     "risk_manager": (
         "positions",
         "risk",
+        "limits",
         "hedging",
         "pricing",
         "market-data",
