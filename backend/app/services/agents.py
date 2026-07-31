@@ -455,6 +455,11 @@ DEEP_AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         "run_greeks_landscape",
         "get_greeks_landscape_run",
         "get_latest_greeks_landscape_run",
+        # Limits tools: monitoring/incident reads + HITL writes (see tools/limits.py)
+        "list_risk_limits",
+        "get_limit_monitoring_run",
+        "list_limit_incidents",
+        "get_limit_incident",
         "create_report",
         "approve_rfq",
         "reject_rfq",
