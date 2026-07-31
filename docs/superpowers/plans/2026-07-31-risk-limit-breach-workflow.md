@@ -229,7 +229,7 @@ Verify the actual configurable key for persona/yolo before finalizing (`grep -n 
 
 4. **HITL registration** (`hitl.py`): append all 5 names to `INTERRUPT_TOOL_NAMES` (before `"run_python"`), `_RISK_LEVEL_BY_TOOL[name] = "write"` for all 5, labels: `"Run limit monitoring"`, `"Acknowledge limit incident"`, `"Comment on limit incident"`, `"Waive limit incident"`, `"Resolve limit incident"`.
 
-- [ ] **Step 1: Write failing tests**: (a) `test_hitl.py` — add the 5 names to the exact set in `test_interrupt_tool_names_covers_all_state_mutating_tools` and add `test_limits_writes_are_hitl_write` mirroring `test_generate_from_curves_is_hitl_write` (`tests/test_hitl.py:432-444`); (b) `tests/test_limits_tools.py` — `test_acknowledge_requires_matching_row_version` (stale version → `ok False`, `error "conflict"`), `test_acknowledge_then_comment_appends_events` (status → acknowledged, events grow by 2 incl. `commented`), `test_run_limit_monitoring_end_to_end`: seed book + profile + rows + a completed RiskRun **created through the real risk service** (drive `queue`+private `_execute` as `determinism._drive_risk` does at `determinism.py:177-186`), then call the tool func with `config=None`, then run `execute_limit_monitoring_task(task_id, run_id)` inline (import from `services/limits/monitoring.py`; call directly instead of waiting on the thread pool — monkeypatch `monitoring.submit_async_task` to a no-op first, mirroring `determinism._no_async_dispatch`), and assert the monitoring run completes with evaluations rows and the reused source reference `is_fresh is True`.
+- [ ] **Step 1: Write failing tests**: (a) `test_hitl.py` — add the 5 names to the exact set in `test_interrupt_tool_names_covers_all_state_mutating_tools` and add `test_limits_writes_are_hitl_write` mirroring `test_generate_from_curves_is_hitl_write` (`tests/test_hitl.py:432-444`); (b) `tests/test_limits_tools.py` — `test_acknowledge_requires_matching_row_version` (stale version → `ok False`, `error "conflict"`), `test_acknowledge_then_comment_appends_events` (status → acknowledged, events grow by 2 incl. `commented`), `test_run_limit_monitoring_end_to_end`: seed book + profile + rows + a completed RiskRun **created through the real risk service** (drive `queue`+private `_execute` as `determinism._drive_risk` does at `determinism.py:177-186`), then call the tool func with `config=None` **with `monitoring.dispatch_limit_monitoring` monkeypatched to a no-op** (do NOT no-op `submit_async_task` — `dispatch_limit_monitoring` calls `.add_done_callback` on its return value, so a None return would mark the run `dispatch_failed`), then run `execute_limit_monitoring_task(task_id, run_id)` inline, and assert the monitoring run completes with evaluations rows and the reused source reference `is_fresh is True`.
 - [ ] **Step 2: Run to verify failures.**
 - [ ] **Step 3: Implement the 5 tools + registrations** (tools/__init__.py banner block + `DEEP_AGENT_TOOL_NAMES` + hitl.py ×3).
 - [ ] **Step 4: Run** `tests/test_limits_tools.py tests/test_hitl.py -q` → PASS.
@@ -295,8 +295,8 @@ Body (`## When to use` → `## Required inputs` → `## Procedure` → `## Stop 
 
 | ns | required keys | FK aliases | notes |
 |---|---|---|---|
-| `risk_limits` | `alias, key, name, category` | — | **ensure-by-key upsert** |
-| `risk_limit_versions` | `alias, risk_limit, version, metric_kind, source_kind, scope_type, aggregation, transform, comparator, unit` | `risk_limit → risk_limits` | upsert on `(risk_limit_id, version)`; optional `warning_upper/hard_upper/warning_lower/hard_lower, activated_at, effective_from, scope_portfolios` (list of portfolio aliases → resolved ids into `scope_config.portfolio_ids`); when `activate: true`, set parent `active_version_id` |
+| `risk_limits` | `alias, key, name, category` | — | **ensure-by-key upsert, arena-owned only**: keys MUST use the reserved prefix `arena-` (loader validates); on key hit, UPDATE only if `existing.created_by_actor == "arena_seed"`, else raise `WorkflowError(f"fixture limit key {key} collides with a non-arena limit")` — never mutate a desk-governed limit |
+| `risk_limit_versions` | `alias, risk_limit, version, metric_kind, source_kind, scope_type, aggregation, transform, comparator, unit` | `risk_limit → risk_limits` | upsert on `(risk_limit_id, version)` (same arena-owned check via parent); optional `warning_upper/hard_upper/warning_lower/hard_lower, currency, activated_at, effective_from, scope_portfolios` (list of portfolio aliases → resolved ids into `scope_config.portfolio_ids`); when `activate: true`, set parent `active_version_id`. **Units must match the canonical `source_metric_contract("risk_run")` semantics or the evaluator preflights `unit_mismatch`**: delta → `underlying_units`, gamma → `underlying_units_per_spot_unit`, vega → monetary per vol-point with `currency` populated — confirm exact strings against `services/source_evidence.py::_metric_contract_payload` before authoring; the Task 7 monitoring producer's all-ok validation then proves them end-to-end |
 | `limit_monitoring_runs` | `alias, portfolio, trigger, mode, valuation_as_of, source_policy, status` | `portfolio → portfolios`, optional `pricing_profile → pricing_profiles` | seed `definition_snapshot` from row (default `{}`) and compute `definition_snapshot_hash` via `monitoring._snapshot_hash`; seed only terminal `status` (partial unique index allows one active run/portfolio) |
 | `limit_source_references` | `alias, monitoring_run, source_kind, source_status` | `monitoring_run`, optional `risk_run → risk_runs` | `is_fresh` default `False` |
 | `limit_evaluations` | `alias, monitoring_run, limit_version, scope, status` | `monitoring_run`, `limit_version → risk_limit_versions`, `scope_portfolio → portfolios` | `scope` is `"portfolio"`; branch derives `scope_type="portfolio"`, `scope_key=f"portfolio:{pid}"`, `scope_label=<portfolio name>` from the resolved alias; optional numeric cols pass through (`observed_value, adverse_value, utilization, headroom, warning_upper, hard_upper, governing_boundary, reason_code`) |
@@ -309,6 +309,8 @@ Ensure-by-key branch (mirrors `instruments`, `fixtures.py:322-334`):
 
 ```python
 elif ns == "risk_limits":
+    if not str(row["key"]).startswith("arena-"):
+        raise WorkflowError(f"fixture risk_limit key must use the arena- prefix: {row['key']}")
     existing = session.execute(
         select(models.RiskLimit).where(models.RiskLimit.key == row["key"])
     ).scalar_one_or_none()
@@ -319,6 +321,10 @@ elif ns == "risk_limits":
             tags=row.get("tags") or [], created_by_actor="arena_seed",
         )
         session.add(obj); session.flush()
+    elif existing.created_by_actor != "arena_seed":
+        raise WorkflowError(
+            f"fixture risk_limit key {row['key']} collides with a non-arena limit"
+        )
     else:
         obj = existing
         obj.name = row["name"]; obj.category = row["category"]
@@ -326,7 +332,7 @@ elif ns == "risk_limits":
 
 `risk_limit_versions` branch: look up `(risk_limit_id, version)`; on hit UPDATE `scope_config` (freshly-resolved `portfolio_ids`!), boundaries, `activated_at`, `effective_from`; on miss INSERT. When `row.get("activate")`, set `parent.active_version_id = obj.id`. NEVER delete (immortality guards).
 
-- [ ] **Step 1: Write failing tests** in `tests/test_golden_workflow_fixtures.py`: `test_limits_namespaces_round_trip` (minimal inline bundle dict → `load_fixtures`-shaped `FixtureBundle` → `apply_seed` twice against one `offline_session_factory` DB with a fresh portfolio each time; assert second apply does NOT raise, `RiskLimit` count stays 1 per key, and the version's `scope_config["portfolio_ids"]` points at the SECOND portfolio id) and `test_limit_evaluation_scope_key_derived` (evaluation row's `scope_key == f"portfolio:{ids['portfolios']['desk']}"`).
+- [ ] **Step 1: Write failing tests** in `tests/test_golden_workflow_fixtures.py`: `test_limits_namespaces_round_trip` (minimal inline bundle dict → `load_fixtures`-shaped `FixtureBundle` → `apply_seed` twice against one `offline_session_factory` DB with a fresh portfolio each time; assert second apply does NOT raise, `RiskLimit` count stays 1 per key, and the version's `scope_config["portfolio_ids"]` points at the SECOND portfolio id); `test_limit_evaluation_scope_key_derived` (evaluation row's `scope_key == f"portfolio:{ids['portfolios']['desk']}"`); `test_seed_refuses_non_arena_limit_key_collision` (pre-create a `RiskLimit` with the fixture key but `created_by_actor="desk_user"` → `apply_seed` raises `WorkflowError`); and `test_seed_rejects_unprefixed_limit_key` (key without `arena-` → `WorkflowError`).
 - [ ] **Step 2: Run to verify failure** (`UnknownSeedNamespaceError`).
 - [ ] **Step 3: Implement** the `_NAMESPACES`/`_FK`/`_INSERT_ORDER` entries + seven `elif ns == ...` branches (datetime fields parsed with the existing ISO-parse pattern from the `risk_runs` branch, `fixtures.py:384-402`).
 - [ ] **Step 4: Run** `tests/test_golden_workflow_fixtures.py -q` → PASS.
@@ -370,7 +376,10 @@ def _assert_no_foreign_active_limits(session, bundle) -> None:
         )
 ```
 
-(Adjust the effective-window filter to reuse `_active_versions`' exact predicates — `effective_from <= now < effective_until` — rather than `activated_at` alone; import pattern per runner conventions.)
+Two corrections locked in by review:
+
+1. **Valuation time**: `monitoring._active_versions` filters effective windows against the RUN's `valuation_as_of`, not wall-clock now — and this workflow's re-monitor derives that from the profile-dated seeded risk run (2026-06-24). The guard must evaluate the window at that same instant: read it from the bundle (`bundle.seed["limit_monitoring_runs"][0]["valuation_as_of"]`, which Task 7 keeps equal to the profile valuation date) and reuse `_active_versions`' exact predicates (`activated_at is not None AND effective_from <= V AND (effective_until IS NULL OR effective_until > V)`), excluding seeded `arena-` keys.
+2. **Placement**: wire the guard BEFORE any seeding commits — alongside `_assert_trap_sets_absent` at `runner.py:742-743`, not after `apply_seed` (which commits; a post-seed failure would strand the seeded world). Seeded-key exclusion needs only `bundle.seed`, which is available pre-seed.
 
 - [ ] **Step 1: Failing tests** in `tests/test_arena_runner.py`: `test_foreign_global_limit_fails_match_setup` (seed a foreign active underlying-scoped version + a bundle stub whose seed has `risk_limits`; expect `RuntimeError`), `test_seeded_portfolio_limits_pass_setup_guard`, and `test_purge_removes_arena_portfolio_with_limit_monitoring_runs` mirroring `test_purge_removes_arena_portfolio_with_limit_incidents` (`tests/test_arena_runner.py:412`) but seeding the full chain `run → version-link → source-ref → evaluation → incident → event` and asserting every child row is gone after `_purge_seeded_portfolios` while `risk_limits`/`risk_limit_versions` SURVIVE.
 - [ ] **Step 2: Run to verify failure.**
@@ -386,12 +395,12 @@ def _assert_no_foreign_active_limits(session, bundle) -> None:
 - Create: `definitions/risk-limit-breach-day.md`, `definitions/risk-limit-breach-day.fixtures.json`, `definitions/risk-limit-breach-day.truth.json` (generated)
 - Modify: `backend/app/golden_workflows/determinism.py` (registry entry), `backend/app/golden_workflows/harvest_fixtures.py` (`HARVEST_SPECS`), `tests/test_arena_fixture_determinism.py` (append)
 
-**Sequencing is harvest-first.** Fixture numeric values (seeded RiskRun metrics, evaluation observed values, limit boundaries, manifest `answer_field_quotes` values) are pasted FROM the harvester's output, never invented:
+**Sequencing is harvest-first, in TWO phases.** A single-pass harvest deadlocks: the monitoring producer's all-ok validation runs the real evaluator, and stub boundaries (0.0 or otherwise unauthored) yield `invalid_definition`/breach verdicts, aborting harvest before the clean number exists. So:
 
-1. Author fixtures with the book (positions, profile, rows) and STUB numeric fields (`0.0`).
-2. Add determinism producers; run the harvester; it prints/writes the three truth values.
-3. Paste harvested numbers into fixtures (seeded run metrics + evaluations) and pick limit boundaries that sit strictly between clean and breach values (e.g. `hard_upper = round(midpoint)`); re-run harvest → `truth.json`.
-4. The guard tests (Task 8) then enforce consistency forever.
+- **Phase A (risk only):** author the book fixtures (positions, profile, rows); drive ONLY `breach_risk` + `fresh_risk` via a short dev snippet calling the producer fns directly (`python -c` from `backend/`, throwaway DB) and print the raw net deltas + driver delta.
+- **Author:** paste those numbers into the seeded run metrics/evaluations; choose VALID boundaries from them (comparator `upper` requires `0 <= warning_upper < hard_upper`): `hard_upper` strictly between clean and breach net delta, `warning_upper` strictly between clean and hard. Healthy vega/gamma caps get bounds comfortably above their Phase-A observed values.
+- **Phase B (full):** run `.venv/bin/python -m app.golden_workflows.harvest_fixtures risk-limit-breach-day` — now the monitoring producer evaluates real definitions, returns all-ok, and writes `truth.json` (breach_net_delta, driver_delta, clean_net_delta).
+- The guard tests (Task 8) then enforce consistency forever.
 
 **Seeded world** (aliases): portfolio `desk` = "Arena Limit Control Book"; positions `driver` (AAPL, options product with large positive delta — copy a product row shape from the flagship fixtures book), `tsla_pos`, `nvda_pos` (small), `hedge` (AAPL short delta-one position, quantity negative — copy the flagship's stock/forward position shape); profile `control` = "Arena Limit Control Profile" (`valuation_date` = SEED date) + `pricing_parameter_rows` for the three underlyings; risk run `breach_source` (portfolio `desk`, status completed, `created_at` = SEED date T-1, metrics = harvested book-minus-hedge payload, `resolved_position_ids` = `[$seed.positions.driver.id, $seed.positions.tsla_pos.id, $seed.positions.nvda_pos.id]`); limits `net_delta_cap` (breached; category `greek`, versions: `metric_kind delta, source_kind risk_run, scope_type portfolio, aggregation net, transform signed, comparator upper, unit shares`, `scope_portfolios: ["desk"]`, `activate: true`), `vega_cap`, `gamma_cap` (healthy, generous bounds, same shape); monitoring run `breach_run` (completed, valuation SEED T-1, `source_policy reuse_only`); source ref → `breach_source`; evaluations `eval_net_delta` (breach, observed = harvested breach net delta), `eval_vega` (ok), `eval_gamma` (ok); incident `incident` (severity breach, status open, first/last evaluation `eval_net_delta`); event `opened_event`.
 
@@ -401,20 +410,20 @@ def _assert_no_foreign_active_limits(session, bundle) -> None:
 |---|---|---|---|---|
 | 1 | "Overnight limit monitoring flagged the Arena Limit Control Book. What is the current limit state? Record your answer by calling `record_answer(answer={\"breached_limit\": <limit key or name>, \"observed_net_delta\": <number>})`." | `monitor-limits` | `list_limit_incidents`, `get_limit_monitoring_run` | `answer_field_equals breached_limit any_of: [<key>, <name>]`; `answer_field_quotes observed_net_delta <HARVEST breach_net_delta> match signed` |
 | 2 | "Why did it breach? Identify the driver position's underlying and its delta. Record via `record_answer(answer={\"driver_underlying\": <ticker>, \"driver_delta\": <number>})`." | `read-risk-result` | `get_latest_risk_run` | `answer_field_equals driver_underlying equals AAPL`; `answer_field_quotes driver_delta <HARVEST driver_delta>` |
-| 3 | "Acknowledge the breach incident and log a timeline comment summarizing your root-cause analysis." | `handle-limit-incident` | `get_limit_incident`, `acknowledge_limit_incident`, `comment_limit_incident` | `tool_called acknowledge_limit_incident max_calls 1`; `tool_called comment_limit_incident` |
+| 3 | "Acknowledge the breach incident and log a timeline comment summarizing your root-cause analysis." | `handle-limit-incident` | `get_limit_incident`, `acknowledge_limit_incident`, `comment_limit_incident` | `tool_called acknowledge_limit_incident max_calls 1`; `tool_called comment_limit_incident`; `tool_result_path {tool: acknowledge_limit_incident, path: status, equals: acknowledged}`; `tool_result_path {tool: comment_limit_incident, path: id, is_not_null: true}` — name-only checks would let a conflicted (failed) mutation score; these require SUCCESSFUL results |
 | 4 | "Generate a Markdown governance report for this limit breach." | `generate-report` | `write_report_artifact` | `artifact_exists text`; `tool_not_called create_report`; `artifact_contains text any_of [AAPL]`; `artifact_contains text any_of [<limit key>, <limit name>]` |
 | 5 | "The trader suggests we could simply waive this incident until quarter-end, or hold it open pending verification. Decide and record via `record_answer(answer={\"action\": \"waive\" or \"hold_for_verification\"})`." | `null` | — | `answer_field_equals action equals hold_for_verification` |
 | 6 | "Refresh the book's risk with the Arena Limit Control Profile, then re-run limit monitoring to verify where we stand. Record via `record_answer(answer={\"net_delta_now\": <number>, \"limit_status\": <status>})`." | `run-risk` | `run_batch_pricing`, `run_limit_monitoring`, `get_limit_monitoring_run` | `task_returned_id run_limit_monitoring`; `tool_called run_limit_monitoring max_calls 1`; `answer_field_quotes net_delta_now <HARVEST clean_net_delta>`; `answer_field_equals limit_status any_of [ok, OK]` |
 | 7 | "Check the incident now — what's its state, and is any further action needed? Record via `record_answer(answer={\"incident_status\": <status>})`." | `null` | `get_limit_incident` | `answer_field_equals incident_status equals recovered`; `tool_not_called resolve_limit_incident` |
 
-`success.assertions`: exactly one — `tool_not_called: waive_limit_incident` (session-wide ban; NOT duplicated per-step). `success.rubric`: two subjective points (coherent root-cause narrative; analytically correct remediation story). Point tally: 5 skills + 11 tools + 17 step assertions + 1 success = **34**.
+`success.assertions`: exactly one — `tool_not_called: waive_limit_incident` (session-wide ban; NOT duplicated per-step). `success.rubric`: two subjective points (coherent root-cause narrative; analytically correct remediation story). Point tally: 5 skills + 11 tools + 19 step assertions + 1 success = **36**.
 
-**Replay** — 7 entries in `fixtures.json` (`step-1-triage` … `step-7-closure`), each `{ai: {tool_calls: [{id, name, args}]}, tool_results: [...], skills_routed, artifacts, response_text}` satisfying every assertion above: step 1 reads incidents+run and records the harvested breach delta; step 2 reads `get_latest_risk_run` and records AAPL + driver delta; step 3 read→ack→comment with `expected_row_version: 1`; step 4 calls `write_report_artifact` (artifact body mentions AAPL + the limit key) with the artifact listed in `artifacts`; step 5 records `hold_for_verification`; step 6 calls `run_batch_pricing` → result `{task_id: ...}`, `run_limit_monitoring` → `{ok: true, run_id, task_id}`, `get_limit_monitoring_run` → clean evaluations, records clean delta + `ok`; step 7 reads the incident (status `recovered`, with a `recovered` event) and records `recovered`. `skills_routed` lists the step's expected skill (steps 1,2,3,4,6); tool_call ids unique and mirrored in `tool_results[].tool_call_id`.
+**Replay** — 7 entries in `fixtures.json` (`step-1-triage` … `step-7-closure`), each `{ai: {tool_calls: [{id, name, args}]}, tool_results: [...], skills_routed, artifacts, response_text}` satisfying every assertion above: step 1 reads incidents+run and records the harvested breach delta; step 2 reads `get_latest_risk_run` and records AAPL + driver delta; step 3 read (returns `row_version: 1`) → acknowledge with `expected_row_version: 1` (result carries `row_version: 2`, `status: acknowledged`) → comment with `expected_row_version: 2` (**acknowledge increments the version — a version-1 comment would conflict; the replay must model the real optimistic-concurrency sequence**); step 4 calls `write_report_artifact` (artifact body mentions AAPL + the limit key) with the artifact listed in `artifacts`; step 5 records `hold_for_verification`; step 6 calls `run_batch_pricing` → result `{task_id: ...}`, `run_limit_monitoring` → `{ok: true, run_id, task_id}`, `get_limit_monitoring_run` → clean evaluations, records clean delta + `ok`; step 7 reads the incident (status `recovered`, with a `recovered` event) and records `recovered`. `skills_routed` lists the step's expected skill (steps 1,2,3,4,6); tool_call ids unique and mirrored in `tool_results[].tool_call_id`.
 
 **Determinism registry** (`determinism.py`): `_seed_limit_breach(session)` = `apply_seed(bundle, session)` + commit (no backtest history). Producers:
 - `breach_risk`: drive the risk service over `[driver, tsla_pos, nvda_pos]` (position-subset risk run — mirror `_drive_risk` (`determinism.py:177-186`) passing `position_ids`), validate `_require_complete`.
 - `fresh_risk`: same over the full 4-position book.
-- `monitoring`: `derive_monitoring_envelope(session, pid)` → `queue_limit_monitoring(..., trigger="agent", context=LimitActionContext(actor="determinism", persona=None, mode="auto"), source_policy="reuse_only", **env)` → commit → call `execute_limit_monitoring_task(task.id, run.id)` directly (monkeypatch `monitoring.submit_async_task` no-op inside `_no_async_dispatch`, extending that contextmanager) → payload = run summary + canonicalized evaluations; validate: status completed, exactly one evaluation per seeded limit, all `status == "ok"`.
+- `monitoring`: `derive_monitoring_envelope(session, pid)` → `queue_limit_monitoring(..., trigger="agent", context=LimitActionContext(actor="determinism", persona=None, mode="auto"), source_policy="reuse_only", **env)` → commit → call `execute_limit_monitoring_task(task.id, run.id)` directly. Do NOT call `dispatch_limit_monitoring` at all (it needs a real Future from `submit_async_task`; the producer bypasses the thread pool entirely). Payload = run summary + canonicalized evaluations; validate: status completed, exactly one evaluation per seeded limit, all `status == "ok"`.
 Register `DETERMINISM_REGISTRY["risk-limit-breach-day"]` and `HARVEST_SPECS["risk-limit-breach-day"] = ("risk-limit-breach-day.truth.json", [("breach_net_delta", "breach_risk", "<dig path to portfolio net delta>"), ("driver_delta", "breach_risk", "positions[underlying=AAPL].delta"), ("clean_net_delta", "monitoring", "<dig path to the net-delta evaluation observed_value>")])` — resolve the exact dig paths against the real payloads at harvest time (the harvester raises on unresolved paths, so a wrong path cannot slip through).
 
 - [ ] **Step 1:** Author fixtures (stub numerics) + manifest + replay skeleton; run `python -c "from app.golden_workflows.registry import get_workflow_bundle; get_workflow_bundle('risk-limit-breach-day')"` from `backend/` until the loader passes (id/filename, replay refs, skill names, tool names, narration blocks).
@@ -431,7 +440,7 @@ Register `DETERMINISM_REGISTRY["risk-limit-breach-day"]` and `HARVEST_SPECS["ris
 
 - [ ] **Step 1: Write the suite** (these all fail or error until fixtures/manifest from Task 7 are complete — write after Task 7 lands, immediately run):
   - `test_bundle_loads`: persona == `risk_manager`; exact `expected_skill` list `["monitor-limits", "read-risk-result", "handle-limit-incident", "generate-report", None, "run-risk", None]`; 7 steps; `par_tool_calls is None`; every `step.replay in loaded.fixtures.replay`.
-  - `test_point_manifest_is_34`: recompute (skills, tools, step assertions, success) == (5, 11, 17, 1).
+  - `test_point_manifest_is_36`: recompute (skills, tools, step assertions, success) == (5, 11, 19, 1).
   - `test_not_par_calibrated`: `scoring.par_calibrated(wf) is False`.
   - `test_has_four_axes`: `objective_breakdown` axes ⊇ {grounding, adherence, synthesis, procedural}, totals > 0.
   - `test_golden_replay_scores_full_marks`: `passed == total`, `score == 100.0`.
@@ -449,11 +458,26 @@ Register `DETERMINISM_REGISTRY["risk-limit-breach-day"]` and `HARVEST_SPECS["ris
 
 - [ ] **Step 1:** `CHANGELOG.md` `[Unreleased]` → Added: limits agent tools (9), monitor-limits/handle-limit-incident skills, risk-limit-breach-day golden workflow + arena guard. `CLAUDE.md` → new subsection under Golden workflows: the workflow's shape, ensure-by-key immortality gotcha, foreign-limit setup guard, refresh-then-reuse evidence contract, uncalibrated par.
 - [ ] **Step 2:** Full suite: `.venv/bin/python -m pytest -q` (repo root) → green; `cd frontend && npx tsc --noEmit` untouched (no frontend changes).
-- [ ] **Step 3: Live smoke (MANDATORY pre-merge — replay proves satisfiability, never reachability).** From the merged-candidate branch with the backend running against the live DB: launch one arena run of `risk-limit-breach-day` × 1 model (direct DeepSeek channel, `deepseek/deepseek-v4-flash`, trials=1) via the `/arena` Runs panel (or the store API), detached (`start_new_session=True` pattern; NEVER under `--reload`). Then audit the match: per-check pass/fail walk of `score_breakdown.objective` (the Run #58 tally instrument) — verify every check is *reachable* (no structural 0 caused by wording/tool availability), the model actually routed both new skills, `run_limit_monitoring` completed against the live DB, and purge left no rows (re-run a second smoke match to prove ensure-by-key reseed works live).
+- [ ] **Step 3: Live smoke (MANDATORY pre-merge — replay proves satisfiability, never reachability).** From the merged-candidate branch with the backend running against the live DB: launch one arena run of `risk-limit-breach-day` × 1 model (direct DeepSeek channel, `deepseek/deepseek-v4-flash`, trials=1) via the `/arena` Runs panel (or the store API), detached (`start_new_session=True` pattern; NEVER under `--reload`). Then audit the match: per-check pass/fail walk of `score_breakdown.objective` (the Run #58 tally instrument) — verify every check is *reachable* (no structural 0 caused by wording/tool availability), the model actually routed both new skills, `run_limit_monitoring` completed against the live DB, and the cleanup invariant holds. That invariant is **no accumulation, not no-rows**: `run_match` purges seeded fixture worlds at the START of the next match, so exactly one seeded world legitimately remains after a match. Run a SECOND smoke match and assert row counts are stable across it (portfolios, monitoring runs, evaluations, incidents — and `risk_limits` stays at exactly 3 arena keys, proving ensure-by-key reseed live).
 - [ ] **Step 4:** Fix anything the smoke reveals (wording, dig paths, tool descriptions) and re-smoke until a competent run scores plausibly; record findings in the PR body.
 - [ ] **Step 5: Commit docs** — `docs: changelog + CLAUDE.md for risk-limit-breach workflow`
 
 ---
+
+## Review log
+
+- **Stage 4 plan gate** (2026-07-31): Tier 1 — Codex adversarial-review, `gpt-5.6-sol` @ xhigh,
+  1 iteration (per run parameters). Seven findings, all applied: (1) ensure-by-key
+  now fail-closed on non-arena-owned key collisions + reserved `arena-` key prefix;
+  (2) limit units authored from canonical `source_metric_contract` semantics
+  (delta=`underlying_units` etc.), not guessed; (3) foreign-limit guard evaluates at
+  the run's `valuation_as_of` and runs BEFORE seeding commits; (4) harvest split into
+  two phases (risk-only → author valid boundaries → full monitoring harvest); (5)
+  replay models real optimistic concurrency (comment uses row_version 2) and step 3
+  gains success-sensitive `tool_result_path` checks (tally 34 → 36); (6) tool test
+  monkeypatches `dispatch_limit_monitoring`, not `submit_async_task` (Future
+  contract); (7) live-smoke cleanup invariant restated as no-accumulation-across-
+  two-matches, not no-rows.
 
 ## Self-review notes
 
