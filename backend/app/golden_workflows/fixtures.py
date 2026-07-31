@@ -45,6 +45,33 @@ _NAMESPACES: dict[str, set[str]] = {
     # RIGHT market quote instead of the env-default fallback spot 100. Always
     # stamped source=ARENA_MARKET_SOURCE so the arena purge can reclaim them.
     "market_quotes": {"alias", "instrument", "as_of", "price"},
+    # Limits family (risk-limit-breach-day). risk_limits/-versions are seeded
+    # ENSURE-by-key (idempotent upsert) because those tables are protected-
+    # immortal (models._protect_risk_limit_history_* has NO arena exemption)
+    # and `key` is globally unique — a blind insert dies on the second match.
+    # Keys MUST use the reserved "arena-" prefix and an existing row is only
+    # updated when provably arena-owned (created_by_actor == "arena_seed").
+    "risk_limits": {"alias", "key", "name", "category", "owner"},
+    "risk_limit_versions": {
+        "alias", "risk_limit", "version", "metric_kind", "source_kind",
+        "scope_type", "aggregation", "transform", "comparator", "unit",
+    },
+    "limit_monitoring_runs": {
+        "alias", "portfolio", "trigger", "mode", "valuation_as_of",
+        "source_policy", "status",
+    },
+    "limit_source_references": {
+        "alias", "monitoring_run", "source_kind", "source_status",
+    },
+    "limit_evaluations": {
+        "alias", "monitoring_run", "limit_version", "scope", "scope_portfolio",
+        "status",
+    },
+    "limit_incidents": {
+        "alias", "portfolio", "risk_limit", "scope", "scope_portfolio",
+        "severity", "status",
+    },
+    "limit_incident_events": {"alias", "incident", "event_type", "actor"},
 }
 
 # FK edges: {child_ns: {field_in_row: parent_ns}}. The positions.rfq edge is
@@ -56,17 +83,66 @@ _FK: dict[str, dict[str, str]] = {
     "pricing_parameter_rows": {"profile": "pricing_profiles", "instrument": "instruments"},
     "risk_runs": {"portfolio": "portfolios"},
     "market_quotes": {"instrument": "instruments"},
+    "risk_limit_versions": {"risk_limit": "risk_limits"},
+    "limit_monitoring_runs": {
+        "portfolio": "portfolios",
+        "pricing_profile": "pricing_profiles",
+    },
+    "limit_source_references": {
+        "monitoring_run": "limit_monitoring_runs",
+        "risk_run": "risk_runs",
+    },
+    "limit_evaluations": {
+        "monitoring_run": "limit_monitoring_runs",
+        "limit_version": "risk_limit_versions",
+        "scope_portfolio": "portfolios",
+    },
+    "limit_incidents": {
+        "portfolio": "portfolios",
+        "risk_limit": "risk_limits",
+        "scope_portfolio": "portfolios",
+        "first_evaluation": "limit_evaluations",
+        "last_evaluation": "limit_evaluations",
+    },
+    "limit_incident_events": {
+        "incident": "limit_incidents",
+        "evaluation": "limit_evaluations",
+    },
 }
 
 # Insertion order so FK parents exist before children (rfqs before positions).
 _INSERT_ORDER = [
     "instruments", "portfolios", "reports", "pricing_profiles",
     "pricing_parameter_rows", "market_quotes", "rfqs", "positions", "risk_runs",
+    "risk_limits", "risk_limit_versions", "limit_monitoring_runs",
+    "limit_source_references", "limit_evaluations", "limit_incidents",
+    "limit_incident_events",
 ]
 
 # Origin tag stamped on arena-seeded market data (backtest history) so it is never
 # confused with production/live-fetched rows. Consumed by determinism.py.
 ARENA_MARKET_SOURCE = "arena_seed"
+
+
+def parse_seed_datetime(value):
+    """Parse an optional fixture datetime: ISO string (date or datetime) → datetime.
+
+    Public on purpose: ``arena/runner.py`` needs this to evaluate the same
+    ``valuation_as_of``/``valuation_date`` fixture fields the seed rows carry
+    (``_assert_no_foreign_active_limits``), and importing a leading-underscore
+    helper across a package boundary is a private-API leak.
+    """
+    if value is None or isinstance(value, datetime):
+        return value
+    raw = str(value)
+    if len(raw) == 10:  # "YYYY-MM-DD"
+        return datetime.strptime(raw, "%Y-%m-%d")
+    return datetime.fromisoformat(raw)
+
+
+# Back-compat alias: this module's own call sites below predate the public
+# rename and are unaffected either way.
+_seed_datetime = parse_seed_datetime
 
 # Column allowlist for the risk_runs seed namespace.  Only keys in this set
 # (beyond the always-excluded "alias" / "portfolio") are forwarded to the
@@ -418,6 +494,230 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
                 # also CREATE it: `artifact_bodies: {<key>: <text>}` writes the body
                 # to artifact_dir under the same basename the agent will resolve.
                 _write_seeded_artifact_bodies(row)
+
+            elif ns == "risk_limits":
+                # ENSURE-by-key upsert: these rows are protected-immortal (the
+                # deletion guards have no arena exemption) and `key` is unique,
+                # so re-seeding must reuse — but ONLY a provably arena-owned
+                # row. A desk-governed limit sharing the key is a fixture bug.
+                if not str(row["key"]).startswith("arena-"):
+                    raise WorkflowError(
+                        "fixture risk_limit key must use the arena- prefix: "
+                        f"{row['key']!r}"
+                    )
+                existing = (
+                    session.query(models.RiskLimit)
+                    .filter(models.RiskLimit.key == row["key"])
+                    .one_or_none()
+                )
+                if existing is None:
+                    obj = models.RiskLimit(
+                        key=row["key"],
+                        name=row["name"],
+                        category=row["category"],
+                        owner=row["owner"],
+                        description=row.get("description"),
+                        tags=row.get("tags") or [],
+                        created_by_actor="arena_seed",
+                    )
+                elif existing.created_by_actor != "arena_seed":
+                    raise WorkflowError(
+                        f"fixture risk_limit key {row['key']!r} collides with "
+                        "a non-arena limit"
+                    )
+                else:
+                    obj = existing
+                    obj.name = row["name"]
+                    obj.category = row["category"]
+                    obj.owner = row["owner"]
+
+            elif ns == "risk_limit_versions":
+                # Fail closed: a non-portfolio scope_type joins EVERY portfolio's
+                # monitoring run (monitoring._active_versions only portfolio-filters
+                # portfolio-scoped versions), so an underlying/product_family/
+                # position-scoped fixture limit would be an immortal, active,
+                # guard-exempt (seeded-key) row contaminating every desk book —
+                # exactly the class of leak CLAUDE.md's containment doctrine warns
+                # about. The sibling limit_evaluations/limit_incidents namespaces
+                # already fail closed the same way.
+                if row["scope_type"] != "portfolio":
+                    raise WorkflowError(
+                        "fixture risk_limit_versions support scope_type='portfolio' "
+                        f"only, got {row['scope_type']!r}"
+                    )
+                limit_id = _parent_id("risk_limits", row["risk_limit"])
+                existing = (
+                    session.query(models.RiskLimitVersion)
+                    .filter(
+                        models.RiskLimitVersion.risk_limit_id == limit_id,
+                        models.RiskLimitVersion.version == int(row["version"]),
+                    )
+                    .one_or_none()
+                )
+                scope_config = dict(row.get("scope_config") or {})
+                if "scope_portfolios" in row:
+                    scope_config["portfolio_ids"] = [
+                        _parent_id("portfolios", alias)
+                        for alias in row["scope_portfolios"]
+                    ]
+                values = {
+                    "state": row.get("state", "active"),
+                    "metric_kind": row["metric_kind"],
+                    "source_kind": row["source_kind"],
+                    "scope_type": row["scope_type"],
+                    "scope_config": scope_config,
+                    "aggregation": row["aggregation"],
+                    "transform": row["transform"],
+                    "comparator": row["comparator"],
+                    "warning_lower": row.get("warning_lower"),
+                    "warning_upper": row.get("warning_upper"),
+                    "hard_lower": row.get("hard_lower"),
+                    "hard_upper": row.get("hard_upper"),
+                    "unit": row["unit"],
+                    "currency": row.get("currency"),
+                    "activated_at": _seed_datetime(row.get("activated_at")),
+                    "effective_from": _seed_datetime(row.get("effective_from")),
+                    "effective_until": _seed_datetime(row.get("effective_until")),
+                }
+                if existing is None:
+                    obj = models.RiskLimitVersion(
+                        risk_limit_id=limit_id,
+                        version=int(row["version"]),
+                        created_by_actor="arena_seed",
+                        **values,
+                    )
+                else:
+                    obj = existing
+                    for field, value in values.items():
+                        setattr(obj, field, value)
+                session.add(obj)
+                session.flush()
+                if row.get("activate"):
+                    session.get(models.RiskLimit, limit_id).active_version_id = obj.id
+
+            elif ns == "limit_monitoring_runs":
+                # Snapshot hash must be internally consistent; seed only
+                # terminal statuses (a partial-unique index allows one
+                # queued/running run per portfolio).
+                from app.services.limits.monitoring import _snapshot_hash
+
+                snapshot = dict(row.get("definition_snapshot") or {})
+                obj = models.LimitMonitoringRun(
+                    trigger=row["trigger"],
+                    mode=row["mode"],
+                    portfolio_id=_parent_id("portfolios", row["portfolio"]),
+                    pricing_parameter_profile_id=(
+                        _parent_id("pricing_profiles", row["pricing_profile"])
+                        if "pricing_profile" in row
+                        else None
+                    ),
+                    valuation_as_of=_seed_datetime(row["valuation_as_of"]),
+                    source_policy=row["source_policy"],
+                    max_source_age_seconds=row.get("max_source_age_seconds"),
+                    status=row["status"],
+                    summary=dict(row.get("summary") or {}),
+                    definition_snapshot=snapshot,
+                    definition_snapshot_hash=_snapshot_hash(snapshot),
+                    started_at=_seed_datetime(row.get("started_at")),
+                    finished_at=_seed_datetime(row.get("finished_at")),
+                )
+
+            elif ns == "limit_source_references":
+                obj = models.LimitSourceReference(
+                    monitoring_run_id=_parent_id(
+                        "limit_monitoring_runs", row["monitoring_run"]
+                    ),
+                    source_kind=row["source_kind"],
+                    risk_run_id=(
+                        _parent_id("risk_runs", row["risk_run"])
+                        if "risk_run" in row
+                        else None
+                    ),
+                    source_status=row["source_status"],
+                    is_fresh=bool(row.get("is_fresh", False)),
+                    requested_parameters=dict(row.get("requested_parameters") or {}),
+                    completeness_diagnostics=dict(
+                        row.get("completeness_diagnostics") or {}
+                    ),
+                    source_valuation_at=_seed_datetime(row.get("source_valuation_at")),
+                )
+
+            elif ns == "limit_evaluations":
+                scope_pid = _parent_id("portfolios", row["scope_portfolio"])
+                scope_portfolio = session.get(models.Portfolio, scope_pid)
+                if row["scope"] != "portfolio":  # pragma: no cover
+                    raise WorkflowError(
+                        "limit_evaluations fixtures support scope='portfolio' only"
+                    )
+                obj = models.LimitEvaluation(
+                    monitoring_run_id=_parent_id(
+                        "limit_monitoring_runs", row["monitoring_run"]
+                    ),
+                    limit_version_id=_parent_id(
+                        "risk_limit_versions", row["limit_version"]
+                    ),
+                    scope_type="portfolio",
+                    scope_key=f"portfolio:{scope_pid}",
+                    scope_label=scope_portfolio.name,
+                    status=row["status"],
+                    observed_value=row.get("observed_value"),
+                    adverse_value=row.get("adverse_value"),
+                    warning_lower=row.get("warning_lower"),
+                    warning_upper=row.get("warning_upper"),
+                    hard_lower=row.get("hard_lower"),
+                    hard_upper=row.get("hard_upper"),
+                    utilization=row.get("utilization"),
+                    headroom=row.get("headroom"),
+                    governing_boundary=row.get("governing_boundary"),
+                    reason_code=row.get("reason_code"),
+                )
+
+            elif ns == "limit_incidents":
+                scope_pid = _parent_id("portfolios", row["scope_portfolio"])
+                scope_portfolio = session.get(models.Portfolio, scope_pid)
+                if row["scope"] != "portfolio":  # pragma: no cover
+                    raise WorkflowError(
+                        "limit_incidents fixtures support scope='portfolio' only"
+                    )
+                obj = models.LimitIncident(
+                    portfolio_id=_parent_id("portfolios", row["portfolio"]),
+                    risk_limit_id=_parent_id("risk_limits", row["risk_limit"]),
+                    scope_type="portfolio",
+                    scope_key=f"portfolio:{scope_pid}",
+                    scope_label=scope_portfolio.name,
+                    severity=row["severity"],
+                    status=row["status"],
+                    first_evaluation_id=(
+                        _parent_id("limit_evaluations", row["first_evaluation"])
+                        if "first_evaluation" in row
+                        else None
+                    ),
+                    last_evaluation_id=(
+                        _parent_id("limit_evaluations", row["last_evaluation"])
+                        if "last_evaluation" in row
+                        else None
+                    ),
+                )
+                # Model defaults (utcnow) apply unless the fixture pins them.
+                if row.get("first_seen_at"):
+                    obj.first_seen_at = _seed_datetime(row["first_seen_at"])
+                if row.get("last_seen_at"):
+                    obj.last_seen_at = _seed_datetime(row["last_seen_at"])
+
+            elif ns == "limit_incident_events":
+                obj = models.LimitIncidentEvent(
+                    incident_id=_parent_id("limit_incidents", row["incident"]),
+                    event_type=row["event_type"],
+                    actor=row["actor"],
+                    persona=row.get("persona"),
+                    mode=row.get("mode"),
+                    evaluation_id=(
+                        _parent_id("limit_evaluations", row["evaluation"])
+                        if "evaluation" in row
+                        else None
+                    ),
+                    payload=dict(row.get("payload") or {}),
+                )
 
             else:  # pragma: no cover
                 raise WorkflowError(f"apply_seed: unhandled namespace {ns!r}")

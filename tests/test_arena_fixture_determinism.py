@@ -156,3 +156,35 @@ def test_high_board_risk_is_reproducible(offline_session_factory, block_network)
                                  workflow_id=HIGH_BOARD_ID)
     assert _strip(first) == _strip(second)
     assert first["risk"]["positions"]
+
+
+def test_limit_breach_producers_are_reproducible(offline_session_factory, block_network):
+    """risk-limit-breach-day: breach/fresh risk + the live monitoring path must
+    yield byte-identical canonical payloads across independent clean DBs."""
+    from app.golden_workflows.determinism import (
+        LIMIT_BREACH_ID,
+        drive_producers,
+        seed_workflow,
+    )
+
+    results = []
+    for _ in range(2):
+        with offline_session_factory() as session:
+            ids = seed_workflow(session, LIMIT_BREACH_ID)
+            results.append(drive_producers(session, ids, workflow_id=LIMIT_BREACH_ID))
+    assert set(results[0]) == {"breach_risk", "fresh_risk", "monitoring"}
+    assert results[0] == results[1]
+
+
+def test_limit_breach_committed_truth_file_is_current(offline_session_factory, block_network):
+    """The committed truth.json must equal a fresh harvest (staleness gate)."""
+    import json
+
+    from app.golden_workflows import harvest_fixtures as hf
+    from app.golden_workflows.determinism import LIMIT_BREACH_ID
+
+    truth_path = hf._DEFN / hf.HARVEST_SPECS[LIMIT_BREACH_ID][0]
+    committed = json.loads(truth_path.read_text())
+    with offline_session_factory() as session:
+        fresh = hf.harvest_for(session, LIMIT_BREACH_ID)
+    assert committed == fresh

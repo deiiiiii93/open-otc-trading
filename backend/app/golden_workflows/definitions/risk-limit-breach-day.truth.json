@@ -1,0 +1,17 @@
+{
+  "breach_net_delta": {
+    "path": "totals.delta",
+    "producer": "breach_risk",
+    "value": 802.6853882273173
+  },
+  "clean_net_delta": {
+    "path": "evaluations[limit_key=arena-limit-breach-net-delta].observed_value",
+    "producer": "monitoring",
+    "value": 402.6853882273173
+  },
+  "driver_delta": {
+    "path": "positions[underlying=AAPL].delta",
+    "producer": "breach_risk",
+    "value": 573.3467058766552
+  }
+}

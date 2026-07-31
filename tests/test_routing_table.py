@@ -157,6 +157,8 @@ OLD_TABLE_ROWS: set[tuple[str, str, str]] = {
     ("Historical backtest or hedge replay of a portfolio", "risk_manager", "run-backtest"),
     ("Read or run a portfolio Greeks Landscape", "risk_manager", "run-greeks-landscape"),
     ("Set up or refresh the Asian fixing calendar, or capture a due fixing for an Asian position", "trader", "asian-fixings"),
+    ("Check risk limit status, breaches, or headroom for a portfolio", "risk_manager", "monitor-limits"),
+    ("Work a limit breach incident (acknowledge, comment, waive, or resolve)", "risk_manager", "handle-limit-incident"),
 }
 
 

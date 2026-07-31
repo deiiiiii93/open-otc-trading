@@ -635,6 +635,53 @@ affected manifests **in the same commit** — never separately, or fixtures and 
 and every grounding check silently mis-scores. Note 0.3.0 forgoes 0.4.0's QUAD/PDE
 stabilisation fix: reproducibility was chosen over engine recency, deliberately.
 
+### risk-limit-breach-day (limits workflow) + the limits agent tools
+
+The fourth golden workflow (7 steps / 39 points, persona `risk_manager`,
+**uncalibrated par** — hyperbolic EFF until a live board calibrates it): work an
+overnight portfolio net-delta cap breach to verified closure on the governed Limits
+module. It ships WITH the limits agent surface: `backend/app/tools/limits.py`
+(4 reads + 5 HITL `"write"`-level writes), `services/limits/agent_support.py`
+(`derive_monitoring_envelope` — shared by the tool and the determinism producer so
+live and harvested paths are identical), skills `limits/monitor-limits` +
+`limits/handle-limit-incident`, and the `limits` domain in
+`PERSONA_WORKFLOW_DOMAINS["risk_manager"]`.
+
+- **Refresh-then-reuse is the evidence contract.** `run_limit_monitoring` derives
+  profile/engine/evidence-id/valuation from the LATEST completed risk run
+  (`source_planner` identity matching requires exact equality on all four;
+  `max_source_age_seconds=None` keeps profile-dated runs fresh). `force_refresh`
+  is deliberately not exposed: the queue-level evidence id is a requested pin that
+  `finalize_market_metadata` enforces against the computed hash, so a
+  model-suppliable label can never match on a multi-symbol book. A model that
+  re-monitors without refreshing risk deterministically fails to verify — that IS
+  the graded discipline.
+- **Incident mutations require `expected_row_version`** from a preceding read
+  (acknowledge/comment each increment it); conflicts return
+  `{ok: false, error: "conflict", hint: ...}`. A clean re-run **auto-recovers** the
+  incident (`recovered`, terminal) — `resolve` on it conflicts, which the workflow
+  grades as a prohibition (step 7). The no-waive ban is **session-scoped** in
+  `success.assertions` only (a per-step ban is gameable by waiving early).
+- **`risk_limits`/`risk_limit_versions` are protected-immortal** (deletion guards
+  have NO arena exemption) and `key` is unique: fixtures seed them
+  **ensure-by-key** (reserved `arena-` prefix; a collision with a non-arena-owned
+  key fails the load). Everything else in the limits family purges via the
+  portfolio dependents sweep. `_assert_no_foreign_active_limits` (arena runner,
+  pre-seed) fails match setup if a foreign active non-portfolio-scoped limit
+  version would join the run — `_active_versions` portfolio-filters ONLY
+  portfolio-scoped versions, so fixture limits must always be portfolio-scoped
+  (an underlying-scoped fixture limit would contaminate real desk runs).
+- **Seeded market quotes are load-bearing:** the limits evaluator refuses
+  synthetic-default spots (`missing:spot` → `incomplete_scope`/`unknown`), so the
+  fixture book seeds instruments + quotes (unlike the flagship's
+  fallback-spot posture). Position `product_id` backfill runs on any tool's
+  `database.init_db()`; harness/tests driving services directly must call it after
+  seeding or the evidence manifest hashes the pre-stamp identity and reuse fails.
+- Truth: `breach_net_delta` 802.685… / `driver_delta` 573.347… (book minus the
+  −400-delta AAPL futures hedge) and `clean_net_delta` 402.685… (live monitoring
+  producer); boundaries warning 500 / hard 600 sit strictly between clean and
+  breach by construction (guard test).
+
 ### Fixture determinism (Spec A — enables the Model Ability Card)
 
 The flagship producers must yield **byte-identical** numbers across runs so grounding

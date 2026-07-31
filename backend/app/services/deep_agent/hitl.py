@@ -57,6 +57,11 @@ INTERRUPT_TOOL_NAMES: tuple[str, ...] = (
     "delete_pricing_parameter_profile",
     "set_instrument_pricing_defaults",
     "build_assumption_set",
+    "run_limit_monitoring",
+    "acknowledge_limit_incident",
+    "comment_limit_incident",
+    "waive_limit_incident",
+    "resolve_limit_incident",
     "run_python",
 )
 
@@ -106,6 +111,11 @@ _RISK_LEVEL_BY_TOOL: dict[str, str] = {
     "delete_pricing_parameter_profile": "irreversible",
     "set_instrument_pricing_defaults": "write",
     "build_assumption_set": "write",
+    "run_limit_monitoring": "write",
+    "acknowledge_limit_incident": "write",
+    "comment_limit_incident": "write",
+    "waive_limit_incident": "write",
+    "resolve_limit_incident": "write",
     # Argument-aware: pure analysis is read-like; writes_artifacts=True is
     # handled by RunPythonArtifactHITLMiddleware.
     "run_python": "read",
@@ -149,6 +159,11 @@ _LABEL_BY_TOOL: dict[str, str] = {
     "delete_pricing_parameter_profile": "Delete pricing profile",
     "set_instrument_pricing_defaults": "Set instrument pricing defaults",
     "build_assumption_set": "Build assumption set",
+    "run_limit_monitoring": "Run limit monitoring",
+    "acknowledge_limit_incident": "Acknowledge limit incident",
+    "comment_limit_incident": "Comment on limit incident",
+    "waive_limit_incident": "Waive limit incident",
+    "resolve_limit_incident": "Resolve limit incident",
     "run_python": "Run Python script",
 }
 

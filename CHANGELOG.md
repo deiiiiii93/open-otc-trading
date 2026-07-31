@@ -23,6 +23,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OpenAI pair inverts), the signal-migration analysis across the three flagships
   (median calls/par 1.50/1.74/**0.96**; EFF rank-correlation 0.63/0.66→0.44 while SYN
   goes to σ28.3/ρ**0.87**), the step-7 evidence-persistence taxonomy, and the Sol A/B.
+- **Limits agent tools (9) — the desk agent can now work the governed Limits module.**
+  Four reads (`list_risk_limits`, `get_limit_monitoring_run`, `list_limit_incidents`,
+  `get_limit_incident`) and five HITL writes (`run_limit_monitoring`,
+  `acknowledge_limit_incident`, `comment_limit_incident`, `waive_limit_incident`,
+  `resolve_limit_incident`) in `backend/app/tools/limits.py`. Incident mutations
+  preserve optimistic concurrency (`expected_row_version` from a preceding read;
+  conflicts return a structured retry hint). `run_limit_monitoring` implements the
+  module's refresh-then-reuse evidence contract via the new
+  `services/limits/agent_support.py::derive_monitoring_envelope` seam — it reuses
+  the latest completed risk run's profile/engine/evidence/valuation identity, so
+  verifying limits after a book change requires a fresh `run_batch_pricing` first.
+- **`limits` skill domain for risk_manager** — `monitor-limits` and
+  `handle-limit-incident` workflow skills with orchestrator routing lines.
+- **Arena golden workflow `risk-limit-breach-day` (39 points, uncalibrated par).**
+  A risk manager works an overnight portfolio net-delta cap breach to verified
+  closure: triage → driver analysis → acknowledge/comment → governance report →
+  waiver probe (session-wide `waive` ban) → refresh-then-re-monitor → verify the
+  incident auto-recovered (with a prohibition on redundant `resolve`). Seven new
+  fixture namespaces (limits family; `risk_limits` seeded ensure-by-key with an
+  `arena-` reserved prefix — those rows are protected-immortal), a
+  foreign-active-limit match-setup guard in the arena runner, determinism
+  producers (`breach_risk`/`fresh_risk`/`monitoring`) and a harvested
+  `truth.json` for all graded numbers.
 
 ### Fixed
 - **Scalar option booking now uses stable legal dates instead of mutable maturity

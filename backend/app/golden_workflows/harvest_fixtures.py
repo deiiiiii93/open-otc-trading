@@ -19,7 +19,8 @@ from app import database
 from app.config import Settings
 from app.golden_workflows.assertions import _dig
 from app.golden_workflows.determinism import (
-    FLAGSHIP_ID, TRADER_RFQ_ID, HIGH_BOARD_ID, seed_workflow, drive_producers,
+    FLAGSHIP_ID, TRADER_RFQ_ID, HIGH_BOARD_ID, LIMIT_BREACH_ID,
+    seed_workflow, drive_producers,
 )
 
 _DEFN = Path(__file__).parent / "definitions"
@@ -53,6 +54,19 @@ HARVEST_SPECS: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
     HIGH_BOARD_ID: ("high-board-portfolio-review-day.truth.json", [
         ("nvda_governed_delta", "risk", "positions[underlying=NVDA].delta"),
         ("desk_portfolio_valuation", "risk", "totals.market_value"),
+    ]),
+    # Risk-limit-breach grounding: breach-side aggregates from the book MINUS
+    # the hedge (authored into the seeded RiskRun/evaluations), plus the
+    # verified clean net delta from the live refresh-then-reuse monitoring
+    # path (the only live-computed number in the workflow).
+    LIMIT_BREACH_ID: ("risk-limit-breach-day.truth.json", [
+        ("breach_net_delta", "breach_risk", "totals.delta"),
+        ("driver_delta", "breach_risk", "positions[underlying=AAPL].delta"),
+        (
+            "clean_net_delta",
+            "monitoring",
+            "evaluations[limit_key=arena-limit-breach-net-delta].observed_value",
+        ),
     ]),
 }
 

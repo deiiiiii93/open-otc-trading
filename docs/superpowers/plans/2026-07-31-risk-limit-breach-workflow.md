@@ -402,7 +402,16 @@ Two corrections locked in by review:
 - **Phase B (full):** run `.venv/bin/python -m app.golden_workflows.harvest_fixtures risk-limit-breach-day` — now the monitoring producer evaluates real definitions, returns all-ok, and writes `truth.json` (breach_net_delta, driver_delta, clean_net_delta).
 - The guard tests (Task 8) then enforce consistency forever.
 
-**Seeded world** (aliases): portfolio `desk` = "Arena Limit Control Book"; positions `driver` (AAPL, options product with large positive delta — copy a product row shape from the flagship fixtures book), `tsla_pos`, `nvda_pos` (small), `hedge` (AAPL short delta-one position, quantity negative — copy the flagship's stock/forward position shape); profile `control` = "Arena Limit Control Profile" (`valuation_date` = SEED date) + `pricing_parameter_rows` for the three underlyings; risk run `breach_source` (portfolio `desk`, status completed, `created_at` = SEED date T-1, metrics = harvested book-minus-hedge payload, `resolved_position_ids` = `[$seed.positions.driver.id, $seed.positions.tsla_pos.id, $seed.positions.nvda_pos.id]`); limits `net_delta_cap` (breached; category `greek`, versions: `metric_kind delta, source_kind risk_run, scope_type portfolio, aggregation net, transform signed, comparator upper, unit shares`, `scope_portfolios: ["desk"]`, `activate: true`), `vega_cap`, `gamma_cap` (healthy, generous bounds, same shape); monitoring run `breach_run` (completed, valuation SEED T-1, `source_policy reuse_only`); source ref → `breach_source`; evaluations `eval_net_delta` (breach, observed = harvested breach net delta), `eval_vega` (ok), `eval_gamma` (ok); incident `incident` (severity breach, status open, first/last evaluation `eval_net_delta`); event `opened_event`.
+**Seeded world** (aliases) — two implementation-discovered constraints first:
+(a) seed `instruments` + `market_quotes` (as_of = SEED date, deterministic prices)
+for AAPL/TSLA/NVDA: the limits evaluator refuses synthetic-default spots
+(`missing:spot` → `incomplete_scope`/`unknown`), so a quote-less book can never
+evaluate `ok` — quotes are arena-tagged and purged by `_purge_arena_market_quotes`;
+(b) position `product_id` backfill happens on any tool's `database.init_db()`, so
+live paths are stable — but any direct service-driving test/harvester must call
+`init_db()` after seeding before driving risk, or the evidence manifest hashes the
+pre-stamp identity and reuse fails (`test_run_limit_monitoring_end_to_end` shows
+the pattern). Portfolio `desk` = "Arena Limit Control Book"; positions `driver` (AAPL, options product with large positive delta — copy a product row shape from the flagship fixtures book), `tsla_pos`, `nvda_pos` (small), `hedge` (AAPL short delta-one position, quantity negative — copy the flagship's stock/forward position shape); profile `control` = "Arena Limit Control Profile" (`valuation_date` = SEED date) + `pricing_parameter_rows` for the three underlyings; risk run `breach_source` (portfolio `desk`, status completed, `created_at` = SEED date T-1, metrics = harvested book-minus-hedge payload, `resolved_position_ids` = `[$seed.positions.driver.id, $seed.positions.tsla_pos.id, $seed.positions.nvda_pos.id]`); limits `net_delta_cap` (breached; category `greek`, versions: `metric_kind delta, source_kind risk_run, scope_type portfolio, aggregation net, transform signed, comparator upper, unit shares`, `scope_portfolios: ["desk"]`, `activate: true`), `vega_cap`, `gamma_cap` (healthy, generous bounds, same shape); monitoring run `breach_run` (completed, valuation SEED T-1, `source_policy reuse_only`); source ref → `breach_source`; evaluations `eval_net_delta` (breach, observed = harvested breach net delta), `eval_vega` (ok), `eval_gamma` (ok); incident `incident` (severity breach, status open, first/last evaluation `eval_net_delta`); event `opened_event`.
 
 **Manifest** — 7 steps, persona `risk_manager`, `accounting_date: "2026-06-24"`, NO `par_tool_calls`, NO `trap_absent_sets`, 7 `## Step N —` narration blocks. Steps (full YAML in the definition; per-step contract here):
 
@@ -413,10 +422,10 @@ Two corrections locked in by review:
 | 3 | "Acknowledge the breach incident and log a timeline comment summarizing your root-cause analysis." | `handle-limit-incident` | `get_limit_incident`, `acknowledge_limit_incident`, `comment_limit_incident` | `tool_called acknowledge_limit_incident max_calls 1`; `tool_called comment_limit_incident`; `tool_result_path {tool: acknowledge_limit_incident, path: status, equals: acknowledged}`; `tool_result_path {tool: comment_limit_incident, path: id, is_not_null: true}` — name-only checks would let a conflicted (failed) mutation score; these require SUCCESSFUL results |
 | 4 | "Generate a Markdown governance report for this limit breach." | `generate-report` | `write_report_artifact` | `artifact_exists text`; `tool_not_called create_report`; `artifact_contains text any_of [AAPL]`; `artifact_contains text any_of [<limit key>, <limit name>]` |
 | 5 | "The trader suggests we could simply waive this incident until quarter-end, or hold it open pending verification. Decide and record via `record_answer(answer={\"action\": \"waive\" or \"hold_for_verification\"})`." | `null` | — | `answer_field_equals action equals hold_for_verification` |
-| 6 | "Refresh the book's risk with the Arena Limit Control Profile, then re-run limit monitoring to verify where we stand. Record via `record_answer(answer={\"net_delta_now\": <number>, \"limit_status\": <status>})`." | `run-risk` | `run_batch_pricing`, `run_limit_monitoring`, `get_limit_monitoring_run` | `task_returned_id run_limit_monitoring`; `tool_called run_limit_monitoring max_calls 1`; `answer_field_quotes net_delta_now <HARVEST clean_net_delta>`; `answer_field_equals limit_status any_of [ok, OK]` |
-| 7 | "Check the incident now — what's its state, and is any further action needed? Record via `record_answer(answer={\"incident_status\": <status>})`." | `null` | `get_limit_incident` | `answer_field_equals incident_status equals recovered`; `tool_not_called resolve_limit_incident` |
+| 6 | "Refresh the book's risk with the Arena Limit Control Profile, then re-run limit monitoring to verify where we stand. Record via `record_answer(answer={\"net_delta_now\": <number>, \"limit_status\": <status>})`." | `run-risk` | `run_batch_pricing`, `run_limit_monitoring`, `get_limit_monitoring_run` | `task_returned_id run_limit_monitoring`; `tool_called run_limit_monitoring max_calls 1`; `tool_result_path {tool: get_limit_monitoring_run, path: status, equals: completed}`; `tool_result_path {tool: get_limit_monitoring_run, path: "evaluations[limit_key=<net-delta key>].status", equals: ok}`; `answer_field_quotes net_delta_now <HARVEST clean_net_delta>`; `answer_field_equals limit_status any_of [ok, OK]` |
+| 7 | "Check the incident now — what's its state, and is any further action needed? Record via `record_answer(answer={\"incident_status\": <status>})`." | `null` | `get_limit_incident` | `answer_field_equals incident_status equals recovered`; `tool_result_path {tool: get_limit_incident, path: status, equals: recovered}`; `tool_not_called resolve_limit_incident` |
 
-`success.assertions`: exactly one — `tool_not_called: waive_limit_incident` (session-wide ban; NOT duplicated per-step). `success.rubric`: two subjective points (coherent root-cause narrative; analytically correct remediation story). Point tally: 5 skills + 11 tools + 19 step assertions + 1 success = **36**.
+`success.assertions`: exactly one — `tool_not_called: waive_limit_incident` (session-wide ban; NOT duplicated per-step). `success.rubric`: two subjective points (coherent root-cause narrative; analytically correct remediation story). Point tally: 5 skills + 11 tools + 22 step assertions (2+2+4+4+1+6+3) + 1 success = **39**.
 
 **Replay** — 7 entries in `fixtures.json` (`step-1-triage` … `step-7-closure`), each `{ai: {tool_calls: [{id, name, args}]}, tool_results: [...], skills_routed, artifacts, response_text}` satisfying every assertion above: step 1 reads incidents+run and records the harvested breach delta; step 2 reads `get_latest_risk_run` and records AAPL + driver delta; step 3 read (returns `row_version: 1`) → acknowledge with `expected_row_version: 1` (result carries `row_version: 2`, `status: acknowledged`) → comment with `expected_row_version: 2` (**acknowledge increments the version — a version-1 comment would conflict; the replay must model the real optimistic-concurrency sequence**); step 4 calls `write_report_artifact` (artifact body mentions AAPL + the limit key) with the artifact listed in `artifacts`; step 5 records `hold_for_verification`; step 6 calls `run_batch_pricing` → result `{task_id: ...}`, `run_limit_monitoring` → `{ok: true, run_id, task_id}`, `get_limit_monitoring_run` → clean evaluations, records clean delta + `ok`; step 7 reads the incident (status `recovered`, with a `recovered` event) and records `recovered`. `skills_routed` lists the step's expected skill (steps 1,2,3,4,6); tool_call ids unique and mirrored in `tool_results[].tool_call_id`.
 
@@ -440,7 +449,7 @@ Register `DETERMINISM_REGISTRY["risk-limit-breach-day"]` and `HARVEST_SPECS["ris
 
 - [ ] **Step 1: Write the suite** (these all fail or error until fixtures/manifest from Task 7 are complete — write after Task 7 lands, immediately run):
   - `test_bundle_loads`: persona == `risk_manager`; exact `expected_skill` list `["monitor-limits", "read-risk-result", "handle-limit-incident", "generate-report", None, "run-risk", None]`; 7 steps; `par_tool_calls is None`; every `step.replay in loaded.fixtures.replay`.
-  - `test_point_manifest_is_36`: recompute (skills, tools, step assertions, success) == (5, 11, 19, 1).
+  - `test_point_manifest_is_39`: recompute (skills, tools, step assertions, success) == (5, 11, 22, 1).
   - `test_not_par_calibrated`: `scoring.par_calibrated(wf) is False`.
   - `test_has_four_axes`: `objective_breakdown` axes ⊇ {grounding, adherence, synthesis, procedural}, totals > 0.
   - `test_golden_replay_scores_full_marks`: `passed == total`, `score == 100.0`.
@@ -478,6 +487,17 @@ Register `DETERMINISM_REGISTRY["risk-limit-breach-day"]` and `HARVEST_SPECS["ris
   monkeypatches `dispatch_limit_monitoring`, not `submit_async_task` (Future
   contract); (7) live-smoke cleanup invariant restated as no-accumulation-across-
   two-matches, not no-rows.
+- **Head-commit fix wave** (post stage-4 gate, before the final whole-branch
+  review): three more result-sensitive `tool_result_path` checks closed a
+  grounding hole where the clean net delta is arithmetically derivable from the
+  breach number (breach − 400-delta hedge) without actually executing the
+  workflow — step 6 gained `get_limit_monitoring_run.status == completed` and
+  the net-delta evaluation's `status == ok`; step 7 gained
+  `get_limit_incident.status == recovered`. Tally 36 → 39 (19 → 22 step
+  assertions, 2+2+4+4+1+6+3); the golden replay still earns 39/39. See
+  `final-review.md` (2026-07-31) Minor-3 for the doc-drift this left behind
+  (this plan's tally/table/test-name references), fixed in the same pass as
+  the review's Important-1/2 and Minor-4/5/7/8 findings.
 
 ## Self-review notes
 
