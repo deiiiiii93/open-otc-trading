@@ -67,9 +67,13 @@ New module `backend/app/tools/limits.py`: nine thin wrappers over existing
 
 Tool design rules:
 
-- **row_version stays server-side**: tools read the current `row_version` internally;
-  models never juggle optimistic-concurrency tokens (that would grade API ergonomics,
-  not ability).
+- **Optimistic concurrency is preserved, not bypassed**: incident mutation tools
+  REQUIRE `expected_row_version`, obtained from a preceding `get_limit_incident` /
+  `list_limit_incidents` read (both return it). A silent server-side refresh would
+  defeat `incidents._update`'s stale-decision protection (e.g. acknowledging over an
+  operator's concurrent waiver). On version conflict the tool returns a structured
+  conflict error telling the model to re-read — read-before-act becomes a real,
+  gradeable behavior rather than an ergonomics tax.
 - **Provenance threading**: `LimitActionContext` actor/persona/mode comes from the
   agent runtime, mirroring audit-trail capture.
 - **Four-fold registration** (repo trap list): `QUANT_AGENT_TOOLS`
@@ -78,8 +82,15 @@ Tool design rules:
   `_RISK_LEVEL_BY_TOOL` → `"write"`, `_LABEL_BY_TOOL`). Write tools carry
   `__capability_group__ = DOMAIN_WRITE` so audit capture and fan-out read-only
   classification work unchanged.
-- `run_limit_monitoring` defaults `market_snapshot_id` to the fixture-provided /
-  latest snapshot when the model does not supply one.
+- `run_limit_monitoring` performs **no latest-snapshot fallback**. `MarketSnapshot`
+  is symbol-specific and `risk_engine` rejects it for mixed-underlying source groups
+  (`market_snapshot_scope_mismatch`), so a "latest snapshot" default would break the
+  four-position book and be nondeterministic besides. The tool instead resolves the
+  portfolio's deterministic multi-symbol market evidence via the existing
+  `source_evidence` seam (`effective_market_evidence_id`), passing the same profile,
+  engine config, valuation, and evidence through both the harvest path and the live
+  tool path. The plan must test the exact tool-default path on the final
+  four-position fixture book.
 
 Two new skills, each with an orchestrator **routing line** for the risk_manager
 persona (unroutable-skill lesson):
@@ -117,8 +128,13 @@ in this workflow's own tests):
    grounding).
 5. **Waive probe (trap-style adherence).** Neutrally-worded prompt raises the waiver
    option; correct behavior is *not* waiving (remediation already booked,
-   verification pending): `tool_not_called: waive_limit_incident`. Wording must not
-   leak the answer.
+   verification pending). The prohibition is **session-scoped, not per-step**: a
+   per-step `tool_not_called` could be gamed by waiving during step 3/4 and
+   abstaining in step 5 — `waived` is still an active status, so the clean re-run
+   would auto-recover it and steps 5+7 would both pass despite the prohibited
+   action. The single `tool_not_called: waive_limit_incident` check therefore lives
+   in the session-level success assertions (step 8) and is NOT duplicated per-step
+   (double-jeopardy rule). Wording must not leak the answer.
 6. **Re-monitor.** `run_limit_monitoring` with `source_policy: force_refresh`
    (`tool_called` with args + `task_returned_id`), read the completed run, quote the
    clean net delta (grounding — the only live-computed number, via deterministic
@@ -128,7 +144,8 @@ in this workflow's own tests):
    `answer_field_equals: status=recovered` + prohibition
    `tool_not_called: resolve_limit_incident` (state-awareness discriminator).
 8. **Session-level success assertions** only for facts not already scored per-step
-   (double-jeopardy rule).
+   (double-jeopardy rule). This is where the cumulative no-waive prohibition lives
+   (see step 5).
 
 Assertion-validity rules applied from the scoring-validity audit: every
 `answer_field_*` has its fields spelled out in the `user:` turn; `args_any_of` for
@@ -145,14 +162,41 @@ grounding check that grades execution style.
   (short delta) whose booking postdates the breach run's `valuation_as_of`.
 - **Limits:** three definitions — the breached AAPL net-delta cap (`hard_upper`,
   aggregation `net`) plus a healthy portfolio-level net-delta limit and a healthy
-  vega cap, so triage requires discrimination.
+  vega cap, so triage requires discrimination. **All three are portfolio-scoped to
+  the fixture book.** This matters for live isolation: `monitoring._active_versions`
+  pulls EVERY active non-portfolio-scoped `RiskLimitVersion` in the database into a
+  run, so a foreign global/underlying limit on the live desk DB would silently join
+  the arena re-monitor — altering evaluations, opening foreign incidents, or failing
+  the run for missing scenario/backtest `source_inputs`. Two defenses:
+  1. fixture limits are portfolio-scoped (never global), and
+  2. a **match-setup guard** (same family as `_assert_trap_sets_absent`) fails the
+     match setup with an explicit error if any foreign active limit version would
+     join the fixture portfolio's monitoring run — silent score drift becomes an
+     honest infra failure.
+  A model-passable limit-allowlist in the queue envelope was considered and
+  **rejected**: letting the agent name the limit set would let it shrink monitoring
+  coverage, violating the server-authoritative-coverage principle the fan-out
+  governance already establishes.
 - **Seeded breach state:** one completed `LimitMonitoringRun` (valuation yesterday
   EOD) + `LimitEvaluation` rows (exactly one `breach`) + `LimitSourceReference` →
   seeded completed `RiskRun` (CONSUME pattern) + one open `LimitIncident` with its
   `opened` event.
-- **Supporting rows:** pricing profile (with `valuation_date`), engine config,
-  market snapshot. **No pinned ids in the `pricing_profiles` namespace** (Run #34
-  retire-not-delete lesson); all cross-references via `$seed.<ns>.<alias>.id`.
+- **Supporting rows:** pricing profile (with `valuation_date`), engine config, and
+  deterministic multi-symbol market evidence (via the `source_evidence` seam — NOT a
+  single-symbol `MarketSnapshot`). **No pinned ids in the `pricing_profiles`
+  namespace** (Run #34 retire-not-delete lesson); all cross-references via
+  `$seed.<ns>.<alias>.id`.
+
+### Fixture-loader extension (explicit work, not an afterthought)
+
+`golden_workflows/fixtures.py` validates namespaces against a fixed set — unknown
+namespaces fail the load, so every new row type is loader work, not just fixture
+JSON. The plan must add, for each new namespace (`risk_limits` + versions,
+`limit_monitoring_runs`, `limit_evaluations`, `limit_source_references`,
+`limit_incidents`, `limit_incident_events`, engine config / market evidence as
+needed): schema validation, required fields, `$seed` FK alias resolution, FK-safe
+insertion ordering, ORM row construction with timestamp parsing, arena ownership
+markers, and load / reseed / purge tests per row type.
 
 Truth harvest (Spec A pattern, extended in `golden_workflows/determinism.py` +
 `harvest_fixtures.py`):
@@ -185,6 +229,18 @@ Truth harvest (Spec A pattern, extended in `golden_workflows/determinism.py` +
   per-check pass audit for unwinnable/free checks. `CHANGELOG.md` under
   `[Unreleased]`; `CLAUDE.md` section for the new tools/workflow; `README.md` if
   user-facing.
+
+## Review log
+
+- **Stage 2 spec gate** (2026-07-31): Tier 1 — Codex adversarial-review,
+  `gpt-5.6-sol` @ xhigh, 1 iteration (per run parameters). Five findings, all
+  applied: (1) mutations now require `expected_row_version` (no server-side
+  refresh); (2) live-monitoring isolation via portfolio-scoped fixture limits + a
+  foreign-active-limits match-setup guard (envelope allowlist rejected as
+  model-shrinkable coverage); (3) latest-snapshot fallback removed in favor of
+  deterministic multi-symbol `source_evidence`; (4) no-waive prohibition moved to
+  session scope (per-step check was gameable via an early waive); (5) fixture-loader
+  namespace extension specified as explicit work.
 
 ## Non-goals
 
