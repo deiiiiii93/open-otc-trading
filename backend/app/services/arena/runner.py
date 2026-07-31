@@ -706,6 +706,67 @@ def _assert_trap_sets_absent(loaded, settings) -> None:
             )
 
 
+def _assert_no_foreign_active_limits(session, bundle) -> None:
+    """Fail match setup when a foreign active limit would join the live re-monitor.
+
+    ``monitoring._active_versions`` filters ONLY portfolio-scoped versions by
+    portfolio id — every other active version (underlying / product_family /
+    position scope) joins ANY portfolio's monitoring run. A foreign desk limit
+    would therefore silently contaminate the match's evaluations and incidents
+    (or fail the run for missing scenario/backtest source_inputs). Convert that
+    silent score drift into an explicit setup failure, same family as
+    ``_assert_trap_sets_absent``.
+
+    The effective window is evaluated at the WORKFLOW's monitoring valuation
+    (read from the bundle's seeded monitoring run — this workflow re-monitors at
+    the profile-dated valuation, not wall-clock now). Seeded ``arena-`` keys are
+    excluded: ensure-by-key rows persist across matches by design. No-op for
+    bundles that seed no risk_limits.
+    """
+    seed = getattr(bundle, "seed", None) or {}
+    seeded_keys = {
+        r["key"] for r in seed.get("risk_limits", []) if r.get("key")
+    }
+    if not seeded_keys:
+        return
+    from datetime import datetime
+
+    from sqlalchemy import or_, select
+
+    from app import models
+    from app.golden_workflows.fixtures import _seed_datetime
+
+    valuations = [
+        _seed_datetime(r.get("valuation_as_of"))
+        for r in seed.get("limit_monitoring_runs", [])
+        if r.get("valuation_as_of")
+    ]
+    valuation = max(valuations) if valuations else datetime.utcnow()
+    rows = session.execute(
+        select(models.RiskLimit.key)
+        .join(
+            models.RiskLimitVersion,
+            models.RiskLimitVersion.risk_limit_id == models.RiskLimit.id,
+        )
+        .where(
+            models.RiskLimitVersion.activated_at.is_not(None),
+            models.RiskLimitVersion.effective_from <= valuation,
+            or_(
+                models.RiskLimitVersion.effective_until.is_(None),
+                models.RiskLimitVersion.effective_until > valuation,
+            ),
+            models.RiskLimitVersion.scope_type != "portfolio",
+            models.RiskLimit.key.not_in(seeded_keys),
+        )
+    ).scalars().all()
+    if rows:
+        raise RuntimeError(
+            "arena setup: foreign active non-portfolio limit versions would "
+            f"join this match's monitoring run: {sorted(set(rows))} — retire or "
+            "deactivate them before running this workflow"
+        )
+
+
 def run_match(
     loaded,
     model,
@@ -748,6 +809,9 @@ def run_match(
     # create the arena-tagged thread.
     seeded_report_ids: list[int] = []
     with database.SessionLocal() as session:
+        # Foreign-limit preflight BEFORE any seeding commits (a post-seed
+        # failure would strand the seeded world).
+        _assert_no_foreign_active_limits(session, loaded.fixtures)
         _purge_seeded_portfolios(session, loaded.fixtures)
         _purge_arena_market_quotes(session)  # reclaim prior match's seeded quotes
         _purge_seeded_reports(session)   # recovery: reclaim prior crash orphans (commits)

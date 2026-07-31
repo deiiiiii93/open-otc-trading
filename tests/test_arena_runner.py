@@ -798,3 +798,118 @@ def test_run_match_cleans_rfqs_even_when_harvest_raises(tmp_path, monkeypatch):
 
     # Cleanup ran in the finally despite the harvest failure, with the baseline.
     assert cleaned == [(4242, 0)]
+
+
+def test_foreign_global_limit_fails_match_setup(session):
+    """A foreign ACTIVE non-portfolio-scoped limit version would silently join
+    the fixture portfolio's monitoring run (_active_versions filters only
+    portfolio-scoped versions by portfolio id) — setup must fail explicitly."""
+    from datetime import datetime
+
+    import pytest
+
+    from app.models import RiskLimit, RiskLimitVersion
+    from app.services.arena.runner import _assert_no_foreign_active_limits
+
+    foreign = RiskLimit(
+        key="desk-aapl-cap", name="Desk AAPL Cap", description="",
+        category="greek", owner="market-risk", tags=[],
+    )
+    session.add(foreign)
+    session.flush()
+    session.add(RiskLimitVersion(
+        risk_limit_id=foreign.id, version=1, state="active",
+        metric_kind="delta", source_kind="risk_run",
+        scope_type="underlying", scope_config={"symbols": ["AAPL"]},
+        aggregation="net", transform="signed", comparator="upper",
+        warning_upper=100.0, hard_upper=200.0, unit="underlying_units",
+        activated_at=datetime(2026, 1, 1), effective_from=datetime(2026, 1, 1),
+    ))
+    session.commit()
+
+    bundle = _Bundle({
+        "risk_limits": [{"alias": "cap", "key": "arena-limit-breach-net-delta"}],
+        "limit_monitoring_runs": [
+            {"alias": "run", "valuation_as_of": "2026-06-23T15:00:00"}
+        ],
+    })
+    with pytest.raises(RuntimeError, match="desk-aapl-cap"):
+        _assert_no_foreign_active_limits(session, bundle)
+
+
+def test_seeded_portfolio_limits_pass_setup_guard(session):
+    """Seeded arena- keys are excluded (they persist across matches by design),
+    and foreign PORTFOLIO-scoped limits never join a fresh fixture portfolio."""
+    from datetime import datetime
+
+    from app.models import Portfolio, RiskLimit, RiskLimitVersion
+    from app.services.arena.runner import _assert_no_foreign_active_limits
+
+    own = RiskLimit(
+        key="arena-limit-breach-net-delta", name="Arena Cap", description="",
+        category="greek", owner="risk_desk", tags=[],
+    )
+    other_portfolio = Portfolio(name="Someone Else's Book")
+    session.add_all([own, other_portfolio])
+    session.flush()
+    session.add(RiskLimitVersion(
+        risk_limit_id=own.id, version=1, state="active",
+        metric_kind="delta", source_kind="risk_run",
+        scope_type="portfolio", scope_config={"portfolio_ids": [other_portfolio.id]},
+        aggregation="net", transform="signed", comparator="upper",
+        warning_upper=100.0, hard_upper=200.0, unit="underlying_units",
+        activated_at=datetime(2026, 1, 1), effective_from=datetime(2026, 1, 1),
+    ))
+    session.commit()
+
+    bundle = _Bundle({
+        "risk_limits": [{"alias": "cap", "key": "arena-limit-breach-net-delta"}],
+        "limit_monitoring_runs": [
+            {"alias": "run", "valuation_as_of": "2026-06-23T15:00:00"}
+        ],
+    })
+    _assert_no_foreign_active_limits(session, bundle)  # must not raise
+
+
+def test_purge_removes_arena_portfolio_with_limit_monitoring_runs(session):
+    """The full limits chain hanging off a seeded portfolio is reclaimed by the
+    generic dependents sweep, while the immortal risk_limits/-versions survive."""
+    from datetime import datetime
+
+    from app.golden_workflows.fixtures import apply_seed, load_fixtures
+    from app.models import (
+        LimitEvaluation,
+        LimitIncident,
+        LimitIncidentEvent,
+        LimitMonitoringRun,
+        LimitSourceReference,
+        Portfolio,
+        RiskLimit,
+        RiskLimitVersion,
+    )
+    from app.services.arena.runner import _purge_seeded_portfolios
+
+    import json
+    from pathlib import Path
+    import tempfile
+
+    from tests.test_golden_workflow_fixtures import _limits_bundle
+
+    tmp = Path(tempfile.mkdtemp())
+    path = tmp / "wf.fixtures.json"
+    bundle_data = _limits_bundle("control", "Control Desk Portfolio")
+    path.write_text(json.dumps(bundle_data))
+    apply_seed(load_fixtures(path), session)
+    ctrl_id = _tag_arena(session, "Control Desk Portfolio")
+
+    _purge_seeded_portfolios(session, _Bundle(bundle_data["seed"]))
+
+    assert session.query(Portfolio).filter(Portfolio.name == "Control Desk Portfolio").count() == 0
+    assert session.query(LimitMonitoringRun).filter(LimitMonitoringRun.portfolio_id == ctrl_id).count() == 0
+    assert session.query(LimitSourceReference).count() == 0
+    assert session.query(LimitEvaluation).count() == 0
+    assert session.query(LimitIncident).filter(LimitIncident.portfolio_id == ctrl_id).count() == 0
+    assert session.query(LimitIncidentEvent).count() == 0
+    # Immortal, deliberately: ensure-by-key reuses them next match.
+    assert session.query(RiskLimit).filter(RiskLimit.key == "arena-fixture-net-delta").count() == 1
+    assert session.query(RiskLimitVersion).count() == 1
