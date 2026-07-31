@@ -230,3 +230,169 @@ def test_trader_rfq_seeded_quote_resolves_at_profile_valuation(session):
     assert prof.valuation_date.date().isoformat() == "2026-07-16"
     quote = latest_quote(session, ins_id, as_of=prof.valuation_date)
     assert quote is not None and float(quote.price) == 401.10
+
+
+# ---------------------------------------------------------------------------
+# Limits namespaces (risk-limit-breach-day)
+# ---------------------------------------------------------------------------
+
+def _limits_bundle(portfolio_alias: str, portfolio_name: str) -> dict:
+    return {
+        "schema_version": 1,
+        "seed": {
+            "portfolios": [{"alias": portfolio_alias, "name": portfolio_name}],
+            "risk_limits": [
+                {
+                    "alias": "cap",
+                    "key": "arena-fixture-net-delta",
+                    "name": "Fixture Net Delta Cap",
+                    "category": "greek",
+                    "owner": "risk_desk",
+                }
+            ],
+            "risk_limit_versions": [
+                {
+                    "alias": "cap-v1",
+                    "risk_limit": "cap",
+                    "version": 1,
+                    "metric_kind": "delta",
+                    "source_kind": "risk_run",
+                    "scope_type": "portfolio",
+                    "scope_portfolios": [portfolio_alias],
+                    "aggregation": "net",
+                    "transform": "signed",
+                    "comparator": "upper",
+                    "warning_upper": 400.0,
+                    "hard_upper": 500.0,
+                    "unit": "underlying_units",
+                    "activated_at": "2026-06-01T00:00:00",
+                    "effective_from": "2026-01-01T00:00:00",
+                    "activate": True,
+                }
+            ],
+            "limit_monitoring_runs": [
+                {
+                    "alias": "breach-run",
+                    "portfolio": portfolio_alias,
+                    "trigger": "manual",
+                    "mode": "interactive",
+                    "valuation_as_of": "2026-06-23T15:00:00",
+                    "source_policy": "reuse_only",
+                    "status": "completed",
+                    "summary": {"breaches": 1},
+                }
+            ],
+            "limit_source_references": [
+                {
+                    "alias": "breach-src",
+                    "monitoring_run": "breach-run",
+                    "source_kind": "risk_run",
+                    "source_status": "completed",
+                    "is_fresh": True,
+                }
+            ],
+            "limit_evaluations": [
+                {
+                    "alias": "ev-net-delta",
+                    "monitoring_run": "breach-run",
+                    "limit_version": "cap-v1",
+                    "scope": "portfolio",
+                    "scope_portfolio": portfolio_alias,
+                    "status": "breach",
+                    "observed_value": 612.5,
+                    "utilization": 1.225,
+                    "warning_upper": 400.0,
+                    "hard_upper": 500.0,
+                }
+            ],
+            "limit_incidents": [
+                {
+                    "alias": "inc",
+                    "portfolio": portfolio_alias,
+                    "risk_limit": "cap",
+                    "scope": "portfolio",
+                    "scope_portfolio": portfolio_alias,
+                    "severity": "breach",
+                    "status": "open",
+                    "first_evaluation": "ev-net-delta",
+                    "last_evaluation": "ev-net-delta",
+                }
+            ],
+            "limit_incident_events": [
+                {
+                    "alias": "opened-evt",
+                    "incident": "inc",
+                    "event_type": "opened",
+                    "actor": "system",
+                }
+            ],
+        },
+        "replay": {},
+    }
+
+
+def test_limits_namespaces_round_trip(tmp_path, session):
+    from app import models
+    from app.golden_workflows.fixtures import apply_seed
+    from sqlalchemy import select
+
+    first = apply_seed(
+        load_fixtures(_write(tmp_path, _limits_bundle("desk", "Limits Book A"))), session
+    )
+    ev = session.get(models.LimitEvaluation, first["limit_evaluations"]["ev-net-delta"])
+    assert ev.scope_key == f"portfolio:{first['portfolios']['desk']}"
+    assert ev.scope_type == "portfolio"
+    inc = session.get(models.LimitIncident, first["limit_incidents"]["inc"])
+    assert inc.status == "open"
+    assert [e.event_type for e in inc.events] == ["opened"]
+
+    p2 = tmp_path / "second"
+    p2.mkdir()
+    second = apply_seed(
+        load_fixtures(_write(p2, _limits_bundle("desk2", "Limits Book B"))), session
+    )
+    limits = list(
+        session.execute(
+            select(models.RiskLimit).where(
+                models.RiskLimit.key == "arena-fixture-net-delta"
+            )
+        ).scalars()
+    )
+    assert len(limits) == 1
+    version = session.get(
+        models.RiskLimitVersion, second["risk_limit_versions"]["cap-v1"]
+    )
+    assert version.scope_config["portfolio_ids"] == [second["portfolios"]["desk2"]]
+    assert limits[0].active_version_id == version.id
+
+
+def test_seed_refuses_non_arena_limit_key_collision(tmp_path, session):
+    from app import models
+    from app.golden_workflows.fixtures import apply_seed
+    from app.golden_workflows.schema import WorkflowError
+
+    session.add(
+        models.RiskLimit(
+            key="arena-fixture-net-delta",
+            name="Desk Governed Cap",
+            category="greek",
+            owner="human",
+            created_by_actor="desk_user",
+        )
+    )
+    session.flush()
+    with pytest.raises(WorkflowError, match="non-arena"):
+        apply_seed(
+            load_fixtures(_write(tmp_path, _limits_bundle("desk", "Limits Book"))),
+            session,
+        )
+
+
+def test_seed_rejects_unprefixed_limit_key(tmp_path, session):
+    from app.golden_workflows.fixtures import apply_seed
+    from app.golden_workflows.schema import WorkflowError
+
+    bundle = _limits_bundle("desk", "Limits Book")
+    bundle["seed"]["risk_limits"][0]["key"] = "desk-net-delta"
+    with pytest.raises(WorkflowError, match="arena-"):
+        apply_seed(load_fixtures(_write(tmp_path, bundle)), session)
