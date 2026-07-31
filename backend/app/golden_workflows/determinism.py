@@ -416,6 +416,145 @@ DETERMINISM_REGISTRY[HIGH_BOARD_ID] = WorkflowDeterminism(
 )
 
 
+# --- Risk-Limit-Breach determinism -----------------------------------------
+# Three producers: breach_risk (book MINUS the hedge — the numbers authored
+# into the seeded breach RiskRun/evaluations), fresh_risk (full post-hedge
+# book — what the model's step-6 refresh computes), and monitoring (the exact
+# refresh-then-reuse path the run_limit_monitoring tool runs live, via the
+# shared derive_monitoring_envelope seam). The monitoring producer never calls
+# dispatch_limit_monitoring (it needs a real Future); it executes the queued
+# task inline.
+LIMIT_BREACH_ID = "risk-limit-breach-day"
+
+
+def _seed_limit_breach(session) -> dict:
+    ids = apply_seed(get_workflow_bundle(LIMIT_BREACH_ID).fixtures, session)
+    # Stabilize position economic identity BEFORE any risk run: live paths get
+    # this from database.init_db()'s product backfill on every tool call, but
+    # the harness drives services directly — without it the evidence manifest
+    # hashes the pre-stamp identity and reuse can never match.
+    from app.services.domains.products import backfill_position_products
+
+    backfill_position_products(session)
+    session.commit()
+    return ids
+
+
+def _limit_breach_ids(ids: dict) -> tuple:
+    return ids["portfolios"]["desk"], ids["pricing_profiles"]["control"]
+
+
+def _drive_risk_subset(session, portfolio_id, profile_id, position_ids):
+    from app.services.batch_pricing import (
+        queue_batch_pricing, _execute_batch_pricing_task,
+    )
+    run, task = queue_batch_pricing(
+        session, portfolio_id=portfolio_id,
+        position_ids=position_ids,
+        pricing_parameter_profile_id=profile_id)
+    _execute_batch_pricing_task(session, task.id, run.id)
+    session.refresh(run)
+    return run, run.metrics or {}
+
+
+def _adapt_breach_risk(session, ids):
+    pid, prof = _limit_breach_ids(ids)
+    subset = [
+        ids["positions"]["driver"],
+        ids["positions"]["tsla_pos"],
+        ids["positions"]["nvda_pos"],
+    ]
+    return _drive_risk_subset(session, pid, prof, subset)
+
+
+def _adapt_fresh_risk(session, ids):
+    return _drive_risk(session, *_limit_breach_ids(ids))
+
+
+def _adapt_monitoring(session, ids):
+    from app.services.limits.agent_support import derive_monitoring_envelope
+    from app.services.limits.contracts import LimitActionContext
+    from app.services.limits.monitoring import (
+        execute_limit_monitoring_task,
+        queue_limit_monitoring,
+    )
+
+    pid, _prof = _limit_breach_ids(ids)
+    envelope = derive_monitoring_envelope(session, pid)
+    run, task = queue_limit_monitoring(
+        session,
+        portfolio_id=pid,
+        trigger="agent",
+        context=LimitActionContext(
+            actor="determinism", persona=None, mode="auto"
+        ),
+        source_policy="reuse_only",
+        **envelope,
+    )
+    session.commit()
+    execute_limit_monitoring_task(task.id, run.id)
+    session.expire_all()
+    from app.models import LimitEvaluation, RiskLimit, RiskLimitVersion
+
+    evaluations = (
+        session.query(LimitEvaluation, RiskLimit.key)
+        .join(
+            RiskLimitVersion,
+            RiskLimitVersion.id == LimitEvaluation.limit_version_id,
+        )
+        .join(RiskLimit, RiskLimit.id == RiskLimitVersion.risk_limit_id)
+        .filter(LimitEvaluation.monitoring_run_id == run.id)
+        .order_by(RiskLimit.key)
+        .all()
+    )
+    session.refresh(run)
+    payload = {
+        "status": run.status,
+        "summary": dict(run.summary or {}),
+        "evaluations": [
+            {
+                "limit_key": key,
+                "status": ev.status,
+                "observed_value": ev.observed_value,
+                "utilization": ev.utilization,
+                "headroom": ev.headroom,
+                "reason_code": ev.reason_code,
+            }
+            for ev, key in evaluations
+        ],
+    }
+    return run, payload
+
+
+def _validate_monitoring(run, payload):
+    if payload.get("status") not in ("completed",):
+        raise AssertionError(
+            f"monitoring producer did not complete cleanly: {payload}"
+        )
+    evaluations = payload.get("evaluations") or []
+    if len(evaluations) != 3:
+        raise AssertionError(
+            f"expected exactly one evaluation per seeded limit, got {payload}"
+        )
+    bad = [e for e in evaluations if e.get("status") != "ok"]
+    if bad:
+        raise AssertionError(f"non-ok evaluations in clean re-monitor: {bad}")
+    return _canonical(payload)
+
+
+DETERMINISM_REGISTRY[LIMIT_BREACH_ID] = WorkflowDeterminism(
+    workflow_id=LIMIT_BREACH_ID,
+    seed_fn=_seed_limit_breach,
+    drivers={
+        "breach_risk": ProducerDriver(_adapt_breach_risk,
+            partial(_validate_task_run, kind="risk", needs="positions", priced=True)),
+        "fresh_risk": ProducerDriver(_adapt_fresh_risk,
+            partial(_validate_task_run, kind="risk", needs="positions", priced=True)),
+        "monitoring": ProducerDriver(_adapt_monitoring, _validate_monitoring),
+    },
+)
+
+
 def seed_workflow(session, workflow_id: str) -> dict:
     return DETERMINISM_REGISTRY[workflow_id].seed_fn(session)
 

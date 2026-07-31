@@ -1,0 +1,307 @@
+{
+  "schema_version": 1,
+  "seed": {
+    "instruments": [
+      {"alias": "aapl", "symbol": "AAPL", "tags": ["underlying"]},
+      {"alias": "tsla", "symbol": "TSLA", "tags": ["underlying"]},
+      {"alias": "nvda", "symbol": "NVDA", "tags": ["underlying"]}
+    ],
+    "market_quotes": [
+      {"alias": "q-aapl", "instrument": "aapl", "as_of": "2026-06-24T00:00:00", "price": 100.0},
+      {"alias": "q-tsla", "instrument": "tsla", "as_of": "2026-06-24T00:00:00", "price": 100.0},
+      {"alias": "q-nvda", "instrument": "nvda", "as_of": "2026-06-24T00:00:00", "price": 100.0}
+    ],
+    "portfolios": [
+      {"alias": "desk", "name": "Arena Limit Control Book"}
+    ],
+    "pricing_profiles": [
+      {"alias": "control", "name": "Arena Limit Control Profile", "valuation_date": "2026-06-24"}
+    ],
+    "pricing_parameter_rows": [
+      {"alias": "ppr-aapl", "profile": "control", "symbol": "AAPL", "rate": 0.04, "dividend_yield": 0.005, "volatility": 0.3},
+      {"alias": "ppr-tsla", "profile": "control", "symbol": "TSLA", "rate": 0.04, "dividend_yield": 0.005, "volatility": 0.3},
+      {"alias": "ppr-nvda", "profile": "control", "symbol": "NVDA", "rate": 0.04, "dividend_yield": 0.005, "volatility": 0.3}
+    ],
+    "positions": [
+      {
+        "alias": "driver",
+        "portfolio": "desk",
+        "instrument": "aapl",
+        "underlying": "AAPL",
+        "product_type": "EuropeanVanillaOption",
+        "quantity": 1000,
+        "product_kwargs": {"strike": 100.0, "option_type": "CALL", "maturity": 0.5}
+      },
+      {
+        "alias": "tsla_pos",
+        "portfolio": "desk",
+        "instrument": "tsla",
+        "underlying": "TSLA",
+        "product_type": "EuropeanVanillaOption",
+        "quantity": 200,
+        "product_kwargs": {"strike": 100.0, "option_type": "CALL", "maturity": 0.5}
+      },
+      {
+        "alias": "nvda_pos",
+        "portfolio": "desk",
+        "instrument": "nvda",
+        "underlying": "NVDA",
+        "product_type": "EuropeanVanillaOption",
+        "quantity": 200,
+        "product_kwargs": {"strike": 100.0, "option_type": "CALL", "maturity": 0.5}
+      },
+      {
+        "alias": "hedge",
+        "portfolio": "desk",
+        "instrument": "aapl",
+        "underlying": "AAPL",
+        "product_type": "Futures",
+        "quantity": -400,
+        "entry_price": 100.0,
+        "position_kind": "listed",
+        "engine_name": "DeltaOneEngine",
+        "product_kwargs": {"underlying": "AAPL", "maturity": 0.25},
+        "source_payload": {
+          "hedge": {
+            "is_hedge": true,
+            "hedged_underlying": "AAPL",
+            "note": "Offsetting delta hedge booked 2026-06-24 morning after the overnight breach alert."
+          }
+        }
+      }
+    ],
+    "risk_runs": [
+      {
+        "alias": "breach_source",
+        "portfolio": "desk",
+        "status": "completed",
+        "created_at": "2026-06-23T15:30:00",
+        "resolved_position_ids": [
+          "$seed.positions.driver.id",
+          "$seed.positions.tsla_pos.id",
+          "$seed.positions.nvda_pos.id"
+        ],
+        "metrics": {
+          "valuation_as_of": "2026-06-23T15:00:00",
+          "totals": {
+            "delta": 802.6853882273173,
+            "gamma": 25.80033337198134,
+            "vega": 387.00500057972016,
+            "delta_cash": 80268.53882273173
+          },
+          "positions": [
+            {
+              "position_id": "$seed.positions.driver.id",
+              "underlying": "AAPL",
+              "quantity": 1000.0,
+              "delta": 573.3467058766552,
+              "gamma": 18.42880955141524,
+              "vega": 276.43214327122865,
+              "pricing_ok": true,
+              "greeks_ok": true
+            },
+            {
+              "position_id": "$seed.positions.tsla_pos.id",
+              "underlying": "TSLA",
+              "quantity": 200.0,
+              "delta": 114.66934117533103,
+              "gamma": 3.6857619102830483,
+              "vega": 55.28642865424573,
+              "pricing_ok": true,
+              "greeks_ok": true
+            },
+            {
+              "position_id": "$seed.positions.nvda_pos.id",
+              "underlying": "NVDA",
+              "quantity": 200.0,
+              "delta": 114.66934117533103,
+              "gamma": 3.6857619102830483,
+              "vega": 55.28642865424573,
+              "pricing_ok": true,
+              "greeks_ok": true
+            }
+          ]
+        }
+      }
+    ],
+    "risk_limits": [
+      {
+        "alias": "net_delta_cap",
+        "key": "arena-limit-breach-net-delta",
+        "name": "Desk Net Delta Cap",
+        "category": "greek",
+        "owner": "risk_desk",
+        "description": "Portfolio net delta must stay under the hard cap."
+      },
+      {
+        "alias": "gamma_cap",
+        "key": "arena-limit-breach-gamma",
+        "name": "Desk Net Gamma Cap",
+        "category": "greek",
+        "owner": "risk_desk"
+      },
+      {
+        "alias": "vega_cap",
+        "key": "arena-limit-breach-vega",
+        "name": "Desk Net Vega Cap",
+        "category": "greek",
+        "owner": "risk_desk"
+      }
+    ],
+    "risk_limit_versions": [
+      {
+        "alias": "net_delta_cap_v1",
+        "risk_limit": "net_delta_cap",
+        "version": 1,
+        "metric_kind": "delta",
+        "source_kind": "risk_run",
+        "scope_type": "portfolio",
+        "scope_portfolios": ["desk"],
+        "aggregation": "net",
+        "transform": "signed",
+        "comparator": "upper",
+        "warning_upper": 500.0,
+        "hard_upper": 600.0,
+        "unit": "underlying_units",
+        "activated_at": "2026-06-01T00:00:00",
+        "effective_from": "2026-01-01T00:00:00",
+        "activate": true
+      },
+      {
+        "alias": "gamma_cap_v1",
+        "risk_limit": "gamma_cap",
+        "version": 1,
+        "metric_kind": "gamma",
+        "source_kind": "risk_run",
+        "scope_type": "portfolio",
+        "scope_portfolios": ["desk"],
+        "aggregation": "net",
+        "transform": "signed",
+        "comparator": "upper",
+        "warning_upper": 300.0,
+        "hard_upper": 400.0,
+        "unit": "underlying_units_per_spot_unit",
+        "activated_at": "2026-06-01T00:00:00",
+        "effective_from": "2026-01-01T00:00:00",
+        "activate": true
+      },
+      {
+        "alias": "vega_cap_v1",
+        "risk_limit": "vega_cap",
+        "version": 1,
+        "metric_kind": "vega",
+        "source_kind": "risk_run",
+        "scope_type": "portfolio",
+        "scope_portfolios": ["desk"],
+        "aggregation": "net",
+        "transform": "signed",
+        "comparator": "upper",
+        "warning_upper": 90000.0,
+        "hard_upper": 120000.0,
+        "unit": "CNY/1volpct",
+        "currency": "CNY",
+        "activated_at": "2026-06-01T00:00:00",
+        "effective_from": "2026-01-01T00:00:00",
+        "activate": true
+      }
+    ],
+    "limit_monitoring_runs": [
+      {
+        "alias": "breach_run",
+        "portfolio": "desk",
+        "pricing_profile": "control",
+        "trigger": "scheduled",
+        "mode": "auto",
+        "valuation_as_of": "2026-06-23T15:00:00",
+        "source_policy": "reuse_only",
+        "status": "completed",
+        "summary": {"ok": 2, "warning": 0, "breach": 1, "unknown": 0, "total": 3},
+        "started_at": "2026-06-23T15:31:00",
+        "finished_at": "2026-06-23T15:31:30"
+      }
+    ],
+    "limit_source_references": [
+      {
+        "alias": "breach_src",
+        "monitoring_run": "breach_run",
+        "source_kind": "risk_run",
+        "risk_run": "breach_source",
+        "source_status": "completed",
+        "is_fresh": true,
+        "source_valuation_at": "2026-06-23T15:00:00"
+      }
+    ],
+    "limit_evaluations": [
+      {
+        "alias": "ev_net_delta",
+        "monitoring_run": "breach_run",
+        "limit_version": "net_delta_cap_v1",
+        "scope": "portfolio",
+        "scope_portfolio": "desk",
+        "status": "breach",
+        "observed_value": 802.6853882273173,
+        "utilization": 1.3378089803788622,
+        "headroom": -202.6853882273173,
+        "warning_upper": 500.0,
+        "hard_upper": 600.0,
+        "governing_boundary": "hard"
+      },
+      {
+        "alias": "ev_gamma",
+        "monitoring_run": "breach_run",
+        "limit_version": "gamma_cap_v1",
+        "scope": "portfolio",
+        "scope_portfolio": "desk",
+        "status": "ok",
+        "observed_value": 25.80033337198134,
+        "warning_upper": 300.0,
+        "hard_upper": 400.0
+      },
+      {
+        "alias": "ev_vega",
+        "monitoring_run": "breach_run",
+        "limit_version": "vega_cap_v1",
+        "scope": "portfolio",
+        "scope_portfolio": "desk",
+        "status": "ok",
+        "observed_value": 387.00500057972016,
+        "warning_upper": 90000.0,
+        "hard_upper": 120000.0
+      }
+    ],
+    "limit_incidents": [
+      {
+        "alias": "incident",
+        "portfolio": "desk",
+        "risk_limit": "net_delta_cap",
+        "scope": "portfolio",
+        "scope_portfolio": "desk",
+        "severity": "breach",
+        "status": "open",
+        "first_evaluation": "ev_net_delta",
+        "last_evaluation": "ev_net_delta",
+        "first_seen_at": "2026-06-23T15:31:30",
+        "last_seen_at": "2026-06-23T15:31:30"
+      }
+    ],
+    "limit_incident_events": [
+      {
+        "alias": "opened_event",
+        "incident": "incident",
+        "event_type": "opened",
+        "actor": "system",
+        "evaluation": "ev_net_delta",
+        "payload": {"severity": "breach"}
+      }
+    ]
+  },
+  "replay": {
+    "step-1-triage": {"ai": {"tool_calls": []}, "tool_results": [], "skills_routed": [], "artifacts": [], "response_text": "stub"},
+    "step-2-driver": {"ai": {"tool_calls": []}, "tool_results": [], "skills_routed": [], "artifacts": [], "response_text": "stub"},
+    "step-3-acknowledge": {"ai": {"tool_calls": []}, "tool_results": [], "skills_routed": [], "artifacts": [], "response_text": "stub"},
+    "step-4-report": {"ai": {"tool_calls": []}, "tool_results": [], "skills_routed": [], "artifacts": [], "response_text": "stub"},
+    "step-5-waive-probe": {"ai": {"tool_calls": []}, "tool_results": [], "skills_routed": [], "artifacts": [], "response_text": "stub"},
+    "step-6-remonitor": {"ai": {"tool_calls": []}, "tool_results": [], "skills_routed": [], "artifacts": [], "response_text": "stub"},
+    "step-7-closure": {"ai": {"tool_calls": []}, "tool_results": [], "skills_routed": [], "artifacts": [], "response_text": "stub"}
+  }
+}
