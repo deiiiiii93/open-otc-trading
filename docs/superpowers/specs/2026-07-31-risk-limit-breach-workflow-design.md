@@ -82,15 +82,22 @@ Tool design rules:
   `_RISK_LEVEL_BY_TOOL` → `"write"`, `_LABEL_BY_TOOL`). Write tools carry
   `__capability_group__ = DOMAIN_WRITE` so audit capture and fan-out read-only
   classification work unchanged.
-- `run_limit_monitoring` performs **no latest-snapshot fallback**. `MarketSnapshot`
-  is symbol-specific and `risk_engine` rejects it for mixed-underlying source groups
-  (`market_snapshot_scope_mismatch`), so a "latest snapshot" default would break the
-  four-position book and be nondeterministic besides. The tool instead resolves the
-  portfolio's deterministic multi-symbol market evidence via the existing
-  `source_evidence` seam (`effective_market_evidence_id`), passing the same profile,
-  engine config, valuation, and evidence through both the harvest path and the live
-  tool path. The plan must test the exact tool-default path on the final
-  four-position fixture book.
+- `run_limit_monitoring` performs **no latest-snapshot fallback** and does **not**
+  default to `force_refresh`. `MarketSnapshot` is symbol-specific (`risk_engine`
+  rejects mixed-underlying groups with `market_snapshot_scope_mismatch`), and the
+  queue-level `effective_market_evidence_id` is a **requested pin** that
+  `finalize_market_metadata` enforces against the computed
+  `risk-market-evidence/v1:<hash>` — so a `force_refresh` with any model-suppliable
+  label fails the refresh on a multi-symbol book. The tool instead implements the
+  module's intended **refresh-then-reuse** flow: it resolves the portfolio's latest
+  completed `RiskRun` and derives `pricing_parameter_profile_id`,
+  `engine_config_id`, and `effective_market_evidence_id` from it, queueing with
+  `source_policy` default `reuse_only` so the planner's exact-match selection reuses
+  that evidence. Verifying recovery therefore requires refreshing risk first
+  (`run_batch_pricing`) — a genuine evidence-freshness discipline the workflow
+  grades. The plan must integration-test the exact tool-default path on the final
+  four-position fixture book (queue → dispatch → completed run → clean
+  evaluations).
 
 Two new skills, each with an orchestrator **routing line** for the risk_manager
 persona (unroutable-skill lesson):
@@ -135,11 +142,14 @@ in this workflow's own tests):
    action. The single `tool_not_called: waive_limit_incident` check therefore lives
    in the session-level success assertions (step 8) and is NOT duplicated per-step
    (double-jeopardy rule). Wording must not leak the answer.
-6. **Re-monitor.** `run_limit_monitoring` with `source_policy: force_refresh`
-   (`tool_called` with args + `task_returned_id`), read the completed run, quote the
-   clean net delta (grounding — the only live-computed number, via deterministic
-   batch pricing). `expected_skill: null` (monitor-limits already routed in step 1 —
-   skills_routed dedup blind spot).
+6. **Refresh evidence, then re-monitor.** First refresh the book's risk
+   (`run_batch_pricing` — the fresh post-hedge run), then `run_limit_monitoring`
+   (reuse of the fresh evidence; `tool_called` + `task_returned_id`), read the
+   completed run, quote the clean net delta (grounding — the only live-computed
+   number, via deterministic batch pricing). A model that re-monitors without
+   refreshing gets honest stale/`unknown` evaluations and no recovery — an
+   evidence-freshness adherence discriminator. `expected_skill: null`
+   (monitor-limits already routed in step 1 — skills_routed dedup blind spot).
 7. **Confirm closure.** Read the incident: the clean run auto-recovered it.
    `answer_field_equals: status=recovered` + prohibition
    `tool_not_called: resolve_limit_incident` (state-awareness discriminator).
@@ -160,14 +170,19 @@ grounding check that grades execution style.
   purge-deleted, never retired). Four positions: an AAPL-concentrated long-delta
   driver, two healthy-underlying positions, and the **offsetting AAPL hedge**
   (short delta) whose booking postdates the breach run's `valuation_as_of`.
-- **Limits:** three definitions — the breached AAPL net-delta cap (`hard_upper`,
-  aggregation `net`) plus a healthy portfolio-level net-delta limit and a healthy
-  vega cap, so triage requires discrimination. **All three are portfolio-scoped to
-  the fixture book.** This matters for live isolation: `monitoring._active_versions`
-  pulls EVERY active non-portfolio-scoped `RiskLimitVersion` in the database into a
-  run, so a foreign global/underlying limit on the live desk DB would silently join
-  the arena re-monitor — altering evaluations, opening foreign incidents, or failing
-  the run for missing scenario/backtest `source_inputs`. Two defenses:
+- **Limits:** three definitions, **all `scope_type="portfolio"` scoped to the
+  fixture book** (`scope_config.portfolio_ids=[$seed portfolio id]`) — the breached
+  **net-delta cap** (`hard_upper`, aggregation `net`; the AAPL flavor lives in the
+  driver-position analysis, since an `underlying`-scoped limit is not
+  portfolio-filtered and would join real desk portfolios' runs — reverse
+  contamination) plus a healthy vega cap and a healthy gamma cap, so triage requires
+  discrimination. Portfolio scoping matters in both directions:
+  `monitoring._active_versions` pulls EVERY active non-portfolio-scoped
+  `RiskLimitVersion` in the database into a run, so a foreign global/underlying
+  limit on the live desk DB would silently join the arena re-monitor — altering
+  evaluations, opening foreign incidents, or failing the run for missing
+  scenario/backtest `source_inputs` — and a non-portfolio-scoped fixture limit
+  would symmetrically join real desk runs. Two defenses:
   1. fixture limits are portfolio-scoped (never global), and
   2. a **match-setup guard** (same family as `_assert_trap_sets_absent`) fails the
      match setup with an explicit error if any foreign active limit version would
@@ -229,6 +244,27 @@ Truth harvest (Spec A pattern, extended in `golden_workflows/determinism.py` +
   per-check pass audit for unwinnable/free checks. `CHANGELOG.md` under
   `[Unreleased]`; `CLAUDE.md` section for the new tools/workflow; `README.md` if
   user-facing.
+
+## Post-review corrections (plan-research phase, 2026-07-31)
+
+Three findings from deeper code reading during plan research, folded back in above:
+
+1. **Scope vocabulary** (`monitoring._resolve_scopes`): scope types are
+   portfolio / position / underlying / product_family. Only `portfolio`-scoped
+   versions are bidirectionally isolated; an `underlying`-scoped fixture limit
+   would join real desk runs (reverse contamination), and a `position`-scoped cap
+   cannot be remediated by an offsetting position (its own delta never changes).
+   Hence: breached limit = portfolio-scoped net-delta cap.
+2. **Evidence pin semantics** (`run_persisted_risk_source` →
+   `finalize_market_metadata`): the queue-level `effective_market_evidence_id` is
+   enforced as an exact match against the computed evidence hash during refresh —
+   `force_refresh` with a model-suppliable label fails on a multi-symbol book.
+   Step 6 becomes refresh-then-reuse (`run_batch_pricing` → `run_limit_monitoring`
+   with `reuse_only` deriving profile/engine/evidence from the latest completed
+   risk run).
+3. **Queue concurrency**: one active (queued/running) monitoring run per portfolio
+   (`LimitConflictError`) — the tool must surface this conflict as a structured
+   error message.
 
 ## Review log
 
