@@ -135,10 +135,15 @@ from .greeks_landscape import (
     run_greeks_landscape_tool,
 )
 from .limits import (
+    acknowledge_limit_incident_tool,
+    comment_limit_incident_tool,
     get_limit_incident_tool,
     get_limit_monitoring_run_tool,
     list_limit_incidents_tool,
     list_risk_limits_tool,
+    resolve_limit_incident_tool,
+    run_limit_monitoring_tool,
+    waive_limit_incident_tool,
 )
 from .product_reference import get_product_reference_doc
 from .product_term_schema import get_product_term_schema
@@ -225,6 +230,11 @@ QUANT_AGENT_TOOLS = [
     get_limit_monitoring_run_tool,
     list_limit_incidents_tool,
     get_limit_incident_tool,
+    run_limit_monitoring_tool,
+    acknowledge_limit_incident_tool,
+    comment_limit_incident_tool,
+    waive_limit_incident_tool,
+    resolve_limit_incident_tool,
     # hedging writes (persisted / HITL-gated):
     book_hedge_tool,
     set_hedge_bands_tool,

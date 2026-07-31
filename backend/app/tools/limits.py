@@ -266,3 +266,252 @@ def get_limit_incident_tool(incident_id: int) -> dict[str, Any]:
             for e in incident.events
         ]
         return out
+
+
+# ---------------------------------------------------------------------------
+# Write tools (HITL) — optimistic concurrency is the model's job: every
+# incident mutation requires expected_row_version from a preceding read.
+# ---------------------------------------------------------------------------
+
+from datetime import datetime  # noqa: E402
+
+from langchain_core.runnables import RunnableConfig  # noqa: E402
+
+from ..services.audit_trail import AUDIT_CONTEXT_KEY  # noqa: E402
+from ..services.limits import incidents as incidents_service  # noqa: E402
+from ..services.limits import monitoring as monitoring_service  # noqa: E402
+from ..services.limits.agent_support import derive_monitoring_envelope  # noqa: E402
+from ..services.limits.contracts import LimitActionContext  # noqa: E402
+from ..services.limits.errors import (  # noqa: E402
+    LimitConflictError,
+    LimitNotFoundError,
+    LimitValidationError,
+)
+
+_CONFLICT_HINT = (
+    "re-read the incident with get_limit_incident and retry with the "
+    "current row_version"
+)
+
+
+def _tool_context(config: RunnableConfig | None) -> LimitActionContext:
+    """Trusted attribution from the runtime's audit context (never model args)."""
+    values: dict[str, Any] = {}
+    if isinstance(config, dict):
+        values = dict(
+            (config.get("configurable") or {}).get(AUDIT_CONTEXT_KEY) or {}
+        )
+    mode = values.get("mode")
+    if mode not in ("interactive", "auto", "yolo"):
+        mode = "interactive"
+    thread_id = values.get("thread_id")
+    if not isinstance(thread_id, int) or isinstance(thread_id, bool) or thread_id <= 0:
+        thread_id = None
+    actor = values.get("actor")
+    if not isinstance(actor, str) or not actor.strip():
+        actor = "agent"
+    return LimitActionContext(
+        actor=actor, persona=None, mode=mode, thread_id=thread_id
+    )
+
+
+class RunLimitMonitoringInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    portfolio_id: int
+    source_policy: str = "reuse_only"
+
+
+@capability_gated(group=ToolGroup.DOMAIN_WRITE)
+@tool("run_limit_monitoring", args_schema=RunLimitMonitoringInput)
+def run_limit_monitoring_tool(
+    portfolio_id: int,
+    source_policy: str = "reuse_only",
+    config: RunnableConfig = None,  # type: ignore[assignment]
+) -> dict[str, Any]:
+    """Queue limit monitoring for a portfolio, reusing the latest completed
+    risk run's evidence. Run a fresh risk calculation first if the book or
+    market changed — stale evidence cannot verify anything. Returns the queued
+    run id; read it later with get_limit_monitoring_run. If this returns
+    error=LimitValidationError, run risk first; error=LimitConflictError means
+    a monitoring run is already active — read it instead. HITL — requires
+    confirmation."""
+    if source_policy not in ("reuse_only", "refresh_if_stale"):
+        return {
+            "ok": False,
+            "error": "invalid_source_policy",
+            "detail": "source_policy must be reuse_only or refresh_if_stale",
+        }
+    database.init_db()
+    with database.SessionLocal() as session:
+        try:
+            envelope = derive_monitoring_envelope(session, portfolio_id)
+            run, task = monitoring_service.queue_limit_monitoring(
+                session,
+                portfolio_id=portfolio_id,
+                trigger="agent",
+                context=_tool_context(config),
+                source_policy=source_policy,
+                **envelope,
+            )
+            session.commit()
+        except (LimitValidationError, LimitConflictError, ValueError) as exc:
+            session.rollback()
+            return {
+                "ok": False,
+                "error": exc.__class__.__name__,
+                "detail": str(exc),
+            }
+        try:
+            monitoring_service.dispatch_limit_monitoring(task.id, run.id)
+        except Exception as exc:  # noqa: BLE001 — mirror the router's dance
+            finished_at = datetime.utcnow()
+            run.status = "failed"
+            run.finished_at = finished_at
+            task.status = "failed"
+            task.message = "Limit monitoring dispatch failed"
+            task.error = str(exc)
+            task.finished_at = finished_at
+            session.commit()
+            return {"ok": False, "error": "dispatch_failed", "detail": str(exc)}
+        return {
+            "ok": True,
+            "run_id": run.id,
+            "task_id": task.id,
+            "status": run.status,
+        }
+
+
+def _mutate_incident(action, *, incident_id: int, **kwargs) -> dict[str, Any]:
+    database.init_db()
+    with database.SessionLocal() as session:
+        try:
+            incident = action(session, incident_id=incident_id, **kwargs)
+            session.commit()
+        except LimitConflictError as exc:
+            session.rollback()
+            return {
+                "ok": False,
+                "error": "conflict",
+                "detail": str(exc),
+                "hint": _CONFLICT_HINT,
+            }
+        except (LimitNotFoundError, LimitValidationError) as exc:
+            session.rollback()
+            return {
+                "ok": False,
+                "error": exc.__class__.__name__,
+                "detail": str(exc),
+            }
+        return _incident_out(session, incident)
+
+
+class AcknowledgeLimitIncidentInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    incident_id: int
+    expected_row_version: int
+
+
+@capability_gated(group=ToolGroup.DOMAIN_WRITE)
+@tool("acknowledge_limit_incident", args_schema=AcknowledgeLimitIncidentInput)
+def acknowledge_limit_incident_tool(
+    incident_id: int,
+    expected_row_version: int,
+    config: RunnableConfig = None,  # type: ignore[assignment]
+) -> dict[str, Any]:
+    """Acknowledge an active limit incident. Requires expected_row_version
+    from a preceding get_limit_incident read; on error=conflict, re-read and
+    retry with the current row_version. HITL — requires confirmation."""
+    return _mutate_incident(
+        incidents_service.acknowledge,
+        incident_id=incident_id,
+        expected_row_version=expected_row_version,
+        context=_tool_context(config),
+    )
+
+
+class CommentLimitIncidentInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    incident_id: int
+    comment: str
+    expected_row_version: int
+
+
+@capability_gated(group=ToolGroup.DOMAIN_WRITE)
+@tool("comment_limit_incident", args_schema=CommentLimitIncidentInput)
+def comment_limit_incident_tool(
+    incident_id: int,
+    comment: str,
+    expected_row_version: int,
+    config: RunnableConfig = None,  # type: ignore[assignment]
+) -> dict[str, Any]:
+    """Append a comment to a limit incident's timeline (e.g. a root-cause
+    note). Requires expected_row_version from a preceding read; on
+    error=conflict, re-read and retry. HITL — requires confirmation."""
+    return _mutate_incident(
+        incidents_service.comment,
+        incident_id=incident_id,
+        comment=comment,
+        expected_row_version=expected_row_version,
+        context=_tool_context(config),
+    )
+
+
+class WaiveLimitIncidentInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    incident_id: int
+    rationale: str
+    expires_at: str
+    expected_row_version: int
+
+
+@capability_gated(group=ToolGroup.DOMAIN_WRITE)
+@tool("waive_limit_incident", args_schema=WaiveLimitIncidentInput)
+def waive_limit_incident_tool(
+    incident_id: int,
+    rationale: str,
+    expires_at: str,
+    expected_row_version: int,
+    config: RunnableConfig = None,  # type: ignore[assignment]
+) -> dict[str, Any]:
+    """Waive an active limit incident with a rationale and an ISO-8601 expiry.
+    Waiving accepts the breach instead of remediating it — do not waive when a
+    remediation is already in flight and verifiable. Requires
+    expected_row_version from a preceding read. HITL — requires confirmation."""
+    try:
+        expiry = datetime.fromisoformat(expires_at)
+    except ValueError:
+        return {"ok": False, "error": "invalid_expires_at"}
+    return _mutate_incident(
+        incidents_service.waive,
+        incident_id=incident_id,
+        rationale=rationale,
+        expires_at=expiry,
+        expected_row_version=expected_row_version,
+        context=_tool_context(config),
+    )
+
+
+class ResolveLimitIncidentInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    incident_id: int
+    expected_row_version: int
+
+
+@capability_gated(group=ToolGroup.DOMAIN_WRITE)
+@tool("resolve_limit_incident", args_schema=ResolveLimitIncidentInput)
+def resolve_limit_incident_tool(
+    incident_id: int,
+    expected_row_version: int,
+    config: RunnableConfig = None,  # type: ignore[assignment]
+) -> dict[str, Any]:
+    """Resolve an ACTIVE limit incident (open/acknowledged/assigned/waived).
+    A clean monitoring re-run auto-recovers the incident (status "recovered")
+    — check its state first; resolving an already-recovered incident returns a
+    conflict. Requires expected_row_version from a preceding read. HITL —
+    requires confirmation."""
+    return _mutate_incident(
+        incidents_service.resolve,
+        incident_id=incident_id,
+        expected_row_version=expected_row_version,
+        context=_tool_context(config),
+    )

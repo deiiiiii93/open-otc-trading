@@ -45,6 +45,11 @@ def test_interrupt_tool_names_covers_all_state_mutating_tools():
         "delete_pricing_parameter_profile",
         "set_instrument_pricing_defaults",
         "build_assumption_set",
+        "run_limit_monitoring",
+        "acknowledge_limit_incident",
+        "comment_limit_incident",
+        "waive_limit_incident",
+        "resolve_limit_incident",
         "run_python",
     }
 
@@ -442,3 +447,22 @@ def test_generate_from_curves_is_hitl_write():
     assert name in INTERRUPT_TOOL_NAMES
     assert _RISK_LEVEL_BY_TOOL[name] == "write"
     assert name in _LABEL_BY_TOOL
+
+
+def test_limits_writes_are_hitl_write():
+    from app.services.deep_agent.hitl import (
+        INTERRUPT_TOOL_NAMES,
+        _LABEL_BY_TOOL,
+        _RISK_LEVEL_BY_TOOL,
+    )
+
+    for name in (
+        "run_limit_monitoring",
+        "acknowledge_limit_incident",
+        "comment_limit_incident",
+        "waive_limit_incident",
+        "resolve_limit_incident",
+    ):
+        assert name in INTERRUPT_TOOL_NAMES
+        assert _RISK_LEVEL_BY_TOOL[name] == "write"
+        assert name in _LABEL_BY_TOOL
