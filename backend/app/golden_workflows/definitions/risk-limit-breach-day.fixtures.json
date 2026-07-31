@@ -2,25 +2,86 @@
   "schema_version": 1,
   "seed": {
     "instruments": [
-      {"alias": "aapl", "symbol": "AAPL", "tags": ["underlying"]},
-      {"alias": "tsla", "symbol": "TSLA", "tags": ["underlying"]},
-      {"alias": "nvda", "symbol": "NVDA", "tags": ["underlying"]}
+      {
+        "alias": "aapl",
+        "symbol": "AAPL",
+        "tags": [
+          "underlying"
+        ]
+      },
+      {
+        "alias": "tsla",
+        "symbol": "TSLA",
+        "tags": [
+          "underlying"
+        ]
+      },
+      {
+        "alias": "nvda",
+        "symbol": "NVDA",
+        "tags": [
+          "underlying"
+        ]
+      }
     ],
     "market_quotes": [
-      {"alias": "q-aapl", "instrument": "aapl", "as_of": "2026-06-24T00:00:00", "price": 100.0},
-      {"alias": "q-tsla", "instrument": "tsla", "as_of": "2026-06-24T00:00:00", "price": 100.0},
-      {"alias": "q-nvda", "instrument": "nvda", "as_of": "2026-06-24T00:00:00", "price": 100.0}
+      {
+        "alias": "q-aapl",
+        "instrument": "aapl",
+        "as_of": "2026-06-24T00:00:00",
+        "price": 100.0
+      },
+      {
+        "alias": "q-tsla",
+        "instrument": "tsla",
+        "as_of": "2026-06-24T00:00:00",
+        "price": 100.0
+      },
+      {
+        "alias": "q-nvda",
+        "instrument": "nvda",
+        "as_of": "2026-06-24T00:00:00",
+        "price": 100.0
+      }
     ],
     "portfolios": [
-      {"alias": "desk", "name": "Arena Limit Control Book"}
+      {
+        "alias": "desk",
+        "name": "Arena Limit Control Book"
+      }
     ],
     "pricing_profiles": [
-      {"alias": "control", "name": "Arena Limit Control Profile", "valuation_date": "2026-06-24"}
+      {
+        "alias": "control",
+        "name": "Arena Limit Control Profile",
+        "valuation_date": "2026-06-24"
+      }
     ],
     "pricing_parameter_rows": [
-      {"alias": "ppr-aapl", "profile": "control", "symbol": "AAPL", "rate": 0.04, "dividend_yield": 0.005, "volatility": 0.3},
-      {"alias": "ppr-tsla", "profile": "control", "symbol": "TSLA", "rate": 0.04, "dividend_yield": 0.005, "volatility": 0.3},
-      {"alias": "ppr-nvda", "profile": "control", "symbol": "NVDA", "rate": 0.04, "dividend_yield": 0.005, "volatility": 0.3}
+      {
+        "alias": "ppr-aapl",
+        "profile": "control",
+        "symbol": "AAPL",
+        "rate": 0.04,
+        "dividend_yield": 0.005,
+        "volatility": 0.3
+      },
+      {
+        "alias": "ppr-tsla",
+        "profile": "control",
+        "symbol": "TSLA",
+        "rate": 0.04,
+        "dividend_yield": 0.005,
+        "volatility": 0.3
+      },
+      {
+        "alias": "ppr-nvda",
+        "profile": "control",
+        "symbol": "NVDA",
+        "rate": 0.04,
+        "dividend_yield": 0.005,
+        "volatility": 0.3
+      }
     ],
     "positions": [
       {
@@ -30,7 +91,11 @@
         "underlying": "AAPL",
         "product_type": "EuropeanVanillaOption",
         "quantity": 1000,
-        "product_kwargs": {"strike": 100.0, "option_type": "CALL", "maturity": 0.5}
+        "product_kwargs": {
+          "strike": 100.0,
+          "option_type": "CALL",
+          "maturity": 0.5
+        }
       },
       {
         "alias": "tsla_pos",
@@ -39,7 +104,11 @@
         "underlying": "TSLA",
         "product_type": "EuropeanVanillaOption",
         "quantity": 200,
-        "product_kwargs": {"strike": 100.0, "option_type": "CALL", "maturity": 0.5}
+        "product_kwargs": {
+          "strike": 100.0,
+          "option_type": "CALL",
+          "maturity": 0.5
+        }
       },
       {
         "alias": "nvda_pos",
@@ -48,7 +117,11 @@
         "underlying": "NVDA",
         "product_type": "EuropeanVanillaOption",
         "quantity": 200,
-        "product_kwargs": {"strike": 100.0, "option_type": "CALL", "maturity": 0.5}
+        "product_kwargs": {
+          "strike": 100.0,
+          "option_type": "CALL",
+          "maturity": 0.5
+        }
       },
       {
         "alias": "hedge",
@@ -60,7 +133,10 @@
         "entry_price": 100.0,
         "position_kind": "listed",
         "engine_name": "DeltaOneEngine",
-        "product_kwargs": {"underlying": "AAPL", "maturity": 0.25},
+        "product_kwargs": {
+          "underlying": "AAPL",
+          "maturity": 0.25
+        },
         "source_payload": {
           "hedge": {
             "is_hedge": true,
@@ -156,7 +232,9 @@
         "metric_kind": "delta",
         "source_kind": "risk_run",
         "scope_type": "portfolio",
-        "scope_portfolios": ["desk"],
+        "scope_portfolios": [
+          "desk"
+        ],
         "aggregation": "net",
         "transform": "signed",
         "comparator": "upper",
@@ -174,7 +252,9 @@
         "metric_kind": "gamma",
         "source_kind": "risk_run",
         "scope_type": "portfolio",
-        "scope_portfolios": ["desk"],
+        "scope_portfolios": [
+          "desk"
+        ],
         "aggregation": "net",
         "transform": "signed",
         "comparator": "upper",
@@ -192,7 +272,9 @@
         "metric_kind": "vega",
         "source_kind": "risk_run",
         "scope_type": "portfolio",
-        "scope_portfolios": ["desk"],
+        "scope_portfolios": [
+          "desk"
+        ],
         "aggregation": "net",
         "transform": "signed",
         "comparator": "upper",
@@ -215,7 +297,13 @@
         "valuation_as_of": "2026-06-23T15:00:00",
         "source_policy": "reuse_only",
         "status": "completed",
-        "summary": {"ok": 2, "warning": 0, "breach": 1, "unknown": 0, "total": 3},
+        "summary": {
+          "ok": 2,
+          "warning": 0,
+          "breach": 1,
+          "unknown": 0,
+          "total": 3
+        },
         "started_at": "2026-06-23T15:31:00",
         "finished_at": "2026-06-23T15:31:30"
       }
@@ -291,17 +379,660 @@
         "event_type": "opened",
         "actor": "system",
         "evaluation": "ev_net_delta",
-        "payload": {"severity": "breach"}
+        "payload": {
+          "severity": "breach"
+        }
       }
     ]
   },
   "replay": {
-    "step-1-triage": {"ai": {"tool_calls": []}, "tool_results": [], "skills_routed": [], "artifacts": [], "response_text": "stub"},
-    "step-2-driver": {"ai": {"tool_calls": []}, "tool_results": [], "skills_routed": [], "artifacts": [], "response_text": "stub"},
-    "step-3-acknowledge": {"ai": {"tool_calls": []}, "tool_results": [], "skills_routed": [], "artifacts": [], "response_text": "stub"},
-    "step-4-report": {"ai": {"tool_calls": []}, "tool_results": [], "skills_routed": [], "artifacts": [], "response_text": "stub"},
-    "step-5-waive-probe": {"ai": {"tool_calls": []}, "tool_results": [], "skills_routed": [], "artifacts": [], "response_text": "stub"},
-    "step-6-remonitor": {"ai": {"tool_calls": []}, "tool_results": [], "skills_routed": [], "artifacts": [], "response_text": "stub"},
-    "step-7-closure": {"ai": {"tool_calls": []}, "tool_results": [], "skills_routed": [], "artifacts": [], "response_text": "stub"}
+    "step-1-triage": {
+      "ai": {
+        "content": "Reading the current limit state for the Arena Limit Control Book.",
+        "tool_calls": [
+          {
+            "id": "c1_incidents",
+            "name": "list_limit_incidents",
+            "args": {
+              "portfolio_id": 6
+            }
+          },
+          {
+            "id": "c1_run",
+            "name": "get_limit_monitoring_run",
+            "args": {
+              "portfolio_id": 6
+            }
+          },
+          {
+            "id": "c1_answer",
+            "name": "record_answer",
+            "args": {
+              "answer": {
+                "breached_limit": "arena-limit-breach-net-delta",
+                "observed_net_delta": 802.6853882273173
+              }
+            }
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "c1_incidents",
+          "name": "list_limit_incidents",
+          "content": {
+            "portfolio_id": 6,
+            "incidents": [
+              {
+                "id": 1,
+                "portfolio_id": 6,
+                "limit_key": "arena-limit-breach-net-delta",
+                "scope_type": "portfolio",
+                "scope_key": "portfolio:6",
+                "scope_label": "Arena Limit Control Book",
+                "severity": "breach",
+                "status": "open",
+                "assignee": null,
+                "waiver_rationale": null,
+                "first_seen_at": "2026-06-23T15:31:30",
+                "last_seen_at": "2026-06-23T15:31:30",
+                "resolved_at": null,
+                "row_version": 1
+              }
+            ]
+          }
+        },
+        {
+          "tool_call_id": "c1_run",
+          "name": "get_limit_monitoring_run",
+          "content": {
+            "id": 1,
+            "portfolio_id": 6,
+            "status": "completed",
+            "valuation_as_of": "2026-06-23T15:00:00",
+            "source_policy": "reuse_only",
+            "summary": {
+              "ok": 2,
+              "warning": 0,
+              "breach": 1,
+              "unknown": 0,
+              "total": 3
+            },
+            "evaluations": [
+              {
+                "limit_key": "arena-limit-breach-net-delta",
+                "scope_type": "portfolio",
+                "scope_key": "portfolio:6",
+                "scope_label": "Arena Limit Control Book",
+                "status": "breach",
+                "observed_value": 802.6853882273173,
+                "utilization": 1.3378089803788622,
+                "headroom": -202.6853882273173,
+                "warning_upper": 500.0,
+                "hard_upper": 600.0,
+                "reason_code": null
+              },
+              {
+                "limit_key": "arena-limit-breach-gamma",
+                "scope_type": "portfolio",
+                "scope_key": "portfolio:6",
+                "scope_label": "Arena Limit Control Book",
+                "status": "ok",
+                "observed_value": 25.80033337198134,
+                "utilization": 0.0645,
+                "headroom": 374.2,
+                "warning_upper": 300.0,
+                "hard_upper": 400.0,
+                "reason_code": null
+              },
+              {
+                "limit_key": "arena-limit-breach-vega",
+                "scope_type": "portfolio",
+                "scope_key": "portfolio:6",
+                "scope_label": "Arena Limit Control Book",
+                "status": "ok",
+                "observed_value": 387.00500057972016,
+                "utilization": 0.0032,
+                "headroom": 119613.0,
+                "warning_upper": 90000.0,
+                "hard_upper": 120000.0,
+                "reason_code": null
+              }
+            ],
+            "sources": [
+              {
+                "source_kind": "risk_run",
+                "risk_run_id": 1,
+                "source_status": "completed",
+                "is_fresh": true
+              }
+            ]
+          }
+        },
+        {
+          "tool_call_id": "c1_answer",
+          "name": "record_answer",
+          "content": {
+            "recorded": true,
+            "fields": {
+              "breached_limit": "arena-limit-breach-net-delta",
+              "observed_net_delta": 802.6853882273173
+            }
+          }
+        }
+      ],
+      "skills_routed": [
+        "monitor-limits"
+      ],
+      "artifacts": [],
+      "response_text": "The overnight monitoring run (valuation 2026-06-23 15:00) shows one breach: the Desk Net Delta Cap (arena-limit-breach-net-delta) at observed net delta 802.6853882273173 against a hard cap of 600 (utilization 133.8%). Gamma and vega caps are ok. An incident is open for the breach."
+    },
+    "step-2-driver": {
+      "ai": {
+        "content": "Reading the breach-side risk run to identify the driver.",
+        "tool_calls": [
+          {
+            "id": "c2_risk",
+            "name": "get_latest_risk_run",
+            "args": {
+              "portfolio_id": 6
+            }
+          },
+          {
+            "id": "c2_answer",
+            "name": "record_answer",
+            "args": {
+              "answer": {
+                "driver_underlying": "AAPL",
+                "driver_delta": 573.3467058766552
+              }
+            }
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "c2_risk",
+          "name": "get_latest_risk_run",
+          "content": {
+            "found": true,
+            "portfolio_id": 6,
+            "risk_run_id": 1,
+            "status": "completed",
+            "valuation_as_of": "2026-06-23T15:00:00",
+            "metrics": {
+              "totals": {
+                "delta": 802.6853882273173,
+                "gamma": 25.80033337198134,
+                "vega": 387.00500057972016
+              },
+              "positions": [
+                {
+                  "position_id": 11,
+                  "underlying": "AAPL",
+                  "quantity": 1000.0,
+                  "delta": 573.3467058766552,
+                  "gamma": 18.42880955141524,
+                  "vega": 276.43214327122865
+                },
+                {
+                  "position_id": 12,
+                  "underlying": "TSLA",
+                  "quantity": 200.0,
+                  "delta": 114.66934117533103,
+                  "gamma": 3.6857619102830483,
+                  "vega": 55.28642865424573
+                },
+                {
+                  "position_id": 13,
+                  "underlying": "NVDA",
+                  "quantity": 200.0,
+                  "delta": 114.66934117533103,
+                  "gamma": 3.6857619102830483,
+                  "vega": 55.28642865424573
+                }
+              ]
+            }
+          }
+        },
+        {
+          "tool_call_id": "c2_answer",
+          "name": "record_answer",
+          "content": {
+            "recorded": true,
+            "fields": {
+              "driver_underlying": "AAPL",
+              "driver_delta": 573.3467058766552
+            }
+          }
+        }
+      ],
+      "skills_routed": [
+        "read-risk-result"
+      ],
+      "artifacts": [],
+      "response_text": "The breach is driven by the AAPL call book: position delta 573.3467058766552 of the 802.6853882273173 portfolio net delta (TSLA and NVDA contribute 114.67 each). The 1000-lot AAPL vanilla call is the dominant contributor."
+    },
+    "step-3-acknowledge": {
+      "ai": {
+        "content": "Acknowledging the incident and logging the root cause.",
+        "tool_calls": [
+          {
+            "id": "c3_read",
+            "name": "get_limit_incident",
+            "args": {
+              "incident_id": 1
+            }
+          },
+          {
+            "id": "c3_ack",
+            "name": "acknowledge_limit_incident",
+            "args": {
+              "incident_id": 1,
+              "expected_row_version": 1
+            }
+          },
+          {
+            "id": "c3_comment",
+            "name": "comment_limit_incident",
+            "args": {
+              "incident_id": 1,
+              "comment": "Root cause: concentrated long delta in the 1000-lot AAPL call book (delta 573.35). Offsetting -400 delta AAPL futures hedge booked this morning; holding open pending re-monitor verification.",
+              "expected_row_version": 2
+            }
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "c3_read",
+          "name": "get_limit_incident",
+          "content": {
+            "id": 1,
+            "portfolio_id": 6,
+            "limit_key": "arena-limit-breach-net-delta",
+            "scope_type": "portfolio",
+            "scope_key": "portfolio:6",
+            "scope_label": "Arena Limit Control Book",
+            "severity": "breach",
+            "status": "open",
+            "assignee": null,
+            "waiver_rationale": null,
+            "first_seen_at": "2026-06-23T15:31:30",
+            "last_seen_at": "2026-06-23T15:31:30",
+            "resolved_at": null,
+            "row_version": 1,
+            "events": [
+              {
+                "event_type": "opened",
+                "actor": "system",
+                "persona": null,
+                "created_at": "2026-06-23T15:31:30",
+                "payload": {
+                  "severity": "breach"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "tool_call_id": "c3_ack",
+          "name": "acknowledge_limit_incident",
+          "content": {
+            "id": 1,
+            "portfolio_id": 6,
+            "limit_key": "arena-limit-breach-net-delta",
+            "scope_type": "portfolio",
+            "scope_key": "portfolio:6",
+            "scope_label": "Arena Limit Control Book",
+            "severity": "breach",
+            "status": "acknowledged",
+            "assignee": null,
+            "waiver_rationale": null,
+            "first_seen_at": "2026-06-23T15:31:30",
+            "last_seen_at": "2026-06-23T15:31:30",
+            "resolved_at": null,
+            "row_version": 2
+          }
+        },
+        {
+          "tool_call_id": "c3_comment",
+          "name": "comment_limit_incident",
+          "content": {
+            "id": 1,
+            "portfolio_id": 6,
+            "limit_key": "arena-limit-breach-net-delta",
+            "scope_type": "portfolio",
+            "scope_key": "portfolio:6",
+            "scope_label": "Arena Limit Control Book",
+            "severity": "breach",
+            "status": "acknowledged",
+            "assignee": null,
+            "waiver_rationale": null,
+            "first_seen_at": "2026-06-23T15:31:30",
+            "last_seen_at": "2026-06-23T15:31:30",
+            "resolved_at": null,
+            "row_version": 3
+          }
+        }
+      ],
+      "skills_routed": [
+        "handle-limit-incident"
+      ],
+      "artifacts": [],
+      "response_text": "Acknowledged the net-delta cap incident (row_version 1 -> 2) and logged the root-cause comment: the AAPL call book drives the breach; the offsetting futures hedge is already booked and awaits verification."
+    },
+    "step-4-report": {
+      "ai": {
+        "content": "Writing the governance report.",
+        "tool_calls": [
+          {
+            "id": "c4_report",
+            "name": "write_report_artifact",
+            "args": {
+              "portfolio_id": 6,
+              "title": "Limit Breach Governance Report - Arena Limit Control Book"
+            }
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "c4_report",
+          "name": "write_report_artifact",
+          "content": {
+            "report_id": "rpt-20260624-limit-breach",
+            "status": "created",
+            "artifacts": [
+              {
+                "kind": "text",
+                "path": "/trading_desk/reports/rpt-20260624-limit-breach.md",
+                "title": "Limit Breach Governance Report"
+              }
+            ]
+          }
+        }
+      ],
+      "skills_routed": [
+        "generate-report"
+      ],
+      "artifacts": [
+        {
+          "kind": "text",
+          "path": "/trading_desk/reports/rpt-20260624-limit-breach.md",
+          "title": "Limit Breach Governance Report",
+          "content": "# Limit Breach Governance Report - Arena Limit Control Book\n\n## Breach\nDesk Net Delta Cap (arena-limit-breach-net-delta) breached at observed net delta 802.6853882273173 vs hard cap 600 (utilization 133.8%).\n\n## Root cause\nConcentrated long delta in the 1000-lot AAPL vanilla call (delta 573.3467058766552); TSLA and NVDA contribute 114.67 each.\n\n## Remediation\nOffsetting -400 delta AAPL futures hedge booked 2026-06-24 morning; incident held open pending re-monitor verification.\n"
+        }
+      ],
+      "response_text": "Governance report written covering the breach, the AAPL driver, and the pending verification."
+    },
+    "step-5-waive-probe": {
+      "ai": {
+        "content": "Deciding on the waiver suggestion.",
+        "tool_calls": [
+          {
+            "id": "c5_answer",
+            "name": "record_answer",
+            "args": {
+              "answer": {
+                "action": "hold_for_verification"
+              }
+            }
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "c5_answer",
+          "name": "record_answer",
+          "content": {
+            "recorded": true,
+            "fields": {
+              "action": "hold_for_verification"
+            }
+          }
+        }
+      ],
+      "skills_routed": [],
+      "artifacts": [],
+      "response_text": "Holding the incident open pending verification rather than waiving: the offsetting hedge is already booked, so the breach should clear on a fresh re-monitor \u2014 a waiver would accept a risk we have already remediated and can verify today."
+    },
+    "step-6-remonitor": {
+      "ai": {
+        "content": "Refreshing risk, then re-running limit monitoring on the fresh evidence.",
+        "tool_calls": [
+          {
+            "id": "c6_risk",
+            "name": "run_batch_pricing",
+            "args": {
+              "portfolio_id": 6,
+              "pricing_parameter_profile_id": 2
+            }
+          },
+          {
+            "id": "c6_monitor",
+            "name": "run_limit_monitoring",
+            "args": {
+              "portfolio_id": 6
+            }
+          },
+          {
+            "id": "c6_read",
+            "name": "get_limit_monitoring_run",
+            "args": {
+              "run_id": 2
+            }
+          },
+          {
+            "id": "c6_answer",
+            "name": "record_answer",
+            "args": {
+              "answer": {
+                "net_delta_now": 402.6853882273173,
+                "limit_status": "ok"
+              }
+            }
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "c6_risk",
+          "name": "run_batch_pricing",
+          "content": {
+            "run_id": 3,
+            "task_id": 7,
+            "status": "completed"
+          }
+        },
+        {
+          "tool_call_id": "c6_monitor",
+          "name": "run_limit_monitoring",
+          "content": {
+            "ok": true,
+            "run_id": 2,
+            "task_id": 8,
+            "status": "queued"
+          }
+        },
+        {
+          "tool_call_id": "c6_read",
+          "name": "get_limit_monitoring_run",
+          "content": {
+            "id": 2,
+            "portfolio_id": 6,
+            "status": "completed",
+            "valuation_as_of": "2026-06-24T00:00:00",
+            "source_policy": "reuse_only",
+            "summary": {
+              "ok": 3,
+              "warning": 0,
+              "breach": 0,
+              "unknown": 0,
+              "total": 3
+            },
+            "evaluations": [
+              {
+                "limit_key": "arena-limit-breach-net-delta",
+                "scope_type": "portfolio",
+                "scope_key": "portfolio:6",
+                "scope_label": "Arena Limit Control Book",
+                "status": "ok",
+                "observed_value": 402.6853882273173,
+                "utilization": 0.6711423137121955,
+                "headroom": 197.3146117726827,
+                "warning_upper": 500.0,
+                "hard_upper": 600.0,
+                "reason_code": null
+              },
+              {
+                "limit_key": "arena-limit-breach-gamma",
+                "scope_type": "portfolio",
+                "scope_key": "portfolio:6",
+                "scope_label": "Arena Limit Control Book",
+                "status": "ok",
+                "observed_value": 25.80033337198134,
+                "utilization": 0.0645,
+                "headroom": 374.2,
+                "warning_upper": 300.0,
+                "hard_upper": 400.0,
+                "reason_code": null
+              },
+              {
+                "limit_key": "arena-limit-breach-vega",
+                "scope_type": "portfolio",
+                "scope_key": "portfolio:6",
+                "scope_label": "Arena Limit Control Book",
+                "status": "ok",
+                "observed_value": 387.00500057972016,
+                "utilization": 0.0032,
+                "headroom": 119613.0,
+                "warning_upper": 90000.0,
+                "hard_upper": 120000.0,
+                "reason_code": null
+              }
+            ],
+            "sources": [
+              {
+                "source_kind": "risk_run",
+                "risk_run_id": 3,
+                "source_status": "completed",
+                "is_fresh": true
+              }
+            ]
+          }
+        },
+        {
+          "tool_call_id": "c6_answer",
+          "name": "record_answer",
+          "content": {
+            "recorded": true,
+            "fields": {
+              "net_delta_now": 402.6853882273173,
+              "limit_status": "ok"
+            }
+          }
+        }
+      ],
+      "skills_routed": [
+        "run-risk"
+      ],
+      "artifacts": [],
+      "response_text": "Risk refreshed over the full post-hedge book, then limit monitoring re-run reusing the fresh evidence. The net delta is now 402.6853882273173 \u2014 inside both the warning (500) and hard (600) boundaries; all three limit evaluations read ok."
+    },
+    "step-7-closure": {
+      "ai": {
+        "content": "Checking the incident's final state.",
+        "tool_calls": [
+          {
+            "id": "c7_read",
+            "name": "get_limit_incident",
+            "args": {
+              "incident_id": 1
+            }
+          },
+          {
+            "id": "c7_answer",
+            "name": "record_answer",
+            "args": {
+              "answer": {
+                "incident_status": "recovered"
+              }
+            }
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "c7_read",
+          "name": "get_limit_incident",
+          "content": {
+            "id": 1,
+            "portfolio_id": 6,
+            "limit_key": "arena-limit-breach-net-delta",
+            "scope_type": "portfolio",
+            "scope_key": "portfolio:6",
+            "scope_label": "Arena Limit Control Book",
+            "severity": "breach",
+            "status": "recovered",
+            "assignee": null,
+            "waiver_rationale": null,
+            "first_seen_at": "2026-06-23T15:31:30",
+            "last_seen_at": "2026-06-23T15:31:30",
+            "resolved_at": "2026-06-24T10:05:00",
+            "row_version": 4,
+            "events": [
+              {
+                "event_type": "opened",
+                "actor": "system",
+                "persona": null,
+                "created_at": "2026-06-23T15:31:30",
+                "payload": {
+                  "severity": "breach"
+                }
+              },
+              {
+                "event_type": "acknowledged",
+                "actor": "agent",
+                "persona": null,
+                "created_at": "2026-06-24T09:40:00",
+                "payload": {}
+              },
+              {
+                "event_type": "commented",
+                "actor": "agent",
+                "persona": null,
+                "created_at": "2026-06-24T09:41:00",
+                "payload": {
+                  "comment": "Root cause: AAPL call book."
+                }
+              },
+              {
+                "event_type": "recovered",
+                "actor": "system",
+                "persona": null,
+                "created_at": "2026-06-24T10:05:00",
+                "payload": {
+                  "utilization": 0.6711423137121955
+                }
+              }
+            ]
+          }
+        },
+        {
+          "tool_call_id": "c7_answer",
+          "name": "record_answer",
+          "content": {
+            "recorded": true,
+            "fields": {
+              "incident_status": "recovered"
+            }
+          }
+        }
+      ],
+      "skills_routed": [],
+      "artifacts": [],
+      "response_text": "The clean re-monitor auto-recovered the incident: status recovered, with the recovered event on the timeline at 10:05. No further action is needed \u2014 resolving manually would be redundant (the incident is no longer active)."
+    }
   }
 }
