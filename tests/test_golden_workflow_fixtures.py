@@ -396,3 +396,18 @@ def test_seed_rejects_unprefixed_limit_key(tmp_path, session):
     bundle["seed"]["risk_limits"][0]["key"] = "desk-net-delta"
     with pytest.raises(WorkflowError, match="arena-"):
         apply_seed(load_fixtures(_write(tmp_path, bundle)), session)
+
+
+def test_seed_rejects_non_portfolio_scope_type(tmp_path, session):
+    """Important-2 (final-review.md): a non-portfolio scope_type fixture limit
+    would be immortal, active, and guard-exempt (seeded arena- key), so it must
+    fail closed at the loader seam — the same posture limit_evaluations/
+    limit_incidents already hold, and the only namespace where scope actually
+    controls containment."""
+    from app.golden_workflows.fixtures import apply_seed
+    from app.golden_workflows.schema import WorkflowError
+
+    bundle = _limits_bundle("desk", "Limits Book")
+    bundle["seed"]["risk_limit_versions"][0]["scope_type"] = "underlying"
+    with pytest.raises(WorkflowError, match="portfolio"):
+        apply_seed(load_fixtures(_write(tmp_path, bundle)), session)

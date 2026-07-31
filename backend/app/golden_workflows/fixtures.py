@@ -124,14 +124,25 @@ _INSERT_ORDER = [
 ARENA_MARKET_SOURCE = "arena_seed"
 
 
-def _seed_datetime(value):
-    """Parse an optional fixture datetime: ISO string (date or datetime) → datetime."""
+def parse_seed_datetime(value):
+    """Parse an optional fixture datetime: ISO string (date or datetime) → datetime.
+
+    Public on purpose: ``arena/runner.py`` needs this to evaluate the same
+    ``valuation_as_of``/``valuation_date`` fixture fields the seed rows carry
+    (``_assert_no_foreign_active_limits``), and importing a leading-underscore
+    helper across a package boundary is a private-API leak.
+    """
     if value is None or isinstance(value, datetime):
         return value
     raw = str(value)
     if len(raw) == 10:  # "YYYY-MM-DD"
         return datetime.strptime(raw, "%Y-%m-%d")
     return datetime.fromisoformat(raw)
+
+
+# Back-compat alias: this module's own call sites below predate the public
+# rename and are unaffected either way.
+_seed_datetime = parse_seed_datetime
 
 # Column allowlist for the risk_runs seed namespace.  Only keys in this set
 # (beyond the always-excluded "alias" / "portfolio") are forwarded to the
@@ -521,6 +532,19 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
                     obj.owner = row["owner"]
 
             elif ns == "risk_limit_versions":
+                # Fail closed: a non-portfolio scope_type joins EVERY portfolio's
+                # monitoring run (monitoring._active_versions only portfolio-filters
+                # portfolio-scoped versions), so an underlying/product_family/
+                # position-scoped fixture limit would be an immortal, active,
+                # guard-exempt (seeded-key) row contaminating every desk book —
+                # exactly the class of leak CLAUDE.md's containment doctrine warns
+                # about. The sibling limit_evaluations/limit_incidents namespaces
+                # already fail closed the same way.
+                if row["scope_type"] != "portfolio":
+                    raise WorkflowError(
+                        "fixture risk_limit_versions support scope_type='portfolio' "
+                        f"only, got {row['scope_type']!r}"
+                    )
                 limit_id = _parent_id("risk_limits", row["risk_limit"])
                 existing = (
                     session.query(models.RiskLimitVersion)

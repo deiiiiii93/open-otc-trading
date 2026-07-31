@@ -913,3 +913,34 @@ def test_purge_removes_arena_portfolio_with_limit_monitoring_runs(session):
     # Immortal, deliberately: ensure-by-key reuses them next match.
     assert session.query(RiskLimit).filter(RiskLimit.key == "arena-fixture-net-delta").count() == 1
     assert session.query(RiskLimitVersion).count() == 1
+
+
+def test_purge_scrubs_dangling_scope_config_portfolio_ids(session):
+    """Important-1 fix (final-review.md): the immortal arena RiskLimitVersion's
+    scope_config must not keep naming a portfolio id this purge just deleted.
+    SQLite reuses a freed max rowid, so the NEXT portfolio created — including a
+    real desk book if the next arena match never runs — could otherwise silently
+    inherit governance by a stale arena hard-cap limit."""
+    import json
+    from pathlib import Path
+    import tempfile
+
+    from app.golden_workflows.fixtures import apply_seed, load_fixtures
+    from app.models import RiskLimitVersion
+    from app.services.arena.runner import _purge_seeded_portfolios
+    from tests.test_golden_workflow_fixtures import _limits_bundle
+
+    tmp = Path(tempfile.mkdtemp())
+    path = tmp / "wf.fixtures.json"
+    bundle_data = _limits_bundle("control", "Control Desk Portfolio")
+    path.write_text(json.dumps(bundle_data))
+    ids = apply_seed(load_fixtures(path), session)
+    ctrl_id = _tag_arena(session, "Control Desk Portfolio")
+    version_id = ids["risk_limit_versions"]["cap-v1"]
+    assert ctrl_id in session.get(RiskLimitVersion, version_id).scope_config["portfolio_ids"]
+
+    _purge_seeded_portfolios(session, _Bundle(bundle_data["seed"]))
+
+    version = session.get(RiskLimitVersion, version_id)
+    assert version is not None  # immortal — survives the purge
+    assert ctrl_id not in (version.scope_config.get("portfolio_ids") or [])

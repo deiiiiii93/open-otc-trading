@@ -494,7 +494,7 @@ def _adapt_monitoring(session, ids):
     session.commit()
     execute_limit_monitoring_task(task.id, run.id)
     session.expire_all()
-    from app.models import LimitEvaluation, RiskLimit, RiskLimitVersion
+    from app.models import LimitEvaluation, LimitIncident, RiskLimit, RiskLimitVersion
 
     evaluations = (
         session.query(LimitEvaluation, RiskLimit.key)
@@ -508,9 +508,16 @@ def _adapt_monitoring(session, ids):
         .all()
     )
     session.refresh(run)
+    # Recommendation-2 hardening (final-review.md): drive the seeded incident's
+    # open -> recovered transition end-to-end, not just its evaluations reading
+    # "ok" — step 7 of the workflow grades this transition and, before this,
+    # no offline test exercised it (only the live-only step-7 reachability
+    # analysis in the review covered it).
+    incident = session.get(LimitIncident, ids["limit_incidents"]["incident"])
     payload = {
         "status": run.status,
         "summary": dict(run.summary or {}),
+        "incident_status": incident.status if incident is not None else None,
         "evaluations": [
             {
                 "limit_key": key,
@@ -539,9 +546,21 @@ def _validate_monitoring(run, payload):
     bad = [e for e in evaluations if e.get("status") != "ok"]
     if bad:
         raise AssertionError(f"non-ok evaluations in clean re-monitor: {bad}")
+    if payload.get("incident_status") != "recovered":
+        raise AssertionError(
+            f"seeded incident did not auto-recover on the clean re-monitor: {payload}"
+        )
     return _canonical(payload)
 
 
+# Ordering is load-bearing: "monitoring" derives its envelope from the LATEST
+# completed risk run (derive_monitoring_envelope), so it must run AFTER
+# "fresh_risk" seeds that run — otherwise it would reuse the seeded breach-side
+# run instead and never observe a clean re-monitor. `drive_producers` iterates
+# `wd.drivers.items()`, and dict insertion order is preserved/iterated in
+# order since Python 3.7, so this dict's literal key order below IS the
+# execution order — do not reorder these three entries without re-checking
+# that dependency.
 DETERMINISM_REGISTRY[LIMIT_BREACH_ID] = WorkflowDeterminism(
     workflow_id=LIMIT_BREACH_ID,
     seed_fn=_seed_limit_breach,

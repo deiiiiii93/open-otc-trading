@@ -7,6 +7,7 @@ never bypassed server-side).
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from langchain_core.tools import tool
@@ -91,6 +92,7 @@ def list_risk_limits_tool(portfolio_id: int) -> dict[str, Any]:
     """List risk limit definitions governing a portfolio, with each limit's
     active version boundaries (warning/hard), metric, scope, and unit."""
     database.init_db()
+    now = datetime.utcnow()
     with database.SessionLocal() as session:
         # Select through RiskLimit.active_version_id (never historical
         # versions): a retired identity has no active pointer and must not be
@@ -108,9 +110,30 @@ def list_risk_limits_tool(portfolio_id: int) -> dict[str, Any]:
             active = session.get(RiskLimitVersion, limit.active_version_id)
             if active is None or active.activated_at is None:
                 continue
+            # Mirror monitoring._active_versions' effective window (monitoring.py
+            # :146-172): a future-effective or expired active version would not
+            # actually evaluate on a live monitoring run, so it must not be
+            # reported as governing just because it is still the limit's
+            # `active_version_id` pointer.
+            if active.effective_from is None or active.effective_from > now:
+                continue
+            if active.effective_until is not None and active.effective_until <= now:
+                continue
             if active.scope_type == "portfolio":
                 ids = (active.scope_config or {}).get("portfolio_ids") or []
-                if portfolio_id not in {int(v) for v in ids}:
+                try:
+                    id_set = {int(v) for v in ids}
+                except (TypeError, ValueError) as exc:
+                    # Malformed data must surface as a tool-shaped result, not an
+                    # unhandled exception raised out of the tool body.
+                    return {
+                        "error": "malformed_scope_config",
+                        "detail": (
+                            f"risk limit {limit.key!r} scope_config.portfolio_ids "
+                            f"is not all integers: {exc}"
+                        ),
+                    }
+                if portfolio_id not in id_set:
                     continue
             limits.append(
                 {
@@ -269,8 +292,6 @@ def get_limit_incident_tool(incident_id: int) -> dict[str, Any]:
 # incident mutation requires expected_row_version from a preceding read.
 # ---------------------------------------------------------------------------
 
-from datetime import datetime  # noqa: E402
-
 from langchain_core.runnables import RunnableConfig  # noqa: E402
 
 from ..services.audit_trail import AUDIT_CONTEXT_KEY  # noqa: E402
@@ -287,6 +308,17 @@ from ..services.limits.errors import (  # noqa: E402
 _CONFLICT_HINT = (
     "re-read the incident with get_limit_incident and retry with the "
     "current row_version"
+)
+# incidents._active_action_incident raises this exact wording for a STATE
+# conflict (acknowledge/comment/waive/resolve on a non-active incident) — a
+# retry can never succeed there no matter which row_version is supplied, so it
+# needs its own error code and hint (a model/YOLO agent given _CONFLICT_HINT
+# instead loops retrying resolve on an already-recovered incident).
+_NOT_ACTIVE_MARKER = "is not active"
+_NOT_ACTIVE_HINT = (
+    "the incident is no longer active (resolved/recovered) — re-read it with "
+    "get_limit_incident to see its current status; retrying with a new "
+    "row_version cannot succeed"
 )
 
 
@@ -392,10 +424,18 @@ def _mutate_incident(action, *, incident_id: int, **kwargs) -> dict[str, Any]:
             session.commit()
         except LimitConflictError as exc:
             session.rollback()
+            detail = str(exc)
+            if _NOT_ACTIVE_MARKER in detail:
+                return {
+                    "ok": False,
+                    "error": "not_active",
+                    "detail": detail,
+                    "hint": _NOT_ACTIVE_HINT,
+                }
             return {
                 "ok": False,
                 "error": "conflict",
-                "detail": str(exc),
+                "detail": detail,
                 "hint": _CONFLICT_HINT,
             }
         except (LimitNotFoundError, LimitValidationError) as exc:
@@ -423,7 +463,9 @@ def acknowledge_limit_incident_tool(
 ) -> dict[str, Any]:
     """Acknowledge an active limit incident. Requires expected_row_version
     from a preceding get_limit_incident read; on error=conflict, re-read and
-    retry with the current row_version. HITL — requires confirmation."""
+    retry with the current row_version — on error=not_active the incident is
+    no longer open/acknowledged/assigned/waived (a retry cannot succeed).
+    HITL — requires confirmation."""
     return _mutate_incident(
         incidents_service.acknowledge,
         incident_id=incident_id,
@@ -509,9 +551,9 @@ def resolve_limit_incident_tool(
 ) -> dict[str, Any]:
     """Resolve an ACTIVE limit incident (open/acknowledged/assigned/waived).
     A clean monitoring re-run auto-recovers the incident (status "recovered")
-    — check its state first; resolving an already-recovered incident returns a
-    conflict. Requires expected_row_version from a preceding read. HITL —
-    requires confirmation."""
+    — check its state first; resolving an already-recovered incident returns
+    error=not_active (retrying cannot succeed — re-read instead). Requires
+    expected_row_version from a preceding read. HITL — requires confirmation."""
     return _mutate_incident(
         incidents_service.resolve,
         incident_id=incident_id,

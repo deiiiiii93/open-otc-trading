@@ -139,6 +139,56 @@ def test_list_risk_limits_reports_active_version(tmp_path):
     assert row["active_version"]["scope_type"] == "portfolio"
 
 
+def test_list_risk_limits_skips_not_yet_effective_version(tmp_path):
+    """Minor-5 fix (final-review.md): mirrors monitoring._active_versions' window
+    — an active_version_id pointer that is not YET effective must not be reported
+    as governing, even though `activated_at` is set."""
+    from app.tools.limits import list_risk_limits_tool
+
+    _configure_test_db(tmp_path)
+    with database.SessionLocal() as session:
+        ids = _seed_limit_world(session)
+        version = session.get(models.RiskLimitVersion, ids["version"])
+        version.effective_from = datetime(2999, 1, 1)
+        session.commit()
+
+    out = list_risk_limits_tool.func(portfolio_id=ids["portfolio"])
+    assert out["limits"] == []
+
+
+def test_list_risk_limits_skips_expired_version(tmp_path):
+    """Same window, other edge: effective_until in the past."""
+    from app.tools.limits import list_risk_limits_tool
+
+    _configure_test_db(tmp_path)
+    with database.SessionLocal() as session:
+        ids = _seed_limit_world(session)
+        version = session.get(models.RiskLimitVersion, ids["version"])
+        version.effective_until = datetime(2020, 1, 1)
+        session.commit()
+
+    out = list_risk_limits_tool.func(portfolio_id=ids["portfolio"])
+    assert out["limits"] == []
+
+
+def test_list_risk_limits_reports_malformed_scope_config_instead_of_raising(
+    tmp_path,
+):
+    """Minor-5 fix: a non-numeric portfolio id in scope_config must come back as
+    a tool-shaped error, not an unhandled ValueError out of the tool body."""
+    from app.tools.limits import list_risk_limits_tool
+
+    _configure_test_db(tmp_path)
+    with database.SessionLocal() as session:
+        ids = _seed_limit_world(session)
+        version = session.get(models.RiskLimitVersion, ids["version"])
+        version.scope_config = {"portfolio_ids": ["not-an-int"]}
+        session.commit()
+
+    out = list_risk_limits_tool.func(portfolio_id=ids["portfolio"])
+    assert out["error"] == "malformed_scope_config"
+
+
 def test_get_limit_monitoring_run_latest_carries_evaluations(tmp_path):
     from app.tools.limits import get_limit_monitoring_run_tool
 
@@ -256,11 +306,39 @@ def test_waive_and_resolve_report_conflicts_as_dicts(tmp_path):
     )
     assert resolved["status"] == "resolved"
 
+    # Minor-4 fix (final-review.md): row_version=2 is the incident's CURRENT,
+    # correct version — this is a STATE conflict (already resolved), not a
+    # stale-row-version race, so it must report error=not_active with a hint
+    # that a retry cannot succeed, never the row_version-retry hint.
     again = resolve_limit_incident_tool.func(
         incident_id=ids["incident"], expected_row_version=2
     )
     assert again["ok"] is False
-    assert again["error"] == "conflict"
+    assert again["error"] == "not_active"
+    assert "cannot succeed" in again["hint"]
+    from app.tools.limits import _CONFLICT_HINT
+
+    assert again["hint"] != _CONFLICT_HINT
+
+
+def test_resolve_reports_conflict_for_stale_row_version_on_an_active_incident(
+    tmp_path,
+):
+    """Contrasts the not_active case above: a wrong row_version against a still-
+    ACTIVE incident is a genuine optimistic-concurrency race, so the response
+    must keep error=conflict with the row_version-retry hint."""
+    from app.tools.limits import resolve_limit_incident_tool
+
+    _configure_test_db(tmp_path)
+    with database.SessionLocal() as session:
+        ids = _seed_limit_world(session)
+
+    out = resolve_limit_incident_tool.func(
+        incident_id=ids["incident"], expected_row_version=99
+    )
+    assert out["ok"] is False
+    assert out["error"] == "conflict"
+    assert "row_version" in out["hint"]
 
 
 def test_run_limit_monitoring_end_to_end(tmp_path, monkeypatch):

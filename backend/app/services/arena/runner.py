@@ -446,6 +446,50 @@ def _purge_match_portfolios(thread_id: int, portfolio_id_baseline: int) -> None:
         )
 
 
+def _scrub_dangling_scope_portfolio_ids(session, purged_portfolio_ids) -> None:
+    """Remove just-deleted portfolio ids from every arena-owned RiskLimitVersion's
+    ``scope_config["portfolio_ids"]``.
+
+    ``risk_limits``/``risk_limit_versions`` are protected-immortal (ensure-by-key
+    reuses them across matches) and their ``scope_config`` names the portfolio(s)
+    they govern by id — but that portfolio is exactly what this function's caller
+    just deleted. Left alone, the version keeps pointing at a freed id, and SQLite
+    reuses a freed max rowid: the next portfolio created — including a real desk
+    book, if the next arena match never runs — can inherit it and silently join
+    every monitoring run there (an active hard-cap limit auto-opening incidents on
+    someone else's book, undetectable by ``_assert_no_foreign_active_limits``,
+    which only checks NON-portfolio-scoped foreign limits).
+    Scoped to ``created_by_actor == "arena_seed"`` on the PARENT ``RiskLimit`` —
+    never a desk-authored limit that happens to reference a purged portfolio, the
+    same ownership discipline as the rest of this module. Clearing to an empty
+    list is acceptable: the next match's ensure-update (fixtures.py
+    ``risk_limit_versions`` branch) re-points ``scope_config`` regardless of
+    whether it ran empty or stale in between.
+    """
+    if not purged_portfolio_ids:
+        return
+    from sqlalchemy import select
+
+    from app import models
+
+    doomed = set(purged_portfolio_ids)
+    versions = session.scalars(
+        select(models.RiskLimitVersion)
+        .join(models.RiskLimit, models.RiskLimit.id == models.RiskLimitVersion.risk_limit_id)
+        .where(
+            models.RiskLimit.created_by_actor == "arena_seed",
+            models.RiskLimitVersion.scope_type == "portfolio",
+        )
+    ).all()
+    for version in versions:
+        config = dict(version.scope_config or {})
+        ids = config.get("portfolio_ids") or []
+        kept = [pid for pid in ids if pid not in doomed]
+        if kept != ids:
+            config["portfolio_ids"] = kept
+            version.scope_config = config
+
+
 def _purge_seeded_portfolios(session, bundle) -> None:
     """Delete prior arena-seeded fixture rows sharing a fixture name (portfolios
     and pricing profiles), plus their dependents, so a re-seed for the next match
@@ -528,6 +572,10 @@ def _purge_seeded_portfolios(session, bundle) -> None:
         # Ownership established above (arena tag + a registered fixture name); the
         # shared helper handles the FK-ordered dependent sweep.
         _delete_portfolios_with_dependents(session, pids, fk_ordered_tables)
+        # risk_limits/risk_limit_versions are protected-immortal and survive this
+        # delete untouched — so any arena-owned version whose scope_config named
+        # one of the just-deleted ids must be scrubbed NOW, or it dangles.
+        _scrub_dangling_scope_portfolio_ids(session, pids)
 
     # --- pricing profiles (arena-marked only) ---
     prof_names = [r["name"] for r in bundle.seed.get("pricing_profiles", []) if r.get("name")]
@@ -734,7 +782,7 @@ def _assert_no_foreign_active_limits(session, bundle) -> None:
     from sqlalchemy import or_, select
 
     from app import models
-    from app.golden_workflows.fixtures import _seed_datetime
+    from app.golden_workflows.fixtures import parse_seed_datetime
 
     # Every valuation instant the match can monitor at: the seeded breach
     # run's valuation AND each seeded profile's valuation_date (the live
@@ -742,11 +790,11 @@ def _assert_no_foreign_active_limits(session, bundle) -> None:
     # risk run, not from the seeded run). A foreign limit effective at ANY of
     # them would contaminate.
     valuations = [
-        _seed_datetime(r.get("valuation_as_of"))
+        parse_seed_datetime(r.get("valuation_as_of"))
         for r in seed.get("limit_monitoring_runs", [])
         if r.get("valuation_as_of")
     ] + [
-        _seed_datetime(p.get("valuation_date"))
+        parse_seed_datetime(p.get("valuation_date"))
         for p in seed.get("pricing_profiles", [])
         if p.get("valuation_date")
     ]
