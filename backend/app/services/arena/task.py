@@ -179,16 +179,26 @@ def _is_infra_contaminated(transcript) -> bool:
 
 
 def _save_transcript(transcript, artifact_root: Path,
-                     workflow_id: str, model_id: str) -> str | None:
-    """Persist the transcript JSON to disk; best-effort, None on failure."""
+                     workflow_id: str, model_id: str,
+                     trial: int | None = None) -> str | None:
+    """Persist the transcript JSON to disk; best-effort, None on failure.
+
+    Writes the canonical ``transcript.json`` (what ArenaMatch.transcript_path
+    points at, so the drilldown and every historical row keep working) and,
+    when ``trial`` is given, an additional per-trial ``transcript.trial<N>.json``.
+    Without the per-trial copy every trial overwrote the same file, so a failing
+    early trial was unauditable — exactly the evidence needed to diagnose a
+    low-CON row. Returns the canonical path.
+    """
     try:
         t_dir = artifact_root / workflow_id / model_id
         t_dir.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(transcript.model_dump(), indent=2)
         t_file = t_dir / "transcript.json"
-        t_file.write_text(
-            json.dumps(transcript.model_dump(), indent=2),
-            encoding="utf-8",
-        )
+        t_file.write_text(payload, encoding="utf-8")
+        if trial is not None:
+            (t_dir / f"transcript.trial{trial}.json").write_text(
+                payload, encoding="utf-8")
         return str(t_file)
     except Exception:
         return None
@@ -256,6 +266,7 @@ def _run_and_score_once(
     run_match_fn: Callable,
     judge_fn: Callable | None,
     post: Callable | None,
+    trial: int | None = None,
 ) -> tuple[str, dict | None, str | None, str | None]:
     """Run and score ONE trial for a (workflow, model) pair.
 
@@ -277,10 +288,10 @@ def _run_and_score_once(
     # partial run truncated by a provider transport error after real early
     # steps (infra_error). Transcript evidence is still saved for audit.
     if _is_infra_blank(transcript):
-        invalid_path = _save_transcript(transcript, artifact_root, workflow_id, model_id)
+        invalid_path = _save_transcript(transcript, artifact_root, workflow_id, model_id, trial)
         return "invalid", None, "infra_blank", invalid_path
     if _is_infra_contaminated(transcript):
-        invalid_path = _save_transcript(transcript, artifact_root, workflow_id, model_id)
+        invalid_path = _save_transcript(transcript, artifact_root, workflow_id, model_id, trial)
         return "invalid", None, "infra_error", invalid_path
 
     # Subjective judgment: the injected test seam, else a contestant-excluded
@@ -347,7 +358,7 @@ def _run_and_score_once(
         transcript, loaded, judged=judged_score)
 
     # Save transcript to disk
-    transcript_path = _save_transcript(transcript, artifact_root, workflow_id, model_id)
+    transcript_path = _save_transcript(transcript, artifact_root, workflow_id, model_id, trial)
 
     return "scored", breakdown, transcript_path, None
 
@@ -513,7 +524,7 @@ def _execute(
             last_path: str | None = None
             last_infra_path: str | None = None
             failed_exc: str | None = None
-            for _trial in range(trials_n):
+            for trial_index in range(trials_n):
                 try:
                     status, breakdown, info, invalid_path = _run_and_score_once(
                         session,
@@ -528,6 +539,7 @@ def _execute(
                         run_match_fn=_run_match_fn,
                         judge_fn=judge_fn,
                         post=post,
+                        trial=trial_index,
                     )
                     if status == "scored":
                         clean.append(breakdown)

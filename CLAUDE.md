@@ -504,6 +504,17 @@ defects biased ranking, not just scale.
   the artifact body — never in `result_payload`, or `get_report` alone reveals it. Pick a
   value that cannot be computed or guessed and sits well outside `rel_tol` of every other
   graded number, so a swapped answer fails.
+- **A step-scoped result check penalizes reading the evidence one step EARLY.**
+  `tool_result_path` defaults to `scope: step`, so a model that fetched the value at the
+  end of the previous step (genuinely fresh) and answered correctly from it scores 0 —
+  the same false negative the flagship fixed for text grounding via `response_quotes_value`
+  (the "point-2" correct-from-context fix). Use `scope: session` when the *evidence* is
+  what matters rather than *when* it was fetched; `_last_result` still takes the LAST
+  matching call across steps 0..i, so a model whose most recent read showed the wrong
+  state still fails. **The assertion models do NOT set `extra="forbid"`** — before this
+  field existed, a manifest's `scope: session` on a `tool_result_path` was silently
+  dropped by pydantic and scored as `step`. When a manifest key seems to have no effect,
+  check that the assertion model actually declares it.
 - **Over-execution is ADH's and EFF's job, not GRD's.** The over-execution primitives
   (`max_calls` — "duplicate dispatch is over-execution" — plus `all_calls` /
   `exclusive_keys`) live on `tool_called`, i.e. **adherence**, and are deliberately
@@ -611,6 +622,13 @@ never by subjective), and exposes `subjective_mean/stdev/mode`.
   `test_golden_workflow_regression` (replay must earn 39/39); changing the
   manifest means updating all of them — and the golden replay fixtures must keep
   earning full marks (fixture-consistency gate).
+- **Per-trial transcripts:** `_save_transcript` writes the canonical
+  `transcript.json` (what `ArenaMatch.transcript_path` points at — a single column,
+  so it stays the LAST clean trial) **plus** `transcript.trial<N>.json` per trial.
+  Before the per-trial copy, trial N overwrote trial N-1, so with `trials≥2` the
+  failing trial behind a low CON was unauditable — the evidence you most need is
+  exactly the one that got clobbered. Read the per-trial files, not
+  `transcript.json`, when diagnosing trial-to-trial variance.
 
 ### QuantArk is pinned — never install it editable
 
@@ -637,8 +655,11 @@ stabilisation fix: reproducibility was chosen over engine recency, deliberately.
 
 ### risk-limit-breach-day (limits workflow) + the limits agent tools
 
-The fourth golden workflow (7 steps / 39 points, persona `risk_manager`,
-**uncalibrated par** — hyperbolic EFF until a live board calibrates it): work an
+The fourth golden workflow (7 steps / **38 points** — was 39 until run #101 showed
+step 2's `read-risk-result` skill check was unroutable, see below — persona
+`risk_manager`, **uncalibrated par** — hyperbolic EFF until a live board calibrates it,
+and run #101 says a realistic counted par is ~25: the leanest FULLY-CORRECT trial took
+19 calls, median 25, against `designed_par` 11): work an
 overnight portfolio net-delta cap breach to verified closure on the governed Limits
 module. It ships WITH the limits agent surface: `backend/app/tools/limits.py`
 (4 reads + 5 HITL `"write"`-level writes), `services/limits/agent_support.py`
@@ -647,6 +668,17 @@ live and harvested paths are identical), skills `limits/monitor-limits` +
 `limits/handle-limit-incident`, and the `limits` domain in
 `PERSONA_WORKFLOW_DOMAINS["risk_manager"]`.
 
+- **Step 2 grades no skill (`expected_skill: null`) — the routing-line rule, measured.**
+  `read-risk-result` declares no `routing:` frontmatter, so `collect_routing_rows` skips
+  it and it never enters the orchestrator's Known-skills table (that is the documented
+  design for sub-workflows, not a bug in the skill). Run #101 quantified the grading
+  consequence: **4/36 trials (11%)** routed it, versus 75-97% for every routed skill on
+  the same board — and the step was performed correctly anyway (**18/18** models called
+  `get_latest_risk_run`, **36/36** recorded both answer fields), so the check measured
+  document-loading, not ability. A routing line was rejected because `read-risk-result`
+  is ALSO the flagship's step-1 skill: making it routable moves flagship difficulty
+  across 11 boards of history. **Before grading any skill, check it has a `routing:`
+  block** — or accept that you are measuring catalog spelunking.
 - **Refresh-then-reuse is the evidence contract.** `run_limit_monitoring` derives
   profile/engine/evidence-id/valuation from the LATEST completed risk run
   (`source_planner` identity matching requires exact equality on all four;

@@ -320,6 +320,9 @@ _LANDSCAPE_RESULT = {"name": "get_greeks_landscape_run", "tool_call_id": "t1",
                      "content": {"landscape": [
                          {"spot_shift": 0.1, "delta": -220000, "gamma": -9600}]}}
 
+_INCIDENT_RESULT = {"name": "get_limit_incident", "tool_call_id": "t2",
+                    "content": {"status": "recovered"}}
+
 
 class TestAxisAndScope:
     def test_null_skill_emits_no_check(self):
@@ -360,6 +363,34 @@ class TestAxisAndScope:
         bd = self._scope_fixture(None)  # default scope: step
         check = bd["steps"][1]["checks"][-1]
         assert check["passed"] is False
+
+    # tool_result_path scope: a model that obtained the evidence in an EARLIER
+    # step (and answered correctly from it) must be creditable. Without a scope
+    # field the assertion silently ignored `scope: session` (pydantic extra=ignore),
+    # so an opt-in session read was impossible — run #101 step 7 lost a real point.
+    def _result_path_scope_fixture(self, scope):
+        assertion = {"type": "tool_result_path", "tool": "get_limit_incident",
+                     "path": "status", "equals": "recovered"}
+        if scope is not None:
+            assertion["scope"] = scope
+        loaded = _mini_loaded([
+            {"user": "read it", "expected_skill": None, "outcome": "o", "replay": "r1"},
+            {"user": "confirm", "expected_skill": None, "outcome": "o", "replay": "r2",
+             "assertions": [assertion]},
+        ])
+        transcript = _transcript("mini-test", [
+            _step_dict(0, tool_results=[_INCIDENT_RESULT]),
+            _step_dict(1, response_text="incident is recovered"),
+        ])
+        return objective_breakdown(transcript, loaded)
+
+    def test_tool_result_path_session_scope_reads_earlier_step(self):
+        bd = self._result_path_scope_fixture("session")
+        assert bd["steps"][1]["checks"][-1]["passed"] is True
+
+    def test_tool_result_path_step_scope_does_not_read_earlier_step(self):
+        bd = self._result_path_scope_fixture(None)  # default scope: step
+        assert bd["steps"][1]["checks"][-1]["passed"] is False
 
     def test_axis_subtotals_sum(self):
         loaded = get_workflow_bundle("risk-manager-control-day")

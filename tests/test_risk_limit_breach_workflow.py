@@ -28,7 +28,14 @@ def test_bundle_loads(loaded):
     assert len(wf.steps) == 7
     assert [s.expected_skill for s in wf.steps] == [
         "monitor-limits",
-        "read-risk-result",
+        # null: read-risk-result declares no `routing:` frontmatter, so it never
+        # enters the orchestrator's Known-skills table and is only reachable via
+        # the persona catalog. Run #101 measured the consequence — 4/36 trials
+        # routed it, while every routed skill on the same board scored 75-97%.
+        # The step is still performed correctly WITHOUT it (18/18 models called
+        # get_latest_risk_run; 36/36 recorded both answer fields), so the check
+        # graded document-loading, not ability. See test_step2_skill_is_null_*.
+        None,
         "handle-limit-incident",
         "generate-report",
         None,
@@ -40,14 +47,27 @@ def test_bundle_loads(loaded):
         assert step.replay in loaded.fixtures.replay
 
 
-def test_point_manifest_is_39(loaded):
+def test_point_manifest_is_38(loaded):
     wf = loaded.workflow
     skills = sum(1 for s in wf.steps if s.expected_skill is not None)
     tools = sum(len(s.expected_tools) for s in wf.steps)
     step_assertions = sum(len(s.assertions) for s in wf.steps)
     success = len(wf.success.assertions)
-    assert (skills, tools, step_assertions, success) == (5, 11, 22, 1)
-    assert skills + tools + step_assertions + success == 39
+    assert (skills, tools, step_assertions, success) == (4, 11, 22, 1)
+    assert skills + tools + step_assertions + success == 38
+
+
+def test_step2_skill_is_null_because_read_risk_result_is_unroutable(loaded):
+    """Step 2 must not grade a skill the orchestrator never advertises.
+
+    `read-risk-result` declares no `routing:` frontmatter, so `collect_routing_rows`
+    skips it and it never reaches the Known-skills table. Grading it measured the
+    harness, not the model. Guards the regression: re-adding an expected_skill here
+    silently reintroduces a near-unwinnable check.
+    """
+    step = loaded.workflow.steps[1]
+    assert step.expected_skill is None
+    assert [t.name for t in step.expected_tools] == ["get_latest_risk_run"]
 
 
 def test_not_par_calibrated(loaded):

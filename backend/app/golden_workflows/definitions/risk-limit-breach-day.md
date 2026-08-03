@@ -39,7 +39,20 @@ steps:
     replay: step-1-triage
 
   - user: "Why did it breach? Identify the driver position's underlying and its delta contribution. Record your answer by calling record_answer(answer={\"driver_underlying\": <ticker>, \"driver_delta\": <number>})."
-    expected_skill: read-risk-result
+    # null: the natural skill here is `read-risk-result`, but it declares no
+    # `routing:` frontmatter, so `collect_routing_rows` skips it and it never
+    # enters the orchestrator's Known-skills table — reachable only via the
+    # persona catalog. Run #101 (18 models × 2 trials) measured the cost:
+    # read-risk-result routed in 4/36 trials (11%) while every ROUTED skill on
+    # the same board scored 75-97% (run-risk 75, monitor-limits 92,
+    # handle-limit-incident 97, generate-report 94) — the Run-#58
+    # discoverability class, reproduced. Decisively, the step is performed
+    # correctly WITHOUT the skill: 18/18 models called get_latest_risk_run and
+    # 36/36 trials recorded both answer fields, so the check graded
+    # document-loading with zero correlation to outcome. Adding a routing line
+    # was rejected instead: read-risk-result is also the flagship's step-1
+    # skill, so it would shift difficulty across 11 boards of flagship history.
+    expected_skill: null
     expected_tools:
       - name: get_latest_risk_run
     outcome: >
@@ -172,11 +185,17 @@ steps:
         field: incident_status
         equals: recovered
       # The read-back must GENUINELY show recovered — a model asserting
-      # closure over a still-open incident read must fail here.
+      # closure over a still-open incident read must fail here. scope: session
+      # so a model that read the incident at the END of step 6 (post-recovery,
+      # therefore genuinely fresh) and answered from it is credited; only the
+      # LAST read across the session counts, so a model whose most recent read
+      # showed a still-open incident still fails. Grades the evidence, not the
+      # redundant re-call — over-execution is ADH's and EFF's job, not GRD's.
       - type: tool_result_path
         tool: get_limit_incident
         path: "status"
         equals: "recovered"
+        scope: session
       - type: tool_not_called
         name: resolve_limit_incident
     replay: step-7-closure

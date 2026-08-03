@@ -91,6 +91,12 @@ class _ToolResultPath(BaseModel):
     gte: float | None = None
     lte: float | None = None
     is_not_null: Literal[True] | None = None
+    # step (default) reads only THIS step's results; session reads cumulatively
+    # over steps 0..i, crediting a model that obtained the evidence earlier and
+    # answered correctly from it rather than redundantly re-calling the tool.
+    # Without this field a manifest's `scope: session` was silently ignored
+    # (extra=ignore), so the opt-in was unreachable.
+    scope: Literal["step", "session"] = "step"
     # Tolerance band for a NUMERIC equals (e.g. an engine-computed delta that
     # absorbs maturity-encoding variance). Optional; absent → exact _exact compare.
     rel_tol: float | None = None

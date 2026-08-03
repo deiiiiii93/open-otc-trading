@@ -47,7 +47,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   producers (`breach_risk`/`fresh_risk`/`monitoring`) and a harvested
   `truth.json` for all graded numbers.
 
+### Changed
+- **`risk-limit-breach-day` step 2 no longer grades a skill (39 → 38 points).** The step
+  declared `expected_skill: read-risk-result`, but that skill ships no `routing:`
+  frontmatter, so `collect_routing_rows` skips it and it never reaches the orchestrator's
+  Known-skills table — it is reachable only through the persona catalog. Run #101
+  (18 models × 2 trials) measured the consequence and it reproduces the Run-#58
+  discoverability class exactly: **read-risk-result routed in 4/36 trials (11%)** while
+  every ROUTED skill on the same board scored 75-97% (`run-risk` 75, `monitor-limits` 92,
+  `handle-limit-incident` 97, `generate-report` 94). Decisively, the step is performed
+  correctly WITHOUT the skill — **18/18 models called `get_latest_risk_run` and 36/36
+  trials recorded both answer fields** — so the check graded document-loading with zero
+  correlation to outcome. Adding a routing line was rejected instead: `read-risk-result`
+  is also the flagship's step-1 skill (`risk-manager-control-day`), so making it routable
+  would shift flagship difficulty across 11 boards of history. Effect on ranking is
+  negligible (Spearman 0.996; only two adjacent swaps between equal-OVR rows), but PRC
+  rises 4-6 points board-wide — the signature of a check that was depressing every
+  model's procedural denominator equally. Replay still earns full marks (now 38/38);
+  run #101's stored board is UNCHANGED because axes are persisted in the breakdown (only
+  `par` derives on read).
+
 ### Fixed
+- **`tool_result_path` honours `scope: session` — a manifest could silently set it and
+  be ignored.** `_ToolResultPath` was the only result-reading assertion without a
+  `scope` field (`response_quotes_tool_value`, `response_quotes_value`, and
+  `tool_result_ratio` all had one), and the assertion models do not set
+  `extra="forbid"`, so a manifest's `scope: session` was dropped by pydantic and
+  silently scored as `scope: step`. The scoring loop was already generically
+  scope-aware (`scoring.py` builds a cumulative-results context), so adding the field
+  is the whole fix; the default stays `step`, leaving every existing manifest
+  byte-identical in behaviour. `risk-limit-breach-day` step 7 opts in: a model that
+  read the incident at the end of step 6 (post-recovery, therefore genuinely fresh)
+  and answered `recovered` from it is now credited, while a model whose most recent
+  read still showed an open incident still fails. Run #101 evidence: claude-sonnet-5
+  answered `recovered` citing a real `resolved_at`/`row_version 4` and lost the
+  grounding point purely for not redundantly re-calling the tool — over-execution is
+  ADH's and EFF's job, not GRD's. Replay still earns 39/39; point count unchanged.
+- **Every arena trial's transcript survives — trial N was overwriting trial N-1.**
+  `_save_transcript` took no trial index and always wrote
+  `<artifact_root>/<workflow>/<model>/transcript.json`, so with `trials≥2` only the
+  last clean trial's evidence remained on disk. In run #101 that destroyed exactly the
+  two artifacts needed to diagnose the board's low-CON rows (glm-5-2's abandoned
+  15-call trial and claude-sonnet-5's 102-call no-refresh trial). Each trial now also
+  writes `transcript.trial<N>.json`; the canonical `transcript.json` still points at
+  the last clean trial, so `ArenaMatch.transcript_path`, the drilldown endpoint, and
+  every historical row are unchanged (no migration, no API change).
 - **Scalar option booking now uses stable legal dates instead of mutable maturity
   inputs.** European, American, cash-digital, barrier, and single/double-sharkfin
   builders and agent schemas require `exercise_date`, preserve optional

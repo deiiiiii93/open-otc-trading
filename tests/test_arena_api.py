@@ -1116,6 +1116,47 @@ def test_execute_folds_multiple_trials_into_one_match(session, settings):
         assert task_row.progress_total == 3
 
 
+def test_execute_preserves_every_trial_transcript(session, settings):
+    """trials=3 → each trial's transcript survives as its OWN file.
+
+    Every trial used to write the same transcript.json, so trial N silently
+    clobbered trial N-1 and a failing early trial became unauditable (run #101:
+    glm-5-2's collapse and claude-sonnet-5's 102-call trial were both lost).
+    The canonical transcript.json still points at the last clean trial, because
+    ArenaMatch.transcript_path is a single column and the drilldown reads it.
+    """
+    run_id, task_id = _queue_pair_run(settings, trials=3)
+
+    def fake_run_match(loaded, model, *, artifact_root, run_id=None):
+        return _scorable_transcript("wf-a", model.slug)
+
+    from app.services.arena.judge import JudgeResult
+
+    def fake_judge(transcript, loaded, *, post=None):
+        return JudgeResult(judged_score=None, judge_missing=True, notes="")
+
+    from app.services.arena.task import execute_arena_run_task
+    execute_arena_run_task(
+        task_id, run_id, database.SessionLocal, settings=settings,
+        run_match_fn=fake_run_match, judge_fn=fake_judge,
+        get_bundle_fn=_fake_get_bundle,
+    )
+
+    with database.SessionLocal() as s:
+        scored = [m for m in arena_store.get_run(s, run_id)["matches"]
+                  if m["status"] == "scored"]
+        assert len(scored) == 1
+        canonical = Path(scored[0]["transcript_path"])
+
+    assert canonical.name == "transcript.json"
+    assert canonical.exists()
+    assert sorted(p.name for p in canonical.parent.glob("transcript.trial*.json")) == [
+        "transcript.trial0.json",
+        "transcript.trial1.json",
+        "transcript.trial2.json",
+    ]
+
+
 def test_execute_trials_one_is_behavior_preserving(session, settings):
     """trials=1 (the default/historical path) → one scored match, n_trials==1,
     a single aggregate entry, and run_match_fn is called exactly once."""
