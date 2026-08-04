@@ -14,7 +14,14 @@ import re
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from app.tools.product_term_schema import _SCHEMA_FAMILIES, get_product_term_schema
+# NOTE: app.tools.product_term_schema is imported lazily inside the two
+# functions below (segment_document / extract_trade), not at module scope.
+# app.tools' package __init__ imports app.tools.confirmations, which needs
+# this module's names (service.py -> .llm) fully defined; a module-level
+# import here of anything under app.tools would force app.tools' package
+# init to re-enter this (still-executing) module and fail on a name not
+# defined yet -- reproducible via `pytest tests/test_confirmations_llm.py`
+# in isolation before this fix (ImportError: partially initialized module).
 
 CONFIRMATION_EXTRACTOR_TAG = "confirmation_extractor"
 _FALLBACK_TAG = "fast"
@@ -147,6 +154,8 @@ Reply with ONLY a JSON object:
 
 
 def segment_document(content, client: ExtractorClient) -> list[TradeSegment]:
+    from app.tools.product_term_schema import _SCHEMA_FAMILIES
+
     prompt = _SEGMENT_INSTRUCTIONS.format(families=", ".join(sorted(_SCHEMA_FAMILIES)))
     parts = [{"type": "text", "text": prompt}] + _content_parts(content)
     data = _complete_json(client, parts)
@@ -177,6 +186,8 @@ Reply with ONLY a JSON object:
 
 
 def extract_trade(content, segment: TradeSegment, client: ExtractorClient) -> TradeDraft:
+    from app.tools.product_term_schema import get_product_term_schema
+
     schema = get_product_term_schema.func(quantark_class=segment.family)
     prompt = _EXTRACT_INSTRUCTIONS.format(
         family=segment.family, schema=json.dumps(schema, indent=1, default=str))

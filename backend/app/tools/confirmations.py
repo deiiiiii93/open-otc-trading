@@ -17,7 +17,16 @@ from .. import database
 from ..config import get_settings
 from ..models import ConfirmationBatch
 from ..services.confirmations import service as confirmations
-from ..services.confirmations.llm import build_extractor_client
+# `from ..services.confirmations.llm import build_extractor_client` (a bare
+# NAME, not a submodule, imported at module scope) is circular-import-unsafe
+# here: services/confirmations/llm.py itself imports app.tools.product_term_
+# schema at ITS module scope, which (via this package's own __init__.py
+# importing this module) can re-enter llm.py while it is still mid-exec and
+# hasn't defined build_extractor_client yet -> ImportError on the partially
+# initialized module. Importing the submodule object instead (a name Python's
+# import system resolves via sys.modules even mid-import) and looking up the
+# attribute at CALL time sidesteps that ordering dependency entirely.
+from ..services.confirmations import llm as confirmations_llm
 from ..services.deep_agent.capability_gate import capability_gated
 from ..services.deep_agent.envelopes import ToolGroup
 
@@ -78,7 +87,7 @@ def parse_trade_confirmation(paths: list[str], portfolio_id: int | None = None) 
     if not resolved:
         return {"ok": False, "error": "no files given"}
     try:
-        client = build_extractor_client()
+        client = confirmations_llm.build_extractor_client()
     except RuntimeError as exc:
         return {"ok": False, "error": str(exc)}
     database.init_db()

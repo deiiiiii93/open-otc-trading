@@ -110,7 +110,8 @@ def test_parse_trade_confirmation_creates_batch_with_trades(tmp_path, monkeypatc
         )
         fake_client = FakeExtractorClient(_seg_json(), _trade_json("TC-TOOL-1"))
         monkeypatch.setattr(
-            tools_confirmations, "build_extractor_client", lambda: fake_client
+            tools_confirmations.confirmations_llm,
+            "build_extractor_client", lambda: fake_client,
         )
 
         uploads_dir = settings.artifact_dir / "uploads" / "chat"
@@ -170,7 +171,8 @@ def test_get_confirmation_batch_round_trips(tmp_path, monkeypatch):
         )
         fake_client = FakeExtractorClient(_seg_json(), _trade_json("TC-TOOL-2"))
         monkeypatch.setattr(
-            tools_confirmations, "build_extractor_client", lambda: fake_client
+            tools_confirmations.confirmations_llm,
+            "build_extractor_client", lambda: fake_client,
         )
         uploads_dir = settings.artifact_dir / "uploads" / "chat"
         uploads_dir.mkdir(parents=True, exist_ok=True)
