@@ -62,6 +62,7 @@ INTERRUPT_TOOL_NAMES: tuple[str, ...] = (
     "comment_limit_incident",
     "waive_limit_incident",
     "resolve_limit_incident",
+    "book_extracted_trade",
     "run_python",
 )
 
@@ -116,6 +117,7 @@ _RISK_LEVEL_BY_TOOL: dict[str, str] = {
     "comment_limit_incident": "write",
     "waive_limit_incident": "write",
     "resolve_limit_incident": "write",
+    "book_extracted_trade": "write",
     # Argument-aware: pure analysis is read-like; writes_artifacts=True is
     # handled by RunPythonArtifactHITLMiddleware.
     "run_python": "read",
@@ -164,6 +166,7 @@ _LABEL_BY_TOOL: dict[str, str] = {
     "comment_limit_incident": "Comment on limit incident",
     "waive_limit_incident": "Waive limit incident",
     "resolve_limit_incident": "Resolve limit incident",
+    "book_extracted_trade": "Book extracted trade",
     "run_python": "Run Python script",
 }
 

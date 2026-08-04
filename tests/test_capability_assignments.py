@@ -31,7 +31,8 @@ def test_quant_agent_tools_count_is_intentional():
     # +3 deterministic artifact disclosure tools (list, inspect, targeted read).
     # +1 curve-generate tool (generate_pricing_parameters_from_curves).
     # +9 limits tools (4 reads + 5 HITL monitoring/incident writes).
-    assert len(QUANT_AGENT_TOOLS) == 112
+    # +3 trade-confirmation tools (parse + read batch + HITL book).
+    assert len(QUANT_AGENT_TOOLS) == 115
 
 
 def test_record_answer_is_domain_read():

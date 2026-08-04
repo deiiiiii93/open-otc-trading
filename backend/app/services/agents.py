@@ -465,6 +465,11 @@ DEEP_AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         "comment_limit_incident",
         "waive_limit_incident",
         "resolve_limit_incident",
+        # Trade-confirmation pipeline: parse uploaded confirmations, read a
+        # batch back, book one reviewed extracted trade (HITL-gated).
+        "parse_trade_confirmation",
+        "get_confirmation_batch",
+        "book_extracted_trade",
         "create_report",
         "approve_rfq",
         "reject_rfq",

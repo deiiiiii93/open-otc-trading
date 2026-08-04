@@ -150,6 +150,11 @@ from .product_term_schema import get_product_term_schema
 from .term_completeness import check_term_completeness
 from .record_answer import record_answer_tool
 from .artifacts import inspect_artifact_tool, list_artifacts_tool, read_artifact_tool
+from .confirmations import (
+    book_extracted_trade,
+    get_confirmation_batch,
+    parse_trade_confirmation,
+)
 
 
 QUANT_AGENT_TOOLS = [
@@ -235,6 +240,10 @@ QUANT_AGENT_TOOLS = [
     comment_limit_incident_tool,
     waive_limit_incident_tool,
     resolve_limit_incident_tool,
+    # Trade-confirmation pipeline (parse/read + HITL booking):
+    parse_trade_confirmation,
+    get_confirmation_batch,
+    book_extracted_trade,
     # hedging writes (persisted / HITL-gated):
     book_hedge_tool,
     set_hedge_bands_tool,

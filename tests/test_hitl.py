@@ -50,6 +50,7 @@ def test_interrupt_tool_names_covers_all_state_mutating_tools():
         "comment_limit_incident",
         "waive_limit_incident",
         "resolve_limit_incident",
+        "book_extracted_trade",
         "run_python",
     }
 
