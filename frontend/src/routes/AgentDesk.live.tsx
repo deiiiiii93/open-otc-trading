@@ -122,12 +122,14 @@ function AgentDeskLiveView({
       onDeleteThread={controller.deleteThread}
       onForkThread={controller.forkThread}
       onOpenTrace={onOpenTrace}
-      onSend={(message) => controller.sendMessage(
+      onSend={(message, attachments) => controller.sendMessage(
         message,
         pageContext,
         accountingDate,
         undefined,
         'desk_workflow',
+        undefined,
+        attachments,
       )}
       onConfirmAction={controller.confirmAction}
       onDismissAction={controller.dismissAction}

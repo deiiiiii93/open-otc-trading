@@ -1,5 +1,5 @@
-import { Send, Square } from 'lucide-react';
-import { useId, useRef, useState, type KeyboardEvent } from 'react';
+import { Paperclip, Send, Square } from 'lucide-react';
+import { useId, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import type {
   AgentChannel,
   AgentExecutionMode,
@@ -8,13 +8,25 @@ import type {
 } from '../types';
 import type { ViewMode } from '../hooks/useViewMode';
 import { Button } from './Button';
+import { Chip } from './Chip';
 import { ModelPicker } from './ModelPicker';
 import { Select } from './Select';
 import { RESERVED_COMPOSER_COMMANDS } from '../lib/reservedCommands';
 import './ChatComposer.css';
 
+// The confirmation pipeline only parses PDF/DOCX (services/confirmations/extract.py
+// raises on anything else), so the picker filters in code as well as via `accept` —
+// `accept` is a hint the OS dialog can bypass (drag-drop, "All files"), and an
+// unparseable upload would only fail later, inside the agent turn.
+export const ATTACHMENT_EXTENSIONS = ['.pdf', '.docx'] as const;
+
+function isAttachable(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return ATTACHMENT_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
 type Props = {
-  onSend: (message: string) => void;
+  onSend: (message: string, attachments?: File[]) => void;
   sending: boolean;
   streaming?: boolean;
   channels?: AgentChannel[];
@@ -69,12 +81,44 @@ export function ChatComposer({
   workflows, onLaunchWorkflow, onRequestParams,
 }: Props) {
   const [text, setText] = useState('');
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   // Index of the highlighted slash-menu item (keyboard/hover cursor). Reset to 0 whenever
   // the text — and therefore the match list — changes; clamped at use sites for safety.
   const [activeIndex, setActiveIndex] = useState(0);
   const id = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const addFiles = (event: ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(event.target.files ?? []);
+    const accepted = picked.filter(isAttachable);
+    const rejected = picked.filter((f) => !isAttachable(f));
+    if (accepted.length > 0) {
+      setAttachments((prev) => [
+        ...prev,
+        // Same name+size twice is a re-pick of one file, not two trades — dropping the
+        // duplicate keeps the agent from parsing (and offering to book) the same
+        // confirmation twice.
+        ...accepted.filter((f) => !prev.some((p) => p.name === f.name && p.size === f.size)),
+      ]);
+    }
+    setAttachmentNotice(
+      rejected.length > 0
+        ? `Only ${ATTACHMENT_EXTENSIONS.join(' / ')} files can be attached — skipped ${rejected
+            .map((f) => f.name)
+            .join(', ')}.`
+        : null,
+    );
+    // Reset the input so re-picking the same file after removing it still fires onChange.
+    event.target.value = '';
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+    setAttachmentNotice(null);
+  };
 
   // The "/token" being typed before any space (lower-cased); null when not composing a
   // command. Built-in commands (e.g. /goal) match by name prefix and need no workflows;
@@ -165,7 +209,10 @@ export function ChatComposer({
 
   const handleSend = () => {
     const trimmed = text.trim();
-    if (!trimmed || sending) return;
+    if (sending) return;
+    // Attachments alone are a legitimate turn ("here's the confirmation") — the agent
+    // receives them through the manifest the backend appends to the run content.
+    if (!trimmed && attachments.length === 0) return;
     // Bare built-in command (e.g. "/goal" with no description): prompt for its argument.
     if (slashToken !== null && BUILTIN_COMMANDS.some((c) => c.name === slashToken)) {
       fillCommand(slashToken);
@@ -176,8 +223,10 @@ export function ChatComposer({
       launch(workflowMatches[0]);
       return;
     }
-    onSend(trimmed);
+    onSend(trimmed, attachments.length > 0 ? attachments : undefined);
     setText('');
+    setAttachments([]);
+    setAttachmentNotice(null);
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -255,7 +304,44 @@ export function ChatComposer({
           placeholder="Quote a snowball, run risk, generate a report…"
         />
       </div>
+      {(attachments.length > 0 || attachmentNotice) && (
+        <div className="wl-composer__attachments">
+          {attachments.map((file, idx) => (
+            <Chip
+              key={`${file.name}-${file.size}`}
+              onRemove={() => removeAttachment(idx)}
+            >
+              {file.name}
+            </Chip>
+          ))}
+          {attachmentNotice && (
+            <span className="wl-composer__attachment-notice" role="status">
+              {attachmentNotice}
+            </span>
+          )}
+        </div>
+      )}
       <div className="wl-composer__actions">
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="wl-composer__file-input"
+          accept={ATTACHMENT_EXTENSIONS.join(',')}
+          multiple
+          onChange={addFiles}
+          data-testid="composer-file-input"
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          iconOnly
+          onClick={() => fileInputRef.current?.click()}
+          disabled={sending}
+          aria-label="Attach confirmation files"
+          title="Attach trade confirmation files (PDF / DOCX)"
+        >
+          <Paperclip size={16} aria-hidden="true" />
+        </Button>
         {channels && onChangeModel && (
           <ModelPicker
             channels={channels}
@@ -293,7 +379,11 @@ export function ChatComposer({
             Stop
           </Button>
         ) : (
-          <Button variant="primary" onClick={handleSend} disabled={sending || text.trim().length === 0}>
+          <Button
+            variant="primary"
+            onClick={handleSend}
+            disabled={sending || (text.trim().length === 0 && attachments.length === 0)}
+          >
             <Send size={16} aria-hidden="true" />
             {streaming ? 'Streaming...' : sending ? 'Sending...' : 'Send'}
           </Button>

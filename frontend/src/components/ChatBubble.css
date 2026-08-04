@@ -442,3 +442,24 @@
   font-size: 9px;
   color: var(--ink-2);
 }
+
+/* Files the user attached to a turn. Rendered as a plain list rather than Chips —
+   these are a record of what was sent, not removable controls. */
+.wl-chat-bubble__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-1);
+  margin: var(--gap-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wl-chat-bubble__attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-1);
+  padding: var(--gap-1) var(--gap-2);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+}

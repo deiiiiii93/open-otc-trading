@@ -78,6 +78,7 @@ export type AgentChatController = {
     contextUsage?: AgentContextUsage | null,
     envelope?: Envelope,
     confirmedCostPreview?: boolean,
+    attachments?: File[],
   ) => Promise<void>;
   /**
    * Re-send the most recent user message in the active thread with
@@ -398,6 +399,7 @@ export function useAgentChatController(
     contextUsage?: AgentContextUsage | null,
     envelope?: Envelope,
     confirmedCostPreview?: boolean,
+    attachments?: File[],
   ) => {
     let threadId = activeId;
     if (threadId == null) {
@@ -452,6 +454,11 @@ export function useAgentChatController(
           content: message,
           meta: {
             ...(contextUsage ? { context_usage: contextUsage } : {}),
+            ...(attachments && attachments.length > 0
+              // Optimistic echo only — the persisted row gets the server-minted refs
+              // (with stored path + sha256) once the turn commits.
+              ? { attachments: attachments.map((f) => ({ filename: f.name, path: '' })) }
+              : {}),
             mode: executionMode,
           },
         }],
@@ -460,6 +467,21 @@ export function useAgentChatController(
 
     let streamAbortController: AbortController | null = null;
     try {
+      // Upload attachments BEFORE opening the stream: the turn body carries only stored
+      // paths, and the agent's parse_trade_confirmation tool refuses anything outside
+      // the server's uploads dir — so the bytes must already be on disk server-side.
+      // A failed upload aborts the turn (caught below) rather than sending a message
+      // that references files the agent cannot open.
+      let attachmentRefs: Array<{ path: string; filename: string; sha256?: string }> = [];
+      if (attachments && attachments.length > 0) {
+        attachmentRefs = await Promise.all(attachments.map(async (file) => {
+          const form = new FormData();
+          form.append('file', file);
+          const res = await fetch('/api/chat/uploads', { method: 'POST', body: form });
+          if (!res.ok) throw new Error(await res.text());
+          return res.json();
+        }));
+      }
       streamAbortRef.current?.abort();
       streamAbortController = new AbortController();
       streamAbortRef.current = streamAbortController;
@@ -477,6 +499,7 @@ export function useAgentChatController(
           accounting_date: accountingDate || undefined,
           envelope: envelope ?? undefined,
           confirmed_cost_preview: confirmedCostPreview ? true : undefined,
+          attachments: attachmentRefs.length > 0 ? attachmentRefs : undefined,
         }),
       });
       if (!response.ok) throw new Error(await response.text());

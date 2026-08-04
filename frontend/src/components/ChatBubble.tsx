@@ -5,6 +5,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react';
+import { Paperclip } from 'lucide-react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -73,6 +74,14 @@ export function ChatBubble({
     ? resolveModelChip(channels, meta.model_selection)
     : null;
   const assets = Array.isArray(meta.assets) ? (meta.assets as AgentAsset[]) : [];
+  // Files the user attached to this turn (uploaded to the server, then referenced by
+  // stored path in the turn body). Rendered outside the content block so an
+  // attachment-only turn — "here's the confirmation", no prose — still shows something.
+  const attachmentRefs: Array<{ filename: string }> = Array.isArray(meta.attachments)
+    ? (meta.attachments as Array<{ filename?: unknown }>)
+        .filter((a) => a && typeof a.filename === 'string' && a.filename.length > 0)
+        .map((a) => ({ filename: a.filename as string }))
+    : [];
   const renderStructuredReplyOptions = canRenderStructuredReplyOptions(meta);
   const structuredOptions: ReplyOptionMeta[] =
     variant === 'assistant'
@@ -153,6 +162,16 @@ export function ChatBubble({
             </ReactMarkdown>
             {isStreaming && <span className="wl-chat-bubble__cursor" aria-hidden="true" />}
           </div>
+        )}
+        {attachmentRefs.length > 0 && (
+          <ul className="wl-chat-bubble__attachments">
+            {attachmentRefs.map((a, idx) => (
+              <li key={`${a.filename}-${idx}`} className="wl-chat-bubble__attachment">
+                <Paperclip size={12} aria-hidden="true" />
+                {a.filename}
+              </li>
+            ))}
+          </ul>
         )}
         {reasoningContent && (
           <ReasoningBlock

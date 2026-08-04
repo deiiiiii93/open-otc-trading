@@ -212,12 +212,14 @@ export function FloatingAgentMiniChat({
       </div>
 
       <ChatComposer
-        onSend={(message) => controller.sendMessage(
+        onSend={(message, attachments) => controller.sendMessage(
           message,
           pageContext,
           accountingDate,
           measurePageContextUsage(pageContext, new Date()),
           'pet_page',
+          undefined,
+          attachments,
         )}
         sending={controller.sending}
         streaming={controller.streaming}

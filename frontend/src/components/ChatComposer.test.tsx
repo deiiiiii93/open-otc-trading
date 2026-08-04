@@ -16,7 +16,7 @@ describe('ChatComposer', () => {
     render(<ChatComposer onSend={onSend} sending={false} />);
     await userEvent.type(screen.getByLabelText(/ask anything/i), 'price snowball');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
-    expect(onSend).toHaveBeenCalledWith('price snowball');
+    expect(onSend).toHaveBeenCalledWith('price snowball', undefined);
   });
 
   it('clears input after send', async () => {
@@ -33,7 +33,7 @@ describe('ChatComposer', () => {
     const textarea = screen.getByLabelText(/ask anything/i);
     await userEvent.type(textarea, 'price snowball');
     fireEvent.keyDown(textarea, { key: 'Enter' });
-    expect(onSend).toHaveBeenCalledWith('price snowball');
+    expect(onSend).toHaveBeenCalledWith('price snowball', undefined);
   });
 
   it('inserts a newline instead of sending on Shift+Enter', async () => {
@@ -215,7 +215,7 @@ describe('ChatComposer', () => {
       const onSend = vi.fn();
       render(<ChatComposer onSend={onSend} sending={false} />);
       await userEvent.type(screen.getByLabelText(/ask anything/i), '/goal refresh risk{Enter}');
-      expect(onSend).toHaveBeenCalledWith('/goal refresh risk');
+      expect(onSend).toHaveBeenCalledWith('/goal refresh risk', undefined);
     });
   });
 
@@ -390,5 +390,74 @@ describe('ChatComposer', () => {
     fireEvent.click(screen.getByRole('option', { name: /\/plain/ }));
     expect(onLaunch).toHaveBeenCalledWith('plain', 'auto');
     expect(onRequestParams).not.toHaveBeenCalled();
+  });
+});
+
+describe('ChatComposer attachments', () => {
+  const pdf = () => new File(['%PDF-1.4'], 'confirm.pdf', { type: 'application/pdf' });
+  const docx = () => new File(['zip'], 'termsheet.docx', {
+    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  });
+
+  const fileInput = () => screen.getByTestId('composer-file-input') as HTMLInputElement;
+
+  it('shows a chip per attached file', () => {
+    render(<ChatComposer onSend={() => {}} sending={false} />);
+    fireEvent.change(fileInput(), { target: { files: [pdf(), docx()] } });
+    expect(screen.getByText('confirm.pdf')).toBeInTheDocument();
+    expect(screen.getByText('termsheet.docx')).toBeInTheDocument();
+  });
+
+  it('removing one chip leaves the other attached', () => {
+    render(<ChatComposer onSend={() => {}} sending={false} />);
+    fireEvent.change(fileInput(), { target: { files: [pdf(), docx()] } });
+    // Chip renders its remove control with aria-label "Remove"; the first chip is the pdf.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]);
+    expect(screen.queryByText('confirm.pdf')).not.toBeInTheDocument();
+    expect(screen.getByText('termsheet.docx')).toBeInTheDocument();
+  });
+
+  it('filters unsupported types in code and explains what it skipped', () => {
+    render(<ChatComposer onSend={() => {}} sending={false} />);
+    const txt = new File(['notes'], 'notes.txt', { type: 'text/plain' });
+    fireEvent.change(fileInput(), { target: { files: [pdf(), txt] } });
+    expect(screen.getByText('confirm.pdf')).toBeInTheDocument();
+    expect(screen.queryByText('notes.txt')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/only \.pdf \/ \.docx/i);
+  });
+
+  it('drops a duplicate re-pick of the same file', () => {
+    render(<ChatComposer onSend={() => {}} sending={false} />);
+    fireEvent.change(fileInput(), { target: { files: [pdf()] } });
+    fireEvent.change(fileInput(), { target: { files: [pdf()] } });
+    expect(screen.getAllByText('confirm.pdf')).toHaveLength(1);
+  });
+
+  it('sends attachments with the message and clears them afterwards', () => {
+    const onSend = vi.fn();
+    render(<ChatComposer onSend={onSend} sending={false} />);
+    fireEvent.change(screen.getByLabelText('Ask anything'), { target: { value: 'book this' } });
+    fireEvent.change(fileInput(), { target: { files: [pdf()] } });
+    fireEvent.click(screen.getByRole('button', { name: /send/i }));
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+    const [message, attachments] = onSend.mock.calls[0];
+    expect(message).toBe('book this');
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0].name).toBe('confirm.pdf');
+    expect(screen.queryByText('confirm.pdf')).not.toBeInTheDocument();
+  });
+
+  it('allows sending an attachment with no text', () => {
+    const onSend = vi.fn();
+    render(<ChatComposer onSend={onSend} sending={false} />);
+    const send = screen.getByRole('button', { name: /send/i });
+    expect(send).toBeDisabled();
+    fireEvent.change(fileInput(), { target: { files: [pdf()] } });
+    expect(send).not.toBeDisabled();
+    fireEvent.click(send);
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onSend.mock.calls[0][0]).toBe('');
+    expect(onSend.mock.calls[0][1]).toHaveLength(1);
   });
 });
