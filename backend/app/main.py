@@ -4,6 +4,7 @@ from collections import deque
 from collections.abc import Generator
 from copy import deepcopy
 from datetime import datetime, timedelta
+import hashlib
 import logging
 from pathlib import Path
 import shutil
@@ -54,6 +55,7 @@ from .models import (
     Workflow,
 )
 from .schemas import (
+    AgentAttachmentIn,
     AgentMessageCreate,
     AgentMessageOut,
     AgentModelConfigOut,
@@ -670,6 +672,27 @@ def _desk_workflow_settle_factory():
     return _make_default_settle()
 
 
+def _attachment_manifest(
+    content: str, attachments: list[AgentAttachmentIn] | None
+) -> str:
+    """Suffix ``content`` with a manifest of chat-composer attachments.
+
+    Used ONLY for the content handed to the agent run (Task 8) — the
+    persisted user message keeps the original, unsuffixed ``content`` so the
+    chat transcript reflects what the user actually typed. Returns ``content``
+    unchanged when there are no attachments.
+    """
+    if not attachments:
+        return content
+    manifest = "\n".join(
+        f"- {a.filename} (stored at {a.path})" for a in attachments
+    )
+    return (
+        f"{content}\n\n[Attached files — pass these stored paths to "
+        f"parse_trade_confirmation if the user wants them parsed/booked:]\n{manifest}"
+    )
+
+
 def create_app(
     settings: Settings | None = None,
     agent_service_override: AgentService | None = None,
@@ -938,6 +961,20 @@ def create_app(
         session.refresh(forked)
         return forked
 
+    @app.post("/api/chat/uploads")
+    def upload_chat_attachment(file: UploadFile = File(...)):
+        # Stored under uploads/chat/ (via the shared _store_upload helper) so
+        # the returned path sits under settings.artifact_dir/uploads, which is
+        # exactly the prefix parse_trade_confirmation validates paths against.
+        upload_path = _store_upload(file, "chat")
+        data = upload_path.read_bytes()
+        return {
+            "path": str(upload_path),
+            "filename": Path(file.filename or upload_path.name).name,
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "byte_len": len(data),
+        }
+
     @app.post("/api/chat/threads/{thread_id}/messages/stream")
     async def stream_chat_message(
         thread_id: int,
@@ -991,15 +1028,25 @@ def create_app(
                 "mode": norm_mode,
                 "envelope": payload.envelope,
                 "confirmed_cost_preview": payload.confirmed_cost_preview,
+                "attachments": (
+                    [a.model_dump() for a in payload.attachments]
+                    if payload.attachments
+                    else None
+                ),
             },
         )
         session.add(user_msg)
         session.commit()
 
+        # The manifest-suffixed content feeds ONLY the agent run below — the
+        # persisted user_msg.content above stays the verbatim payload.content
+        # so the chat transcript matches what the user actually typed.
+        agent_content = _attachment_manifest(payload.content, payload.attachments)
+
         return StreamingResponse(
             active_agent_service.stream_and_persist(
                 thread_id=thread.id,
-                content=payload.content,
+                content=agent_content,
                 requested_character=payload.character,
                 page_context=payload.page_context,
                 context_usage=payload.context_usage,

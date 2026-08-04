@@ -248,6 +248,12 @@ class DefaultWriteIn(BaseModel):
     model: str
 
 
+class AgentAttachmentIn(BaseModel):
+    path: str
+    filename: str
+    sha256: str | None = None
+
+
 class AgentMessageCreate(BaseModel):
     content: str
     character: Literal["auto", "trader", "risk_manager", "high_board"] = "auto"
@@ -255,6 +261,10 @@ class AgentMessageCreate(BaseModel):
     context_usage: AgentContextUsage | None = None
     accounting_date: date | None = None
     model: AgentModelSelection | None = None
+    # Task 8: files the user attached in the composer (uploaded ahead of the
+    # turn via POST /api/chat/uploads, under uploads/chat/ so
+    # parse_trade_confirmation's artifact_dir/uploads path check accepts them).
+    attachments: list[AgentAttachmentIn] | None = None
     # Execution mode (canonical). "interactive" surfaces HITL; "auto" auto-clears
     # HITL but the model may still ask via reply cards; "yolo" is fully headless
     # (no HITL, no deferral). When omitted, the deprecated ``yolo_mode`` boolean
