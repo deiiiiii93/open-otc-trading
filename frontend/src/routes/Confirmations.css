@@ -1,0 +1,204 @@
+.wl-confirmations {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  gap: var(--gap-4);
+  align-items: start;
+}
+
+.wl-confirmations__left,
+.wl-confirmations__right {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  min-width: 0;
+}
+
+.wl-confirmations__upload {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  padding: var(--panel-padding);
+  border: 1px solid var(--hairline);
+  background: var(--paper-2);
+}
+
+.wl-confirmations__dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 72px;
+  border: 1px dashed var(--hairline-2);
+  background: var(--paper);
+  color: var(--ink-2);
+  cursor: pointer;
+  padding: var(--gap-3);
+}
+
+.wl-confirmations__dropzone:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.wl-confirmations__dropzone-text {
+  font-size: var(--type-body-size);
+}
+
+.wl-confirmations__file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.wl-confirmations__file-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  margin: 0;
+  padding-left: var(--gap-4);
+}
+
+.wl-confirmations__error {
+  color: var(--neg);
+  font-size: var(--type-small-size);
+}
+
+.wl-confirmations__status-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-1);
+}
+
+.wl-confirmations__document {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  padding: var(--panel-padding);
+  border: 1px solid var(--hairline);
+  background: var(--paper-2);
+}
+
+.wl-confirmations__document-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+}
+
+.wl-confirmations__document-name {
+  font-weight: var(--type-caps-weight);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-confirmations__trade {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  padding: var(--panel-padding-tight);
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+}
+
+.wl-confirmations__trade-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+}
+
+.wl-confirmations__trade-family {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}
+
+.wl-confirmations__trade-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+}
+
+.wl-confirmations__trade-fields .wl-field {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.wl-confirmations__terms-input {
+  border: 1px solid var(--hairline-2);
+  background: var(--paper-2);
+  color: var(--ink);
+  padding: var(--input-padding-y) var(--input-padding-x);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  line-height: 1.5;
+  border-radius: 0;
+  resize: vertical;
+}
+
+.wl-confirmations__terms-input::placeholder {
+  color: var(--ink-2);
+}
+
+.wl-confirmations__terms-input:focus {
+  outline: none;
+  border: 2px solid var(--ink);
+  padding: calc(var(--input-padding-y) - 1px) calc(var(--input-padding-x) - 1px);
+}
+
+.wl-confirmations__evidence,
+.wl-confirmations__validation-errors {
+  margin: 0;
+  padding-left: var(--gap-4);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+}
+
+.wl-confirmations__validation-errors {
+  color: var(--neg);
+}
+
+.wl-confirmations__trade-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--gap-2);
+}
+
+.wl-confirmations__trade-portfolio {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.wl-confirmations__link {
+  color: var(--info);
+}
+
+.wl-confirmations__booked-link,
+.wl-confirmations__reject-note {
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .wl-confirmations {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

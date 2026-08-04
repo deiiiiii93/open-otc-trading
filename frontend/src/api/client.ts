@@ -51,6 +51,8 @@ import type {
   LimitVersionCreateInput,
   MarketSnapshot,
   RiskLimit,
+  ConfirmationBatch,
+  ExtractedTrade,
 } from '../types';
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -677,3 +679,34 @@ export const validateDraft = (kind: string, payload: unknown) =>
     method: 'POST',
     body: JSON.stringify({ kind, payload }),
   });
+
+// --- Trade confirmations -----------------------------------------------
+
+export async function uploadConfirmations(
+  files: File[],
+  portfolioId: number | null,
+): Promise<ConfirmationBatch> {
+  const form = new FormData();
+  files.forEach((f) => form.append('files', f));
+  if (portfolioId != null) form.append('portfolio_id', String(portfolioId));
+  const res = await fetch('/api/confirmations', { method: 'POST', body: form });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export const listConfirmationBatches = () => api<ConfirmationBatch[]>('/api/confirmations');
+
+export const getConfirmationBatch = (id: number) =>
+  api<ConfirmationBatch>(`/api/confirmations/${id}`);
+
+export const updateExtractedTrade = (id: number, body: Partial<ExtractedTrade>) =>
+  api<ExtractedTrade>(`/api/confirmations/trades/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+
+export const bookExtractedTrade = (id: number, portfolioId: number | null) =>
+  api<{ ok: boolean; position_id?: number; error?: string; detail?: unknown }>(
+    `/api/confirmations/trades/${id}/book`,
+    { method: 'POST', body: JSON.stringify({ portfolio_id: portfolioId }) });
+
+export const rejectExtractedTrade = (id: number, reason?: string) =>
+  api<ExtractedTrade>(`/api/confirmations/trades/${id}/reject`,
+    { method: 'POST', body: JSON.stringify({ reason }) });

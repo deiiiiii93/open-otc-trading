@@ -41,6 +41,7 @@ import { WorkflowsLive } from './routes/Workflows.live';
 import { MemoryLive } from './routes/Memory.live';
 import { ModelMaintenanceLive } from './routes/ModelMaintenance.live';
 import { AuditLive } from './routes/Audit.live';
+import { ConfirmationsLive } from './routes/Confirmations.live';
 import { fetchTracingConfig } from './api/client';
 import { openTraceTarget } from './lib/tracing';
 import type { TracingConfig } from './types';
@@ -51,6 +52,7 @@ const navItems = [
   { route: 'try-solve' as const, label: 'Try to Solve' },
   { route: 'positions' as const,  label: 'Positions' },
   { route: 'booking' as const,    label: 'Booking' },
+  { route: 'confirmations' as const, label: 'Confirmations' },
   { route: 'pricing-parameters' as const, label: 'Pricing Parameters' },
   { route: 'engine-configs' as const, label: 'Engine Configs' },
   { route: 'portfolios' as const, label: 'Portfolios' },
@@ -283,6 +285,7 @@ function App() {
           />
         )}
         {route === 'booking' && <BookingLive onPageContextChange={handlePageContextChange} />}
+        {route === 'confirmations' && <ConfirmationsLive onPageContextChange={handlePageContextChange} />}
         {route === 'pricing-parameters' && (
           <PricingParametersLive
             onPageContextChange={handlePageContextChange}

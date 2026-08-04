@@ -25,7 +25,8 @@ export type Route =
   | 'memory'
   | 'model-maintenance'
   | 'audit'
-  | 'limits';
+  | 'limits'
+  | 'confirmations';
 
 export interface AgentRegistryModel {
   id: string;
@@ -1791,3 +1792,30 @@ export interface AuditSummary {
   by_mode: Record<string, number>;
   fail_closed_refusals: { persisted: number; unpersisted: number };
 }
+
+// --- Trade confirmations -----------------------------------------------
+
+export type ExtractedTrade = {
+  id: number; document_id: number; seq: number; family: string;
+  extracted_terms: Record<string, unknown>; terms: Record<string, unknown>;
+  underlying: string | null; quantity: number | null; entry_price: number | null;
+  currency: string | null; counterparty: string | null; trade_date: string | null;
+  external_trade_id: string | null; confidence: number | null;
+  evidence: Record<string, { quote: string; page: number }>;
+  validation_status: 'valid' | 'invalid' | 'unsupported';
+  validation_errors: unknown[]; status: 'extracted' | 'booked' | 'rejected';
+  booked_position_id: number | null; reject_reason: string | null;
+};
+
+export type ConfirmationDocument = {
+  id: number; filename: string; sha256: string; byte_len: number; mime: string;
+  page_count: number | null; extract_mode: 'text' | 'vision' | 'mixed' | null;
+  status: 'pending' | 'parsing' | 'parsed' | 'failed'; error: string | null;
+  model_provenance: Record<string, string> | null; parsed_at: string | null;
+  trades: ExtractedTrade[];
+};
+
+export type ConfirmationBatch = {
+  id: number; source: string; default_portfolio_id: number | null;
+  task_id: number | null; created_at: string; documents: ConfirmationDocument[];
+};
