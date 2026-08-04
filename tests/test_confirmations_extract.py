@@ -108,3 +108,41 @@ def test_unsupported_extension_raises(tmp_path):
     p.write_text("hello")
     with pytest.raises(ValueError, match="Unsupported"):
         extract_document(p)
+
+
+def test_docx_mixed_text_and_images(tmp_path):
+    """Test DOCX with near-empty text + embedded image uses 1-based indexes."""
+    from PIL import Image
+
+    p = tmp_path / "mixed.docx"
+    doc = DocxDocument()
+
+    # Add minimal text (< MIN_TEXT_CHARS_PER_PAGE)
+    doc.add_paragraph("Short")
+
+    # Create and embed a tiny PNG image
+    img = Image.new("RGB", (10, 10), color="red")
+    img_path = tmp_path / "tiny.png"
+    img.save(img_path)
+    doc.add_picture(str(img_path))
+
+    doc.save(str(p))
+
+    # Extract and verify
+    content = extract_document(p)
+
+    # Should be mixed or vision mode (text too short to be sole page)
+    assert content.extract_mode in ("mixed", "vision")
+    assert content.page_count >= 1
+
+    # All page indexes must be 1-based and consecutive
+    indexes = [page.index for page in content.pages]
+    assert indexes == list(range(1, len(indexes) + 1)), f"Indexes not 1-based consecutive: {indexes}"
+
+    # At least one page must have PNG image data
+    image_pages = [p for p in content.pages if p.image_png is not None]
+    assert len(image_pages) > 0, "No image pages found"
+
+    # Image bytes must be valid PNG
+    for img_page in image_pages:
+        assert img_page.image_png[:8] == b"\x89PNG\r\n\x1a\n", "Invalid PNG magic bytes"

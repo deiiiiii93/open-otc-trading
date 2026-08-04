@@ -103,12 +103,16 @@ def _extract_docx(path: Path) -> DocumentContent:
         return DocumentContent(
             pages=[PageContent(index=1, text=text)], page_count=1, extract_mode="text"
         )
-    pages = [
-        PageContent(index=i + 1, text="", image_png=_ensure_png(data))
-        for i, data in enumerate(images)
-    ]
+    # Both text and images: text is first (index=1), images follow (index=2+)
+    pages = []
     if text:
-        pages.insert(0, PageContent(index=0, text=text))
+        pages.append(PageContent(index=1, text=text))
+    # Images start at index 2 (or 1 if no text)
+    image_start_idx = 2 if text else 1
+    for i, data in enumerate(images):
+        pages.append(
+            PageContent(index=image_start_idx + i, text="", image_png=_ensure_png(data))
+        )
     return DocumentContent(pages=pages, page_count=len(pages), extract_mode=_mode(pages))
 
 
