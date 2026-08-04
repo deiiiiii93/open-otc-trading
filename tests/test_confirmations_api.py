@@ -23,9 +23,10 @@ import json
 
 import pytest
 
-from app.models import AuditEvent, Portfolio, Position
+from app.models import AuditEvent, ConfirmationBatch, Portfolio, Position, TaskRun
 from app.services.confirmations import service as confirmations_service
 from app.services.confirmations.extract import DocumentContent, PageContent
+from app.services.domains.booking import book_position as _real_book_position
 
 # initial_price (S0) is required by every product_builders family — see
 # tests/test_product_builders.py's canonical minimal vanilla term set.
@@ -216,6 +217,48 @@ def test_book_trade_without_target_portfolio_fails_honestly(client, monkeypatch)
     assert body["error"] == "no_target_portfolio"
 
 
+def test_book_trade_booking_failed_rolls_back(
+    client, session, monkeypatch, container_portfolio,
+):
+    """book_position raising ValueError -> {"ok": False, "error": "booking_failed"}
+    -> router `session.rollback()`. The wrapper calls the REAL book_position first
+    (so a Position row is genuinely flushed, exercising an actual partial write)
+    and only then raises, so this proves the rollback discards that flushed-but-
+    uncommitted row rather than merely proving a pre-flush guard never wrote
+    anything in the first place.
+    """
+    batch_id, trade = _upload_and_get_trade(
+        client, monkeypatch, external_trade_id="TC-BOOKFAIL",
+        portfolio_id=container_portfolio.id,
+    )
+
+    def _flush_then_fail(sess, req):
+        _real_book_position(sess, req)
+        raise ValueError("forced booking failure")
+
+    monkeypatch.setattr(confirmations_service, "book_position", _flush_then_fail)
+
+    resp = client.post(f"/api/confirmations/trades/{trade['id']}/book", json={})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["ok"] is False
+    assert body["error"] == "booking_failed"
+
+    # Fresh GET (new session) proves the trade was never mutated to "booked".
+    detail = client.get(f"/api/confirmations/{batch_id}").json()
+    refreshed = detail["documents"][0]["trades"][0]
+    assert refreshed["status"] == "extracted"
+    assert refreshed["booked_position_id"] is None
+
+    # Fresh session query proves no orphan Position row survived the rollback.
+    count = (
+        session.query(Position)
+        .filter(Position.source_trade_id == "TC-BOOKFAIL")
+        .count()
+    )
+    assert count == 0
+
+
 # (d) reject -> status rejected.
 def test_reject_trade_marks_rejected_with_reason(client, monkeypatch):
     _, trade = _upload_and_get_trade(client, monkeypatch, external_trade_id="TC-REJECT")
@@ -279,3 +322,37 @@ def test_upload_writes_upload_audit_row(client, session, monkeypatch):
         row.subject_type == "confirmation_batch" and row.subject_id == str(body["id"])
         for row in audit_rows
     )
+
+
+def test_upload_dispatch_failure_returns_500_and_marks_task_failed(
+    client, session, monkeypatch,
+):
+    """dispatch_parse raising -> router catches, marks the TaskRun "failed", commits
+    that, then raises HTTPException(500). The batch + document rows created before
+    dispatch was ever called must survive (only dispatch failed, not the upload)."""
+    def _boom(batch_id, task_id):
+        raise RuntimeError("dispatch boom")
+
+    monkeypatch.setattr(confirmations_service, "dispatch_parse", _boom)
+
+    resp = client.post(
+        "/api/confirmations",
+        files=[("files", ("d.pdf", b"%PDF-1.4 fake d", "application/pdf"))],
+    )
+    assert resp.status_code == 500
+
+    # Fresh queries (this session never touched these rows before) prove the
+    # upload's own writes were committed prior to dispatch, independent of the
+    # 500 raised afterward.
+    batch = (
+        session.query(ConfirmationBatch)
+        .order_by(ConfirmationBatch.id.desc())
+        .first()
+    )
+    assert batch is not None
+    assert len(batch.documents) == 1
+
+    task = session.get(TaskRun, batch.task_id)
+    assert task is not None
+    assert task.status == "failed"
+    assert "dispatch boom" in (task.error or "")
