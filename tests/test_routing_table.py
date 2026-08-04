@@ -129,6 +129,7 @@ def test_render_empty_rows_is_header_only() -> None:
 # Extended at Task 3.4 with the run-backtest routing row (22 rows total).
 # Extended with the run-greeks-landscape routing row (23 rows total).
 # Extended with the asian-fixings routing row (24 rows total).
+# Extended with the book-trade-confirmation routing row (25 rows total).
 OLD_TABLE_ROWS: set[tuple[str, str, str]] = {
     ("Create or edit a reusable desk workflow", "risk_manager", "build-workflow"),
     ("Build a slash-command workflow playbook", "trader", "build-workflow"),
@@ -159,6 +160,7 @@ OLD_TABLE_ROWS: set[tuple[str, str, str]] = {
     ("Set up or refresh the Asian fixing calendar, or capture a due fixing for an Asian position", "trader", "asian-fixings"),
     ("Check risk limit status, breaches, or headroom for a portfolio", "risk_manager", "monitor-limits"),
     ("Work a limit breach incident (acknowledge, comment, waive, or resolve)", "risk_manager", "handle-limit-incident"),
+    ("Book trades from an uploaded confirmation document", "trader", "book-trade-confirmation"),
 }
 
 
