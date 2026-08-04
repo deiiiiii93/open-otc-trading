@@ -18,6 +18,10 @@ export type TradeDraft = {
   currency: string;
   termsText: string;
   termsError: string | null;
+  /** Set when Save is blocked by client-side field validation (required-field
+   * or non-numeric-number checks) — kept separate from termsError so a JSON
+   * parse failure and a field-validation failure never overwrite each other. */
+  fieldsError: string | null;
 };
 
 export function tradeDraftDefaults(trade: ExtractedTrade): TradeDraft {
@@ -28,6 +32,7 @@ export function tradeDraftDefaults(trade: ExtractedTrade): TradeDraft {
     currency: trade.currency ?? '',
     termsText: JSON.stringify(trade.terms ?? {}, null, 2),
     termsError: null,
+    fieldsError: null,
   };
 }
 
@@ -312,24 +317,26 @@ function TradeCard({
             <Input
               label="Underlying"
               value={d.underlying}
-              onChange={(e) => onDraftChange(trade.id, { ...d, underlying: e.target.value })}
+              onChange={(e) => onDraftChange(trade.id, { ...d, underlying: e.target.value, fieldsError: null })}
             />
             <Input
               label="Quantity"
-              type="number"
+              type="text"
+              inputMode="decimal"
               value={d.quantity}
-              onChange={(e) => onDraftChange(trade.id, { ...d, quantity: e.target.value })}
+              onChange={(e) => onDraftChange(trade.id, { ...d, quantity: e.target.value, fieldsError: null })}
             />
             <Input
               label="Entry price"
-              type="number"
+              type="text"
+              inputMode="decimal"
               value={d.entry_price}
-              onChange={(e) => onDraftChange(trade.id, { ...d, entry_price: e.target.value })}
+              onChange={(e) => onDraftChange(trade.id, { ...d, entry_price: e.target.value, fieldsError: null })}
             />
             <Input
               label="Currency"
               value={d.currency}
-              onChange={(e) => onDraftChange(trade.id, { ...d, currency: e.target.value })}
+              onChange={(e) => onDraftChange(trade.id, { ...d, currency: e.target.value, fieldsError: null })}
             />
           </div>
           <label className="wl-field">
@@ -343,6 +350,7 @@ function TradeCard({
             />
           </label>
           {d.termsError && <span className="wl-confirmations__error">{d.termsError}</span>}
+          {d.fieldsError && <span className="wl-confirmations__error">{d.fieldsError}</span>}
           <Button
             variant="default"
             disabled={busy}

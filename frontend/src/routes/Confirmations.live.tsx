@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   bookExtractedTrade, errorMessage, getConfirmationBatch, listConfirmationBatches,
   listPortfoliosWithIds, rejectExtractedTrade, updateExtractedTrade, uploadConfirmations,
@@ -21,6 +21,25 @@ function findTradeInBatch(batch: ConfirmationBatch | null, tradeId: number): Ext
   return null;
 }
 
+// Client-side gate for Save: the PUT endpoint silently drops any null-valued
+// key (`if v is not None` server-side), so an emptied required field or a
+// NaN-producing typo (Number('abc') -> NaN -> JSON.stringify -> null) would
+// otherwise round-trip as a no-op while still showing "Trade saved." —
+// required fields must error+block; optional numeric fields may be left
+// blank (omitted from the PUT body, i.e. "unchanged") but if non-blank must
+// parse to a finite number.
+function validateDraftFields(draft: TradeDraft): string | null {
+  if (draft.underlying.trim() === '') return 'Underlying is required.';
+  if (draft.currency.trim() === '') return 'Currency is required.';
+  if (draft.quantity.trim() !== '' && !Number.isFinite(Number(draft.quantity))) {
+    return 'Quantity must be a number.';
+  }
+  if (draft.entry_price.trim() !== '' && !Number.isFinite(Number(draft.entry_price))) {
+    return 'Entry price must be a number.';
+  }
+  return null;
+}
+
 export function ConfirmationsLive(_props: Props) {
   const [batches, setBatches] = useState<ConfirmationBatch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
@@ -37,29 +56,46 @@ export function ConfirmationsLive(_props: Props) {
   const [rejectReason, setRejectReason] = useState<Record<number, string>>({});
   const [rowBusy, setRowBusy] = useState<Set<number>>(new Set());
 
+  // Separate stale-response guards for the two independent async loaders that
+  // both write into `batches` (mirrors AuditLive.tsx's loadRequestIdRef /
+  // detailRequestIdRef split — a single shared counter would make every
+  // paired loadBatches()+refreshBatch() dispatch (see onRefresh) permanently
+  // discard the loadBatches() response, since the refreshBatch() dispatch
+  // right after it would always bump a shared counter past loadBatches's
+  // captured token). Scoping each loader to its own counter still fully
+  // guards the concrete race this exists for: a straggling poll tick's
+  // refreshBatch() response landing after a post-book/save/reject
+  // refreshBatch() response and clobbering the fresher state.
+  const loadSeqRef = useRef(0);
+  const refreshSeqRef = useRef(0);
+
   const selectedBatch = useMemo(
     () => batches.find((b) => b.id === selectedBatchId) ?? null,
     [batches, selectedBatchId],
   );
 
   const loadBatches = useCallback(async () => {
+    const token = ++loadSeqRef.current;
     try {
       const list = await listConfirmationBatches();
+      if (token !== loadSeqRef.current) return;
       setBatches(list);
       setError(null);
     } catch (e) {
-      setError(errorMessage(e));
+      if (token === loadSeqRef.current) setError(errorMessage(e));
     } finally {
-      setLoading(false);
+      if (token === loadSeqRef.current) setLoading(false);
     }
   }, []);
 
   const refreshBatch = useCallback(async (id: number) => {
+    const token = ++refreshSeqRef.current;
     try {
       const updated = await getConfirmationBatch(id);
+      if (token !== refreshSeqRef.current) return;
       setBatches((prev) => prev.map((b) => (b.id === id ? updated : b)));
     } catch (e) {
-      setFeedback(errorMessage(e));
+      if (token === refreshSeqRef.current) setFeedback(errorMessage(e));
     }
   }, []);
 
@@ -119,26 +155,46 @@ export function ConfirmationsLive(_props: Props) {
     const trade = findTradeInBatch(selectedBatch, tradeId);
     const draft = drafts[tradeId] ?? (trade ? tradeDraftDefaults(trade) : null);
     if (!draft) return;
+
+    // Field validation runs BEFORE any API call: required fields must not be
+    // empty and numeric fields, if non-blank, must parse — otherwise the PUT
+    // silently no-ops the offending key server-side while still reporting
+    // "Trade saved." (see the top-of-file comment on validateDraftFields).
+    const fieldsError = validateDraftFields(draft);
+    if (fieldsError) {
+      setDrafts((prev) => ({ ...prev, [tradeId]: { ...draft, fieldsError } }));
+      return;
+    }
+
     let parsedTerms: Record<string, unknown>;
     try {
       parsedTerms = draft.termsText.trim() === '' ? {} : JSON.parse(draft.termsText);
     } catch (e) {
       setDrafts((prev) => ({
         ...prev,
-        [tradeId]: { ...draft, termsError: `Invalid JSON: ${e instanceof Error ? e.message : String(e)}` },
+        [tradeId]: {
+          ...draft, fieldsError: null,
+          termsError: `Invalid JSON: ${e instanceof Error ? e.message : String(e)}`,
+        },
       }));
       return;
     }
+
+    // Only present-and-valid keys go in the body — an untouched-empty
+    // quantity/entry_price is honestly omitted (meaning "leave unchanged"),
+    // never sent as an explicit null the server would drop anyway.
+    const body: Partial<ExtractedTrade> = {
+      underlying: draft.underlying.trim(),
+      currency: draft.currency.trim(),
+      terms: parsedTerms,
+    };
+    if (draft.quantity.trim() !== '') body.quantity = Number(draft.quantity);
+    if (draft.entry_price.trim() !== '') body.entry_price = Number(draft.entry_price);
+
     setRowBusy((prev) => new Set(prev).add(tradeId));
     try {
-      await updateExtractedTrade(tradeId, {
-        underlying: draft.underlying || null,
-        quantity: draft.quantity.trim() === '' ? null : Number(draft.quantity),
-        entry_price: draft.entry_price.trim() === '' ? null : Number(draft.entry_price),
-        currency: draft.currency || null,
-        terms: parsedTerms,
-      });
-      setDrafts((prev) => ({ ...prev, [tradeId]: { ...draft, termsError: null } }));
+      await updateExtractedTrade(tradeId, body);
+      setDrafts((prev) => ({ ...prev, [tradeId]: { ...draft, termsError: null, fieldsError: null } }));
       setFeedback('Trade saved.');
       if (selectedBatchId != null) await refreshBatch(selectedBatchId);
     } catch (e) {
