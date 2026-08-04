@@ -1439,7 +1439,9 @@ def build_confirmations_router(*, get_db) -> APIRouter:
 - [ ] **Step 4: Run tests** — PASS
 - [ ] **Step 5: Commit** — `feat(confirmations): REST surface + async parse dispatch + audit events`
 
----### Task 6: Agent tools + registrations (HITL, capability, pins)
+---
+
+### Task 6: Agent tools + registrations (HITL, capability, pins)
 
 **Files:**
 - Create: `backend/app/tools/confirmations.py`
