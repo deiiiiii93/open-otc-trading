@@ -113,21 +113,26 @@ def _json_from_response(raw: str) -> dict:
         brace = re.search(r"\{.*\}", text, re.DOTALL)
         if brace:
             text = brace.group(0)
-    return json.loads(text)
+    parsed = json.loads(text)
+    if not isinstance(parsed, dict):
+        raise ValueError(
+            f"top-level JSON must be an object, got {type(parsed).__name__}"
+        )
+    return parsed
 
 
 def _complete_json(client: ExtractorClient, parts: list[dict]) -> dict:
     raw = client.complete(parts)
     try:
         return _json_from_response(raw)
-    except (json.JSONDecodeError, AttributeError):
+    except (json.JSONDecodeError, AttributeError, ValueError):
         raw2 = client.complete(parts + [{
             "type": "text",
             "text": "Your previous reply was not valid JSON. Reply with ONLY the JSON object.",
         }])
         try:
             return _json_from_response(raw2)
-        except (json.JSONDecodeError, AttributeError) as exc:
+        except (json.JSONDecodeError, AttributeError, ValueError) as exc:
             raise ExtractionError("extractor returned invalid JSON twice", raw2) from exc
 
 

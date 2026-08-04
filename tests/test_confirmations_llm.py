@@ -44,6 +44,27 @@ def test_segment_invalid_json_retries_once_then_raises():
     assert len(client.calls) == 2
 
 
+def test_segment_non_dict_json_retries_once_then_succeeds():
+    client = FakeClient([
+        json.dumps([1, 2, 3]),
+        json.dumps({"trades": [
+            {"family": "EuropeanVanillaOption", "pages": [1], "anchor": "BUY 100 vanilla"}
+        ]}),
+    ])
+    segments = segment_document(_text_doc(), client)
+    assert segments == [TradeSegment(
+        family="EuropeanVanillaOption", pages=[1], anchor="BUY 100 vanilla")]
+    assert len(client.calls) == 2
+
+
+def test_segment_non_dict_json_both_responses_raises_extraction_error():
+    client = FakeClient([json.dumps([1, 2, 3]), json.dumps("just a string")])
+    with pytest.raises(ExtractionError) as exc_info:
+        segment_document(_text_doc(), client)
+    assert len(client.calls) == 2
+    assert exc_info.value.raw_response == json.dumps("just a string")
+
+
 def test_extract_trade_targets_family_schema_and_parses_draft():
     payload = {
         "terms": {"strike": 150.0, "maturity_years": 1.0, "option_type": "call"},
