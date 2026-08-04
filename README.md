@@ -50,6 +50,7 @@ The product walkthrough tells it as one continuous flow:
 - **Conversational desk** — Brief an LLM agent in natural language; it calls deterministic tools for pricing, risk, hedging, and booking. Responses stream token-by-token with structured asset cards and charts.
 - **Pricing engine** — Multi-engine Greeks (analytical, Monte Carlo, PDE) via QuantArk, across snowball, phoenix, autocall, sharkfin, Asian, digital, barrier, and vanilla families.
 - **Human-in-the-loop booking** — Positions and hedges require explicit approval; the agent proposes, you commit.
+- **Trade confirmation → book** — Upload counterparty confirmation documents (PDF/DOCX, including scanned pages) on the **Confirmations** page, or just attach them to the Desk Agent or the floating Pet chat. The system extracts each trade into its product family's legal term schema — with the source quote and page number behind every field — validates it through the same builder gate as manual booking, and lands it as a reviewable draft. You edit anything the parser got wrong and confirm per trade; nothing books itself, and re-uploading the same confirmation reports the existing position instead of duplicating it.
 - **Portfolio risk** — Aggregated Greeks, scenario analysis, and position monitoring in a single run, sliced by underlying.
 - **Hedging** — A MILP solver that proposes and sizes Δ-neutral hedge strategies, with lifecycle backtesting.
 - **RFQ workflow** — Client portal for quote requests with an internal approval pipeline.

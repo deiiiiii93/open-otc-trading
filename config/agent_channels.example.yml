@@ -132,10 +132,17 @@ channels:
         provider: openai
         label: Gemini 3.5 Flash
         tags: [fast, tool-use]
+      # `confirmation_extractor` is the dedicated tag for the trade-confirmation
+      # parser (services/confirmations). Tag exactly ONE model with it, and that
+      # model MUST be vision-capable: scanned/image-only confirmations are sent as
+      # image content parts, and a text-only model fails the document outright
+      # rather than silently degrading. Resolution is two-tier —
+      # confirmation_extractor -> fast -> registry default — so a missing/typo'd
+      # tag costs the cheap tier, never the expensive agent default.
       - id: google/gemini-3.6-flash
         provider: openai
         label: Gemini 3.6 Flash
-        tags: [fast, tool-use]
+        tags: [fast, tool-use, confirmation_extractor]
       - id: openai/chat-latest
         provider: openai
         label: GPT-5.5 Instant

@@ -102,11 +102,57 @@ def _draft_to_row(document_id: int, seq: int, draft: TradeDraft) -> ExtractedTra
     )
 
 
+def synthesize_booking_terms(family: str, terms: dict, *, underlying: str | None = None,
+                             currency: str | None = None) -> tuple[dict | None, list[str]]:
+    """Turn schema-vocabulary extraction output into a canonical QuantArk termsheet.
+
+    Extraction fills ``get_product_term_schema(family)`` — the same surface the agent's
+    own ``build_product`` tool consumes — so its output is RAW builder input, not a
+    finished termsheet. It must go through ``build_product`` (the repo's single
+    producer) exactly as an agent would before booking.
+
+    Skipping this step silently breaks booking, and the live smoke proved it: a vanilla
+    confirmation legitimately yields ``{initial_price, exercise_date, strike,
+    option_type}`` (three of those are REQUIRED by the published schema), but
+    ``booking._RAW_TERMSHEET_VOCAB`` — the sniffer that decides synthesize-vs-verbatim —
+    lists only ``maturity_years|maturity_date|expiry_date|expiry``. With no match it
+    routes the terms to the validate-and-wrap path, where QuantArk rejects
+    ``initial_price`` as an unsupported kwarg for ``EuropeanVanillaOption``.
+
+    The fix belongs here, not in that tuple: adding ``exercise_date`` to it would flip
+    ALREADY-BUILT vanillas (whose persisted kwargs carry ``exercise_date`` but no
+    ``initial_price``) from the working verbatim path onto a synthesize path that then
+    fails for the missing field — the same trap the tuple's comment documents for
+    ``initial_price``. Building here keeps shared booking semantics untouched and still
+    leaves the booking gate to re-validate the result.
+    """
+    from ..domains.product_builders import build_product
+
+    built = build_product(
+        family,
+        dict(terms or {}),
+        underlying=underlying,
+        currency=currency,
+    )
+    if not built.ok:
+        problems = [*(built.warnings or [])]
+        if built.missing:
+            problems.append(f"missing required terms: {', '.join(built.missing)}")
+        return None, problems or [f"could not build a valid {family} termsheet"]
+    return dict(built.product_kwargs), []
+
+
 def validate_trade_terms(trade: ExtractedTrade) -> tuple[str, list[str]]:
     from app.tools.product_term_schema import _SCHEMA_FAMILIES
 
     if trade.family not in _SCHEMA_FAMILIES:
         return "unsupported", [f"unsupported product family {trade.family!r}"]
+    booking_terms, problems = synthesize_booking_terms(
+        trade.family, dict(trade.terms or {}),
+        underlying=trade.underlying, currency=trade.currency,
+    )
+    if booking_terms is None:
+        return "invalid", problems
     engine_name = DEFAULT_ENGINE_BY_PRODUCT_TYPE.get(trade.family)
     spec = ProductBookingSpec(
         asset_class="equity",
@@ -114,7 +160,7 @@ def validate_trade_terms(trade: ExtractedTrade) -> tuple[str, list[str]]:
         quantark_class=trade.family,
         underlying=trade.underlying or "UNKNOWN",
         currency=trade.currency,
-        terms=dict(trade.terms or {}),
+        terms=booking_terms,
         components=[],
     )
     try:
@@ -263,13 +309,22 @@ def book_trade(
     )
     if existing is not None:
         return {"ok": False, "error": "already_booked", "position_id": existing.id}
+    # Same synthesis validate_trade_terms just ran — booking must persist the CANONICAL
+    # termsheet, not the raw schema-vocabulary extraction, or the two would disagree
+    # about what "valid" meant.
+    booking_terms, problems = synthesize_booking_terms(
+        trade.family, dict(trade.terms or {}),
+        underlying=trade.underlying, currency=trade.currency,
+    )
+    if booking_terms is None:
+        return {"ok": False, "error": "validation_failed", "detail": problems}
     spec = ProductBookingSpec(
         asset_class="equity",
         product_family=product_family_for_quantark_class(trade.family),
         quantark_class=trade.family,
         underlying=trade.underlying or "UNKNOWN",
         currency=trade.currency,
-        terms=dict(trade.terms or {}),
+        terms=booking_terms,
         components=[],
         source_payload={
             "confirmation_document": document.filename,

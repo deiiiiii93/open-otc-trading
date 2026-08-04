@@ -863,3 +863,95 @@ pricing parameters from curves" button. Pricing Parameters stays a flat table.
 - **`validate_curve` is the single validation seam,** shared by the REST PUT
   (`upsert_underlying_default`) and the agent setter (`set_instrument_defaults`). Volatility
   curves require `> 0`; rate/dividend allow any finite value (rates can be negative).
+
+---
+
+## Trade confirmation → book
+
+Turn counterparty confirmation documents (PDF/DOCX, **including scanned/image-only
+pages**) into booked positions. One shared service owns the pipeline; the REST
+surface, the **Confirmations** page, and the agent tools are all thin clients over
+it — there is no second booking path.
+
+**Package:** `backend/app/services/confirmations/` — `extract.py` (pure PDF/DOCX text
+extraction + image-page detection/render), `llm.py` (two-stage extraction + model
+routing), `service.py` (batch → parse → validate → review → book). REST:
+`backend/app/routers/confirmations.py` (`/api/confirmations`). Tools:
+`backend/app/tools/confirmations.py`. Skill:
+`skills/workflows/positions/book-trade-confirmation/`. Frontend:
+`frontend/src/routes/Confirmations.{tsx,live.tsx,css}`. Migration `0052`
+(`confirmation_batches` → `confirmation_documents` → `extracted_trades`).
+Deps: `pypdf`, `pypdfium2`.
+
+### The pipeline
+
+Text-first: a PDF page under `MIN_TEXT_CHARS_PER_PAGE` (40) is treated as a scan and
+rendered to PNG for the vision path; `extract_mode` records `text`/`vision`/`mixed`
+honestly. Then **two LLM stages** — stage 1 segments the document into trades
+(`{family, pages, anchor}`, family constrained to the `build_product` vocabulary),
+stage 2 fills that family's `get_product_term_schema` with per-field
+`{quote, page}` evidence. Every draft is immediately re-validated through
+`prepare_booking_product_spec`; `validation_status` is `valid` / `invalid` /
+`unsupported`, and validation failures are **data, not errors** (the reviewer edits
+and the server re-validates).
+
+### Invariants
+
+- **Review-first is the whole design.** `book_trade` re-runs validation at booking
+  time (never trusts the stored status) and books through the existing
+  `book_position` gate. The web page books per trade on a human click; the agent's
+  `book_extracted_trade` is HITL `"write"`. `parse_trade_confirmation` is
+  write-class but deliberately **not** HITL — parsing writes only draft rows.
+- **Idempotency:** `source_trade_id` = the confirmation's own `external_trade_id`,
+  else `conf:{sha256[:12]}:{seq}`. A pre-check on `(portfolio_id, source_trade_id)`
+  returns `already_booked` + the existing position id. Note `book_position` itself
+  does **not** dedup and there is no DB unique constraint — the service pre-check is
+  the only guard (single-writer posture, same as the xlsx importer).
+- **Per-document failure isolation:** `parse_document` never raises for extraction
+  failures — the document lands `status="failed"` with the error (and the raw LLM
+  response in `extraction_debug`), and the rest of the batch continues.
+- `extracted_terms` is **immutable** (what the model returned); `terms` is the
+  human-editable copy. Both are kept so a review can always be audited against the
+  original parse.
+
+### Gotchas
+
+- **Extraction output is builder INPUT, not a termsheet — `synthesize_booking_terms`
+  is mandatory.** The extractor fills `get_product_term_schema(family)`, so a vanilla
+  legitimately comes back as `{initial_price, exercise_date, strike, option_type}`
+  (three of them REQUIRED by that schema). But `booking._RAW_TERMSHEET_VOCAB` — the
+  sniffer choosing synthesize-vs-validate-verbatim — lists only
+  `maturity_years|maturity_date|expiry_date|expiry`, so those terms match nothing, take
+  the verbatim path, and QuantArk rejects `initial_price` as an unsupported kwarg.
+  **Do NOT "fix" this by adding `exercise_date` to that tuple:** already-built vanillas
+  persist `exercise_date` *without* `initial_price`, so widening the tuple flips them
+  from the working verbatim path onto a synthesize path that then fails for the missing
+  field — the same trap its comment documents for `initial_price`. The service instead
+  runs `build_product` itself (the repo's single producer) before the gate, exactly as an
+  agent would. `validate_trade_terms` and `book_trade` MUST use the same helper or
+  "valid" and "bookable" diverge. **Only the live smoke caught this** — the unit fixtures
+  used `maturity_years`, which happens to match the raw-vocab list, so every offline test
+  passed while the real model's schema-faithful output was unbookable.
+- **The extractor model must be vision-capable.** Routing is by registry tag,
+  two-tier: `confirmation_extractor` (tag exactly one model) → `fast` → registry
+  default. Tag edits go to **both** `config/agent_channels.yaml` and the tracked
+  `.example.yml`. Pinned here: `google/gemini-3.6-flash`. A document needing vision
+  under a text-only model fails loudly rather than silently degrading.
+- **No module-scope `app.tools` import may live in `services/confirmations/`.**
+  `llm.py`/`service.py` need `app.tools.product_term_schema`, but `app.tools`'s
+  package init imports `tools/confirmations.py`, which imports this package — a real
+  cycle. Both use **function-scope** imports, and
+  `test_confirmations_tools.py::test_service_import_before_app_tools_has_no_import_cycle`
+  is a fresh-subprocess probe that pins it.
+- The three tools need the **full registration checklist** (`QUANT_AGENT_TOOLS`,
+  `DEEP_AGENT_TOOL_NAMES`, and for the book tool all three `hitl.py` structures) plus
+  the exact-set pins in `test_capability_assignments.py` (tool count) and
+  `test_hitl.py`. Adding the SKILL.md broke exact-set assertions in four catalog test
+  files — enumerate with `grep -rln "book-position" tests/`.
+- **Chat attachments are a separate seam:** `POST /api/chat/uploads` stores under
+  `artifact_dir/uploads/chat/` (inside the parse tool's containment root), and
+  `stream_chat_message` appends an attachment manifest to the **agent-run** content
+  only — the persisted user message keeps the user's original text.
+- The frontend vitest suite is **flaky under load** (slow route tests hit the 5s
+  timeout; `main` alone varies 12→18 failures run to run). Compare failing-file sets
+  against a same-machine `main` run before blaming a branch.

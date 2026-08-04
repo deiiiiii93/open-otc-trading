@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Trade confirmation → book** — upload counterparty confirmation documents (PDF/DOCX,
+  including scanned/image-only pages) and turn them into booked positions. New
+  `services/confirmations/` package (`extract` → `llm` → `service`) does text-first
+  extraction with a **vision fallback** for image pages (`pypdf` + `pypdfium2`), then a
+  two-stage LLM pass — segment the document into trades, then fill each family's legal
+  term schema from `get_product_term_schema` with per-field `{quote, page}` evidence.
+  Every extraction is re-validated through `prepare_booking_product_spec`, and **nothing
+  books without a human**: the web review screen or the agent's HITL card. Booking reuses
+  the existing `book_position` gate with `source_trade_id` idempotency
+  (`external_trade_id`, else `conf:{sha256[:12]}:{seq}`), so re-booking the same
+  confirmation reports `already_booked` instead of duplicating.
+  Surfaces: REST `/api/confirmations` (upload / list / detail / edit / book / reject,
+  async parse via `TaskRun`), the **Confirmations** nav page (multi-file upload, per-document
+  status, per-trade review with evidence quotes and inline validation errors), and three
+  agent tools — `parse_trade_confirmation`, `get_confirmation_batch`, and the HITL-gated
+  `book_extracted_trade` — routed by the new `positions/book-trade-confirmation` skill.
+  Chat attachments (`POST /api/chat/uploads` + a paperclip in the composer) let the
+  **Desk Agent and the Pet mini-chat** take confirmation files directly. Model routing uses
+  a dedicated `confirmation_extractor` registry tag (vision-capable, two-tier fallback to
+  `fast`). Migration `0052`; new deps `pypdf`, `pypdfium2`.
 - **`openai/gpt-5.6-sol` registered as an arena contestant** (the three sites per the
   doubao precedent: `CANDIDATE_MODELS`, live `agent_channels.yaml`, tracked
   `.example.yml`; tags `[tool-use, reasoning]`, not `fast`). Added for the Run #94

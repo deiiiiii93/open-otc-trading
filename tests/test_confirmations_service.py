@@ -225,3 +225,74 @@ def test_book_trade_fallback_source_trade_id_from_sha256(
     assert result["ok"] is True
     position = session.get(Position, result["position_id"])
     assert position.source_trade_id == f"conf:{doc.sha256[:12]}:{trade.seq}"
+
+
+# The vocabulary a REAL extraction produces: get_product_term_schema declares
+# initial_price / exercise_date / strike as REQUIRED for EuropeanVanillaOption, and the
+# live smoke confirmed the model fills exactly those. Critically it supplies NO key from
+# booking._RAW_TERMSHEET_VOCAB (maturity_years|maturity_date|expiry_date|expiry), which
+# is what made the booking gate treat these raw terms as a finished QuantArk termsheet
+# and reject initial_price. Regression pin for synthesize_booking_terms.
+SCHEMA_VOCAB_VANILLA_TERMS = {
+    "initial_price": 148.25,
+    "exercise_date": "2027-08-03",
+    "strike": 150.0,
+    "option_type": "CALL",
+}
+
+
+def _fake_for_schema_vocab_vanilla():
+    seg = json.dumps({"trades": [
+        {"family": "EuropeanVanillaOption", "pages": [1], "anchor": "BUY 500"}]})
+    trade = json.dumps({
+        "terms": SCHEMA_VOCAB_VANILLA_TERMS, "underlying": "AAPL", "quantity": 500,
+        "entry_price": 12.5, "currency": "USD", "counterparty": "Northwind Securities",
+        "trade_date": "2026-08-03", "external_trade_id": "TCS-2026-0042",
+        "confidence": 0.95,
+        "evidence": {"strike": {"quote": "Strike: 150.00", "page": 1}},
+    })
+    return FakeClient(seg, [trade])
+
+
+def test_schema_vocabulary_terms_validate_and_book(
+    session, tmp_path, monkeypatch, container_portfolio,
+):
+    """Terms in the published schema's vocabulary must be bookable end to end.
+
+    Before synthesize_booking_terms they scored `invalid` with
+    "Unsupported kwargs for EuropeanVanillaOption: initial_price" — schema-legal
+    extraction the desk could never book.
+    """
+    monkeypatch.setattr(
+        svc, "extract_document",
+        lambda path: DocumentContent(
+            pages=[PageContent(index=1, text="conf")], page_count=1, extract_mode="text"),
+    )
+    batch, doc = _seed_doc(session, tmp_path)
+    svc.parse_document(session, doc, client=_fake_for_schema_vocab_vanilla())
+    trade = doc.trades[0]
+
+    assert trade.validation_status == "valid", trade.validation_errors
+    # The raw extraction is preserved verbatim for audit...
+    assert trade.extracted_terms["initial_price"] == 148.25
+    assert trade.extracted_terms["exercise_date"] == "2027-08-03"
+
+    result = svc.book_trade(session, trade.id, portfolio_id=container_portfolio.id)
+    assert result["ok"] is True, result
+
+    # ...while the PERSISTED product carries the canonical built termsheet, which is
+    # what QuantArk actually prices (initial_price is consumed by the builder, not a
+    # constructor kwarg).
+    position = session.get(Position, result["position_id"])
+    assert position.product_type == "EuropeanVanillaOption"
+    assert position.product_kwargs["strike"] == 150.0
+    assert position.product_kwargs["exercise_date"] == "2027-08-03"
+    assert "initial_price" not in position.product_kwargs
+
+
+def test_synthesize_booking_terms_reports_missing_required_fields():
+    booking_terms, problems = svc.synthesize_booking_terms(
+        "EuropeanVanillaOption", {"strike": 150.0},
+    )
+    assert booking_terms is None
+    assert problems
