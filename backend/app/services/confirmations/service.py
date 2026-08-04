@@ -29,7 +29,15 @@ from .llm import (
     ExtractionError, TradeDraft, build_extractor_client, extract_trade,
     segment_document,
 )
-from app.tools.product_term_schema import _SCHEMA_FAMILIES
+
+# NOTE: app.tools.product_term_schema is imported lazily at each use site
+# below (validate_trade_terms / parse_document), not at module scope — same
+# app.tools <-> services.confirmations edge class fixed in llm.py (see the
+# comment there). A module-scope import here of anything under app.tools
+# would make app.tools' package init (which imports app.tools.confirmations,
+# which needs this whole module fully defined) re-enter this still-executing
+# module. Leave NO module-scope app.tools import anywhere in
+# app/services/confirmations/.
 
 
 @dataclass(frozen=True)
@@ -95,6 +103,8 @@ def _draft_to_row(document_id: int, seq: int, draft: TradeDraft) -> ExtractedTra
 
 
 def validate_trade_terms(trade: ExtractedTrade) -> tuple[str, list[str]]:
+    from app.tools.product_term_schema import _SCHEMA_FAMILIES
+
     if trade.family not in _SCHEMA_FAMILIES:
         return "unsupported", [f"unsupported product family {trade.family!r}"]
     engine_name = DEFAULT_ENGINE_BY_PRODUCT_TYPE.get(trade.family)
@@ -119,6 +129,8 @@ def validate_trade_terms(trade: ExtractedTrade) -> tuple[str, list[str]]:
 
 
 def parse_document(session: Session, document: ConfirmationDocument, *, client) -> None:
+    from app.tools.product_term_schema import _SCHEMA_FAMILIES
+
     document.status = "parsing"
     session.flush()
     debug: dict = {}

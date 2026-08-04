@@ -334,3 +334,44 @@ def test_tool_capability_groups():
     assert by_name["parse_trade_confirmation"].__capability_group__ is ToolGroup.DOMAIN_WRITE
     assert by_name["get_confirmation_batch"].__capability_group__ is ToolGroup.DOMAIN_READ
     assert by_name["book_extracted_trade"].__capability_group__ is ToolGroup.DOMAIN_WRITE
+
+
+# ---------------------------------------------------------------------------
+# No-cycle regression: app.tools <-> app.services.confirmations
+# ---------------------------------------------------------------------------
+
+
+def test_service_import_before_app_tools_has_no_import_cycle():
+    """Regression probe for the app.tools <-> services.confirmations edge.
+
+    services/confirmations/service.py (and llm.py, fixed earlier) used to do
+    a module-scope `from app.tools.product_term_schema import ...`. app.tools'
+    own package __init__ imports app.tools.confirmations, which needs
+    service.py/llm.py fully defined -- so importing services.confirmations
+    BEFORE app.tools re-enters those still-executing modules and raises
+    ImportError on a name not defined yet. That only "worked" here by the
+    incidental ordering inside tools/__init__.py (product_term_schema
+    imported ahead of .confirmations) plus the sys.modules submodule
+    fallback for `from ..services.confirmations import llm as
+    confirmations_llm` -- an import-block reorder in either module would
+    silently reintroduce it. A fresh-interpreter subprocess is required (not
+    an in-process import) because sys.modules from earlier test-collection
+    imports would otherwise mask the ordering this probes for.
+    """
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[1]
+    backend_dir = repo_root / "backend"
+    env = dict(os.environ)
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = f"{backend_dir}:{existing}" if existing else str(backend_dir)
+
+    result = subprocess.run(
+        [sys.executable, "-c",
+         "import app.services.confirmations.service; import app.tools"],
+        cwd=str(repo_root), env=env, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
