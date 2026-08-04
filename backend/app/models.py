@@ -1394,6 +1394,86 @@ class PositionImportBatch(Base):
     portfolio: Mapped[Portfolio] = relationship(back_populates="import_batches")
 
 
+class ConfirmationBatch(Base):
+    __tablename__ = "confirmation_batches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source: Mapped[str] = mapped_column(String(20), default="web")
+    default_portfolio_id: Mapped[int | None] = mapped_column(
+        ForeignKey("portfolios.id"), nullable=True
+    )
+    task_id: Mapped[int | None] = mapped_column(
+        ForeignKey("task_runs.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    documents: Mapped[list["ConfirmationDocument"]] = relationship(
+        back_populates="batch", cascade="all, delete-orphan"
+    )
+
+
+class ConfirmationDocument(Base):
+    __tablename__ = "confirmation_documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[int] = mapped_column(
+        ForeignKey("confirmation_batches.id"), index=True
+    )
+    filename: Mapped[str] = mapped_column(String(255))
+    stored_path: Mapped[str] = mapped_column(String(1024))
+    sha256: Mapped[str] = mapped_column(String(64), index=True)
+    byte_len: Mapped[int] = mapped_column(Integer)
+    mime: Mapped[str] = mapped_column(String(120))
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    extract_mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model_provenance: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    extraction_debug: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    parsed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    batch: Mapped[ConfirmationBatch] = relationship(back_populates="documents")
+    trades: Mapped[list["ExtractedTrade"]] = relationship(
+        back_populates="document", cascade="all, delete-orphan"
+    )
+
+
+class ExtractedTrade(Base):
+    __tablename__ = "extracted_trades"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("confirmation_documents.id"), index=True
+    )
+    seq: Mapped[int] = mapped_column(Integer, default=1)
+    family: Mapped[str] = mapped_column(String(80))
+    extracted_terms: Mapped[dict] = mapped_column(JSON, default=dict)
+    terms: Mapped[dict] = mapped_column(JSON, default=dict)
+    underlying: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    entry_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    counterparty: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    trade_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    external_trade_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict)
+    validation_status: Mapped[str] = mapped_column(String(20), default="invalid")
+    validation_errors: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(20), default="extracted", index=True)
+    booked_position_id: Mapped[int | None] = mapped_column(
+        ForeignKey("positions.id"), nullable=True
+    )
+    reject_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow
+    )
+
+    document: Mapped[ConfirmationDocument] = relationship(back_populates="trades")
+
+
 class FxRate(Base):
     __tablename__ = "fx_rates"
     __table_args__ = (
