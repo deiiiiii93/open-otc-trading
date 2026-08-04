@@ -152,3 +152,76 @@ def test_book_trade_books_and_is_idempotent(session, tmp_path, monkeypatch, cont
     assert trade.status == "booked"
     again = svc.book_trade(session, trade.id, portfolio_id=container_portfolio.id)
     assert again["ok"] is False and again["error"] == "already_booked"
+
+
+def test_book_trade_dedup_guard_blocks_different_trade_same_source_id(
+    session, tmp_path, monkeypatch, container_portfolio,
+):
+    """Two DIFFERENT ExtractedTrade rows (e.g. a re-uploaded duplicate
+    confirmation) that resolve to the same source_trade_id must dedup via the
+    Position(portfolio_id, source_trade_id) query, not the trade.status=="booked"
+    fast path — trade 2 is never itself booked, so that fast path never fires.
+    """
+    monkeypatch.setattr(
+        svc, "extract_document",
+        lambda path: DocumentContent(
+            pages=[PageContent(index=1, text="x")], page_count=1, extract_mode="text"),
+    )
+    _, doc1 = _seed_doc(session, tmp_path)
+    svc.parse_document(session, doc1, client=_fake_for_vanilla())
+    trade1 = doc1.trades[0]
+
+    dup_dir = tmp_path / "dup"
+    dup_dir.mkdir()
+    _, doc2 = _seed_doc(session, dup_dir)
+    svc.parse_document(session, doc2, client=_fake_for_vanilla())
+    trade2 = doc2.trades[0]
+
+    assert trade1.id != trade2.id
+    assert trade1.external_trade_id == trade2.external_trade_id == "TC-1001"
+
+    first = svc.book_trade(session, trade1.id, portfolio_id=container_portfolio.id)
+    assert first["ok"] is True
+    first_position_id = first["position_id"]
+
+    second = svc.book_trade(session, trade2.id, portfolio_id=container_portfolio.id)
+    assert second == {
+        "ok": False, "error": "already_booked", "position_id": first_position_id,
+    }
+    assert trade2.status == "extracted"
+    assert trade2.booked_position_id is None
+    count = (
+        session.query(Position)
+        .filter(Position.portfolio_id == container_portfolio.id,
+                Position.source_trade_id == "TC-1001")
+        .count()
+    )
+    assert count == 1
+
+
+def test_book_trade_fallback_source_trade_id_from_sha256(
+    session, tmp_path, monkeypatch, container_portfolio,
+):
+    """No external_trade_id in the extraction -> source_trade_id falls back to
+    conf:{document.sha256[:12]}:{trade.seq} (confirmation_source_trade_id)."""
+    monkeypatch.setattr(
+        svc, "extract_document",
+        lambda path: DocumentContent(
+            pages=[PageContent(index=1, text="x")], page_count=1, extract_mode="text"),
+    )
+    seg = json.dumps({"trades": [
+        {"family": "EuropeanVanillaOption", "pages": [1], "anchor": "a"}]})
+    trade_json = json.dumps({
+        "terms": VANILLA_TERMS, "underlying": "AAPL", "quantity": 100,
+        "entry_price": 12.5, "currency": "USD", "counterparty": "Big Bank",
+        "trade_date": "2026-08-01", "confidence": 0.9, "evidence": {},
+    })
+    batch, doc = _seed_doc(session, tmp_path)
+    svc.parse_document(session, doc, client=FakeClient(seg, [trade_json]))
+    trade = doc.trades[0]
+    assert trade.external_trade_id is None
+
+    result = svc.book_trade(session, trade.id, portfolio_id=container_portfolio.id)
+    assert result["ok"] is True
+    position = session.get(Position, result["position_id"])
+    assert position.source_trade_id == f"conf:{doc.sha256[:12]}:{trade.seq}"

@@ -14,12 +14,10 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from ...config import get_settings
 from ...models import (
     ConfirmationBatch, ConfirmationDocument, ExtractedTrade, Position, TaskRun,
     TaskStatus,
 )
-from ..audit import record_audit
 from ..domains.booking import (
     BookingRequest, ProductBookingSpec, book_position, prepare_booking_product_spec,
 )
