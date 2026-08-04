@@ -833,6 +833,76 @@ class PortfolioMembershipOut(BaseModel):
     position_ids: list[int]
 
 
+class ExtractedTradeOut(BaseModel):
+    id: int
+    document_id: int
+    seq: int
+    family: str
+    extracted_terms: dict[str, Any] = Field(default_factory=dict)
+    terms: dict[str, Any] = Field(default_factory=dict)
+    underlying: str | None = None
+    quantity: float | None = None
+    entry_price: float | None = None
+    currency: str | None = None
+    counterparty: str | None = None
+    trade_date: str | None = None
+    external_trade_id: str | None = None
+    confidence: float | None = None
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    validation_status: str
+    validation_errors: list[Any] = Field(default_factory=list)
+    status: str
+    booked_position_id: int | None = None
+    reject_reason: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class ConfirmationDocumentOut(BaseModel):
+    id: int
+    filename: str
+    sha256: str
+    byte_len: int
+    mime: str
+    page_count: int | None = None
+    extract_mode: str | None = None
+    status: str
+    error: str | None = None
+    model_provenance: dict[str, Any] | None = None
+    parsed_at: datetime | None = None
+    trades: list[ExtractedTradeOut] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class ConfirmationBatchOut(BaseModel):
+    id: int
+    source: str
+    default_portfolio_id: int | None = None
+    task_id: int | None = None
+    created_at: datetime
+    documents: list[ConfirmationDocumentOut] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class ExtractedTradeUpdateIn(BaseModel):
+    family: str | None = None
+    underlying: str | None = None
+    quantity: float | None = None
+    entry_price: float | None = None
+    currency: str | None = None
+    terms: dict[str, Any] | None = None
+
+
+class BookTradeIn(BaseModel):
+    portfolio_id: int | None = None
+
+
+class RejectTradeIn(BaseModel):
+    reason: str | None = None
+
+
 class PositionImportBatchOut(BaseModel):
     id: int
     portfolio_id: int
