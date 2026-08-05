@@ -22,7 +22,8 @@ from app.services.domains import booking as booking_svc
 from app.services.domains import position_terms as terms_svc
 from app.services.domains import positions as positions_svc
 from app.services.domains import products as products_svc
-from app.services.underlyings import is_registered_underlying, resolve_underlying_currency
+from app.services.instruments import resolve_bookable_underlying
+from app.services.underlyings import resolve_underlying_currency
 
 from ._shaping import (
     shape_position,
@@ -660,11 +661,21 @@ def book_position_tool(
     )
     database.init_db()
     with database.SessionLocal() as session:
-        if not is_registered_underlying(session, product.underlying):
+        # Same gate the Confirmations review screen applies, so an agent
+        # cannot reach a booking the human path would have refused. reason
+        # separates "no such instrument" (register_underlying then retry)
+        # from "exists but is draft/untagged" (retrying will never help).
+        resolution = resolve_bookable_underlying(session, product.underlying)
+        if not resolution.ok:
             return {
                 "ok": False,
                 "error": "underlying_not_registered",
-                "detail": {"symbol": product.underlying},
+                "detail": {
+                    "symbol": product.underlying,
+                    "reason": resolution.reason,
+                    "message": resolution.message,
+                    "candidates": resolution.candidates,
+                },
             }
         position = booking_svc.book_position(
             session,

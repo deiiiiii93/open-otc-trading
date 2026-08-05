@@ -51,6 +51,11 @@ def _make_portfolio(name: str = "Book", kind: str = "container") -> int:
 
 
 def _tag_underlying(symbol: str) -> None:
+    """Make `symbol` BOOKABLE: active AND tagged "underlying".
+
+    Instrument.status defaults to "draft", so tagging alone left these rows
+    unbookable — the booking gate requires both halves.
+    """
     from app.models import Instrument
 
     with database.SessionLocal() as session:
@@ -58,6 +63,7 @@ def _tag_underlying(symbol: str) -> None:
         if row is None:
             row = Instrument(symbol=symbol, kind="index")
             session.add(row)
+        row.status = "active"
         row.tags = list({*(row.tags or []), "underlying"})
         session.commit()
 
@@ -449,6 +455,38 @@ def test_book_position_rejects_unregistered_underlying():
     assert result["ok"] is False
     assert result["error"] == "underlying_not_registered"
     assert result["detail"]["symbol"] == "UNREGISTERED_SYMBOL.SH"
+    # reason separates "no such instrument" (register_underlying then retry)
+    # from "exists but draft/untagged" (retrying can never help).
+    assert result["detail"]["reason"] == "unknown"
+
+
+def test_book_position_rejects_an_instrument_that_is_not_tagged_underlying():
+    """Registered is not the same as bookable: an instrument kept only for
+    hedging must not become a trade underlying."""
+    from app import database
+    from app.models import Instrument
+
+    with database.SessionLocal() as session:
+        session.add(Instrument(
+            symbol="IF2612.CFFEX", display_name="IF2612.CFFEX", kind="futures",
+            status="active", tags=["hedge"],
+        ))
+        session.commit()
+
+    result = book_position_tool.invoke({
+        "portfolio_id": _make_portfolio(),
+        "product": {
+            "product_family": "spot", "quantark_class": "Spot",
+            "underlying": "IF2612.CFFEX", "terms": {},
+        },
+        "quantity": 1,
+    })
+
+    assert result["ok"] is False
+    assert result["error"] == "underlying_not_registered"
+    assert result["detail"]["reason"] == "not_bookable"
+    assert "missing 'underlying'" in result["detail"]["message"]
+    assert result["detail"]["symbol"] == "IF2612.CFFEX"
 
 
 def test_product_booking_input_derives_family_from_quantark_class():

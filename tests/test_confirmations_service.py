@@ -9,6 +9,14 @@ from app.services.confirmations import service as svc
 from app.services.confirmations.extract import DocumentContent, PageContent
 
 
+@pytest.fixture(autouse=True)
+def _aapl_is_bookable(registered_underlying):
+    """Every fixture below trades AAPL, and validation now requires the
+    underlying to be an ACTIVE instrument tagged "underlying" — otherwise
+    booking would mint a junk instrument for it."""
+    registered_underlying("AAPL")
+
+
 @pytest.fixture
 def container_portfolio(session):
     p = Portfolio(name="Conf Test Book", kind="container")
@@ -152,6 +160,94 @@ def test_book_trade_books_and_is_idempotent(session, tmp_path, monkeypatch, cont
     assert trade.status == "booked"
     again = svc.book_trade(session, trade.id, portfolio_id=container_portfolio.id)
     assert again["ok"] is False and again["error"] == "already_booked"
+
+
+def _fake_with_legal_name():
+    """The real-world failure: the extractor keeps the issuer's LEGAL name
+    because the confirmation writes "Shares: Apple Inc. (Ticker: AAPL)" and
+    the schema only asked for "underlying"."""
+    seg = json.dumps({"trades": [
+        {"family": "EuropeanVanillaOption", "pages": [1], "anchor": "BUY 100"}]})
+    trade = json.dumps({
+        "terms": VANILLA_TERMS, "underlying": "Apple Inc.", "quantity": 100,
+        "entry_price": 12.5, "currency": "USD", "counterparty": "Big Bank",
+        "trade_date": "2026-08-01", "external_trade_id": "TC-LEGAL-1",
+        "confidence": 0.9,
+        "evidence": {
+            "underlying": {"quote": "Shares: Apple Inc. (Ticker: AAPL)", "page": 1},
+        },
+    })
+    return FakeClient(seg, [trade])
+
+
+def test_legal_name_underlying_is_invalid_and_suggests_the_ticker(
+    session, tmp_path, monkeypatch,
+):
+    """A legal name is not an instrument. Left unchecked this books "fine" and
+    then silently cannot be priced: book_position -> link_position_underlying
+    -> ensure_underlying MINTS an instrument for any unrecognised string."""
+    monkeypatch.setattr(
+        svc, "extract_document",
+        lambda path: DocumentContent(
+            pages=[PageContent(index=1, text="x")], page_count=1, extract_mode="text"),
+    )
+    _, doc = _seed_doc(session, tmp_path)
+    svc.parse_document(session, doc, client=_fake_with_legal_name())
+
+    trade = doc.trades[0]
+    assert trade.validation_status == "invalid"
+    assert "did you mean AAPL?" in " ".join(trade.validation_errors)
+    # The extractor's own output is preserved verbatim for audit.
+    assert trade.underlying == "Apple Inc."
+
+
+def test_book_trade_refuses_an_underlying_that_is_not_a_bookable_instrument(
+    session, tmp_path, monkeypatch, container_portfolio,
+):
+    """book_trade re-validates rather than trusting the stored status, so the
+    gate holds even if a row was persisted 'valid' by an older parse."""
+    monkeypatch.setattr(
+        svc, "extract_document",
+        lambda path: DocumentContent(
+            pages=[PageContent(index=1, text="x")], page_count=1, extract_mode="text"),
+    )
+    _, doc = _seed_doc(session, tmp_path)
+    svc.parse_document(session, doc, client=_fake_with_legal_name())
+    trade = doc.trades[0]
+    trade.validation_status = "valid"  # pretend an older parse blessed it
+    session.flush()
+
+    result = svc.book_trade(session, trade.id, portfolio_id=container_portfolio.id)
+
+    assert result["ok"] is False
+    assert trade.status != "booked"
+    assert session.query(Position).count() == 0
+
+
+def test_underlying_must_be_tagged_underlying_not_merely_present(
+    session, tmp_path, monkeypatch, registered_underlying,
+):
+    """An instrument that exists for hedging only is not a valid trade
+    underlying — the error must say so instead of "no such instrument"."""
+    monkeypatch.setattr(
+        svc, "extract_document",
+        lambda path: DocumentContent(
+            pages=[PageContent(index=1, text="x")], page_count=1, extract_mode="text"),
+    )
+    registered_underlying("IF2612.CFFEX", kind="futures", tags=["hedge"])
+    _, doc = _seed_doc(session, tmp_path)
+
+    seg = json.dumps({"trades": [
+        {"family": "EuropeanVanillaOption", "pages": [1], "anchor": "BUY"}]})
+    trade_json = json.dumps({
+        "terms": VANILLA_TERMS, "underlying": "IF2612.CFFEX", "quantity": 100,
+        "entry_price": 12.5, "currency": "CNY", "confidence": 0.9, "evidence": {},
+    })
+    svc.parse_document(session, doc, client=FakeClient(seg, [trade_json]))
+
+    trade = doc.trades[0]
+    assert trade.validation_status == "invalid"
+    assert "missing 'underlying'" in " ".join(trade.validation_errors)
 
 
 def test_book_trade_dedup_guard_blocks_different_trade_same_source_id(

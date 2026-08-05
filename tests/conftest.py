@@ -69,6 +69,32 @@ def session(settings: Settings):
 
 
 @pytest.fixture
+def registered_underlying(session):
+    """Factory for a BOOKABLE underlying: an Instrument that is ACTIVE **and**
+    tagged "underlying".
+
+    Booking requires both halves — book_position, book_hedge and the
+    confirmations review gate all refuse anything else — so a test that books
+    must seed one. It commits because tools that open their own
+    `database.SessionLocal()` cannot see uncommitted rows.
+    """
+    from app.models import Instrument
+
+    def make(symbol: str = "AAPL", *, status: str = "active",
+             tags: list[str] | None = None, **kw) -> "Instrument":
+        row = Instrument(
+            symbol=symbol, display_name=kw.pop("display_name", symbol),
+            kind=kw.pop("kind", "stock"), status=status,
+            tags=["underlying"] if tags is None else tags, **kw,
+        )
+        session.add(row)
+        session.commit()
+        return row
+
+    return make
+
+
+@pytest.fixture
 def agent_thread_factory(session):
     """Factory returning new AgentThread rows on the test session."""
     from app.models import AgentThread

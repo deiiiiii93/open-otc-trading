@@ -202,6 +202,120 @@ def test_is_registered_underlying():
         assert is_registered_underlying(session, "DOES_NOT_EXIST.SH") is False
 
 
+def test_is_registered_underlying_requires_active_status():
+    """The tag alone is NOT enough — a draft or retired instrument is not
+    tradeable. This predicate used to check only the tag, so book_position and
+    book_hedge would both have accepted one."""
+    from app import database
+    from app.services.underlyings import is_registered_underlying
+
+    with database.SessionLocal() as session:
+        _mk(session, symbol="DRAFT.SH", status="draft", tags=["underlying"])
+        _mk(session, symbol="RETIRED.SH", status="retired", tags=["underlying"])
+        _mk(session, symbol="LIVE.SH", status="active", tags=["underlying"])
+        session.commit()
+
+        assert is_registered_underlying(session, "DRAFT.SH") is False
+        assert is_registered_underlying(session, "RETIRED.SH") is False
+        assert is_registered_underlying(session, "LIVE.SH") is True
+
+
+def test_bookable_underlyings_needs_active_and_the_tag():
+    from app import database
+    from app.services.instruments import bookable_underlyings
+
+    with database.SessionLocal() as session:
+        _mk(session, symbol="OK.SH", status="active", tags=["underlying", "hedge"])
+        _mk(session, symbol="HEDGE_ONLY.SH", status="active", tags=["hedge"])
+        _mk(session, symbol="DRAFT.SH", status="draft", tags=["underlying"])
+        session.commit()
+
+        assert [row.symbol for row in bookable_underlyings(session)] == ["OK.SH"]
+
+
+def test_resolve_bookable_underlying_returns_the_canonical_spelling():
+    """A lower-cased input must still resolve, and must book against the
+    STORED symbol rather than the caller's casing."""
+    from app import database
+    from app.services.instruments import resolve_bookable_underlying
+
+    with database.SessionLocal() as session:
+        _mk(session, symbol="AAPL", kind="stock", tags=["underlying"])
+        session.commit()
+
+        assert resolve_bookable_underlying(session, "AAPL").symbol == "AAPL"
+        assert resolve_bookable_underlying(session, "  aapl  ").symbol == "AAPL"
+        assert resolve_bookable_underlying(session, "aapl").ok is True
+
+
+def test_resolve_bookable_underlying_explains_why_an_existing_row_is_unusable():
+    """"Exists but not bookable" is a different problem from "no such
+    instrument" — retrying register_underlying would never fix it — so the two
+    carry different reasons and the message names the actual blocker."""
+    from app import database
+    from app.services.instruments import resolve_bookable_underlying
+
+    with database.SessionLocal() as session:
+        _mk(session, symbol="IF2612.CFFEX", kind="futures", tags=["hedge"])
+        _mk(session, symbol="DRAFT.SH", status="draft", tags=["underlying"])
+        session.commit()
+
+        hedge = resolve_bookable_underlying(session, "IF2612.CFFEX")
+        assert (hedge.ok, hedge.reason) == (False, "not_bookable")
+        assert "missing 'underlying'" in (hedge.message or "")
+
+        draft = resolve_bookable_underlying(session, "DRAFT.SH")
+        assert (draft.ok, draft.reason) == (False, "not_bookable")
+        assert "'draft'" in (draft.message or "")
+
+
+def test_resolve_bookable_underlying_suggests_a_ticker_quoted_in_the_hint():
+    """The confirmation names the instrument twice — "Apple Inc. (Ticker:
+    AAPL)" — so the evidence quote turns a dead end into a usable suggestion.
+    The value is NEVER auto-rewritten: ok stays False and a human decides."""
+    from app import database
+    from app.services.instruments import resolve_bookable_underlying
+
+    with database.SessionLocal() as session:
+        _mk(session, symbol="AAPL", kind="stock", tags=["underlying"])
+        session.commit()
+
+        hinted = resolve_bookable_underlying(
+            session, "Apple Inc.", hint_text="Shares: Apple Inc. (Ticker: AAPL)")
+        assert hinted.ok is False
+        assert hinted.reason == "unknown"
+        assert hinted.candidates == ["AAPL"]
+        assert "did you mean AAPL?" in (hinted.message or "")
+
+        # Without the hint there is nothing to go on, and inventing a match
+        # would be a guess — so it stays honestly empty.
+        bare = resolve_bookable_underlying(session, "Apple Inc.")
+        assert bare.candidates == []
+
+
+def test_resolve_bookable_underlying_never_suggests_an_unbookable_instrument():
+    from app import database
+    from app.services.instruments import resolve_bookable_underlying
+
+    with database.SessionLocal() as session:
+        _mk(session, symbol="AAPL", kind="stock", status="draft", tags=["underlying"])
+        session.commit()
+
+        result = resolve_bookable_underlying(
+            session, "Apple Inc.", hint_text="Apple Inc. (Ticker: AAPL)")
+        assert result.candidates == []
+
+
+def test_resolve_bookable_underlying_rejects_empty():
+    from app import database
+    from app.services.instruments import resolve_bookable_underlying
+
+    with database.SessionLocal() as session:
+        for value in (None, "", "   "):
+            result = resolve_bookable_underlying(session, value)
+            assert (result.ok, result.reason) == (False, "empty")
+
+
 def test_sync_hedge_tag_adds_tag_for_active_map_entry():
     from app import database
     from app.models import HedgeMapEntry

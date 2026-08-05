@@ -69,6 +69,13 @@ def _sync_dispatch(fake_client):
 
 
 @pytest.fixture(autouse=True)
+def _aapl_is_bookable(registered_underlying):
+    """The confirmations in this file trade AAPL, and validation now requires
+    the underlying to be an ACTIVE instrument tagged "underlying"."""
+    registered_underlying("AAPL")
+
+
+@pytest.fixture(autouse=True)
 def _fake_extract_document(monkeypatch):
     monkeypatch.setattr(
         confirmations_service, "extract_document",

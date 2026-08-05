@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from ..models import MarketDataProfile, Position, Product, Underlying
@@ -14,6 +14,10 @@ from .import_schema import is_knocked_out
 
 MANUAL_INPUT_FIELDS = ("rate", "dividend_yield", "volatility")
 VISIBLE_STATUSES = {"active", "draft"}
+
+# Booking an underlying requires BOTH of these — see is_bookable_underlying_row.
+BOOKABLE_UNDERLYING_TAG = "underlying"
+BOOKABLE_UNDERLYING_STATUS = "active"
 
 
 @dataclass(frozen=True)
@@ -194,16 +198,39 @@ def update_underlying(session: Session, symbol: str, fields: dict[str, Any]) -> 
     return row
 
 
-def is_registered_underlying(session: Session, symbol: str) -> bool:
-    """True when the symbol resolves to an Instrument tagged "underlying" —
-    the gate book_position/book_hedge check before booking."""
-    cleaned = normalize_underlying_symbol(symbol)
-    if not cleaned:
-        return False
-    row = session.query(Underlying).filter(Underlying.symbol == cleaned).one_or_none()
+def is_bookable_underlying_row(row: Underlying | None) -> bool:
+    """The single definition of "may be booked against as a trade underlying":
+    status ACTIVE **and** carrying the computed "underlying" tag.
+
+    The tag alone is not sufficient — a draft or retired instrument is not
+    tradeable, and this predicate used to check only the tag, so every caller
+    (book_position, book_hedge) would have accepted one.
+    """
     if row is None:
         return False
-    return "underlying" in (row.tags or [])
+    return row.status == BOOKABLE_UNDERLYING_STATUS and (
+        BOOKABLE_UNDERLYING_TAG in (row.tags or [])
+    )
+
+
+def find_instrument_by_symbol(session: Session, symbol: str) -> Underlying | None:
+    """Case-insensitive symbol lookup. Symbols are stored canonically, but a
+    confirmation or an agent may hand us "aapl"; matching case-sensitively
+    would report a registered instrument as unknown."""
+    cleaned = normalize_underlying_symbol(symbol)
+    if not cleaned:
+        return None
+    return (
+        session.query(Underlying)
+        .filter(func.upper(Underlying.symbol) == cleaned.upper())
+        .one_or_none()
+    )
+
+
+def is_registered_underlying(session: Session, symbol: str) -> bool:
+    """True when the symbol resolves to an ACTIVE Instrument tagged
+    "underlying" — the gate book_position/book_hedge check before booking."""
+    return is_bookable_underlying_row(find_instrument_by_symbol(session, symbol))
 
 
 def link_position_underlying(

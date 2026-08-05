@@ -25,6 +25,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   indicator and the polling can't disagree about what "still parsing" means.
 
 ### Fixed
+- **Booking now refuses an underlying that is not a bookable instrument.** A confirmation
+  names the issuer in legal form ("Apple Inc."), but positions, pricing and risk key off the
+  instrument **symbol** — and nothing checked. `validate_trade_terms` only asserted the field
+  was non-empty, so `Apple Inc.` was stored `valid`, and `book_position` →
+  `link_position_underlying` → `ensure_underlying` then **minted** an `Instrument` for it
+  (deriving nonsense along the way: `akshare_symbol("Apple Inc.")` splits on the dot in "Inc."
+  and yields `"Apple Inc"`). The position booked "successfully" and could never be priced,
+  hedged or risk-checked. New `resolve_bookable_underlying` (`services/instruments.py`) is the
+  shared gate: it resolves only against instruments that are **`status="active"` AND tagged
+  `"underlying"`**, returns the canonical stored spelling (so `aapl` books as `AAPL`), and
+  never rewrites the caller's value — an unrecognised name is reported, not guessed. It
+  distinguishes `unknown` ("no such instrument" — register it and retry) from `not_bookable`
+  ("exists but is draft/untagged" — retrying can never help) and names the actual blocker.
+  Candidate suggestions scan the confirmation's own evidence quote, so
+  `"Shares: Apple Inc. (Ticker: AAPL)"` yields *"did you mean AAPL?"* instead of a dead end.
+  Wired into `confirmations.validate_trade_terms` (hence the Confirmations review screen **and**
+  the agent's `book_extracted_trade`, which share it, and `book_trade`, which re-validates) and
+  into `book_position_tool`, whose `underlying_not_registered` error now carries
+  `reason`/`message`/`candidates`.
+- **`is_registered_underlying` ignored instrument status.** It returned
+  `"underlying" in row.tags` without checking `status`, so the gate `book_position` and
+  `book_hedge` already relied on would have accepted a `draft` or `retired` instrument. It now
+  requires active + tagged via the shared `is_bookable_underlying_row` predicate, and matches
+  the symbol case-insensitively. No-op on current data; two test helpers were creating `draft`
+  instruments (the model default) and depending on the old behaviour.
+- **The extractor was never told to return a ticker.** The stage-2 prompt asked for
+  `"underlying": <string or null>` with no symbol-vs-name guidance, so the model faithfully
+  returned the legal name even when the ticker sat in the same sentence. It now asks for the
+  exchange ticker / market symbol explicitly, with the "Apple Inc. (Ticker: AAPL)" case spelled
+  out, and falls back to the legal name (cited in evidence) only when the document shows no
+  symbol at all.
 - **Confirmations: the batch list clipped its Docs and Status columns.** The row declared
   25rem of *fixed* grid track (`4rem` id + `11rem` created + `6rem` source + `4rem` docs)
   before the status column got a say, inside a `minmax(280px, 380px)` rail — fixed tracks

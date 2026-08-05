@@ -35,17 +35,38 @@ def _seg_json(family: str = "EuropeanVanillaOption") -> str:
     return json.dumps({"trades": [{"family": family, "pages": [1], "anchor": "BUY 100"}]})
 
 
-def _trade_json(external_trade_id: str) -> str:
+def _trade_json(external_trade_id: str, underlying: str = "AAPL") -> str:
+    evidence = {"strike": {"quote": "strike 150", "page": 1}}
+    if underlying != "AAPL":
+        evidence["underlying"] = {
+            "quote": f"Shares: {underlying} (Ticker: AAPL)", "page": 1}
     return json.dumps({
-        "terms": VANILLA_TERMS, "underlying": "AAPL", "quantity": 100,
+        "terms": VANILLA_TERMS, "underlying": underlying, "quantity": 100,
         "entry_price": 12.5, "currency": "USD", "counterparty": "Big Bank",
         "trade_date": "2026-08-01", "external_trade_id": external_trade_id,
         "confidence": 0.9,
-        "evidence": {"strike": {"quote": "strike 150", "page": 1}},
+        "evidence": evidence,
     })
 
 
-def _configure_test_env(tmp_path) -> Settings:
+def _register_underlying(symbol: str = "AAPL") -> None:
+    """Seed a BOOKABLE underlying: ACTIVE **and** tagged "underlying".
+
+    Validation refuses anything else, because book_position would otherwise
+    mint a junk instrument for an unrecognised string. Committed, since the
+    tools under test open their own sessions.
+    """
+    from app.models import Instrument
+
+    with database.SessionLocal() as session:
+        session.add(Instrument(
+            symbol=symbol, display_name=symbol, kind="stock",
+            status="active", tags=["underlying"],
+        ))
+        session.commit()
+
+
+def _configure_test_env(tmp_path, *, register_underlying: bool = True) -> Settings:
     settings = Settings(
         database_url=f"sqlite+pysqlite:///{tmp_path / 'test.sqlite3'}",
         artifact_dir=tmp_path / "artifacts",
@@ -53,6 +74,8 @@ def _configure_test_env(tmp_path) -> Settings:
     configure_settings(settings)
     database.configure_database(settings)
     database.init_db()
+    if register_underlying:
+        _register_underlying()
     return settings
 
 
@@ -208,9 +231,15 @@ def test_get_confirmation_batch_not_found(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _seed_extracted_trade(tmp_path, monkeypatch, *, external_trade_id: str):
-    """Seed one valid extracted trade + a container portfolio, via the same
-    parse path Task 4/5 tests use, and return (settings, trade_id, portfolio_id).
+def _seed_extracted_trade(
+    tmp_path, monkeypatch, *, external_trade_id: str,
+    underlying: str = "AAPL", expect_status: str = "valid",
+):
+    """Seed one extracted trade + a container portfolio, via the same parse
+    path Task 4/5 tests use, and return (settings, trade_id, portfolio_id).
+
+    `underlying` defaults to the registered AAPL; pass a legal name to
+    exercise the instrument-master gate.
     """
     from app.models import Portfolio
     from app.services.confirmations import service as confirmations_service
@@ -244,11 +273,12 @@ def _seed_extracted_trade(tmp_path, monkeypatch, *, external_trade_id: str):
         session.add(document)
         session.flush()
 
-        fake_client = FakeExtractorClient(_seg_json(), _trade_json(external_trade_id))
+        fake_client = FakeExtractorClient(
+            _seg_json(), _trade_json(external_trade_id, underlying))
         confirmations_service.parse_document(session, document, client=fake_client)
         session.commit()
         trade_id = document.trades[0].id
-        assert document.trades[0].validation_status == "valid"
+        assert document.trades[0].validation_status == expect_status
 
     return settings, trade_id, portfolio.id
 
@@ -271,6 +301,27 @@ def test_book_extracted_trade_books_position(tmp_path, monkeypatch):
         assert position is not None
         assert position.portfolio_id == portfolio_id
         assert position.source_trade_id == "TC-TOOL-BOOK"
+
+
+def test_book_extracted_trade_refuses_an_unregistered_underlying(tmp_path, monkeypatch):
+    """The agent path enforces the SAME instrument-master gate as the web
+    review screen — both go through confirmations.book_trade, so an agent
+    cannot book a legal name the human path would have refused."""
+    from app.models import Position
+    from app.tools.confirmations import book_extracted_trade
+
+    settings, trade_id, portfolio_id = _seed_extracted_trade(
+        tmp_path, monkeypatch, external_trade_id="TC-TOOL-LEGAL",
+        underlying="Apple Inc.", expect_status="invalid",
+    )
+    try:
+        result = book_extracted_trade.func(trade_id=trade_id, portfolio_id=portfolio_id)
+    finally:
+        _reset_settings()
+
+    assert result["ok"] is False
+    with database.SessionLocal() as session:
+        assert session.query(Position).count() == 0
 
 
 def test_book_extracted_trade_rebook_fails_honestly(tmp_path, monkeypatch):

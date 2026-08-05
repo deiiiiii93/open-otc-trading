@@ -897,6 +897,18 @@ and the server re-validates).
 
 ### Invariants
 
+- **The underlying must be a BOOKABLE instrument: `status="active"` AND tagged
+  `"underlying"`.** Both halves, always — `services/underlyings.py::is_bookable_underlying_row`
+  is the single predicate, and `services/instruments.py::resolve_bookable_underlying` is the
+  shared gate wrapping it (used by `validate_trade_terms` and `book_position_tool`; the tag
+  alone used to be enough, which let a draft instrument through). **This is a fail-CLOSED
+  gate because the failure mode downstream is silent:** an unrecognised underlying is not
+  rejected by booking — `book_position` → `link_position_underlying` → `ensure_underlying`
+  **mints a new Instrument** for any non-empty string (`normalize_underlying_symbol` is just
+  `.strip()`), so the position books "fine" and is then unpriceable forever. Never resolve a
+  legal name to a symbol automatically; report candidates and let a human/agent choose.
+  Candidates come from the confirmation's own evidence quote, which is why
+  `"Shares: Apple Inc. (Ticker: AAPL)"` can suggest `AAPL` — suggestion only, never rewrite.
 - **Review-first is the whole design.** `book_trade` re-runs validation at booking
   time (never trusts the stored status) and books through the existing
   `book_position` gate. The web page books per trade on a human click; the agent's
@@ -932,6 +944,10 @@ and the server re-validates).
   "valid" and "bookable" diverge. **Only the live smoke caught this** — the unit fixtures
   used `maturity_years`, which happens to match the raw-vocab list, so every offline test
   passed while the real model's schema-faithful output was unbookable.
+- **A test that books must seed a bookable underlying.** `Instrument.status` defaults to
+  `"draft"`, so tagging alone leaves a row unbookable — the `registered_underlying` conftest
+  fixture (active + tagged, committed so tools opening their own session can see it) exists
+  for this. Symptom of missing it: every booking test suddenly reports `invalid`.
 - **The extractor model must be vision-capable.** Routing is by registry tag,
   two-tier: `confirmation_extractor` (tag exactly one model) → `fast` → registry
   default. Tag edits go to **both** `config/agent_channels.yaml` and the tracked

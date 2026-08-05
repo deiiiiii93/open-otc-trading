@@ -174,9 +174,16 @@ use the exact enum spellings shown):
 
 {schema}
 
+The "underlying" field must be the underlying instrument's EXCHANGE TICKER /
+MARKET SYMBOL exactly as the document writes it (e.g. "AAPL", "600519.SH",
+"000300.SH") — NOT the issuer's legal or marketing name. Confirmations usually
+give both: from "Shares: Apple Inc. (Ticker: AAPL)" the correct value is
+"AAPL", not "Apple Inc.". If the document shows only a legal name and no
+symbol anywhere, return that name and cite it in evidence; a human will map it.
+
 Reply with ONLY a JSON object:
 {{"terms": {{<schema field name>: <value>, ...}},
-  "underlying": <string or null>, "quantity": <number or null>,
+  "underlying": <ticker/symbol string or null>, "quantity": <number or null>,
   "entry_price": <number or null, the premium/price per unit>,
   "currency": <ISO code or null>, "counterparty": <string or null>,
   "trade_date": <YYYY-MM-DD or null>, "external_trade_id": <the confirmation's own trade/deal reference or null>,

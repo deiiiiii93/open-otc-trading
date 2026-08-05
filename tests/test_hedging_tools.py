@@ -69,6 +69,8 @@ def test_book_hedge_tool_executes_from_exact_workflow_artifact(session, settings
 
     pf = _seed(session)
     underlying = session.query(Underlying).filter_by(symbol="000905.SH").one()
+    # Bookable = active AND tagged; Instrument.status defaults to "draft".
+    underlying.status = "active"
     underlying.tags = ["underlying"]
     thread = AgentThread(title="artifact backed hedge", character="trader")
     session.add(thread)

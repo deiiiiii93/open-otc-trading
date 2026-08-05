@@ -23,6 +23,7 @@ from ..domains.booking import (
 )
 from ..domains.products import product_family_for_quantark_class
 from ..engine_configs import DEFAULT_ENGINE_BY_PRODUCT_TYPE
+from ..instruments import resolve_bookable_underlying
 from ..task_runner import submit_async_task
 from .extract import extract_document
 from .llm import (
@@ -142,7 +143,22 @@ def synthesize_booking_terms(family: str, terms: dict, *, underlying: str | None
     return dict(built.product_kwargs), []
 
 
-def validate_trade_terms(trade: ExtractedTrade) -> tuple[str, list[str]]:
+def _underlying_evidence_quote(trade: ExtractedTrade) -> str | None:
+    """The verbatim source text the extractor cited for `underlying`.
+
+    Confirmations name the instrument twice — "Shares: Apple Inc. (Ticker:
+    AAPL)" — and the extractor often keeps the legal name. Feeding the quote
+    to the resolver as a candidate hint turns a dead-end "no such instrument"
+    into "did you mean AAPL?". It is used for SUGGESTIONS ONLY; the stored
+    value is never rewritten from it.
+    """
+    evidence = trade.evidence or {}
+    entry = evidence.get("underlying") if isinstance(evidence, dict) else None
+    quote = entry.get("quote") if isinstance(entry, dict) else None
+    return str(quote) if quote else None
+
+
+def validate_trade_terms(session: Session, trade: ExtractedTrade) -> tuple[str, list[str]]:
     from app.tools.product_term_schema import _SCHEMA_FAMILIES
 
     if trade.family not in _SCHEMA_FAMILIES:
@@ -171,6 +187,16 @@ def validate_trade_terms(trade: ExtractedTrade) -> tuple[str, list[str]]:
         return "invalid", ["missing underlying"]
     if not trade.quantity:
         return "invalid", ["missing quantity"]
+    # The instrument-master gate. A confirmation names the issuer in legal
+    # form ("Apple Inc."), but positions/pricing/risk key off the instrument
+    # SYMBOL, and book_position -> link_position_underlying -> ensure_underlying
+    # would silently MINT a junk instrument for an unrecognised string rather
+    # than refuse it. Booking must therefore be blocked here, at review time,
+    # where a human or agent can still correct the value.
+    resolution = resolve_bookable_underlying(
+        session, trade.underlying, hint_text=_underlying_evidence_quote(trade))
+    if not resolution.ok:
+        return "invalid", [resolution.message or "underlying is not bookable"]
     return "valid", []
 
 
@@ -195,7 +221,7 @@ def parse_document(session: Session, document: ConfirmationDocument, *, client) 
             row = _draft_to_row(document.id, i, draft)
             session.add(row)
             session.flush()
-            row.validation_status, row.validation_errors = validate_trade_terms(row)
+            row.validation_status, row.validation_errors = validate_trade_terms(session, row)
         document.status = "parsed"
         document.parsed_at = datetime.utcnow()
         document.model_provenance = getattr(client, "selection", None)
@@ -269,7 +295,7 @@ def update_trade(session: Session, trade_id: int, *, updates: dict) -> Extracted
         if key not in _EDITABLE_FIELDS:
             raise ValueError(f"Field {key!r} is not editable")
         setattr(trade, key, value)
-    trade.validation_status, trade.validation_errors = validate_trade_terms(trade)
+    trade.validation_status, trade.validation_errors = validate_trade_terms(session, trade)
     session.flush()
     return trade
 
@@ -292,7 +318,7 @@ def book_trade(
                 "position_id": trade.booked_position_id}
     if trade.status != "extracted":
         return {"ok": False, "error": f"trade is {trade.status}"}
-    trade.validation_status, trade.validation_errors = validate_trade_terms(trade)
+    trade.validation_status, trade.validation_errors = validate_trade_terms(session, trade)
     if trade.validation_status != "valid":
         return {"ok": False, "error": "validation_failed",
                 "detail": trade.validation_errors}
