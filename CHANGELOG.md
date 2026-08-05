@@ -8,6 +8,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Confirmations: visible parsing progress.** Parsing is dispatched asynchronously and
+  documents are worked **sequentially**, so the old UI went silent exactly when the slow
+  part started — the Upload button flipped back the moment the batch row existed, leaving
+  only a static status badge while two LLM stages (plus a vision render for scanned pages)
+  ran per document. The page now shows: a pulsing live marker on every non-terminal badge
+  (document cards *and* the batch list), a progress banner above the document cards with a
+  determinate bar and the name of the file being read, per-document copy that distinguishes
+  **queued** from **actively parsing**, and shimmer placeholders (the shared `Skeleton`
+  primitive) standing in for the trade rows about to arrive. `parseProgressLabel` counts
+  parsed and failed **separately** — a bare "3 of 5" would otherwise hide that two blew up —
+  and a clean finish clears the line while a batch that lost a document keeps reporting it.
+  Accessibility: `role="progressbar"` with live counts, `aria-live="polite"` announcements,
+  and `aria-busy` on in-flight document cards. `IN_FLIGHT_DOC_STATUSES` is now exported from
+  `Confirmations.tsx` and consumed by the poll loop in `Confirmations.live.tsx`, so the
+  indicator and the polling can't disagree about what "still parsing" means.
+
+### Fixed
+- **Confirmations: the batch list clipped its Docs and Status columns.** The row declared
+  25rem of *fixed* grid track (`4rem` id + `11rem` created + `6rem` source + `4rem` docs)
+  before the status column got a say, inside a `minmax(280px, 380px)` rail — fixed tracks
+  don't shrink, so the last two columns fell off the panel edge and were never visible. The
+  row is now `2.75rem` + `1fr` + `2.5rem` + `1.1fr` (≈5rem fixed), carries one **headline**
+  badge per batch via `batchStatusMark` instead of one badge per document status, and shows a
+  rail-width timestamp; the full timestamp and the batch source moved into the cell's `title`.
+- **Confirmations: a batch that was not selected froze mid-parse.** The poll refreshed only
+  the selected batch, so uploading a second batch and switching away left the first one's
+  status stale until a manual Refresh. Polling now watches **every** batch and refreshes the
+  list (which already carries documents and trades), so all rows advance together and the
+  loop still stops by itself once nothing is in flight. Because the list response is a strict
+  superset of the batch-detail response, `onRefresh` no longer fires both requests, which in
+  turn let the two stale-response guards in `Confirmations.live.tsx` collapse into one
+  shared newest-dispatch-wins counter.
 - **Trade confirmation → book** — upload counterparty confirmation documents (PDF/DOCX,
   including scanned/image-only pages) and turn them into booked positions. New
   `services/confirmations/` package (`extract` → `llm` → `service`) does text-first

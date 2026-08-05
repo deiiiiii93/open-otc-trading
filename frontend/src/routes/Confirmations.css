@@ -78,6 +78,84 @@
   gap: var(--gap-1);
 }
 
+/* Live marker: inherits the surrounding text colour so it reads correctly
+   inside any Badge variant and in both themes. Duration comes from the
+   shared loop token — no bespoke motion values. */
+.wl-confirmations__pulse-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  margin-right: var(--gap-1);
+  vertical-align: middle;
+  animation: wl-pulse var(--motion-shimmer) var(--motion-curve) infinite;
+}
+
+.wl-confirmations__parsing-banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  padding: var(--panel-padding-tight);
+  border: 1px solid var(--hairline);
+  background: var(--paper-2);
+}
+
+.wl-confirmations__parsing-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+}
+
+.wl-confirmations__parsing-label {
+  font-size: var(--type-body-size);
+  color: var(--ink);
+}
+
+.wl-confirmations__parsing-file {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.wl-confirmations__progress-track {
+  position: relative;
+  height: 4px;
+  background: var(--paper-3);
+  overflow: hidden;
+}
+
+.wl-confirmations__progress-fill {
+  height: 100%;
+  background: var(--info);
+  transition: width var(--motion-slide) var(--motion-curve);
+}
+
+.wl-confirmations__doc-parsing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  padding: var(--panel-padding-tight);
+  border: 1px dashed var(--hairline-2);
+  background: var(--paper);
+}
+
+.wl-confirmations__doc-parsing-text {
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+
+.wl-confirmations__doc-skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+
 .wl-confirmations__document {
   display: flex;
   flex-direction: column;

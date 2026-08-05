@@ -4,13 +4,11 @@ import {
   listPortfoliosWithIds, rejectExtractedTrade, updateExtractedTrade, uploadConfirmations,
 } from '../api/client';
 import type { ConfirmationBatch, ExtractedTrade, PageContextReporter } from '../types';
-import { Confirmations, tradeDraftDefaults, type TradeDraft } from './Confirmations';
+import {
+  Confirmations, IN_FLIGHT_DOC_STATUSES, tradeDraftDefaults, type TradeDraft,
+} from './Confirmations';
 
 type Props = { onPageContextChange?: PageContextReporter };
-
-// A document is still being worked on server-side; keep polling the selected
-// batch while any of its documents are in one of these states.
-const NON_TERMINAL_DOC_STATUSES = new Set(['pending', 'parsing']);
 
 function findTradeInBatch(batch: ConfirmationBatch | null, tradeId: number): ExtractedTrade | null {
   if (!batch) return null;
@@ -56,18 +54,18 @@ export function ConfirmationsLive(_props: Props) {
   const [rejectReason, setRejectReason] = useState<Record<number, string>>({});
   const [rowBusy, setRowBusy] = useState<Set<number>>(new Set());
 
-  // Separate stale-response guards for the two independent async loaders that
-  // both write into `batches` (mirrors AuditLive.tsx's loadRequestIdRef /
-  // detailRequestIdRef split — a single shared counter would make every
-  // paired loadBatches()+refreshBatch() dispatch (see onRefresh) permanently
-  // discard the loadBatches() response, since the refreshBatch() dispatch
-  // right after it would always bump a shared counter past loadBatches's
-  // captured token). Scoping each loader to its own counter still fully
-  // guards the concrete race this exists for: a straggling poll tick's
-  // refreshBatch() response landing after a post-book/save/reject
-  // refreshBatch() response and clobbering the fresher state.
-  const loadSeqRef = useRef(0);
-  const refreshSeqRef = useRef(0);
+  // ONE stale-response guard shared by both loaders, bumped at dispatch, so
+  // the newest dispatch always wins. This is safe only because every dispatch
+  // happens strictly after whatever caused it has already committed
+  // server-side (mutations await their PUT/POST before refreshing), so a later
+  // request can never observe an older world than an earlier one.
+  //
+  // Two counters used to be required because `onRefresh` fired both loaders
+  // together and a shared counter would permanently discard the list response.
+  // That pairing is gone: the list endpoint returns documents *and* trades, so
+  // loadBatches() is a strict superset of refreshBatch() and `onRefresh` just
+  // calls the former.
+  const batchSeqRef = useRef(0);
 
   const selectedBatch = useMemo(
     () => batches.find((b) => b.id === selectedBatchId) ?? null,
@@ -75,27 +73,27 @@ export function ConfirmationsLive(_props: Props) {
   );
 
   const loadBatches = useCallback(async () => {
-    const token = ++loadSeqRef.current;
+    const token = ++batchSeqRef.current;
     try {
       const list = await listConfirmationBatches();
-      if (token !== loadSeqRef.current) return;
+      if (token !== batchSeqRef.current) return;
       setBatches(list);
       setError(null);
     } catch (e) {
-      if (token === loadSeqRef.current) setError(errorMessage(e));
+      if (token === batchSeqRef.current) setError(errorMessage(e));
     } finally {
-      if (token === loadSeqRef.current) setLoading(false);
+      if (token === batchSeqRef.current) setLoading(false);
     }
   }, []);
 
   const refreshBatch = useCallback(async (id: number) => {
-    const token = ++refreshSeqRef.current;
+    const token = ++batchSeqRef.current;
     try {
       const updated = await getConfirmationBatch(id);
-      if (token !== refreshSeqRef.current) return;
+      if (token !== batchSeqRef.current) return;
       setBatches((prev) => prev.map((b) => (b.id === id ? updated : b)));
     } catch (e) {
-      if (token === refreshSeqRef.current) setFeedback(errorMessage(e));
+      if (token === batchSeqRef.current) setFeedback(errorMessage(e));
     }
   }, []);
 
@@ -114,18 +112,22 @@ export function ConfirmationsLive(_props: Props) {
     }
   }, [batches, selectedBatchId]);
 
-  // Poll the selected batch while any of its documents are still parsing —
-  // mirrors the Arena runs-list poll (interval is re-derived from the latest
-  // batches state, so it naturally stops once every document is terminal).
+  // Poll while ANY batch still has work in flight, not just the selected one:
+  // upload a second batch, switch away from the first, and the first would
+  // otherwise freeze mid-parse with a stale rail badge forever. Polling the
+  // list (rather than one batch detail) refreshes every row at once, and
+  // gating on a boolean means the interval is rebuilt only when that flips —
+  // not on every tick's response.
+  const anyParseInFlight = useMemo(
+    () => batches.some((b) => b.documents.some((d) => IN_FLIGHT_DOC_STATUSES.has(d.status))),
+    [batches],
+  );
+
   useEffect(() => {
-    if (!selectedBatch) return undefined;
-    const pending = selectedBatch.documents.some((d) => NON_TERMINAL_DOC_STATUSES.has(d.status));
-    if (!pending) return undefined;
-    const timer = window.setInterval(() => {
-      void refreshBatch(selectedBatch.id);
-    }, 2000);
+    if (!anyParseInFlight) return undefined;
+    const timer = window.setInterval(() => { void loadBatches(); }, 2000);
     return () => window.clearInterval(timer);
-  }, [selectedBatch, refreshBatch]);
+  }, [anyParseInFlight, loadBatches]);
 
   const onFilesSelected = useCallback((files: FileList | null) => {
     setSelectedFiles(files ? Array.from(files) : []);
@@ -263,10 +265,7 @@ export function ConfirmationsLive(_props: Props) {
       onUploadPortfolioChange={setUploadPortfolioId}
       onUpload={() => void onUpload()}
       onSelectBatch={setSelectedBatchId}
-      onRefresh={() => {
-        void loadBatches();
-        if (selectedBatchId != null) void refreshBatch(selectedBatchId);
-      }}
+      onRefresh={() => void loadBatches()}
       onDraftChange={onDraftChange}
       onSaveTrade={(id) => void onSaveTrade(id)}
       onTradePortfolioChange={onTradePortfolioChange}

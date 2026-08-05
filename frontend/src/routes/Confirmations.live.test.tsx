@@ -36,6 +36,57 @@ beforeEach(() => {
   vi.spyOn(client, 'listPortfoliosWithIds').mockResolvedValue([{ id: 7, name: 'Macro' }]);
 });
 
+describe('ConfirmationsLive — parse polling', () => {
+  const parsingDoc = (id: number) => ({
+    id, filename: `parsing-${id}.pdf`, sha256: 'abc', byte_len: 10, mime: 'application/pdf',
+    page_count: 1, extract_mode: null, status: 'parsing' as const, error: null,
+    model_provenance: null, parsed_at: null, trades: [],
+  });
+
+  // The selected batch is #1; the batch still parsing is #2. Before the fix
+  // the poll refreshed only the selected batch, so #2 froze mid-parse and its
+  // rail badge never caught up.
+  it('keeps polling for a batch that is parsing but NOT selected', async () => {
+    vi.useFakeTimers();
+    try {
+      const stale = [makeBatch({ id: 1 }), makeBatch({ id: 2, documents: [parsingDoc(2)] })];
+      const settled = [makeBatch({ id: 1 }), makeBatch({ id: 2 })];
+      const list = vi.spyOn(client, 'listConfirmationBatches').mockResolvedValue(stale);
+
+      render(<ConfirmationsLive />);
+      // Wait for the response to reach STATE, not merely for the call to have
+      // been made — the poll effect only registers once `batches` updates.
+      // Batch #1 is the auto-selected parsed one, so the only 'parsing' text
+      // on screen is batch #2's rail badge.
+      await vi.waitFor(() => expect(screen.getByText('parsing')).toBeInTheDocument());
+
+      list.mockResolvedValue(settled);
+      await vi.advanceTimersByTimeAsync(2000);
+      await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+
+      // Every document is terminal now, so the loop must stop on its own.
+      await vi.waitFor(() => expect(screen.queryByText('parsing')).not.toBeInTheDocument());
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(list).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never starts a poll when every batch is already terminal', async () => {
+    vi.useFakeTimers();
+    try {
+      const list = vi.spyOn(client, 'listConfirmationBatches').mockResolvedValue([makeBatch()]);
+      render(<ConfirmationsLive />);
+      await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(list).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('ConfirmationsLive — Save validation', () => {
   it('blocks Save with an inline error and never calls the API when quantity is not a number', async () => {
     vi.spyOn(client, 'updateExtractedTrade').mockResolvedValue(makeTrade());

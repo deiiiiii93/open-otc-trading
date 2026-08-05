@@ -8,8 +8,82 @@ import { Table, type Column } from '../components/Table';
 import { Select } from '../components/Select';
 import { Input } from '../components/Input';
 import { Empty } from '../components/Empty';
+import { Skeleton } from '../components/Skeleton';
 import { routeUrl } from '../lib/routing';
 import './Confirmations.css';
+
+/**
+ * Document statuses that mean the server is still working on this file.
+ *
+ * Single source of truth: `Confirmations.live.tsx` imports this to decide
+ * whether to keep polling, so the poll loop and the on-screen hint can never
+ * disagree about what "still parsing" means.
+ */
+export const IN_FLIGHT_DOC_STATUSES: ReadonlySet<ConfirmationDocument['status']> =
+  new Set<ConfirmationDocument['status']>(['pending', 'parsing']);
+
+export type ParseProgress = {
+  /** Documents the server has finished with — either outcome. */
+  done: number;
+  parsed: number;
+  failed: number;
+  /** Accepted but not yet started. Documents are parsed one at a time. */
+  queued: number;
+  /** The document being worked on right now, if any. */
+  active: ConfirmationDocument | null;
+  total: number;
+  /** True while any document is still `pending` or `parsing`. */
+  inFlight: boolean;
+};
+
+/** Fold a batch's documents into the counts the parsing hint is built from. */
+export function describeParseProgress(batch: ConfirmationBatch): ParseProgress {
+  const docs = batch.documents;
+  const parsed = docs.filter((d) => d.status === 'parsed').length;
+  const failed = docs.filter((d) => d.status === 'failed').length;
+  return {
+    done: parsed + failed,
+    parsed,
+    failed,
+    queued: docs.filter((d) => d.status === 'pending').length,
+    active: docs.find((d) => d.status === 'parsing') ?? null,
+    total: docs.length,
+    inFlight: docs.some((d) => IN_FLIGHT_DOC_STATUSES.has(d.status)),
+  };
+}
+
+/**
+ * Turns {@link ParseProgress} into the one line shown in the page header chip
+ * and (while work is in flight) the banner above the document cards. Returns
+ * `null` to show no line at all.
+ *
+ * Three deliberate choices:
+ *
+ * - **Failures are counted separately, never folded into "done".** `done` is
+ *   `parsed + failed`, so a bare "3 of 5" can quietly mean two blew up. The
+ *   failure count therefore rides along as its own clause whenever it is
+ *   non-zero.
+ * - **A clean finish vanishes; a failure does not.** Once every document is
+ *   terminal there is no progress left to report, so the happy path returns
+ *   `null` rather than parking a permanent chip. But a batch that lost a
+ *   document keeps saying so, so a desk that looked away at the wrong moment
+ *   still finds out.
+ * - **"Parsing N of M" is only claimed when a document is genuinely being
+ *   worked on.** Documents are parsed sequentially server-side, so between
+ *   `dispatch_parse` and the first `status="parsing"` transition nothing is
+ *   happening yet — that window reports as queued, not as parsing.
+ */
+export function parseProgressLabel(p: ParseProgress): string | null {
+  if (p.total === 0) return null;
+  const failures = p.failed > 0 ? ` · ${p.failed} failed` : '';
+  if (!p.inFlight) {
+    return p.failed > 0 ? `${p.parsed} parsed${failures}` : null;
+  }
+  if (p.active == null) {
+    return `Queued — ${p.total} document${p.total === 1 ? '' : 's'}${failures}`;
+  }
+  return `Parsing ${p.done + 1} of ${p.total}…${failures}`;
+}
 
 export type TradeDraft = {
   underlying: string;
@@ -77,18 +151,45 @@ const VALIDATION_VARIANT: Record<ExtractedTrade['validation_status'], BadgeVaria
   unsupported: 'warn',
 };
 
+function parseTime(iso: string): Date {
+  return new Date(/Z|[+-]\d\d:\d\d$/.test(iso) ? iso : `${iso}Z`);
+}
+
 function formatTime(iso: string): string {
-  const stamped = /Z|[+-]\d\d:\d\d$/.test(iso) ? iso : `${iso}Z`;
-  const d = new Date(stamped);
+  const d = parseTime(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
 
-function docStatusCounts(batch: ConfirmationBatch): Array<[ConfirmationDocument['status'], number]> {
-  const counts = new Map<ConfirmationDocument['status'], number>();
-  for (const doc of batch.documents) {
-    counts.set(doc.status, (counts.get(doc.status) ?? 0) + 1);
+/** Rail-width timestamp — the full one rides along in the cell's `title`. */
+function formatTimeCompact(iso: string): string {
+  const d = parseTime(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString(undefined, {
+    month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+export type BatchStatusMark = { text: string; variant: BadgeVariant; live: boolean };
+
+/**
+ * The single headline badge shown per batch row.
+ *
+ * The batch list lives in a ~280–380px rail, which cannot fit one badge per
+ * document status — the old five-column layout summed 25rem of *fixed* grid
+ * track, so Docs and Status were pushed off the panel edge and never seen. The
+ * row therefore reports the batch's headline state and leaves the per-status
+ * breakdown to the review pane, which has the room for it.
+ *
+ * Precedence deliberately mirrors {@link parseProgressLabel}: work still in
+ * flight outranks everything, then failures, then a clean finish. A batch that
+ * lost a document keeps saying so from the rail, not just from the open pane.
+ */
+export function batchStatusMark(p: ParseProgress): BatchStatusMark {
+  if (p.total === 0) return { text: 'empty', variant: 'ink', live: false };
+  if (p.inFlight) return { text: p.active ? 'parsing' : 'queued', variant: 'warn', live: true };
+  if (p.failed > 0) {
+    return { text: p.parsed > 0 ? `${p.failed} failed` : 'failed', variant: 'neg', live: false };
   }
-  return Array.from(counts.entries());
+  return { text: 'parsed', variant: 'pos', live: false };
 }
 
 function portfolioOptions(portfolios: Array<{ id: number; name: string }>, placeholder: string) {
@@ -105,27 +206,46 @@ export function Confirmations(props: ConfirmationsProps) {
     onBookTrade, onRejectTrade,
   } = props;
 
+  // Fixed track total must stay well under the rail's 280px floor — see
+  // batchStatusMark. Everything else is `fr` so the row survives compact
+  // density and a narrow window.
   const columns = useMemo<Column<ConfirmationBatch>[]>(() => [
-    { key: 'id', header: 'ID', width: '4rem', render: (b) => `#${b.id}` },
-    { key: 'created', header: 'Created', width: '11rem', render: (b) => formatTime(b.created_at) },
-    { key: 'source', header: 'Source', width: '6rem', render: (b) => b.source },
-    { key: 'docs', header: 'Docs', numeric: true, width: '4rem', render: (b) => b.documents.length },
+    { key: 'id', header: 'ID', width: '2.75rem', render: (b) => `#${b.id}` },
+    {
+      key: 'created',
+      header: 'Created',
+      width: 'minmax(0, 1fr)',
+      render: (b) => (
+        <span title={`${formatTime(b.created_at)} · source: ${b.source}`}>
+          {formatTimeCompact(b.created_at)}
+        </span>
+      ),
+    },
+    { key: 'docs', header: 'Docs', numeric: true, width: '2.5rem', render: (b) => b.documents.length },
     {
       key: 'status',
       header: 'Status',
-      width: 'minmax(0, 1.4fr)',
-      render: (b) => (
-        <div className="wl-confirmations__status-cell">
-          {docStatusCounts(b).map(([status, n]) => (
-            <Badge key={status} variant={DOC_STATUS_VARIANT[status]}>{status} {n}</Badge>
-          ))}
-        </div>
-      ),
+      width: 'minmax(0, 1.1fr)',
+      render: (b) => {
+        const mark = batchStatusMark(describeParseProgress(b));
+        return (
+          <div className="wl-confirmations__status-cell">
+            <Badge variant={mark.variant}>
+              {mark.live && <PulseDot />}
+              {mark.text}
+            </Badge>
+          </div>
+        );
+      },
     },
   ], []);
 
+  const progress = selectedBatch ? describeParseProgress(selectedBatch) : null;
+  const progressLabel = progress ? parseProgressLabel(progress) : null;
+  const chips = [`${batches.length} batches`, ...(progressLabel ? [progressLabel] : [])];
+
   return (
-    <PageScaffold title="Confirmations" chips={[`${batches.length} batches`]} feedback={error ?? feedback}>
+    <PageScaffold title="Confirmations" chips={chips} feedback={error ?? feedback}>
       <div className="wl-confirmations">
         <div className="wl-confirmations__left">
           <div className="wl-confirmations__upload">
@@ -190,7 +310,39 @@ export function Confirmations(props: ConfirmationsProps) {
           ) : selectedBatch.documents.length === 0 ? (
             <Empty message="This batch has no documents" />
           ) : (
-            selectedBatch.documents.map((document) => (
+            <>
+            {progress?.inFlight && (
+              <div
+                className="wl-confirmations__parsing-banner"
+                data-testid="confirmations-parsing-banner"
+                role="status"
+                aria-live="polite"
+              >
+                <div className="wl-confirmations__parsing-head">
+                  <PulseDot />
+                  <span className="wl-confirmations__parsing-label">
+                    {progressLabel ?? 'Parsing…'}
+                  </span>
+                  {progress.active && (
+                    <span className="wl-confirmations__parsing-file">{progress.active.filename}</span>
+                  )}
+                </div>
+                <div
+                  className="wl-confirmations__progress-track"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={progress.total}
+                  aria-valuenow={progress.done}
+                  aria-label="Documents parsed"
+                >
+                  <div
+                    className="wl-confirmations__progress-fill"
+                    style={{ width: `${(progress.done / Math.max(progress.total, 1)) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            {selectedBatch.documents.map((document) => (
               <DocumentCard
                 key={document.id}
                 document={document}
@@ -207,12 +359,18 @@ export function Confirmations(props: ConfirmationsProps) {
                 onBookTrade={onBookTrade}
                 onRejectTrade={onRejectTrade}
               />
-            ))
+            ))}
+            </>
           )}
         </div>
       </div>
     </PageScaffold>
   );
+}
+
+/** Small animated marker meaning "the server is working on this right now". */
+function PulseDot() {
+  return <span className="wl-confirmations__pulse-dot" aria-hidden="true" />;
 }
 
 function DocumentCard({
@@ -233,13 +391,38 @@ function DocumentCard({
   onBookTrade: (tradeId: number) => void;
   onRejectTrade: (tradeId: number) => void;
 }) {
+  const inFlight = IN_FLIGHT_DOC_STATUSES.has(document.status);
+
   return (
-    <div className="wl-confirmations__document" data-testid={`confirmation-document-${document.id}`}>
+    <div
+      className="wl-confirmations__document"
+      data-testid={`confirmation-document-${document.id}`}
+      aria-busy={inFlight || undefined}
+    >
       <div className="wl-confirmations__document-head">
         <span className="wl-confirmations__document-name">{document.filename}</span>
-        <Badge variant={DOC_STATUS_VARIANT[document.status]}>{document.status}</Badge>
+        <Badge variant={DOC_STATUS_VARIANT[document.status]}>
+          {inFlight && <PulseDot />}
+          {document.status}
+        </Badge>
         {document.extract_mode && <Chip>{document.extract_mode}</Chip>}
       </div>
+      {inFlight && (
+        <div className="wl-confirmations__doc-parsing" role="status" aria-live="polite">
+          <span className="wl-confirmations__doc-parsing-text">
+            {document.status === 'parsing'
+              ? 'Reading the document and extracting trades…'
+              : 'Queued — documents are parsed one at a time.'}
+          </span>
+          {document.status === 'parsing' && (
+            <div className="wl-confirmations__doc-skeletons" aria-hidden="true">
+              <Skeleton height={12} width="40%" />
+              <Skeleton height={12} width="85%" />
+              <Skeleton height={12} width="65%" />
+            </div>
+          )}
+        </div>
+      )}
       {document.status === 'failed' && document.error && (
         <p className="wl-confirmations__error" role="alert">{document.error}</p>
       )}

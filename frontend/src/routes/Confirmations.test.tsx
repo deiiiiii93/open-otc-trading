@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { Confirmations, type ConfirmationsProps } from './Confirmations';
+import { render, screen, within } from '@testing-library/react';
+import {
+  Confirmations, batchStatusMark, describeParseProgress, parseProgressLabel,
+  type ConfirmationsProps, type ParseProgress,
+} from './Confirmations';
 import type { ConfirmationBatch, ConfirmationDocument, ExtractedTrade } from '../types';
 
 function makeTrade(o: Partial<ExtractedTrade> = {}): ExtractedTrade {
@@ -64,10 +67,152 @@ const baseProps: ConfirmationsProps = {
 };
 
 describe('Confirmations presentational', () => {
+  // Scoped to the document card: the batch rail now carries its own headline
+  // 'parsing' badge, so an unscoped query matches both.
   it('shows a status badge for a document still parsing', () => {
     const batch = makeBatch({ documents: [makeDocument({ id: 2, status: 'parsing', trades: [] })] });
     render(<Confirmations {...baseProps} batches={[batch]} selectedBatch={batch} />);
-    expect(screen.getByText('parsing')).toBeInTheDocument();
+    const card = within(screen.getByTestId('confirmation-document-2'));
+    expect(card.getByText('parsing')).toBeInTheDocument();
+  });
+
+  it('shows a live parsing banner with shimmer placeholders while a document parses', () => {
+    const batch = makeBatch({ documents: [makeDocument({ id: 2, status: 'parsing', trades: [] })] });
+    const { container } = render(
+      <Confirmations {...baseProps} batches={[batch]} selectedBatch={batch} />,
+    );
+    expect(screen.getByTestId('confirmations-parsing-banner')).toBeInTheDocument();
+    expect(screen.getByText('Reading the document and extracting trades…')).toBeInTheDocument();
+    expect(container.querySelectorAll('.wl-skeleton').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('confirmation-document-2')).toHaveAttribute('aria-busy', 'true');
+  });
+
+  // Documents parse sequentially server-side, so a queued file is a distinct
+  // state from an actively-parsing one and must not claim work is happening.
+  it('marks a pending document as queued, without shimmer placeholders', () => {
+    const batch = makeBatch({ documents: [makeDocument({ id: 4, status: 'pending', trades: [] })] });
+    const { container } = render(
+      <Confirmations {...baseProps} batches={[batch]} selectedBatch={batch} />,
+    );
+    expect(screen.getByText('Queued — documents are parsed one at a time.')).toBeInTheDocument();
+    expect(container.querySelectorAll('.wl-skeleton')).toHaveLength(0);
+  });
+
+  it('drops the parsing banner once every document is terminal', () => {
+    const batch = makeBatch({
+      documents: [
+        makeDocument({ id: 5, status: 'parsed', trades: [] }),
+        makeDocument({ id: 6, status: 'failed', error: 'nope', trades: [] }),
+      ],
+    });
+    render(<Confirmations {...baseProps} batches={[batch]} selectedBatch={batch} />);
+    expect(screen.queryByTestId('confirmations-parsing-banner')).not.toBeInTheDocument();
+  });
+
+  it('describeParseProgress folds document statuses into progress counts', () => {
+    const batch = makeBatch({
+      documents: [
+        makeDocument({ id: 1, status: 'parsed' }),
+        makeDocument({ id: 2, status: 'failed', error: 'nope' }),
+        makeDocument({ id: 3, status: 'parsing', filename: 'live.pdf' }),
+        makeDocument({ id: 4, status: 'pending' }),
+      ],
+    });
+    const p = describeParseProgress(batch);
+    expect(p).toMatchObject({
+      done: 2, parsed: 1, failed: 1, queued: 1, total: 4, inFlight: true,
+    });
+    expect(p.active?.filename).toBe('live.pdf');
+  });
+
+  describe('parseProgressLabel', () => {
+    const progress = (o: Partial<ParseProgress> = {}): ParseProgress => ({
+      done: 0, parsed: 0, failed: 0, queued: 0, active: null, total: 0, inFlight: false, ...o,
+    });
+
+    it('reports the active document position, not the queue length', () => {
+      expect(parseProgressLabel(progress({
+        done: 2, parsed: 2, queued: 2, active: makeDocument({ status: 'parsing' }),
+        total: 5, inFlight: true,
+      }))).toBe('Parsing 3 of 5…');
+    });
+
+    // Between dispatch and the first status="parsing" transition nothing is
+    // actually being worked on — claiming "parsing" there would be a lie.
+    it('reports queued while no document has started', () => {
+      expect(parseProgressLabel(progress({
+        queued: 3, active: null, total: 3, inFlight: true,
+      }))).toBe('Queued — 3 documents');
+    });
+
+    it('never folds failures into the done count', () => {
+      expect(parseProgressLabel(progress({
+        done: 2, parsed: 1, failed: 1, active: makeDocument({ status: 'parsing' }),
+        total: 4, inFlight: true,
+      }))).toBe('Parsing 3 of 4… · 1 failed');
+    });
+
+    it('vanishes on a clean finish but keeps reporting failures', () => {
+      expect(parseProgressLabel(progress({
+        done: 3, parsed: 3, total: 3, inFlight: false,
+      }))).toBeNull();
+      expect(parseProgressLabel(progress({
+        done: 3, parsed: 2, failed: 1, total: 3, inFlight: false,
+      }))).toBe('2 parsed · 1 failed');
+    });
+
+    it('says nothing for an empty batch', () => {
+      expect(parseProgressLabel(progress({}))).toBeNull();
+    });
+  });
+
+  describe('batchStatusMark', () => {
+    const progress = (o: Partial<ParseProgress> = {}): ParseProgress => ({
+      done: 0, parsed: 0, failed: 0, queued: 0, active: null, total: 0, inFlight: false, ...o,
+    });
+
+    it('lets in-flight work outrank a failure already recorded', () => {
+      expect(batchStatusMark(progress({
+        failed: 1, done: 1, active: makeDocument({ status: 'parsing' }), total: 3, inFlight: true,
+      }))).toEqual({ text: 'parsing', variant: 'warn', live: true });
+    });
+
+    it('distinguishes queued from parsing', () => {
+      expect(batchStatusMark(progress({ queued: 2, total: 2, inFlight: true })))
+        .toEqual({ text: 'queued', variant: 'warn', live: true });
+    });
+
+    it('surfaces partial failure from the rail, not just the open pane', () => {
+      expect(batchStatusMark(progress({ done: 3, parsed: 2, failed: 1, total: 3 })))
+        .toEqual({ text: '1 failed', variant: 'neg', live: false });
+      expect(batchStatusMark(progress({ done: 2, failed: 2, total: 2 })))
+        .toEqual({ text: 'failed', variant: 'neg', live: false });
+    });
+
+    it('reports a clean finish', () => {
+      expect(batchStatusMark(progress({ done: 2, parsed: 2, total: 2 })))
+        .toEqual({ text: 'parsed', variant: 'pos', live: false });
+    });
+  });
+
+  // The rail is ~280-380px wide; fixed grid tracks summing past that used to
+  // push the Docs and Status columns off the panel edge entirely.
+  it('keeps the batch row to one headline badge and a small fixed-track budget', () => {
+    const batch = makeBatch({
+      documents: [
+        makeDocument({ id: 1, status: 'parsed' }),
+        makeDocument({ id: 2, status: 'parsing', trades: [] }),
+      ],
+    });
+    const { container } = render(
+      <Confirmations {...baseProps} batches={[batch]} selectedBatch={null} />,
+    );
+    const row = container.querySelector('.wl-table__row:not(.wl-table__row--head)') as HTMLElement;
+    expect(row.querySelectorAll('.wl-confirmations__status-cell .wl-badge')).toHaveLength(1);
+
+    const fixedRem = (row.style.gridTemplateColumns.match(/([\d.]+)rem/g) ?? [])
+      .reduce((sum, t) => sum + parseFloat(t), 0);
+    expect(fixedRem).toBeLessThan(8);
   });
 
   it('shows the error text for a failed document', () => {
