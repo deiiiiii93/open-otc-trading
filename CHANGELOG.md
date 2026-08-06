@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Arena per-model scorecards** — `scripts/render_scorecards.py` renders one
+  outreach card per lab from a board run, combining the derived ability card,
+  the specific checks that did not pass, the exact serving configuration, and
+  the banked per-model trace. Targets and framing live in
+  `docs/arena/scorecards/targets.yaml`; the rendering kernel
+  (`backend/app/services/arena/scorecard.py`) is pure and tested against frozen
+  run #94 fixtures, so the suite never touches the live DB. Cards fail honest:
+  a missing card, a missing tool count, or an unbanked transcript renders as an
+  explicit absence rather than a fabricated number or a dangling link, and a
+  check without an explicit `passed: false` counts as unknown, never as a
+  failure. `latest_transcript_paths` makes "latest re-run supersedes" explicit
+  so a lab is never linked to a trace from a run already known to be invalid.
+- **README engineering-notes section** — surfaces `CLAUDE.md`, the Arena
+  reports, and the per-model scorecards from the front page.
 - **Report module redesign** — reports are now generated from declarative YAML
   templates instead of a hardcoded writer. A server-owned **block registry**
   (18 producers across risk, P&L, limits, RFQ, positions and audit) resolves

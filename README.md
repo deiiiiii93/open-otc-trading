@@ -64,6 +64,14 @@ The product walkthrough tells it as one continuous flow:
 - **Model maintenance** — A **Model Maintenance** console (`/model-maintenance`) to add, edit, and delete LLM channels and models — and pick the registry default — without hand-editing `config/agent_channels.yaml`. Edits go through a comment-preserving, validate-then-commit write that hot-reloads the agent live; only the `api_key_env` **name** is stored (never a secret), with a per-channel health badge. Gated by `OPEN_OTC_FEATURE_MODEL_WRITE_API` (default on).
 - **Reproducible & audited** — Every pricing run, risk run, and agent trace is persisted; QuantArk keeps the math deterministic.
 
+### Engineering notes
+
+The desk is the substrate; these are the notes from building it.
+
+- **[Agent guidance file](CLAUDE.md)** — the working `CLAUDE.md` this codebase is actually developed against: the invariants, the failure modes, and the gotchas that cost real debugging time. Most such files are private; this one is not. A sample of what is in there — a human-in-the-loop level of `"write"` turns out to mean *interactive only*, so in unattended mode it books a real position with no approval card at all; a tool that is registered but not allowlisted is silently dropped from every persona's toolset, so when a model *never* calls a tool, suspect availability before capability.
+- **[The OTC Desk Agent Arena](docs/arena/)** — repeated-trial evaluation of ~18 LLMs driving this desk end to end with no human in the loop, scored from the system's own trace log. Five published runs — including an audit that found **15 of 50 of our own checks carried no ability signal**, and that correcting them reordered the board. A hand-written perfect replay proves an assertion is *satisfiable*, never that it is *reachable*.
+- **[Per-model scorecards](docs/arena/scorecards/)** — one card per lab from the latest board: the ability card, the specific checks that did not pass, the exact serving configuration, and the interoperability findings behind four models needing a wire-protocol pin.
+
 ---
 
 ## 🏆 The OTC Desk Agent Arena
