@@ -133,3 +133,118 @@ def failed_checks(breakdown: dict, limit: int = 3) -> list[FailedCheck]:
             ))
 
     return out[:limit]
+
+
+# (display label, key in card_mean) — the stored card mixes case: ovr/con are
+# lowercase, the four axis stats are uppercase. Verified against run #94.
+_STATS: tuple[tuple[str, str], ...] = (
+    ("OVR", "ovr"), ("GRD", "GRD"), ("ADH", "ADH"), ("SYN", "SYN"),
+    ("EFF", "EFF"), ("PRC", "PRC"), ("CON", "con"),
+)
+
+_ENVIRONMENT = """\
+The environment is a live OTC derivatives trading desk, not a static prompt set. Each
+model drives the production orchestrator end to end with no human in the loop — reading
+risk, pricing a portfolio, running scenarios, and producing a governance report, where
+each step consumes the previous step's output. Scoring reads the system's own trace log
+against a fixed objective manifest; there is no LLM judge in these numbers.\
+"""
+
+_INTEROP = """\
+### One interoperability finding you may want
+
+Through an OpenAI-compatible gateway, this model emitted tool calls with **empty-string
+ids**, which caused every persona delegation to fail before it started. Pinning the route
+to the Anthropic wire protocol resolved it, and the board row above is the clean re-run
+after that pin. Four models on this board needed the same pin, so it may be worth
+checking against your own OpenAI-compatible surface.\
+"""
+
+_QUESTION = """\
+### My question
+
+Did I serve your model correctly? The run configuration is linked below. If any of it is
+wrong — the wire protocol, a limit, the way tools are presented — I would rather fix the
+harness and re-run than publish a number that measures my plumbing instead of your model.\
+"""
+
+_STATS_LEGEND = (
+    "Stats are scaled 0–99. GRD grounding, ADH adherence, SYN synthesis, EFF "
+    "efficiency against a calibrated par, PRC precision, CON consistency across "
+    "trials. OVR is their weighted combination; CON is reported separately and is "
+    "not folded into OVR."
+)
+
+
+def _card_table(rows: list[dict]) -> str:
+    labels = [label for label, _ in _STATS]
+    lines = [
+        "| Model | " + " | ".join(labels) + " | Objective |",
+        "|---" * (len(_STATS) + 2) + "|",
+    ]
+    for row in rows:
+        card = row.get("card_mean") or {}
+        cells = [str(card.get(key, "n/a")) if card else "n/a" for _, key in _STATS]
+        lines.append(
+            f"| `{row['model_id']}` | " + " | ".join(cells)
+            + f" | {row.get('mean_objective', 'n/a')} |"
+        )
+    return "\n".join(lines)
+
+
+def render_scorecard(
+    *,
+    target: Target,
+    rows: list[dict],
+    checks: dict[str, list[FailedCheck]],
+    transcripts: dict[str, str | None],
+    run_id: int,
+) -> str:
+    """Render one lab's outreach card. Pure — no IO."""
+    parts: list[str] = [
+        f"# {target.lab} — OTC Desk Agent Arena, Run #{run_id}",
+        "",
+        _ENVIRONMENT,
+        "",
+        "## Result",
+        "",
+        _card_table(rows),
+        "",
+        _STATS_LEGEND,
+        "",
+    ]
+
+    if any(not r.get("card_mean") for r in rows):
+        parts += [
+            "> An ability card is **not available** for a row above: the stored "
+            "breakdown lacked the evidence needed to derive one. The objective score "
+            "still stands.",
+            "",
+        ]
+
+    if target.interop_note:
+        parts += [_INTEROP, ""]
+
+    if target.anomaly:
+        parts += ["### What stands out", "", target.anomaly.strip(), ""]
+
+    failing = [(mid, c) for mid, cs in checks.items() for c in cs]
+    if failing:
+        parts += ["### Specific checks that did not pass", ""]
+        for mid, check in failing:
+            where = f", step {check.step}" if check.step is not None else ""
+            parts.append(f"- `{mid}` — **{check.label}** ({check.axis}{where})")
+        parts.append("")
+
+    parts += ["### Evidence", ""]
+    for model_id in target.model_ids:
+        path = transcripts.get(model_id)
+        if path:
+            parts.append(f"- `{model_id}` — full trace: `{path}`")
+        else:
+            parts.append(
+                f"- `{model_id}` — per-trial trace **not banked** for this board row; "
+                "the score derives from the stored breakdown."
+            )
+    parts += ["", _QUESTION, ""]
+    return "\n".join(parts)

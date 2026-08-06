@@ -16,6 +16,7 @@ from app.services.arena.scorecard import (
     failed_checks,
     latest_transcript_paths,
     load_targets,
+    render_scorecard,
     resolve_transcript,
 )
 
@@ -138,6 +139,90 @@ def test_latest_transcript_paths_skips_null_paths():
 
 def test_latest_transcript_paths_omits_a_model_with_only_nulls():
     assert latest_transcript_paths([(94, "m", None)]) == {}
+
+
+def _target(**kw) -> Target:
+    base = dict(lab="Zhipu", tier="B1", model_ids=("glm-5-2",),
+                channels=("https://example.invalid/issues",), anomaly=None,
+                interop_note=False)
+    base.update(kw)
+    return Target(**base)  # type: ignore[arg-type]
+
+
+def _rows(model_id="glm-5-2"):
+    return [{"model_id": model_id, "mean_objective": 62.9, "match_count": 2,
+             "card_mean": {"ovr": 64, "base_ovr": 64, "con": 99, "GRD": 70,
+                           "ADH": 99, "SYN": 0, "EFF": 64, "PRC": 58}}]
+
+
+def test_render_includes_the_card_stats():
+    md = render_scorecard(target=_target(), rows=_rows(), checks={},
+                          transcripts={}, run_id=94)
+    for stat in ("OVR", "GRD", "ADH", "SYN", "EFF", "PRC", "CON"):
+        assert stat in md
+    # ovr 64 and con 99 must be read from the lowercase keys, not rendered n/a.
+    assert "| 64 |" in md
+    assert "n/a" not in md
+
+
+def test_render_asks_the_serving_question():
+    md = render_scorecard(target=_target(), rows=_rows(), checks={},
+                          transcripts={}, run_id=94)
+    assert "serve" in md.lower()
+
+
+def test_render_never_pitches():
+    """Etiquette rule: no job or consulting ask, and no velocity claims, ever."""
+    md = render_scorecard(target=_target(interop_note=True,
+                                         anomaly="something anomalous"),
+                          rows=_rows(),
+                          checks={"glm-5-2": [FailedCheck("l", "synthesis", "5")]},
+                          transcripts={"glm-5-2": None}, run_id=94).lower()
+    for banned in ("hiring", "hire", "consult", "opportunit", "resume", "cv",
+                   "lines of code", "commits", "portfolio of work"):
+        assert banned not in md, f"banned phrase {banned!r} appeared in a card"
+
+
+def test_interop_note_rendered_only_when_flagged():
+    plain = render_scorecard(target=_target(interop_note=False), rows=_rows(),
+                             checks={}, transcripts={}, run_id=94)
+    flagged = render_scorecard(target=_target(interop_note=True), rows=_rows(),
+                               checks={}, transcripts={}, run_id=94)
+    assert "empty-string" not in plain
+    assert "empty-string" in flagged
+
+
+def test_missing_transcript_states_the_absence():
+    md = render_scorecard(target=_target(), rows=_rows(), checks={},
+                          transcripts={"glm-5-2": None}, run_id=94)
+    assert "not banked" in md.lower()
+
+
+def test_present_transcript_is_linked():
+    md = render_scorecard(target=_target(), rows=_rows(), checks={},
+                          transcripts={"glm-5-2": "artifacts/arena/93/x.json"},
+                          run_id=94)
+    assert "artifacts/arena/93/x.json" in md
+    assert "not banked" not in md.lower()
+
+
+def test_missing_card_is_reported_not_fabricated():
+    rows = [{"model_id": "glm-5-2", "mean_objective": 62.9, "match_count": 2,
+             "card_mean": None}]
+    md = render_scorecard(target=_target(), rows=rows, checks={},
+                          transcripts={}, run_id=94)
+    assert "not available" in md.lower()
+    assert "OVR 0" not in md
+
+
+def test_failed_checks_are_listed_with_axis_and_step():
+    md = render_scorecard(
+        target=_target(), rows=_rows(),
+        checks={"glm-5-2": [FailedCheck("answer quotes 238.04", "grounding", "5")]},
+        transcripts={}, run_id=94)
+    assert "answer quotes 238.04" in md
+    assert "grounding" in md
+    assert "5" in md
 
 
 def test_unknown_tier_is_rejected(tmp_path):
