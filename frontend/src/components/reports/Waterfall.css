@@ -1,0 +1,45 @@
+.wl-waterfall {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+.wl-waterfall__chart {
+  width: 100%;
+}
+.wl-waterfall__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-4);
+  margin: 0;
+}
+.wl-waterfall__entry {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wl-waterfall__term {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}
+.wl-waterfall__value {
+  margin: 0;
+  font-family: var(--font-numeric);
+  font-size: var(--type-num-s-size);
+  font-weight: var(--type-num-s-weight);
+  color: var(--ink);
+}
+.wl-waterfall__entry--total .wl-waterfall__value {
+  font-size: var(--type-num-m-size);
+  font-weight: var(--type-num-m-weight);
+}
+.wl-waterfall__entry--residual .wl-waterfall__value {
+  color: var(--warn);
+}
+.wl-waterfall__warn {
+  margin: 0;
+  font-size: var(--type-small-size);
+  color: var(--warn);
+}

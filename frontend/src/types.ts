@@ -852,7 +852,76 @@ export type ReportJob = {
   artifact_paths: Record<string, any>;
   task_id?: number | null;
   limit_monitoring_run_id?: number | null;
+  // Null for legacy jobs; set for every templated report. The Reports page
+  // discriminates the two payload shapes on exactly this field.
+  template_slug?: string | null;
+  compare_to_run_id?: number | null;
   created_at: string;           // ISO timestamp
+};
+
+/** Tri-state block status. `empty` = the check ran and found nothing;
+ *  `unavailable` = the check could not run. Never render them the same. */
+export type BlockStatus = 'ok' | 'empty' | 'unavailable';
+
+export type BlockResult = {
+  status: BlockStatus;
+  reason: string | null;
+  data: Record<string, any>;
+  provenance: Record<string, any>;
+};
+
+export type ReportBlock = {
+  key: string;
+  render: string;
+  fields: string[] | null;
+  result: BlockResult;
+};
+
+export type ReportSection = {
+  id: string;
+  title: string;
+  blocks: ReportBlock[];
+  narrative: string | null;
+  narrative_error: string | null;
+  grounding: {
+    checked: boolean;
+    flags: { token: number; offset: number }[];
+    grounded_count: number;
+  };
+};
+
+export type ReportDocument = {
+  template: {
+    slug: string;
+    title: string;
+    persona: string;
+    version: number;
+    spec: string;
+    spec_sha256: string;
+  };
+  params: { portfolio_id: number; compare_to_run_id: number | null };
+  generated_at: string;
+  sections: ReportSection[];
+  provenance: Record<string, any>;
+};
+
+export type ReportTemplate = {
+  slug: string;
+  title: string;
+  persona: string;
+  description: string;
+  source: 'seed' | 'user' | 'agent';
+  version: number;
+  spec?: string | null;
+};
+
+export type ReportBlockCatalogEntry = {
+  key: string;
+  title: string;
+  shape: string;
+  requires: string[];
+  domain: string;
+  description: string;
 };
 
 export type TaskErrorPosition = {
