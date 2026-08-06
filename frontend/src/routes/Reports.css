@@ -1,2 +1,102 @@
-.wl-reports { padding-top: var(--gap-2); }
-.wl-reports__loading { display: flex; flex-direction: column; gap: var(--gap-3); }
+.wl-reports__rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+.wl-reports__tabs {
+  display: flex;
+  gap: var(--gap-1);
+  border-bottom: 1px solid var(--hairline);
+}
+.wl-reports__tab {
+  flex: 1;
+  padding: var(--gap-2);
+  font-family: var(--font-ui);
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-2);
+  background: transparent;
+  border: none;
+  border-bottom: var(--rail-accent-width) solid transparent;
+  cursor: pointer;
+}
+.wl-reports__tab--active {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+.wl-reports__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+}
+.wl-reports__item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--gap-2);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-left: var(--rail-accent-width) solid transparent;
+  cursor: pointer;
+}
+.wl-reports__item:hover {
+  background: var(--paper-2);
+}
+.wl-reports__item--active {
+  background: var(--paper-2);
+  border-left-color: var(--ink);
+}
+.wl-reports__item-title {
+  font-size: var(--type-body-size);
+  color: var(--ink);
+}
+.wl-reports__item-meta {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+.wl-reports__loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+.wl-reports__legacy {
+  margin: 0;
+  padding: var(--panel-padding);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink);
+  background: var(--paper-2);
+  overflow-x: auto;
+}
+.wl-reports__generate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+.wl-reports__generate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+}
+.wl-reports__generate-btn {
+  padding: var(--button-padding-y) var(--button-padding-x);
+  min-height: var(--control-height);
+  font-family: var(--font-ui);
+  font-size: var(--type-small-size);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  cursor: pointer;
+}
+.wl-reports__generate-btn:hover {
+  background: var(--paper-2);
+}

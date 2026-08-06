@@ -13,7 +13,7 @@ type Props<T> = {
   metrics?: Metric[] | Metric[][];
   toolbar?: TableToolbarProps;
   // Provide EITHER `table` (renders the Table primitive) OR `body` (escape hatch
-  // for list pages whose body is not a <Table>, e.g. Reports' <ReportTimeline>).
+  // for list pages whose body is not a <Table>, e.g. a timeline or card list).
   table?: {
     columns: Column<T>[]; rows: T[]; rowKey: (r: T) => string | number;
     selectedKey?: string | number | null; onRowClick?: (r: T) => void;

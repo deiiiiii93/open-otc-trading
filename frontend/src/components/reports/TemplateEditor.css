@@ -1,0 +1,60 @@
+.wl-tpl-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+.wl-tpl-editor__head {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+}
+.wl-tpl-editor__slug {
+  font-size: var(--type-body-size);
+  font-weight: var(--type-h3-weight);
+  color: var(--ink);
+}
+.wl-tpl-editor__version {
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+/* The textarea is explicitly themed: an unstyled control defaults to a white
+   background, which breaks dark mode. */
+.wl-tpl-editor__area {
+  min-height: 24rem;
+  padding: var(--panel-padding-tight);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--paper-2);
+  border: 1px solid var(--hairline);
+  resize: vertical;
+}
+.wl-tpl-editor__area:focus {
+  outline: 1px solid var(--ink);
+  outline-offset: -1px;
+}
+.wl-tpl-editor__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+}
+.wl-tpl-editor__ok {
+  font-size: var(--type-small-size);
+  color: var(--pos);
+}
+.wl-tpl-editor__note {
+  margin: 0;
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+}
+.wl-tpl-editor__errors {
+  margin: 0;
+  padding-left: var(--gap-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+  font-size: var(--type-small-size);
+  color: var(--neg);
+}

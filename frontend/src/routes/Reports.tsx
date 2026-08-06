@@ -1,83 +1,197 @@
 import { useMemo, useState } from 'react';
-import type { PageContext, PageContextReporter, ReportJob } from '../types';
-import { DataTablePage } from '../components/templates';
-import { ReportTimeline } from '../components/ReportTimeline';
-import { ReportReader } from '../components/ReportReader';
+import type {
+  PageContext,
+  PageContextReporter,
+  ReportDocument,
+  ReportJob,
+  ReportTemplate,
+} from '../types';
+import { MasterDetailPage } from '../components/templates';
+import { ReportDocumentView } from '../components/reports/ReportDocumentView';
+import { TemplateEditor } from '../components/reports/TemplateEditor';
+import { Badge } from '../components/Badge';
+import { Empty } from '../components/Empty';
 import { Skeleton } from '../components/Skeleton';
 import { usePageContextReporter } from '../hooks/usePageContextReporter';
 import './Reports.css';
 
 type Props = {
   jobs: ReportJob[];
+  templates: ReportTemplate[];
   loading: boolean;
+  selectedJob: ReportJob | null;
+  onSelectJob: (job: ReportJob) => void;
+  onGenerate: (slug: string) => void;
+  onSaveTemplate: (slug: string, specYaml: string) => Promise<void>;
+  onValidateTemplate: (specYaml: string) => Promise<{ ok: boolean; errors: string[] }>;
   onPageContextChange?: PageContextReporter;
 };
 
-export function Reports({ jobs, loading, onPageContextChange }: Props) {
-  const [openJob, setOpenJob] = useState<ReportJob | null>(null);
-  const isOpen = openJob != null;
+type Tab = 'reports' | 'templates';
 
-  const chips: string[] = [];
-  const activeCount = jobs.filter((job) => job.status === 'queued' || job.status === 'running').length;
-  if (loading) chips.push('Loading…');
-  else chips.push(`${jobs.length} reports`);
-  if (activeCount) chips.push(`${activeCount} active`);
-  chips.push('All types');
-  const pageContext = useMemo(() => {
-    const base: PageContext = {
+function jobTitle(job: ReportJob): string {
+  const fromDoc = (job.result_payload as Partial<ReportDocument> | undefined)?.template?.title;
+  if (fromDoc) return fromDoc;
+  const fromRequest = job.request_payload?.title;
+  return typeof fromRequest === 'string' && fromRequest ? fromRequest : `Report #${job.id}`;
+}
+
+/** A templated report carries a slug AND a sections array. Legacy jobs have
+ *  neither, and still render — their payload is shown raw rather than lost. */
+function isTemplated(job: ReportJob): boolean {
+  return Boolean(job.template_slug) && Boolean((job.result_payload as any)?.sections);
+}
+
+export function Reports({
+  jobs,
+  templates,
+  loading,
+  selectedJob,
+  onSelectJob,
+  onGenerate,
+  onSaveTemplate,
+  onValidateTemplate,
+  onPageContextChange,
+}: Props) {
+  const [tab, setTab] = useState<Tab>('reports');
+  const [selectedTemplate, setSelectedTemplate] = useState<ReportTemplate | null>(null);
+
+  const chips = useMemo(
+    () => [loading ? 'Loading…' : `${jobs.length} reports`, `${templates.length} templates`],
+    [loading, jobs.length, templates.length],
+  );
+
+  const pageContext = useMemo<PageContext>(
+    () => ({
       route: 'reports',
       title: 'Reports',
-      path: '/',
-      entity_ids: { report_job_id: openJob?.id ?? null },
+      path: '/reports',
+      entity_ids: { report_job_id: selectedJob?.id ?? null },
       snapshot: {
         report_count: jobs.length,
-        jobs: jobs.slice(0, 12).map((job) => ({
-          id: job.id,
-          report_type: job.report_type,
-          status: job.status,
-          created_at: job.created_at,
-          artifact_paths: job.artifact_paths,
-        })),
+        templates: templates.map((template) => template.slug),
+        selected: selectedJob
+          ? { id: selectedJob.id, template_slug: selectedJob.template_slug ?? null }
+          : null,
       },
       chips,
-    };
-    if (!openJob) return base;
-    return {
-      ...base,
-      title: 'Report Reader dialog',
-      snapshot: {
-        parent_context: base,
-        report_job: openJob,
-      },
-      chips: ['dialog', `Report #${openJob.id}`, openJob.report_type],
-    };
-  }, [chips, jobs, openJob]);
+    }),
+    [chips, jobs, templates, selectedJob],
+  );
   usePageContextReporter(pageContext, onPageContextChange);
 
-  return (
-    <DataTablePage
-      title="REPORTS"
-      chips={chips}
-      body={
-        <div className="wl-reports">
-          {loading ? (
-            <div className="wl-reports__loading">
-              <Skeleton height={48} />
-              <Skeleton height={48} />
-              <Skeleton height={48} />
-            </div>
-          ) : (
-            <ReportTimeline jobs={jobs} onOpen={setOpenJob} />
-          )}
-        </div>
-      }
-      overlays={
-        <ReportReader
-          open={isOpen}
-          job={openJob}
-          onOpenChange={(open) => { if (!open) setOpenJob(null); }}
+  const rail = (
+    <div className="wl-reports__rail">
+      <div className="wl-reports__tabs" role="tablist">
+        {(['reports', 'templates'] as Tab[]).map((name) => (
+          <button
+            key={name}
+            role="tab"
+            type="button"
+            aria-selected={tab === name}
+            className={`wl-reports__tab ${tab === name ? 'wl-reports__tab--active' : ''}`.trim()}
+            onClick={() => setTab(name)}
+          >
+            {name === 'reports' ? 'Reports' : 'Templates'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'reports' ? (
+        <ul className="wl-reports__list">
+          {jobs.map((job) => (
+            <li key={job.id}>
+              <button
+                type="button"
+                className={`wl-reports__item ${
+                  selectedJob?.id === job.id ? 'wl-reports__item--active' : ''
+                }`.trim()}
+                onClick={() => onSelectJob(job)}
+              >
+                <span className="wl-reports__item-title">{jobTitle(job)}</span>
+                <span className="wl-reports__item-meta">
+                  #{job.id} · {job.created_at.slice(5, 16).replace('T', ' ')}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <ul className="wl-reports__list">
+          {templates.map((template) => (
+            <li key={template.slug}>
+              <button
+                type="button"
+                className={`wl-reports__item ${
+                  selectedTemplate?.slug === template.slug ? 'wl-reports__item--active' : ''
+                }`.trim()}
+                onClick={() => setSelectedTemplate(template)}
+              >
+                <span className="wl-reports__item-title">{template.slug}</span>
+                <span className="wl-reports__item-meta">
+                  <Badge variant="ink">{template.persona}</Badge>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+
+  let body: React.ReactNode;
+  if (loading) {
+    body = (
+      <div className="wl-reports__loading">
+        <Skeleton height={48} />
+        <Skeleton height={48} />
+        <Skeleton height={48} />
+      </div>
+    );
+  } else if (tab === 'templates') {
+    body = selectedTemplate ? (
+      <TemplateEditor
+        template={selectedTemplate}
+        onSave={onSaveTemplate}
+        onValidate={onValidateTemplate}
+      />
+    ) : (
+      <div className="wl-reports__generate">
+        <Empty
+          message="Select a template to view its spec, or generate a report from one."
+          symbol="◫"
         />
-      }
-    />
+        <div className="wl-reports__generate-actions">
+          {templates.map((template) => (
+            <button
+              key={template.slug}
+              type="button"
+              className="wl-reports__generate-btn"
+              onClick={() => onGenerate(template.slug)}
+            >
+              Generate {template.title}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  } else if (!selectedJob) {
+    body = <Empty message="No reports yet — generate one from a template." symbol="◌" />;
+  } else if (isTemplated(selectedJob)) {
+    body = (
+      <ReportDocumentView document={selectedJob.result_payload as unknown as ReportDocument} />
+    );
+  } else {
+    body = (
+      <pre className="wl-reports__legacy" data-testid="legacy-payload">
+        {JSON.stringify(selectedJob.result_payload ?? {}, null, 2)}
+      </pre>
+    );
+  }
+
+  return (
+    <MasterDetailPage title="REPORTS" chips={chips} rail={rail} railWidth="18rem">
+      {body}
+    </MasterDetailPage>
   );
 }
