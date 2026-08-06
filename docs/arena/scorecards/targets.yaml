@@ -1,0 +1,94 @@
+# Phase 1 outreach targets.
+# Spec: docs/superpowers/specs/2026-08-06-otc-agent-public-narrative-design.md §5.3
+#
+# tier: A  = strong result, good news, send first
+#       B1 = interop finding (protocol:anthropic), highest-value message
+#       B2 = anomalous result, harness suspected, send last
+#
+# WARNING: the `channels` URLs are UNVERIFIED. They were inferred, not confirmed.
+# Every one must be checked by hand before anything is posted — a card filed on
+# the wrong repo is worse than one not filed at all.
+targets:
+  - lab: DeepSeek
+    tier: A
+    model_ids: [deepseek-v4-flash, deepseek-v4-pro]
+    channels: ["https://github.com/deepseek-ai/DeepSeek-V3/issues", "zhihu"]
+    anomaly: null
+    interop_note: false
+
+  - lab: Alibaba
+    tier: A
+    model_ids: [qwen-3-7-max]
+    channels: ["https://github.com/QwenLM/Qwen3/issues", "zhihu"]
+    anomaly: null
+    interop_note: true
+
+  - lab: Meituan
+    tier: A
+    model_ids: [longcat-2-0]
+    channels: ["https://github.com/meituan-longcat/LongCat-Flash-Chat/issues"]
+    anomaly: null
+    interop_note: true
+
+  - lab: StepFun
+    tier: A
+    model_ids: [step-3-7-flash]
+    channels: ["https://github.com/stepfun-ai/Step-3/issues"]
+    anomaly: null
+    interop_note: false
+
+  - lab: Zhipu
+    tier: B1
+    model_ids: [glm-5-2]
+    channels: ["https://github.com/zai-org/GLM-4.5/issues"]
+    anomaly: >-
+      Synthesis scored 0/5 on the clean re-run. This is reported as a real result, NOT
+      as a suspected harness fault: the earlier broken rows were diagnosed and re-run
+      after the protocol pin described above.
+    interop_note: true
+
+  - lab: MiniMax
+    tier: B1
+    model_ids: [minimax-m3]
+    channels: ["https://github.com/MiniMax-AI/MiniMax-M2/issues"]
+    anomaly: >-
+      The only model on the board scoring below 92 on adherence (78).
+    interop_note: true
+
+  - lab: Tencent
+    tier: B2
+    model_ids: [hunyuan-3]
+    channels: ["https://github.com/Tencent-Hunyuan/Hunyuan-A13B/issues"]
+    anomaly: >-
+      Synthesis 40 against adherence 99 — the model follows the process but does not
+      produce the deliverable. That split is more consistent with a harness or
+      output-parsing fault than with capability, and I would like help ruling that out.
+    interop_note: false
+
+  - lab: Moonshot
+    tier: B2
+    model_ids: [kimi-2-7]
+    channels: ["https://github.com/MoonshotAI/Kimi-K2/issues"]
+    anomaly: >-
+      Synthesis 40 with consistency 33 — the deliverable appears on some trials and not
+      others, which reads as instability rather than inability.
+    interop_note: false
+
+  - lab: Xiaomi
+    tier: B2
+    model_ids: [mimo-2-5, mimo-2-5-pro]
+    channels: ["https://github.com/XiaomiMiMo/MiMo/issues"]
+    anomaly: >-
+      MiMo 2.5 Pro ranks below non-Pro MiMo 2.5 on this workflow. An inverted tier order
+      is usually worth a look on the serving side.
+    interop_note: false
+
+  - lab: ByteDance
+    tier: B2
+    model_ids: [doubao-seed-2-1-pro]
+    channels: ["https://github.com/volcengine/verl/issues"]
+    anomaly: >-
+      Consistency 0 against an objective score of 82.8 — high capability with no
+      run-to-run reproducibility, which is the pattern I would most expect to be my
+      harness rather than the model.
+    interop_note: false
