@@ -184,7 +184,8 @@ Three properties:
 2. **The agent can request more evidence** via a read-only `resolve_report_block(key, params)`
    tool. More evidence, never invented evidence.
 3. **Prose is grounding-checked at runtime.** The arena scoring already ships a numeric
-   grounding matcher (`_quote_value_in_text`, backing `response_quotes_value`). Reuse it as a
+   grounding matcher (`_scan_numeric_tokens` / `_quote_value_report` in
+   `golden_workflows/assertions.py`, backing `response_quotes_value`). Reuse it as a
    guard: every numeric token in a section's narrative must appear in that section's block
    data. An offline benchmark tool becomes a production safety net at no build cost.
 
