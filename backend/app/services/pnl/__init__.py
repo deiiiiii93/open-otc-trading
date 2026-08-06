@@ -5,6 +5,7 @@ originates here is computed from persisted risk-run evidence.
 """
 from __future__ import annotations
 
+from .entry_price import entry_price_from_quote, inception_pnl
 from .explain import RESIDUAL_WARN_RATIO, UnsupportedMetricContract, explain_diff
 from .snapshot_diff import diff_metrics, load_run_pair
 
@@ -14,4 +15,6 @@ __all__ = [
     "explain_diff",
     "RESIDUAL_WARN_RATIO",
     "UnsupportedMetricContract",
+    "inception_pnl",
+    "entry_price_from_quote",
 ]
