@@ -1,0 +1,380 @@
+[
+  {
+    "card_mean": {
+      "ADH": 99,
+      "EFF": 99,
+      "GRD": 99,
+      "PRC": 99,
+      "SYN": 99,
+      "base_ovr": 99,
+      "con": 99,
+      "ovr": 99
+    },
+    "carded_count": 1,
+    "invalid_count": 0,
+    "match_count": 1,
+    "mean_objective": 100.0,
+    "model_id": "gemini-3-6-flash",
+    "rank": 1,
+    "subjective_mean": null,
+    "subjective_mode": "disabled",
+    "subjective_stdev": null
+  },
+  {
+    "card_mean": {
+      "ADH": 99,
+      "EFF": 80,
+      "GRD": 99,
+      "PRC": 99,
+      "SYN": 99,
+      "base_ovr": 96,
+      "con": 99,
+      "ovr": 96
+    },
+    "carded_count": 1,
+    "invalid_count": 0,
+    "match_count": 1,
+    "mean_objective": 100.0,
+    "model_id": "grok-4-5",
+    "rank": 2,
+    "subjective_mean": null,
+    "subjective_mode": "disabled",
+    "subjective_stdev": null
+  },
+  {
+    "card_mean": {
+      "ADH": 99,
+      "EFF": 81,
+      "GRD": 91,
+      "PRC": 94,
+      "SYN": 89,
+      "base_ovr": 92,
+      "con": 96,
+      "ovr": 91
+    },
+    "carded_count": 1,
+    "invalid_count": 0,
+    "match_count": 1,
+    "mean_objective": 94.3,
+    "model_id": "deepseek-v4-flash",
+    "rank": 3,
+    "subjective_mean": null,
+    "subjective_mode": "disabled",
+    "subjective_stdev": null
+  },
+  {
+    "card_mean": {
+      "ADH": 99,
+      "EFF": 68,
+      "GRD": 95,
+      "PRC": 86,
+      "SYN": 99,
+      "base_ovr": 92,
+      "con": 76,
+      "ovr": 88
+    },
+    "carded_count": 1,
+    "invalid_count": 0,
+    "match_count": 1,
+    "mean_objective": 94.3,
+    "model_id": "deepseek-v4-pro",
+    "rank": 4,
+    "subjective_mean": null,
+    "subjective_mode": "disabled",
+    "subjective_stdev": null
+  },
+  {
+    "card_mean": {
+      "ADH": 99,
+      "EFF": 76,
+      "GRD": 82,
+      "PRC": 90,
+      "SYN": 99,
+      "base_ovr": 89,
+      "con": 92,
+      "ovr": 88
+    },
+    "carded_count": 1,
+    "invalid_count": 0,
+    "match_count": 1,
+    "mean_objective": 91.4,
+    "model_id": "qwen-3-7-max",
+    "rank": 5,
+    "subjective_mean": null,
+    "subjective_mode": "disabled",
+    "subjective_stdev": null
+  },
+  {
+    "card_mean": {
+      "ADH": 99,
+      "EFF": 72,
+      "GRD": 90,
+      "PRC": 94,
+      "SYN": 99,
+      "base_ovr": 92,
+      "con": 50,
+      "ovr": 83
+    },
+    "carded_count": 1,
+    "invalid_count": 0,
+    "match_count": 1,
+    "mean_objective": 95.7,
+    "model_id": "longcat-2-0",
+    "rank": 6,
+    "subjective_mean": null,
+    "subjective_mode": "disabled",
+    "subjective_stdev": null
+  },
+  {
+    "card_mean": {
+      "ADH": 99,
+      "EFF": 82,
+      "GRD": 82,
+      "PRC": 81,
+      "SYN": 59,
+      "base_ovr": 83,
+      "con": 99,
+      "ovr": 83
+    },
+    "carded_count": 1,
+    "invalid_count": 0,
+    "match_count": 1,
+    "mean_objective": 82.9,
+    "model_id": "gpt-5-6-terra",
+    "rank": 7,
+    "subjective_mean": null,
+    "subjective_mode": "disabled",
+    "subjective_stdev": null
+  },
+  {
+    "card_mean": {
+      "ADH": 99,
+      "EFF": 74,
+      "GRD": 74,
+      "PRC": 90,
+      "SYN": 79,
+      "base_ovr": 83,
+      "con": 86,
+      "ovr": 81
+    },
+    "carded_count": 1,
+    "invalid_count": 0,
+    "match_count": 1,
+    "mean_objective": 85.8,
+    "model_id": "step-3-7-flash",
+    "rank": 8,
+    "subjective_mean": null,
+    "subjective_mode": "disabled",
+    "subjective_stdev": null
+  },
+  {
+    "card_mean": {
+      "ADH": 92,
+      "EFF": 84,
+      "GRD": 74,
+      "PRC": 81,
+      "SYN": 99,
+      "base_ovr": 85,
+      "con": 59,
+      "ovr": 79
+    },
+    "carded_count": 1,
+    "invalid_count": 0,
+    "match_count": 1,
+    "mean_objective": 84.2,
+    "model_id": "claude-sonnet-5",
+    "rank": 9,
+    "subjective_mean": null,
+    "subjective_mode": "disabled",
+    "subjective_stdev": null
+  },
+  {
+    "card_mean": {
+      "ADH": 99,
+      "EFF": 82,
+      "GRD": 78,
+      "PRC": 94,
+      "SYN": 69,
+      "base_ovr": 84,
+      "con": 30,
+      "ovr": 74
+    },
+    "carded_count": 1,
+    "invalid_count": 0,
+    "match_count": 1,
+    "mean_objective": 87.1,
+    "model_id": "gpt-5-6-luna",
+    "rank": 10,
+    "subjective_mean": null,
+    "subjective_mode": "disabled",
+    "subjective_stdev": null
+  },
+  {
+    "card_mean": {
+      "ADH": 99,
+      "EFF": 33,
+      "GRD": 74,
+      "PRC": 99,
+      "SYN": 59,
+      "base_ovr": 74,
+      "con": null,
+      "ovr": 74
+    },
+    "carded_count": 1,
+    "invalid_count": 0,
+    "match_count": 1,
+    "mean_objective": 85.7,
+    "model_id": "gemini-3-5-flash",
+    "rank": 11,
+    "subjective_mean": null,
+    "subjective_mode": "disabled",
+    "subjective_stdev": null
+  },
+  {
+    "card_mean": {
+      "ADH": 99,
+      "EFF": 78,
+      "GRD": 82,
+      "PRC": 81,
+      "SYN": 40,
+      "base_ovr": 79,
+      "con": 40,
+      "ovr": 71
+    },
+    "carded_count": 1,
+    "invalid_count": 0,
+    "match_count": 1,
+    "mean_objective": 80.0,
+    "model_id": "hunyuan-3",
+    "rank": 12,
+    "subjective_mean": null,
+    "subjective_mode": "disabled",
+    "subjective_stdev": null
+  },
+  {
+    "card_mean": {
+      "ADH": 99,
+      "EFF": 76,
+      "GRD": 78,
+      "PRC": 76,
+      "SYN": 40,
+      "base_ovr": 77,
+      "con": 33,
+      "ovr": 68
+    },
+    "carded_count": 1,
+    "invalid_count": 0,
+    "match_count": 1,
+    "mean_objective": 77.2,
+    "model_id": "kimi-2-7",
+    "rank": 13,
+    "subjective_mean": null,
+    "subjective_mode": "disabled",
+    "subjective_stdev": null
+  },
+  {
+    "card_mean": {
+      "ADH": 99,
+      "EFF": 76,
+      "GRD": 74,
+      "PRC": 68,
+      "SYN": 50,
+      "base_ovr": 76,
+      "con": 40,
+      "ovr": 68
+    },
+    "carded_count": 1,
+    "invalid_count": 0,
+    "match_count": 1,
+    "mean_objective": 74.3,
+    "model_id": "mimo-2-5",
+    "rank": 14,
+    "subjective_mean": null,
+    "subjective_mode": "disabled",
+    "subjective_stdev": null
+  },
+  {
+    "card_mean": {
+      "ADH": 99,
+      "EFF": 78,
+      "GRD": 78,
+      "PRC": 90,
+      "SYN": 50,
+      "base_ovr": 80,
+      "con": 0,
+      "ovr": 66
+    },
+    "carded_count": 1,
+    "invalid_count": 0,
+    "match_count": 1,
+    "mean_objective": 82.8,
+    "model_id": "doubao-seed-2-1-pro",
+    "rank": 15,
+    "subjective_mean": null,
+    "subjective_mode": "disabled",
+    "subjective_stdev": null
+  },
+  {
+    "card_mean": {
+      "ADH": 99,
+      "EFF": 76,
+      "GRD": 78,
+      "PRC": 68,
+      "SYN": 50,
+      "base_ovr": 78,
+      "con": 10,
+      "ovr": 65
+    },
+    "carded_count": 1,
+    "invalid_count": 0,
+    "match_count": 1,
+    "mean_objective": 75.7,
+    "model_id": "mimo-2-5-pro",
+    "rank": 16,
+    "subjective_mean": null,
+    "subjective_mode": "disabled",
+    "subjective_stdev": null
+  },
+  {
+    "card_mean": {
+      "ADH": 99,
+      "EFF": 64,
+      "GRD": 70,
+      "PRC": 58,
+      "SYN": 0,
+      "base_ovr": 64,
+      "con": 99,
+      "ovr": 64
+    },
+    "carded_count": 1,
+    "invalid_count": 0,
+    "match_count": 1,
+    "mean_objective": 62.9,
+    "model_id": "glm-5-2",
+    "rank": 17,
+    "subjective_mean": null,
+    "subjective_mode": "disabled",
+    "subjective_stdev": null
+  },
+  {
+    "card_mean": {
+      "ADH": 78,
+      "EFF": 35,
+      "GRD": 50,
+      "PRC": 32,
+      "SYN": 40,
+      "base_ovr": 51,
+      "con": 0,
+      "ovr": 42
+    },
+    "carded_count": 1,
+    "invalid_count": 0,
+    "match_count": 1,
+    "mean_objective": 48.6,
+    "model_id": "minimax-m3",
+    "rank": 18,
+    "subjective_mean": null,
+    "subjective_mode": "disabled",
+    "subjective_stdev": null
+  }
+]
