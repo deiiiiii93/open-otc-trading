@@ -89,7 +89,7 @@ derived surfaces:
 |---|---|---|---|
 | S1 | Per-model scorecard cuts (×10) | Chinese LLM labs | 1 |
 | S2 | Flagship English essay | Western labs + general | 2 |
-| S3 | Arena English home + arXiv preprint | Labs, ongoing | 3 |
+| S3 | Arena English home + Paper B preprint (§7.1) | Labs, ongoing | 3 |
 | S4 | Governance whitepaper | Financial institutions | 4 |
 | S5 | Chinese finance cut (Zhihu / 公众号) | Chinese FIs | 4 |
 
@@ -249,12 +249,59 @@ whitepaper, or the next Arena run), never from a repost.
 - **One run per major model launch** → report → post. This converts a one-time spike into
   a following: every model release is a free news hook the Arena is already positioned
   for.
-- **arXiv preprint (cs.AI)** of the consolidated methodology. The reports are already
-  paper-shaped — Run #94 carries an Abstract, a Limitations & threats-to-validity section,
-  a Reproducibility section, and a behavioural-taxonomy appendix. A preprint is a
-  *credential* in a way a blog post is not: citable, permanent, and the most efficient
-  single artifact for the LLM-lab recruiting goal. It also hardens every other channel.
-  **Check arXiv endorsement for cs.AI early** — it is the only step with a lead time.
+- **A preprint** — but a specific one, written *after* the essay. See §7.1.
+
+### 7.1 The paper: write Paper B, not Paper A
+
+**arXiv is archival, not distribution.** cs.AI takes a very large daily volume and the
+median preprint is read by almost nobody; an unaffiliated single-author paper posted cold
+sinks without trace. A preprint therefore buys a **credential**, not eyeballs. Since this
+plan needs both, they are sequenced: the essay (§6) produces the readers, and those
+readers are what make the preprint visible when it lands. **The essay ships first.**
+Writing the paper first optimises in the dark, before any signal about which framing
+resonates.
+
+Two papers are latent in the Arena work, with opposite prospects:
+
+**Paper A — "OTC Desk Agent Arena: 18 LLMs on a production desk." Do not write this.**
+It is a leaderboard for a self-designed, self-scored, single-environment benchmark at
+n=2 trials, attached to a product the author owns. Each of those is a standard reviewer
+objection, and the author's own published honesty (*"30% of the checks carried no
+signal"*) becomes the attack surface. Low ceiling, real downside.
+
+**Paper B — "Non-discriminating checks in agentic benchmarks: an audit of our own."
+Write this one.** Same underlying work, a different contribution: a methods and
+negative-results paper whose finding is *transferable* — every team building an agent
+benchmark has this bug and does not know it. Two results travel on their own:
+
+- A golden replay proves **satisfiability, never reachability**. The hand-written perfect
+  transcript scored 50/50 by construction while live models capped at 35/50.
+- **A check at 0/N or N/N carries zero ability signal while still occupying the
+  denominator.** 15 of 50 here; correcting it moved the top from 72 → 88.6 and
+  **reordered the board** (Spearman 0.789).
+
+Paper B also inverts the credibility problem. In Paper A the benchmark's flaws are the
+attack surface; in Paper B, *finding* them **is the contribution** — and almost no
+benchmark author has published their own autopsy. That scarcity is the value.
+
+Position it against τ-bench, SWE-bench, WebArena and AgentBench, with the Arena as the
+**case study**, not the contribution.
+
+### 7.2 Venues
+
+Post to **arXiv (cs.AI) and SSRN**. SSRN carries no endorsement gate and reaches the
+financial-institution audience that arXiv does not reach at all — it is not a fallback but
+a second, differently-targeted channel.
+
+**Register format matters as much as the gate.** The existing reports are paper-shaped in
+structure but blog-shaped in voice, and arXiv moderators reclassify or reject submissions
+reading as product promotion. Converting requires: no emoji in headings, results before
+rankings, a related-work section, and the product named once as the environment under
+test rather than linked throughout.
+
+**What would change the plan:** a co-author with an academic affiliation working in
+evaluation. That solves endorsement outright, materially strengthens the paper, and would
+justify starting it in parallel with the essay rather than after it.
 
 ---
 
@@ -304,12 +351,52 @@ of judgment.
 | Benchmark methodology attacked | The validity audit is a pre-built defence — publish it *prominently*, not defensively |
 | Outreach reads as spam | The §5.5 etiquette rules |
 | Essay too niche to travel | The §3 reframe: lessons generalise, the desk is only the credibility substrate |
-| arXiv submission blocked | Check cs.AI endorsement in week 1, before it is on the critical path |
+| arXiv submission blocked | Endorsement probe in week 1 (§13.1); SSRN and Zenodo carry the work regardless (§13.3) |
+| Preprint sinks unread, or invites attack | Essay ships first and supplies the readers; write Paper B not Paper A (§7.1) |
 
 ---
 
-## 12. Open assumption
+## 12. Publishing constraints — resolved
 
-No employer or client confidentiality constraint restricts publishing this material. The
-repository is already public and MIT-licensed under the author's name, so this appears
-safe — but it has not been explicitly confirmed and should be before Phase 2.
+**Confirmed 2026-08-06:** this is entirely a personal project. No employer or client
+confidentiality constraint applies, and the repository is already public and MIT-licensed
+under the author's name. Nothing in this plan is gated on a clearance step.
+
+One consequence worth stating: because the work is unaffiliated, the author has **no
+institutional email and therefore no automatic arXiv endorsement** (§7). That is a
+lead-time item, not a blocker — see §13.
+
+---
+
+## 13. Lead-time items
+
+Nothing here blocks Phase 1 or Phase 2. Each is a cheap probe run early so that a slow
+dependency never lands on the critical path later.
+
+### 13.1 arXiv endorsement probe — ~20 minutes, week 1
+
+arXiv requires first-time submitters to a category to be **endorsed** by an existing
+publisher in that category. Endorsement vouches for the *author* as a legitimate
+researcher in the field — not for the paper's correctness — and creates no co-authorship.
+It is permanent per category and invisible to most researchers, because submitters from
+recognised institutional email domains are endorsed automatically.
+
+The probe: register an arXiv account and begin a `cs.AI` submission far enough to see
+whether auto-endorsement applies. It almost certainly will not (§12). Knowing this in
+week 1 determines whether effort goes to finding an endorser or straight to SSRN, months
+before the paper is written.
+
+*Note:* exact endorser thresholds are not fully published and the policy changes; verify
+current rules on arxiv.org rather than relying on this document.
+
+### 13.2 Endorser or co-author search — opportunistic, ongoing
+
+arXiv asks endorsers not to endorse people they do not know, so cold outreach has a low
+yield. The realistic sources are people who encounter the work through Phase 1 or Phase 2
+— which is a further reason the paper follows the essay rather than preceding it.
+
+### 13.3 Fallback venues — no gate
+
+If no endorser materialises, **SSRN** (finance-native, no gate) and **Zenodo** (instant
+DOI, citable) carry the work. A peer-reviewed **workshop short paper** is a realistic
+target for an unaffiliated author and is a *stronger* credential than any preprint.
