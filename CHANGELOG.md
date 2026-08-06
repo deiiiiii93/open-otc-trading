@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **P&L producers (`backend/app/services/pnl/`)** — deterministic day-over-day
+  producers for the report module: `snapshot_diff` (risk-run diff; elapsed time
+  from `valuation_as_of`, never wall-clock, so two runs priced at the same
+  valuation date carry zero theta P&L however far apart they were computed),
+  `explain` (Greeks attribution — δ·ΔS + ½γ·ΔS² + ν·Δσ + θ·Δt + ρ·Δr + ρq·Δq —
+  with unit multipliers read from the run's own `metric_contract` rather than
+  hardcoded, start-of-period convention, and the residual surfaced rather than
+  hidden), and `entry_price` (inception-P&L basis accounting that excludes and
+  **counts** basis-less positions instead of reporting market value as P&L).
+  Positions failing `pricing_ok`/`greeks_ok` in either run are excluded and
+  listed with a reason, never zero-filled; an unrecognised `metric_contract`
+  raises rather than guessing units. Nothing in the package touches an LLM.
+- **Block contract types (`backend/app/services/reporting/contracts.py`)** —
+  `BlockShape`, `BlockResult`, `BlockContext`. `BlockResult.status` is
+  tri-state: `ok` / `empty` / `unavailable`, so "no breaches" and "the breach
+  check did not run" can never render identically, and a non-`ok` result cannot
+  be constructed without a reason.
 - **Booking result card in chat.** The outcome of a confirmation booking is now rendered from
   a server-built structured record (`meta.booking_result`) instead of the assistant's prose:
   status, position id, product/underlying/size, destination portfolio, the **canonical booked
