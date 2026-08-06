@@ -24,8 +24,12 @@ class Target:
     tier: str
     model_ids: tuple[str, ...]
     channels: tuple[str, ...]
+    serving: dict[str, str]
     anomaly: str | None
-    interop_note: bool
+    #: Per-lab text, not a flag. The four protocol-pinned models have four
+    #: DISTINCT symptoms (two empty-id, two unparsed native markup); a shared
+    #: blob would report to two labs a bug that was never theirs.
+    interop_note: str | None
 
 
 @dataclass(frozen=True)
@@ -51,8 +55,9 @@ def load_targets(path: Path) -> list[Target]:
                 tier=tier,
                 model_ids=tuple(entry["model_ids"]),
                 channels=tuple(entry.get("channels") or ()),
+                serving=dict(entry.get("serving") or {}),
                 anomaly=(entry.get("anomaly") or None),
-                interop_note=bool(entry.get("interop_note")),
+                interop_note=(entry.get("interop_note") or None),
             )
         )
     return targets
@@ -150,22 +155,13 @@ each step consumes the previous step's output. Scoring reads the system's own tr
 against a fixed objective manifest; there is no LLM judge in these numbers.\
 """
 
-_INTEROP = """\
-### One interoperability finding you may want
-
-Through an OpenAI-compatible gateway, this model emitted tool calls with **empty-string
-ids**, which caused every persona delegation to fail before it started. Pinning the route
-to the Anthropic wire protocol resolved it, and the board row above is the clean re-run
-after that pin. Four models on this board needed the same pin, so it may be worth
-checking against your own OpenAI-compatible surface.\
-"""
-
 _QUESTION = """\
 ### My question
 
-Did I serve your model correctly? The run configuration is linked below. If any of it is
-wrong — the wire protocol, a limit, the way tools are presented — I would rather fix the
-harness and re-run than publish a number that measures my plumbing instead of your model.\
+Did I serve your model correctly? The configuration above is everything I controlled. If
+any of it is wrong — the wire protocol, the gateway, the way tools are presented — I
+would rather fix the harness and re-run than publish a number that measures my plumbing
+instead of your model.\
 """
 
 _STATS_LEGEND = (
@@ -192,6 +188,35 @@ def _card_table(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _serving_section(target: Target, trials: dict[str, int]) -> list[str]:
+    """Disclose how the model was served.
+
+    The "did I serve you right?" question is unanswerable without this, so the
+    section is rendered even when the config is empty — as an explicit gap
+    rather than a silent omission.
+    """
+    out = ["### How it was served", ""]
+    if not target.serving:
+        out += ["Serving configuration was **not recorded** for this run.", ""]
+        return out
+    for key, value in target.serving.items():
+        out.append(f"- **{key}**: `{value}`")
+    # n_trials from the stored breakdown, NOT the leaderboard's match_count:
+    # on a folded board match_count is always 1 (one aggregate row), which
+    # would understate the evidence to the recipient.
+    counts = [n for n in trials.values() if isinstance(n, int) and n > 0]
+    if counts:
+        out.append(f"- **trials per model, folded into this row**: {max(counts)}")
+    out += [
+        "- **LLM jury**: disabled — every number above is rule-based",
+        "",
+        "Anything not listed here is repo default; the published run report carries the "
+        "full reproducibility section.",
+        "",
+    ]
+    return out
+
+
 def render_scorecard(
     *,
     target: Target,
@@ -199,6 +224,7 @@ def render_scorecard(
     checks: dict[str, list[FailedCheck]],
     transcripts: dict[str, str | None],
     run_id: int,
+    trials: dict[str, int] | None = None,
 ) -> str:
     """Render one lab's outreach card. Pure — no IO."""
     parts: list[str] = [
@@ -223,7 +249,12 @@ def render_scorecard(
         ]
 
     if target.interop_note:
-        parts += [_INTEROP, ""]
+        parts += [
+            "### One interoperability finding you may want",
+            "",
+            target.interop_note.strip(),
+            "",
+        ]
 
     if target.anomaly:
         parts += ["### What stands out", "", target.anomaly.strip(), ""]
@@ -235,6 +266,8 @@ def render_scorecard(
             where = f", step {check.step}" if check.step is not None else ""
             parts.append(f"- `{mid}` — **{check.label}** ({check.axis}{where})")
         parts.append("")
+
+    parts += _serving_section(target, trials or {})
 
     parts += ["### Evidence", ""]
     for model_id in target.model_ids:

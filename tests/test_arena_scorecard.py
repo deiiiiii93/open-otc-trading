@@ -60,12 +60,32 @@ def test_tiers_are_valid_and_glm_carries_the_interop_note():
     assert {t.tier for t in targets.values()} <= {"A", "B1", "B2"}
     # Accuracy rule: GLM's harness fault was found and fixed, so it carries the
     # interop note rather than an open "is my harness broken?" question.
-    assert targets["Zhipu"].interop_note is True
+    assert targets["Zhipu"].interop_note
 
 
 def test_interop_note_set_for_exactly_the_four_protocol_pinned_labs():
     labs = {t.lab for t in load_targets(TARGETS) if t.interop_note}
     assert labs == {"Zhipu", "Alibaba", "Meituan", "MiniMax"}
+
+
+def test_each_interop_note_is_distinct():
+    """Four pinned models, four DIFFERENT symptoms — a shared blob would tell
+    two labs about a bug that was never theirs."""
+    notes = [t.interop_note for t in load_targets(TARGETS) if t.interop_note]
+    assert len(notes) == len(set(notes)) == 4
+
+
+def test_only_protocol_pinned_labs_declare_the_anthropic_protocol():
+    for t in load_targets(TARGETS):
+        pinned = t.serving.get("protocol") == "anthropic"
+        assert pinned == bool(t.interop_note), (
+            f"{t.lab}: protocol pin and interop note disagree")
+
+
+def test_every_target_discloses_serving_config():
+    for t in load_targets(TARGETS):
+        assert t.serving.get("gateway"), f"{t.lab} discloses no gateway"
+        assert t.serving.get("protocol"), f"{t.lab} discloses no protocol"
 
 
 def test_every_target_declares_at_least_one_channel():
@@ -143,8 +163,9 @@ def test_latest_transcript_paths_omits_a_model_with_only_nulls():
 
 def _target(**kw) -> Target:
     base = dict(lab="Zhipu", tier="B1", model_ids=("glm-5-2",),
-                channels=("https://example.invalid/issues",), anomaly=None,
-                interop_note=False)
+                channels=("https://example.invalid/issues",),
+                serving={"gateway": "ZenMux", "protocol": "anthropic"},
+                anomaly=None, interop_note=None)
     base.update(kw)
     return Target(**base)  # type: ignore[arg-type]
 
@@ -173,7 +194,7 @@ def test_render_asks_the_serving_question():
 
 def test_render_never_pitches():
     """Etiquette rule: no job or consulting ask, and no velocity claims, ever."""
-    md = render_scorecard(target=_target(interop_note=True,
+    md = render_scorecard(target=_target(interop_note="an interop symptom",
                                          anomaly="something anomalous"),
                           rows=_rows(),
                           checks={"glm-5-2": [FailedCheck("l", "synthesis", "5")]},
@@ -183,13 +204,41 @@ def test_render_never_pitches():
         assert banned not in md, f"banned phrase {banned!r} appeared in a card"
 
 
-def test_interop_note_rendered_only_when_flagged():
-    plain = render_scorecard(target=_target(interop_note=False), rows=_rows(),
+def test_interop_note_rendered_verbatim_only_when_present():
+    plain = render_scorecard(target=_target(interop_note=None), rows=_rows(),
                              checks={}, transcripts={}, run_id=94)
-    flagged = render_scorecard(target=_target(interop_note=True), rows=_rows(),
-                               checks={}, transcripts={}, run_id=94)
-    assert "empty-string" not in plain
-    assert "empty-string" in flagged
+    flagged = render_scorecard(
+        target=_target(interop_note="tool-call ids arrived EMPTY"),
+        rows=_rows(), checks={}, transcripts={}, run_id=94)
+    assert "interoperability finding" not in plain
+    assert "tool-call ids arrived EMPTY" in flagged
+
+
+def test_serving_config_is_always_disclosed():
+    """The serving question is unanswerable without it."""
+    md = render_scorecard(target=_target(), rows=_rows(), checks={},
+                          transcripts={}, run_id=94)
+    assert "How it was served" in md
+    assert "ZenMux" in md and "anthropic" in md
+
+
+def test_trials_come_from_n_trials_not_the_folded_match_count():
+    """On a folded board match_count is always 1; the real trial count is 2."""
+    md = render_scorecard(target=_target(), rows=_rows(), checks={},
+                          transcripts={}, run_id=94, trials={"glm-5-2": 2})
+    assert "trials per model, folded into this row**: 2" in md
+
+
+def test_trials_line_omitted_when_unknown():
+    md = render_scorecard(target=_target(), rows=_rows(), checks={},
+                          transcripts={}, run_id=94, trials={"glm-5-2": 0})
+    assert "trials per model" not in md
+
+
+def test_absent_serving_config_is_stated_not_omitted():
+    md = render_scorecard(target=_target(serving={}), rows=_rows(), checks={},
+                          transcripts={}, run_id=94)
+    assert "not recorded" in md.lower()
 
 
 def test_missing_transcript_states_the_absence():

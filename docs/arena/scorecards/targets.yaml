@@ -8,87 +8,127 @@
 # WARNING: the `channels` URLs are UNVERIFIED. They were inferred, not confirmed.
 # Every one must be checked by hand before anything is posted — a card filed on
 # the wrong repo is worse than one not filed at all.
+# `serving` is disclosed verbatim in every card — the "did I serve you right?"
+# question is meaningless unless the recipient can check the answer.
+# `interop_note` is PER-LAB free text: the four pinned models have four distinct
+# symptoms (two empty-id, two unparsed-native-markup). A shared blob would tell
+# two labs about a bug that was not theirs.
 targets:
   - lab: DeepSeek
     tier: A
     model_ids: [deepseek-v4-flash, deepseek-v4-pro]
     channels: ["https://github.com/deepseek-ai/DeepSeek-V3/issues", "zhihu"]
+    serving: {gateway: ZenMux, provider: openai, protocol: openai-compatible}
     anomaly: null
-    interop_note: false
+    interop_note: null
 
   - lab: Alibaba
     tier: A
     model_ids: [qwen-3-7-max]
     channels: ["https://github.com/QwenLM/Qwen3/issues", "zhihu"]
+    serving: {gateway: ZenMux, provider: openai, protocol: anthropic}
     anomaly: null
-    interop_note: true
+    interop_note: >-
+      Through the OpenAI-compatible gateway, this model's tool-call id arrived **empty**
+      in the full agent flow, so subagent dispatch failed with "Tool call ID is required
+      for subagent invocation". Routing it through the Anthropic endpoint fixed it — that
+      path assigns server-side `toolu_` ids, which cannot be empty. The board row above is
+      from the pinned route. It may be worth checking against your own OpenAI-compatible
+      surface; three other models on this board needed a pin for related reasons.
 
   - lab: Meituan
     tier: A
     model_ids: [longcat-2-0]
     channels: ["https://github.com/meituan-longcat/LongCat-Flash-Chat/issues"]
+    serving: {gateway: ZenMux, provider: openai, protocol: anthropic}
     anomaly: null
-    interop_note: true
+    interop_note: >-
+      Through the OpenAI-compatible gateway, this model emitted tool calls as
+      `<longcat_tool_call>` markup that the gateway left unparsed. The markup leaked into
+      the response text and the run registered **zero tool calls**, which floors an
+      agentic score regardless of the model's actual reasoning. Routing through the
+      Anthropic endpoint, so the gateway translates native tool calls into structured
+      `tool_use`, fixed it — the board row above is from the pinned route.
 
   - lab: StepFun
     tier: A
     model_ids: [step-3-7-flash]
     channels: ["https://github.com/stepfun-ai/Step-3/issues"]
+    serving: {gateway: ZenMux, provider: openai, protocol: openai-compatible}
     anomaly: null
-    interop_note: false
+    interop_note: null
 
   - lab: Zhipu
     tier: B1
     model_ids: [glm-5-2]
     channels: ["https://github.com/zai-org/GLM-4.5/issues"]
+    serving: {gateway: ZenMux, provider: openai, protocol: anthropic}
     anomaly: >-
-      Synthesis scored 0/5 on the clean re-run. This is reported as a real result, NOT
-      as a suspected harness fault: the earlier broken rows were diagnosed and re-run
-      after the protocol pin described above.
-    interop_note: true
+      Synthesis scored 0/5 on the pinned re-run, and that is reported here as a real
+      result rather than a harness fault — the earlier broken rows were diagnosed and
+      re-run before this board was merged.
+    interop_note: >-
+      Through the OpenAI-compatible gateway, this model emitted tool calls whose `id` was
+      an **empty string** under full orchestrator load. The agent framework guards on that
+      (`if not tool_call_id: raise`), so every persona delegation raised before a subagent
+      started — no persona ever ran, and the run scored 0 on grounding, synthesis and
+      precision (objective 14.3) despite the model reasoning correctly about the failure
+      and honestly declining a trap step. Routing through the Anthropic endpoint fixed it.
+      **The part you may most want:** it did not reproduce on an isolated probe — simple,
+      streaming, parallel and direct tool calls all returned valid ids. It appears to need
+      sustained multi-tool load to surface.
 
   - lab: MiniMax
     tier: B1
     model_ids: [minimax-m3]
     channels: ["https://github.com/MiniMax-AI/MiniMax-M2/issues"]
+    serving: {gateway: ZenMux, provider: openai, protocol: anthropic}
     anomaly: >-
       The only model on the board scoring below 92 on adherence (78).
-    interop_note: true
+    interop_note: >-
+      Through the OpenAI-compatible gateway, this model emitted **Anthropic-format** tool
+      calls which the gateway left unparsed — they leaked into the response text as
+      `<invoke ...>` markup rather than being dispatched. Routing through the Anthropic
+      endpoint fixed it, and the board row above is from the pinned route.
 
   - lab: Tencent
     tier: B2
     model_ids: [hunyuan-3]
     channels: ["https://github.com/Tencent-Hunyuan/Hunyuan-A13B/issues"]
+    serving: {gateway: ZenMux, provider: openai, protocol: openai-compatible}
     anomaly: >-
       Synthesis 40 against adherence 99 — the model follows the process but does not
       produce the deliverable. That split is more consistent with a harness or
       output-parsing fault than with capability, and I would like help ruling that out.
-    interop_note: false
+    interop_note: null
 
   - lab: Moonshot
     tier: B2
     model_ids: [kimi-2-7]
     channels: ["https://github.com/MoonshotAI/Kimi-K2/issues"]
+    serving: {gateway: ZenMux, provider: openai, protocol: openai-compatible}
     anomaly: >-
       Synthesis 40 with consistency 33 — the deliverable appears on some trials and not
       others, which reads as instability rather than inability.
-    interop_note: false
+    interop_note: null
 
   - lab: Xiaomi
     tier: B2
     model_ids: [mimo-2-5, mimo-2-5-pro]
     channels: ["https://github.com/XiaomiMiMo/MiMo/issues"]
+    serving: {gateway: ZenMux, provider: openai, protocol: openai-compatible}
     anomaly: >-
       MiMo 2.5 Pro ranks below non-Pro MiMo 2.5 on this workflow. An inverted tier order
       is usually worth a look on the serving side.
-    interop_note: false
+    interop_note: null
 
   - lab: ByteDance
     tier: B2
     model_ids: [doubao-seed-2-1-pro]
     channels: ["https://github.com/volcengine/verl/issues"]
+    serving: {gateway: ZenMux, provider: openai, protocol: openai-compatible}
     anomaly: >-
       Consistency 0 against an objective score of 82.8 — high capability with no
       run-to-run reproducibility, which is the pattern I would most expect to be my
       harness rather than the model.
-    interop_note: false
+    interop_note: null
