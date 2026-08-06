@@ -2367,8 +2367,36 @@ class ReportJob(Base):
     request_payload: Mapped[dict] = mapped_column(JSON, default=dict)
     result_payload: Mapped[dict] = mapped_column(JSON, default=dict)
     artifact_paths: Mapped[dict] = mapped_column(JSON, default=dict)
+    template_slug: Mapped[str | None] = mapped_column(
+        String(80), nullable=True, index=True
+    )
+    compare_to_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     task_runs: Mapped[list["TaskRun"]] = relationship(back_populates="report_job")
+
+
+class ReportTemplate(Base):
+    """A report template: declarative YAML naming blocks and narrative briefs.
+
+    ``spec`` is the source of truth; ``title``/``persona``/``description`` are a
+    denormalized cache extracted from ``spec.meta`` on save, mirroring how
+    ``DeskWorkflow`` caches its script's ``meta`` literal.
+    """
+
+    __tablename__ = "report_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    title: Mapped[str] = mapped_column(String(160))
+    persona: Mapped[str] = mapped_column(String(40))
+    description: Mapped[str] = mapped_column(Text, default="")
+    spec: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(16), default="user")
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow
+    )
 
 
 class AuditEvent(Base):
