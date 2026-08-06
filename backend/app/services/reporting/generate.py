@@ -120,16 +120,46 @@ def generate_document(
 
             instruction = (section.narrative or "").strip()
             if instruction and narrate is not None:
-                brief = narrator_brief(section, results)
+                # A section with no blocks of its own is a SYNTHESIS section:
+                # it summarises what came before, so it is shown the sections
+                # already rendered. Its prose is then grounded against that same
+                # upstream evidence — otherwise every figure it correctly
+                # carries forward would be flagged as invented.
+                upstream = (
+                    [
+                        {
+                            "id": done["id"],
+                            "title": done["title"],
+                            "blocks": [
+                                {
+                                    "key": entry["key"],
+                                    "status": entry["result"]["status"],
+                                    "reason": entry["result"]["reason"],
+                                    "data": entry["result"]["data"],
+                                }
+                                for entry in done["blocks"]
+                            ],
+                        }
+                        for done in sections
+                        if done["blocks"]
+                    ]
+                    if not block_entries
+                    else None
+                )
+                brief = narrator_brief(section, results, upstream)
                 try:
                     narrative = (narrate(spec.meta.persona, brief) or "").strip() or None
                 except Exception as exc:  # noqa: BLE001 - degrade one section only
                     narrative_error = str(exc)
                 if narrative:
-                    grounding = check_grounding(
-                        narrative,
-                        [entry["result"]["data"] for entry in block_entries],
-                    )
+                    grounding_sources = [
+                        entry["result"]["data"] for entry in block_entries
+                    ]
+                    for done in upstream or []:
+                        grounding_sources.extend(
+                            block["data"] for block in done["blocks"]
+                        )
+                    grounding = check_grounding(narrative, grounding_sources)
 
             sections.append(
                 {

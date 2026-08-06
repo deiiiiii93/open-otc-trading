@@ -1081,3 +1081,20 @@ Migrations `0053` (tables) + `0054` (seeds).
   the data stored `0.34`.
 - Flags are **non-blocking**: a false positive should degrade the report's confidence
   signal, not destroy the report.
+- **A section with no blocks is a SYNTHESIS section and must be shown the report
+  above it.** `narrator_brief` passes only that section's own blocks, so a
+  `blocks: []` section — the board one-pager's `executive_summary` — was handed an
+  empty brief and honestly wrote "the evidence base is empty" while all five
+  sections above it had resolved fine. It now receives `report_so_far` (resolved
+  upstream sections) and is grounded against that same evidence, or every figure
+  it correctly carries forward would be flagged as invented. Ordinary sections are
+  deliberately NOT given it, so a brief stays focused on its own evidence.
+- **The grounding guard needed three live-found corrections**, all false positives
+  that would have trained readers to ignore it: ISO timestamps are strings, so
+  "23 June 2026" was ungrounded until date components are mined from them; a
+  sha256 quoted verbatim from the data was shredded into 17 fabricated "numbers"
+  until strings reproduced verbatim are blanked before tokenizing; and relative
+  tolerance alone rejects prose rounding at small magnitudes ("0.06" for 0.0634 is
+  5.4% off), so a token also grounds when it equals a data value rounded to any
+  precision. **Only a live model run surfaces these** — a hand-written fixture
+  narrative quotes numbers the way the test author would, not the way a model does.

@@ -198,6 +198,76 @@ def test_a_missing_template_raises(session):
         )
 
 
+SYNTHESIS_SPEC = """
+meta:
+  slug: demo-daily
+  title: Demo Daily
+  persona: high_board
+sections:
+  - id: headline
+    title: Headline
+    blocks:
+      - { key: risk.totals, render: metric_row }
+  - id: executive_summary
+    title: Executive summary
+    blocks: []
+    narrative: Summarise the sections above.
+"""
+
+
+def test_a_synthesis_section_can_see_the_sections_above_it(session, stub_blocks):
+    """A section with no blocks summarises the report; it must be shown it.
+
+    Caught by a LIVE run of the board one-pager: the executive summary wrote
+    "the evidence base is empty" while all five sections above it had resolved
+    fine, because its brief carried only its own (zero) blocks.
+    """
+    from app.services.reporting import templates
+
+    templates.save_template(
+        slug="demo-daily", spec_yaml=SYNTHESIS_SPEC, session=session
+    )
+
+    seen: list[dict] = []
+
+    def narrate(persona, brief):
+        seen.append(brief)
+        return "Delta cash is 57,334.67."
+
+    doc = generate_document(
+        template_slug="demo-daily", portfolio_id=2, narrate=narrate, session=session
+    )
+
+    assert len(seen) == 1
+    brief = seen[0]
+    assert brief["section_id"] == "executive_summary"
+    assert brief["blocks"] == []
+    upstream = brief["report_so_far"]
+    assert [s["id"] for s in upstream] == ["headline"]
+    assert upstream[0]["blocks"][0]["key"] == "risk.totals"
+    assert upstream[0]["blocks"][0]["data"]["metrics"]["delta_cash"] == pytest.approx(
+        57334.67
+    )
+    # And a figure carried forward from upstream must ground, not be flagged.
+    summary = doc["sections"][1]
+    assert summary["grounding"]["flags"] == []
+
+
+def test_an_ordinary_section_is_not_given_the_whole_report(
+    session, seeded_template, stub_blocks
+):
+    """Upstream context is for synthesis only; a normal brief stays focused."""
+    seen: list[dict] = []
+    generate_document(
+        template_slug=seeded_template,
+        portfolio_id=2,
+        narrate=lambda persona, brief: seen.append(brief) or "ok",
+        session=session,
+    )
+    assert seen
+    assert all("report_so_far" not in brief for brief in seen)
+
+
 def test_each_block_is_resolved_exactly_once_even_if_reused(
     session, monkeypatch, stub_blocks
 ):

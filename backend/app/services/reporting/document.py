@@ -21,15 +21,26 @@ def spec_sha256(spec_yaml: str) -> str:
 
 
 def narrator_brief(
-    section: SectionSpec, results: dict[str, BlockResult]
+    section: SectionSpec,
+    results: dict[str, BlockResult],
+    upstream: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """What the agent is shown for one section.
 
     Each block carries its status and reason, not just its data. A narrator that
     cannot see ``status == "unavailable"`` will write that the book is within
     limits when the limit check never ran.
+
+    ``upstream`` carries the already-resolved sections and is supplied only to a
+    SYNTHESIS section — one declaring no blocks of its own, whose job is to sum
+    up what came before. Without it such a section is handed an empty brief and
+    honestly reports that it was given nothing: a live run of the board
+    one-pager produced exactly that, an executive summary stating "the evidence
+    base is empty" while all five sections above it had resolved fine. It is
+    withheld from ordinary sections so a brief stays focused on its own
+    evidence.
     """
-    return {
+    brief: dict[str, Any] = {
         "section_id": section.id,
         "section_title": section.title,
         "instruction": (section.narrative or "").strip(),
@@ -44,6 +55,9 @@ def narrator_brief(
             if ref.key in results
         ],
     }
+    if upstream:
+        brief["report_so_far"] = upstream
+    return brief
 
 
 def build_document(

@@ -22,6 +22,10 @@ prose for this section. Rules you must not break:
                    clean result from a check that did not run.
 3. Follow the instruction's length. Do not add headings or restate tables.
 4. Write plainly, for a professional desk reader.
+5. Round figures to a sensible precision for prose (a utilisation of
+   0.6711423137121955 is "0.67"). Rounding is expected and does not count as
+   changing the number; quoting sixteen decimal places is not more accurate,
+   only less readable.
 """
 
 

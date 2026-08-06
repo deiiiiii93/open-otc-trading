@@ -71,6 +71,54 @@ def test_empty_narrative_is_reported_as_unchecked():
     assert result["flags"] == []
 
 
+def test_date_components_from_iso_timestamps_are_grounded():
+    """A narrator writing "first seen 23 June 2026" is quoting the data.
+
+    Timestamps live in block data as ISO STRINGS, so their components are
+    invisible to a numeric-only walk. Live smoke flagged 23 and 2026 as
+    ungrounded on the incidents section — a false positive on every report that
+    mentions a date.
+    """
+    blocks = [{"rows": [{"first_seen_at": "2026-06-23T09:00:00"}]}]
+    result = check_grounding("The incident was first seen 23 June 2026.", blocks)
+    assert result["flags"] == []
+
+
+def test_a_hash_quoted_verbatim_from_the_data_is_not_shredded_into_numbers():
+    """Live smoke flagged 17 "numbers" inside one sha256 the model copied right.
+
+    Text reproduced verbatim from the block data is grounded by construction;
+    tokenizing an identifier fabricates figures the narrator never claimed.
+    """
+    blocks = [{"position_set_hash": "sha256:f69b3b37e04106164810fc704e91245a"}]
+    narrative = (
+        "The position set is traceable to hash "
+        "sha256:f69b3b37e04106164810fc704e91245a."
+    )
+    assert check_grounding(narrative, blocks)["flags"] == []
+
+
+def test_a_number_not_quoted_from_the_data_is_still_flagged():
+    """Blanking quoted strings must not blind the guard to invented figures."""
+    blocks = [{"position_set_hash": "sha256:f69b3b37e04106164810fc704e91245a"}]
+    result = check_grounding("Delta cash is 4106164810.", blocks)
+    assert [flag["token"] for flag in result["flags"]] == [4106164810.0]
+
+
+def test_prose_rounding_of_small_magnitudes_is_grounded():
+    """Live smoke flagged "0.06" written for 0.0634 — 5.4% off, so relative
+    tolerance alone rejects exactly the rounding a desk reader wants."""
+    blocks = [{"rows": [{"utilization": 0.0634}, {"utilization": 0.00297}]}]
+    result = check_grounding("Utilisation was 0.06 and 0.003.", blocks)
+    assert result["flags"] == []
+
+
+def test_rounding_tolerance_does_not_ground_an_invented_figure():
+    blocks = [{"metrics": {"delta_cash": 57334.67}}]
+    result = check_grounding("Delta cash is 999.99.", blocks)
+    assert [flag["token"] for flag in result["flags"]] == [999.99]
+
+
 def test_values_from_any_block_in_the_section_count_as_grounded():
     blocks = [{"metrics": {"a": 10.0}}, {"metrics": {"b": 20.0}}]
     assert check_grounding("We saw 10 and 20.", blocks)["flags"] == []
