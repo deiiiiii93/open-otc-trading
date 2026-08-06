@@ -118,6 +118,8 @@ def test_all_workflow_domains_have_expected_skills(
             "generate-report",
             "batch-run-reports",
             "display-report",
+            "generate-templated-report",
+            "author-report-template",
         },
         "/workflows/snowballs/": {
             "snowball-term-interpretation",
@@ -152,7 +154,7 @@ def test_legacy_sources_are_empty(skills_backend: FilesystemBackend) -> None:
 def test_trader_total_workflow_catalog(skills_backend: FilesystemBackend) -> None:
     catalog = _persona_catalog(_build_backend(), _source_list(trader_spec(object(), [])))
 
-    assert len(catalog) == 30, f"Expected 30 entries, got {len(catalog)}: {catalog}"  # 22 + pricing-parameter-maintenance + asian-fixings + build-workflow + product-term-interpretation + book-trade-confirmation + the reporting domain (generate-report, display-report, batch-run-reports), now visible to trader so persona: trader templates are routable
+    assert len(catalog) == 32, f"Expected 32 entries, got {len(catalog)}: {catalog}"  # 22 + pricing-parameter-maintenance + asian-fixings + build-workflow + product-term-interpretation + book-trade-confirmation + the reporting domain, now visible to trader so persona: trader templates are routable (generate-report, display-report, batch-run-reports, generate-templated-report, author-report-template)
     assert {
         "position-snapshot",
         "solve-imported-row",
@@ -172,7 +174,7 @@ def test_risk_manager_total_workflow_catalog(
 ) -> None:
     catalog = _persona_catalog(_build_backend(), _source_list(risk_spec(object(), [])))
 
-    assert len(catalog) == 30, f"Expected 30 entries, got {len(catalog)}: {catalog}"  # +asian-fixings (positions domain) +build-workflow +limits (monitor-limits, handle-limit-incident) +book-trade-confirmation
+    assert len(catalog) == 32, f"Expected 32 entries, got {len(catalog)}: {catalog}"  # +asian-fixings (positions domain) +build-workflow +limits (monitor-limits, handle-limit-incident) +book-trade-confirmation +generate-templated-report +author-report-template
     assert {
         "monitor-limits",
         "handle-limit-incident",
@@ -205,6 +207,8 @@ def test_high_board_total_workflow_catalog(
         "generate-report",
         "batch-run-reports",
         "display-report",
+        "generate-templated-report",
+        "author-report-template",
     }
 
 

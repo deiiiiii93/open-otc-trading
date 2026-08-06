@@ -130,6 +130,9 @@ def test_render_empty_rows_is_header_only() -> None:
 # Extended with the run-greeks-landscape routing row (23 rows total).
 # Extended with the asian-fixings routing row (24 rows total).
 # Extended with the book-trade-confirmation routing row (25 rows total).
+# Extended with the templated-report routing rows (30 rows total): three for
+# generate-templated-report (one per persona, since a template declares which
+# persona narrates it) and two for author-report-template.
 OLD_TABLE_ROWS: set[tuple[str, str, str]] = {
     ("Create or edit a reusable desk workflow", "risk_manager", "build-workflow"),
     ("Build a slash-command workflow playbook", "trader", "build-workflow"),
@@ -161,6 +164,11 @@ OLD_TABLE_ROWS: set[tuple[str, str, str]] = {
     ("Check risk limit status, breaches, or headroom for a portfolio", "risk_manager", "monitor-limits"),
     ("Work a limit breach incident (acknowledge, comment, waive, or resolve)", "risk_manager", "handle-limit-incident"),
     ("Book trades from an uploaded confirmation document", "trader", "book-trade-confirmation"),
+    ("Generate a daily desk report from a template", "risk_manager", "generate-templated-report"),
+    ("Generate the trader daily book review", "trader", "generate-templated-report"),
+    ("Generate the board one-pager", "high_board", "generate-templated-report"),
+    ("Create or edit a report template", "risk_manager", "author-report-template"),
+    ("Change what a report shows", "trader", "author-report-template"),
 }
 
 

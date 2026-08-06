@@ -98,6 +98,8 @@ def test_phase3_remaining_workflow_sources_are_readable() -> None:
         "generate-report",
         "batch-run-reports",
         "display-report",
+        "generate-templated-report",
+        "author-report-template",
     }
     assert _names(_list_skills(backend, "/workflows/snowballs/")) == {
         "snowball-term-interpretation",

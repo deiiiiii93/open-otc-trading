@@ -71,6 +71,8 @@ def test_production_composite_backend_resolves_workflow_prefix() -> None:
         "generate-report",
         "batch-run-reports",
         "display-report",
+        "generate-templated-report",
+        "author-report-template",
     }
     assert _list_skills(backend, "/skills/procedures/trader/") == []
     assert _list_skills(backend, "/skills/products/") == []
