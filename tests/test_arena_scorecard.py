@@ -14,7 +14,9 @@ from app.services.arena.scorecard import (
     FailedCheck,
     Target,
     failed_checks,
+    latest_transcript_paths,
     load_targets,
+    resolve_transcript,
 )
 
 REPO = Path(__file__).resolve().parents[1]
@@ -95,6 +97,47 @@ def test_failed_checks_treats_a_missing_passed_key_as_unknown_not_failed():
     """Fail-honest: an unknown check must never be reported to a lab as a failure."""
     bd = {"objective": {"steps": [{"index": 0, "checks": [{"label": "x", "axis": "a"}]}]}}
     assert failed_checks(bd) == []
+
+
+def test_resolve_transcript_returns_none_when_path_is_none(tmp_path):
+    assert resolve_transcript({"m": None}, "m", tmp_path) is None
+
+
+def test_resolve_transcript_returns_none_when_model_absent(tmp_path):
+    assert resolve_transcript({}, "missing-model", tmp_path) is None
+
+
+def test_resolve_transcript_returns_none_when_file_missing(tmp_path):
+    paths = {"m": "artifacts/arena/85/wf/m/transcript.json"}
+    assert resolve_transcript(paths, "m", tmp_path) is None
+
+
+def test_resolve_transcript_returns_path_when_file_exists(tmp_path):
+    rel = "artifacts/arena/85/wf/m/transcript.json"
+    target = tmp_path / rel
+    target.parent.mkdir(parents=True)
+    target.write_text("{}", encoding="utf-8")
+    assert resolve_transcript({"m": rel}, "m", tmp_path) == rel
+
+
+def test_latest_transcript_paths_prefers_the_highest_run_id():
+    """A re-run supersedes: GLM has a broken run #91 trace and a clean #93 one."""
+    rows = [
+        (91, "glm-5-2", "artifacts/arena/91/wf/glm-5-2/transcript.json"),
+        (93, "glm-5-2", "artifacts/arena/93/wf/glm-5-2/transcript.json"),
+    ]
+    assert latest_transcript_paths(rows)["glm-5-2"].startswith("artifacts/arena/93/")
+    # Order of the input rows must not change the answer.
+    assert latest_transcript_paths(rows[::-1])["glm-5-2"].startswith("artifacts/arena/93/")
+
+
+def test_latest_transcript_paths_skips_null_paths():
+    rows = [(94, "m", None), (85, "m", "artifacts/arena/85/wf/m/transcript.json")]
+    assert latest_transcript_paths(rows)["m"].startswith("artifacts/arena/85/")
+
+
+def test_latest_transcript_paths_omits_a_model_with_only_nulls():
+    assert latest_transcript_paths([(94, "m", None)]) == {}
 
 
 def test_unknown_tier_is_rejected(tmp_path):

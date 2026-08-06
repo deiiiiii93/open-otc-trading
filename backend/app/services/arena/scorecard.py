@@ -58,6 +58,43 @@ def load_targets(path: Path) -> list[Target]:
     return targets
 
 
+def latest_transcript_paths(
+    rows: list[tuple[int, str, str | None]],
+) -> dict[str, str]:
+    """Map model_id → transcript path, letting the HIGHEST run id win.
+
+    A model can appear on several banked runs — GLM 5.2 has one on the broken
+    pre-`protocol:anthropic` run and one on the clean re-run. A re-run
+    supersedes, so ordering must be explicit: relying on row iteration order
+    could link a lab to a trace from a run we already know was invalid.
+    """
+    best: dict[str, tuple[int, str]] = {}
+    for run_id, model_id, path in rows:
+        if not path:
+            continue
+        current = best.get(model_id)
+        if current is None or run_id > current[0]:
+            best[model_id] = (run_id, path)
+    return {model_id: path for model_id, (_run, path) in best.items()}
+
+
+def resolve_transcript(
+    paths_by_model: dict[str, str | None],
+    model_id: str,
+    repo_root: Path,
+) -> str | None:
+    """Return the repo-relative transcript path only if the file really exists.
+
+    Folded board runs store `transcript_path=None`, and some models have no
+    banked transcript at all. Returning None lets the card state the absence
+    instead of linking a dangling pointer.
+    """
+    rel = paths_by_model.get(model_id)
+    if not rel:
+        return None
+    return rel if (Path(repo_root) / rel).is_file() else None
+
+
 def _is_failed(check: dict) -> bool:
     """A check is failed when it explicitly reports not passing.
 
