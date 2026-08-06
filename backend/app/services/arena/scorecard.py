@@ -28,6 +28,15 @@ class Target:
     interop_note: bool
 
 
+@dataclass(frozen=True)
+class FailedCheck:
+    """One assertion the model did not satisfy, named for the outreach card."""
+
+    label: str
+    axis: str
+    step: str | None
+
+
 def load_targets(path: Path) -> list[Target]:
     """Parse the checked-in targets config. Raises on an invalid tier."""
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
@@ -47,3 +56,43 @@ def load_targets(path: Path) -> list[Target]:
             )
         )
     return targets
+
+
+def _is_failed(check: dict) -> bool:
+    """A check is failed when it explicitly reports not passing.
+
+    Fail-honest: a check with no `passed` key is unknown, not failed — reporting
+    an unknown as a failure to a model's authors would be exactly the kind of
+    fabricated claim the accuracy rule forbids.
+    """
+    return check.get("passed") is False
+
+
+def _label(check: dict) -> str:
+    return str(check.get("label") or check.get("kind") or "unlabelled")
+
+
+def failed_checks(breakdown: dict, limit: int = 3) -> list[FailedCheck]:
+    """Collect up to `limit` failed checks, step checks first, then session ones."""
+    objective = breakdown.get("objective") or {}
+    out: list[FailedCheck] = []
+
+    for step in objective.get("steps") or []:
+        index = step.get("index")
+        for check in step.get("checks") or []:
+            if _is_failed(check):
+                out.append(FailedCheck(
+                    label=_label(check),
+                    axis=str(check.get("axis") or "unknown"),
+                    step=str(index) if index is not None else None,
+                ))
+
+    for check in objective.get("success") or []:
+        if _is_failed(check):
+            out.append(FailedCheck(
+                label=_label(check),
+                axis=str(check.get("axis") or "unknown"),
+                step=None,
+            ))
+
+    return out[:limit]
