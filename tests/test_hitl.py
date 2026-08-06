@@ -12,6 +12,7 @@ def test_interrupt_tool_names_covers_all_state_mutating_tools():
         "run_batch_pricing",
         "run_greeks_landscape",
         "create_report",
+        "save_report_template",
         "create_or_update_rfq_draft",
         "quote_rfq",
         "submit_rfq_for_approval",

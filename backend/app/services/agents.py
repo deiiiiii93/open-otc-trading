@@ -559,6 +559,15 @@ DEEP_AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         # the high_board report-query-and-display workflow.
         "list_reports",
         "get_report",
+        # Templated reporting: block catalog + template CRUD + generation. A
+        # tool missing from THIS list is silently dropped from every persona's
+        # toolset even when it is registered in QUANT_AGENT_TOOLS.
+        "list_report_blocks",
+        "list_report_templates",
+        "get_report_template",
+        "resolve_report_block",
+        "save_report_template",
+        "generate_report",
         # Async-subagent dispatch (not HITL-gated; the subagent's own writes
         # bubble up to the parent thread).
         "start_async_agent",

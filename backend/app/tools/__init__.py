@@ -82,6 +82,14 @@ from .assumptions import (
     set_instrument_pricing_defaults_tool,
 )
 from .products import build_product_tool
+from .report_templates import (
+    generate_report_tool,
+    get_report_template_tool,
+    list_report_blocks_tool,
+    list_report_templates_tool,
+    resolve_report_block_tool,
+    save_report_template_tool,
+)
 from .reporting import (
     create_report_tool,
     get_report_tool,
@@ -206,6 +214,11 @@ QUANT_AGENT_TOOLS = [
     list_reports_tool,
     get_report_tool,
     write_report_artifact_tool,
+    # Templated reporting (reads):
+    list_report_blocks_tool,
+    list_report_templates_tool,
+    get_report_template_tool,
+    resolve_report_block_tool,
     # Persisted-action / HITL-gated:
     import_otc_positions_tool,
     book_position_tool,
@@ -249,6 +262,10 @@ QUANT_AGENT_TOOLS = [
     set_hedge_bands_tool,
     register_underlying_tool,
     create_report_tool,
+    # Templated reporting (writes; save_report_template is HITL "write"-level,
+    # generate_report is write-class but deliberately not gated):
+    save_report_template_tool,
+    generate_report_tool,
     # Pricing parameter writes (persisted / HITL-gated):
     create_pricing_parameter_profile_tool,
     generate_pricing_parameters_from_curves_tool,

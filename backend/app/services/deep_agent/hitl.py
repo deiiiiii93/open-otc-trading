@@ -24,6 +24,7 @@ INTERRUPT_TOOL_NAMES: tuple[str, ...] = (
     "run_batch_pricing",
     "run_greeks_landscape",
     "create_report",
+    "save_report_template",
     "create_or_update_rfq_draft",
     "quote_rfq",
     "submit_rfq_for_approval",
@@ -71,6 +72,12 @@ _RISK_LEVEL_BY_TOOL: dict[str, str] = {
     "run_batch_pricing": "write",
     "run_greeks_landscape": "write",
     "create_report": "write",
+    # "write" = interactive only; AUTO mode strips it from the interrupt map.
+    # Correct here: a template edit is reversible and audited, and past reports
+    # embed their own spec, so an unattended edit cannot rewrite history.
+    # Contrast the booking tools, which are "irreversible" precisely because
+    # AUTO must still stop them.
+    "save_report_template": "write",
     "create_or_update_rfq_draft": "write",
     "quote_rfq": "write",
     "submit_rfq_for_approval": "write",
@@ -135,6 +142,7 @@ _LABEL_BY_TOOL: dict[str, str] = {
     "run_batch_pricing": "Run batch pricing (valuations + risk)",
     "run_greeks_landscape": "Run Greeks Landscape",
     "create_report": "Create report artifacts",
+    "save_report_template": "Save report template",
     "create_or_update_rfq_draft": "Save RFQ draft",
     "quote_rfq": "Quote RFQ",
     "submit_rfq_for_approval": "Submit RFQ",
