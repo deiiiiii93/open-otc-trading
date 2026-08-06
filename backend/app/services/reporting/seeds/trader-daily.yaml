@@ -1,0 +1,77 @@
+meta:
+  slug: trader-daily
+  title: Trader — Daily Book Review
+  persona: trader
+  description: >
+    Overnight P&L, what drove it, and what needs attention at the open.
+  params:
+    - { name: portfolio_id, type: portfolio, required: true }
+    - { name: compare_to, type: risk_run_ref, default: previous }
+
+sections:
+  - id: overnight
+    title: Overnight
+    blocks:
+      - { key: pnl.daily, render: delta_metric_row }
+      - key: risk.totals
+        render: metric_row
+        fields: [delta_cash, gamma_cash, vega, theta]
+    narrative: |
+      One paragraph. State the overnight market-value move and the single
+      largest driver behind it. If the coverage block shows fewer positions
+      priced than the book holds, say so in the first sentence — a P&L number
+      over an incomplete book is not the book's P&L. If the position set
+      changed between runs, say that too, because part of the move is then
+      composition rather than price.
+
+  - id: attribution
+    title: What moved it
+    blocks:
+      - { key: pnl.explain, render: waterfall }
+    narrative: |
+      Explain the decomposition in plain terms: which Greek carried the move.
+      If `residual_exceeds_threshold` is true, state plainly that the
+      attribution does not fully explain the move and do not speculate about
+      why. If any positions were excluded, name how many and why.
+
+  - id: movers
+    title: Position movers
+    blocks:
+      - key: pnl.by_position
+        render: table
+        params: { top_n: 10 }
+    narrative: |
+      Call out any position whose move is large relative to the others.
+      Do not restate the table row by row.
+
+  - id: exposure
+    title: Exposure
+    blocks:
+      - { key: risk.exposure_by_underlying, render: bar_chart }
+    narrative: |
+      Name the concentrations. If one underlying carries most of the delta,
+      say so explicitly.
+
+  - id: barrier_watch
+    title: Barrier and KO watch
+    blocks:
+      - { key: positions.barrier_proximity, render: callout }
+    narrative: |
+      Flag anything close to a barrier by days or by level. If this block is
+      empty, say the book carries no tracked barriers rather than implying
+      nothing is at risk.
+
+  - id: pipeline
+    title: RFQ pipeline
+    blocks:
+      - { key: rfq.open_pipeline, render: table }
+
+  - id: book_changes
+    title: Book changes
+    blocks:
+      - { key: positions.changes, render: table }
+      - { key: pnl.inception, render: metric_row }
+    narrative: |
+      Note what was added or closed. For since-inception P&L, if
+      `basis_missing_count` is above zero, state how many positions carry no
+      cost basis so the reader knows the figure is partial.

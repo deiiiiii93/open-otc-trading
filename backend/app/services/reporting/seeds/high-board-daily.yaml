@@ -1,0 +1,58 @@
+meta:
+  slug: high-board-daily
+  title: Board — Daily One-Pager
+  persona: high_board
+  description: >
+    Governance one-pager: position, exceptions, agent activity, and evidence
+    completeness, with a single executive summary.
+  params:
+    - { name: portfolio_id, type: portfolio, required: true }
+    - { name: compare_to, type: risk_run_ref, default: previous }
+
+sections:
+  - id: position
+    title: Position of the desk
+    blocks:
+      - key: risk.totals
+        render: metric_row
+        fields: [market_value, gross_notional, delta_cash, vega]
+      - { key: pnl.daily, render: delta_metric_row }
+
+  - id: exceptions
+    title: Limit exceptions
+    blocks:
+      - { key: limits.breaches, render: callout }
+      - { key: limits.incidents, render: table }
+
+  - id: agent_actions
+    title: Agent actions taken
+    blocks:
+      - key: audit.write_actions_summary
+        render: table
+        params: { window_days: 1 }
+
+  - id: approvals
+    title: Awaiting approval
+    blocks:
+      - { key: rfq.pending_approvals, render: table }
+
+  - id: evidence
+    title: Evidence completeness
+    blocks:
+      - { key: coverage.evidence, render: metric_row }
+
+  - id: executive_summary
+    title: Executive summary
+    blocks: []
+    narrative: |
+      Three sentences, no more, for a reader who will not scroll.
+
+      1. Where the desk stands and how it moved.
+      2. Whether there are live limit exceptions, and if the limit check could
+         not run, say that instead — never imply compliance that was not
+         verified.
+      3. Whether the evidence behind this report is complete, and what a board
+         member should ask about next.
+
+      Ground every number in the sections above. Do not introduce a figure that
+      does not appear in this report.

@@ -1,0 +1,25 @@
+meta:
+  slug: portfolio-snapshot
+  title: Portfolio Snapshot
+  persona: risk_manager
+  description: >
+    Point-in-time portfolio totals and positions. Compatibility template for
+    the create_report tool; fully deterministic, no narrative, no LLM call.
+  params:
+    - { name: portfolio_id, type: portfolio, required: true }
+
+sections:
+  - id: totals
+    title: Portfolio totals
+    blocks:
+      - { key: risk.totals, render: metric_row }
+
+  - id: positions
+    title: Positions
+    blocks:
+      - { key: risk.greeks_by_bucket, render: greeks_table }
+
+  - id: evidence
+    title: Evidence
+    blocks:
+      - { key: coverage.evidence, render: metric_row }

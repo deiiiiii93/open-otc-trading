@@ -1,0 +1,70 @@
+meta:
+  slug: risk-manager-daily
+  title: Risk — Daily Limit & Exposure Review
+  persona: risk_manager
+  description: >
+    Limit status, concentration, and the evidence quality behind both.
+  params:
+    - { name: portfolio_id, type: portfolio, required: true }
+    - { name: compare_to, type: risk_run_ref, default: previous }
+
+sections:
+  - id: limit_status
+    title: Limit status
+    blocks:
+      - { key: limits.utilization, render: delta_metric_row }
+      - { key: limits.breaches, render: callout }
+    narrative: |
+      Lead with whether the book is within limits. Read the breaches block's
+      status carefully before writing this sentence:
+        - status "ok" with items    -> name every breached limit and its scope.
+        - status "empty"            -> no limit is in breach. Say so plainly.
+        - status "unavailable"      -> the limit check DID NOT RUN. Say exactly
+          that. Never write that the book is within limits when the check did
+          not run.
+      If `indeterminate_count` is above zero, name those limits separately:
+      they could not be evaluated and are not passes.
+
+  - id: incidents
+    title: Incidents
+    blocks:
+      - { key: limits.incidents, render: table }
+    narrative: |
+      Summarise open and acknowledged incidents and who owns them. Note any
+      incident that has been open across multiple sessions.
+
+  - id: concentration
+    title: Concentration
+    blocks:
+      - { key: risk.exposure_by_underlying, render: bar_chart }
+      - { key: risk.greeks_by_bucket, render: greeks_table }
+    narrative: |
+      Identify concentration by underlying and by Greek. Say which single
+      position or underlying would hurt most on an adverse move.
+
+  - id: change
+    title: Change since last run
+    blocks:
+      - { key: risk.exposure_diff, render: delta_metric_row }
+    narrative: |
+      State what moved in exposure terms. If `composition_changed` is true,
+      note that part of the change is the book itself changing, not the market.
+
+  - id: evidence
+    title: Evidence quality
+    blocks:
+      - { key: coverage.evidence, render: metric_row }
+    narrative: |
+      State how much of the book actually priced and how stale the market
+      evidence is. If `evidence_complete` is false or `missing_evidence` is
+      non-empty, list what is missing. This section is the reason a reader can
+      trust the rest of the report — do not soften it.
+
+  - id: stress
+    title: Stress
+    blocks:
+      - { key: scenario.latest_grid, render: table }
+    narrative: |
+      Summarise the worst scenario outcome. If this block is unavailable, state
+      that no stress run exists for this book and that the report therefore
+      says nothing about tail risk.
