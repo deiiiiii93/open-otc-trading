@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Report module redesign** — reports are now generated from declarative YAML
+  templates instead of a hardcoded writer. A server-owned **block registry**
+  (18 producers across risk, P&L, limits, RFQ, positions and audit) resolves
+  every number deterministically; the agent contributes **only narrative
+  prose**, which a numeric grounding guard checks against that section's own
+  data and flags when it quotes a figure the data does not contain. Block
+  results are tri-state — `ok` / `empty` / `unavailable` — so "no limit is in
+  breach" and "the limit check did not run" can never render alike. Four
+  templates ship seeded: `trader-daily`, `risk-manager-daily`,
+  `high-board-daily` (one narrating section, so one LLM call) and
+  `portfolio-snapshot` (zero narrative, zero LLM calls). Template saves are
+  validate-then-commit: a spec naming an unknown block, or a renderer
+  incompatible with a block's shape, is rejected at 422 with the offending key
+  named and the stored row byte-unchanged. Each generated report embeds its
+  full template spec plus sha256, so editing a template never rewrites what an
+  old report claims to have been generated from. New surfaces:
+  `/api/reports/{blocks,templates,generate}`, six agent tools, and two routed
+  skills (`generate-templated-report`, `author-report-template`).
+  The Reports page is rebuilt — report list rail, natively rendered document
+  with provenance and coverage in the header, and a Templates tab with a
+  validating YAML editor. Export (HTML/XLSX/PDF) and Regenerate are
+  deliberately **not** included; re-rendering from the stored document is a
+  self-contained follow-on, and shipping it half-done would recreate the
+  file-versus-screen divergence this redesign removes.
 - **P&L producers (`backend/app/services/pnl/`)** — deterministic day-over-day
   producers for the report module: `snapshot_diff` (risk-run diff; elapsed time
   from `valuation_as_of`, never wall-clock, so two runs priced at the same
@@ -208,6 +232,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `truth.json` for all graded numbers.
 
 ### Changed
+- **`create_report` now routes through the seeded `portfolio-snapshot` template.**
+  The hardcoded HTML/XLSX writer (`_write_html` / `_write_xlsx` /
+  `_build_report_payload`, `services/reports.py` 391 → 193 lines) is deleted, so
+  there is exactly one report writer. The **tool name is retained deliberately**:
+  it is a graded `tool_not_called` prohibition in three golden workflows, and
+  deleting it would make four checks trivially always-pass — inflating scores
+  and breaking comparability with eleven boards of arena history. Reports no
+  longer write artifact files at generation time (`artifact_paths` is `{}`).
+- `PERSONA_WORKFLOW_DOMAINS["trader"]` now includes `reporting`. A template's
+  persona narrates it, so a `persona: trader` template dispatched the trader
+  persona, which could not see the reporting domain at all — making its report
+  skills unroutable. Trader's workflow catalog grows 27 → 32.
+- `PnlAttribution` is renamed **`GreeksByPosition`**; it renders a Greeks table,
+  not a P&L decomposition. The real attribution waterfall now exists, and two
+  components named for the same thing would be a trap.
 - **`risk-limit-breach-day` step 2 no longer grades a skill (39 → 38 points).** The step
   declared `expected_skill: read-risk-result`, but that skill ships no `routing:`
   frontmatter, so `collect_routing_rows` skips it and it never reaches the orchestrator's

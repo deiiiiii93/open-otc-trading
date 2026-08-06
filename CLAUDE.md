@@ -1026,3 +1026,58 @@ and the server re-validates).
 - The frontend vitest suite is **flaky under load** (slow route tests hit the 5s
   timeout; `main` alone varies 12→18 failures run to run). Compare failing-file sets
   against a same-machine `main` run before blaming a branch.
+
+---
+
+## Report module (templated reports)
+
+Reports are generated from **declarative YAML templates**. A server-owned block
+registry resolves every number deterministically; the agent's only output is prose.
+
+**Package:** `backend/app/services/reporting/` — `contracts.py` (tri-state `BlockResult`),
+`registry.py` (`@report_block`), `blocks/{risk,pnl,limits,desk}.py` (18 producers),
+`renderers.py` (renderer↔shape map), `template_spec.py` (parse + validate-all-errors),
+`templates.py` (validate-then-commit store), `seeds/*.yaml` (4 shipped templates),
+`grounding.py`, `document.py`, `generate.py`, `narrator.py`. Deterministic P&L lives in
+`backend/app/services/pnl/` (`snapshot_diff`, `explain`, `entry_price`). REST:
+`routers/reports.py`. Tools: `tools/report_templates.py`. Skills:
+`skills/workflows/reporting/{generate-templated-report,author-report-template}`.
+Migrations `0053` (tables) + `0054` (seeds).
+
+### Gotchas
+
+- **`empty` vs `unavailable` is the whole point — never collapse them.** `empty` = the
+  check RAN and found nothing ("no limit is in breach"); `unavailable` = the check DID NOT
+  RUN. A report that renders them alike claims a clean book nobody verified. Limit
+  evaluations with status `unknown`/`incomplete_scope` are a third case, counted as
+  `indeterminate` — filtering them out (the obvious implementation) produces an empty
+  breach list and a report that reads clean when the truth is "we couldn't tell".
+- **`create_report` keeps its name forever.** It is a graded `tool_not_called` prohibition
+  in three golden workflows; deleting the tool makes four checks trivially always-pass.
+  The implementation was deleted, the name routes through `portfolio-snapshot`.
+  `tests/test_reporting_legacy_retirement.py` pins this.
+- **Seeded templates need BOTH install paths.** Migration `0054` seeds them, but a DB
+  created by `init_db()`'s ORM bootstrap never runs it and then `create_report` has no
+  template to resolve. `database.ensure_seeded_report_templates()` covers that, called
+  from `create_app` — deliberately **not** from `init_db()`, which every block producer's
+  `_session_scope` calls on the hot path, including from worker threads.
+- **Never hold a write transaction across block resolution.** Each producer's
+  `_session_scope` calls `database.init_db()`, which issues `create_all` + schema DDL;
+  with an open write transaction in the same worker thread SQLite deadlocks and the task
+  hangs to its poll timeout. `_complete_report_job` commits the `RUNNING` marker first.
+- **A write service must not copy `domains/risk.py`'s `_session_scope`.** That one is
+  READ-only: it flushes and never commits, so a self-owned session silently discards the
+  write. The template store did exactly this and `PUT` answered 200 while nothing
+  persisted — caught only by an HTTP test, because every unit test injected its own
+  session.
+- **Reports embed their own template spec + sha256.** Editing a template never rewrites
+  what an old report claims to have been generated from, and no stored hash can dangle.
+- **`scenario.latest_grid` ships permanently `unavailable`** until a scenario producer
+  populates `scenario_test_runs`. That is honest, not a bug: the risk template shows the
+  desk that its report says nothing about tail risk.
+- The grounding guard reuses the arena scorer's `_scan_numeric_tokens`. That tokenizer
+  emits TWO readings at one offset for a `%` token (`34.0` and `0.34`), so tokens are
+  grouped by offset and grounded if EITHER matches — otherwise "34%" is flagged whenever
+  the data stored `0.34`.
+- Flags are **non-blocking**: a false positive should degrade the report's confidence
+  signal, not destroy the report.
