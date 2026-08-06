@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { PnlAttribution } from './PnlAttribution';
+import { GreeksByPosition } from './GreeksByPosition';
 
 const positions = [
   {
@@ -94,9 +94,9 @@ const positions = [
   },
 ];
 
-describe('PnlAttribution', () => {
+describe('GreeksByPosition', () => {
   it('renders Greek rows with position and trade IDs', () => {
-    render(<PnlAttribution positions={positions} onPromoteToReport={() => {}} />);
+    render(<GreeksByPosition positions={positions} onPromoteToReport={() => {}} />);
     expect(screen.getByText('GREEKS · BY POSITION')).toBeInTheDocument();
     expect(screen.queryByText('P&L · BY POSITION')).not.toBeInTheDocument();
     expect(screen.getAllByText('CSI500').length).toBeGreaterThan(0);
@@ -110,38 +110,38 @@ describe('PnlAttribution', () => {
   });
 
   it('uses pos variant for positive Greek values', () => {
-    const { container } = render(<PnlAttribution positions={positions} onPromoteToReport={() => {}} />);
+    const { container } = render(<GreeksByPosition positions={positions} onPromoteToReport={() => {}} />);
     const positiveValues = container.querySelectorAll('.wl-attr__value--pos');
     expect(positiveValues.length).toBeGreaterThan(0);
   });
 
   it('uses neg variant for negative Greek values', () => {
-    const { container } = render(<PnlAttribution positions={positions} onPromoteToReport={() => {}} />);
+    const { container } = render(<GreeksByPosition positions={positions} onPromoteToReport={() => {}} />);
     const negativeValues = container.querySelectorAll('.wl-attr__value--neg');
     expect(negativeValues.length).toBeGreaterThan(0);
   });
 
   it('formats Greek values with thousands separators', () => {
-    render(<PnlAttribution positions={positions} onPromoteToReport={() => {}} />);
+    render(<GreeksByPosition positions={positions} onPromoteToReport={() => {}} />);
     expect(screen.getByText('+12,345.0000')).toBeInTheDocument();
     expect(screen.getByText('-200,000.0000')).toBeInTheDocument();
     expect(screen.getByText('+11.1100')).toBeInTheDocument();
   });
 
   it('shows empty state when positions list is empty', () => {
-    render(<PnlAttribution positions={[]} onPromoteToReport={() => {}} />);
+    render(<GreeksByPosition positions={[]} onPromoteToReport={() => {}} />);
     expect(screen.getByText(/no priced positions/i)).toBeInTheDocument();
   });
 
   it('calls onPromoteToReport when ↗ clicked', async () => {
     const onPromoteToReport = vi.fn();
-    render(<PnlAttribution positions={positions} onPromoteToReport={onPromoteToReport} />);
+    render(<GreeksByPosition positions={positions} onPromoteToReport={onPromoteToReport} />);
     await userEvent.click(screen.getByRole('button', { name: /promote/i }));
     expect(onPromoteToReport).toHaveBeenCalledOnce();
   });
 
   it('filters rows by position ID search', async () => {
-    render(<PnlAttribution positions={positions} onPromoteToReport={() => {}} />);
+    render(<GreeksByPosition positions={positions} onPromoteToReport={() => {}} />);
     const searchInput = screen.getByPlaceholderText(/search position \/ trade id/i);
     await userEvent.type(searchInput, '2');
     expect(screen.queryByText('CSI500')).not.toBeInTheDocument();
@@ -150,7 +150,7 @@ describe('PnlAttribution', () => {
   });
 
   it('filters rows by trade ID search', async () => {
-    render(<PnlAttribution positions={positions} onPromoteToReport={() => {}} />);
+    render(<GreeksByPosition positions={positions} onPromoteToReport={() => {}} />);
     const searchInput = screen.getByPlaceholderText(/search position \/ trade id/i);
     await userEvent.type(searchInput, 't-vanilla');
     expect(screen.getByText('CSI500')).toBeInTheDocument();
@@ -159,7 +159,7 @@ describe('PnlAttribution', () => {
   });
 
   it('toggles to underlying grouping and aggregates Greeks', async () => {
-    render(<PnlAttribution positions={positions} onPromoteToReport={() => {}} />);
+    render(<GreeksByPosition positions={positions} onPromoteToReport={() => {}} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Underlying' }));
 
@@ -174,7 +174,7 @@ describe('PnlAttribution', () => {
   });
 
   it('filters underlying rows by underlying search', async () => {
-    render(<PnlAttribution positions={positions} onPromoteToReport={() => {}} />);
+    render(<GreeksByPosition positions={positions} onPromoteToReport={() => {}} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Underlying' }));
     const searchInput = screen.getByPlaceholderText(/search underlying/i);
@@ -186,7 +186,7 @@ describe('PnlAttribution', () => {
   });
 
   it('drills from an underlying row into filtered position rows', async () => {
-    render(<PnlAttribution positions={positions} onPromoteToReport={() => {}} />);
+    render(<GreeksByPosition positions={positions} onPromoteToReport={() => {}} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Underlying' }));
     await userEvent.click(screen.getByRole('button', { name: /drill down to CSI500 positions/i }));
@@ -200,7 +200,7 @@ describe('PnlAttribution', () => {
   });
 
   it('supports keyboard drilldown from underlying rows', async () => {
-    render(<PnlAttribution positions={positions} onPromoteToReport={() => {}} />);
+    render(<GreeksByPosition positions={positions} onPromoteToReport={() => {}} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Underlying' }));
     screen.getByRole('button', { name: /drill down to HSCEI positions/i }).focus();
@@ -231,7 +231,7 @@ describe('PnlAttribution', () => {
       pricing_ok: true,
       pricing_error: null,
     }));
-    render(<PnlAttribution positions={manyPositions} onPromoteToReport={() => {}} />);
+    render(<GreeksByPosition positions={manyPositions} onPromoteToReport={() => {}} />);
     // Default page size is 25; page 1 shows IDs 1–25
     expect(screen.getByText('SYM1')).toBeInTheDocument();
     expect(screen.queryByText('SYM26')).not.toBeInTheDocument();

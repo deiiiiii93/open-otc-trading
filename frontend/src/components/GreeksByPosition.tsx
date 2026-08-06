@@ -2,9 +2,9 @@ import { useState, useMemo } from 'react';
 import { Empty } from './Empty';
 import { Select } from './Select';
 import { formatCount, formatSignedNumber } from './numberFormat';
-import './PnlAttribution.css';
+import './GreeksByPosition.css';
 
-export type AttributionPosition = {
+export type PositionGreeksRow = {
   position_id: number;
   source_trade_id?: string | null;
   underlying: string;
@@ -28,7 +28,7 @@ export type AttributionPosition = {
 };
 
 type Props = {
-  positions: AttributionPosition[];
+  positions: PositionGreeksRow[];
   onPromoteToReport?: () => void;
 };
 
@@ -60,7 +60,7 @@ const GREEK_COLUMNS = [
 
 type GreekKey = typeof GREEK_COLUMNS[number]['key'];
 
-function greekValue(position: AttributionPosition, key: GreekKey): number {
+function greekValue(position: PositionGreeksRow, key: GreekKey): number {
   const value = position[key];
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (key === 'delta_cash' && typeof position.delta === 'number' && Number.isFinite(position.delta)) {
@@ -73,7 +73,7 @@ function greekValue(position: AttributionPosition, key: GreekKey): number {
   return 0;
 }
 
-function positionRow(position: AttributionPosition): GreekRow {
+function positionRow(position: PositionGreeksRow): GreekRow {
   return {
     key: `position-${position.position_id}`,
     underlying: position.underlying,
@@ -90,8 +90,8 @@ function positionRow(position: AttributionPosition): GreekRow {
   };
 }
 
-function underlyingRows(positions: AttributionPosition[]): GreekRow[] {
-  const groups = new Map<string, { positions: AttributionPosition[]; productTypes: Set<string> }>();
+function underlyingRows(positions: PositionGreeksRow[]): GreekRow[] {
+  const groups = new Map<string, { positions: PositionGreeksRow[]; productTypes: Set<string> }>();
   positions.forEach((position) => {
     const key = position.underlying || 'Unknown';
     const group = groups.get(key) ?? { positions: [], productTypes: new Set<string>() };
@@ -123,7 +123,7 @@ function underlyingRows(positions: AttributionPosition[]): GreekRow[] {
     .sort((a, b) => a.underlying.localeCompare(b.underlying));
 }
 
-export function PnlAttribution({ positions, onPromoteToReport }: Props) {
+export function GreeksByPosition({ positions, onPromoteToReport }: Props) {
   const [groupingMode, setGroupingMode] = useState<GroupingMode>('position');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(0);

@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import { Modal } from './Modal';
 import { Skeleton } from './Skeleton';
 import { GreeksSummary, type CurrencyGreeks, type GreeksTotals } from './GreeksSummary';
-import { PnlAttribution, type AttributionPosition } from './PnlAttribution';
+import { GreeksByPosition, type PositionGreeksRow } from './GreeksByPosition';
 import './RiskReportDialog.css';
 
 export type RiskReportRun = {
@@ -15,7 +15,7 @@ export type RiskReportRun = {
   metrics: {
     totals?: GreeksTotals | null;
     by_currency?: Record<string, CurrencyGreeks> | null;
-    positions?: AttributionPosition[];
+    positions?: PositionGreeksRow[];
   };
 };
 
@@ -66,7 +66,7 @@ export function RiskReportDialog({ riskRunId, open, onClose }: Props) {
               totals={run.metrics.totals ?? null}
               byCurrency={run.metrics.by_currency ?? null}
             />
-            <PnlAttribution positions={run.metrics.positions ?? []} />
+            <GreeksByPosition positions={run.metrics.positions ?? []} />
           </>
         )}
       </div>

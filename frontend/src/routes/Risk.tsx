@@ -5,7 +5,7 @@ import { HeaderControls } from '../components/HeaderControls';
 import { Empty } from '../components/Empty';
 import { Select } from '../components/Select';
 import { GreeksSummary, type CurrencyGreeks, type GreeksTotals } from '../components/GreeksSummary';
-import { PnlAttribution, type AttributionPosition } from '../components/PnlAttribution';
+import { GreeksByPosition, type PositionGreeksRow } from '../components/GreeksByPosition';
 
 import { formatCount } from '../components/numberFormat';
 import { usePageContextReporter } from '../hooks/usePageContextReporter';
@@ -17,7 +17,7 @@ export type RiskMetrics = {
   // Mixed-currency runs have totals: null with money greeks per currency.
   totals: GreeksTotals | null;
   byCurrency: Record<string, CurrencyGreeks> | null;
-  positions: AttributionPosition[];
+  positions: PositionGreeksRow[];
 
 };
 
@@ -219,7 +219,7 @@ export function Risk({
             byCurrency={metrics?.byCurrency ?? null}
             onPromoteToReport={onPromoteGreeks}
           />
-          <PnlAttribution
+          <GreeksByPosition
             positions={metrics?.positions ?? []}
             onPromoteToReport={onPromotePnl}
           />
