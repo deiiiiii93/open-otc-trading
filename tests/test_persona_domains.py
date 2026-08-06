@@ -18,6 +18,7 @@ def test_trader_sources_unchanged() -> None:
         "/skills/workflows/hedging/",
         "/skills/workflows/market-data/",
         "/skills/workflows/portfolios/",
+        "/skills/workflows/reporting/",
         "/skills/workflows/rfq/",
         "/skills/workflows/snowballs/",
         "/skills/workflows/desk-workflows/",

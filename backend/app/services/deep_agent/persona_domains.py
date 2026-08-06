@@ -18,6 +18,7 @@ PERSONA_WORKFLOW_DOMAINS: Final[dict[str, tuple[str, ...]]] = {
         "hedging",
         "market-data",
         "portfolios",
+        "reporting",
         "rfq",
         "snowballs",
         "desk-workflows",
