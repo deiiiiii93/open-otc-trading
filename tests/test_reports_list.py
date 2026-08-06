@@ -2,10 +2,29 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
+
+
+@pytest.fixture(autouse=True)
+def _suppress_async_dispatch(monkeypatch):
+    """Keep the report worker thread from outliving this module.
+
+    POSTing /api/reports/jobs dispatches generation to a ThreadPoolExecutor.
+    That worker resolves every declared block, and each producer's
+    `_session_scope` calls `database.init_db()` — so it is still issuing
+    `create_all` when the NEXT test's `session` fixture rebinds the global
+    engine to a fresh tmp DB, and the two race
+    ("table instruments already exists" at conftest.py:66).
+
+    These tests only assert that jobs are listed newest-first, so the
+    completion path is irrelevant here; it is covered end-to-end by
+    test_api.py::test_portfolio_risk_and_report.
+    """
+    monkeypatch.setattr("app.main.submit_async_task", lambda *a, **k: None)
 
 
 def make_client(tmp_path: Path) -> TestClient:
