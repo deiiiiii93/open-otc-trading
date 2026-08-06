@@ -74,10 +74,18 @@ so no later task depends on the live DB.
 **Interfaces:**
 - Consumes: nothing.
 - Produces: two JSON fixtures. `arena_run94_leaderboard.json` is a `list[dict]`, each row
-  having at least `model_id: str`, `mean_objective: float`, `match_count: int`, and
-  `card_mean: dict | None` where the card dict has keys
-  `OVR, GRD, ADH, SYN, EFF, PRC, CON` (ints 0–99). `arena_run94_breakdowns.json` is a
+  having `model_id: str`, `mean_objective: float`, `match_count: int`, `rank: int`,
+  `carded_count: int` and `card_mean: dict | None`. `arena_run94_breakdowns.json` is a
   `dict[str, dict]` mapping `model_id` → the raw `score_breakdown`.
+
+**VERIFIED SHAPES (captured 2026-08-06 — later tasks depend on these exact key names):**
+
+- `card_mean` keys are **mixed case**: `ovr`, `base_ovr`, `con` are **lowercase**;
+  `GRD`, `ADH`, `SYN`, `EFF`, `PRC` are **uppercase**. There is no `OVR` or `CON` key.
+- A check is `{"axis": str, "detail": str, "kind": str, "label": str, "passed": bool}`.
+  The type field is named **`kind`**, not `type`.
+- A step is `{"checks": list, "index": int, "user": str}`. There is **no `id` or `title`** —
+  use `index` to identify a step.
 
 - [ ] **Step 1: Write the capture script**
 
@@ -495,19 +503,19 @@ def failed_checks(breakdown: dict, limit: int = 3) -> list[FailedCheck]:
     out: list[FailedCheck] = []
 
     for step in objective.get("steps") or []:
-        step_name = step.get("id") or step.get("title")
+        index = step.get("index")
         for check in step.get("checks") or []:
             if _is_failed(check):
                 out.append(FailedCheck(
-                    label=str(check.get("label") or check.get("type") or "unlabelled"),
+                    label=str(check.get("label") or check.get("kind") or "unlabelled"),
                     axis=str(check.get("axis") or "unknown"),
-                    step=str(step_name) if step_name else None,
+                    step=str(index) if index is not None else None,
                 ))
 
     for check in objective.get("success") or []:
         if _is_failed(check):
             out.append(FailedCheck(
-                label=str(check.get("label") or check.get("type") or "unlabelled"),
+                label=str(check.get("label") or check.get("kind") or "unlabelled"),
                 axis=str(check.get("axis") or "unknown"),
                 step=None,
             ))
@@ -735,7 +743,12 @@ Expected: FAIL — `ImportError: cannot import name 'render_scorecard'`
 Append to `backend/app/services/arena/scorecard.py`:
 
 ```python
-_STATS = ("OVR", "GRD", "ADH", "SYN", "EFF", "PRC", "CON")
+# (display label, key in card_mean) — the stored card mixes case: ovr/con are
+# lowercase, the four axis stats are uppercase. Verified in Task 1.
+_STATS: tuple[tuple[str, str], ...] = (
+    ("OVR", "ovr"), ("GRD", "GRD"), ("ADH", "ADH"), ("SYN", "SYN"),
+    ("EFF", "EFF"), ("PRC", "PRC"), ("CON", "con"),
+)
 
 _ENVIRONMENT = """\
 The environment is a live OTC derivatives trading desk, not a static prompt set. Each
@@ -765,17 +778,13 @@ harness and re-run than publish a number that measures my plumbing instead of yo
 
 
 def _card_table(rows: list[dict]) -> str:
-    lines = ["| Model | " + " | ".join(_STATS) + " | Objective |",
+    labels = [label for label, _ in _STATS]
+    lines = ["| Model | " + " | ".join(labels) + " | Objective |",
              "|---" * (len(_STATS) + 2) + "|"]
     for row in rows:
-        card = row.get("card_mean")
-        if not card:
-            lines.append(f"| `{row['model_id']}` | "
-                         + " | ".join("n/a" for _ in _STATS)
-                         + f" | {row.get('mean_objective', 'n/a')} |")
-            continue
-        lines.append(f"| `{row['model_id']}` | "
-                     + " | ".join(str(card.get(s, "n/a")) for s in _STATS)
+        card = row.get("card_mean") or {}
+        cells = [str(card.get(key, "n/a")) if card else "n/a" for _, key in _STATS]
+        lines.append(f"| `{row['model_id']}` | " + " | ".join(cells)
                      + f" | {row.get('mean_objective', 'n/a')} |")
     return "\n".join(lines)
 
