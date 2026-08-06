@@ -162,6 +162,73 @@ def test_book_trade_books_and_is_idempotent(session, tmp_path, monkeypatch, cont
     assert again["ok"] is False and again["error"] == "already_booked"
 
 
+def test_book_trade_returns_a_renderable_booking_summary(
+    session, tmp_path, monkeypatch, container_portfolio,
+):
+    """The tool result is the ONLY structured record of the booking that reaches
+    the chat UI. `{"ok": true, "position_id": 27}` is too thin to render, so the
+    service returns the desk-facing facts alongside it."""
+    monkeypatch.setattr(
+        svc, "extract_document",
+        lambda path: DocumentContent(
+            pages=[PageContent(index=1, text="x")], page_count=1, extract_mode="text"),
+    )
+    batch, doc = _seed_doc(session, tmp_path)
+    svc.parse_document(session, doc, client=_fake_for_vanilla())
+    trade = doc.trades[0]
+
+    result = svc.book_trade(session, trade.id, portfolio_id=container_portfolio.id)
+
+    booking = result["booking"]
+    assert booking["status"] == "booked"
+    assert booking["position_id"] == result["position_id"]
+    assert booking["trade_id"] == trade.id
+    assert booking["portfolio"] == {
+        "id": container_portfolio.id, "name": container_portfolio.name,
+    }
+    assert booking["underlying"] == "AAPL"
+    assert booking["family"] == "EuropeanVanillaOption"
+    assert booking["quantity"] == 100
+    assert booking["entry_price"] == 12.5
+    assert booking["currency"] == "USD"
+    assert booking["counterparty"] == "Big Bank"
+    assert booking["external_trade_id"] == "TC-1001"
+    assert booking["source_document"] == "c.pdf"
+    # Terms are the CANONICAL booked termsheet, not the raw extraction, so the
+    # card shows what was actually persisted.
+    assert booking["terms"]["strike"] == 150.0
+    # Nested schedules would blow up a compact card; only scalars survive.
+    assert all(
+        isinstance(v, (str, int, float, bool)) for v in booking["terms"].values()
+    )
+
+
+def test_book_trade_reports_a_failed_booking_as_a_result(
+    session, tmp_path, monkeypatch, container_portfolio,
+):
+    """A refusal is a result too — the card must be able to say WHY nothing was
+    booked, rather than the turn going silent."""
+    monkeypatch.setattr(
+        svc, "extract_document",
+        lambda path: DocumentContent(
+            pages=[PageContent(index=1, text="x")], page_count=1, extract_mode="text"),
+    )
+    batch, doc = _seed_doc(session, tmp_path)
+    svc.parse_document(session, doc, client=_fake_with_legal_name())
+    trade = doc.trades[0]
+
+    result = svc.book_trade(session, trade.id, portfolio_id=container_portfolio.id)
+
+    assert result["ok"] is False
+    booking = result["booking"]
+    assert booking["status"] == "failed"
+    assert booking["error"] == "validation_failed"
+    assert booking["position_id"] is None
+    assert booking["trade_id"] == trade.id
+    assert booking["underlying"] == "Apple Inc."
+    assert booking["detail"]
+
+
 def _fake_with_legal_name():
     """The real-world failure: the extractor keeps the issuer's LEGAL name
     because the confirmation writes "Shares: Apple Inc. (Ticker: AAPL)" and
@@ -281,9 +348,14 @@ def test_book_trade_dedup_guard_blocks_different_trade_same_source_id(
     first_position_id = first["position_id"]
 
     second = svc.book_trade(session, trade2.id, portfolio_id=container_portfolio.id)
-    assert second == {
-        "ok": False, "error": "already_booked", "position_id": first_position_id,
-    }
+    assert second["ok"] is False
+    assert second["error"] == "already_booked"
+    assert second["position_id"] == first_position_id
+    # The dedup refusal points at the ALREADY-booked position, so the card
+    # tells the user where the trade actually lives.
+    assert second["booking"]["status"] == "already_booked"
+    assert second["booking"]["position_id"] == first_position_id
+    assert second["booking"]["trade_id"] == trade2.id
     assert trade2.status == "extracted"
     assert trade2.booked_position_id is None
     count = (

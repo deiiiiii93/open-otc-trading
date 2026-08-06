@@ -117,7 +117,14 @@ _RISK_LEVEL_BY_TOOL: dict[str, str] = {
     "comment_limit_incident": "write",
     "waive_limit_incident": "write",
     "resolve_limit_incident": "write",
-    "book_extracted_trade": "write",
+    # "irreversible", NOT "write": this books a real position through the very
+    # same book_position gate as its siblings above, and positions have no
+    # delete (close/settle are lifecycle events layered on top). As "write" it
+    # was stripped from the interrupt map under auto mode, so AUTO booked a
+    # trade straight off a parsed PDF with no human in the loop -- exactly the
+    # failure the register_underlying comment below guards against, one order
+    # of magnitude larger.
+    "book_extracted_trade": "irreversible",
     # Argument-aware: pure analysis is read-like; writes_artifacts=True is
     # handled by RunPythonArtifactHITLMiddleware.
     "run_python": "read",
@@ -292,21 +299,74 @@ def _summarize_register_underlying(args: dict[str, Any]) -> str:
         return f"Register underlying {symbol}"
 
 
+def _summarize_book_extracted_trade(args: dict[str, Any]) -> str:
+    """Preflight-aware, same rationale as _summarize_register_underlying: the
+    interrupt fires before the tool body runs, so the raw args are just
+    ``{portfolio_id, trade_id}`` -- meaningless to a human asked to approve an
+    irreversible booking. Reads the staged trade so the card states what is
+    actually being booked."""
+    trade_id = args.get("trade_id")
+    if not isinstance(trade_id, int):
+        return "Book extracted trade"
+
+    from app import database
+    from app.models import ExtractedTrade, Portfolio
+
+    try:
+        database.init_db()
+        with database.SessionLocal() as session:
+            trade = session.get(ExtractedTrade, trade_id)
+            if trade is None:
+                return f"Book extracted trade #{trade_id} (not found)"
+            head = f"Book {_compact_value(trade.quantity)} {trade.family or 'trade'}"
+            if trade.underlying:
+                head += f" on {trade.underlying}"
+            extras: list[str] = []
+            if trade.entry_price is not None:
+                extras.append(f"entry {trade.entry_price} {trade.currency or ''}".strip())
+            if trade.counterparty:
+                extras.append(f"cpty {trade.counterparty}")
+            if trade.external_trade_id:
+                extras.append(f"ref {trade.external_trade_id}")
+            portfolio_id = args.get("portfolio_id")
+            if isinstance(portfolio_id, int):
+                portfolio = session.get(Portfolio, portfolio_id)
+                extras.append(
+                    f"into {portfolio.name} (id={portfolio_id})" if portfolio
+                    else f"into portfolio id={portfolio_id}"
+                )
+            if trade.validation_status and trade.validation_status != "valid":
+                extras.append(f"VALIDATION {trade.validation_status}")
+            return head + (" — " + ", ".join(extras) if extras else "")
+    except Exception:
+        # Card rendering must never 500 the turn over a preview lookup.
+        return f"Book extracted trade #{trade_id}"
+
+
 _SUMMARY_BUILDERS: dict[str, Callable[[dict[str, Any]], str]] = {
     "book_position": _summarize_book_position,
     "register_underlying": _summarize_register_underlying,
+    "book_extracted_trade": _summarize_book_extracted_trade,
 }
 
 
 def _summary_for(action_request: dict[str, Any]) -> str:
-    description = action_request.get("description")
-    if isinstance(description, str) and description:
-        return description
     name = action_request["name"]
     args = action_request.get("args") or {}
+    # A registered builder is a deliberate, tool-specific override and MUST win
+    # over the description. HumanInTheLoopMiddleware stamps every action request
+    # with generic boilerplate ("Tool execution requires approval\n\nTool: ...\n
+    # Args: {...}"), so checking `description` first made this whole table
+    # unreachable in the live path — every real approval card showed raw ids
+    # (verified against historical pending_actions for book_position). Only a
+    # live smoke caught it: the unit tests called the builders directly, which
+    # proves they work, not that anything calls them.
     builder = _SUMMARY_BUILDERS.get(name)
     if builder is not None:
         return builder(args)
+    description = action_request.get("description")
+    if isinstance(description, str) and description:
+        return description
     if not args:
         return f"Run {name}"
     arg_summary = ", ".join(f"{k}={_compact_value(v)}" for k, v in list(args.items())[:4])

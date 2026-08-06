@@ -216,6 +216,32 @@ export type AgentTodoItem = {
 };
 
 /**
+ * Server-built record of a booking write, emitted from the booking tool's
+ * RESULT (never parsed out of the model's prose). It exists so the outcome of
+ * an irreversible write is always visible: without it, the booking confirmation
+ * is only in the assistant text, which the reasoning-fold heuristic can hide
+ * entirely when a turn runs many tools.
+ */
+export type BookingResultMeta = {
+  status: 'booked' | 'already_booked' | 'failed';
+  position_id: number | null;
+  trade_id: number;
+  family?: string | null;
+  underlying?: string | null;
+  quantity?: number | null;
+  entry_price?: number | null;
+  currency?: string | null;
+  counterparty?: string | null;
+  trade_date?: string | null;
+  external_trade_id?: string | null;
+  source_document?: string | null;
+  portfolio?: { id: number; name: string | null };
+  terms?: Record<string, string | number | boolean>;
+  error?: string;
+  detail?: unknown;
+};
+
+/**
  * Canonical agent execution mode sent on the chat request.
  * - `interactive` — HITL confirmation prompts surface to the user.
  * - `auto` (default) — auto-clears HITL prompts; the agent may still ask via reply-option cards.
@@ -245,6 +271,7 @@ export type ChatMessage = {
     mode?: AgentExecutionMode;
     reply_options?: ReplyOptionMeta[];
     term_form?: TermFormMeta;
+    booking_result?: BookingResultMeta;
     envelope_initial?: Envelope;
     envelope_final?: Envelope;
     envelope_transitioned?: boolean;

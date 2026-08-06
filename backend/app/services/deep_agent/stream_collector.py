@@ -36,6 +36,12 @@ class StreamCollector:
     drain_reason: str | None = None
     reply_options: list[dict] | None = None
     term_form: dict | None = None
+    # Structured record of the turn's booking write, lifted from the tool
+    # RESULT (not its args, unlike term_form/reply_options — a booking's args
+    # are just ids). Drives the chat booking card so the outcome of an
+    # irreversible write can never depend on the model's prose surviving the
+    # frontend's reasoning-fold heuristic. Last booking of the turn wins.
+    booking_result: dict | None = None
     todos: list[dict[str, str]] | None = None
     # P2.5: envelope trail. ``envelope_initial`` is the envelope the turn
     # started under; ``envelope_final`` is the one in effect when the turn
@@ -105,6 +111,9 @@ class StreamCollector:
         self.text_chunks.clear()
         self.reply_options = None
         self.term_form = None
+        # booking_result is deliberately NOT cleared, for the same reason tool
+        # events are kept: it records a write that really happened. Dropping it
+        # would hide a booked position behind an escalation retry.
 
     def on_token(self, text: str) -> None:
         if text:

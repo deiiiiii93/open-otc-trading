@@ -358,13 +358,17 @@ def test_confirmation_tools_registered():
         assert expected in DEEP_AGENT_TOOL_NAMES
 
 
-def test_book_tool_is_hitl_write():
+def test_book_tool_is_hitl_irreversible():
     from app.services.deep_agent.hitl import (
         INTERRUPT_TOOL_NAMES, _LABEL_BY_TOOL, _RISK_LEVEL_BY_TOOL,
     )
 
     assert "book_extracted_trade" in INTERRUPT_TOOL_NAMES
-    assert _RISK_LEVEL_BY_TOOL["book_extracted_trade"] == "write"
+    # NOT "write": a "write" level is stripped from the interrupt map under
+    # auto mode, which let AUTO book a real position off a parsed PDF with no
+    # human in the loop. See test_hitl.py's
+    # test_book_extracted_trade_is_irreversible_risk_not_write.
+    assert _RISK_LEVEL_BY_TOOL["book_extracted_trade"] == "irreversible"
     assert "book_extracted_trade" in _LABEL_BY_TOOL
     from app.services.deep_agent.hitl import INTERRUPT_TOOL_NAMES as names
     assert "parse_trade_confirmation" not in names

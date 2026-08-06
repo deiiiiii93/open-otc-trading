@@ -202,6 +202,74 @@ describe('ChatBubble', () => {
     expect(reasoningBody).not.toHaveTextContent('Portfolio "X" (id=4) -- Snowball Risk & Hedging Report');
   });
 
+  it('shows the booking card even when the whole reply folds into Reasoning', () => {
+    // The live regression (thread 682): a confirmation-booking turn ran 10
+    // tools and named several of them in its prose, so the fold heuristic
+    // swallowed the ENTIRE message -- including "Trade booked -- position 27".
+    // The card is server-built from the tool result, so it must survive that.
+    const toolHeavyProse = [
+      'Let me read the book-trade-confirmation skill first.',
+      'I need to parse the confirmation with parse_trade_confirmation.',
+      'Now I have the extracted terms from the document.',
+      'Let me verify them with check_term_completeness before booking.',
+      'I have the completeness verdict and can call book_extracted_trade.',
+      'Let me confirm the position landed in the right portfolio.',
+    ].join(' '.repeat(24));
+
+    const { container } = render(
+      <ChatBubble
+        message={{
+          id: 9,
+          role: 'assistant',
+          character: 'trader',
+          content: `${toolHeavyProse} ${toolHeavyProse}`,
+          meta: {
+            process_events: [
+              { id: 'b1', name: 'read_file', status: 'done', duration_ms: 10 },
+              { id: 'b2', name: 'parse_trade_confirmation', status: 'done', duration_ms: 90 },
+              { id: 'b3', name: 'check_term_completeness', status: 'done', duration_ms: 20 },
+              { id: 'b4', name: 'book_extracted_trade', status: 'done', duration_ms: 30 },
+              { id: 'b5', name: 'get_positions', status: 'done', duration_ms: 15 },
+            ] as ToolEvent[],
+            booking_result: {
+              status: 'booked',
+              position_id: 27,
+              trade_id: 2,
+              family: 'BarrierOption',
+              underlying: 'TSLA',
+              quantity: 750,
+              portfolio: { id: 1, name: 'Default' },
+            },
+          },
+        }}
+        viewMode="compact"
+        onConfirmAction={vi.fn()}
+        onDismissAction={vi.fn()}
+      />,
+    );
+
+    // The fold really did fire — the body is empty and everything is in Reasoning.
+    const body = container.querySelector('.wl-chat-bubble__body:not(.wl-chat-bubble__reasoning-body)');
+    expect(body).toBeNull();
+    expect(screen.getByText('Reasoning')).toBeInTheDocument();
+    // ...and the booking is still visible anyway.
+    expect(screen.getByTestId('booking-result-card')).toBeInTheDocument();
+    expect(screen.getByText('#27')).toBeInTheDocument();
+    expect(screen.getByText('TSLA')).toBeInTheDocument();
+  });
+
+  it('renders no booking card when the turn booked nothing', () => {
+    render(
+      <ChatBubble
+        message={agentWithEvents}
+        viewMode="compact"
+        onConfirmAction={vi.fn()}
+        onDismissAction={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId('booking-result-card')).not.toBeInTheDocument();
+  });
+
   it('renders ActionProposal for pending actions', () => {
     render(
       <ChatBubble

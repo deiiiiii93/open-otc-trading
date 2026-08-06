@@ -17,7 +17,12 @@ def test_orchestrator_stack_has_audit_inside_error_boundary():
     names = _names(mw)
     assert names[0] == "ToolErrorBoundaryMiddleware"
     assert names[1] == "AuditTrailMiddleware"
-    assert names[2] == "GroundTruthArtifactMiddleware"
+    # Ordering, not exact indices: what matters is that audit sits immediately
+    # inside the error boundary and ahead of ground-truth capture. Pinning the
+    # index made every later middleware insertion look like a regression.
+    assert names.index("GroundTruthArtifactMiddleware") > names.index(
+        "AuditTrailMiddleware"
+    )
 
 
 def test_persona_stacks_have_audit_inside_error_boundary():
@@ -29,7 +34,9 @@ def test_persona_stacks_have_audit_inside_error_boundary():
         names = _names(spec["middleware"])
         assert names[0] == "ToolErrorBoundaryMiddleware"
         assert names[1] == "AuditTrailMiddleware"
-        assert names[2] == "GroundTruthArtifactMiddleware"
+        assert names.index("GroundTruthArtifactMiddleware") > names.index(
+            "AuditTrailMiddleware"
+        )
         assert "FanoutReadOnlyMiddleware" in names
 
 

@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Booking result card in chat.** The outcome of a confirmation booking is now rendered from
+  a server-built structured record (`meta.booking_result`) instead of the assistant's prose:
+  status, position id, product/underlying/size, destination portfolio, the **canonical booked
+  terms**, and the provenance line (source confirmation file, counterparty, external ref).
+  Refusals render too — `failed` / `already_booked` states name the reason and, for a dedup
+  refusal, point at the position that already holds the trade. `book_trade` returns the
+  payload on **every** exit path, `_capture_booking_result_from_tool_end` lifts it out of the
+  tool **result** at `on_tool_end` (the reply-options/term-form captures read tool *args*,
+  which for a booking are just `{portfolio_id, trade_id}` and say nothing about what was
+  booked), and capture is keyed by tool **name** so an unrelated tool returning a `booking`
+  key can't spoof a card. The record deliberately survives `reset_user_facing_output_for_retry`
+  for the same reason tool events do: it reports a write that really happened.
+  Capture lives in a `wrap_tool_call` middleware (`deep_agent/booking_capture.py`,
+  registered in **all three** stacks beside `AuditTrailMiddleware`) rather than in a scan of
+  the agent result's messages: personas run via `task()` in their own LangGraph checkpoint
+  namespace, so a booking they make never enters the orchestrator's `result["messages"]`
+  (measured on a live gated run: the tool appeared in 28 subagent checkpoints and **0**
+  orchestrator ones). Three live-only defects were found and fixed getting this working —
+  see Fixed.
 - **Confirmations: visible parsing progress.** Parsing is dispatched asynchronously and
   documents are worked **sequentially**, so the old UI went silent exactly when the slow
   part started — the Upload button flipped back the moment the batch row existed, leaving
@@ -25,6 +44,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   indicator and the polling can't disagree about what "still parsing" means.
 
 ### Fixed
+- **AUTO mode booked confirmation trades with no human in the loop.** `book_extracted_trade`
+  was classified `"write"` in `_RISK_LEVEL_BY_TOOL`, and `interrupt_on_config(yolo_mode=True)`
+  strips every `"write"`-level tool from the interrupt map — so in AUTO mode the tool booked a
+  real position straight off a parsed PDF and no approval card was ever raised (observed live:
+  thread 682 booked position 27, `pending_actions: []`, `interrupt_ids: []`). It is the odd one
+  out: `book_position`, `book_rfq_to_position` and `book_hedge` are all `"irreversible"`, and
+  `book_extracted_trade` persists through the very same `book_position` gate — positions have
+  no delete. Now `"irreversible"`, matching AUTO mode's documented contract ("ordinary write
+  confirmations are bypassed, but irreversible operations stay gated") and the identical
+  argument already made in-file for `register_underlying`. Headless/YOLO is unchanged (it
+  clears all HITL by design), as is the Confirmations page's own Book button (REST, not the
+  tool). Added `_summarize_book_extracted_trade` so the approval card states the product,
+  size, counterparty and destination rather than opaque ids — the interrupt fires before the
+  tool body runs, so without it the gate would be theater.
+- **HITL approval cards showed raw boilerplate instead of the registered summary.**
+  `_summary_for` returned `action_request["description"]` before consulting
+  `_SUMMARY_BUILDERS`, and `HumanInTheLoopMiddleware` stamps a generic description
+  ("Tool execution requires approval\n\nTool: …\nArgs: {…}") on **every** request — so the
+  whole builder table was unreachable and `book_position` / `register_underlying` had been
+  showing raw ids for their entire existence (verified against historical `pending_actions`).
+  A registered builder now wins over the middleware's boilerplate. Unit tests missed it
+  because they called the builders directly, or passed an action request with no description
+  at all: satisfiability, not reachability.
+- **The booking card never appeared for the writes that were actually gated.** Three
+  successive live-only defects, none reachable from unit tests: (1) the HITL **resume** path
+  is non-streaming (`agent.invoke`), so `on_tool_end` never fires and the streaming capture
+  was dead there; (2) the run key — `configurable["thread_id"]` is the *checkpointer* key,
+  not the AgentThread id the persist path looks up, and inside a persona it is neither, so
+  the record was filed under a key nobody read; (3) the decisive one — the tool result body
+  is **not plain JSON** by the time the seam sees it, because `GroundTruthArtifactMiddleware`
+  runs inside this middleware and appends `<artifact_ref>{…}</artifact_ref>`, so `json.loads`
+  raised "Extra data" and the payload was dropped while the content looked perfectly valid in
+  a repr. Parsing now uses `raw_decode` (leading value only) and tolerates content-block
+  lists and `Command` results.
+- **A completed booking could be hidden entirely by the chat reasoning fold.**
+  `ChatBubble`'s `findPublicContentBoundary` only recognises a heading containing
+  `portfolio|report|summary|risk|hedg|snapshot|recommendation`; a booking reply's headings
+  ("Parsed product terms", "Booking", "Completeness verdict") match none, so with ≥5 tool
+  events and prose naming its own tools the whole 7 KB message folded into "Reasoning" with an
+  empty body. The new booking card renders outside that heuristic and is suppressed by neither
+  streaming nor a pending action, so an irreversible write is never visible only by chance.
 - **Booking now refuses an underlying that is not a bookable instrument.** A confirmation
   names the issuer in legal form ("Apple Inc."), but positions, pricing and risk key off the
   instrument **symbol** — and nothing checked. `validate_trade_terms` only asserted the field

@@ -122,6 +122,7 @@ def test_yolo_mode_uses_langchain_auto_approval_for_write_tools():
         "release_rfq",
         "book_rfq_to_position",
         "book_hedge",
+        "book_extracted_trade",
         "register_underlying",
         "cancel_lifecycle_event",
         "delete_portfolio",
@@ -394,6 +395,49 @@ def test_book_position_summary_is_human_readable_not_raw_json():
     assert "100" in summary
 
 
+def test_registered_builder_beats_the_middlewares_boilerplate_description():
+    """Regression, caught only by a live smoke (thread 683).
+
+    HumanInTheLoopMiddleware stamps EVERY action request with a generic
+    ``description`` ("Tool execution requires approval\\n\\nTool: ...\\nArgs:
+    ..."), and _summary_for returned that before consulting _SUMMARY_BUILDERS —
+    so every builder in the table was unreachable in the live path and real
+    approval cards showed raw ids. Unit tests missed it because they called the
+    builders directly, or passed an action_request with no description at all:
+    satisfiability, not reachability.
+    """
+    from app.services.deep_agent.hitl import _summary_for
+
+    summary = _summary_for({
+        "name": "book_position",
+        "description": (
+            "Tool execution requires approval\n\nTool: book_position\n"
+            "Args: {'portfolio_id': 6, 'quantity': 100}"
+        ),
+        "args": {
+            "portfolio_id": 6,
+            "product": {"product_family": "snowball", "underlying": "000905.SH"},
+            "quantity": 100,
+        },
+    })
+
+    assert "Tool execution requires approval" not in summary
+    assert "000905.SH" in summary
+    assert "portfolio 6" in summary
+
+
+def test_summary_falls_back_to_the_description_when_no_builder_is_registered():
+    """A tool with no builder still shows whatever the middleware supplied."""
+    from app.services.deep_agent.hitl import _summary_for
+
+    summary = _summary_for({
+        "name": "some_unregistered_tool",
+        "description": "Custom description from the interrupt config",
+        "args": {"a": 1},
+    })
+    assert summary == "Custom description from the interrupt config"
+
+
 def test_summary_compacts_nested_dict_args_generically():
     """Any tool with a dict/list arg gets a compact placeholder, never a blob."""
     from app.services.deep_agent.hitl import _summary_for
@@ -413,6 +457,69 @@ def test_register_underlying_is_irreversible_risk_not_write():
     # silently persist an unvetted underlying, contradicting the requirement
     # that only yolo auto-adds. "irreversible" stays gated under auto.
     assert _RISK_LEVEL_BY_TOOL["register_underlying"] == "irreversible"
+
+
+def test_book_extracted_trade_is_irreversible_risk_not_write():
+    from app.services.deep_agent.hitl import _RISK_LEVEL_BY_TOOL
+
+    # book_extracted_trade persists a position through the very same
+    # book_position gate, so it is the same irreversible act as its siblings
+    # -- all of which are already classified "irreversible". As "write" it was
+    # stripped from the interrupt map under auto mode, letting AUTO book a real
+    # trade off a parsed PDF with no human in the loop.
+    assert _RISK_LEVEL_BY_TOOL["book_extracted_trade"] == "irreversible"
+    for sibling in ("book_position", "book_rfq_to_position", "book_hedge"):
+        assert _RISK_LEVEL_BY_TOOL[sibling] == "irreversible"
+
+
+def test_summarize_book_extracted_trade_previews_the_trade(session, registered_underlying):
+    """The interrupt fires BEFORE the tool body runs, so the card can only see
+    `{portfolio_id, trade_id}` -- opaque to a human asked to approve an
+    irreversible booking. The summarizer reads the staged trade so the approval
+    card states what is actually being booked. Same self-contained session
+    pattern as _summarize_register_underlying (see that test's docstring)."""
+    from app.models import (ConfirmationBatch, ConfirmationDocument, ExtractedTrade,
+                            Portfolio)
+    from app.services.deep_agent import hitl
+
+    registered_underlying("TSLA")
+    portfolio = Portfolio(name="Default", base_currency="USD")
+    session.add(portfolio)
+    session.flush()
+    batch = ConfirmationBatch(source="agent", default_portfolio_id=portfolio.id)
+    session.add(batch)
+    session.flush()
+    document = ConfirmationDocument(
+        batch_id=batch.id, filename="conf.pdf", stored_path="/tmp/conf.pdf",
+        sha256="abc123", byte_len=1024, mime="application/pdf", status="parsed",
+    )
+    session.add(document)
+    session.flush()
+    session.add(ExtractedTrade(
+        document_id=document.id, seq=1, family="BarrierOption", underlying="TSLA",
+        quantity=750.0, entry_price=9.15, currency="USD",
+        counterparty="Kestrel Capital Partners LLC",
+        external_trade_id="ARD-EQO-2026-04701",
+        terms={"strike": 330.0, "barrier": 420.0}, extracted_terms={},
+        validation_status="valid", status="extracted",
+    ))
+    session.commit()
+
+    summary = hitl._summarize_book_extracted_trade(
+        {"portfolio_id": portfolio.id, "trade_id": 1}
+    )
+    assert "TSLA" in summary
+    assert "750" in summary
+    assert "BarrierOption" in summary
+    assert "Kestrel Capital Partners LLC" in summary
+
+
+def test_summarize_book_extracted_trade_survives_a_missing_trade(session):
+    """Card rendering must never 500 the turn over a preview lookup."""
+    from app.services.deep_agent import hitl
+
+    assert hitl._summarize_book_extracted_trade({"portfolio_id": 1, "trade_id": 9999})
+    assert hitl._summarize_book_extracted_trade({})
 
 
 def test_summarize_register_underlying_distinguishes_create_vs_tag(session):

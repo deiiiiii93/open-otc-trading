@@ -280,6 +280,70 @@ def _capture_term_form_from_tool_end(
     collector.term_form = payload
 
 
+from .deep_agent.booking_capture import (  # noqa: E402
+    BOOKING_RESULT_TOOLS as _BOOKING_RESULT_TOOLS,
+)
+from .deep_agent.booking_capture import (  # noqa: E402
+    booking_payload_from_tool_output as _booking_payload_from_tool_output,
+)
+from .deep_agent.booking_capture import take_booking as _take_booking
+
+
+def _capture_booking_result_from_tool_end(
+    collector: StreamCollector,
+    *,
+    name: str,
+    output: Any,
+    error_text: str | None,
+) -> None:
+    """Lift the structured booking summary out of a booking tool's RESULT.
+
+    Unlike the reply-options/term-form captures, this reads the tool OUTPUT,
+    not its args: a booking call's args are just ``{portfolio_id, trade_id}``.
+    The payload exists so the outcome of an irreversible write is structured
+    data the UI renders directly, instead of prose that the reasoning-fold
+    heuristic can swallow whole. Last booking of the turn wins.
+
+    Streaming path only — see _booking_result_from_result for the resume path.
+    """
+    if name not in _BOOKING_RESULT_TOOLS or error_text:
+        return
+    booking = _booking_payload_from_tool_output(output)
+    if booking is not None:
+        collector.booking_result = booking
+
+
+def _booking_result_from_result(result: Any) -> dict | None:
+    """Extract the booking summary from a NON-streaming agent result by scanning
+    ToolMessages for the last booking-tool call. Mirrors _term_form_from_result.
+
+    Required because the HITL resume path (`resume_pending_action` ->
+    `invoke_workflow_resume` -> `agent.invoke`) never streams: no `on_tool_end`
+    fires, so the streaming capture above is dead there and the persisted
+    message carries no `process_events` at all. Since an approved booking is
+    EXACTLY the case that arrives via resume, missing this seam would leave the
+    card blank for every gated booking — the live failure on thread 683.
+
+    Scans ToolMessages, not AIMessage.tool_calls like the term-form/reply-option
+    extractors, because a booking's payload is in the tool's RESULT.
+    """
+    messages = result.get("messages") if isinstance(result, dict) else None
+    if not isinstance(messages, list):
+        return None
+    captured: dict | None = None
+    for message in messages:
+        if getattr(message, "type", None) != "tool":
+            continue
+        if getattr(message, "name", None) not in _BOOKING_RESULT_TOOLS:
+            continue
+        if getattr(message, "status", None) == "error":
+            continue
+        booking = _booking_payload_from_tool_output(message)
+        if booking is not None:
+            captured = booking
+    return captured
+
+
 def _collector_completion_phase(collector: StreamCollector) -> str:
     if collector.drained:
         return "drained"
@@ -2013,6 +2077,17 @@ class AgentService:
             if include_interactive_affordances
             else None
         )
+        # NOT gated on include_interactive_affordances: the booking card is a
+        # record of a write that happened, not an interactive affordance to
+        # offer, so it must survive contexts that suppress prompts.
+        #
+        # The middleware store is the PRIMARY source and the result scan only a
+        # fallback, not the other way round: a booking made by a persona lands
+        # in that persona's own checkpoint namespace and never appears in the
+        # orchestrator's result messages (see deep_agent/booking_capture.py).
+        booking_result = _take_booking(str(thread.id)) or _booking_result_from_result(
+            result
+        )
         assets = _merge_assets(
             assets,
             _agent_file_assets_from_state(
@@ -2083,6 +2158,7 @@ class AgentService:
                 "envelope_final": envelope_final,
                 **({"reply_options": reply_options} if reply_options else {}),
                 **({"term_form": term_form} if term_form else {}),
+                **({"booking_result": booking_result} if booking_result else {}),
             },
         )
         session.add(assistant_msg)
@@ -2448,6 +2524,11 @@ class AgentService:
                     **(
                         {"term_form": collector.term_form}
                         if collector.term_form
+                        else {}
+                    ),
+                    **(
+                        {"booking_result": collector.booking_result}
+                        if collector.booking_result
                         else {}
                     ),
                 },
@@ -3211,6 +3292,20 @@ class AgentService:
                     "model_selection_fallback": fallback_used,
                     "yolo_mode": yolo_mode,
                     "envelope_final": execution.envelope,
+                    # An APPROVED booking always lands here rather than on the
+                    # streaming path, so without this the card would be blank
+                    # for exactly the writes that were gated.
+                    **(
+                        {"booking_result": booking_result}
+                        if (booking_result := (
+                            _take_booking(
+                                str(action_source_meta.get("checkpointer_key")
+                                    or thread_id)
+                            )
+                            or _booking_result_from_result(execution.raw_result)
+                        ))
+                        else {}
+                    ),
                 },
             )
             session.add(new_msg)
@@ -4044,6 +4139,9 @@ class AgentService:
             _capture_term_form_from_tool_end(
                 collector, run_id=run_id, name=name, error_text=error_text
             )
+            _capture_booking_result_from_tool_end(
+                collector, name=name, output=output, error_text=error_text
+            )
             ev_data = collector.tool_events.get(run_id, {})
             payload = {"id": run_id, "duration_ms": ev_data.get("duration_ms", 0)}
             if error_text:
@@ -4142,6 +4240,9 @@ class AgentService:
             _capture_term_form_from_tool_end(
                 collector, run_id=run_id, name=name, error_text=error_text
             )
+            _capture_booking_result_from_tool_end(
+                collector, name=name, output=output, error_text=error_text
+            )
             ev_data = collector.tool_events.get(run_id, {})
             payload = {"id": run_id, "duration_ms": ev_data.get("duration_ms", 0)}
             if error_text:
@@ -4238,6 +4339,11 @@ class AgentService:
                             if collector.term_form
                             else {}
                         ),
+                        **(
+                            {"booking_result": collector.booking_result}
+                            if collector.booking_result
+                            else {}
+                        ),
                     },
                 )
             else:
@@ -4313,6 +4419,11 @@ class AgentService:
                             if collector.term_form
                             else {}
                         ),
+                        **(
+                            {"booking_result": collector.booking_result}
+                            if collector.booking_result
+                            else {}
+                        ),
                     },
                 )
             session.add(assistant_msg)
@@ -4375,6 +4486,17 @@ class AgentService:
             if include_interactive_affordances
             else None
         )
+        # NOT gated on include_interactive_affordances: the booking card is a
+        # record of a write that happened, not an interactive affordance to
+        # offer, so it must survive contexts that suppress prompts.
+        #
+        # The middleware store is the PRIMARY source and the result scan only a
+        # fallback, not the other way round: a booking made by a persona lands
+        # in that persona's own checkpoint namespace and never appears in the
+        # orchestrator's result messages (see deep_agent/booking_capture.py).
+        booking_result = _take_booking(str(thread.id)) or _booking_result_from_result(
+            result
+        )
         assets = _merge_assets(
             assets,
             _agent_file_assets_from_state(
@@ -4419,6 +4541,7 @@ class AgentService:
                     "yolo_mode": yolo_mode,
                     **({"reply_options": reply_options} if reply_options else {}),
                     **({"term_form": term_form} if term_form else {}),
+                    **({"booking_result": booking_result} if booking_result else {}),
                 },
             )
             session.add(assistant_msg)
@@ -4458,6 +4581,7 @@ class AgentService:
                 "yolo_mode": yolo_mode,
                 **({"reply_options": reply_options} if reply_options else {}),
                 **({"term_form": term_form} if term_form else {}),
+                **({"booking_result": booking_result} if booking_result else {}),
             },
         )
         session.add(assistant_msg)

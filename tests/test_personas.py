@@ -176,6 +176,7 @@ def test_orchestrator_can_enable_quickjs_code_interpreter_middleware(monkeypatch
     assert [type(item).__name__ for item in middleware] == [
         "ToolErrorBoundaryMiddleware",
         "AuditTrailMiddleware",
+        "BookingResultMiddleware",
         "GroundTruthArtifactMiddleware",
         "DeskContextMiddleware",
         "RunPythonArtifactHITLMiddleware",
@@ -184,7 +185,11 @@ def test_orchestrator_can_enable_quickjs_code_interpreter_middleware(monkeypatch
         "EvalAttributionGateMiddleware",
         "CodeInterpreterMiddleware",
     ]
-    ci = middleware[8]
+    # Looked up by type, not position: a hardcoded index turns any later
+    # middleware insertion into a spurious failure here.
+    ci = next(
+        m for m in middleware if type(m).__name__ == "CodeInterpreterMiddleware"
+    )
     # task() is exposed via subagents=True (default), NOT ptc=["task"] (which the
     # lib rejects); the per-eval backstop is lowered to 24.
     assert not getattr(ci, "_ptc")
@@ -222,6 +227,7 @@ def test_orchestrator_installs_ledger_scoped_compaction_middleware(monkeypatch):
     assert middleware_names == [
         "ToolErrorBoundaryMiddleware",
         "AuditTrailMiddleware",
+        "BookingResultMiddleware",
         "GroundTruthArtifactMiddleware",
         "DeskContextMiddleware",
         "RunPythonArtifactHITLMiddleware",

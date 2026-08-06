@@ -15,6 +15,7 @@ import {
   type AgentActionProposal,
   type AgentAsset,
   type AgentTodoItem,
+  type BookingResultMeta,
   type ChatMessage as ChatMessageType,
   type ReplyOptionMeta,
   type TaskRun,
@@ -22,6 +23,7 @@ import {
   type ToolEvent,
 } from '../types';
 import { ActionProposal } from './ActionProposal';
+import { BookingResultCard } from './BookingResultCard';
 import { ToolTimeline } from './ToolTimeline';
 import type { ViewMode } from '../hooks/useViewMode';
 import { colorForProvider } from './providerColors';
@@ -108,6 +110,15 @@ export function ChatBubble({
     && (meta.term_form as TermFormMeta).fields.length > 0
       ? (meta.term_form as TermFormMeta)
       : null;
+  // Server-built, so it is shown whatever the prose did — including when the
+  // reasoning fold hides the whole message. Unlike termForm this is NOT
+  // suppressed while streaming or by a pending action: it reports a write that
+  // already happened, and suppressing it would recreate the very blind spot it
+  // exists to close.
+  const bookingResult: BookingResultMeta | null =
+    meta.booking_result && (meta.booking_result as BookingResultMeta).status
+      ? (meta.booking_result as BookingResultMeta)
+      : null;
   const showReplyOptions = !!(
     replyOptionsEnabled
     && onSelectReplyOption
@@ -162,6 +173,9 @@ export function ChatBubble({
             </ReactMarkdown>
             {isStreaming && <span className="wl-chat-bubble__cursor" aria-hidden="true" />}
           </div>
+        )}
+        {variant === 'assistant' && bookingResult && (
+          <BookingResultCard booking={bookingResult} />
         )}
         {attachmentRefs.length > 0 && (
           <ul className="wl-chat-bubble__attachments">

@@ -135,6 +135,7 @@ def _agent_middleware(
     goal_grader: Any = None,
 ) -> list[Any]:
     from .audit_trail_middleware import AuditTrailMiddleware
+    from .booking_capture import BookingResultMiddleware
     from .compaction import LedgerScopedCompactionMiddleware
     from .cost_preview_hitl import LongRunningCostHITLMiddleware
     from .desk_context import DeskContextMiddleware
@@ -152,6 +153,9 @@ def _agent_middleware(
     middleware: list[Any] = [
         ToolErrorBoundaryMiddleware(),
         AuditTrailMiddleware(tools=tools),
+        # Same seam, same reason: a booking made inside a persona subagent is
+        # invisible to result-message scanning (separate checkpoint namespace).
+        BookingResultMiddleware(),
         GroundTruthArtifactMiddleware(tools=tools),
         # Snoop resolved scope (portfolio_id, profile_id, dates) from the
         # orchestrator's direct domain-tool calls into desk_context state, which

@@ -912,8 +912,23 @@ and the server re-validates).
 - **Review-first is the whole design.** `book_trade` re-runs validation at booking
   time (never trusts the stored status) and books through the existing
   `book_position` gate. The web page books per trade on a human click; the agent's
-  `book_extracted_trade` is HITL `"write"`. `parse_trade_confirmation` is
+  `book_extracted_trade` is HITL **`"irreversible"`**. `parse_trade_confirmation` is
   write-class but deliberately **not** HITL — parsing writes only draft rows.
+- **`"write"` is not a HITL level for anything that books.** `interrupt_on_config(
+  yolo_mode=True)` — i.e. **AUTO mode** — strips every `"write"`-level tool from the
+  interrupt map, so a booking tool classified `"write"` raises **no approval card at
+  all** and persists a real position unattended (this happened: thread 682 booked
+  position 27 off a PDF with `pending_actions: []`). Every booking tool is therefore
+  `"irreversible"` — `book_position`, `book_rfq_to_position`, `book_hedge`,
+  `book_extracted_trade` — and positions have no delete to make it otherwise. When
+  adding a HITL tool, ask which of the three modes must still stop it: `"write"`
+  means "interactive only", **not** "gated".
+- **A gated tool needs a `_SUMMARY_BUILDERS` entry when its args are ids.** The
+  interrupt fires *before* the tool body runs, so the card can only see the raw args —
+  `book_extracted_trade`'s are `{portfolio_id, trade_id}`. `_summarize_book_extracted_trade`
+  opens its own short-lived read-only session to state the product, size, counterparty
+  and destination, exactly like `_summarize_register_underlying`. Without one the gate
+  is theater: a human clicking Approve on two integers is not review.
 - **Idempotency:** `source_trade_id` = the confirmation's own `external_trade_id`,
   else `conf:{sha256[:12]}:{seq}`. A pre-check on `(portfolio_id, source_trade_id)`
   returns `already_booked` + the existing position id. Note `book_position` itself
@@ -968,6 +983,46 @@ and the server re-validates).
   `artifact_dir/uploads/chat/` (inside the parse tool's containment root), and
   `stream_chat_message` appends an attachment manifest to the **agent-run** content
   only — the persisted user message keeps the user's original text.
+- **Never let the chat report a write through prose alone.** `ChatBubble`'s
+  reasoning-fold heuristic (`resolveAssistantContentPresentation`) hides the *entire*
+  message body when a reply is long, mentions its own tool names, and carries ≥5 tool
+  events — and `findPublicContentBoundary` only rescues a body whose heading contains
+  `portfolio|report|summary|risk|hedg|snapshot|recommendation`, which a booking reply's
+  headings do not. A real booking confirmation was therefore invisible. The fix is
+  structural, not lexical: `book_trade` returns a `booking` payload on **every** exit
+  path → `_capture_booking_result_from_tool_end` (reads the tool **result** at
+  `on_tool_end`, unlike the term-form/reply-option captures which read **args**) →
+  `collector.booking_result` → `meta.booking_result` → `BookingResultCard`. Capture is
+  keyed by tool **name** (`BOOKING_RESULT_TOOLS`) so an unrelated tool can't spoof a
+  card, and the record survives `reset_user_facing_output_for_retry` because — like a
+  tool event — it reports a write that really happened. **Adding a tool to
+  `BOOKING_RESULT_TOOLS` requires that tool to return the same `booking` shape.**
+- **Result-message scanning cannot see anything a PERSONA did.** The obvious
+  implementation — scan `result["messages"]` like `_term_form_from_result` — is
+  structurally wrong here: the orchestrator delegates via `task()`, and the persona runs
+  in its **own LangGraph checkpoint namespace**. Measured on a live gated booking:
+  `book_extracted_trade` appeared in **28 subagent checkpoints and 0 orchestrator ones**.
+  `propose_term_form` escapes this only because the *orchestrator itself* calls it. The
+  `wrap_tool_call` seam is the only place that sees a subagent's tool calls — the same
+  reason `AuditTrailMiddleware` lives there and is registered in all three stacks.
+  `BookingResultMiddleware` (`deep_agent/booking_capture.py`) sits beside it.
+- **A tool result body is NOT plain JSON at the `wrap_tool_call` seam.**
+  `GroundTruthArtifactMiddleware` runs *inside* it and appends
+  `<artifact_ref>{...}</artifact_ref>` to the content, so `json.loads(content)` raises
+  `Extra data` and silently drops the payload — while a repr still shows the JSON
+  perfectly, which makes it look like the middleware never ran. Use
+  `json.JSONDecoder().raw_decode()` (first value, ignore the trailing evidence ref), and
+  also handle content-block **lists** and `Command` results — the seam returns all three
+  shapes. Note `AuditTrailMiddleware` is immune because it only *stores* `str(content)`.
+- **Do not key run-scoped state on `configurable["thread_id"]`.** `graph_run_config`
+  documents it as the *checkpointer* key ("sometimes a composite string, NOT necessarily an
+  AgentThread id"), and inside a persona it is neither. The stable turn identity is
+  `AUDIT_CONTEXT_KEY['thread_id']`, stamped at every entry point and readable from inside
+  subagents. `current_run_keys()` records under both.
+- **The agent does not always route through `book_extracted_trade`.** Live runs booked the
+  same confirmation via plain `book_position` roughly half the time, which the booking card
+  does not cover (that tool returns no `booking` payload). Worth closing before treating
+  card coverage as complete.
 - The frontend vitest suite is **flaky under load** (slow route tests hit the 5s
   timeout; `main` alone varies 12→18 failures run to run). Compare failing-file sets
   against a same-machine `main` run before blaming a branch.

@@ -15,8 +15,8 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from ...models import (
-    ConfirmationBatch, ConfirmationDocument, ExtractedTrade, Position, TaskRun,
-    TaskStatus,
+    ConfirmationBatch, ConfirmationDocument, ExtractedTrade, Portfolio, Position,
+    TaskRun, TaskStatus,
 )
 from ..domains.booking import (
     BookingRequest, ProductBookingSpec, book_position, prepare_booking_product_spec,
@@ -306,6 +306,65 @@ def confirmation_source_trade_id(trade: ExtractedTrade, document: ConfirmationDo
     return f"conf:{document.sha256[:12]}:{trade.seq}"
 
 
+#: Terms worth showing on a booking card. Nested payloads (synthesized
+#: observation schedules, coupon ladders) are dropped rather than truncated —
+#: a card that half-renders a schedule is worse than one that omits it, and the
+#: full termsheet is always on the position.
+_CARD_TERM_LIMIT = 12
+
+
+def _card_terms(terms: dict | None) -> dict:
+    scalars = {
+        key: value
+        for key, value in (terms or {}).items()
+        if isinstance(value, (str, int, float, bool)) and value is not None
+    }
+    return dict(list(scalars.items())[:_CARD_TERM_LIMIT])
+
+
+def _booking_summary(
+    trade: ExtractedTrade,
+    *,
+    status: str,
+    position_id: int | None = None,
+    portfolio_id: int | None = None,
+    portfolio_name: str | None = None,
+    terms: dict | None = None,
+    error: str | None = None,
+    detail: object = None,
+) -> dict:
+    """Desk-facing record of a booking attempt.
+
+    Returned on BOTH the success and refusal paths: a refusal is a result the
+    user needs to see, and without it a failed agent booking is invisible.
+    Purely descriptive — it never re-derives anything, it reports what the
+    write actually did.
+    """
+    document = trade.document
+    summary: dict = {
+        "status": status,
+        "position_id": position_id,
+        "trade_id": trade.id,
+        "family": trade.family,
+        "underlying": trade.underlying,
+        "quantity": trade.quantity,
+        "entry_price": trade.entry_price,
+        "currency": trade.currency,
+        "counterparty": trade.counterparty,
+        "trade_date": trade.trade_date,
+        "external_trade_id": trade.external_trade_id,
+        "source_document": document.filename if document is not None else None,
+        "terms": _card_terms(terms if terms is not None else trade.terms),
+    }
+    if portfolio_id is not None:
+        summary["portfolio"] = {"id": portfolio_id, "name": portfolio_name}
+    if error:
+        summary["error"] = error
+    if detail:
+        summary["detail"] = detail
+    return summary
+
+
 def book_trade(
     session: Session, trade_id: int, *, portfolio_id: int | None = None,
     actor: str = "desk_user",
@@ -315,17 +374,28 @@ def book_trade(
         return {"ok": False, "error": "not_found"}
     if trade.status == "booked":
         return {"ok": False, "error": "already_booked",
-                "position_id": trade.booked_position_id}
+                "position_id": trade.booked_position_id,
+                "booking": _booking_summary(
+                    trade, status="already_booked",
+                    position_id=trade.booked_position_id,
+                    error="already_booked")}
     if trade.status != "extracted":
-        return {"ok": False, "error": f"trade is {trade.status}"}
+        return {"ok": False, "error": f"trade is {trade.status}",
+                "booking": _booking_summary(
+                    trade, status="failed", error=f"trade is {trade.status}")}
     trade.validation_status, trade.validation_errors = validate_trade_terms(session, trade)
     if trade.validation_status != "valid":
         return {"ok": False, "error": "validation_failed",
-                "detail": trade.validation_errors}
+                "detail": trade.validation_errors,
+                "booking": _booking_summary(
+                    trade, status="failed", error="validation_failed",
+                    detail=trade.validation_errors)}
     document = trade.document
     target_portfolio = portfolio_id or document.batch.default_portfolio_id
     if not target_portfolio:
-        return {"ok": False, "error": "no_target_portfolio"}
+        return {"ok": False, "error": "no_target_portfolio",
+                "booking": _booking_summary(
+                    trade, status="failed", error="no_target_portfolio")}
     source_trade_id = confirmation_source_trade_id(trade, document)
     existing = (
         session.query(Position)
@@ -333,8 +403,14 @@ def book_trade(
                 Position.source_trade_id == source_trade_id)
         .one_or_none()
     )
+    portfolio = session.get(Portfolio, target_portfolio)
+    portfolio_name = portfolio.name if portfolio is not None else None
     if existing is not None:
-        return {"ok": False, "error": "already_booked", "position_id": existing.id}
+        return {"ok": False, "error": "already_booked", "position_id": existing.id,
+                "booking": _booking_summary(
+                    trade, status="already_booked", position_id=existing.id,
+                    portfolio_id=target_portfolio, portfolio_name=portfolio_name,
+                    error="already_booked")}
     # Same synthesis validate_trade_terms just ran — booking must persist the CANONICAL
     # termsheet, not the raw schema-vocabulary extraction, or the two would disagree
     # about what "valid" meant.
@@ -343,7 +419,11 @@ def book_trade(
         underlying=trade.underlying, currency=trade.currency,
     )
     if booking_terms is None:
-        return {"ok": False, "error": "validation_failed", "detail": problems}
+        return {"ok": False, "error": "validation_failed", "detail": problems,
+                "booking": _booking_summary(
+                    trade, status="failed", error="validation_failed",
+                    detail=problems, portfolio_id=target_portfolio,
+                    portfolio_name=portfolio_name)}
     spec = ProductBookingSpec(
         asset_class="equity",
         product_family=product_family_for_quantark_class(trade.family),
@@ -378,11 +458,21 @@ def book_trade(
             },
         ))
     except ValueError as exc:
-        return {"ok": False, "error": "booking_failed", "detail": str(exc)}
+        return {"ok": False, "error": "booking_failed", "detail": str(exc),
+                "booking": _booking_summary(
+                    trade, status="failed", error="booking_failed",
+                    detail=str(exc), terms=booking_terms,
+                    portfolio_id=target_portfolio, portfolio_name=portfolio_name)}
     trade.status = "booked"
     trade.booked_position_id = position.id
     session.flush()
-    return {"ok": True, "position_id": position.id}
+    return {
+        "ok": True,
+        "position_id": position.id,
+        "booking": _booking_summary(
+            trade, status="booked", position_id=position.id, terms=booking_terms,
+            portfolio_id=target_portfolio, portfolio_name=portfolio_name),
+    }
 
 
 def reject_trade(session: Session, trade_id: int, *, reason: str | None = None) -> ExtractedTrade:

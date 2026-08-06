@@ -117,6 +117,7 @@ def build_async_agent(
     from deepagents import create_deep_agent
 
     from ..deep_agent.audit_trail_middleware import AuditTrailMiddleware
+    from ..deep_agent.booking_capture import BookingResultMiddleware
     from ..deep_agent.ground_truth import GroundTruthArtifactMiddleware
 
     backend = _build_backend()
@@ -124,6 +125,7 @@ def build_async_agent(
     # background async agents run write tools too.
     middleware: list[Any] = [
         AuditTrailMiddleware(tools=tools),
+        BookingResultMiddleware(),
         GroundTruthArtifactMiddleware(tools=tools),
     ]
     if yolo_mode:
