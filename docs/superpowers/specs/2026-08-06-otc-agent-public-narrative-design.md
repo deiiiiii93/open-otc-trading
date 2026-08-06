@@ -99,7 +99,13 @@ derived surfaces:
 
 ### 5.1 Deliverable
 
-Ten one-page per-model scorecards. Board-shaped reports do not work here: nobody at
+Ten one-page per-model scorecards, **generated from the live DB rather than hand-written**
+(`arena_run` / `arena_match` in `data/open_otc.sqlite3`, board run #94, banked per-model
+runs #85–#93). A generator is the right call three times over: it is reproducible, it
+regenerates for every future run in Phase 3, and a rigour-marketing campaign whose own
+numbers were retyped by hand would be self-refuting.
+
+Board-shaped reports do not work here: nobody at
 DeepSeek wants to read seventeen competitors' results to find their own. Each cut is
 roughly 30 minutes of work and multiplies the response rate.
 
@@ -147,20 +153,36 @@ reach.
 | 3 | Meituan (LongCat) | LongCat 2.0 — OVR 83 (6th) | Top objective score of the tier (95.7); `protocol:anthropic` case |
 | 4 | StepFun | Step 3.7 Flash — OVR 81 (8th) | — |
 
-**Tier B — anomalous or low results. Send second, with the harness question carrying the
-weight.** The framing here is *not* "your model did badly". It is: **"your model scored
-anomalously low on one axis and I suspect my harness rather than your model — can you
-help me check?"** That is a genuine question, it is the most useful thing these labs could
-receive, and it is the most likely of all ten to get a technical reply.
+**Tier B1 — the interop finding. This is the highest-value message in the batch.**
+
+Four models — **GLM 5.2, Qwen 3.7 Max, LongCat 2.0 and MiniMax M3** — required pinning to
+`protocol: anthropic` to be evaluated at all. The documented symptom, from the Run #94
+field notes: through ZenMux's **OpenAI-compatible** gateway these models emit tool calls
+with **empty-string ids**, so every persona delegation failed before starting. GLM 5.2's
+first rows were scored across exactly this broken integration and had to be re-run after
+the pin.
+
+This is not a "did I serve you right?" question — it is a **concrete, reproducible interop
+bug report** about the lab's own OpenAI-compatible surface, with symptom, blast radius and
+remedy. It is actionable, it is not about ranking, and it is the message most likely to
+reach an engineer. Qwen appears in Tier A on merit *and* carries this note.
+
+**Tier B2 — anomalous results, harness suspected. Send last.** Framing: **"your model
+scored anomalously low on one axis and I suspect my harness rather than your model — can
+you help me check?"**
 
 | # | Lab | Model — Run #94 | The anomaly that *is* the hook |
 |---|---|---|---|
-| 5 | Tencent (Hunyuan) | Hunyuan 3 — OVR 71 (12th) | SYN 40 against ADH 99 — follows process, fails to deliver |
-| 6 | Moonshot (Kimi) | Kimi 2.7 — OVR 68 (13th) | SYN 40, CON 33 |
-| 7 | Xiaomi (MiMo) | MiMo 2.5 — OVR 68 (14th); 2.5 Pro — OVR 65 (16th) | Pro ranks *below* non-Pro — worth their attention |
-| 8 | ByteDance (Doubao) | Doubao Seed 2.1 Pro — OVR 66 (15th) | CON 0 with objective 82.8 — high capability, zero reproducibility |
-| 9 | Zhipu (GLM) | GLM 5.2 — OVR 64 (17th) | **SYN 0 with CON 99** — perfectly consistent at producing no deliverable. Almost certainly a harness or serving issue, not capability |
-| 10 | MiniMax | M3 — OVR 42 (18th) | Only model with ADH below 92 (78); documented `protocol:anthropic` case. The serving question is most literal here |
+| 5 | Zhipu (GLM) | GLM 5.2 — OVR 64 (17th) | Tier B1 interop bug. Note the board row is the **clean re-run after the pin**, so SYN 0/5 is a real result and must not be reported as a suspected harness fault |
+| 6 | MiniMax | M3 — OVR 42 (18th) | Tier B1. Also the only model with ADH below 92 (78) |
+| 7 | Tencent (Hunyuan) | Hunyuan 3 — OVR 71 (12th) | SYN 40 against ADH 99 — follows process, fails to deliver |
+| 8 | Moonshot (Kimi) | Kimi 2.7 — OVR 68 (13th) | SYN 40, CON 33 |
+| 9 | Xiaomi (MiMo) | MiMo 2.5 — OVR 68 (14th); 2.5 Pro — OVR 65 (16th) | Pro ranks *below* non-Pro — worth their attention |
+| 10 | ByteDance (Doubao) | Doubao Seed 2.1 Pro — OVR 66 (15th) | CON 0 with objective 82.8 — high capability, zero reproducibility |
+
+**Accuracy rule for every Tier B message:** where a low score has already been diagnosed
+and fixed, say so. Reporting a known-and-fixed harness fault as an open question is
+dishonest and destroys the credibility the whole plan rests on.
 
 **Western labs are deliberately excluded from Phase 1.** Anthropic, OpenAI, Google and
 xAI do not convert from unsolicited contact. For them the order inverts: the Phase 2
