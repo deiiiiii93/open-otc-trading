@@ -41,20 +41,3 @@ def test_recommend_hedge_no_data_no_crash():
     assert out["target_delta_trade"] == 0.0
 
 
-def test_write_html_tolerates_null_totals(tmp_path):
-    from app.services.reports import _write_html
-
-    path = tmp_path / "r.html"
-    payload = {"risk": {"totals": None, "positions": []}}
-    _write_html(path, "Mixed", payload)  # must not raise
-    # totals=None now renders the mixed-currency note instead of empty top cards.
-    assert path.exists() and "Mixed currency" in path.read_text()
-
-
-def test_write_xlsx_tolerates_null_totals(tmp_path):
-    from app.services.reports import _write_xlsx
-
-    path = tmp_path / "r.xlsx"
-    payload = {"risk": {"totals": None, "positions": []}}
-    _write_xlsx(path, "Mixed", payload)  # must not raise
-    assert path.exists()

@@ -1853,14 +1853,17 @@ def test_portfolio_risk_and_report(tmp_path: Path):
     completed_report = client.get(f"/api/reports/jobs/{queued_report['id']}")
     assert completed_report.status_code == 200
     assert completed_report.json()["request_payload"]["pricing_parameter_profile_id"] is None
-    assert completed_report.json()["result_payload"]["pricing_parameter_profile"] is None
-    paths = completed_report.json()["artifact_paths"]
-    assert Path(paths["html"]).name.startswith("Demo_Report_")
-    assert Path(paths["html"]).name.endswith(".html")
-    assert Path(paths["excel"]).name.startswith("Demo_Report_")
-    assert Path(paths["excel"]).name.endswith(".xlsx")
-    assert Path(paths["html"]).exists()
-    assert Path(paths["excel"]).exists()
+    # The queued path now produces a ReportDocument from the seeded
+    # portfolio-snapshot template instead of a hardcoded HTML/XLSX pair.
+    body = completed_report.json()
+    assert body["template_slug"] == "portfolio-snapshot"
+    payload = body["result_payload"]
+    assert set(payload) >= {"template", "params", "sections", "provenance"}
+    assert payload["template"]["slug"] == "portfolio-snapshot"
+    assert payload["sections"]
+    # Artifacts are no longer written at generation time; export re-renders from
+    # the document, so a file can never diverge from what the screen shows.
+    assert body["artifact_paths"] == {}
 
 
 def test_startup_recovery_marks_stale_tasks_failed(tmp_path: Path):

@@ -705,6 +705,16 @@ def create_app(
         database.configure_database(settings)
     active_settings = settings or get_settings()
     database.init_db()
+    # Shipped report templates. Migration 0054 seeds them for a migrated
+    # database; this covers one created by the ORM bootstrap, where
+    # `create_report` would otherwise have no portfolio-snapshot to route to.
+    # Best-effort by design: optional product data must never prevent the app
+    # from starting. A failure here surfaces later as an honest
+    # "template not found", not as a dead server.
+    try:
+        database.ensure_seeded_report_templates()
+    except Exception:  # noqa: BLE001
+        logger.warning("could not seed report templates at startup", exc_info=True)
     configure_task_executor(active_settings)
     with database.SessionLocal() as startup_session:
         try:

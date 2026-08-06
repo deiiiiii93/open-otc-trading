@@ -24,7 +24,11 @@ from app import database
 from app.models import ReportJob
 from app.schemas import ReportJobCreate
 from app.services.audit import record_audit
-from app.services.reports import execute_report_job_task, queue_report_job
+from app.services.reports import (
+    DEFAULT_TEMPLATE_SLUG,
+    execute_report_job_task,
+    queue_report_job,
+)
 from app.services.task_runner import submit_async_task
 
 
@@ -96,6 +100,7 @@ def create_report(
     report_type: ReportType = "portfolio",
     title: str = "Agent Generated Desk Report",
     pricing_profile_id: int | None = None,
+    template_slug: str = DEFAULT_TEMPLATE_SLUG,
     session: Session | None = None,
 ) -> dict[str, Any]:
     """Queue a persisted ReportJob and dispatch its async execution.
@@ -116,6 +121,9 @@ def create_report(
         )
         settings = database.settings
         job, task = queue_report_job(sess, request)
+        # Stamp the template BEFORE the commit so the async worker's
+        # _complete_report_job reads it rather than falling back to the default.
+        job.template_slug = template_slug
         record_audit(
             sess,
             event_type="report.queued",
@@ -138,6 +146,7 @@ def create_report(
             "report_job_id": job.id,
             "task_id": task.id,
             "pricing_parameter_profile_id": pricing_profile_id,
+            "template_slug": template_slug,
             "status": task.status,
             "message": "Report queued. Use the Tasks page or /api/tasks/{task_id} to monitor completion.",
         }

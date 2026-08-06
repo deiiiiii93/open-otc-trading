@@ -113,6 +113,42 @@ def test_exposure_diff_is_unavailable_without_a_comparison_run(monkeypatch):
     assert result.status == "unavailable"
 
 
+def test_null_totals_are_reported_empty_rather_than_crashing(monkeypatch):
+    """Carried over from the deleted writers' 'tolerates null totals' tests.
+
+    A mixed-currency run sets `totals` to None by design (there is no single
+    currency to total in). The block must say so, not raise and not invent a
+    zero.
+    """
+    from app.services.reporting.blocks import risk as risk_blocks
+
+    null_totals = _metrics()
+    null_totals["totals"] = None
+    monkeypatch.setattr(risk_blocks, "_load_metrics", lambda ctx: (null_totals, {}))
+
+    result = resolve_block("risk.totals", BlockContext(portfolio_id=2))
+    assert result.status == "empty"
+    assert result.reason
+
+
+def test_a_mixed_currency_book_is_labelled_mixed_not_silently_first(monkeypatch):
+    """Carried over from the deleted _write_html by-currency tests.
+
+    The legacy writer had a dedicated mixed-currency path; when it was retired
+    the requirement survived, so it is asserted against the block that owns it
+    now. Reporting a two-currency book under a single currency code would state
+    a total that is not denominated in what it claims.
+    """
+    from app.services.reporting.blocks import risk as risk_blocks
+
+    mixed = _metrics()
+    mixed["currencies"] = ["CNY", "USD"]
+    monkeypatch.setattr(risk_blocks, "_load_metrics", lambda ctx: (mixed, {}))
+
+    result = resolve_block("risk.totals", BlockContext(portfolio_id=2))
+    assert result.data["currency"] == "mixed"
+
+
 def test_exposure_diff_reports_changes_when_two_runs_exist(monkeypatch):
     from app.services.reporting.blocks import risk as risk_blocks
 

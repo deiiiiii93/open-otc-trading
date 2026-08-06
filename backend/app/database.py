@@ -84,6 +84,9 @@ def configure_database(new_settings: Settings) -> None:
     SessionLocal = sessionmaker(
         bind=engine, autoflush=False, autocommit=False, expire_on_commit=False
     )
+    # A different database needs its seeded templates checked again, and a test
+    # may reuse a URL it previously emptied.
+    _SEEDED_TEMPLATE_ENGINES.clear()
 
 
 def init_db() -> None:
@@ -101,6 +104,94 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_incremental_schema(engine)
     _backfill_missing_position_products(engine)
+
+
+# Engine URLs whose seeded report templates have already been checked this
+# process. Cleared by configure_database when the engine is rebuilt.
+_SEEDED_TEMPLATE_ENGINES: set[str] = set()
+
+
+def ensure_seeded_report_templates(active_engine: Engine | None = None) -> None:
+    """Install the shipped report templates on an ORM-bootstrapped database.
+
+    Migration 0054 seeds these, but a database created by ``create_all`` never
+    runs it — and a desk with no `portfolio-snapshot` row cannot generate a
+    report at all, because `create_report` routes through that template. Both
+    creation paths must therefore install the same product data.
+
+    Called once from application startup, deliberately NOT from ``init_db``:
+    every block producer's ``_session_scope`` calls ``init_db`` on the hot path,
+    including from async worker threads, and doing database work there risks
+    both wasted queries and lock contention with a worker's open transaction.
+
+    Idempotent: existing slugs are left alone, so a user's edits to a seeded
+    template survive every restart.
+    """
+    active_engine = active_engine if active_engine is not None else engine
+    from datetime import datetime, timezone
+
+    from sqlalchemy import text
+
+    # Memoized per engine URL: init_db() is called by every block producer's
+    # _session_scope, so this must not touch the database on the hot path. It
+    # also must not hold a write lock while a worker session is mid-transaction.
+    key = str(active_engine.url)
+    if key in _SEEDED_TEMPLATE_ENGINES:
+        return
+
+    inspector = inspect(active_engine)
+    if "report_templates" not in set(inspector.get_table_names()):
+        return
+
+    # Pure pathlib + PyYAML; the seeds package imports nothing from `app`, so
+    # this stays free of the database -> services import cycle.
+    from .services.reporting.seeds import load_seed_specs
+
+    try:
+        import yaml
+    except ImportError:  # pragma: no cover - yaml is a hard dependency
+        return
+
+    seeds = load_seed_specs()
+
+    # READ first, and only open a write transaction when something is actually
+    # missing. init_db() is called on every block resolution (each producer's
+    # _session_scope calls it), so an unconditional engine.begin() here takes a
+    # SQLite write lock on every block and deadlocks against a worker that
+    # already holds a session — the queued report path hung exactly this way.
+    with active_engine.connect() as connection:
+        existing = {
+            row[0]
+            for row in connection.execute(text("SELECT slug FROM report_templates"))
+        }
+    missing = {slug: text_ for slug, text_ in seeds.items() if slug not in existing}
+    if not missing:
+        _SEEDED_TEMPLATE_ENGINES.add(key)
+        return
+
+    _SEEDED_TEMPLATE_ENGINES.add(key)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    with active_engine.begin() as connection:
+        for slug, spec_text in missing.items():
+            meta = (yaml.safe_load(spec_text) or {}).get("meta") or {}
+            connection.execute(
+                text(
+                    "INSERT INTO report_templates "
+                    "(slug, title, persona, description, spec, source, version,"
+                    " created_at, updated_at) "
+                    "VALUES (:slug, :title, :persona, :description, :spec,"
+                    " 'seed', 1, :created_at, :updated_at)"
+                ),
+                {
+                    "slug": slug,
+                    "title": meta.get("title") or slug,
+                    "persona": meta.get("persona") or "risk_manager",
+                    "description": (meta.get("description") or "").strip(),
+                    "spec": spec_text,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
 
 
 def _backfill_missing_position_products(active_engine: Engine) -> None:
