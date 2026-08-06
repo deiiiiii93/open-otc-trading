@@ -35,12 +35,19 @@ class TemplateNotFound(Exception):
 
 @contextmanager
 def _session_scope(session: Session | None) -> Iterator[Session]:
+    """Yield a session, committing only the one we own.
+
+    ``generate_report`` persists a ReportJob, so a self-owned session must
+    commit rather than flush-and-discard. See the same note in
+    ``templates.py``.
+    """
     if session is not None:
         yield session
         return
     database.init_db()
     with database.SessionLocal() as sess:
         yield sess
+        sess.commit()
 
 
 def _resolve_comparison(ctx: BlockContext, session: Session) -> int | None:

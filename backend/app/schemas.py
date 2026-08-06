@@ -1787,9 +1787,38 @@ class ReportJobOut(BaseModel):
     result_payload: dict[str, Any]
     artifact_paths: dict[str, Any]
     task_id: int | None = None
+    # Null for legacy jobs; set for every templated report. The frontend
+    # discriminates the two report shapes on exactly this field.
+    template_slug: str | None = None
+    compare_to_run_id: int | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ReportTemplateOut(BaseModel):
+    slug: str
+    title: str
+    persona: str
+    description: str = ""
+    source: str
+    version: int
+    spec: str | None = None
+
+
+class ReportTemplateWriteIn(BaseModel):
+    spec_yaml: str
+
+
+class ReportTemplateValidateOut(BaseModel):
+    ok: bool
+    errors: list[str]
+
+
+class ReportGenerateIn(BaseModel):
+    template_slug: str
+    portfolio_id: int
+    compare_to: int | None = None
 
 
 class TaskRunOut(BaseModel):

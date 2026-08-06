@@ -29,12 +29,25 @@ class TemplateProtectedError(Exception):
 
 @contextmanager
 def _session_scope(session: Session | None) -> Iterator[Session]:
+    """Yield a session, committing only the one we own.
+
+    A caller-supplied session belongs to the caller, who decides when to commit
+    (tests rely on that to assert a rejected save left the row unchanged). A
+    session we open ourselves must COMMIT, not merely flush: the read-only
+    variant of this helper in ``domains/risk.py`` does not, and copying it
+    verbatim silently discarded every write made through the REST router —
+    ``PUT`` answered 200 while the row never persisted.
+
+    ``SessionLocal`` is configured ``expire_on_commit=False``, so a row returned
+    after this commit is still readable by the caller.
+    """
     if session is not None:
         yield session
         return
     database.init_db()
     with database.SessionLocal() as sess:
         yield sess
+        sess.commit()
 
 
 def _checked_spec(slug: str, spec_yaml: str) -> TemplateSpec:

@@ -265,6 +265,7 @@ from .routers.workflows import build_desk_workflows_router
 from .routers.agent_channels import build_agent_channels_router
 from .routers.limits import build_limits_router
 from .routers.confirmations import build_confirmations_router
+from .routers.reports import build_reports_router
 from .services.deep_agent.goal_mode import (
     GoalRunService,
     goal_grader_tool_allowlist,
@@ -516,6 +517,8 @@ def _report_job_out(job: ReportJob) -> ReportJobOut:
         result_payload=job.result_payload or {},
         artifact_paths=job.artifact_paths or {},
         task_id=_latest_task_id(list(job.task_runs or [])),
+        template_slug=job.template_slug,
+        compare_to_run_id=job.compare_to_run_id,
         created_at=job.created_at,
     )
 
@@ -4187,6 +4190,7 @@ def create_app(
     app.include_router(build_desk_workflows_router())
     app.include_router(build_limits_router(get_db=get_db))
     app.include_router(build_confirmations_router(get_db=get_db))
+    app.include_router(build_reports_router())
     app.include_router(
         build_agent_channels_router(active_agent_service, settings=active_settings)
     )
