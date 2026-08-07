@@ -34,8 +34,8 @@ Anything not listed here is repo default; the published run report carries the f
 
 ### Evidence
 
-- `deepseek-v4-flash` — per-trial trace **not banked** for this board row; the score derives from the stored breakdown.
-- `deepseek-v4-pro` — per-trial trace **not banked** for this board row; the score derives from the stored breakdown.
+- `deepseek-v4-flash` — full trace: `artifacts/arena/84/high-board-portfolio-review-day/deepseek-v4-flash/transcript.json`
+- `deepseek-v4-pro` — full trace: `artifacts/arena/84/high-board-portfolio-review-day/deepseek-v4-pro/transcript.json`
 
 ### My question
 

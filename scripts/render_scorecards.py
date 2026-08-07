@@ -24,6 +24,7 @@ sys.path.insert(0, str(REPO / "backend"))
 from app import database  # noqa: E402
 from app.services.arena import store  # noqa: E402
 from app.services.arena.scorecard import (  # noqa: E402
+    banked_run_ids,
     failed_checks,
     latest_transcript_paths,
     load_targets,
@@ -33,7 +34,6 @@ from app.services.arena.scorecard import (  # noqa: E402
 
 TARGETS = REPO / "docs/arena/scorecards/targets.yaml"
 OUT_DIR = REPO / "docs/arena/scorecards"
-BANKED_FIRST, BANKED_LAST = 85, 93
 
 
 def _slug(lab: str) -> str:
@@ -60,14 +60,25 @@ def main() -> int:
             (args.run,),
         )
     }
+    # Transcript-bearing runs come from the board's own merged_from provenance,
+    # not a hardcoded range — see scorecard.banked_run_ids.
+    configs = [
+        json.loads(c) if c else {}
+        for (c,) in conn.execute(
+            "select config from arena_match where run_id=?", (args.run,)
+        )
+    ]
+    runs = banked_run_ids(configs, args.run)
+    placeholders = ",".join("?" for _ in runs)
     banked = list(
         conn.execute(
             "select run_id, model_id, transcript_path from arena_match "
-            "where run_id between ? and ?",
-            (BANKED_FIRST, BANKED_LAST),
+            f"where run_id in ({placeholders})",
+            runs,
         )
     )
     paths = latest_transcript_paths(banked)
+    print(f"transcript source runs: {runs}", file=sys.stderr)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     written = 0

@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from app.services.arena.scorecard import (
+    banked_run_ids,
     FailedCheck,
     Target,
     failed_checks,
@@ -139,6 +140,26 @@ def test_resolve_transcript_returns_path_when_file_exists(tmp_path):
     target.parent.mkdir(parents=True)
     target.write_text("{}", encoding="utf-8")
     assert resolve_transcript({"m": rel}, "m", tmp_path) == rel
+
+
+def test_banked_run_ids_come_from_merged_from_not_a_hardcoded_range():
+    """Regression: a 85-93 guess lost runs 81 and 84, so doubao and both
+    deepseeks rendered a false "trace not banked" while their files existed."""
+    configs = [{"merged_from": [81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 93]}]
+    runs = banked_run_ids(configs, 94)
+    assert 81 in runs and 84 in runs
+    assert runs == [81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 93, 94]
+
+
+def test_banked_run_ids_falls_back_to_the_run_itself():
+    """An unfolded run has no merged_from; it is its own transcript source."""
+    assert banked_run_ids([{}], 94) == [94]
+    assert banked_run_ids([], 94) == [94]
+
+
+def test_banked_run_ids_unions_across_matches():
+    configs = [{"merged_from": [81]}, {"merged_from": [84]}]
+    assert banked_run_ids(configs, 94) == [81, 84, 94]
 
 
 def test_latest_transcript_paths_prefers_the_highest_run_id():

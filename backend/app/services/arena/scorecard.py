@@ -63,6 +63,23 @@ def load_targets(path: Path) -> list[Target]:
     return targets
 
 
+def banked_run_ids(board_configs: list[dict], run_id: int) -> list[int]:
+    """Which runs hold the per-model transcripts behind a folded board.
+
+    Read from the board's OWN `config.merged_from` provenance, never from a
+    hardcoded range: a report's prose range goes stale the moment a model is
+    backfilled onto an existing board. Run #94 merged from [81..90, 93], so a
+    85-93 guess silently loses runs 81 and 84 — and the card then prints a
+    confident "not banked" for models whose traces exist.
+    """
+    runs: set[int] = {run_id}
+    for cfg in board_configs:
+        for value in (cfg or {}).get("merged_from") or []:
+            if isinstance(value, int):
+                runs.add(value)
+    return sorted(runs)
+
+
 def latest_transcript_paths(
     rows: list[tuple[int, str, str | None]],
 ) -> dict[str, str]:

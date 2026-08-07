@@ -36,7 +36,7 @@ Anything not listed here is repo default; the published run report carries the f
 
 ### Evidence
 
-- `doubao-seed-2-1-pro` — per-trial trace **not banked** for this board row; the score derives from the stored breakdown.
+- `doubao-seed-2-1-pro` — full trace: `artifacts/arena/81/high-board-portfolio-review-day/doubao-seed-2-1-pro/transcript.json`
 
 ### My question
 
