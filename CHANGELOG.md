@@ -99,6 +99,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   indicator and the polling can't disagree about what "still parsing" means.
 
 ### Fixed
+- **`scenario.latest_grid` would have reported a populated stress run as `empty`.**
+  The producer read `results["rows"]`/`results["cells"]`, but the scenario runner
+  persists `shape_results(...)`, whose grid lives under **`"scenarios"`** — so the
+  moment a real stress run landed, the block would have answered *"the scenario run
+  recorded no result rows"* with a full grid sitting in the row. That is a false
+  `empty`: `unavailable` says nobody checked, `empty` says **we checked and the book
+  is clean**, and the report would have claimed a stress test it never read. Now reads
+  `"scenarios"`, projects each entry to the scalar columns a rows renderer can display
+  (nested `greeks`/`position_results` stringify to `[object Object]`), and returns
+  **`unavailable`** — not `empty` — for a payload it cannot recognise, so a failed key
+  lookup can no longer fall through to the reassuring branch. The gap survived review
+  because the only test covered the no-runs branch; the populated path was never
+  exercised, and the fixture invented `{"rows": ...}` rather than harvesting the real
+  producer's keys.
+- **The grounding guard flagged "5 basis points" and "3 month tenor" as invented.**
+  The shared arena tokenizer (`_scan_numeric_tokens`) applies its `k`/`m`/`mm`/`bn`/`b`
+  magnitude suffix with **no word boundary after it**, so it read those as `5e9` and
+  `3e6` — and it emits only the scaled reading, leaving a correctly-quoted `5` no way
+  to ground. The tokenizer itself is deliberately **unchanged**: `_quote_value_report`
+  matches on *any* reading, so widening it would make arena grading strictly more
+  lenient across every stored board. The correction lives in `grounding.py` and
+  **replaces** the misparse rather than adding an alternative reading — there is no
+  suffix, so the scaled value is simply wrong. Decided on the whole trailing word, since
+  a per-character rule backtracks `1.2bn` to a `b` suffix followed by the "letter" `n`;
+  genuine magnitudes (`1.2bn`, `5 million`) are untouched.
 - **AUTO mode booked confirmation trades with no human in the loop.** `book_extracted_trade`
   was classified `"write"` in `_RISK_LEVEL_BY_TOOL`, and `interrupt_on_config(yolo_mode=True)`
   strips every `"write"`-level tool from the interrupt map — so in AUTO mode the tool booked a

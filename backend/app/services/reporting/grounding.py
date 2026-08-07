@@ -16,7 +16,10 @@ import math
 import re
 from typing import Any
 
-from app.golden_workflows.assertions import _scan_numeric_tokens
+from app.golden_workflows.assertions import (
+    _MINUS_TRANSLATION,
+    _scan_numeric_tokens,
+)
 
 DEFAULT_REL_TOL = 0.01
 
@@ -36,6 +39,27 @@ _INT_RUN = re.compile(r"\d+")
 # model had copied correctly). Text quoted verbatim from the data is grounded by
 # construction, so it is blanked out before scanning rather than tokenized.
 _MIN_QUOTABLE_LEN = 8
+
+# The shared arena tokenizer treats a trailing k/m/mm/bn/b as a magnitude suffix
+# WITHOUT requiring a word boundary after it, so it reads "5 basis points" as
+# 5e9 and "3 month tenor" as 3e6 — and it emits only the multiplied reading, so
+# a correctly-quoted 5 has no way to ground. The shared tokenizer cannot be
+# widened: `_quote_value_report` matches on ANY reading, so an extra reading
+# would make arena grading strictly more lenient across every stored board.
+# The correction therefore lives here, and REPLACES the reading rather than
+# supplementing it — there is no suffix, so the scaled value is not a second
+# interpretation, it is a misparse. A genuine "1.2bn" (suffix followed by a
+# space) and a spelled-out "5 million" are both left alone.
+# Matched on the WHOLE trailing word, not one character: a per-character rule
+# backtracks "1.2bn" to a "b" suffix followed by the "letter" n and corrupts a
+# genuine magnitude.
+_NUMBER_THEN_WORD = re.compile(r"([+-]?\d[\d,]*(?:\.\d+)?)\s*([a-z]+)", re.I)
+_MAGNITUDE_WORDS = frozenset({
+    "k", "m", "mm", "mn", "bn", "b", "bln",
+    "thousand", "million", "billion",
+})
+# Only these first letters make the shared tokenizer read a suffix at all.
+_SUFFIX_LETTERS = frozenset("kmb")
 
 # Prose rounds: "0.67" for 0.6711, "17,335" for 17334.67. Relative tolerance
 # alone cannot express that — 0.06 written for 0.0634 is 5.4% off and would be
@@ -105,6 +129,24 @@ def _blank_quoted_strings(narrative: str, quotables: list[str]) -> str:
     return out
 
 
+def _misparsed_suffix_readings(text: str) -> dict[int, float]:
+    """offset -> the bare value, for tokens whose "suffix" was the next word.
+
+    Keyed by the offset the shared tokenizer reports (both patterns start at the
+    number), so the correction lands on the same token.
+    """
+    out: dict[int, float] = {}
+    for match in _NUMBER_THEN_WORD.finditer(text.translate(_MINUS_TRANSLATION)):
+        word = match.group(2).lower()
+        if word[0] not in _SUFFIX_LETTERS or word in _MAGNITUDE_WORDS:
+            continue  # not misread, or genuinely a magnitude
+        try:
+            out[match.start()] = float(match.group(1).replace(",", ""))
+        except ValueError:
+            continue
+    return out
+
+
 def _matches(token: float, values: list[float], rel_tol: float) -> bool:
     for value in values:
         tolerance = rel_tol * abs(value) if value != 0 else rel_tol
@@ -139,6 +181,10 @@ def check_grounding(
     by_offset: dict[int, list[float]] = {}
     for offset, token in tokens:
         by_offset.setdefault(offset, []).append(token)
+    # Overwrite, don't extend: a suffix that ran into the next word was never a
+    # suffix, so the scaled reading is wrong rather than alternative.
+    for offset, bare in _misparsed_suffix_readings(scanned).items():
+        by_offset[offset] = [bare]
 
     flags: list[dict[str, Any]] = []
     grounded = 0

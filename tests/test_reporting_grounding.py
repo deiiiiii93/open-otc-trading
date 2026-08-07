@@ -122,3 +122,37 @@ def test_rounding_tolerance_does_not_ground_an_invented_figure():
 def test_values_from_any_block_in_the_section_count_as_grounded():
     blocks = [{"metrics": {"a": 10.0}}, {"metrics": {"b": 20.0}}]
     assert check_grounding("We saw 10 and 20.", blocks)["flags"] == []
+
+
+def test_a_magnitude_letter_belonging_to_the_next_word_is_not_a_suffix():
+    """The shared arena tokenizer has no word boundary after its k/m/bn/b
+    suffix, so it reads "5 basis points" as 5e9 and "3 month" as 3e6 — and it
+    emits ONLY the multiplied reading, leaving a correctly-quoted 5 with no way
+    to ground."""
+    blocks = [{"metrics": {"spread_bp": 5.0, "tenor_months": 3.0}}]
+    result = check_grounding(
+        "A 5 basis point spread over a 3 month tenor.", blocks
+    )
+    assert result["flags"] == []
+
+
+def test_a_real_magnitude_suffix_still_requires_the_scaled_value():
+    """"1.2bn" means 1.2e9. Adding a bare reading there would ground it against
+    a stray 1.2 in the data, which is exactly the fabrication we check for."""
+    blocks = [{"metrics": {"ratio": 1.2}}]
+    result = check_grounding("Notional is 1.2bn across the desk.", blocks)
+    assert [flag["token"] for flag in result["flags"]] == [1.2e9]
+
+
+def test_a_spelled_out_magnitude_word_still_requires_the_scaled_value():
+    """"5 million" is 5e6 — "illion" is a magnitude word, not a stray letter."""
+    blocks = [{"metrics": {"count": 5.0}}]
+    result = check_grounding("The desk holds 5 million of notional.", blocks)
+    assert [flag["token"] for flag in result["flags"]] == [5e6]
+
+
+def test_an_invented_number_before_a_letter_word_is_still_flagged():
+    """Recovering the bare reading must not blind the guard."""
+    blocks = [{"metrics": {"spread_bp": 5.0}}]
+    result = check_grounding("A 42 basis point spread.", blocks)
+    assert [flag["token"] for flag in result["flags"]] == [42.0]

@@ -34,6 +34,15 @@ _NO_SCENARIO = (
     "no scenario test run exists for this portfolio, so no stress grid could "
     "be reported"
 )
+_UNREADABLE_SCENARIO = (
+    "the latest scenario run publishes no recognisable result grid, so its "
+    "stress results could not be read"
+)
+
+# The scenario payload nests greeks/underlying_results/position_results, which a
+# rows renderer stringifies to "[object Object]". Project to the scalars a stress
+# grid is actually read for.
+_SCENARIO_ROW_FIELDS = ("name", "portfolio_value", "pnl", "pnl_pct")
 
 
 @contextmanager
@@ -219,12 +228,31 @@ def scenario_latest_grid(ctx: BlockContext) -> BlockResult:
     if run is None:
         return BlockResult.unavailable(_NO_SCENARIO)
     results = getattr(run, "results", None) or {}
-    rows = results.get("rows") or results.get("cells") or []
-    if not rows:
+    # The runner persists `shape_results(...)`, whose grid key is "scenarios".
+    scenarios = results.get("scenarios")
+    if not isinstance(scenarios, list):
+        # We could not READ this run — not the same as the run finding nothing.
+        # `empty` here would report a clean stress test for a payload we simply
+        # failed to parse, which is the reassuring answer by default.
+        return BlockResult.unavailable(_UNREADABLE_SCENARIO, provenance=provenance)
+    if not scenarios:
         return BlockResult.empty(
-            "the scenario run recorded no result rows", provenance=provenance
+            "the scenario run stressed no positions", provenance=provenance
         )
-    return BlockResult.ok(data={"rows": list(rows)}, provenance=provenance)
+    rows = [
+        {field: entry.get(field) for field in _SCENARIO_ROW_FIELDS}
+        for entry in scenarios
+        if isinstance(entry, dict)
+    ]
+    return BlockResult.ok(
+        data={
+            "rows": rows,
+            "baseline_value": results.get("baseline_value"),
+            "worst_scenario": results.get("worst_scenario"),
+            "best_scenario": results.get("best_scenario"),
+        },
+        provenance=provenance,
+    )
 
 
 __all__ = [

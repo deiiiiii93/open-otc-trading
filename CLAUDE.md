@@ -1072,13 +1072,28 @@ Migrations `0053` (tables) + `0054` (seeds).
   session.
 - **Reports embed their own template spec + sha256.** Editing a template never rewrites
   what an old report claims to have been generated from, and no stored hash can dangle.
-- **`scenario.latest_grid` ships permanently `unavailable`** until a scenario producer
-  populates `scenario_test_runs`. That is honest, not a bug: the risk template shows the
-  desk that its report says nothing about tail risk.
+- **`scenario.latest_grid` reads `unavailable` while `scenario_test_runs` is empty.**
+  That part is honest, not a bug: the risk template shows the desk that its report says
+  nothing about tail risk. But **a producer that returns `empty` from a failed key lookup
+  is indistinguishable, at the type level, from one reporting a genuine absence** — and
+  `.get()` hands you the reassuring branch by default. This block read `results["rows"]`
+  while the runner persists `shape_results(...)` under **`"scenarios"`**, so a populated
+  stress grid would have rendered as "we checked, nothing to report". A producer must
+  return **`unavailable` for a payload it cannot parse** and reserve `empty` for a payload
+  it read successfully that contained nothing. Test the POPULATED path against the real
+  producer's keys — a fixture that invents its own payload shape shares the bug.
 - The grounding guard reuses the arena scorer's `_scan_numeric_tokens`. That tokenizer
   emits TWO readings at one offset for a `%` token (`34.0` and `0.34`), so tokens are
   grouped by offset and grounded if EITHER matches — otherwise "34%" is flagged whenever
-  the data stored `0.34`.
+  the data stored `0.34`. Its `k|m|mm|bn|b` suffix has **no word boundary after it**, so
+  it reads "5 basis points" as `5e9` and "3 month" as `3e6`, and emits only the scaled
+  reading. **Never fix that in `assertions.py`:** `_quote_value_report` matches on ANY
+  reading, so an extra reading makes arena grading strictly more lenient across every
+  stored board. `grounding.py::_misparsed_suffix_readings` corrects it locally and
+  **overwrites** the reading (there is no suffix, so the scaled value is a misparse, not
+  a second interpretation). Decide on the WHOLE trailing word — a per-character rule
+  backtracks `1.2bn` to a `b` suffix followed by the "letter" `n` and corrupts a genuine
+  magnitude.
 - Flags are **non-blocking**: a false positive should degrade the report's confidence
   signal, not destroy the report.
 - **A section with no blocks is a SYNTHESIS section and must be shown the report
