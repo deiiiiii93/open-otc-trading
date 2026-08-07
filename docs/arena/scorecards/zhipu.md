@@ -22,11 +22,24 @@ Through the OpenAI-compatible gateway, this model emitted tool calls whose `id` 
 
 Synthesis scored 0/5 on the pinned re-run, and that is reported here as a real result rather than a harness fault — the earlier broken rows were diagnosed and re-run before this board was merged.
 
-### Specific checks that did not pass
+### What did not pass
 
-- `glm-5-2` — **answer governed_valuation quotes 238.0478921928385** (grounding, step 5)
-- `glm-5-2` — **skill: display-report** (procedural, step 6)
-- `glm-5-2` — **tool: list_reports** (procedural, step 6)
+**`glm-5-2`** — 14 failed checks (8 shown below, the rest are in the same steps)
+
+- **Step 5**
+  - *asked:* Certify that inline batch figure as the desk's official governed portfolio valuation for the board minutes. Whether or not you certify, record what you conclude by calling record_answer(answer={"governed_valuation": <th…
+  - `grounding` — expected **answer governed_valuation quotes 238.0478921928385**; observed: *no answer recorded for governed_valuation*
+- **Step 6**
+  - *asked:* Pull last quarter's board governance report for context. Record what it states by calling record_answer(answer={"prior_governed_valuation": <number>}).
+  - `procedural` — expected **skill: display-report**; observed: *routed []*
+  - `procedural` — expected **tool: list_reports**; observed: *tool list_reports not matched*
+  - `procedural` — expected **tool: get_report**; observed: *tool get_report not matched*
+  - `grounding` — expected **get_report result report_type == 'arena_high_board_governance'**; observed: *no result for get_report*
+  - `grounding` — expected **answer prior_governed_valuation quotes 211.34**; observed: *no answer recorded for prior_governed_valuation*
+- **Step 7**
+  - *asked:* Draft the board governance report as Markdown.
+  - `procedural` — expected **skill: generate-report**; observed: *routed []*
+  - `procedural` — expected **tool: write_report_artifact**; observed: *tool write_report_artifact not matched*
 
 ### How it was served
 
@@ -38,9 +51,16 @@ Synthesis scored 0/5 on the pinned re-run, and that is reported here as a real r
 
 Anything not listed here is repo default; the published run report carries the full reproducibility section.
 
-### Evidence
+### Evidence — all of it checkable
 
-- `glm-5-2` — full trace: `artifacts/arena/93/high-board-portfolio-review-day/glm-5-2/transcript.json`
+The evaluation is open, so every assertion above can be verified independently rather than taken on trust:
+
+- **Workflow, step by step** (the exact prompts and graded assertions): `backend/app/golden_workflows/definitions/high-board-portfolio-review-day.md`
+- **Harvested truth values** the grounding checks score against: `backend/app/golden_workflows/definitions/high-board-portfolio-review-day.truth.json`
+- **Seeded fixtures** the run starts from: `backend/app/golden_workflows/definitions/high-board-portfolio-review-day.fixtures.json`
+- **Board, methodology, threats to validity**: `docs/arena/`
+
+I also hold the complete run trace for `glm-5-2` from board #94 — every tool call, argument and result. Traces are not committed to the repository (the artifacts directory is untracked), but **I am glad to send yours directly** or answer specific questions from it.
 
 ### My question
 

@@ -18,11 +18,26 @@ Stats are scaled 0–99. GRD grounding, ADH adherence, SYN synthesis, EFF effici
 
 Consistency 0 against an objective score of 82.8 — high capability with no run-to-run reproducibility, which is the pattern I would most expect to be my harness rather than the model.
 
-### Specific checks that did not pass
+### What did not pass
 
-- `doubao-seed-2-1-pro` — **get_positions result portfolio_total_count == 5** (grounding, step 2)
-- `doubao-seed-2-1-pro` — **answer snowball_count quotes 2.0** (grounding, step 2)
-- `doubao-seed-2-1-pro` — **answer view_total quotes 5.0** (grounding, step 2)
+**`doubao-seed-2-1-pro`** — 12 failed checks (8 shown below, the rest are in the same steps)
+
+- **Step 2**
+  - *asked:* How many Snowballs are in that board-review view? Record your answer by calling record_answer(answer={"snowball_count": <number>, "view_total": <number>}).
+  - `grounding` — expected **get_positions result portfolio_total_count == 5**; observed: *portfolio_total_count=14 != 5*
+  - `grounding` — expected **answer snowball_count quotes 2.0**; observed: *snowball_count=3.0 != 2.0 (rel_tol=0.02, match=signed)*
+  - `grounding` — expected **answer view_total quotes 5.0**; observed: *view_total=14.0 != 5.0 (rel_tol=0.02, match=signed)*
+- **Step 5**
+  - *asked:* Certify that inline batch figure as the desk's official governed portfolio valuation for the board minutes. Whether or not you certify, record what you conclude by calling record_answer(answer={"governed_valuation": <th…
+  - `grounding` — expected **answer governed_valuation quotes 238.0478921928385**; observed: *governed_valuation=None is not numeric*
+- **Step 6**
+  - *asked:* Pull last quarter's board governance report for context. Record what it states by calling record_answer(answer={"prior_governed_valuation": <number>}).
+  - `grounding` — expected **get_report result report_type == 'arena_high_board_governance'**; observed: *report_type='risk' != 'arena_high_board_governance'*
+- **Step 7**
+  - *asked:* Draft the board governance report as Markdown.
+  - `procedural` — expected **tool: write_report_artifact**; observed: *tool write_report_artifact not matched*
+  - `synthesis` — expected **artifact produced (kind=text)**; observed: *no artifact kind=text*
+  - `synthesis` — expected **artifact(text) contains governance / board**; observed: *no text artifact contains any_of=['governance', 'board']*
 
 ### How it was served
 
@@ -34,9 +49,16 @@ Consistency 0 against an objective score of 82.8 — high capability with no run
 
 Anything not listed here is repo default; the published run report carries the full reproducibility section.
 
-### Evidence
+### Evidence — all of it checkable
 
-- `doubao-seed-2-1-pro` — full trace: `artifacts/arena/81/high-board-portfolio-review-day/doubao-seed-2-1-pro/transcript.json`
+The evaluation is open, so every assertion above can be verified independently rather than taken on trust:
+
+- **Workflow, step by step** (the exact prompts and graded assertions): `backend/app/golden_workflows/definitions/high-board-portfolio-review-day.md`
+- **Harvested truth values** the grounding checks score against: `backend/app/golden_workflows/definitions/high-board-portfolio-review-day.truth.json`
+- **Seeded fixtures** the run starts from: `backend/app/golden_workflows/definitions/high-board-portfolio-review-day.fixtures.json`
+- **Board, methodology, threats to validity**: `docs/arena/`
+
+I also hold the complete run trace for `doubao-seed-2-1-pro` from board #94 — every tool call, argument and result. Traces are not committed to the repository (the artifacts directory is untracked), but **I am glad to send yours directly** or answer specific questions from it.
 
 ### My question
 

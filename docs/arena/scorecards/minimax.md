@@ -22,11 +22,24 @@ Through the OpenAI-compatible gateway, this model emitted **Anthropic-format** t
 
 The only model on the board scoring below 92 on adherence (78).
 
-### Specific checks that did not pass
+### What did not pass
 
-- `minimax-m3` — **skill: portfolio-maintenance** (procedural, step 0)
-- `minimax-m3` — **skill: portfolio-maintenance** (procedural, step 1)
-- `minimax-m3` — **tool: create_portfolio** (procedural, step 1)
+**`minimax-m3`** — 13 failed checks (8 shown below, the rest are in the same steps)
+
+- **Step 0**
+  - *asked:* Resolve the desk control book — is it a container or a view?
+  - `procedural` — expected **skill: portfolio-maintenance**; observed: *routed []*
+- **Step 1**
+  - *asked:* Create a board-review view over the desk control book.
+  - `procedural` — expected **skill: portfolio-maintenance**; observed: *routed []*
+  - `procedural` — expected **tool: create_portfolio**; observed: *tool create_portfolio not matched*
+  - `adherence` — expected **tool called: create_portfolio**; observed: *tool create_portfolio not matched*
+  - `grounding` — expected **create_portfolio result data.kind == 'view'**; observed: *no result for create_portfolio*
+- **Step 2**
+  - *asked:* How many Snowballs are in that board-review view? Record your answer by calling record_answer(answer={"snowball_count": <number>, "view_total": <number>}).
+  - `procedural` — expected **tool: get_positions**; observed: *tool get_positions not matched*
+  - `grounding` — expected **get_positions result total_count >= 1.0**; observed: *no result for get_positions*
+  - `grounding` — expected **get_positions result portfolio_total_count == 5**; observed: *no result for get_positions*
 
 ### How it was served
 
@@ -38,9 +51,16 @@ The only model on the board scoring below 92 on adherence (78).
 
 Anything not listed here is repo default; the published run report carries the full reproducibility section.
 
-### Evidence
+### Evidence — all of it checkable
 
-- `minimax-m3` — full trace: `artifacts/arena/90/high-board-portfolio-review-day/minimax-m3/transcript.json`
+The evaluation is open, so every assertion above can be verified independently rather than taken on trust:
+
+- **Workflow, step by step** (the exact prompts and graded assertions): `backend/app/golden_workflows/definitions/high-board-portfolio-review-day.md`
+- **Harvested truth values** the grounding checks score against: `backend/app/golden_workflows/definitions/high-board-portfolio-review-day.truth.json`
+- **Seeded fixtures** the run starts from: `backend/app/golden_workflows/definitions/high-board-portfolio-review-day.fixtures.json`
+- **Board, methodology, threats to validity**: `docs/arena/`
+
+I also hold the complete run trace for `minimax-m3` from board #94 — every tool call, argument and result. Traces are not committed to the repository (the artifacts directory is untracked), but **I am glad to send yours directly** or answer specific questions from it.
 
 ### My question
 

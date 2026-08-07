@@ -34,11 +34,19 @@ class Target:
 
 @dataclass(frozen=True)
 class FailedCheck:
-    """One assertion the model did not satisfy, named for the outreach card."""
+    """One assertion the model did not satisfy, named for the outreach card.
+
+    `label` is what was EXPECTED; `detail` is what was OBSERVED. A card that
+    prints only the expectation makes the recipient guess at the failure —
+    "tool: list_reports" versus "tool list_reports not matched" is the
+    difference between a scoreboard and a bug report.
+    """
 
     label: str
     axis: str
     step: str | None
+    detail: str = ""
+    instruction: str = ""
 
 
 def load_targets(path: Path) -> list[Target]:
@@ -131,19 +139,27 @@ def _label(check: dict) -> str:
     return str(check.get("label") or check.get("kind") or "unlabelled")
 
 
-def failed_checks(breakdown: dict, limit: int = 3) -> list[FailedCheck]:
-    """Collect up to `limit` failed checks, step checks first, then session ones."""
+def failed_checks(breakdown: dict, limit: int | None = None) -> list[FailedCheck]:
+    """Collect failed checks, step checks first, then session ones.
+
+    `limit=None` returns every failure. The renderer decides how many to show
+    and always states the true total — truncating silently reads as
+    cherry-picking to the one audience that will check.
+    """
     objective = breakdown.get("objective") or {}
     out: list[FailedCheck] = []
 
     for step in objective.get("steps") or []:
         index = step.get("index")
+        instruction = str(step.get("user") or "")
         for check in step.get("checks") or []:
             if _is_failed(check):
                 out.append(FailedCheck(
                     label=_label(check),
                     axis=str(check.get("axis") or "unknown"),
                     step=str(index) if index is not None else None,
+                    detail=str(check.get("detail") or ""),
+                    instruction=instruction,
                 ))
 
     for check in objective.get("success") or []:
@@ -152,9 +168,11 @@ def failed_checks(breakdown: dict, limit: int = 3) -> list[FailedCheck]:
                 label=_label(check),
                 axis=str(check.get("axis") or "unknown"),
                 step=None,
+                detail=str(check.get("detail") or ""),
+                instruction="",
             ))
 
-    return out[:limit]
+    return out if limit is None else out[:limit]
 
 
 # (display label, key in card_mean) — the stored card mixes case: ovr/con are
@@ -205,6 +223,101 @@ def _card_table(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _evidence_section(
+    target: Target,
+    transcripts: dict[str, str | None],
+    run_id: int,
+    workflow_id: str,
+) -> list[str]:
+    """State what evidence exists and how to get it.
+
+    The BENCHMARK is public by design — manifest, fixtures and harvested truth
+    values are all committed — so this section points at them rather than
+    inventing a secrecy rationale. Only the raw run traces are uncommitted
+    (`artifacts/` is not tracked), and those are offered directly.
+    """
+    defs = f"backend/app/golden_workflows/definitions/{workflow_id}"
+    out = [
+        "### Evidence — all of it checkable",
+        "",
+        "The evaluation is open, so every assertion above can be verified "
+        "independently rather than taken on trust:",
+        "",
+        f"- **Workflow, step by step** (the exact prompts and graded assertions): "
+        f"`{defs}.md`",
+        f"- **Harvested truth values** the grounding checks score against: "
+        f"`{defs}.truth.json`",
+        f"- **Seeded fixtures** the run starts from: `{defs}.fixtures.json`",
+        "- **Board, methodology, threats to validity**: `docs/arena/`",
+        "",
+    ]
+    held = [m for m in target.model_ids if transcripts.get(m)]
+    if held:
+        models = ", ".join(f"`{m}`" for m in held)
+        out.append(
+            f"I also hold the complete run trace for {models} from board #{run_id} — "
+            "every tool call, argument and result. Traces are not committed to the "
+            "repository (the artifacts directory is untracked), but **I am glad to "
+            "send yours directly** or answer specific questions from it."
+        )
+    missing = [m for m in target.model_ids if not transcripts.get(m)]
+    if missing:
+        out.append(
+            "No stored trace for " + ", ".join(f"`{m}`" for m in missing)
+            + " on this board row; those scores derive from the stored breakdown."
+        )
+    out.append("")
+    return out
+
+
+def _truncate(text: str, width: int = 220) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= width else text[: width - 1].rstrip() + "…"
+
+
+def _failures_section(
+    checks: dict[str, list[FailedCheck]],
+    shown_per_model: int,
+) -> list[str]:
+    """Render failures grouped by step, with the instruction and the observation.
+
+    Grouping matters for more than tidiness: a run that stops executing produces
+    one root failure and a long tail of cascade. A flat list makes that read as
+    many independent defects.
+    """
+    if not any(checks.values()):
+        return []
+
+    out = ["### What did not pass", ""]
+    for model_id, failures in checks.items():
+        if not failures:
+            continue
+        shown = failures[:shown_per_model]
+        header = f"**`{model_id}`** — {len(failures)} failed check" \
+                 f"{'s' if len(failures) != 1 else ''}"
+        if len(shown) < len(failures):
+            header += f" ({len(shown)} shown below, the rest are in the same steps)"
+        out += [header, ""]
+
+        by_step: dict[str | None, list[FailedCheck]] = {}
+        for check in shown:
+            by_step.setdefault(check.step, []).append(check)
+
+        for step, group in by_step.items():
+            label = f"Step {step}" if step is not None else "Session-level"
+            out.append(f"- **{label}**")
+            instruction = next((c.instruction for c in group if c.instruction), "")
+            if instruction:
+                out.append(f"  - *asked:* {_truncate(instruction)}")
+            for check in group:
+                line = f"  - `{check.axis}` — expected **{check.label}**"
+                if check.detail:
+                    line += f"; observed: *{check.detail}*"
+                out.append(line)
+        out.append("")
+    return out
+
+
 def _serving_section(target: Target, trials: dict[str, int]) -> list[str]:
     """Disclose how the model was served.
 
@@ -242,6 +355,8 @@ def render_scorecard(
     transcripts: dict[str, str | None],
     run_id: int,
     trials: dict[str, int] | None = None,
+    shown_failures: int = 8,
+    workflow_id: str = "high-board-portfolio-review-day",
 ) -> str:
     """Render one lab's outreach card. Pure — no IO."""
     parts: list[str] = [
@@ -276,25 +391,10 @@ def render_scorecard(
     if target.anomaly:
         parts += ["### What stands out", "", target.anomaly.strip(), ""]
 
-    failing = [(mid, c) for mid, cs in checks.items() for c in cs]
-    if failing:
-        parts += ["### Specific checks that did not pass", ""]
-        for mid, check in failing:
-            where = f", step {check.step}" if check.step is not None else ""
-            parts.append(f"- `{mid}` — **{check.label}** ({check.axis}{where})")
-        parts.append("")
+    parts += _failures_section(checks, shown_per_model=shown_failures)
 
     parts += _serving_section(target, trials or {})
 
-    parts += ["### Evidence", ""]
-    for model_id in target.model_ids:
-        path = transcripts.get(model_id)
-        if path:
-            parts.append(f"- `{model_id}` — full trace: `{path}`")
-        else:
-            parts.append(
-                f"- `{model_id}` — per-trial trace **not banked** for this board row; "
-                "the score derives from the stored breakdown."
-            )
-    parts += ["", _QUESTION, ""]
+    parts += _evidence_section(target, transcripts, run_id, workflow_id)
+    parts += [_QUESTION, ""]
     return "\n".join(parts)

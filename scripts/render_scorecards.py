@@ -80,6 +80,11 @@ def main() -> int:
     paths = latest_transcript_paths(banked)
     print(f"transcript source runs: {runs}", file=sys.stderr)
 
+    (workflow_ids,) = next(iter(
+        conn.execute("select workflow_ids from arena_run where id=?", (args.run,))))
+    workflow_id = json.loads(workflow_ids)[0]
+    print(f"workflow: {workflow_id}", file=sys.stderr)
+
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     written = 0
     targets = load_targets(TARGETS)
@@ -88,7 +93,7 @@ def main() -> int:
         if not rows:
             print(f"SKIP {target.lab}: no board rows", file=sys.stderr)
             continue
-        checks = {m: failed_checks(breakdowns.get(m) or {}) for m in target.model_ids}
+        checks = {m: failed_checks(breakdowns.get(m) or {}) for m in target.model_ids}  # all
         transcripts = {
             m: resolve_transcript(paths, m, REPO) for m in target.model_ids
         }
@@ -99,6 +104,7 @@ def main() -> int:
         md = render_scorecard(
             target=target, rows=rows, checks=checks,
             transcripts=transcripts, run_id=args.run, trials=trials,
+            workflow_id=workflow_id,
         )
         (OUT_DIR / f"{_slug(target.lab)}.md").write_text(md, encoding="utf-8")
         written += 1

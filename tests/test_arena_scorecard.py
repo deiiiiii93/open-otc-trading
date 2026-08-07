@@ -265,15 +265,76 @@ def test_absent_serving_config_is_stated_not_omitted():
 def test_missing_transcript_states_the_absence():
     md = render_scorecard(target=_target(), rows=_rows(), checks={},
                           transcripts={"glm-5-2": None}, run_id=94)
-    assert "not banked" in md.lower()
+    assert "no stored trace" in md.lower()
 
 
-def test_present_transcript_is_linked():
+def test_held_transcript_is_offered_not_linked_to_a_local_path():
+    """`artifacts/` is untracked, so a path is unreachable to the recipient."""
     md = render_scorecard(target=_target(), rows=_rows(), checks={},
                           transcripts={"glm-5-2": "artifacts/arena/93/x.json"},
                           run_id=94)
-    assert "artifacts/arena/93/x.json" in md
-    assert "not banked" not in md.lower()
+    assert "artifacts/arena/93/x.json" not in md, "must not print a local path"
+    assert "send yours directly" in md.lower()
+    assert "no stored trace" not in md.lower()
+
+
+def test_evidence_points_at_the_public_benchmark_definition():
+    """The benchmark IS public — manifest, truth values and fixtures are all
+    committed. The card must invite verification, not imply secrecy."""
+    md = render_scorecard(target=_target(), rows=_rows(), checks={},
+                          transcripts={}, run_id=94,
+                          workflow_id="high-board-portfolio-review-day")
+    for artefact in (".md", ".truth.json", ".fixtures.json"):
+        assert f"high-board-portfolio-review-day{artefact}" in md
+    assert "docs/arena/" in md
+
+
+def test_evidence_never_claims_the_benchmark_is_secret():
+    """Regression: an earlier draft justified withholding traces by claiming
+    they held prompts and expected values that would invalidate the benchmark.
+    Both are published in the repo, so that rationale was simply false."""
+    md = render_scorecard(target=_target(), rows=_rows(), checks={},
+                          transcripts={"glm-5-2": "artifacts/x.json"},
+                          run_id=94).lower()
+    for false_claim in ("invalidate the benchmark", "burn the benchmark",
+                        "exact prompts and expected values"):
+        assert false_claim not in md
+
+
+def test_failures_show_observation_not_just_expectation():
+    md = render_scorecard(
+        target=_target(), rows=_rows(),
+        checks={"glm-5-2": [FailedCheck(
+            label="tool: list_reports", axis="procedural", step="6",
+            detail="tool list_reports not matched",
+            instruction="Open the governance report and cite its type.")]},
+        transcripts={}, run_id=94)
+    assert "tool: list_reports" in md          # expected
+    assert "tool list_reports not matched" in md  # observed
+    assert "Open the governance report" in md     # the instruction
+
+
+def test_failure_count_is_stated_when_truncated():
+    many = [FailedCheck(f"check {i}", "synthesis", "7", f"detail {i}", "do a thing")
+            for i in range(13)]
+    md = render_scorecard(target=_target(), rows=_rows(),
+                          checks={"glm-5-2": many}, transcripts={},
+                          run_id=94, shown_failures=3)
+    assert "13 failed checks" in md
+    assert "3 shown below" in md
+
+
+def test_failures_grouped_by_step():
+    md = render_scorecard(
+        target=_target(), rows=_rows(),
+        checks={"glm-5-2": [
+            FailedCheck("a", "grounding", "5", "d1", "instruction five"),
+            FailedCheck("b", "procedural", "6", "d2", "instruction six"),
+            FailedCheck("c", "synthesis", "6", "d3", "instruction six"),
+        ]},
+        transcripts={}, run_id=94)
+    assert md.count("**Step 6**") == 1, "step 6 must appear once, not per check"
+    assert "**Step 5**" in md
 
 
 def test_missing_card_is_reported_not_fabricated():

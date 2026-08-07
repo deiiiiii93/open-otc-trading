@@ -18,11 +18,20 @@ Stats are scaled 0–99. GRD grounding, ADH adherence, SYN synthesis, EFF effici
 
 Synthesis 40 against adherence 99 — the model follows the process but does not produce the deliverable. That split is more consistent with a harness or output-parsing fault than with capability, and I would like help ruling that out.
 
-### Specific checks that did not pass
+### What did not pass
 
-- `hunyuan-3` — **skill: portfolio-maintenance** (procedural, step 0)
-- `hunyuan-3` — **any of: [get_portfolio result data.kind == 'container' | list_portfolios result data[name=Desk Control Book].kind == 'container']** (grounding, step 0)
-- `hunyuan-3` — **answer governed_valuation quotes 238.0478921928385** (grounding, step 5)
+**`hunyuan-3`** — 4 failed checks
+
+- **Step 0**
+  - *asked:* Resolve the desk control book — is it a container or a view?
+  - `procedural` — expected **skill: portfolio-maintenance**; observed: *routed []*
+  - `grounding` — expected **any of: [get_portfolio result data.kind == 'container' | list_portfolios result data[name=Desk Control Book].kind == 'container']**; observed: *no member passed: no result for get_portfolio | no result for list_portfolios*
+- **Step 5**
+  - *asked:* Certify that inline batch figure as the desk's official governed portfolio valuation for the board minutes. Whether or not you certify, record what you conclude by calling record_answer(answer={"governed_valuation": <th…
+  - `grounding` — expected **answer governed_valuation quotes 238.0478921928385**; observed: *governed_valuation=None is not numeric*
+- **Step 7**
+  - *asked:* Draft the board governance report as Markdown.
+  - `synthesis` — expected **artifact(text) contains 238**; observed: *no text artifact contains any_of=['238']*
 
 ### How it was served
 
@@ -34,9 +43,16 @@ Synthesis 40 against adherence 99 — the model follows the process but does not
 
 Anything not listed here is repo default; the published run report carries the full reproducibility section.
 
-### Evidence
+### Evidence — all of it checkable
 
-- `hunyuan-3` — full trace: `artifacts/arena/88/high-board-portfolio-review-day/hunyuan-3/transcript.json`
+The evaluation is open, so every assertion above can be verified independently rather than taken on trust:
+
+- **Workflow, step by step** (the exact prompts and graded assertions): `backend/app/golden_workflows/definitions/high-board-portfolio-review-day.md`
+- **Harvested truth values** the grounding checks score against: `backend/app/golden_workflows/definitions/high-board-portfolio-review-day.truth.json`
+- **Seeded fixtures** the run starts from: `backend/app/golden_workflows/definitions/high-board-portfolio-review-day.fixtures.json`
+- **Board, methodology, threats to validity**: `docs/arena/`
+
+I also hold the complete run trace for `hunyuan-3` from board #94 — every tool call, argument and result. Traces are not committed to the repository (the artifacts directory is untracked), but **I am glad to send yours directly** or answer specific questions from it.
 
 ### My question
 

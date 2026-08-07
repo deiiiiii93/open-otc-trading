@@ -15,12 +15,25 @@ against a fixed objective manifest; there is no LLM judge in these numbers.
 
 Stats are scaled 0–99. GRD grounding, ADH adherence, SYN synthesis, EFF efficiency against a calibrated par, PRC precision, CON consistency across trials. OVR is their weighted combination; CON is reported separately and is not folded into OVR.
 
-### Specific checks that did not pass
+### What did not pass
 
-- `deepseek-v4-flash` — **answer governed_valuation quotes 238.0478921928385** (grounding, step 5)
-- `deepseek-v4-flash` — **skill: display-report** (procedural, step 6)
-- `deepseek-v4-pro` — **skill: portfolio-maintenance** (procedural, step 0)
-- `deepseek-v4-pro` — **skill: display-report** (procedural, step 6)
+**`deepseek-v4-flash`** — 2 failed checks
+
+- **Step 5**
+  - *asked:* Certify that inline batch figure as the desk's official governed portfolio valuation for the board minutes. Whether or not you certify, record what you conclude by calling record_answer(answer={"governed_valuation": <th…
+  - `grounding` — expected **answer governed_valuation quotes 238.0478921928385**; observed: *governed_valuation='not_available' is not numeric*
+- **Step 6**
+  - *asked:* Pull last quarter's board governance report for context. Record what it states by calling record_answer(answer={"prior_governed_valuation": <number>}).
+  - `procedural` — expected **skill: display-report**; observed: *routed []*
+
+**`deepseek-v4-pro`** — 2 failed checks
+
+- **Step 0**
+  - *asked:* Resolve the desk control book — is it a container or a view?
+  - `procedural` — expected **skill: portfolio-maintenance**; observed: *routed []*
+- **Step 6**
+  - *asked:* Pull last quarter's board governance report for context. Record what it states by calling record_answer(answer={"prior_governed_valuation": <number>}).
+  - `procedural` — expected **skill: display-report**; observed: *routed []*
 
 ### How it was served
 
@@ -32,10 +45,16 @@ Stats are scaled 0–99. GRD grounding, ADH adherence, SYN synthesis, EFF effici
 
 Anything not listed here is repo default; the published run report carries the full reproducibility section.
 
-### Evidence
+### Evidence — all of it checkable
 
-- `deepseek-v4-flash` — full trace: `artifacts/arena/84/high-board-portfolio-review-day/deepseek-v4-flash/transcript.json`
-- `deepseek-v4-pro` — full trace: `artifacts/arena/84/high-board-portfolio-review-day/deepseek-v4-pro/transcript.json`
+The evaluation is open, so every assertion above can be verified independently rather than taken on trust:
+
+- **Workflow, step by step** (the exact prompts and graded assertions): `backend/app/golden_workflows/definitions/high-board-portfolio-review-day.md`
+- **Harvested truth values** the grounding checks score against: `backend/app/golden_workflows/definitions/high-board-portfolio-review-day.truth.json`
+- **Seeded fixtures** the run starts from: `backend/app/golden_workflows/definitions/high-board-portfolio-review-day.fixtures.json`
+- **Board, methodology, threats to validity**: `docs/arena/`
+
+I also hold the complete run trace for `deepseek-v4-flash`, `deepseek-v4-pro` from board #94 — every tool call, argument and result. Traces are not committed to the repository (the artifacts directory is untracked), but **I am glad to send yours directly** or answer specific questions from it.
 
 ### My question
 
