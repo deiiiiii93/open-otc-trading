@@ -163,6 +163,21 @@ from .confirmations import (
     get_confirmation_batch,
     parse_trade_confirmation,
 )
+from .settlement import (
+    block_settlement_cashflow_tool,
+    generate_settlement_cashflows_tool,
+    generate_settlement_notice_tool,
+    get_settlement_cashflow_tool,
+    get_settlement_cashflows_tool,
+    get_settlement_summary_tool,
+    release_settlement_cashflow_tool,
+    resync_settlement_cashflow_tool,
+    settle_settlement_cashflow_tool,
+    unblock_settlement_cashflow_tool,
+    unrelease_settlement_cashflow_tool,
+    update_settlement_cashflow_tool,
+    void_settlement_cashflow_tool,
+)
 
 
 QUANT_AGENT_TOOLS = [
@@ -257,6 +272,23 @@ QUANT_AGENT_TOOLS = [
     parse_trade_confirmation,
     get_confirmation_batch,
     book_extracted_trade,
+    # Settlement: 3 reads + 10 HITL writes over the cash implied by lifecycle
+    # events. Registering here is only half the job — every one of these must
+    # also be in DEEP_AGENT_TOOL_NAMES or it is silently dropped from every
+    # persona's toolset.
+    get_settlement_cashflows_tool,
+    get_settlement_cashflow_tool,
+    get_settlement_summary_tool,
+    generate_settlement_cashflows_tool,
+    update_settlement_cashflow_tool,
+    release_settlement_cashflow_tool,
+    unrelease_settlement_cashflow_tool,
+    block_settlement_cashflow_tool,
+    unblock_settlement_cashflow_tool,
+    void_settlement_cashflow_tool,
+    resync_settlement_cashflow_tool,
+    settle_settlement_cashflow_tool,
+    generate_settlement_notice_tool,
     # hedging writes (persisted / HITL-gated):
     book_hedge_tool,
     set_hedge_bands_tool,

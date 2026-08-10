@@ -53,6 +53,19 @@ def test_interrupt_tool_names_covers_all_state_mutating_tools():
         "resolve_limit_incident",
         "book_extracted_trade",
         "run_python",
+        # Settlement: 10 write-class tools over the cash implied by lifecycle
+        # events. Only settle_settlement_cashflow is "irreversible" — see
+        # test_only_settle_settlement_is_irreversible below.
+        "generate_settlement_cashflows",
+        "update_settlement_cashflow",
+        "release_settlement_cashflow",
+        "unrelease_settlement_cashflow",
+        "block_settlement_cashflow",
+        "unblock_settlement_cashflow",
+        "void_settlement_cashflow",
+        "resync_settlement_cashflow",
+        "settle_settlement_cashflow",
+        "generate_settlement_notice",
     }
 
 
