@@ -23,6 +23,41 @@
 - Transition-log actions, verbatim: `generated`, `edited`, `released`, `unreleased`, `blocked`, `unblocked`, `settled`, `voided`, `resynced`, `flagged_stale`, `stale_cleared`.
 - Migration id: `0055_settlement_cashflows`, `down_revision = "0054_seed_report_templates"`.
 
+## Design amendment — desk decisions, 2026-08-10 (during execution)
+
+The Task 2 Step 5 mapping was answered by the desk, and both answers widen the
+design beyond what Tasks 3–6 originally assumed. Everything below is implemented
+and tested; later tasks must respect it.
+
+1. **Every terminating event emits a `settlement` leg** (`settle`, `knock_out`,
+   `autocall`, `maturity`, `close`) so a trade can never terminate silently with
+   untracked cash. They deliberately **share** a `leg_key`.
+2. **`open` emits a `premium` leg** computed from the position's recorded
+   `entry_price × quantity` (a multiplication of two stored trade fields, not a
+   payoff model). This is the one place the deriver reads position state.
+
+Consequences:
+
+- **Same-position dedup is required.** Two different `lifecycle_event_id`s mean
+  `UNIQUE(lifecycle_event_id, leg_key)` cannot see the economic duplicate.
+  `derive.SINGLETON_LEG_KEYS = {"settlement", "premium"}` marks once-per-position
+  legs; `generate._open_singleton` enforces it, ignoring **terminal** rows so a
+  settle → reopen → settle cycle legitimately earns a second cashflow.
+  `coupon` is deliberately NOT singleton — coupons recur.
+- **`generate._fill_if_empty` is a narrow, audited exception to INSERT-only:**
+  null → value only, only on a `needs_amount` row, never over a released or
+  edited one, idempotent, logged as `filled_from_event` with the source event id.
+- **A filled row keeps `derived_amount = None`.** `derived_*` describes the row's
+  OWN event, which really carried no amount. Rewriting it would make drift
+  detection compare the filled value against a re-derived `None` forever. A
+  filled row therefore reads as "overridden" (`amount != derived_amount`), which
+  is exactly how `resync` must treat it.
+- **Amounts are non-negative magnitudes; `direction` carries the sign.** A
+  negative derived amount flips `pay` ↔ `receive`.
+- `GenerationResult` gained a **`filled`** field: `(created, skipped, filled,
+  cashflow_ids)`.
+- Transition-log vocabulary gains **`filled_from_event`**.
+
 ---
 
 ### Task 1: Data model and migration
@@ -464,19 +499,35 @@ def downgrade() -> None:
 
 - [ ] **Step 6: Verify the migration applies and reverses on a scratch DB**
 
-Run:
-```bash
-cd /Users/fuxinyao/open-otc-trading
-OPEN_OTC_DATABASE_URL="sqlite+pysqlite:///$(mktemp -d)/mig.sqlite3" \
-  .venv/bin/python -m alembic upgrade head
-```
-Expected: completes with no error, ending at `0055_settlement_cashflows`.
+⚠️ **A full fresh-chain `upgrade head` CANNOT work in this repo, and that is
+pre-existing.** The chain breaks at **0051** (`duplicate column name:
+position_id` on `pricing_parameter_rows` — a migration written against ORM
+models, the drift this repo already documents). Verified identical on `main`,
+and it is why `test_migration_fresh_chain.py`, `test_migration_0024.py`,
+`test_migration_0046.py` and `test_migration_0047.py` are all in the
+pre-existing failure baseline. Do **not** try to fix that here.
 
-Then confirm the head is single (no branch was introduced):
+Also: the env var is **`OPEN_OTC_DATABASE_URL`** (a `validation_alias`), not
+`DATABASE_URL`. Getting it wrong does not error — it silently falls back to
+`./data/open_otc.sqlite3`, i.e. **the live DB**, and reports `exit=0`.
+
+So verify `0055` in isolation by stamping at its parent:
+
 ```bash
-.venv/bin/python -m alembic heads
+cd /Users/fuxinyao/open-otc-trading/.claude/worktrees/settlement-module
+TMPDB=$(mktemp -d)
+export OPEN_OTC_DATABASE_URL="sqlite+pysqlite:///$TMPDB/only55.sqlite3"
+PY=/Users/fuxinyao/open-otc-trading/.venv/bin/python
+$PY -m alembic stamp 0054_seed_report_templates
+$PY -m alembic upgrade head      # runs ONLY 0055
+$PY -m alembic downgrade -1      # and reverses it
+$PY -m alembic heads             # exactly one head
 ```
-Expected: exactly one head, `0055_settlement_cashflows`.
+
+Expected: upgrade creates `settlement_cashflows`, `settlement_cashflow_events`,
+`settlement_notices` plus 5 indexes; downgrade removes all three and returns the
+version to `0054_seed_report_templates`; `heads` prints exactly
+`0055_settlement_cashflows (head)`.
 
 - [ ] **Step 7: Commit**
 
@@ -1463,7 +1514,8 @@ def test_counterparty_resolves_from_a_booked_confirmation(session, book):
     session.add(batch)
     session.flush()
     document = ConfirmationDocument(
-        batch_id=batch.id, filename="conf.pdf", content_sha256="b" * 64
+        batch_id=batch.id, filename="conf.pdf", stored_path="/tmp/conf.pdf",
+        sha256="b" * 64, byte_len=1024, mime="application/pdf",
     )
     session.add(document)
     session.flush()
@@ -1487,13 +1539,11 @@ def test_counterparty_is_none_when_unknown(session, book):
 Run: `.venv/bin/python -m pytest tests/test_settlement_generate.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.services.settlement.generate'`
 
-- [ ] **Step 3: Verify the ConfirmationDocument column names used by the test**
+- [ ] **Step 3: (RESOLVED during execution) ConfirmationDocument column names**
 
-Run:
-```bash
-grep -n "class ConfirmationDocument" -A 20 backend/app/models.py
-```
-If `filename` / `content_sha256` differ, correct the test fixture in Step 1 to the real column names before continuing. Do not change the production code to match a guess.
+Verified against `backend/app/models.py:1415`. The column is **`sha256`, not
+`content_sha256`**, and `stored_path` / `byte_len` / `mime` are all NOT NULL.
+The Step 1 fixture above already reflects this. No further action.
 
 - [ ] **Step 4: Write the generation module**
 
@@ -4266,10 +4316,10 @@ export function Settlement({
         onRowClick,
       }}
       empty={
-        <Empty>
-          No settlement cashflows. Run Generate to pick up lifecycle events
-          that have not been swept yet.
-        </Empty>
+        <Empty
+          message="No settlement cashflows"
+          hint="Run Generate to pick up lifecycle events that have not been swept yet."
+        />
       }
       overlays={overlays}
     />
@@ -4277,10 +4327,10 @@ export function Settlement({
 }
 ```
 
-Check `Badge`'s exported `BadgeVariant` values and `Empty`'s props against
-`frontend/src/components/Badge.tsx` and `Empty.tsx` before running — adjust the
-variant names if they differ. All colors come from tokens via `Badge`; add no
-raw hex in `Settlement.css`.
+Verified during execution: `BadgeVariant` is `'pos' | 'neg' | 'warn' | 'info' |
+'ink'` (all four used above are valid), and **`Empty` takes a `message` prop, not
+children** — the code above already uses `message` + `hint`. All colors come from
+tokens via `Badge`; add no raw hex in `Settlement.css`.
 
 - [ ] **Step 5: Run the test to verify it passes**
 
