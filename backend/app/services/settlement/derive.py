@@ -27,14 +27,19 @@ class LegRule:
     """One cash leg a lifecycle event type may produce.
 
     ``amount_keys`` are tried in order against ``event_data``; the first
-    present, finite number wins. If none match, the leg is still emitted
-    with ``amount=None`` so the desk sees that cash is owed but unquantified.
+    present, finite number wins. If none match and no ``position_resolver`` is
+    declared, the leg is still emitted with ``amount=None`` so the desk sees
+    that cash is owed but unquantified.
+
+    ``direction`` may be ``None``, meaning the resolver decides it (a premium
+    is paid on a long and received on a short).
     """
 
     leg_key: str
-    direction: Direction
-    amount_keys: tuple[str, ...]
+    direction: Direction | None
+    amount_keys: tuple[str, ...] = ()
     date_keys: tuple[str, ...] = ("settlement_date", "value_date", "payment_date")
+    position_resolver: str | None = None
 
 
 def _finite_float(value: Any) -> float | None:
@@ -79,6 +84,55 @@ def _first_date(data: dict[str, Any], keys: tuple[str, ...]) -> date | None:
     return None
 
 
+def _flip(direction: Direction) -> Direction:
+    return "receive" if direction == "pay" else "pay"
+
+
+def _normalize(
+    amount: float | None, direction: Direction
+) -> tuple[float | None, Direction]:
+    """Amounts are stored as non-negative magnitudes; ``direction`` carries the
+    sign. A negative payable is a receivable — leaving it negative would let a
+    loss-side settlement read as "pay 1,250" when the cash goes the other way.
+    """
+    if amount is None or amount >= 0:
+        return amount, direction
+    return abs(amount), _flip(direction)
+
+
+def _premium_from_position(position: Position) -> tuple[float | None, Direction, str]:
+    """Trade premium at inception: |entry_price x quantity|.
+
+    This is a multiplication of two recorded trade fields, NOT a payoff model —
+    the no-pricing rule is intact. Direction follows the sign of quantity: the
+    desk pays premium on a long and receives it on a short.
+    """
+    quantity = _finite_float(position.quantity)
+    price = _finite_float(position.entry_price)
+    if quantity is None or price is None:
+        return None, "pay", "none"
+    amount = quantity * price
+    if amount == 0:
+        return None, "pay", "none"
+    direction: Direction = "pay" if amount > 0 else "receive"
+    return abs(amount), direction, "position.entry_price*quantity"
+
+
+#: Named position-derived amount strategies, referenced by ``LegRule``.
+_POSITION_RESOLVERS = {"premium": _premium_from_position}
+
+#: Legs that can occur at most ONCE per position over its whole life.
+#:
+#: Consumed by ``generate.py`` for same-position dedup. Terminating events
+#: (knock_out / autocall / maturity / close) and the later ``settle`` all emit
+#: a ``settlement`` leg under DIFFERENT lifecycle event ids, so the
+#: ``UNIQUE(lifecycle_event_id, leg_key)`` constraint cannot see the economic
+#: duplicate — the generator must. ``coupon`` is deliberately ABSENT: coupons
+#: recur, and deduping them would collapse a snowball's whole schedule into
+#: one row.
+SINGLETON_LEG_KEYS: frozenset[str] = frozenset({"settlement", "premium"})
+
+
 def derive_cashflows(
     position: Position, event: PositionLifecycleEvent
 ) -> list[CashflowDraft]:
@@ -93,10 +147,22 @@ def derive_cashflows(
         drafts: list[CashflowDraft] = []
         for rule in rules:
             amount, basis = _first_amount(data, rule.amount_keys)
+            direction: Direction = rule.direction or "pay"
+
+            # event_data wins; a position resolver is the fallback, so an
+            # explicitly recorded amount always overrides a computed one.
+            if amount is None and rule.position_resolver is not None:
+                resolver = _POSITION_RESOLVERS.get(rule.position_resolver)
+                if resolver is not None:
+                    amount, resolved_direction, basis = resolver(position)
+                    if rule.direction is None:
+                        direction = resolved_direction
+
+            amount, direction = _normalize(amount, direction)
             drafts.append(
                 CashflowDraft(
                     leg_key=rule.leg_key,
-                    direction=rule.direction,
+                    direction=direction,
                     amount=amount,
                     value_date=_first_date(data, rule.date_keys),
                     basis=basis,
@@ -134,19 +200,54 @@ def derive_cashflows(
 # (``_enrich_snowball_ko_settlement``): settlement_amount, principal_amount,
 # coupon_amount, settlement_date, ko_return_rate, ko_accrual_factor.
 #
+# Desk decisions (2026-08-10):
+#
+#   1. Every TERMINATING event emits a `settlement` leg immediately, usually
+#      `needs_amount`, so a trade can never terminate silently with untracked
+#      cash. The later `settle` — which is the only event the system enriches
+#      with a number — FILLS that row rather than creating a second one.
+#      Because those are different lifecycle events, the DB constraint cannot
+#      dedupe them: `settlement` is in SINGLETON_LEG_KEYS and generate.py
+#      enforces one-per-position.
+#   2. `open` emits a `premium` leg computed from the position's own recorded
+#      entry_price x quantity, so the cash lifecycle is covered from inception.
+#
+# Non-cash types (reopen, knock_in, coupon_observation, coupon_lock, fixing,
+# custom) are absent on purpose and therefore emit nothing.
+
+_SETTLEMENT_LEG = LegRule(
+    leg_key="settlement",
+    direction="pay",
+    amount_keys=("settlement_amount",),
+)
+
+_COUPON_LEG = LegRule(
+    leg_key="coupon",
+    direction="pay",
+    amount_keys=("coupon_amount", "settlement_amount"),
+)
+
 CASH_LEG_RULES: dict[str, tuple[LegRule, ...]] = {
-    "settle": (
-        LegRule(
-            leg_key="settlement",
-            direction="pay",
-            amount_keys=("settlement_amount",),
-        ),
+    # Inception.
+    "open": (
+        LegRule(leg_key="premium", direction=None, position_resolver="premium"),
     ),
-    # TODO(desk): add the remaining cash-generating event types.
-    #   Decide for each of: open, close, knock_out, coupon_paid, maturity,
-    #   autocall, memory_coupon, custom.
-    #   Leave non-cash types out entirely.
+    # Terminations — all emit the SAME singleton settlement leg.
+    "settle": (_SETTLEMENT_LEG,),
+    "knock_out": (_SETTLEMENT_LEG,),
+    "autocall": (_SETTLEMENT_LEG,),
+    "maturity": (_SETTLEMENT_LEG,),
+    "close": (_SETTLEMENT_LEG,),
+    # Recurring coupons — deliberately NOT singleton.
+    "coupon_paid": (_COUPON_LEG,),
+    "memory_coupon": (_COUPON_LEG,),
 }
 
 
-__all__ = ["CASH_LEG_RULES", "CashflowDraft", "LegRule", "derive_cashflows"]
+__all__ = [
+    "CASH_LEG_RULES",
+    "SINGLETON_LEG_KEYS",
+    "CashflowDraft",
+    "LegRule",
+    "derive_cashflows",
+]
