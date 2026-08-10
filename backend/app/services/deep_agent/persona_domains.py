@@ -12,6 +12,10 @@ from typing import Final
 PERSONA_WORKFLOW_DOMAINS: Final[dict[str, tuple[str, ...]]] = {
     "trader": (
         "positions",
+        # Settlement follows booking, so it sits beside positions. Tuple order
+        # is load-bearing: it is preserved into the persona's skill source list
+        # and controls catalog listing order in subagent prompts.
+        "settlement",
         "products",
         "try-solve",
         "pricing",
