@@ -1375,6 +1375,118 @@ class PositionLifecycleEvent(Base):
     position: Mapped["Position"] = relationship(back_populates="lifecycle_events")
 
 
+class SettlementCashflow(Base):
+    """One cash leg implied by a position lifecycle event.
+
+    ``derived_*`` is the snapshot of what the deriver produced and is never
+    rewritten by generation or drift detection — only an explicit resync
+    re-baselines it. ``amount``/``value_date`` are the effective values an
+    edit changes. Keeping both is what lets drift be detected on a row a
+    human has already overridden: without the frozen snapshot the recompute
+    would be compared against the human's number and every edited row would
+    read as drifted forever.
+    """
+
+    __tablename__ = "settlement_cashflows"
+    __table_args__ = (
+        UniqueConstraint(
+            "lifecycle_event_id", "leg_key", name="uq_settlement_cashflow_event_leg"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    lifecycle_event_id: Mapped[int] = mapped_column(
+        ForeignKey("position_lifecycle_events.id", ondelete="CASCADE"), index=True
+    )
+    leg_key: Mapped[str] = mapped_column(String(40))
+    position_id: Mapped[int] = mapped_column(ForeignKey("positions.id"), index=True)
+    currency: Mapped[str] = mapped_column(String(8), default="CNY")
+    counterparty: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    direction: Mapped[str] = mapped_column(String(8))
+    derived_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    derived_value_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    derived_basis: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    value_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="needs_amount", index=True)
+    stale: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("0"), nullable=False
+    )
+    stale_reason: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    block_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    row_version: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow
+    )
+
+    lifecycle_event: Mapped["PositionLifecycleEvent"] = relationship()
+    position: Mapped["Position"] = relationship()
+    events: Mapped[list["SettlementCashflowEvent"]] = relationship(
+        back_populates="cashflow",
+        cascade="all, delete-orphan",
+        order_by="SettlementCashflowEvent.created_at",
+    )
+    notices: Mapped[list["SettlementNotice"]] = relationship(
+        back_populates="cashflow",
+        cascade="all, delete-orphan",
+        order_by="SettlementNotice.version",
+    )
+
+
+class SettlementCashflowEvent(Base):
+    """Append-only transition log for one settlement cashflow."""
+
+    __tablename__ = "settlement_cashflow_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    cashflow_id: Mapped[int] = mapped_column(
+        ForeignKey("settlement_cashflows.id", ondelete="CASCADE"), index=True
+    )
+    action: Mapped[str] = mapped_column(String(24))
+    from_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    to_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    actor: Mapped[str] = mapped_column(String(120), default="desk_user")
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    cashflow: Mapped[SettlementCashflow] = relationship(back_populates="events")
+
+
+class SettlementNotice(Base):
+    """A rendered settlement notice document for one cashflow.
+
+    ``payload_snapshot`` freezes the exact values used at render time, so the
+    notice remains provable evidence of what was stated even after the
+    cashflow moves on — the same posture as a report embedding its own spec
+    and sha256.
+    """
+
+    __tablename__ = "settlement_notices"
+    __table_args__ = (
+        UniqueConstraint("cashflow_id", "version", name="uq_settlement_notice_version"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    cashflow_id: Mapped[int] = mapped_column(
+        ForeignKey("settlement_cashflows.id", ondelete="CASCADE"), index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    artifact_path: Mapped[str] = mapped_column(String(255))
+    content_sha256: Mapped[str] = mapped_column(String(64))
+    payload_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(16), default="generated")
+    rendered_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    rendered_by: Mapped[str] = mapped_column(String(120), default="desk_user")
+
+    cashflow: Mapped[SettlementCashflow] = relationship(back_populates="notices")
+
+
 class PositionImportBatch(Base):
     __tablename__ = "position_import_batches"
 
