@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Settlement module** — the cash implied by position lifecycle events, tracked
+  and governed. Cashflows are auto-generated from `PositionLifecycleEvent`s by a
+  pure, total deriver and worked through a `needs_amount → pending → released →
+  settled` state machine (plus `blocked` / `void`) under optimistic concurrency,
+  with an append-only transition log. The module **never computes payoffs**: an
+  event either carries an amount or the cashflow is honestly `needs_amount`.
+  Drift against the source event is **flagged, never silently applied** —
+  `resync` is the only re-baseline path and it preserves a human override.
+  Deterministic Markdown settlement notices (no LLM prose) with a frozen payload
+  snapshot and sha256. New `/api/settlement` REST surface, 13 agent tools
+  (`settle_settlement_cashflow` is HITL `irreversible`, the rest `write`), a
+  routable `manage-settlement-cashflows` skill for the trader persona, and the
+  **Settlement** nav page. Migration `0055`.
 - **Arena per-model scorecards** — `scripts/render_scorecards.py` renders one
   outreach card per lab from a board run, combining the derived ability card,
   the specific checks that did not pass, the exact serving configuration, and
