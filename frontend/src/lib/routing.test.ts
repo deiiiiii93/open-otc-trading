@@ -16,8 +16,8 @@ describe('ROUTE_PATHS', () => {
     expect(new Set(paths).size).toBe(paths.length);
   });
 
-  it('covers exactly the 26 navigable routes', () => {
-    expect(Object.keys(ROUTE_PATHS).length).toBe(26);
+  it('covers exactly the 27 navigable routes', () => {
+    expect(Object.keys(ROUTE_PATHS).length).toBe(27);
   });
 
   it('includes the memory route', () => {

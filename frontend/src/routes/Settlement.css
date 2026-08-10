@@ -1,0 +1,78 @@
+/* Settlement page.
+ *
+ * Token-only: every value below resolves to a token defined in src/tokens/.
+ * Note this file deliberately avoids --radius-1 and --ink-3, which some older
+ * page CSS references but which are not defined in the token files.
+ */
+
+.wl-settlement__position {
+  display: inline-flex;
+  gap: var(--gap-1);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.wl-settlement__muted {
+  color: var(--ink-2);
+}
+
+.wl-settlement__stale-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-1);
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+}
+
+.wl-settlement__drawer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-4);
+}
+
+.wl-settlement__facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--gap-2) var(--gap-3);
+  margin: 0;
+}
+
+.wl-settlement__facts dt {
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+}
+
+.wl-settlement__facts dd {
+  margin: 0;
+  font-family: var(--font-numeric);
+}
+
+.wl-settlement__drift {
+  margin: 0;
+  padding: var(--panel-padding-tight);
+  border: var(--hairline) solid var(--paper-3);
+  background: var(--paper-2);
+  color: var(--ink);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.wl-settlement__history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+}
+
+.wl-settlement__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+}
