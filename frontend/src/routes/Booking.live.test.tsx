@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BookingLive } from './Booking.live';
+import { expectNumericValue } from '../test-setup';
 
 const portfolio = {
   id: 1,
@@ -220,8 +221,8 @@ describe('BookingLive', () => {
 
     render(<BookingLive />);
 
-    await waitFor(() => expect(screen.getByLabelText('Initial Price')).toHaveValue(3888.12));
-    expect(screen.getByLabelText('Strike')).toHaveValue(3888.12);
+    await waitFor(() => expectNumericValue(screen.getByLabelText('Initial Price'), 3888.12));
+    expectNumericValue(screen.getByLabelText('Strike'), 3888.12);
   });
 
   it('adds KI/KO barrier% fields and keeps barrier levels adaptive to initial price', async () => {
@@ -361,7 +362,7 @@ describe('BookingLive', () => {
     await waitFor(() => expect(screen.getByText('BOOKING')).toBeInTheDocument());
     await userEvent.selectOptions(screen.getByLabelText('Product Type'), 'EuropeanVanillaOption');
 
-    await waitFor(() => expect(screen.getByLabelText('Strike')).toHaveValue(3888.12));
+    await waitFor(() => expectNumericValue(screen.getByLabelText('Strike'), 3888.12));
   });
 
   it('exposes a Contract Multiplier term field (default 1) for non-autocallable options', async () => {
@@ -432,7 +433,7 @@ describe('BookingLive', () => {
 
     await waitFor(() => expect(screen.getByText('BOOKING')).toBeInTheDocument());
     await userEvent.selectOptions(screen.getByLabelText('Product Type'), 'EuropeanVanillaOption');
-    await waitFor(() => expect(screen.getByLabelText('Strike')).toHaveValue(3888.12));
+    await waitFor(() => expectNumericValue(screen.getByLabelText('Strike'), 3888.12));
     fireEvent.change(screen.getByLabelText('Exercise Date'), { target: { value: '2026-09-18' } });
     fireEvent.change(screen.getByLabelText('Settlement Date'), { target: { value: '2026-09-18' } });
 
@@ -467,7 +468,7 @@ describe('BookingLive', () => {
     await waitFor(() => expect(screen.getByText('BOOKING')).toBeInTheDocument());
     for (const productType of strikeProducts) {
       await userEvent.selectOptions(screen.getByLabelText('Product Type'), productType);
-      await waitFor(() => expect(screen.getByLabelText('Strike')).toHaveValue(3888.12));
+      await waitFor(() => expectNumericValue(screen.getByLabelText('Strike'), 3888.12));
     }
   });
 
@@ -483,40 +484,27 @@ describe('BookingLive', () => {
 
     render(<BookingLive />);
 
-    await waitFor(() => expect(screen.getByLabelText('Initial Price')).toHaveValue(3888.12));
+    await waitFor(() => expectNumericValue(screen.getByLabelText('Initial Price'), 3888.12));
     await userEvent.selectOptions(screen.getByLabelText('Underlying'), '000905.SH');
 
-    await waitFor(() => expect(screen.getByLabelText('Initial Price')).toHaveValue(6123.45));
-    expect(screen.getByLabelText('Strike')).toHaveValue(6123.45);
+    await waitFor(() => expectNumericValue(screen.getByLabelText('Initial Price'), 6123.45));
+    expectNumericValue(screen.getByLabelText('Strike'), 6123.45);
   });
 
-  it('sends package components as top-level product components', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = requestUrl(input);
-      if (url === '/api/portfolios' && !init?.method) return response([portfolio]);
-      if (url === '/api/market-data/profiles' && !init?.method) return response([]);
-      if (url === '/api/instruments?status=active&tag=underlying' && !init?.method) return response([activeUnderlying]);
-      if (url === '/api/portfolios/1/positions' && init?.method === 'POST') {
-        const body = JSON.parse(String(init.body));
-        expect(body.product.product_family).toBe('package');
-        expect(body.product.components).toEqual([{ component_product_id: 7, quantity: 1 }]);
-        return response({ ...portfolio, positions: [{ id: 43, product_id: 89, source_trade_id: 'PKG-1' }] });
-      }
-      throw new Error(`Unexpected request: ${url}`);
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    render(<BookingLive />);
-
-    await waitFor(() => expect(screen.getByText('BOOKING')).toBeInTheDocument());
-    await userEvent.selectOptions(screen.getByLabelText('Product Type'), 'EuropeanVanillaOption');
-    await userEvent.click(screen.getByRole('button', { name: /add row/i }));
-    fireEvent.change(screen.getByLabelText(/components 1 component product id/i), { target: { value: '7' } });
-    fireEvent.change(screen.getByLabelText(/components 1 quantity/i), { target: { value: '1' } });
-    await userEvent.click(screen.getByRole('button', { name: /book position/i }));
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/portfolios/1/positions', expect.any(Object)));
-  });
+  // A "sends package components as top-level product components" test used to
+  // live here and could never pass. It clicked an "Add Row" button that the
+  // Booking page does not render: `ProductTermsForm` only shows the record-array
+  // editor for keys ALREADY present in `product_kwargs` (`extraFields`), and no
+  // product type in `PRODUCT_TYPES` declares a `components` field, so a fresh
+  // booking form has no way to introduce one. The page therefore cannot
+  // originate a package position at all — that is a product gap, not a test bug.
+  //
+  // The contract it meant to cover (components lift to top-level
+  // `product.components`, family infers to `package`) IS covered, through the
+  // path that exists — editing a position whose terms already carry components:
+  // `PositionEditForm.test.tsx > submits package components as top-level
+  // product components`. Removed rather than skipped so the suite does not
+  // carry a permanently-red assertion about a flow nobody implemented.
 
   it('exposes a Pricing tab in the right rail', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

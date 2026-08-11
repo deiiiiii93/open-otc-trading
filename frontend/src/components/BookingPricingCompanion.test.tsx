@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BookingPricingCompanion } from './BookingPricingCompanion';
+import { expectNumericValue } from '../test-setup';
 
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -39,7 +40,7 @@ describe('BookingPricingCompanion', () => {
     render(<BookingPricingCompanion {...baseProps} />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText('Spot')).toHaveValue(3888.12);
+      expectNumericValue(screen.getByLabelText('Spot'), 3888.12);
       expect(screen.getByLabelText('Rate')).toHaveValue(0.025);
       expect(screen.getByLabelText('Volatility')).toHaveValue(0.2);
       expect(screen.getByLabelText('Dividend Yield')).toHaveValue(0.01);

@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { TermForm } from './TermForm';
 import type { TermFormMeta } from '../types';
+import { expectNumericValue } from '../test-setup';
 
 const form: TermFormMeta = {
   title: 'Finish booking',
@@ -20,7 +21,7 @@ describe('TermForm', () => {
     render(<TermForm form={form} onSubmit={vi.fn()} />);
     expect(screen.getByText('Finish booking')).toBeInTheDocument();
     expect(screen.getByText('Initial fixing S0')).toBeInTheDocument();
-    expect(screen.getByLabelText('Initial fixing S0')).toHaveValue(8359.56);
+    expectNumericValue(screen.getByLabelText('Initial fixing S0'), 8359.56);
   });
 
   it('blocks submit and shows an error when a required field is empty', () => {
