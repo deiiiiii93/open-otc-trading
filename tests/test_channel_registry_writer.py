@@ -9,11 +9,16 @@ from app.services.deep_agent import channel_registry_writer as w
 
 @pytest.fixture
 def yaml_path(tmp_path: Path, monkeypatch) -> Path:
-    # Hermetic: source from the stable repo-root config, NOT cr._yaml_path()
-    # (which honors AGENT_CHANNELS_FILE and can be repointed by another test).
+    # Hermetic on two axes:
+    #  - NOT cr._yaml_path(), which honors AGENT_CHANNELS_FILE and can be
+    #    repointed by another test; and
+    #  - NOT the live `config/agent_channels.yaml`, which is gitignored,
+    #    per-environment, and rewritten at runtime by the Model Maintenance UI.
+    #    Tests below assert which channel holds the default and which model ids
+    #    exist, so they need a version-controlled source: the tracked template.
     monkeypatch.delenv("AGENT_CHANNELS_FILE", raising=False)
     cr.configure_registry(None)
-    src = cr._REPO_ROOT / "config" / "agent_channels.yaml"
+    src = cr._REPO_ROOT / "config" / "agent_channels.example.yml"
     dst = tmp_path / "agent_channels.yaml"
     shutil.copy(src, dst)
     # ensure a comment exists to assert preservation

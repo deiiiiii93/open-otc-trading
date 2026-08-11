@@ -340,12 +340,17 @@ def test_stamped_0046_database_runs_forward_migration(
 
     settings = Settings(database_url=database_url)
     monkeypatch.setattr(config_module, "get_settings", lambda: settings)
-    command.upgrade(_alembic_config(database_url), "head")
+    # Upgrade to the migration under test, NOT to "head". `_old_0046_engine`
+    # builds a deliberately narrow five-table database (portfolios plus the
+    # limits tables) that supports 0047 and nothing else, so targeting the
+    # moving head drags in unrelated later migrations against a schema that
+    # cannot satisfy them — 0050's `ALTER TABLE instruments` is the first.
+    command.upgrade(_alembic_config(database_url), "0047_limit_incident_portfolio")
 
     with engine.connect() as connection:
         assert (
             MigrationContext.configure(connection).get_current_revision()
-            == "0049_hedge_booking_claim"
+            == "0047_limit_incident_portfolio"
         )
         assert (
             connection.scalar(

@@ -678,19 +678,45 @@ def _assert_schema_matches_orm(migrated_insp) -> None:
         # also touches. `instruments.tags` (migration 0042) is the first such
         # case — 0024 predates the tags column by design, so exclude it here
         # rather than extend this narrowly-scoped 0024 test to also run 0042.
-        POST_0024_COLUMNS = {"instruments": {"tags"}}
+        #
+        # MAINTENANCE: every migration after 0024 that adds a column to one of
+        # the parity tables below must add that column here, or this test fails
+        # with "<table> columns differ". Current entries:
+        #   instruments.tags                  → 0042_instrument_tags
+        #   instruments.*_curve               → 0050_instrument_term_structure_curves
+        #   pricing_parameter_rows.position_id → 0051_pricing_parameter_row_position_id
+        POST_0024_COLUMNS = {
+            "instruments": {
+                "tags",
+                "rate_curve",
+                "dividend_yield_curve",
+                "volatility_curve",
+            },
+            "pricing_parameter_rows": {"position_id"},
+        }
 
+        # A foreign key or index over a post-0024 column cannot exist in the
+        # 0024-only schema either, so derive those exclusions from the column
+        # list above rather than maintaining three parallel lists.
         def cols(insp, t):
             return {c["name"] for c in insp.get_columns(t)} - POST_0024_COLUMNS.get(t, set())
 
         def fks(insp, t):
+            skip = POST_0024_COLUMNS.get(t, set())
             return {
                 (tuple(f["constrained_columns"]), f["referred_table"])
                 for f in insp.get_foreign_keys(t)
+                if not skip & set(f["constrained_columns"])
             }
 
         def idx(insp, t):
-            return {i["name"] for i in insp.get_indexes(t) if i.get("name")}
+            skip = POST_0024_COLUMNS.get(t, set())
+            return {
+                i["name"]
+                for i in insp.get_indexes(t)
+                if i.get("name")
+                and not skip & {c for c in (i.get("column_names") or []) if c}
+            }
 
         for t in (
             "instruments", "positions", "products", "market_data_profiles",

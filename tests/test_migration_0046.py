@@ -9,6 +9,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from alembic.script import ScriptDirectory
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateIndex
 from sqlalchemy import inspect
@@ -245,7 +246,10 @@ def test_orm_first_bootstrap_then_upgrade_head(tmp_path: Path, monkeypatch) -> N
     assert _TABLES <= set(inspector.get_table_names())
     with sa.create_engine(database_url).connect() as connection:
         revision = MigrationContext.configure(connection).get_current_revision()
-    assert revision == "0049_hedge_booking_claim"
+    # Ask the script directory for head rather than freezing a literal: this
+    # asserts "the upgrade reached head", which is what the test is about, and
+    # does not need editing every time a migration is added.
+    assert revision == ScriptDirectory.from_config(config).get_current_head()
 
 
 def test_boot_repair_then_upgrade_adds_task_monitoring_foreign_key(
