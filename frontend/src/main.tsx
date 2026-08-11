@@ -42,6 +42,7 @@ import { MemoryLive } from './routes/Memory.live';
 import { ModelMaintenanceLive } from './routes/ModelMaintenance.live';
 import { AuditLive } from './routes/Audit.live';
 import { ConfirmationsLive } from './routes/Confirmations.live';
+import { SettlementLive } from './routes/Settlement.live';
 import { fetchTracingConfig } from './api/client';
 import { openTraceTarget } from './lib/tracing';
 import type { TracingConfig } from './types';
@@ -53,6 +54,7 @@ const navItems = [
   { route: 'positions' as const,  label: 'Positions' },
   { route: 'booking' as const,    label: 'Booking' },
   { route: 'confirmations' as const, label: 'Confirmations' },
+  { route: 'settlement' as const, label: 'Settlement' },
   { route: 'pricing-parameters' as const, label: 'Pricing Parameters' },
   { route: 'engine-configs' as const, label: 'Engine Configs' },
   { route: 'portfolios' as const, label: 'Portfolios' },
@@ -286,6 +288,7 @@ function App() {
         )}
         {route === 'booking' && <BookingLive onPageContextChange={handlePageContextChange} />}
         {route === 'confirmations' && <ConfirmationsLive onPageContextChange={handlePageContextChange} />}
+        {route === 'settlement' && <SettlementLive />}
         {route === 'pricing-parameters' && (
           <PricingParametersLive
             onPageContextChange={handlePageContextChange}

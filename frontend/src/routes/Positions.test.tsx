@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Positions, type PositionRow } from './Positions';
+import { expectNumericValue } from '../test-setup';
 
 const baseProps = {
   portfolios: [
@@ -243,7 +244,7 @@ describe('Positions', () => {
     // Ticket fields prefill from the server-resolved params: spot from the
     // quote store, r/q/vol from the profile resolution — never from the last
     // run's market_inputs snapshot.
-    expect(within(dialog).getByLabelText('Pricing spot')).toHaveValue(11965);
+    expectNumericValue(within(dialog).getByLabelText('Pricing spot'), 11965);
     expect(within(dialog).getByLabelText('Pricing rate')).toHaveValue(0.03);
     expect(within(dialog).getByLabelText('Pricing dividend yield')).toHaveValue(0.01);
     expect(within(dialog).getByLabelText('Pricing volatility')).toHaveValue(0.44);
@@ -267,7 +268,7 @@ describe('Positions', () => {
 
     // The stale spot recorded by the last valuation run (an override echo)
     // must not leak into the ticket.
-    expect(within(dialog).getByLabelText('Pricing spot')).toHaveValue(11965);
+    expectNumericValue(within(dialog).getByLabelText('Pricing spot'), 11965);
     expect(within(dialog).getByLabelText('Pricing rate')).toHaveValue(0.014);
     expect(within(dialog).getByLabelText('Pricing dividend yield')).toHaveValue(0.016);
     expect(within(dialog).getByLabelText('Pricing volatility')).toHaveValue(0.234);
@@ -396,7 +397,7 @@ describe('Positions', () => {
 
     expect(within(dialog).queryByText(/Loaded profile/i)).not.toBeInTheDocument();
     expect(within(dialog).queryByText(/cannot extract pricing parameters/i)).not.toBeInTheDocument();
-    expect(within(dialog).getByLabelText('Pricing spot')).toHaveValue(4913.8);
+    expectNumericValue(within(dialog).getByLabelText('Pricing spot'), 4913.8);
     expect(within(dialog).queryByLabelText('Pricing rate')).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText('Pricing dividend yield')).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText('Pricing volatility')).not.toBeInTheDocument();

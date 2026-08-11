@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PositionsLive } from './Positions.live';
+import { expectNumericValue } from '../test-setup';
 
 const portfolio = {
   id: 1,
@@ -438,7 +439,7 @@ describe('PositionsLive', () => {
     expect(within(dialog).getByLabelText('Pricing valuation date')).toHaveValue('2026-04-30');
     // All four market fields prefill from the server resolution: spot from the
     // quote store, r/q/vol from the trade-keyed profile row.
-    await waitFor(() => expect(within(dialog).getByLabelText('Pricing spot')).toHaveValue(11965));
+    await waitFor(() => expectNumericValue(within(dialog).getByLabelText('Pricing spot'), 11965));
     expect(within(dialog).getByLabelText('Pricing rate')).toHaveValue(0.025);
     expect(within(dialog).getByLabelText('Pricing dividend yield')).toHaveValue(0.01);
     expect(within(dialog).getByLabelText('Pricing volatility')).toHaveValue(0.33);

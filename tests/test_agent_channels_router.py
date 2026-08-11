@@ -20,8 +20,12 @@ class _FakeAgent:
 
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch):
+    # Copy the TRACKED template, not the live `config/agent_channels.yaml`:
+    # that file is gitignored, per-environment, and rewritten at runtime by the
+    # Model Maintenance UI, while the tests below assert which channel holds the
+    # default and which model ids exist.
     dst = tmp_path / "agent_channels.yaml"
-    shutil.copy(cr._REPO_ROOT / "config" / "agent_channels.yaml", dst)
+    shutil.copy(cr._REPO_ROOT / "config" / "agent_channels.example.yml", dst)
     monkeypatch.setenv("AGENT_CHANNELS_FILE", str(dst))
     cr.configure_registry(None)
     agent = _FakeAgent()

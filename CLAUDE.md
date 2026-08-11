@@ -274,10 +274,13 @@ normal `message` turn that also locks their card (`InboundMessage.card_lock_ref`
   deep-links at the web desk (e.g. `http://localhost:5173`).
 - `lark-oapi` is a hard dep in `pyproject.toml`; a stale `.venv` may lack it
   (`uv sync`). WS long-connection mode needs **no** public webhook URL.
-- **`.env` leak in tests:** real `FEISHU_*` / `GATEWAY_*` values bleed into
-  `Settings()` and fail the "defaults are None/empty" assertions in
-  `test_config.py` / one `test_identity.py` case — validate those in a no-`.env`
-  environment. All other gateway tests are connector-agnostic (FakeConnector).
+- **`.env` leak in tests — FIXED, no longer a caveat.** Real `FEISHU_*` / `GATEWAY_*`
+  values used to bleed into `Settings()` and fail the "defaults are None/empty"
+  assertions in `tests/gateway/test_config.py` / one `test_identity.py` case, and the
+  guidance was "validate those in a no-`.env` environment". The suite is now hermetic
+  via `app.config.dotenv_path()` + the `OPEN_OTC_ENV_FILE` pin in `tests/conftest.py`
+  (see *Tests must not assert against moving targets*), so it passes identically with
+  and without a `.env`. All gateway tests are connector-agnostic (FakeConnector).
 
 ---
 
@@ -1130,3 +1133,183 @@ Migrations `0053` (tables) + `0054` (seeds).
   5.4% off), so a token also grounds when it equals a data value rounded to any
   precision. **Only a live model run surfaces these** — a hand-written fixture
   narrative quotes numbers the way the test author would, not the way a model does.
+
+---
+
+## Settlement module
+
+The cash that position lifecycle events imply, tracked and governed. Cashflows are
+auto-generated from `PositionLifecycleEvent`s; users and agents release, block, edit
+and settle them, and issue settlement notices.
+
+**Package:** `backend/app/services/settlement/` — `contracts.py` (statuses +
+`CashflowDraft`), `derive.py` (the pure deriver + `CASH_LEG_RULES` +
+`SINGLETON_LEG_KEYS`), `store.py` (state machine + optimistic concurrency),
+`generate.py` (sweep + same-position dedup + fill), `drift.py`, `notice.py`,
+`errors.py`. REST: `routers/settlement.py` (`/api/settlement`). Tools:
+`tools/settlement.py` (3 reads + 10 writes). Skill:
+`skills/workflows/settlement/manage-settlement-cashflows/`. Frontend:
+`frontend/src/routes/Settlement.{tsx,live.tsx,types.ts,css}`. Migration `0055`.
+
+### It governs cash; it never computes payoffs
+
+An amount either comes with the lifecycle event or the cashflow is honestly
+`needs_amount`. That is a correct state, not a bug — the same `empty` vs
+`unavailable` discipline the report module fought for. A settlement calculator here
+would be a second, unvalidated pricing surface beside the pinned `quantark==0.3.0`.
+The one exception is the `premium` leg, which multiplies the position's own recorded
+`entry_price × quantity` — two stored trade fields, not a model.
+
+### `derived_amount` beside `amount` is the load-bearing choice
+
+`derived_*` is the deriver's snapshot for the row's OWN event; `amount`/`value_date`
+are effective values an edit changes. **Without the frozen snapshot, drift cannot be
+detected on an edited row** — the recompute would be compared against the human's
+number and every edited row would read as drifted forever. `amount != derived_amount`
+therefore means "overridden", which is exactly how `resync_cashflow` must treat it.
+
+### Two dedup layers, because they catch different duplicates
+
+- `UNIQUE(lifecycle_event_id, leg_key)` stops one event emitting a leg twice.
+- `SINGLETON_LEG_KEYS` (`{"settlement", "premium"}`) + `generate._open_singleton` stop
+  **different** events emitting the same once-per-position leg twice. The DB cannot
+  see that a `knock_out` and its follow-up `settle` are one economic settlement —
+  they are separate `position_lifecycle_events` rows. Dedup ignores **terminal**
+  cashflows so a settle → reopen → settle cycle legitimately earns a second row.
+  **`coupon` is deliberately NOT singleton** — coupons recur, and deduping them would
+  collapse a snowball's whole schedule into one row.
+
+### Gotchas
+
+- **`generate._fill_if_empty` is the single sanctioned exception to INSERT-only.**
+  Terminating events create a `needs_amount` row; the later `settle` fills it.
+  Narrow by design: null → value only, never over a released or edited row,
+  idempotent, logged as `filled_from_event`. **It leaves `derived_*` untouched** —
+  that snapshot describes the row's own event, which really carried no amount, so
+  rewriting it would make drift compare the filled value against a re-derived `None`
+  forever.
+- **Drift flags, never applies, and never bumps `row_version`.** Flagging is not a
+  user mutation; a UI holding a version must stay able to act on the row it sees.
+- **Amounts are non-negative magnitudes; `direction` carries the sign.** A negative
+  derived amount flips `pay` ↔ `receive`, so a loss-side settlement cannot read as
+  "pay 1,250" when the cash goes the other way.
+- **The inline hook in `create_lifecycle_event` is best-effort on purpose.** Lifecycle
+  is the source of truth for position status and must never be held hostage to
+  cashflow derivation, which is why the deriver is *total* (never raises) and
+  `generate_missing` is the safety net.
+- **`settle_settlement_cashflow` is `irreversible`; every other settlement write is
+  `"write"`.** Deliberate desk decision: release is recallable (`unrelease` exists and
+  `block` is reachable from `released`), so only the unrecallable assertion that money
+  moved is hard-gated. Remember `"write"` means AUTO/headless executes it unattended.
+  `settle` carries a `_SUMMARY_BUILDERS` entry so the card states the amount rather
+  than two bare integers.
+- **A test derives the mutating REST routes from the real router** and asserts each has
+  a tool counterpart, so the HTTP and agent surfaces cannot drift apart.
+- **Eight exact-set pins broke when this landed**, seven backend and one frontend:
+  `test_hitl.py` (interrupt set), `test_capability_assignments.py` (121 → 134),
+  `test_skills_catalog_v2.py` (×2), `test_routing_table.py`, `test_persona_domains.py`,
+  and `frontend/src/lib/routing.test.ts` (26 → 27 routes).
+- **The skill lint caps a SKILL.md body at 500 tokens** and requires `may_escalate_to`
+  plus an `## Example` section. The first draft came in at 749 and failed CI lint.
+- **`--radius-1` and `--ink-3` are referenced by some page CSS but defined nowhere.**
+  Do not copy them; verify every token against `frontend/src/tokens/` before use.
+
+### Every migration after `0001` must be IDEMPOTENT
+
+`0001_initial` does `from app.models import Base; Base.metadata.create_all(bind=bind)`.
+That is not a historical snapshot — it materialises **today's ORM metadata**, so a fresh
+database arrives at revision 1 already carrying the *entire current schema* (93 tables,
+including ones whose `create_table` migration has not run yet). Every migration after it
+therefore executes against a database that already has the modern shape, which makes
+existence-guarded DDL a **hard invariant**, not a style preference:
+
+```python
+def _tables() -> set[str]:
+    return set(inspect(op.get_bind()).get_table_names())
+
+def _columns(table: str) -> set[str]:
+    return {c["name"] for c in inspect(op.get_bind()).get_columns(table)}
+```
+
+`0005` and `0052` model the pattern. `0051`, `0053` and `0055` originally did not, and the
+chain died at `0051` with `duplicate column name: position_id` — the documented
+empty-database path was unusable for months. **`tests/test_migration_fresh_chain.py` is
+the standing guard**: it asserts `alembic upgrade head` on an empty DB reaches head, so an
+unguarded migration fails CI rather than rotting silently.
+
+Two consequences worth knowing:
+
+- **A migration's body is nearly decorative for fresh databases** (create_all already made
+  the objects). It is load-bearing for the LIVE database, which really does replay the
+  chain — so write it correctly anyway, and never let a guard skip work a real upgrade needs.
+- **`0051`'s downgrade still fails on a create_all-seeded DB**: SQLite cannot `DROP COLUMN`
+  a column an FK references, and the ORM puts an FK on `pricing_parameter_rows.position_id`
+  that a real historical 0051 never created. No test covers downgrades; a batch table
+  rebuild would be needed to fix it properly.
+
+### Tests must not assert against moving targets
+
+Four classes of self-invalidating assertion have already bitten this repo. All were red on
+`main` for a long time, which trains people to ignore the suite:
+
+- **A frozen `head` literal.** `test_migration_0046`/`0047` hardcoded
+  `"0049_hedge_booking_claim"` to mean "head", so every added migration broke them. Ask
+  `ScriptDirectory.from_config(config).get_current_head()` instead.
+- **Upgrading a synthetic fixture DB to `head`.** `test_migration_0047`'s
+  `_old_0046_engine` builds five tables to exercise one migration; targeting `head` drags
+  in every later migration against a schema that cannot satisfy them (`0050`'s
+  `ALTER TABLE instruments` was the first). **Target the migration under test.**
+- **Hand-maintained parallel exclusion lists.** `test_migration_0024` compares
+  "0024-only schema" against the *current* ORM behind a list of post-0024 columns; it was
+  never updated for `0050`/`0051`. It now derives the FK and index exclusions *from* the
+  column list, so only one list can go stale.
+- **Reading the developer's `.env`.** Fixed at the source: both dotenv readers now go
+  through **`app.config.dotenv_path()`**, which honours `OPEN_OTC_ENV_FILE` (unset =
+  repo-root `.env`, empty = no dotenv at all), and `tests/conftest.py` sets it empty
+  before the first `app` import. **Any new `.env` reader must use that seam** — being
+  hermetic on one path and leaky on another is the same as being leaky. Two things made
+  this bite hard: `Settings` is a dataclass whose *field defaults* read `.env`, so
+  every `Settings()` was affected, not just `get_settings()`; and
+  `channel_registry.load_from_path` used `load_dotenv(override=True)`, which **writes
+  into `os.environ`** and republished `.env` over conftest's own pins for every test
+  that ran afterwards — so the failure set was order-dependent. A test needing a dotenv
+  points `OPEN_OTC_ENV_FILE` at its own fixture file (see `test_config.py`).
+- **Asserting on a gitignored, per-environment file.** `test_agent_channels_router`,
+  `test_agent_registry_config` and `test_channel_registry_writer` read the live
+  `config/agent_channels.yaml` and hardcoded `zenmux` as the default-holding channel. That
+  file is per-env by design **and the Model Maintenance UI rewrites it at runtime**, so the
+  tests failed wherever the default had moved (here, `deepseek`). They were hermetic against
+  the `AGENT_CHANNELS_FILE` env var but not against the file's contents — those are two
+  different axes. Source the **tracked** `config/agent_channels.example.yml`.
+
+### Frontend: `NumberInput` formats by default, including in bare test renders
+
+`useThousandSeparator()` returns `thousandSeparator: true` when **no provider is mounted**
+— deliberate, and pinned by `NumberInput.test.tsx > renders formatted by default`. So
+`NumberInput` turns a value needing a separator into formatted **text** (`8359.56` →
+`"8,359.56"`, `type="number"` → `type="text"`). In tests this makes `toHaveValue(8359.56)`
+compare a number against a comma string, while values **under 1000 keep passing** — the
+breakage looks arbitrary until you notice the threshold. For tests about prefill or data
+flow rather than presentation, use `expectNumericValue(el, n)` from `src/test-setup.ts`.
+
+Related: **the Booking page cannot originate a `package` position.** `ProductTermsForm`
+renders the record-array ("Add Row") editor only for keys already in `product_kwargs`
+(`extraFields`), and no `PRODUCT_TYPES` entry declares a `components` field, so there is no
+way to introduce one on a fresh form. A `Booking.live` test asserted that flow and could
+never pass; it was removed, since the same contract is covered via the reachable path in
+`PositionEditForm.test.tsx`. Closing the gap means giving the form a real components entry
+point — it is a product decision, not a test fix.
+
+### Pre-existing traps this work ran into (NOT caused by settlement)
+
+- **The DB env var is `OPEN_OTC_DATABASE_URL`, not `DATABASE_URL`** (it is a
+  `validation_alias`). Getting it wrong does NOT error — it silently falls back to
+  `./data/open_otc.sqlite3`, i.e. the LIVE DB, and reports `exit=0`. The only tell is
+  the absence of "Running upgrade" lines.
+- **A git worktree needs `config/agent_channels.yaml` copied in.** It is gitignored
+  (per-env), so without it every test that imports `app.main` dies at collection with
+  `FileNotFoundError`. (Copying `.env` in used to break `test_config.py` /
+  `test_tracing_config`; the suite is hermetic now, so it no longer matters either way.)
+- The venv's editable-install `.pth` currently points at a deleted worktree, so a bare
+  `python -c "import app"` fails. Tests are unaffected: `pyproject.toml` sets
+  `pythonpath = ["backend"]` relative to pytest's rootdir.

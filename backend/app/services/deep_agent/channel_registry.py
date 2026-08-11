@@ -15,9 +15,10 @@ from typing import Literal
 
 import yaml
 
+from app.config import dotenv_path
+
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-_ENV_FILE = _REPO_ROOT / ".env"
 
 
 @dataclass(frozen=True)
@@ -108,11 +109,19 @@ def load_from_path(
     channels are healthy — the caller decides whether the agent is "disabled".
     """
     if force_reread_dotenv:
-        try:
-            from dotenv import load_dotenv  # imported lazily to keep tests fast
-            load_dotenv(_ENV_FILE, override=True)
-        except ImportError:
-            pass
+        # `dotenv_path()` may return None, meaning "dotenv loading is disabled"
+        # (the test suite sets it so). Honour that: `load_dotenv(None)` would
+        # fall back to searching for a .env from the CWD, and `override=True`
+        # writes straight into os.environ — so an unguarded call here does not
+        # just read a stray .env, it republishes it over every value the suite
+        # pinned, for every test that runs afterwards.
+        env_file = dotenv_path()
+        if env_file is not None:
+            try:
+                from dotenv import load_dotenv  # lazily imported to keep tests fast
+                load_dotenv(env_file, override=True)
+            except ImportError:
+                pass
 
     path = Path(path)
     raw = yaml.safe_load(path.read_text())

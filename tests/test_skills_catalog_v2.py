@@ -40,6 +40,7 @@ def test_persona_sources_are_workflow_only() -> None:
 
     assert trader_sources == [
         "/skills/workflows/positions/",
+        "/skills/workflows/settlement/",
         "/skills/workflows/products/",
         "/skills/workflows/try-solve/",
         "/skills/workflows/pricing/",
@@ -154,7 +155,7 @@ def test_legacy_sources_are_empty(skills_backend: FilesystemBackend) -> None:
 def test_trader_total_workflow_catalog(skills_backend: FilesystemBackend) -> None:
     catalog = _persona_catalog(_build_backend(), _source_list(trader_spec(object(), [])))
 
-    assert len(catalog) == 32, f"Expected 32 entries, got {len(catalog)}: {catalog}"  # 22 + pricing-parameter-maintenance + asian-fixings + build-workflow + product-term-interpretation + book-trade-confirmation + the reporting domain, now visible to trader so persona: trader templates are routable (generate-report, display-report, batch-run-reports, generate-templated-report, author-report-template)
+    assert len(catalog) == 33, f"Expected 33 entries, got {len(catalog)}: {catalog}"  # 22 + pricing-parameter-maintenance + asian-fixings + build-workflow + product-term-interpretation + book-trade-confirmation + the reporting domain, now visible to trader so persona: trader templates are routable (generate-report, display-report, batch-run-reports, generate-templated-report, author-report-template) + manage-settlement-cashflows
     assert {
         "position-snapshot",
         "solve-imported-row",

@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { afterEach } from 'vitest';
+import { afterEach, expect } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import axe from 'axe-core';
 
@@ -46,6 +46,25 @@ afterEach(() => {
   document.documentElement.removeAttribute('data-density');
   globalThis.localStorage.clear();
 });
+
+/**
+ * Assert a numeric field holds `expected`, independent of thousand-separator
+ * formatting.
+ *
+ * `NumberInput` renders a value that needs a separator as formatted TEXT
+ * (`8359.56` → `"8,359.56"`, and `type="number"` → `type="text"`), and
+ * `useThousandSeparator()` deliberately defaults to ON when no provider is
+ * mounted — which is every bare unit-test render. So `toHaveValue(8359.56)`
+ * compares a number against `"8,359.56"` and fails, while values under 1000
+ * pass, which makes the breakage look arbitrary.
+ *
+ * Use this in tests whose subject is prefill or data flow rather than
+ * presentation. Formatting itself is covered by `NumberInput.test.tsx`.
+ */
+export function expectNumericValue(element: HTMLElement, expected: number): void {
+  const raw = (element as HTMLInputElement).value;
+  expect(Number(raw.replace(/,/g, ''))).toBe(expected);
+}
 
 export async function expectNoA11yViolations(container: Element): Promise<void> {
   const results = await axe.run(container, {

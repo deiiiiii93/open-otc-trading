@@ -29,7 +29,11 @@ def _config_with_env_file(monkeypatch, env_file):
     import app.config as config_module
 
     importlib.reload(config_module)
-    monkeypatch.setattr(config_module, "_ENV_FILE", env_file)
+    # Point the public override at the fixture file rather than patching the
+    # private `_ENV_FILE`: conftest sets the override empty for the whole suite
+    # (so a developer's real .env can never leak into a defaults assertion), and
+    # an empty override short-circuits `_ENV_FILE` entirely.
+    monkeypatch.setenv(config_module.ENV_FILE_OVERRIDE_VAR, str(env_file))
     return config_module
 
 

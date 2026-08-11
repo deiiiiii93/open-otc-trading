@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Settlement module** — the cash implied by position lifecycle events, tracked
+  and governed. Cashflows are auto-generated from `PositionLifecycleEvent`s by a
+  pure, total deriver and worked through a `needs_amount → pending → released →
+  settled` state machine (plus `blocked` / `void`) under optimistic concurrency,
+  with an append-only transition log. The module **never computes payoffs**: an
+  event either carries an amount or the cashflow is honestly `needs_amount`.
+  Drift against the source event is **flagged, never silently applied** —
+  `resync` is the only re-baseline path and it preserves a human override.
+  Deterministic Markdown settlement notices (no LLM prose) with a frozen payload
+  snapshot and sha256. New `/api/settlement` REST surface, 13 agent tools
+  (`settle_settlement_cashflow` is HITL `irreversible`, the rest `write`), a
+  routable `manage-settlement-cashflows` skill for the trader persona, and the
+  **Settlement** nav page. Migration `0055`.
 - **Arena per-model scorecards** — `scripts/render_scorecards.py` renders one
   outreach card per lab from a board run, combining the derived ability card,
   the specific checks that did not pass, the exact serving configuration, and
@@ -99,6 +112,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   indicator and the polling can't disagree about what "still parsing" means.
 
 ### Fixed
+- **`alembic upgrade head` could not reach head on an empty database.** `0001_initial`
+  materialises live ORM metadata via `Base.metadata.create_all()`, so a fresh database
+  arrives at revision 1 already carrying *today's* full schema — which makes idempotent
+  DDL a hard invariant for every migration after it, not a style preference. `0005` and
+  `0052` honour that with existence guards; `0051`, `0053` and `0055` did not, so the
+  chain died at `0051` with `duplicate column name: position_id` and the documented
+  empty-database path was unusable. All three now guard their DDL on current schema
+  state. `tests/test_migration_fresh_chain.py` was already asserting this and had been
+  failing; it is the standing guard against the next unguarded migration.
+- **Four tests asserted against moving targets and had to fail as the repo grew.**
+  `test_migration_0046` and `test_migration_0047` froze the literal
+  `"0049_hedge_booking_claim"` as a stand-in for *head*, so every added migration broke
+  them; 0046 now asks `ScriptDirectory` for head, and 0047 targets the migration it
+  actually tests (its `_old_0046_engine` builds a deliberately narrow five-table
+  database that cannot satisfy later migrations — `0050`'s `ALTER TABLE instruments`
+  is the first to need one of the missing tables). `test_migration_0024`'s
+  hand-maintained "columns added after 0024" allowlist had not been updated for `0050`
+  or `0051`; it now also derives the foreign-key and index exclusions *from* that column
+  list rather than keeping three lists in sync by hand.
+- **The test suite is now hermetic against a developer's `.env`.** `Settings` is a
+  dataclass whose field defaults call `_read_environment_settings()`, so **every**
+  `Settings()` read the repo-root `.env` — and on a configured machine that made eight
+  tests fail (gateway config defaults, `trace_db_path`, a gateway identity case) while
+  the identical code passed in CI and in a fresh worktree. `CLAUDE.md` had documented
+  the workaround ("validate those in a no-`.env` environment") rather than fixing it,
+  which meant a real developer's suite was permanently red and the red was expected.
+  Worse, `channel_registry.load_from_path` called `load_dotenv(..., override=True)`,
+  **writing `.env` into `os.environ`** and republishing it over the values conftest had
+  pinned — for every test that ran afterwards, making the failure set order-dependent.
+  Both readers now resolve through a single `app.config.dotenv_path()` seam honouring
+  `OPEN_OTC_ENV_FILE`; `tests/conftest.py` sets it empty ("no dotenv at all") before the
+  first `app` import. Production behaviour is unchanged when the variable is unset —
+  both call sites resolve to the same repo-root `.env` they always did. Verified by
+  running the full suite both with and without a `.env` in place: 4454 passed either way.
+- **Twelve frontend tests asserted raw numeric values against thousand-separated
+  inputs.** `NumberInput` renders a value needing a separator as formatted TEXT
+  (`8359.56` → `"8,359.56"`, `type="number"` → `type="text"`), and
+  `useThousandSeparator()` deliberately defaults **on** when no provider is mounted —
+  which is every bare unit-test render. So `toHaveValue(8359.56)` compared a number
+  against `"8,359.56"`, while values under 1000 kept passing, making the breakage look
+  arbitrary. Those tests are about prefill and data flow, not presentation (formatting
+  has its own coverage in `NumberInput.test.tsx`), so they now use a
+  formatting-agnostic `expectNumericValue` helper in `src/test-setup.ts`.
+- **Removed a Booking test for a flow the page does not implement.**
+  `Booking.live.test.tsx > sends package components as top-level product components`
+  clicked an "Add Row" button that never renders: `ProductTermsForm` shows the
+  record-array editor only for keys already present in `product_kwargs`, and no entry
+  in `PRODUCT_TYPES` declares a `components` field, so a fresh booking form cannot
+  introduce one. **The Booking page cannot originate a package position** — a product
+  gap, not a test bug. The contract it meant to cover is already covered through the
+  path that exists (`PositionEditForm.test.tsx > submits package components as
+  top-level product components`), so no coverage was lost.
+- **Three registry tests asserted on the contents of a gitignored, per-environment
+  file.** `test_agent_channels_router`, `test_agent_registry_config` and
+  `test_channel_registry_writer` sourced the live `config/agent_channels.yaml` and
+  hardcoded `zenmux` as the channel holding the default. That file is per-environment
+  by design and the Model Maintenance UI rewrites it at runtime, so the tests failed on
+  any checkout whose default had moved (here, to `deepseek`). They were hermetic against
+  the `AGENT_CHANNELS_FILE` env var but not against the file's contents. All three now
+  source the **tracked** `config/agent_channels.example.yml`.
 - **`scenario.latest_grid` would have reported a populated stress run as `empty`.**
   The producer read `results["rows"]`/`results["cells"]`, but the scenario runner
   persists `shape_results(...)`, whose grid lives under **`"scenarios"`** — so the

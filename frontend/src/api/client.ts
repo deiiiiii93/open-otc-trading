@@ -710,3 +710,93 @@ export const bookExtractedTrade = (id: number, portfolioId: number | null) =>
 export const rejectExtractedTrade = (id: number, reason?: string) =>
   api<ExtractedTrade>(`/api/confirmations/trades/${id}/reject`,
     { method: 'POST', body: JSON.stringify({ reason }) });
+
+// --- Settlement ------------------------------------------------------------
+//
+// Actions return a discriminated result rather than throwing, because a 409
+// (someone else moved the row) is an expected outcome the UI must handle by
+// reloading — not an error to surface as a stack trace.
+
+import type {
+  SettlementCashflowDetail,
+  SettlementCashflowRow,
+  SettlementSummary,
+} from '../routes/Settlement.types';
+
+export type SettlementActionResult =
+  | { ok: true; row: SettlementCashflowRow }
+  | { ok: false; conflict: boolean; message: string };
+
+export const listSettlementCashflows = (params: {
+  portfolio_id?: number | null;
+  status?: string;
+  stale?: boolean;
+  limit?: number;
+  offset?: number;
+}) => {
+  const query = new URLSearchParams();
+  if (params.portfolio_id != null) query.set('portfolio_id', String(params.portfolio_id));
+  if (params.status) query.set('status', params.status);
+  if (params.stale) query.set('stale', 'true');
+  query.set('limit', String(params.limit ?? 100));
+  query.set('offset', String(params.offset ?? 0));
+  return api<{ items: SettlementCashflowRow[]; total: number; limit: number; offset: number }>(
+    `/api/settlement/cashflows?${query.toString()}`);
+};
+
+export const getSettlementCashflow = (id: number) =>
+  api<SettlementCashflowDetail>(`/api/settlement/cashflows/${id}`);
+
+export const fetchSettlementSummary = (portfolioId?: number | null) =>
+  api<SettlementSummary>(
+    `/api/settlement/summary${portfolioId != null ? `?portfolio_id=${portfolioId}` : ''}`);
+
+export const sweepSettlement = (
+  kind: 'generate' | 'refresh', portfolioId?: number | null,
+) =>
+  api<Record<string, number>>(`/api/settlement/cashflows/${kind}`, {
+    method: 'POST',
+    body: JSON.stringify(portfolioId != null ? { portfolio_id: portfolioId } : {}),
+  });
+
+async function settlementWrite(
+  path: string, init: RequestInit,
+): Promise<SettlementActionResult> {
+  const headers = new Headers(init.headers);
+  headers.set('content-type', 'application/json');
+  const response = await fetch(path, { ...init, headers });
+  if (response.ok) return { ok: true, row: await response.json() };
+  let message = await response.text();
+  try {
+    const parsed = JSON.parse(message);
+    if (typeof parsed?.detail === 'string') message = parsed.detail;
+  } catch {
+    // Non-JSON error body — keep the raw text.
+  }
+  return { ok: false, conflict: response.status === 409, message };
+}
+
+export const settlementAction = (
+  id: number,
+  action: 'release' | 'unrelease' | 'block' | 'unblock' | 'settle' | 'void' | 'resync',
+  expectedRowVersion: number,
+  reason?: string,
+) =>
+  settlementWrite(`/api/settlement/cashflows/${id}/${action}`, {
+    method: 'POST',
+    body: JSON.stringify({ expected_row_version: expectedRowVersion, reason }),
+  });
+
+export const updateSettlementCashflow = (
+  id: number,
+  expectedRowVersion: number,
+  patch: { amount?: number; value_date?: string; counterparty?: string; notes?: string },
+) =>
+  settlementWrite(`/api/settlement/cashflows/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ expected_row_version: expectedRowVersion, ...patch }),
+  });
+
+export const createSettlementNotice = (id: number) =>
+  api<{ id: number; version: number; artifact_path: string }>(
+    `/api/settlement/cashflows/${id}/notice`, { method: 'POST', body: '{}' });

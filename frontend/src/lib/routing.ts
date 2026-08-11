@@ -10,6 +10,7 @@ export const ROUTE_PATHS: Record<NavRoute, string> = {
   'model-maintenance': '/model-maintenance',
   audit: '/audit',
   confirmations: '/confirmations',
+  settlement: '/settlement',
   positions: '/positions',
   booking: '/booking',
   'pricing-parameters': '/pricing-parameters',

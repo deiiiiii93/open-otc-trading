@@ -2240,3 +2240,113 @@ class DeskWorkflowOut(DeskWorkflowSummaryOut):
     script: str
 
     model_config = {"from_attributes": True}
+
+
+# --- Settlement ------------------------------------------------------------
+
+
+class SettlementCashflowOut(BaseModel):
+    id: int
+    lifecycle_event_id: int
+    leg_key: str
+    position_id: int
+    portfolio_id: int | None = None
+    underlying: str | None = None
+    product_type: str | None = None
+    event_type: str | None = None
+    currency: str
+    counterparty: str | None = None
+    direction: str
+    derived_amount: float | None = None
+    derived_value_date: date | None = None
+    derived_basis: str | None = None
+    amount: float | None = None
+    value_date: date | None = None
+    status: str
+    stale: bool
+    stale_reason: dict | None = None
+    last_checked_at: datetime | None = None
+    block_reason: str | None = None
+    notes: str | None = None
+    row_version: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class SettlementCashflowEventOut(BaseModel):
+    id: int
+    action: str
+    from_status: str | None = None
+    to_status: str | None = None
+    actor: str
+    reason: str | None = None
+    payload: dict
+    created_at: datetime
+
+
+class SettlementNoticeOut(BaseModel):
+    id: int
+    version: int
+    artifact_path: str
+    content_sha256: str
+    status: str
+    rendered_at: datetime
+    rendered_by: str
+
+
+class SettlementCashflowDetailOut(SettlementCashflowOut):
+    events: list[SettlementCashflowEventOut] = Field(default_factory=list)
+    notices: list[SettlementNoticeOut] = Field(default_factory=list)
+
+
+class SettlementCashflowListOut(BaseModel):
+    items: list[SettlementCashflowOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class SettlementSweepIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    portfolio_id: int | None = None
+
+
+class SettlementGenerateOut(BaseModel):
+    created: int
+    skipped: int
+    filled: int
+
+
+class SettlementRefreshOut(BaseModel):
+    checked: int
+    flagged: int
+    cleared: int
+
+
+class SettlementCashflowPatchIn(BaseModel):
+    """``model_fields_set`` distinguishes "not supplied" from "explicitly null",
+    so no sentinel field is needed here."""
+
+    model_config = ConfigDict(extra="forbid")
+    expected_row_version: int
+    amount: float | None = None
+    value_date: date | None = None
+    counterparty: str | None = None
+    notes: str | None = None
+
+
+class SettlementActionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_row_version: int
+    reason: str | None = None
+
+
+class SettlementNoticeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    actor: str = "desk_user"
+
+
+class SettlementSummaryOut(BaseModel):
+    by_status: dict[str, int]
+    totals_by_currency: dict[str, float]
+    stale_count: int

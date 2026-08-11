@@ -26,7 +26,8 @@ export type Route =
   | 'model-maintenance'
   | 'audit'
   | 'limits'
-  | 'confirmations';
+  | 'confirmations'
+  | 'settlement';
 
 export interface AgentRegistryModel {
   id: string;

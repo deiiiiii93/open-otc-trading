@@ -534,6 +534,22 @@ DEEP_AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         "parse_trade_confirmation",
         "get_confirmation_batch",
         "book_extracted_trade",
+        # settlement: registered in QUANT_AGENT_TOOLS AND allowlisted here —
+        # absent from this allowlist a tool is silently dropped from every
+        # persona's toolset.
+        "get_settlement_cashflows",
+        "get_settlement_cashflow",
+        "get_settlement_summary",
+        "generate_settlement_cashflows",
+        "update_settlement_cashflow",
+        "release_settlement_cashflow",
+        "unrelease_settlement_cashflow",
+        "block_settlement_cashflow",
+        "unblock_settlement_cashflow",
+        "void_settlement_cashflow",
+        "resync_settlement_cashflow",
+        "settle_settlement_cashflow",
+        "generate_settlement_notice",
         "create_report",
         "approve_rfq",
         "reject_rfq",

@@ -12,6 +12,7 @@ from app.services.deep_agent.skills_paths import WORKFLOWS_DIR
 def test_trader_sources_unchanged() -> None:
     assert workflow_skill_sources("trader") == [
         "/skills/workflows/positions/",
+        "/skills/workflows/settlement/",
         "/skills/workflows/products/",
         "/skills/workflows/try-solve/",
         "/skills/workflows/pricing/",

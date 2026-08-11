@@ -5,6 +5,7 @@ Returns ORM objects; never JSON. Session-aware.
 """
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -27,6 +28,9 @@ from app.services.audit import record_audit
 from app.services import position_adapter, position_pricer
 from app.services.domains.products import compatibility_terms_for_position
 from app.services.portfolio_membership import resolve_positions
+from app.services.settlement.generate import generate_for_event
+
+logger = logging.getLogger(__name__)
 
 TRADE_SHEET = position_adapter.TRADE_SHEET
 
@@ -620,6 +624,19 @@ def create_lifecycle_event(
             actor=actor,
         )
         sess.add(event)
+        sess.flush()  # event.id is required by cashflow generation
+        try:
+            generate_for_event(sess, event=event, actor=actor)
+        except Exception:  # noqa: BLE001
+            # Best-effort by design. Lifecycle is the source of truth for
+            # position status and must never be held hostage to cashflow
+            # derivation; generate_missing() is the safety net that fills any
+            # gap this leaves.
+            logger.exception(
+                "settlement cashflow generation failed for lifecycle event "
+                "on position %s",
+                position.id,
+            )
         portfolio.updated_at = datetime.utcnow()
         record_audit(
             sess,

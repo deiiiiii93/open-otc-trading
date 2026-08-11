@@ -64,6 +64,16 @@ INTERRUPT_TOOL_NAMES: tuple[str, ...] = (
     "waive_limit_incident",
     "resolve_limit_incident",
     "book_extracted_trade",
+    "generate_settlement_cashflows",
+    "update_settlement_cashflow",
+    "release_settlement_cashflow",
+    "unrelease_settlement_cashflow",
+    "block_settlement_cashflow",
+    "unblock_settlement_cashflow",
+    "void_settlement_cashflow",
+    "resync_settlement_cashflow",
+    "settle_settlement_cashflow",
+    "generate_settlement_notice",
     "run_python",
 )
 
@@ -132,6 +142,22 @@ _RISK_LEVEL_BY_TOOL: dict[str, str] = {
     # failure the register_underlying comment below guards against, one order
     # of magnitude larger.
     "book_extracted_trade": "irreversible",
+    # Settlement. "write" = interactive only; AUTO strips these from the
+    # interrupt map. Deliberate desk decision: release is recallable
+    # (unrelease exists, and block is reachable from released), and every
+    # transition is audited.
+    "generate_settlement_cashflows": "write",
+    "update_settlement_cashflow": "write",
+    "release_settlement_cashflow": "write",
+    "unrelease_settlement_cashflow": "write",
+    "block_settlement_cashflow": "write",
+    "unblock_settlement_cashflow": "write",
+    "void_settlement_cashflow": "write",
+    "resync_settlement_cashflow": "write",
+    "generate_settlement_notice": "write",
+    # "irreversible", NOT "write": marking a cashflow settled asserts money
+    # actually moved and cannot be recalled. AUTO mode must still stop here.
+    "settle_settlement_cashflow": "irreversible",
     # Argument-aware: pure analysis is read-like; writes_artifacts=True is
     # handled by RunPythonArtifactHITLMiddleware.
     "run_python": "read",
@@ -182,6 +208,16 @@ _LABEL_BY_TOOL: dict[str, str] = {
     "waive_limit_incident": "Waive limit incident",
     "resolve_limit_incident": "Resolve limit incident",
     "book_extracted_trade": "Book extracted trade",
+    "generate_settlement_cashflows": "Generate settlement cashflows",
+    "update_settlement_cashflow": "Edit settlement cashflow",
+    "release_settlement_cashflow": "Release cashflow for payment",
+    "unrelease_settlement_cashflow": "Recall released cashflow",
+    "block_settlement_cashflow": "Block settlement cashflow",
+    "unblock_settlement_cashflow": "Unblock settlement cashflow",
+    "void_settlement_cashflow": "Void settlement cashflow",
+    "resync_settlement_cashflow": "Resync cashflow to its source event",
+    "settle_settlement_cashflow": "Mark cashflow SETTLED",
+    "generate_settlement_notice": "Generate settlement notice",
     "run_python": "Run Python script",
 }
 
@@ -351,10 +387,51 @@ def _summarize_book_extracted_trade(args: dict[str, Any]) -> str:
         return f"Book extracted trade #{trade_id}"
 
 
+def _summarize_settle_settlement_cashflow(args: dict[str, Any]) -> str:
+    """Same rationale as _summarize_book_extracted_trade: the interrupt fires
+    before the tool body runs, so the raw args are just ``{cashflow_id,
+    expected_row_version}`` -- meaningless to a human asked to confirm that
+    money actually moved. Reads the row so the card states the amount."""
+    cashflow_id = args.get("cashflow_id")
+    if not isinstance(cashflow_id, int):
+        return "Mark settlement cashflow SETTLED"
+
+    from app import database
+    from app.models import Position, SettlementCashflow
+
+    try:
+        database.init_db()
+        with database.SessionLocal() as session:
+            row = session.get(SettlementCashflow, cashflow_id)
+            if row is None:
+                return f"Mark settlement cashflow #{cashflow_id} SETTLED (not found)"
+            amount = "unknown amount" if row.amount is None else f"{row.amount:,.2f}"
+            head = f"Mark SETTLED: {amount} {row.currency} ({row.direction})"
+            extras: list[str] = []
+            if row.counterparty:
+                extras.append(f"cpty {row.counterparty}")
+            if row.value_date:
+                extras.append(f"value {row.value_date.isoformat()}")
+            position = session.get(Position, row.position_id)
+            if position is not None:
+                extras.append(
+                    f"position #{position.id} {position.product_type} "
+                    f"on {position.underlying}"
+                )
+            extras.append(f"currently {row.status}")
+            if row.stale:
+                extras.append("STALE vs source event")
+            return head + (" — " + ", ".join(extras) if extras else "")
+    except Exception:
+        # Card rendering must never 500 the turn over a preview lookup.
+        return f"Mark settlement cashflow #{cashflow_id} SETTLED"
+
+
 _SUMMARY_BUILDERS: dict[str, Callable[[dict[str, Any]], str]] = {
     "book_position": _summarize_book_position,
     "register_underlying": _summarize_register_underlying,
     "book_extracted_trade": _summarize_book_extracted_trade,
+    "settle_settlement_cashflow": _summarize_settle_settlement_cashflow,
 }
 
 

@@ -169,6 +169,11 @@ OLD_TABLE_ROWS: set[tuple[str, str, str]] = {
     ("Generate the board one-pager", "high_board", "generate-templated-report"),
     ("Create or edit a report template", "risk_manager", "author-report-template"),
     ("Change what a report shows", "trader", "author-report-template"),
+    (
+        "Review settlement cashflows, release or block a payment, or issue a settlement notice",
+        "trader",
+        "manage-settlement-cashflows",
+    ),
 }
 
 

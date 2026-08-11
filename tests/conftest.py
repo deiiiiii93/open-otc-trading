@@ -11,6 +11,18 @@ from pathlib import Path
 
 import pytest
 
+# Run hermetically against the developer's `.env`. Settings is a dataclass whose
+# field defaults read the repo-root `.env`, so on a configured machine every
+# `Settings()` silently inherits real FEISHU_*/GATEWAY_*/OPEN_OTC_* values and
+# any test asserting "this default is None/empty" fails — while the same test
+# passes in CI and in a fresh worktree. Worse, `channel_registry.load_from_path`
+# used to `load_dotenv(override=True)`, republishing `.env` over os.environ for
+# every test that ran after it, including the pins below.
+#
+# Empty means "no dotenv at all" (see `app.config.dotenv_path`). Tests that need
+# a dotenv point this at their own fixture file.
+os.environ.setdefault("OPEN_OTC_ENV_FILE", "")
+
 # Default the whole suite to no tracing: agent-driving tests must not write
 # trace DBs into data/. Tracing tests opt in explicitly via monkeypatch.
 os.environ.setdefault("OPEN_OTC_TRACING", "off")
