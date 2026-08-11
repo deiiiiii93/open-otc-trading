@@ -11,6 +11,26 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ENV_FILE = _REPO_ROOT / ".env"
 
+#: Env var that redirects — or disables — dotenv loading process-wide.
+#: Unset (the normal case) keeps the repo-root ``.env``; empty disables dotenv
+#: entirely. The test suite sets it empty so a developer's real ``.env`` cannot
+#: leak into assertions about defaults.
+ENV_FILE_OVERRIDE_VAR = "OPEN_OTC_ENV_FILE"
+
+
+def dotenv_path() -> Path | None:
+    """The dotenv file to read, or None when dotenv loading is disabled.
+
+    Every ``.env`` reader in the codebase must go through this, not through
+    ``_ENV_FILE`` directly — otherwise the suite is hermetic on one path and
+    leaky on the other. Currently two readers: ``_read_environment_settings``
+    here and ``channel_registry.load_from_path``'s ``load_dotenv``.
+    """
+    override = os.environ.get(ENV_FILE_OVERRIDE_VAR)
+    if override is None:
+        return _ENV_FILE
+    return Path(override) if override else None
+
 
 def _default_risk_parallel_workers() -> int:
     return max(1, min(8, os.cpu_count() or 1))
@@ -200,7 +220,7 @@ class _EnvironmentSettings(BaseSettings):
 
 
 def _read_environment_settings() -> _EnvironmentSettings:
-    return _EnvironmentSettings(_env_file=_ENV_FILE)
+    return _EnvironmentSettings(_env_file=dotenv_path())
 
 
 def _env_value(name: str) -> Any:

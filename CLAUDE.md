@@ -274,10 +274,13 @@ normal `message` turn that also locks their card (`InboundMessage.card_lock_ref`
   deep-links at the web desk (e.g. `http://localhost:5173`).
 - `lark-oapi` is a hard dep in `pyproject.toml`; a stale `.venv` may lack it
   (`uv sync`). WS long-connection mode needs **no** public webhook URL.
-- **`.env` leak in tests:** real `FEISHU_*` / `GATEWAY_*` values bleed into
-  `Settings()` and fail the "defaults are None/empty" assertions in
-  `test_config.py` / one `test_identity.py` case — validate those in a no-`.env`
-  environment. All other gateway tests are connector-agnostic (FakeConnector).
+- **`.env` leak in tests — FIXED, no longer a caveat.** Real `FEISHU_*` / `GATEWAY_*`
+  values used to bleed into `Settings()` and fail the "defaults are None/empty"
+  assertions in `tests/gateway/test_config.py` / one `test_identity.py` case, and the
+  guidance was "validate those in a no-`.env` environment". The suite is now hermetic
+  via `app.config.dotenv_path()` + the `OPEN_OTC_ENV_FILE` pin in `tests/conftest.py`
+  (see *Tests must not assert against moving targets*), so it passes identically with
+  and without a `.env`. All gateway tests are connector-agnostic (FakeConnector).
 
 ---
 
@@ -1260,6 +1263,17 @@ Four classes of self-invalidating assertion have already bitten this repo. All w
   "0024-only schema" against the *current* ORM behind a list of post-0024 columns; it was
   never updated for `0050`/`0051`. It now derives the FK and index exclusions *from* the
   column list, so only one list can go stale.
+- **Reading the developer's `.env`.** Fixed at the source: both dotenv readers now go
+  through **`app.config.dotenv_path()`**, which honours `OPEN_OTC_ENV_FILE` (unset =
+  repo-root `.env`, empty = no dotenv at all), and `tests/conftest.py` sets it empty
+  before the first `app` import. **Any new `.env` reader must use that seam** — being
+  hermetic on one path and leaky on another is the same as being leaky. Two things made
+  this bite hard: `Settings` is a dataclass whose *field defaults* read `.env`, so
+  every `Settings()` was affected, not just `get_settings()`; and
+  `channel_registry.load_from_path` used `load_dotenv(override=True)`, which **writes
+  into `os.environ`** and republished `.env` over conftest's own pins for every test
+  that ran afterwards — so the failure set was order-dependent. A test needing a dotenv
+  points `OPEN_OTC_ENV_FILE` at its own fixture file (see `test_config.py`).
 - **Asserting on a gitignored, per-environment file.** `test_agent_channels_router`,
   `test_agent_registry_config` and `test_channel_registry_writer` read the live
   `config/agent_channels.yaml` and hardcoded `zenmux` as the default-holding channel. That
@@ -1294,8 +1308,8 @@ point — it is a product decision, not a test fix.
   the absence of "Running upgrade" lines.
 - **A git worktree needs `config/agent_channels.yaml` copied in.** It is gitignored
   (per-env), so without it every test that imports `app.main` dies at collection with
-  `FileNotFoundError`. Do **not** copy `.env` — its absence is what makes
-  `test_config.py` / `test_tracing_config` honest.
+  `FileNotFoundError`. (Copying `.env` in used to break `test_config.py` /
+  `test_tracing_config`; the suite is hermetic now, so it no longer matters either way.)
 - The venv's editable-install `.pth` currently points at a deleted worktree, so a bare
   `python -c "import app"` fails. Tests are unaffected: `pyproject.toml` sets
   `pythonpath = ["backend"]` relative to pytest's rootdir.

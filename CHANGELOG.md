@@ -131,6 +131,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hand-maintained "columns added after 0024" allowlist had not been updated for `0050`
   or `0051`; it now also derives the foreign-key and index exclusions *from* that column
   list rather than keeping three lists in sync by hand.
+- **The test suite is now hermetic against a developer's `.env`.** `Settings` is a
+  dataclass whose field defaults call `_read_environment_settings()`, so **every**
+  `Settings()` read the repo-root `.env` — and on a configured machine that made eight
+  tests fail (gateway config defaults, `trace_db_path`, a gateway identity case) while
+  the identical code passed in CI and in a fresh worktree. `CLAUDE.md` had documented
+  the workaround ("validate those in a no-`.env` environment") rather than fixing it,
+  which meant a real developer's suite was permanently red and the red was expected.
+  Worse, `channel_registry.load_from_path` called `load_dotenv(..., override=True)`,
+  **writing `.env` into `os.environ`** and republishing it over the values conftest had
+  pinned — for every test that ran afterwards, making the failure set order-dependent.
+  Both readers now resolve through a single `app.config.dotenv_path()` seam honouring
+  `OPEN_OTC_ENV_FILE`; `tests/conftest.py` sets it empty ("no dotenv at all") before the
+  first `app` import. Production behaviour is unchanged when the variable is unset —
+  both call sites resolve to the same repo-root `.env` they always did. Verified by
+  running the full suite both with and without a `.env` in place: 4454 passed either way.
 - **Twelve frontend tests asserted raw numeric values against thousand-separated
   inputs.** `NumberInput` renders a value needing a separator as formatted TEXT
   (`8359.56` → `"8,359.56"`, `type="number"` → `type="text"`), and
