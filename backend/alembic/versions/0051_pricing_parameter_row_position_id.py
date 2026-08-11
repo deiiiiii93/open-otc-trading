@@ -55,4 +55,21 @@ def downgrade() -> None:
             table_name="pricing_parameter_rows",
         )
     if "position_id" in _columns("pricing_parameter_rows"):
-        op.drop_column("pricing_parameter_rows", "position_id")
+        # Batch mode, NOT a direct `op.drop_column`. SQLite refuses
+        # `ALTER TABLE ... DROP COLUMN` while any foreign-key definition names
+        # the column, and on a create_all-seeded database (see the module
+        # docstring) position_id arrives carrying an FK to `positions` that a
+        # real historical 0051 never created. A direct drop_column emits that
+        # native ALTER and dies with:
+        #   error in table pricing_parameter_rows after drop column:
+        #   unknown column "position_id" in foreign key definition
+        #
+        # batch_alter_table rebuilds the table instead (create new, copy rows,
+        # drop old, rename), which removes the column and its FK together. The
+        # default recreate="auto" is sufficient — alembic's
+        # SQLiteImpl.requires_recreate_in_batch recreates for ANY op outside
+        # add_column/create_index/drop_index, without consulting the SQLite
+        # version — so this matches the other batch drop_column sites in the
+        # chain (0005, 0012, 0018, 0047, ...).
+        with op.batch_alter_table("pricing_parameter_rows") as batch:
+            batch.drop_column("position_id")

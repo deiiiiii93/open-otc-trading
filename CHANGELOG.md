@@ -112,6 +112,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   indicator and the polling can't disagree about what "still parsing" means.
 
 ### Fixed
+- **`0051`'s downgrade could not run on a create_all-seeded database.** A create_all DB
+  hands `pricing_parameter_rows.position_id` the foreign key its ORM model declares — one
+  a real historical 0051 never created — and SQLite refuses
+  `ALTER TABLE ... DROP COLUMN` while any FK definition names the column, so the direct
+  `op.drop_column` died with *unknown column "position_id" in foreign key definition*.
+  It now uses `op.batch_alter_table`, which rebuilds the table and removes the column and
+  its FK together; the default `recreate="auto"` suffices, because alembic recreates for
+  any op outside `add_column`/`create_index`/`drop_index` regardless of SQLite version.
+  `0051` was the only direct-drop site — the eleven batch sites were already correct.
+  New `tests/test_migration_0051_position_id.py` pins what a table rebuild actually risks:
+  the two sibling foreign keys, the other four indexes, and the row data all survive, and
+  the migration round-trips. `alembic downgrade 0055 → 0050` and back now works.
 - **`alembic upgrade head` could not reach head on an empty database.** `0001_initial`
   materialises live ORM metadata via `Base.metadata.create_all()`, so a fresh database
   arrives at revision 1 already carrying *today's* full schema — which makes idempotent

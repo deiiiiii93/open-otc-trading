@@ -1242,10 +1242,20 @@ Two consequences worth knowing:
 - **A migration's body is nearly decorative for fresh databases** (create_all already made
   the objects). It is load-bearing for the LIVE database, which really does replay the
   chain — so write it correctly anyway, and never let a guard skip work a real upgrade needs.
-- **`0051`'s downgrade still fails on a create_all-seeded DB**: SQLite cannot `DROP COLUMN`
-  a column an FK references, and the ORM puts an FK on `pricing_parameter_rows.position_id`
-  that a real historical 0051 never created. No test covers downgrades; a batch table
-  rebuild would be needed to fix it properly.
+- **A create_all DB also hands a column its ORM foreign key**, which a real historical
+  migration may never have created — so `DROP COLUMN` can be illegal on the fresh-chain
+  path while it was fine historically. **Never drop a column with a direct
+  `op.drop_column`; always use `op.batch_alter_table`.** SQLite refuses
+  `ALTER TABLE ... DROP COLUMN` while any FK definition names the column, and batch mode
+  rebuilds the table (create new, copy rows, drop old, rename) so the column and its FK
+  go together. `recreate="auto"` (the default) is enough — alembic's
+  `SQLiteImpl.requires_recreate_in_batch` recreates for **any** op outside
+  `add_column`/`create_index`/`drop_index` and never consults the SQLite version, so the
+  fact that SQLite ≥ 3.35 supports DROP COLUMN does not tempt it onto the native path.
+  `0051` was the only direct-drop site; the eleven batch sites (`0005`, `0012`, `0018`,
+  `0047`, …) were already correct. Covered by `tests/test_migration_0051_position_id.py`,
+  which pins the rebuild's real risk: that sibling FKs, the other indexes, and the row
+  data all survive.
 
 ### Tests must not assert against moving targets
 
