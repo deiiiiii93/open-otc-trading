@@ -1211,14 +1211,83 @@ therefore means "overridden", which is exactly how `resync_cashflow` must treat 
 - **`--radius-1` and `--ink-3` are referenced by some page CSS but defined nowhere.**
   Do not copy them; verify every token against `frontend/src/tokens/` before use.
 
+### Every migration after `0001` must be IDEMPOTENT
+
+`0001_initial` does `from app.models import Base; Base.metadata.create_all(bind=bind)`.
+That is not a historical snapshot — it materialises **today's ORM metadata**, so a fresh
+database arrives at revision 1 already carrying the *entire current schema* (93 tables,
+including ones whose `create_table` migration has not run yet). Every migration after it
+therefore executes against a database that already has the modern shape, which makes
+existence-guarded DDL a **hard invariant**, not a style preference:
+
+```python
+def _tables() -> set[str]:
+    return set(inspect(op.get_bind()).get_table_names())
+
+def _columns(table: str) -> set[str]:
+    return {c["name"] for c in inspect(op.get_bind()).get_columns(table)}
+```
+
+`0005` and `0052` model the pattern. `0051`, `0053` and `0055` originally did not, and the
+chain died at `0051` with `duplicate column name: position_id` — the documented
+empty-database path was unusable for months. **`tests/test_migration_fresh_chain.py` is
+the standing guard**: it asserts `alembic upgrade head` on an empty DB reaches head, so an
+unguarded migration fails CI rather than rotting silently.
+
+Two consequences worth knowing:
+
+- **A migration's body is nearly decorative for fresh databases** (create_all already made
+  the objects). It is load-bearing for the LIVE database, which really does replay the
+  chain — so write it correctly anyway, and never let a guard skip work a real upgrade needs.
+- **`0051`'s downgrade still fails on a create_all-seeded DB**: SQLite cannot `DROP COLUMN`
+  a column an FK references, and the ORM puts an FK on `pricing_parameter_rows.position_id`
+  that a real historical 0051 never created. No test covers downgrades; a batch table
+  rebuild would be needed to fix it properly.
+
+### Tests must not assert against moving targets
+
+Four classes of self-invalidating assertion have already bitten this repo. All were red on
+`main` for a long time, which trains people to ignore the suite:
+
+- **A frozen `head` literal.** `test_migration_0046`/`0047` hardcoded
+  `"0049_hedge_booking_claim"` to mean "head", so every added migration broke them. Ask
+  `ScriptDirectory.from_config(config).get_current_head()` instead.
+- **Upgrading a synthetic fixture DB to `head`.** `test_migration_0047`'s
+  `_old_0046_engine` builds five tables to exercise one migration; targeting `head` drags
+  in every later migration against a schema that cannot satisfy them (`0050`'s
+  `ALTER TABLE instruments` was the first). **Target the migration under test.**
+- **Hand-maintained parallel exclusion lists.** `test_migration_0024` compares
+  "0024-only schema" against the *current* ORM behind a list of post-0024 columns; it was
+  never updated for `0050`/`0051`. It now derives the FK and index exclusions *from* the
+  column list, so only one list can go stale.
+- **Asserting on a gitignored, per-environment file.** `test_agent_channels_router`,
+  `test_agent_registry_config` and `test_channel_registry_writer` read the live
+  `config/agent_channels.yaml` and hardcoded `zenmux` as the default-holding channel. That
+  file is per-env by design **and the Model Maintenance UI rewrites it at runtime**, so the
+  tests failed wherever the default had moved (here, `deepseek`). They were hermetic against
+  the `AGENT_CHANNELS_FILE` env var but not against the file's contents — those are two
+  different axes. Source the **tracked** `config/agent_channels.example.yml`.
+
+### Frontend: `NumberInput` formats by default, including in bare test renders
+
+`useThousandSeparator()` returns `thousandSeparator: true` when **no provider is mounted**
+— deliberate, and pinned by `NumberInput.test.tsx > renders formatted by default`. So
+`NumberInput` turns a value needing a separator into formatted **text** (`8359.56` →
+`"8,359.56"`, `type="number"` → `type="text"`). In tests this makes `toHaveValue(8359.56)`
+compare a number against a comma string, while values **under 1000 keep passing** — the
+breakage looks arbitrary until you notice the threshold. For tests about prefill or data
+flow rather than presentation, use `expectNumericValue(el, n)` from `src/test-setup.ts`.
+
+Related: **the Booking page cannot originate a `package` position.** `ProductTermsForm`
+renders the record-array ("Add Row") editor only for keys already in `product_kwargs`
+(`extraFields`), and no `PRODUCT_TYPES` entry declares a `components` field, so there is no
+way to introduce one on a fresh form. A `Booking.live` test asserted that flow and could
+never pass; it was removed, since the same contract is covered via the reachable path in
+`PositionEditForm.test.tsx`. Closing the gap means giving the form a real components entry
+point — it is a product decision, not a test fix.
+
 ### Pre-existing traps this work ran into (NOT caused by settlement)
 
-- **A fresh `alembic upgrade head` cannot succeed in this repo.** The chain breaks at
-  `0051` (`duplicate column name: position_id` on `pricing_parameter_rows` — a
-  migration written against ORM models). Verified identical on `main`; it is why
-  `test_migration_fresh_chain`, `test_migration_0024/0046/0047` sit in the failure
-  baseline. Verify a new migration by stamping its parent:
-  `alembic stamp 0054_seed_report_templates && alembic upgrade head`.
 - **The DB env var is `OPEN_OTC_DATABASE_URL`, not `DATABASE_URL`** (it is a
   `validation_alias`). Getting it wrong does NOT error — it silently falls back to
   `./data/open_otc.sqlite3`, i.e. the LIVE DB, and reports `exit=0`. The only tell is
