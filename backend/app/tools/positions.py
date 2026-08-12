@@ -206,6 +206,12 @@ class ImportPositionsInput(BaseModel):
 
 
 class PositionLifecycleReferenceInput(BaseModel):
+    # Forbid extras, like BookPositionInput. Pydantic's default is `ignore`,
+    # which silently DROPPED a plausible-but-wrong argument: a model calling
+    # mark_knockout(settlement_amount=900) got no error and no cashflow amount.
+    # A loud rejection lets it retry; a silent drop loses the number.
+    model_config = ConfigDict(extra="forbid")
+
     position_id: int | None = Field(
         default=None,
         description="Position.id to update. Prefer this when known.",
@@ -253,6 +259,26 @@ class MarkKnockoutInput(PositionLifecycleReferenceInput):
     ko_level: float | None = Field(default=None)
     payoff: float | None = Field(default=None)
     reason: str | None = Field(default=None)
+
+
+class RecordLifecycleEventInput(PositionLifecycleReferenceInput):
+    event_type: str = Field(
+        description=(
+            "Lifecycle event to record. Legal types: open, reopen, close, settle, "
+            "maturity, exercise, expire, knock_in, knock_out, coupon_observation, "
+            "coupon_paid, memory_coupon, barrier_reset, fixing, custom. Which are "
+            "allowed depends on the product family — an invalid type is rejected "
+            "with the legal list for that position."
+        )
+    )
+    event_data: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Event payload. Amounts that imply cash must use `settlement_amount` "
+            "(or `payoff`) for terminating events and `coupon_amount` for coupons; "
+            "other keys are recorded but generate no cashflow."
+        ),
+    )
 
 
 class CancelLifecycleEventInput(BaseModel):
@@ -885,6 +911,43 @@ def mark_knockout_tool(
         ),
         actor="agent",
     )
+    return _shape_lifecycle_update(update)
+
+
+@capability_gated(group=ToolGroup.DOMAIN_WRITE)
+@tool("record_lifecycle_event", args_schema=RecordLifecycleEventInput)
+def record_lifecycle_event_tool(
+    event_type: str,
+    position_id: int | None = None,
+    source_trade_id: str | None = None,
+    portfolio_id: int | None = None,
+    event_data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Record ANY lifecycle event the position's product family allows.
+
+    The general form of close_position / settle_position / mark_knockout, which
+    each hardcode one event type. Use this for everything else — exercise,
+    expire, maturity, knock_in, coupons, barrier_reset, reopen, custom.
+
+    The legal set is the product family's own allowlist, so this tool keeps no
+    list of its own and can never drift from the vocabulary. An invalid type is
+    refused with the legal types for that position rather than raising.
+    """
+    try:
+        update = positions_svc.create_lifecycle_event(
+            position_id=position_id,
+            source_trade_id=source_trade_id,
+            portfolio_id=portfolio_id,
+            event_type=event_type,
+            event_data=_clean_event_data(dict(event_data or {})),
+            actor="agent",
+        )
+    except LookupError as exc:
+        return {"ok": False, "error": str(exc)}
+    except ValueError as exc:
+        # create_lifecycle_event's message already names the legal types for
+        # this family, which is what lets a model recover without guessing.
+        return {"ok": False, "error": str(exc)}
     return _shape_lifecycle_update(update)
 
 

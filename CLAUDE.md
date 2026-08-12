@@ -1266,6 +1266,32 @@ copy, because the copy it used to keep drifted and lost `settle` and `fixing`.
   reads as *non-transitioning* rather than *unrecognised* — deleting them would make
   historical phoenix rows silently stop closing their positions.
 
+### The agent surface: one generic tool, not one per event type
+
+`record_lifecycle_event` (`tools/positions.py`) records **any** event its position's
+family allows, validating against `valid_lifecycle_event_types` rather than keeping a
+list of its own — so it can never drift from the vocabulary and never needs extending
+when a type is added. It returns `{ok: false, error: ...}` (the message names the legal
+types for that family) instead of raising, so a model can recover without guessing.
+HITL `"write"`, like its three hardcoded siblings — a lifecycle event is recallable via
+`cancel_lifecycle_event`, unlike a booking.
+
+- **`close_position` / `settle_position` / `mark_knockout` each hardcode one event
+  type.** They predate the generic tool and stay for their friendlier signatures, but
+  they covered only 3 of 17 types — `exercise`, `expire` and `barrier_reset` were
+  reachable from REST and the UI and **not from the agent**, which only a live smoke of
+  the agent path revealed. **After adding an event type, check the agent can record
+  it**; the vocabulary, the REST layer and the tool surface are three different gates.
+- **`_SETTLEMENT_LEG.amount_keys` is `("settlement_amount", "payoff")`.** `payoff` is a
+  fallback and must stay second. Both `mark_knockout` and the UI's knock_out/autocall
+  forms collect a "Payoff", and before that key existed the number was written to
+  `event_data` and read by nothing — so a desk user or agent who correctly reported the
+  KO payoff still got a `needs_amount` row and silently lost the figure.
+- **`PositionLifecycleReferenceInput` sets `extra="forbid"`.** Pydantic's default
+  `ignore` silently DROPPED a plausible-but-wrong argument: `mark_knockout(
+  settlement_amount=900)` returned success with no amount recorded. A loud rejection
+  lets a model retry; a silent drop loses the number.
+
 ### Every migration after `0001` must be IDEMPOTENT
 
 `0001_initial` does `from app.models import Base; Base.metadata.create_all(bind=bind)`.

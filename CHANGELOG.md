@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type and every cash-leg rule must be reachable by some family or explicitly
   retired, and every family in the product-builder registry must have an event map.
   Both fail against the previous vocabulary.
+- `record_lifecycle_event` agent tool — records any event the position's family
+  allows, validating against the vocabulary rather than keeping its own list. The
+  agent previously had tools for only 4 of the 17 event types, so `exercise`,
+  `expire` and `barrier_reset` were reachable from REST and the UI but not from the
+  desk agent. Found by smoking the agent path, which no test covered.
 
 ### Fixed
 - **`open` and `reopen` were declared but allowed for no product**, so the `premium`
@@ -38,6 +43,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `open` no longer moves position status. Making it reachable exposed that its
   `open` target silently overwrote the status of a position booked `knocked_in` or
   `closed` (a historical trade imported mid-life). `reopen` remains the transition.
+- `mark_knockout`'s `payoff` argument now reaches the settlement cashflow. It was
+  written to the event payload and read by nothing — `_SETTLEMENT_LEG` matched only
+  `settlement_amount` — so an agent or desk user who correctly reported the KO payoff
+  still got a `needs_amount` row and silently lost the figure. `payoff` is a fallback;
+  an explicit `settlement_amount` still wins.
+- Lifecycle tool inputs reject unknown arguments (`extra="forbid"`, matching
+  `BookPositionInput`). Pydantic's default silently discarded them, so
+  `mark_knockout(settlement_amount=900)` returned success having recorded no amount.
 
 ### Changed
 - Phoenix records `knock_out`/`coupon_observation` instead of

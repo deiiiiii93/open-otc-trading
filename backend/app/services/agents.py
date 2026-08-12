@@ -501,6 +501,7 @@ DEEP_AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         "close_position",
         "settle_position",
         "mark_knockout",
+        "record_lifecycle_event",
         "cancel_lifecycle_event",
         "generate_asian_fixing_schedule",
         "capture_asian_fixings",

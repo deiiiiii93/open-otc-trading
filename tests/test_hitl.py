@@ -29,6 +29,7 @@ def test_interrupt_tool_names_covers_all_state_mutating_tools():
         "close_position",
         "settle_position",
         "mark_knockout",
+        "record_lifecycle_event",
         "cancel_lifecycle_event",
         "delete_portfolio",
         "set_portfolio_rule",

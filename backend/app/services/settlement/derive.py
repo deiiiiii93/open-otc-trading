@@ -226,7 +226,15 @@ def derive_cashflows(
 _SETTLEMENT_LEG = LegRule(
     leg_key="settlement",
     direction="pay",
-    amount_keys=("settlement_amount",),
+    # `payoff` is a FALLBACK, tried only when no `settlement_amount` is present.
+    # `mark_knockout` and the UI's knock_out/autocall forms both collect a
+    # "Payoff", and before this key existed that number was written to
+    # event_data and read by nothing — so a desk user or agent who correctly
+    # reported the KO payoff still got a `needs_amount` row and silently lost
+    # the figure they had just supplied. Order matters: `settlement_amount` is
+    # what the settle path and the snowball KO enrichment write, and it must
+    # keep winning.
+    amount_keys=("settlement_amount", "payoff"),
 )
 
 _COUPON_LEG = LegRule(

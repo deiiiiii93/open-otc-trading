@@ -40,6 +40,7 @@ INTERRUPT_TOOL_NAMES: tuple[str, ...] = (
     "close_position",
     "settle_position",
     "mark_knockout",
+    "record_lifecycle_event",
     "cancel_lifecycle_event",
     "delete_portfolio",
     "set_portfolio_rule",
@@ -107,6 +108,10 @@ _RISK_LEVEL_BY_TOOL: dict[str, str] = {
     "close_position": "write",
     "settle_position": "write",
     "mark_knockout": "write",
+    # "write" matches its three hardcoded siblings: a lifecycle event is
+    # recallable via cancel_lifecycle_event, unlike a booking. Note "write"
+    # means AUTO/headless executes it unattended.
+    "record_lifecycle_event": "write",
     "cancel_lifecycle_event": "irreversible",
     "delete_portfolio": "irreversible",
     "set_portfolio_rule": "write",
@@ -184,6 +189,7 @@ _LABEL_BY_TOOL: dict[str, str] = {
     "close_position": "Close position",
     "settle_position": "Settle position",
     "mark_knockout": "Mark position KO",
+    "record_lifecycle_event": "Record lifecycle event",
     "cancel_lifecycle_event": "Cancel lifecycle event",
     "delete_portfolio": "Delete portfolio",
     "set_portfolio_rule": "Replace portfolio filter rule",

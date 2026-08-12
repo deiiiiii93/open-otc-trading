@@ -33,7 +33,7 @@ def test_quant_agent_tools_count_is_intentional():
     # +9 limits tools (4 reads + 5 HITL monitoring/incident writes).
     # +3 trade-confirmation tools (parse + read batch + HITL book).
     # +13 settlement tools (3 reads + 10 HITL cashflow/notice writes).
-    assert len(QUANT_AGENT_TOOLS) == 134
+    assert len(QUANT_AGENT_TOOLS) == 135
 
 
 def test_record_answer_is_domain_read():
