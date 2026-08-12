@@ -30,67 +30,15 @@ from app.services.domains.products import compatibility_terms_for_position
 from app.services.portfolio_membership import resolve_positions
 from app.services.settlement.generate import generate_for_event
 
+from .lifecycle_vocabulary import (
+    LIFECYCLE_EVENT_TARGETS,
+    PRODUCT_LIFECYCLE_EVENTS,
+    valid_lifecycle_event_types,
+)
+
 logger = logging.getLogger(__name__)
 
 TRADE_SHEET = position_adapter.TRADE_SHEET
-
-LIFECYCLE_EVENT_TARGETS: dict[str, str | None] = {
-    "open": "open",
-    "close": "closed",
-    "settle": "closed",
-    "reopen": "open",
-    "knock_in": "knocked_in",
-    "knock_out": "closed",
-    "coupon_observation": None,
-    "coupon_paid": None,
-    "maturity": "closed",
-    "autocall": "closed",
-    "coupon_lock": None,
-    "memory_coupon": None,
-    "fixing": None,
-    "custom": None,
-}
-
-PRODUCT_LIFECYCLE_EVENTS: dict[str, set[str]] = {
-    "SnowballOption": {
-        "close",
-        "settle",
-        "knock_in",
-        "knock_out",
-        "coupon_observation",
-        "coupon_paid",
-        "maturity",
-        "custom",
-    },
-    "PhoenixOption": {
-        "close",
-        "settle",
-        "autocall",
-        "coupon_lock",
-        "coupon_paid",
-        "memory_coupon",
-        "maturity",
-        "custom",
-    },
-    "BarrierOption": {"close", "settle", "knock_in", "knock_out", "maturity", "custom"},
-    "SingleSharkfinOption": {
-        "close",
-        "settle",
-        "knock_in",
-        "knock_out",
-        "maturity",
-        "custom",
-    },
-    "DoubleSharkfinOption": {
-        "close",
-        "settle",
-        "knock_in",
-        "knock_out",
-        "maturity",
-        "custom",
-    },
-    "AsianOption": {"close", "settle", "fixing", "custom"},
-}
 
 
 @contextmanager
@@ -102,11 +50,6 @@ def _session_scope(session: Session | None) -> Iterator[Session]:
     database.init_db()
     with database.SessionLocal() as sess:
         yield sess
-
-
-def valid_lifecycle_event_types(product_type: str) -> set[str]:
-    """Return lifecycle events allowed for a product type."""
-    return PRODUCT_LIFECYCLE_EVENTS.get(product_type, {"close", "settle", "custom"})
 
 
 # ---------------------------------------------------------------------------
