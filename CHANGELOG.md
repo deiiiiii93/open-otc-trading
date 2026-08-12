@@ -8,6 +8,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Lifecycle events for every bookable product family.** Three new event types —
+  `exercise` (with an `early` flag, so American early exercise is distinguishable
+  from exercise at expiry), `expire` (terminal, books **no** cash: it is how the
+  system records "nothing owed, and we verified that" rather than leaving a
+  permanent `needs_amount` phantom obligation), and `barrier_reset` for KO-reset
+  snowballs. All 15 bookable families now have an explicit event map instead of 9
+  of them falling through to `close`/`settle`/`custom`; notably
+  `KnockOutResetSnowballOption` was a snowball with no knock-in, knock-out or
+  coupon events, and the one-touch families had no way to record a touch.
+- `GET /api/lifecycle-vocabulary` serves the event types, per-family allowlist,
+  retired types and per-event form fields. The Positions lifecycle picker reads it
+  instead of a hardcoded copy, which restores the `settle` and `fixing` options the
+  UI had silently lost — `settle` is the only event carrying a settlement amount, so
+  until now a human could not record one from the web app at all.
+- Two structural guards (`tests/test_lifecycle_vocabulary.py`): every declared event
+  type and every cash-leg rule must be reachable by some family or explicitly
+  retired, and every family in the product-builder registry must have an event map.
+  Both fail against the previous vocabulary.
+
+### Fixed
+- **`open` and `reopen` were declared but allowed for no product**, so the `premium`
+  settlement leg could never fire and no position had ever recorded its inception
+  cash — the settlement module's documented "cash lifecycle is covered from
+  inception" did not hold. `book_position` now emits an `open` event, so every new
+  booking generates its premium cashflow. The two tests covering the premium leg
+  passed only because they constructed `PositionLifecycleEvent` directly, bypassing
+  the validation gate.
+- `open` no longer moves position status. Making it reachable exposed that its
+  `open` target silently overwrote the status of a position booked `knocked_in` or
+  `closed` (a historical trade imported mid-life). `reopen` remains the transition.
+
+### Changed
+- Phoenix records `knock_out`/`coupon_observation` instead of
+  `autocall`/`coupon_lock`, so phoenix and snowball share one vocabulary. The two
+  old types are **retired, not deleted**: existing rows keep projecting status and
+  generating cash, but no new ones can be recorded. (The live database holds 0
+  lifecycle events of any type, so this retirement disturbs no historical data.)
+- Booking now writes a second audit row (`position.lifecycle_event` alongside
+  `position.created`) for the `open` event.
+
+### Added
 - **Settlement module** — the cash implied by position lifecycle events, tracked
   and governed. Cashflows are auto-generated from `PositionLifecycleEvent`s by a
   pure, total deriver and worked through a `needs_amount → pending → released →

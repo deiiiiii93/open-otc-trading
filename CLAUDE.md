@@ -1214,6 +1214,58 @@ therefore means "overridden", which is exactly how `resync_cashflow` must treat 
 - **`--radius-1` and `--ink-3` are referenced by some page CSS but defined nowhere.**
   Do not copy them; verify every token against `frontend/src/tokens/` before use.
 
+---
+
+## Position lifecycle events
+
+Two layers, one chokepoint. `services/domains/lifecycle_vocabulary.py` owns
+`LIFECYCLE_EVENT_TARGETS` (17 event types → the status each drives; `None` =
+non-transitioning), `PRODUCT_LIFECYCLE_EVENTS` (per-family allowlist, all 15 bookable
+families explicit), `RETIRED_EVENT_TYPES`, and `EVENT_FIELD_SPECS`. It is pure data —
+no DB, no service imports — and `positions.py` re-exports it for the historical import
+site. Served to the UI by `GET /api/lifecycle-vocabulary`; the frontend keeps **no**
+copy, because the copy it used to keep drifted and lost `settle` and `fixing`.
+
+- **The allowlist is TOTAL.** `create_lifecycle_event` is the only constructor of
+  `PositionLifecycleEvent`, so a family missing from the map does not degrade
+  gracefully — it loses the event outright, and the only symptom is a `ValueError`
+  when someone tries to record something real. `tests/test_lifecycle_vocabulary.py`
+  asserts every declared type is reachable (or explicitly retired) and every family in
+  `product_builders._REGISTRY` is covered. **Both guards failed before this landed:**
+  `open`/`reopen` were reachable by no product, so `CASH_LEG_RULES["open"]` — the
+  premium leg — had never fired for any position. Its two tests passed by building
+  `PositionLifecycleEvent(...)` directly. **A test that constructs its own subject
+  bypasses whatever validates the real one**, so it proves satisfiability, never
+  reachability — the same lesson as the arena golden replay and the trader-rfq fix.
+- **`book_position` emits `open`,** via the non-committing
+  `positions.record_lifecycle_event` seam (`create_lifecycle_event` wraps it and
+  commits; booking calls it inside the caller's transaction). `booking.py` imports it
+  **function-scope**: positions.py → position_adapter.py → booking.py is a real cycle.
+  Consequence: every booking now writes a `premium` cashflow **and** a second audit row
+  (`position.lifecycle_event` beside `position.created`) — three exact-set assertions
+  had to be updated for that.
+- **`open` moves NO status** (target `None`). Making it reachable exposed that its old
+  `"open"` target silently overwrote the booked status of a position booked
+  `knocked_in` or `closed` — a historical trade imported mid-life. An inception
+  *record* must not rewrite what it records. `reopen` is the transition.
+- **`expire` emits no cash leg, deliberately.** `generate.py` sets
+  `status = "needs_amount" if amount is None else "pending"` and a zero resolves to
+  `None`, so a terminating event with nothing owed would leave a permanent phantom
+  obligation. `expire` is how the system says *zero* rather than *unknown* — the same
+  `empty` vs `unavailable` discipline the report module fought for.
+- **`barrier_reset` RECORDS a barrier step; it does not apply one.** Lifecycle events
+  write `event_data`; pricing reads `Position.product_kwargs`. A reset position still
+  prices off its original barrier.
+- **One-touch models the touch as `knock_out`, not `knock_in`.** The touch both ends
+  the option and creates the obligation; `knock_in` leaves the position alive and has
+  no cash rule, which would hide the money until maturity.
+- **`autocall`/`coupon_lock` are retired, not deleted** — no family may record them
+  (phoenix now uses `knock_out`/`coupon_observation`), but they keep their
+  `LIFECYCLE_EVENT_TARGETS` entry and `autocall` keeps its cash rule.
+  `_project_status_from_lifecycle` resolves targets with `.get()`, so an unknown type
+  reads as *non-transitioning* rather than *unrecognised* — deleting them would make
+  historical phoenix rows silently stop closing their positions.
+
 ### Every migration after `0001` must be IDEMPOTENT
 
 `0001_initial` does `from app.models import Base; Base.metadata.create_all(bind=bind)`.
