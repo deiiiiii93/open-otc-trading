@@ -1175,7 +1175,13 @@ therefore means "overridden", which is exactly how `resync_cashflow` must treat 
   **different** events emitting the same once-per-position leg twice. The DB cannot
   see that a `knock_out` and its follow-up `settle` are one economic settlement —
   they are separate `position_lifecycle_events` rows. Dedup ignores **terminal**
-  cashflows so a settle → reopen → settle cycle legitimately earns a second row.
+  cashflows (`settled` / `void`) so a settle → reopen → settle cycle earns a second
+  row **only once the first settlement is terminal**. If the first row is still
+  `pending` — the ordinary desk state — the second `settle` is absorbed by the
+  singleton guard and its amount is **silently dropped**: the lifecycle log then says
+  650 while the blotter still says 500. Measured, not theorised; `reopen` was
+  unreachable until the lifecycle-vocabulary work made it recordable, so this path
+  is new. Resolve (settle/void) or edit the first cashflow before reopening.
   **`coupon` is deliberately NOT singleton** — coupons recur, and deduping them would
   collapse a snowball's whole schedule into one row.
 
