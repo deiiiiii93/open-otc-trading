@@ -391,13 +391,20 @@ def test_book_position_tool_creates_product_and_position():
     assert position.product_id == product.id
     assert observations[0].barrier_level == 103.0
     with database.SessionLocal() as session:
-        audit = (
+        audits = (
             session.query(AuditEvent)
             .filter_by(subject_type="position", subject_id=position_id)
-            .one()
+            .order_by(AuditEvent.id)
+            .all()
         )
+    # Booking records the position AND the `open` lifecycle event that starts
+    # its cash lifecycle.
+    assert [a.event_type for a in audits] == [
+        "position.created",
+        "position.lifecycle_event",
+    ]
+    audit = audits[0]
     assert audit.actor == "agent"
-    assert audit.event_type == "position.created"
     assert audit.payload["source"] == "agent_tool"
 
 

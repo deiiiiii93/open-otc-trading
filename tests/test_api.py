@@ -1668,8 +1668,11 @@ def test_add_position_creates_product_and_keeps_legacy_fields(tmp_path: Path):
 
     with database.SessionLocal() as session:
         events = session.query(AuditEvent).order_by(AuditEvent.id).all()
+        # Booking records the position AND the `open` lifecycle event that
+        # starts its cash lifecycle.
         assert [event.event_type for event in events if event.subject_type == "position"] == [
-            "position.created"
+            "position.created",
+            "position.lifecycle_event",
         ]
 
 

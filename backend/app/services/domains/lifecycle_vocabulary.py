@@ -20,8 +20,12 @@ record something real. ``tests/test_lifecycle_vocabulary.py`` guards that.
 from __future__ import annotations
 
 LIFECYCLE_EVENT_TARGETS: dict[str, str | None] = {
-    # Inception and correction.
-    "open": "open",
+    # Inception and correction. `open` RECORDS inception and deliberately moves
+    # no status: a position may be booked already knocked-in (a historical
+    # trade imported mid-life) or closed, and an inception record must not
+    # overwrite the status it was booked with. `reopen` is the event that
+    # actually transitions a position back to open.
+    "open": None,
     "reopen": "open",
     # Terminations. `maturity`, `exercise` and `expire` are all FINAL states;
     # the desk records the one that describes what actually happened.

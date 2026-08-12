@@ -292,6 +292,103 @@ def test_coupons_are_not_deduped_so_a_schedule_survives(session, book):
     assert sorted(r.amount for r in rows) == [10.0, 20.0, 30.0]
 
 
+def test_open_is_reachable_through_the_real_constructor(session, book):
+    """The premium leg was dead for the life of this module because no product
+    could record `open` — and the unit tests missed it by building the ORM
+    object directly, proving satisfiability rather than reachability. This test
+    goes through the gate."""
+    from app.services.domains import positions as positions_svc
+
+    _, position = book
+    position.entry_price = 2.5
+    position.quantity = 100.0
+    session.flush()
+
+    update = positions_svc.create_lifecycle_event(
+        position_id=position.id,
+        event_type="open",
+        event_data={"source": "test"},
+        session=session,
+    )
+
+    assert update.event.event_type == "open"
+    row = session.query(SettlementCashflow).filter_by(leg_key="premium").one()
+    assert row.amount == 250.0
+    assert row.status == "pending"
+
+
+def _vanilla_booking(portfolio_id: int, *, entry_price: float):
+    """A minimal bookable vanilla. `ProductBookingSpec` is a `ProductSpec`:
+    asset_class / product_family / quantark_class / underlying / currency /
+    terms — there is no `family=` shorthand."""
+    from app.services.domains.booking import BookingRequest, ProductBookingSpec
+
+    return BookingRequest(
+        portfolio_id=portfolio_id,
+        product=ProductBookingSpec(
+            asset_class="equity",
+            product_family="vanilla",
+            quantark_class="EuropeanVanillaOption",
+            underlying="AAPL",
+            currency="USD",
+            terms={
+                "strike": 100.0,
+                "maturity_years": 1.0,
+                "option_type": "CALL",
+                "initial_price": 100.0,
+            },
+        ),
+        quantity=10.0,
+        entry_price=entry_price,
+        engine_name="BlackScholesEngine",
+    )
+
+
+def test_booking_a_position_emits_open_and_its_premium(session, registered_underlying):
+    """Every booking path funnels through book_position, so the cash lifecycle
+    is covered from inception rather than from termination."""
+    from app.services.domains.booking import book_position
+
+    registered_underlying("AAPL")
+    portfolio = Portfolio(name="Booking Emits Open")
+    session.add(portfolio)
+    session.flush()
+
+    position = book_position(session, _vanilla_booking(portfolio.id, entry_price=3.0))
+    session.flush()
+
+    events = (
+        session.query(PositionLifecycleEvent).filter_by(position_id=position.id).all()
+    )
+    assert [e.event_type for e in events] == ["open"]
+
+    row = session.query(SettlementCashflow).filter_by(position_id=position.id).one()
+    assert row.leg_key == "premium"
+    assert row.amount == 30.0
+    assert row.direction == "pay"
+
+
+def test_booking_at_zero_entry_price_yields_needs_amount_not_a_zero_row(
+    session, registered_underlying
+):
+    """`BookingRequest.entry_price` defaults to 0.0, so this is the common case,
+    not an edge one. `needs_amount` honestly says 'premium owed, amount not
+    recorded'; a zero row would claim the trade was free."""
+    from app.services.domains.booking import book_position
+
+    registered_underlying("AAPL")
+    portfolio = Portfolio(name="No Entry Price")
+    session.add(portfolio)
+    session.flush()
+
+    position = book_position(session, _vanilla_booking(portfolio.id, entry_price=0.0))
+    session.flush()
+
+    row = session.query(SettlementCashflow).filter_by(position_id=position.id).one()
+    assert row.amount is None
+    assert row.status == "needs_amount"
+
+
 def test_open_generates_a_premium_leg_from_the_position(session, book):
     _, position = book
     position.entry_price = 2.5

@@ -309,6 +309,24 @@ def book_position(
             "portfolio_id": portfolio.id,
         },
     )
+
+    # The cash lifecycle starts at inception, not at termination: this `open`
+    # event is what makes the settlement deriver emit the premium leg.
+    # Function-scope import on purpose — positions.py -> position_adapter.py ->
+    # booking.py, so a module-scope import here is a real cycle.
+    from .positions import record_lifecycle_event
+
+    open_event_data: dict[str, Any] = {"source": request.source}
+    if request.trade_effective_date is not None:
+        open_event_data["trade_date"] = str(request.trade_effective_date)
+    record_lifecycle_event(
+        session,
+        portfolio=portfolio,
+        position=position,
+        event_type="open",
+        event_data=open_event_data,
+        actor=request.actor,
+    )
     return position
 
 

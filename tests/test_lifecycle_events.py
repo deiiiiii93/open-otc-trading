@@ -258,9 +258,9 @@ def test_list_lifecycle_events_ordered_by_date(tmp_path: Path):
     )
     assert events.status_code == 200
     data = events.json()
-    assert len(data) == 2
-    assert data[0]["event_type"] == "knock_out"
-    assert data[1]["event_type"] == "knock_in"
+    # Newest first, and booking now records an `open` event at inception, so
+    # the timeline starts at the trade rather than at the first observation.
+    assert [event["event_type"] for event in data] == ["knock_out", "knock_in", "open"]
 
 
 def test_list_portfolio_lifecycle_events_returns_events_for_all_positions(tmp_path: Path):
@@ -287,8 +287,20 @@ def test_list_portfolio_lifecycle_events_returns_events_for_all_positions(tmp_pa
 
     assert events.status_code == 200
     data = events.json()
-    assert [event["position_id"] for event in data] == [first["id"], second["id"]]
-    assert [event["event_type"] for event in data] == ["knock_in", "knock_out"]
+    # Grouped by position, newest first within each. Each position now carries
+    # the `open` event booking records at inception.
+    assert [event["position_id"] for event in data] == [
+        first["id"],
+        first["id"],
+        second["id"],
+        second["id"],
+    ]
+    assert [event["event_type"] for event in data] == [
+        "knock_in",
+        "open",
+        "knock_out",
+        "open",
+    ]
 
 
 def test_list_view_portfolio_lifecycle_events_uses_resolved_membership(tmp_path: Path):
@@ -321,8 +333,12 @@ def test_list_view_portfolio_lifecycle_events_uses_resolved_membership(tmp_path:
 
     assert events.status_code == 200
     data = events.json()
-    assert [event["position_id"] for event in data] == [position["id"]]
-    assert data[0]["event_type"] == "knock_in"
+    # The point of this test: the view resolves membership, so `other`'s events
+    # are excluded entirely. Each included position also carries the `open`
+    # event booking records at inception.
+    assert {event["position_id"] for event in data} == {position["id"]}
+    assert other["id"] not in {event["position_id"] for event in data}
+    assert [event["event_type"] for event in data] == ["knock_in", "open"]
 
 
 def test_cancel_lifecycle_event_endpoint_marks_event_and_recomputes_status(tmp_path: Path):

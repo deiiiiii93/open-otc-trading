@@ -144,8 +144,18 @@ def test_booking_creates_product_and_position(session):
     assert booked.product_type == "SpotInstrument"
     assert booked.product_kwargs["deltaone_type"] == "ETF"
     assert session.query(Position).count() == 1
-    event = session.query(AuditEvent).filter_by(subject_id=str(booked.id)).one()
-    assert event.event_type == "position.created"
+    # Booking records the position AND the `open` lifecycle event that starts
+    # its cash lifecycle, so there are two audit rows, not one.
+    events = (
+        session.query(AuditEvent)
+        .filter_by(subject_id=str(booked.id))
+        .order_by(AuditEvent.id)
+        .all()
+    )
+    assert [e.event_type for e in events] == [
+        "position.created",
+        "position.lifecycle_event",
+    ]
 
 
 def test_position_out_includes_product_terms(session):

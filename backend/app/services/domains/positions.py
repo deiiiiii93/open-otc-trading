@@ -523,6 +523,75 @@ def _project_status_from_lifecycle(
     return projected
 
 
+def record_lifecycle_event(
+    sess: Session,
+    *,
+    portfolio: Portfolio,
+    position: Position,
+    event_type: str,
+    event_data: dict[str, Any] | None = None,
+    actor: str = "agent",
+) -> PositionLifecycleEvent:
+    """Create one lifecycle event and apply its consequences, WITHOUT committing.
+
+    The caller owns the transaction. ``create_lifecycle_event`` wraps this and
+    commits; ``book_position`` calls it mid-booking, where committing here would
+    end the caller's transaction early.
+    """
+    clean_event_type = (event_type or "").strip()
+    if clean_event_type not in LIFECYCLE_EVENT_TARGETS:
+        raise ValueError(f"Invalid event type '{event_type}'")
+    valid_types = valid_lifecycle_event_types(position.product_type or "")
+    if clean_event_type not in valid_types:
+        raise ValueError(
+            f"Invalid event type '{clean_event_type}'. Valid types: {sorted(valid_types)}"
+        )
+    clean_event_data = _enrich_lifecycle_event_data(
+        sess, position, clean_event_type, dict(event_data or {})
+    )
+    target_status = LIFECYCLE_EVENT_TARGETS.get(clean_event_type)
+    old_status = position.status
+    new_status = old_status
+    if target_status is not None and old_status != target_status:
+        position.status = target_status
+        new_status = target_status
+    event = PositionLifecycleEvent(
+        position_id=position.id,
+        event_type=clean_event_type,
+        event_data=clean_event_data,
+        old_status=old_status,
+        new_status=new_status,
+        actor=actor,
+    )
+    sess.add(event)
+    sess.flush()  # event.id is required by cashflow generation
+    try:
+        generate_for_event(sess, event=event, actor=actor)
+    except Exception:  # noqa: BLE001
+        # Best-effort by design. Lifecycle is the source of truth for position
+        # status and must never be held hostage to cashflow derivation;
+        # generate_missing() is the safety net that fills any gap this leaves.
+        logger.exception(
+            "settlement cashflow generation failed for lifecycle event on position %s",
+            position.id,
+        )
+    portfolio.updated_at = datetime.utcnow()
+    record_audit(
+        sess,
+        event_type="position.lifecycle_event",
+        actor=actor,
+        subject_type="position",
+        subject_id=position.id,
+        payload={
+            "event_type": clean_event_type,
+            "event_data": clean_event_data,
+            "old_status": old_status,
+            "new_status": new_status,
+        },
+    )
+    return event
+
+
 def create_lifecycle_event(
     *,
     position_id: int | None = None,
@@ -534,9 +603,6 @@ def create_lifecycle_event(
     session: Session | None = None,
 ) -> PositionLifecycleUpdate:
     """Create a persisted lifecycle event and apply its status transition."""
-    clean_event_type = (event_type or "").strip()
-    if clean_event_type not in LIFECYCLE_EVENT_TARGETS:
-        raise ValueError(f"Invalid event type '{event_type}'")
     with _session_scope(session) as sess:
         portfolio, position = _resolve_lifecycle_position(
             sess,
@@ -544,55 +610,13 @@ def create_lifecycle_event(
             source_trade_id=source_trade_id,
             portfolio_id=portfolio_id,
         )
-        valid_types = valid_lifecycle_event_types(position.product_type or "")
-        if clean_event_type not in valid_types:
-            raise ValueError(
-                f"Invalid event type '{clean_event_type}'. Valid types: {sorted(valid_types)}"
-            )
-        clean_event_data = _enrich_lifecycle_event_data(
-            sess, position, clean_event_type, dict(event_data or {})
-        )
-        target_status = LIFECYCLE_EVENT_TARGETS.get(clean_event_type)
-        old_status = position.status
-        new_status = old_status
-        if target_status is not None and old_status != target_status:
-            position.status = target_status
-            new_status = target_status
-        event = PositionLifecycleEvent(
-            position_id=position.id,
-            event_type=clean_event_type,
-            event_data=clean_event_data,
-            old_status=old_status,
-            new_status=new_status,
-            actor=actor,
-        )
-        sess.add(event)
-        sess.flush()  # event.id is required by cashflow generation
-        try:
-            generate_for_event(sess, event=event, actor=actor)
-        except Exception:  # noqa: BLE001
-            # Best-effort by design. Lifecycle is the source of truth for
-            # position status and must never be held hostage to cashflow
-            # derivation; generate_missing() is the safety net that fills any
-            # gap this leaves.
-            logger.exception(
-                "settlement cashflow generation failed for lifecycle event "
-                "on position %s",
-                position.id,
-            )
-        portfolio.updated_at = datetime.utcnow()
-        record_audit(
+        event = record_lifecycle_event(
             sess,
-            event_type="position.lifecycle_event",
+            portfolio=portfolio,
+            position=position,
+            event_type=event_type,
+            event_data=event_data,
             actor=actor,
-            subject_type="position",
-            subject_id=position.id,
-            payload={
-                "event_type": clean_event_type,
-                "event_data": clean_event_data,
-                "old_status": old_status,
-                "new_status": new_status,
-            },
         )
         sess.commit()
         sess.refresh(event)
