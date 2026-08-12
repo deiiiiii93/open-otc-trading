@@ -19,6 +19,11 @@ from app.schemas import PricingEnvironmentSnapshot
 from app.services.deep_agent.capability_gate import capability_gated
 from app.services.deep_agent.envelopes import ToolGroup
 from app.services.domains import booking as booking_svc
+from app.services.domains.lifecycle_vocabulary import (
+    EVENT_FIELD_SPECS,
+    LIFECYCLE_EVENT_TARGETS,
+    RETIRED_EVENT_TYPES,
+)
 from app.services.domains import position_terms as terms_svc
 from app.services.domains import positions as positions_svc
 from app.services.domains import products as products_svc
@@ -33,6 +38,72 @@ from ._shaping import (
 from ._product_inputs import ToolPositionSnapshotSpec
 
 TRADE_SHEET = positions_svc.TRADE_SHEET
+
+
+# --------------------------------------------------------------------------- #
+# Lifecycle tool descriptions, rendered FROM the vocabulary.
+#
+# A model only ever sees a tool's description, so that text is the entire lever
+# on which lifecycle tool it reaches for — a live smoke measured it routing
+# `settle_position` for both "expired worthless" and "exercised early", losing
+# the economic distinction the vocabulary exists to record. Hand-writing the
+# event menu here would recreate the copy that already drifted once in the
+# frontend (where it silently lost `settle` and `fixing`), so it is generated
+# instead: add an event type to `LIFECYCLE_EVENT_TARGETS` and it appears in the
+# tool surface with no edit here.
+# --------------------------------------------------------------------------- #
+
+#: Event types that keep a dedicated single-purpose tool, and its name.
+_DEDICATED_EVENT_TOOLS: dict[str, str] = {
+    "close": "close_position",
+    "settle": "settle_position",
+    "knock_out": "mark_knockout",
+}
+
+_ACTIVE_EVENT_TYPES: tuple[str, ...] = tuple(
+    event_type
+    for event_type in LIFECYCLE_EVENT_TARGETS
+    if event_type not in RETIRED_EVENT_TYPES
+)
+
+_LEGAL_EVENT_TYPES = ", ".join(_ACTIVE_EVENT_TYPES)
+
+
+def _event_menu() -> str:
+    """Render one line per recordable event: type, status effect, payload keys."""
+    lines: list[str] = []
+    for event_type in _ACTIVE_EVENT_TYPES:
+        target = LIFECYCLE_EVENT_TARGETS[event_type]
+        effect = f"-> {target}" if target else "(no status change)"
+        keys = ", ".join(
+            spec["key"] for spec in EVENT_FIELD_SPECS.get(event_type, ())
+        )
+        note = ""
+        if event_type in _DEDICATED_EVENT_TOOLS:
+            note = f"  [or {_DEDICATED_EVENT_TOOLS[event_type]}]"
+        payload = f"  event_data: {keys}" if keys else ""
+        lines.append(f"      {event_type:<19}{effect:<18}{payload}{note}")
+    return "\n".join(lines)
+
+
+def _redirect_notice(this_tool: str, this_event: str) -> str:
+    """Point a single-event tool at the general one for every OTHER ending.
+
+    Every terminating event closes the position, so "it is closed now" is no
+    reason to prefer a close/settle tool — the event type is the record of WHY,
+    and that record is what the settlement deriver and the blotter read.
+    """
+    others = ", ".join(
+        event_type
+        for event_type in _ACTIVE_EVENT_TYPES
+        if LIFECYCLE_EVENT_TARGETS[event_type] == "closed" and event_type != this_event
+    )
+    return (
+        f"    Records `{this_event}` and nothing else. If the trade ended some OTHER "
+        f"way ({others}), that way is the event: call record_lifecycle_event with it "
+        f"instead of {this_tool}. They all close the position too, so a closed "
+        "position is not a reason to prefer this tool."
+    )
 
 
 class _PortfolioSnapshotInput(BaseModel):
@@ -264,11 +335,9 @@ class MarkKnockoutInput(PositionLifecycleReferenceInput):
 class RecordLifecycleEventInput(PositionLifecycleReferenceInput):
     event_type: str = Field(
         description=(
-            "Lifecycle event to record. Legal types: open, reopen, close, settle, "
-            "maturity, exercise, expire, knock_in, knock_out, coupon_observation, "
-            "coupon_paid, memory_coupon, barrier_reset, fixing, custom. Which are "
-            "allowed depends on the product family — an invalid type is rejected "
-            "with the legal list for that position."
+            f"Lifecycle event to record. Legal types: {_LEGAL_EVENT_TYPES}. Which "
+            "are allowed depends on the product family — an invalid type is "
+            "rejected with the legal list for that position."
         )
     )
     event_data: dict[str, Any] = Field(
@@ -832,7 +901,7 @@ def close_position_tool(
     reason: str | None = None,
     closed_at: date | str | None = None,
 ) -> dict[str, Any]:
-    """Record a close lifecycle event and mark the position closed."""
+    """Record a `close` lifecycle event: a negotiated unwind or early termination."""
     update = positions_svc.create_lifecycle_event(
         position_id=position_id,
         source_trade_id=source_trade_id,
@@ -861,7 +930,13 @@ def settle_position_tool(
     currency: str | None = None,
     reason: str | None = None,
 ) -> dict[str, Any]:
-    """Record a settlement lifecycle event and mark the position closed."""
+    """Record a `settle` lifecycle event: cash settled, with no more specific cause.
+
+    This is NOT the tool for a trade that expired worthless. Pass
+    `settlement_amount` only when cash really moves — `expire` books no cashflow,
+    while settling zero creates a zero-amount cash row the desk must still
+    release and settle.
+    """
     update = positions_svc.create_lifecycle_event(
         position_id=position_id,
         source_trade_id=source_trade_id,
@@ -923,11 +998,11 @@ def record_lifecycle_event_tool(
     portfolio_id: int | None = None,
     event_data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Record ANY lifecycle event the position's product family allows.
+    """Record exercise, expire, maturity, knock_in, coupons, fixings, reopen.
 
-    The general form of close_position / settle_position / mark_knockout, which
-    each hardcode one event type. Use this for everything else — exercise,
-    expire, maturity, knock_in, coupons, barrier_reset, reopen, custom.
+    The general lifecycle recorder: whatever happened to the trade, record it
+    under its own name. close_position / settle_position / mark_knockout each
+    hardcode ONE event type; this tool records any of them and everything else.
 
     The legal set is the product family's own allowlist, so this tool keeps no
     list of its own and can never drift from the vocabulary. An invalid type is
@@ -949,6 +1024,29 @@ def record_lifecycle_event_tool(
         # this family, which is what lets a model recover without guessing.
         return {"ok": False, "error": str(exc)}
     return _shape_lifecycle_update(update)
+
+
+# The model sees only `.description`, so the generated menu and redirects are
+# appended there rather than written into the docstrings a developer reads.
+# `description` is a declared BaseTool field, so plain assignment is enough —
+# unlike `invoke`, which capability_gated has to patch via object.__setattr__.
+record_lifecycle_event_tool.description = (
+    f"{record_lifecycle_event_tool.description.rstrip()}\n\n"
+    f"    Recordable events (allowed set depends on the product family):\n"
+    f"{_event_menu()}"
+)
+close_position_tool.description = (
+    f"{close_position_tool.description.rstrip()}\n\n"
+    f"{_redirect_notice('close_position', 'close')}"
+)
+settle_position_tool.description = (
+    f"{settle_position_tool.description.rstrip()}\n\n"
+    f"{_redirect_notice('settle_position', 'settle')}"
+)
+mark_knockout_tool.description = (
+    f"{mark_knockout_tool.description.rstrip()}\n\n"
+    f"{_redirect_notice('mark_knockout', 'knock_out')}"
+)
 
 
 @capability_gated(group=ToolGroup.DOMAIN_WRITE)

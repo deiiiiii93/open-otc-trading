@@ -13,9 +13,12 @@ from app.models import Instrument, Portfolio, PositionLifecycleEvent, Settlement
 from app.services.domains import lifecycle_vocabulary as vocab
 from app.tools.positions import (
     MarkKnockoutInput,
+    RecordLifecycleEventInput,
     book_position_tool,
+    close_position_tool,
     mark_knockout_tool,
     record_lifecycle_event_tool,
+    settle_position_tool,
 )
 
 
@@ -506,6 +509,74 @@ def test_a_lifecycle_card_can_describe_a_position_by_source_trade_id():
         {"name": "close_position", "args": {"source_trade_id": "SB-2026-014"}}
     )
     assert "SB-2026-014" in card
+
+
+DEDICATED_TOOLS = (
+    (close_position_tool, "close"),
+    (settle_position_tool, "settle"),
+    (mark_knockout_tool, "knock_out"),
+)
+
+
+def test_every_recordable_event_type_is_named_in_the_tool_description():
+    """A live smoke measured the third gate: available is not discoverable.
+
+    The model routed `settle_position` for both "expired worthless" and
+    "exercised early" — the tool was reachable, allowlisted and correct, and it
+    was never called, because a description is all a model sees. The menu is
+    RENDERED from the vocabulary rather than written out, so this asserts the
+    render covers everything: a new event type reaches the agent surface with no
+    edit to tools/positions.py.
+    """
+    description = record_lifecycle_event_tool.description
+    for event_type, target in vocab.LIFECYCLE_EVENT_TARGETS.items():
+        if event_type in vocab.RETIRED_EVENT_TYPES:
+            continue
+        assert event_type in description, f"{event_type} missing from the tool menu"
+        if target:
+            assert f"-> {target}" in description
+
+
+def test_retired_event_types_are_not_offered():
+    """Retired types stay in the vocabulary so history resolves, and out of the
+    menu so nothing new records them."""
+    description = record_lifecycle_event_tool.description
+    for event_type in vocab.RETIRED_EVENT_TYPES:
+        assert event_type not in description
+
+
+def test_the_event_type_field_lists_the_active_types():
+    """The args-schema description was a second hand-written copy of the same
+    list — the shape that already drifted in the frontend."""
+    field = RecordLifecycleEventInput.model_fields["event_type"].description or ""
+    for event_type in vocab.LIFECYCLE_EVENT_TARGETS:
+        assert (event_type in field) is (event_type not in vocab.RETIRED_EVENT_TYPES)
+
+
+@pytest.mark.parametrize("tool,event_type", DEDICATED_TOOLS)
+def test_each_single_event_tool_redirects_to_the_general_one(tool, event_type):
+    """Every terminating event closes the position, so "it is closed now" is no
+    reason to prefer close/settle — which is exactly the inference the smoke
+    caught. Each single-event tool has to name the alternative."""
+    description = tool.description
+    assert "record_lifecycle_event" in description
+    others = {
+        other
+        for other, target in vocab.LIFECYCLE_EVENT_TARGETS.items()
+        if target == "closed"
+        and other != event_type
+        and other not in vocab.RETIRED_EVENT_TYPES
+    }
+    for other in others:
+        assert other in description, f"{tool.name} does not mention {other}"
+
+
+def test_settle_position_warns_off_the_worthless_expiry():
+    """Measured, not theorised: settling zero really does create a `0.0` /
+    `pending` cash row somebody must still release and settle."""
+    description = settle_position_tool.description
+    assert "expire" in description
+    assert "worthless" in description
 
 
 def test_lifecycle_inputs_reject_unknown_arguments():
