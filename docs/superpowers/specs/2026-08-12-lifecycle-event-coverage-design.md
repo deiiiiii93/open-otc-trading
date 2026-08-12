@@ -88,11 +88,17 @@ observation event, despite being in `_SCHEDULE_FAMILIES`).
 five families it lists, omits `AsianOption`/`fixing` entirely, and its fallback is
 `['close', 'custom']` — missing the `settle` the backend allows.
 
-**F5 — zero cash cannot be expressed.** `generate.py:197` sets
-`status = "needs_amount" if draft.amount is None else "pending"`, and a zero resolves to `None`
-(`test_zero_premium_is_needs_amount_not_a_zero_cashflow`). Any terminating event that emits a
-`settlement` leg with nothing owed leaves a row permanently *awaiting an amount* — a phantom
-obligation on the blotter. This already bites `maturity`: a barrier or sharkfin maturing worthless
+**F5 — a termination with no amount leaves a phantom obligation.** `generate.py:197` sets
+`status = "needs_amount" if draft.amount is None else "pending"`. Any terminating event that
+emits a `settlement` leg without an amount leaves a row permanently *awaiting* one — a phantom
+obligation on the blotter.
+
+> **Corrected 2026-08-12, post-implementation.** This finding was first written as "zero cash
+> cannot be expressed", which is too strong. An *explicit* `settlement_amount: 0.0` in
+> `event_data` yields a `0.0` / `pending` row; the zero→`None` collapse belongs to
+> `_premium_from_position` (the position resolver), not the `amount_keys` path
+> (`test_zero_premium_is_needs_amount_not_a_zero_cashflow` is about the premium leg). The
+> defect is the ABSENT amount, not the zero. `expire` remains justified — see §3. This already bites `maturity`: a barrier or sharkfin maturing worthless
 emits a `needs_amount` row with no follow-up `settle` to fill it, and the desk's only recourse is
 to `block` it by hand.
 
@@ -169,10 +175,13 @@ Retired means *no new events of this type*; it does not mean the system forgets 
 meant. The reachability guard (§9) consults this set so a retired type is not reported as the
 accidental-orphan defect it otherwise resembles.
 
-`expire` emitting **no** cash leg is load-bearing, and follows directly from F5: it is the only way
-this system can say *zero* rather than *unknown*. This is the same `empty` vs `unavailable`
-discipline the reporting module already established — a report that renders them alike claims a
-clean book nobody verified.
+`expire` emitting **no** cash leg is load-bearing, and follows from F5: a termination that opens a
+settlement row without an amount strands it at `needs_amount` forever. `expire` records the
+termination and opens no row. Note (per the F5 correction) that a desk *could* instead
+`settle` with an explicit `0.0` — that is expressible — but it creates a zero cashflow somebody
+must still release and settle, which is bookkeeping for money that does not exist. The `empty` vs
+`unavailable` discipline the reporting module established is the same instinct: an absence that
+was verified must not look like an absence nobody checked.
 
 `maturity`, `exercise` and `expire` are all final states (D5). The desk records the one that
 describes what actually happened:

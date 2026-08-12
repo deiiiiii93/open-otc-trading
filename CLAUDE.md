@@ -1259,11 +1259,16 @@ copy, because the copy it used to keep drifted and lost `settle` and `fixing`.
   `"open"` target silently overwrote the booked status of a position booked
   `knocked_in` or `closed` — a historical trade imported mid-life. An inception
   *record* must not rewrite what it records. `reopen` is the transition.
-- **`expire` emits no cash leg, deliberately.** `generate.py` sets
-  `status = "needs_amount" if amount is None else "pending"` and a zero resolves to
-  `None`, so a terminating event with nothing owed would leave a permanent phantom
-  obligation. `expire` is how the system says *zero* rather than *unknown* — the same
-  `empty` vs `unavailable` discipline the report module fought for.
+- **`expire` emits no cash leg, deliberately.** A terminating event with no amount in
+  `event_data` yields `amount=None` → a `needs_amount` row (`generate.py:197`), i.e. a
+  permanent phantom obligation for a trade where nothing is owed. `expire` records the
+  termination without opening a cash row at all.
+  **Precision, measured after an over-broad first draft:** an *explicit*
+  `settlement_amount: 0.0` IS expressible and yields a `0.0` / `pending` row — the
+  zero→`None` collapse belongs to `_premium_from_position` (the position resolver),
+  not the `amount_keys` path. So `expire` is not "the only way to say zero"; it is the
+  way to say *nothing is owed* without creating a zero cashflow somebody must still
+  release and settle.
 - **`barrier_reset` RECORDS a barrier step; it does not apply one.** Lifecycle events
   write `event_data`; pricing reads `Position.product_kwargs`. A reset position still
   prices off its original barrier.
