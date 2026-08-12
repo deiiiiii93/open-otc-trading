@@ -86,6 +86,39 @@ def test_deriver_is_deterministic():
     assert derive_cashflows(*args) == derive_cashflows(*args)
 
 
+def test_exercise_books_the_settlement_leg():
+    drafts = derive_cashflows(
+        _position(),
+        _event("exercise", {"settlement_amount": 1250.0, "settlement_date": "2026-09-01"}),
+    )
+    assert [d.leg_key for d in drafts] == ["settlement"]
+    assert drafts[0].amount == 1250.0
+
+
+def test_expire_books_nothing_because_nothing_is_owed():
+    """The whole point of a distinct `expire`: a terminating event that emitted
+    a settlement leg with no amount would leave a row permanently
+    `needs_amount` — a phantom obligation nobody can ever clear."""
+    assert derive_cashflows(_position(), _event("expire", {"expiry_date": "2026-09-01"})) == []
+
+
+def test_barrier_reset_books_nothing():
+    """A barrier stepping is a change of terms, not a cash movement."""
+    drafts = derive_cashflows(
+        _position(),
+        _event("barrier_reset", {"reset_date": "2026-09-01", "new_barrier_level": 98.0}),
+    )
+    assert drafts == []
+
+
+def test_a_one_touch_knock_out_uses_the_same_singleton_settlement_leg():
+    """So a touch followed by a settle fills one row rather than booking twice."""
+    drafts = derive_cashflows(
+        _position(), _event("knock_out", {"settlement_amount": 500.0})
+    )
+    assert [d.leg_key for d in drafts] == ["settlement"]
+
+
 def test_every_rule_targets_a_real_lifecycle_event_type():
     from app.services.domains.positions import LIFECYCLE_EVENT_TARGETS
 
@@ -106,7 +139,7 @@ def test_every_terminating_event_emits_the_same_singleton_settlement_leg():
     dedup possible at all.
     """
     position = _position()
-    terminating = ("settle", "knock_out", "autocall", "maturity", "close")
+    terminating = ("settle", "knock_out", "autocall", "maturity", "close", "exercise")
     legs = {
         event_type: {
             d.leg_key

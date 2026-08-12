@@ -179,7 +179,7 @@ def derive_cashflows(
 #
 # DOMAIN DECISION — owned by the desk, not by this module's author.
 #
-# The 14 legal event types live in ``LIFECYCLE_EVENT_TARGETS``
+# The 17 legal event types live in ``LIFECYCLE_EVENT_TARGETS``
 # (services/domains/positions.py). An event type absent from this map produces
 # NO cashflow at all, which is the correct answer for observation-only events.
 #
@@ -212,8 +212,16 @@ def derive_cashflows(
 #   2. `open` emits a `premium` leg computed from the position's own recorded
 #      entry_price x quantity, so the cash lifecycle is covered from inception.
 #
-# Non-cash types (reopen, knock_in, coupon_observation, coupon_lock, fixing,
-# custom) are absent on purpose and therefore emit nothing.
+# Non-cash types (reopen, knock_in, coupon_observation, fixing, barrier_reset,
+# expire, custom) are absent on purpose and therefore emit nothing. `expire`
+# because nothing is owed — a settlement leg with no amount would sit
+# `needs_amount` forever; `barrier_reset` because a stepping barrier is a
+# change of terms, not cash.
+#
+# `autocall` and `coupon_lock` are RETIRED (see
+# lifecycle_vocabulary.RETIRED_EVENT_TYPES): no family may record them any
+# more, but `autocall` keeps its rule below so ``generate_missing`` can still
+# sweep historical phoenix autocalls for cash.
 
 _SETTLEMENT_LEG = LegRule(
     leg_key="settlement",
@@ -238,6 +246,7 @@ CASH_LEG_RULES: dict[str, tuple[LegRule, ...]] = {
     "autocall": (_SETTLEMENT_LEG,),
     "maturity": (_SETTLEMENT_LEG,),
     "close": (_SETTLEMENT_LEG,),
+    "exercise": (_SETTLEMENT_LEG,),
     # Recurring coupons — deliberately NOT singleton.
     "coupon_paid": (_COUPON_LEG,),
     "memory_coupon": (_COUPON_LEG,),
