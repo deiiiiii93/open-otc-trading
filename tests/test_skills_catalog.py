@@ -31,6 +31,7 @@ def test_workflow_sources_are_readable(skills_backend: FilesystemBackend) -> Non
         "book-position",
         "asian-fixings",
         "book-trade-confirmation",
+        "record-lifecycle-event",
     }
     assert _names(_list_skills(skills_backend, "/workflows/risk/")) == {
         "run-risk",

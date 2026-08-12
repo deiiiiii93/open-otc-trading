@@ -100,6 +100,7 @@ def test_workflow_sources_are_readable_via_skills_backend() -> None:
         "book-position",
         "asian-fixings",
         "book-trade-confirmation",
+        "record-lifecycle-event",
     }
     assert _names(_list_skills(backend, "/workflows/try-solve/")) == {
         "solve-imported-row",

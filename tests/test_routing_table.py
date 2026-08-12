@@ -133,6 +133,9 @@ def test_render_empty_rows_is_header_only() -> None:
 # Extended with the templated-report routing rows (30 rows total): three for
 # generate-templated-report (one per persona, since a template declares which
 # persona narrates it) and two for author-report-template.
+# Extended with the record-lifecycle-event row: a live smoke measured the
+# orchestrator framing a worthless expiry as a "settlement" and delegating it
+# that way, because no skill claimed lifecycle recording at all.
 OLD_TABLE_ROWS: set[tuple[str, str, str]] = {
     ("Create or edit a reusable desk workflow", "risk_manager", "build-workflow"),
     ("Build a slash-command workflow playbook", "trader", "build-workflow"),
@@ -173,6 +176,12 @@ OLD_TABLE_ROWS: set[tuple[str, str, str]] = {
         "Review settlement cashflows, release or block a payment, or issue a settlement notice",
         "trader",
         "manage-settlement-cashflows",
+    ),
+    (
+        "Record a lifecycle event on a position — expiry, exercise, knock-in or "
+        "knock-out, coupon, fixing, maturity, unwind or settlement",
+        "trader",
+        "record-lifecycle-event",
     ),
 }
 

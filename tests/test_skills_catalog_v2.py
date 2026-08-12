@@ -81,6 +81,7 @@ def test_all_workflow_domains_have_expected_skills(
             "book-position",
             "asian-fixings",
             "book-trade-confirmation",
+            "record-lifecycle-event",
         },
         "/workflows/products/": {"build-product", "product-term-interpretation"},
         "/workflows/try-solve/": {
@@ -155,7 +156,7 @@ def test_legacy_sources_are_empty(skills_backend: FilesystemBackend) -> None:
 def test_trader_total_workflow_catalog(skills_backend: FilesystemBackend) -> None:
     catalog = _persona_catalog(_build_backend(), _source_list(trader_spec(object(), [])))
 
-    assert len(catalog) == 33, f"Expected 33 entries, got {len(catalog)}: {catalog}"  # 22 + pricing-parameter-maintenance + asian-fixings + build-workflow + product-term-interpretation + book-trade-confirmation + the reporting domain, now visible to trader so persona: trader templates are routable (generate-report, display-report, batch-run-reports, generate-templated-report, author-report-template) + manage-settlement-cashflows
+    assert len(catalog) == 34, f"Expected 34 entries, got {len(catalog)}: {catalog}"  # 22 + pricing-parameter-maintenance + asian-fixings + build-workflow + product-term-interpretation + book-trade-confirmation + the reporting domain, now visible to trader so persona: trader templates are routable (generate-report, display-report, batch-run-reports, generate-templated-report, author-report-template) + manage-settlement-cashflows + record-lifecycle-event
     assert {
         "position-snapshot",
         "solve-imported-row",
@@ -175,7 +176,7 @@ def test_risk_manager_total_workflow_catalog(
 ) -> None:
     catalog = _persona_catalog(_build_backend(), _source_list(risk_spec(object(), [])))
 
-    assert len(catalog) == 32, f"Expected 32 entries, got {len(catalog)}: {catalog}"  # +asian-fixings (positions domain) +build-workflow +limits (monitor-limits, handle-limit-incident) +book-trade-confirmation +generate-templated-report +author-report-template
+    assert len(catalog) == 33, f"Expected 33 entries, got {len(catalog)}: {catalog}"  # +asian-fixings (positions domain) +build-workflow +limits (monitor-limits, handle-limit-incident) +book-trade-confirmation +generate-templated-report +author-report-template +record-lifecycle-event
     assert {
         "monitor-limits",
         "handle-limit-incident",

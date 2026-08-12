@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   agent previously had tools for only 4 of the 17 event types, so `exercise`,
   `expire` and `barrier_reset` were reachable from REST and the UI but not from the
   desk agent. Found by smoking the agent path, which no test covered.
+- **`record-lifecycle-event` skill** — the routing line that makes lifecycle
+  recording a claimed desk workflow. No skill covered "something happened to a live
+  trade" before, so the orchestrator had nothing to route to and improvised.
 
 ### Fixed
 - **`open` and `reopen` were declared but allowed for no product**, so the `premium`
@@ -64,6 +67,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   client unwind)`), so a human is no longer asked to approve two integers. They share
   one subject helper that degrades honestly on an unreadable position rather than
   throwing.
+- **A model would not route to the new lifecycle tool.** A live three-probe smoke on
+  the desk agent measured it recording both "expired worthless" and "exercised early"
+  through `settle_position` — losing the `early` flag and the event type entirely, and
+  booking a zero-amount cashflow the desk still has to release. The tool was
+  available, allowlisted and correct; it was simply never chosen. Two fixes, measured
+  separately: the single-event tools' descriptions now redirect to
+  `record_lifecycle_event` for every other ending (this fixed the exercise probe), and
+  the new `record-lifecycle-event` skill supplies the routing line the orchestrator
+  needed (this fixed the expiry probe — the orchestrator was framing it as a
+  "settlement" in its own delegation, before any persona saw a tool description). The
+  event menu inside the tool description is **rendered from the vocabulary**, so a new
+  event type reaches the agent surface with no edit to the tool module.
 
 ### Changed
 - Phoenix records `knock_out`/`coupon_observation` instead of

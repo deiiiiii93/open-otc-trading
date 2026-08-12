@@ -1298,6 +1298,30 @@ HITL `"write"`, like its three hardcoded siblings — a lifecycle event is recal
   reachable from REST and the UI and **not from the agent**, which only a live smoke of
   the agent path revealed. **After adding an event type, check the agent can record
   it**; the vocabulary, the REST layer and the tool surface are three different gates.
+- **Availability is the third gate, not the last one — discoverability is the fourth,
+  and it fails at a DIFFERENT layer than you fix.** With the generic tool available,
+  allowlisted and correct, a live 3-probe smoke measured the desk agent recording both
+  "expired worthless" and "exercised early" through `settle_position`: the `early` flag
+  and the event type were lost, and the worthless expiry booked a `0.0`/`pending` cash
+  row somebody must still release. Two distinct causes, each needing its own fix:
+  - **The persona chooses by tool description.** Redirecting from the single-event
+    tools ("records `settle` and nothing else; if the trade ended some OTHER way, call
+    `record_lifecycle_event`") fixed the exercise probe on its own. Every terminating
+    event closes the position, so "it is closed now" never discriminates — the
+    descriptions have to say so.
+  - **The orchestrator never sees a tool description.** It delegates via `task()`, and
+    it had written *"Record an OTM expiry **settlement**"* into the delegation before
+    any persona existed — because **no skill claimed lifecycle recording**, so there
+    was nothing to route to and it improvised from the nearest word it knew. Only the
+    `record-lifecycle-event` skill's `routing:` line fixed that probe. Same lesson the
+    arena measured (routed skills 64–88%, unrouted 0–23%): **when a model never reaches
+    for a working tool, look one level UP from where you think the choice is made.**
+  The event menu in `record_lifecycle_event`'s description is **rendered from
+  `LIFECYCLE_EVENT_TARGETS` + `EVENT_FIELD_SPECS`** (`_event_menu()`), and the
+  redirects from `_redirect_notice()`. Hand-writing them would recreate exactly the
+  copy that already drifted in the frontend. `.description` is assigned after the
+  decorator stack — it is a declared `BaseTool` field, so plain assignment works,
+  unlike `invoke` which `capability_gated` must patch via `object.__setattr__`.
 - **`_SETTLEMENT_LEG.amount_keys` is `("settlement_amount", "payoff")`.** `payoff` is a
   fallback and must stay second. Both `mark_knockout` and the UI's knock_out/autocall
   forms collect a "Payoff", and before that key existed the number was written to
