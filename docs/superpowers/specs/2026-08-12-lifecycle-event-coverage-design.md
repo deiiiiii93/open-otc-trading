@@ -116,23 +116,58 @@ on the implementation.
 | D3 | `book_position` emits an `open` event, so premium cashflows generate from inception. **No backfill** of existing positions |
 | D4 | A single server-owned vocabulary endpoint; the frontend deletes both hardcoded tables |
 
-Plus a fifth, taken as a correction during review:
+Plus two more, taken as corrections during review of this document:
 
 | # | Decision |
 |---|---|
 | D5 | `maturity` means *the position is no longer alive*, and is a **final state available to all products** — not partitioned by product style, and not redefined as non-terminating |
+| D6 | Consolidate near-synonyms across families: a one-touch's touch is a `knock_out`; a phoenix autocall is a `knock_out` and its coupon-lock a `coupon_observation`. `autocall` and `coupon_lock` are **retired** (§3.2), and `barrier_reset` is added as a 17th type for the KO-reset snowball |
 
-## 3. Vocabulary — 14 → 16 event types
+## 3. Vocabulary — 14 → 17 event types, 2 retired
 
-Two additions to `LIFECYCLE_EVENT_TARGETS`:
+Three additions to `LIFECYCLE_EVENT_TARGETS`:
 
 | Event | Target status | Cash leg | Meaning |
 |---|---|---|---|
 | `exercise` | `closed` | `settlement` (singleton) | The holder exercised. `event_data`: `{exercise_date, early: bool, settlement_amount?}` |
 | `expire` | `closed` | **none** | Ended with nothing owed, and that was verified |
+| `barrier_reset` | `None` (alive) | **none** | A KO-reset snowball's barrier stepped to a new level. `event_data`: `{reset_date, new_barrier_level, previous_barrier_level}` |
 
 `early: bool` is what distinguishes American early exercise from exercise at expiry — one event
 type, two economics, rather than two near-synonym types.
+
+### 3.1 `barrier_reset` records the reset; it does not apply it
+
+A lifecycle event writes to `event_data` (a JSON blob) and never touches
+`Position.product_kwargs`, which is what `build_product` and therefore QuantArk actually price
+against. So `barrier_reset` is a **record that the barrier stepped**, not a mechanism that moves it:
+after recording one, the position still prices off its original KO barrier.
+
+Making pricing consume the reset means mutating `product_kwargs` (and so re-versioning the
+position, since `product_kwargs` is in `_POSITION_VERSION_FIELDS`, `models.py`). That is a
+materially larger change and is **out of scope** (§11) — but it must be stated, because an
+implementer would otherwise reasonably assume recording the event moved the barrier.
+
+### 3.2 `autocall` and `coupon_lock` are retired, not deleted (D6)
+
+Phoenix was the only family allowed either type, and the matrix in §4 replaces them with
+`knock_out` and `coupon_observation` — a phoenix autocall *is* a knock-out (the same trigger a
+snowball calls `knock_out`), and a `coupon_lock` *is* a `coupon_observation` whose condition was
+met. Consolidating means phoenix and snowball speak one vocabulary.
+
+Both types are therefore **removed from every allowlist but kept in `LIFECYCLE_EVENT_TARGETS` and
+in `CASH_LEG_RULES`**, and added to an explicit `RETIRED_EVENT_TYPES` set. Deleting them outright
+would silently damage history in two ways:
+
+- `_project_status_from_lifecycle` (`positions.py:567`) resolves targets with
+  `LIFECYCLE_EVENT_TARGETS.get(...)`, so an unknown type reads as non-transitioning — a historical
+  phoenix `autocall` would stop projecting the position to `closed`.
+- `generate_missing` sweeps events that have no cashflow rows, so dropping
+  `CASH_LEG_RULES["autocall"]` would stop it ever generating cash for a historical autocall.
+
+Retired means *no new events of this type*; it does not mean the system forgets what the type
+meant. The reachability guard (§9) consults this set so a retired type is not reported as the
+accidental-orphan defect it otherwise resembles.
 
 `expire` emitting **no** cash leg is load-bearing, and follows directly from F5: it is the only way
 this system can say *zero* rather than *unknown*. This is the same `empty` vs `unavailable`
@@ -159,25 +194,35 @@ Universal base for **all 15 families**: `open`, `reopen`, `close`, `settle`, `ma
 | BarrierOption | `knock_in`, `knock_out`, `exercise`, `expire` |
 | SingleSharkfinOption | `knock_in`, `knock_out`, `exercise`, `expire` |
 | DoubleSharkfinOption | `knock_in`, `knock_out`, `exercise`, `expire` |
-| OneTouchOption | `knock_in` *(the touch)*, `expire` *(no-touch)* |
-| DoubleOneTouchOption | `knock_in`, `expire` |
+| OneTouchOption | `knock_out` *(the touch)*, `expire` *(no-touch)* |
+| DoubleOneTouchOption | `knock_out`, `expire` |
 | AsianOption | `fixing`, `exercise`, `expire` |
 | SnowballOption | `knock_in`, `knock_out`, `coupon_observation`, `coupon_paid` |
-| KnockOutResetSnowballOption | `knock_in`, `knock_out`, `coupon_observation`, `coupon_paid` |
-| PhoenixOption | `autocall`, `coupon_lock`, `coupon_paid`, `memory_coupon`, `knock_in` |
-| RangeAccrualOption | `fixing`, `coupon_observation`, `coupon_paid` |
+| KnockOutResetSnowballOption | `knock_in`, `knock_out`, `coupon_observation`, `coupon_paid`, `barrier_reset` |
+| PhoenixOption | `knock_out`, `coupon_observation`, `coupon_paid`, `memory_coupon`, `knock_in` |
+| RangeAccrualOption | `fixing` |
 | Futures | — |
 | SpotInstrument | — |
 
 Rationale on the non-obvious cells:
 
-- **`KnockOutResetSnowballOption` mirrors `SnowballOption` exactly.** It is a snowball; its absence
-  from the map is an oversight, and every other subsystem already pairs the two.
-- **Phoenix gains `knock_in`.** Phoenix structures standardly carry a KI barrier; the omission
-  looks like the same class of oversight. Additive, so low risk.
-- **One-touch models the touch as `knock_in`**, which targets `knocked_in` and leaves the position
-  alive until `maturity`/`settle` — correct for a pay-at-maturity one-touch, and it needs no change
-  to the target map. A no-touch expiry is `expire`.
+- **`KnockOutResetSnowballOption` takes the snowball set plus `barrier_reset`.** Its absence from
+  the map was an oversight — every other subsystem already pairs it with `SnowballOption` — but it
+  is not merely a copy: the stepping barrier is the feature that distinguishes it, and §3.1 governs
+  what recording that step does and does not do.
+- **One-touch and double-one-touch model the touch as `knock_out`, not `knock_in`.** The touch is
+  what makes the option pay, so the position both terminates and owes money at that instant.
+  `knock_out` targets `closed` and carries the settlement leg; `knock_in` targets `knocked_in` and
+  has no cash rule at all, which would leave the obligation invisible until maturity. A deferred
+  payment date belongs on the cashflow's `value_date`, not in keeping the position open. A no-touch
+  expiry is `expire`.
+- **Phoenix gains `knock_in` and moves to `knock_out` / `coupon_observation`.** Phoenix structures
+  standardly carry a KI barrier, and its autocall and coupon-lock are the same economics snowball
+  already names `knock_out` and `coupon_observation`. See §3.2 for the retirement of the two old
+  types.
+- **RangeAccrualOption gets `fixing` only.** This assumes range accruals pay once at maturity —
+  covered by `maturity` + `settle` — with `fixing` recording the in/out-of-range observations. A
+  periodically-paying range accrual would additionally need `coupon_paid`.
 - **Futures gets no `expire`**, because futures always settle something; `maturity` + `settle`
   covers final settlement.
 - **`reopen` is universal.** It reverses an erroneous close, and settlement already supports the
@@ -214,16 +259,22 @@ recorded by hand; it is deliberately out of scope.
 "exercise": (_SETTLEMENT_LEG,),
 ```
 
-`expire` is deliberately **absent**, joining `reopen` / `knock_in` / `coupon_observation` /
-`coupon_lock` / `fixing` / `custom` as events that emit nothing.
+`expire` and `barrier_reset` are deliberately **absent**, joining `reopen` / `knock_in` /
+`coupon_observation` / `fixing` / `custom` as events that emit nothing. `expire` because nothing is
+owed (§3); `barrier_reset` because a barrier stepping is a change of terms, not a cash movement.
+
+`autocall` **keeps** its `_SETTLEMENT_LEG` entry even though no family can fire it any more, so
+`generate_missing` can still sweep historical phoenix autocalls (§3.2).
 
 No new dedup logic is required. `_SETTLEMENT_LEG` has `leg_key="settlement"`, which is already in
 `SINGLETON_LEG_KEYS`, so `generate._open_singleton` handles an `exercise` followed by a `settle`
 exactly as it already handles `knock_out` → `settle`: the later event fills the row rather than
-creating a second one.
+creating a second one. The same applies to a one-touch's `knock_out` → `settle`, which is already
+the pinned snowball path (`test_knockout_and_settle_do_not_both_book_the_settlement`).
 
 The comment at `derive.py:182` ("The 14 legal event types live in `LIFECYCLE_EVENT_TARGETS`") must
-be updated to 16, and its list of non-cash types extended with `expire`.
+be updated to 17, its list of non-cash types extended with `expire` and `barrier_reset`, and its
+`coupon_lock` reference moved to the retired set.
 
 ## 7. Server-owned vocabulary endpoint
 
@@ -247,10 +298,16 @@ New field specs required for the added events, and for the two the UI is missing
 |---|---|
 | `exercise` | `exercise_date` (date), `early` (bool), `settlement_amount` (number) |
 | `expire` | `expiry_date` (date), `reason` (text) |
+| `barrier_reset` | `reset_date` (date), `new_barrier_level` (number), `previous_barrier_level` (number) |
 | `settle` | `settlement_amount` (number), `settlement_date` (date) |
 | `fixing` | `observation_date` (date), `observed_price` (number) |
 | `open` | `trade_date` (date), `premium_amount` (number) — display only; see note |
 | `reopen` | `reason` (text) |
+
+The existing `autocall` and `coupon_lock` field specs are **retained** so historical phoenix events
+still render with labelled fields, even though neither type can be selected any more. `by_family`
+is what gates the picker; `event_fields` is what renders. Keeping the two concerns separate is what
+lets a retired type stay readable.
 
 Note on `open`: `derive.py`'s `open` rule declares no `amount_keys`, so the position resolver is
 its sole source and a recorded `premium_amount` does **not** override it — pinned deliberately by
@@ -274,16 +331,23 @@ The decisive tests are the two structural guards, because F1 survived precisely 
 that bypassed the gate.
 
 - **Reachability guard.** Every key in `LIFECYCLE_EVENT_TARGETS` and every key in `CASH_LEG_RULES`
-  must appear in at least one family's allowlist. *This fails on `main` today* — it is the test
-  that would have caught F1.
+  must appear in at least one family's allowlist **or in `RETIRED_EVENT_TYPES`**. *This fails on
+  `main` today* — it is the test that would have caught F1. The retired-set escape hatch is what
+  keeps a deliberate retirement (§3.2) distinguishable from an accidental orphan; requiring a type
+  to be listed there is what makes the retirement a decision someone had to write down.
 - **Family coverage guard.** `PRODUCT_LIFECYCLE_EVENTS` must cover every family in
   `product_builders._REGISTRY`, so a newly added family cannot silently fall through to the
   3-event default. This is what hid F3.
 - **Settlement tests go through `create_lifecycle_event`**, not raw `PositionLifecycleEvent(...)`.
   The `_event` helper in `test_settlement_generate.py:36` must be routed through the real
   constructor, or these tests keep proving satisfiability instead of reachability.
-- `expire` produces no cashflow row.
-- `exercise` → `settle` produces exactly one `settlement` leg (existing singleton dedup).
+- `expire` and `barrier_reset` produce no cashflow row.
+- `barrier_reset` leaves `Position.status` unchanged and does not alter `product_kwargs` (§3.1).
+- `exercise` → `settle` and a one-touch `knock_out` → `settle` each produce exactly one
+  `settlement` leg (existing singleton dedup).
+- **Retirement is honoured, not forgotten:** `create_lifecycle_event` refuses a new `autocall` or
+  `coupon_lock` for every family, while a pre-existing `autocall` row still projects a position to
+  `closed` and is still swept for cash by `generate_missing`.
 - `book_position` emits exactly one `open` event and one `premium` cashflow; a position with no
   `entry_price` yields `needs_amount` rather than a zero row.
 - The endpoint's `by_family` matches `valid_lifecycle_event_types` for all 15 families.
@@ -298,7 +362,12 @@ Run backend as `.venv/bin/python -m pytest` from the repo root; frontend as
 - **Purely additive to recorded history.** The allowlist gates *creation* only; existing rows of
   any type still render and still project status. No migration is needed — `event_type` is
   `String(80)`, not an enum.
-- **No event type is removed**, so nothing recordable today becomes unrecordable.
+- **Two event types become unrecordable for Phoenix:** `autocall` and `coupon_lock` (§3.2). This is
+  the one place the change is not purely additive. Existing rows are unaffected — they render,
+  project status, and generate cash exactly as before — but the desk must use `knock_out` and
+  `coupon_observation` from now on, so a phoenix book will contain both spellings of the same
+  economics either side of the ship date. **Pre-merge check:** count existing `autocall` /
+  `coupon_lock` rows so the size of that discontinuity is known rather than discovered.
 - **New cashflow rows appear on every new booking** (§5). This is the intended behaviour, but it
   changes what the Settlement page shows from the day it ships.
 - **Golden workflows / arena:** no manifest grades a lifecycle event type today, but confirm before
@@ -318,13 +387,22 @@ Run backend as `.venv/bin/python -m pytest` from the repo root; frontend as
   stock position is a separate design.
 - Automatic event generation from schedules (beyond the existing
   `generate_asian_fixing_schedule`) — e.g. auto-`expire` on the maturity date.
+- **Making `barrier_reset` move the priced barrier** (§3.1). Recording the step is in scope;
+  mutating `product_kwargs` so QuantArk prices against the new level is not.
+- Migrating historical `autocall` / `coupon_lock` rows to their replacement spellings (§3.2).
+  Retirement is forward-only.
 
 ## 12. Open items
 
-Neither blocks implementation; both are cheap to revise.
+None blocks implementation; all are cheap to revise.
 
 1. **`reopen` on every family** — offered universally on the reasoning that it corrects an
    erroneous close and settlement already supports the cycle. Could be narrowed to a
    correction-only tool.
 2. **`expire` for Futures** — dropped on the reasoning that futures always settle something.
    Trivially additive if the futures book needs it.
+3. **`coupon_paid` for RangeAccrualOption** — omitted on the assumption that range accruals here
+   pay once at maturity. Needed if any pay periodically.
+4. **A KO-reset snowball's reset schedule is not generated**, only recorded event by event. The
+   `generate_asian_fixing_schedule` precedent exists if the desk wants the whole reset ladder
+   materialised at booking.
