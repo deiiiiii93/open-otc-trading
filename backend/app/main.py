@@ -85,6 +85,8 @@ from .schemas import (
     InstrumentUpdate,
     MarketDataProfileOut,
     MarketDataSnapshot,
+    LifecycleFieldSpecOut,
+    LifecycleVocabularyOut,
     MarketQuoteCreate,
     MarketQuoteOut,
     MarketSnapshotOut,
@@ -2891,6 +2893,24 @@ def create_app(
             position=position,
             pricing_parameter_profile_id=pricing_parameter_profile_id,
             as_of=datetime.utcnow(),
+        )
+
+    @app.get("/api/lifecycle-vocabulary", response_model=LifecycleVocabularyOut)
+    def get_lifecycle_vocabulary():
+        """Serve the lifecycle event vocabulary so the UI never keeps a copy."""
+        from app.services.domains import lifecycle_vocabulary as vocab
+
+        return LifecycleVocabularyOut(
+            event_types=dict(vocab.LIFECYCLE_EVENT_TARGETS),
+            by_family={
+                family: sorted(events)
+                for family, events in vocab.PRODUCT_LIFECYCLE_EVENTS.items()
+            },
+            retired=sorted(vocab.RETIRED_EVENT_TYPES),
+            event_fields={
+                event: [LifecycleFieldSpecOut(**spec) for spec in specs]
+                for event, specs in vocab.EVENT_FIELD_SPECS.items()
+            },
         )
 
     @app.get(

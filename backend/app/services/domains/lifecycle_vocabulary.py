@@ -115,8 +115,79 @@ def valid_lifecycle_event_types(product_type: str) -> set[str]:
     return PRODUCT_LIFECYCLE_EVENTS.get(product_type, set(BASE_EVENTS))
 
 
+EVENT_FIELD_SPECS: dict[str, tuple[dict[str, str], ...]] = {
+    "open": (
+        {"key": "trade_date", "label": "Trade Date", "type": "date"},
+        {"key": "premium_amount", "label": "Premium Amount", "type": "number"},
+    ),
+    "reopen": ({"key": "reason", "label": "Reason", "type": "text"},),
+    "close": ({"key": "reason", "label": "Reason", "type": "text"},),
+    "settle": (
+        {"key": "settlement_amount", "label": "Settlement Amount", "type": "number"},
+        {"key": "settlement_date", "label": "Settlement Date", "type": "date"},
+    ),
+    "maturity": (
+        {"key": "maturity_date", "label": "Maturity Date", "type": "date"},
+        {"key": "final_payoff", "label": "Final Payoff", "type": "number"},
+    ),
+    "exercise": (
+        {"key": "exercise_date", "label": "Exercise Date", "type": "date"},
+        {"key": "early", "label": "Early Exercise", "type": "bool"},
+        {"key": "settlement_amount", "label": "Settlement Amount", "type": "number"},
+    ),
+    "expire": (
+        {"key": "expiry_date", "label": "Expiry Date", "type": "date"},
+        {"key": "reason", "label": "Reason", "type": "text"},
+    ),
+    "knock_in": (
+        {"key": "barrier_level", "label": "Barrier Level", "type": "number"},
+        {"key": "observation_date", "label": "Observation Date", "type": "date"},
+    ),
+    "knock_out": (
+        {"key": "barrier_level", "label": "Barrier Level", "type": "number"},
+        {"key": "observation_date", "label": "Observation Date", "type": "date"},
+        {"key": "payoff", "label": "Payoff", "type": "number"},
+    ),
+    "barrier_reset": (
+        {"key": "reset_date", "label": "Reset Date", "type": "date"},
+        {"key": "new_barrier_level", "label": "New Barrier Level", "type": "number"},
+        {"key": "previous_barrier_level", "label": "Previous Barrier", "type": "number"},
+    ),
+    "coupon_observation": (
+        {"key": "observation_date", "label": "Observation Date", "type": "date"},
+        {"key": "observed_price", "label": "Observed Price", "type": "number"},
+    ),
+    "coupon_paid": (
+        {"key": "coupon_amount", "label": "Coupon Amount", "type": "number"},
+        {"key": "coupon_date", "label": "Coupon Date", "type": "date"},
+    ),
+    "memory_coupon": (
+        {"key": "coupon_amount", "label": "Coupon Amount", "type": "number"},
+        {"key": "memory_periods", "label": "Memory Periods", "type": "number"},
+    ),
+    "fixing": (
+        {"key": "observation_date", "label": "Observation Date", "type": "date"},
+        {"key": "observed_price", "label": "Observed Price", "type": "number"},
+    ),
+    "custom": ({"key": "reason", "label": "Reason", "type": "text"},),
+    # Retained for RETIRED types so historical rows still render with labels.
+    # `by_family` is what gates the picker; this map is what renders. Keeping
+    # the two concerns separate is what lets a retired type stay readable.
+    "autocall": (
+        {"key": "autocall_level", "label": "Autocall Level", "type": "number"},
+        {"key": "observation_date", "label": "Observation Date", "type": "date"},
+        {"key": "payoff", "label": "Payoff", "type": "number"},
+    ),
+    "coupon_lock": (
+        {"key": "lock_date", "label": "Lock Date", "type": "date"},
+        {"key": "locked_coupon_rate", "label": "Locked Coupon Rate", "type": "number"},
+    ),
+}
+
+
 __all__ = [
     "BASE_EVENTS",
+    "EVENT_FIELD_SPECS",
     "LIFECYCLE_EVENT_TARGETS",
     "PRODUCT_LIFECYCLE_EVENTS",
     "RETIRED_EVENT_TYPES",

@@ -1881,6 +1881,25 @@ class PositionLifecycleEventOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class LifecycleFieldSpecOut(BaseModel):
+    key: str
+    label: str
+    type: str
+
+
+class LifecycleVocabularyOut(BaseModel):
+    """The server-owned lifecycle event vocabulary.
+
+    The frontend used to keep its own copy of these tables and they drifted —
+    it lost `settle` and `fixing` entirely. This endpoint is the single source.
+    """
+
+    event_types: dict[str, str | None]
+    by_family: dict[str, list[str]]
+    retired: list[str]
+    event_fields: dict[str, list[LifecycleFieldSpecOut]]
+
+
 class AsyncAgentStartIn(BaseModel):
     """Input payload for start_async_agent (tool + API DTO)."""
 

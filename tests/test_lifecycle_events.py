@@ -341,6 +341,53 @@ def test_list_view_portfolio_lifecycle_events_uses_resolved_membership(tmp_path:
     assert [event["event_type"] for event in data] == ["knock_in", "open"]
 
 
+def test_lifecycle_vocabulary_endpoint_serves_the_server_owned_maps(tmp_path: Path):
+    """The UI used to keep its own copy and it drifted — losing `settle` and
+    `fixing` entirely. One source of truth, served."""
+    client = make_client(tmp_path)
+
+    resp = client.get("/api/lifecycle-vocabulary")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["event_types"]["exercise"] == "closed"
+    assert body["event_types"]["barrier_reset"] is None
+    assert sorted(body["retired"]) == ["autocall", "coupon_lock"]
+
+    vanilla = body["by_family"]["EuropeanVanillaOption"]
+    assert "exercise" in vanilla and "expire" in vanilla
+    assert "settle" in vanilla, "the UI's missing-settle bug must not survive"
+
+    assert "settle" in body["event_fields"], "settle had no form fields at all"
+    settle_keys = [f["key"] for f in body["event_fields"]["settle"]]
+    assert settle_keys == ["settlement_amount", "settlement_date"]
+
+    # Retired types keep their field specs so historical rows still render.
+    assert "autocall" in body["event_fields"]
+
+
+def test_lifecycle_vocabulary_by_family_matches_the_service(tmp_path: Path):
+    from app.services.domains import positions as positions_svc
+
+    client = make_client(tmp_path)
+    body = client.get("/api/lifecycle-vocabulary").json()
+
+    for family, allowed in body["by_family"].items():
+        assert set(allowed) == positions_svc.valid_lifecycle_event_types(family)
+        assert allowed == sorted(allowed), "sorted output keeps the picker stable"
+
+
+def test_every_selectable_event_has_field_specs(tmp_path: Path):
+    """A selectable event with no fields renders an empty form — which is how
+    `settle` became unusable from the UI."""
+    client = make_client(tmp_path)
+    body = client.get("/api/lifecycle-vocabulary").json()
+
+    selectable = {e for events in body["by_family"].values() for e in events}
+    missing = selectable - set(body["event_fields"])
+    assert missing == set(), f"selectable events with no form fields: {sorted(missing)}"
+
+
 def test_cancel_lifecycle_event_endpoint_marks_event_and_recomputes_status(tmp_path: Path):
     client = make_client(tmp_path)
 
