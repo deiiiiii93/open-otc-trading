@@ -51,6 +51,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lifecycle tool inputs reject unknown arguments (`extra="forbid"`, matching
   `BookPositionInput`). Pydantic's default silently discarded them, so
   `mark_knockout(settlement_amount=900)` returned success having recorded no amount.
+- `reopen` is refused while a non-terminal `settlement` cashflow exists. Reopening
+  over a live settlement row meant the next `settle` was absorbed by the
+  once-per-position guard and its amount silently dropped — the lifecycle log would
+  say 650 while the blotter still said 500. The refusal mutates nothing and names the
+  remedy; once the row is settled, voided or edited, the reopen legitimately earns a
+  second settlement row. `reopen` was unreachable before this release, so no existing
+  data can be affected.
+- The `record_lifecycle_event` approval card names the trade and the event instead of
+  raw ids (`Record exercise on 10.0 AmericanOption / AAPL …`), so a human is not asked
+  to approve two integers.
 
 ### Changed
 - Phoenix records `knock_out`/`coupon_observation` instead of

@@ -280,6 +280,145 @@ def test_knockout_with_payoff_then_settle_still_books_one_row(session, book):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# D. reopen must not strand a live settlement row
+# ---------------------------------------------------------------------------
+
+
+def _settlement_rows(session, position_id: int):
+    return (
+        session.query(SettlementCashflow)
+        .filter_by(position_id=position_id, leg_key="settlement")
+        .order_by(SettlementCashflow.id)
+        .all()
+    )
+
+
+def test_reopen_is_refused_while_a_live_settlement_row_exists(session, book):
+    """Measured before this guard: settle(500) -> reopen -> settle(650) left the
+    cashflow at 500. The singleton guard absorbed the second settle and the new
+    amount reached nothing, so the lifecycle log said 650 while the blotter said
+    500. Refusing the reopen is fail-closed and mutates nothing.
+    """
+    position_id = _book(book.id, "EuropeanVanillaOption", _VANILLA_TERMS)
+    record_lifecycle_event_tool.invoke(
+        {
+            "position_id": position_id,
+            "event_type": "settle",
+            "event_data": {"settlement_amount": 500.0},
+        }
+    )
+
+    result = record_lifecycle_event_tool.invoke(
+        {"position_id": position_id, "event_type": "reopen", "event_data": {"reason": "oops"}}
+    )
+
+    assert result["ok"] is False
+    assert "settlement" in result["error"].lower()
+    # The hint must say what to do, not merely that it failed.
+    assert any(word in result["error"].lower() for word in ("settle", "void", "edit"))
+    # Nothing moved.
+    session.expire_all()
+    assert [(c.amount, c.status) for c in _settlement_rows(session, position_id)] == [
+        (500.0, "pending")
+    ]
+
+
+def test_reopen_is_allowed_once_the_settlement_is_terminal(session, book):
+    """A settled or voided row no longer blocks: the position may legitimately
+    reopen and earn a SECOND settlement row."""
+    position_id = _book(book.id, "EuropeanVanillaOption", _VANILLA_TERMS)
+    record_lifecycle_event_tool.invoke(
+        {
+            "position_id": position_id,
+            "event_type": "settle",
+            "event_data": {"settlement_amount": 500.0},
+        }
+    )
+    row = _settlement_rows(session, position_id)[0]
+    row.status = "settled"
+    session.commit()
+
+    result = record_lifecycle_event_tool.invoke(
+        {"position_id": position_id, "event_type": "reopen", "event_data": {"reason": "restruck"}}
+    )
+    assert result["ok"] is True, result
+    assert result["position"]["status"] == "open"
+
+    record_lifecycle_event_tool.invoke(
+        {
+            "position_id": position_id,
+            "event_type": "settle",
+            "event_data": {"settlement_amount": 650.0},
+        }
+    )
+    session.expire_all()
+    assert [(c.amount, c.status) for c in _settlement_rows(session, position_id)] == [
+        (500.0, "settled"),
+        (650.0, "pending"),
+    ]
+
+
+def test_reopen_is_allowed_when_the_position_never_settled(session, book):
+    """The guard is about a STRANDED settlement row, not about reopening at all.
+    A position closed without cash (expire) must still be reopenable — and the
+    always-present `premium` row must not block it."""
+    position_id = _book(book.id, "EuropeanVanillaOption", _VANILLA_TERMS)
+    record_lifecycle_event_tool.invoke(
+        {"position_id": position_id, "event_type": "expire", "event_data": {}}
+    )
+
+    result = record_lifecycle_event_tool.invoke(
+        {"position_id": position_id, "event_type": "reopen", "event_data": {}}
+    )
+
+    assert result["ok"] is True, result
+    assert result["position"]["status"] == "open"
+
+
+# ---------------------------------------------------------------------------
+# E. the approval card must not be two integers
+# ---------------------------------------------------------------------------
+
+
+def test_the_approval_card_states_the_event_and_the_trade(session, book):
+    """The interrupt fires BEFORE the tool body, so the card can only see raw
+    args — `position_id=27` tells a human nothing about what they are approving.
+    """
+    from app.services.deep_agent import hitl
+
+    position_id = _book(book.id, "AmericanOption", _VANILLA_TERMS)
+    card = hitl._summary_for(
+        {
+            "name": "record_lifecycle_event",
+            "args": {
+                "position_id": position_id,
+                "event_type": "exercise",
+                "event_data": {"settlement_amount": 500.0, "early": True},
+            },
+        }
+    )
+
+    assert "exercise" in card.lower()
+    assert "AmericanOption" in card or "American" in card
+    assert "AAPL" in card
+    assert "500" in card
+    assert f"position_id={position_id}" not in card, "raw args are the bug"
+
+
+def test_the_approval_card_degrades_honestly_for_an_unknown_position():
+    from app.services.deep_agent import hitl
+
+    card = hitl._summary_for(
+        {
+            "name": "record_lifecycle_event",
+            "args": {"position_id": 999_999, "event_type": "close"},
+        }
+    )
+    assert "close" in card.lower()
+    assert "999999" in card or "not found" in card.lower()
+
+
 def test_lifecycle_inputs_reject_unknown_arguments():
     """A silently-dropped argument is worse than an error: `settlement_amount`
     is a plausible guess for mark_knockout, and pydantic's default `ignore`

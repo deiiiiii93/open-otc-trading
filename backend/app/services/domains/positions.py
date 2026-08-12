@@ -28,7 +28,7 @@ from app.services.audit import record_audit
 from app.services import position_adapter, position_pricer
 from app.services.domains.products import compatibility_terms_for_position
 from app.services.portfolio_membership import resolve_positions
-from app.services.settlement.generate import generate_for_event
+from app.services.settlement.generate import generate_for_event, live_settlement_row
 
 from .lifecycle_vocabulary import (
     LIFECYCLE_EVENT_TARGETS,
@@ -546,6 +546,22 @@ def record_lifecycle_event(
         raise ValueError(
             f"Invalid event type '{clean_event_type}'. Valid types: {sorted(valid_types)}"
         )
+    if clean_event_type == "reopen":
+        # Fail closed rather than strand cash. Reopening over a live settlement
+        # row means the NEXT `settle` is absorbed by the once-per-position guard
+        # in generate.py and its amount is silently dropped — measured:
+        # settle(500) -> reopen -> settle(650) left the cashflow at 500 while
+        # the lifecycle log said 650. Refusing mutates nothing and leaves the
+        # desk in charge of which number is right.
+        stranded = live_settlement_row(sess, position.id)
+        if stranded is not None:
+            raise ValueError(
+                f"Cannot reopen position {position.id}: settlement cashflow "
+                f"#{stranded.id} is still '{stranded.status}'. A later settle "
+                "would be absorbed by the once-per-position guard and its "
+                "amount silently dropped. Settle, void, or edit that cashflow "
+                "first."
+            )
     clean_event_data = _enrich_lifecycle_event_data(
         sess, position, clean_event_type, dict(event_data or {})
     )

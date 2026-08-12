@@ -104,6 +104,21 @@ def _open_singleton(
     ).scalar_one_or_none()
 
 
+def live_settlement_row(
+    session: Session, position_id: int
+) -> SettlementCashflow | None:
+    """The non-terminal ``settlement`` row that makes a ``reopen`` unsafe.
+
+    A public wrapper over the singleton lookup so the lifecycle layer can ask
+    the question without reaching into this module's internals. Callers use it
+    to REFUSE, never to mutate: if a position reopens while its settlement is
+    still live, the next ``settle`` is absorbed by ``_open_singleton`` and its
+    amount is silently dropped — the lifecycle log would say one number and the
+    blotter another.
+    """
+    return _open_singleton(session, position_id, "settlement")
+
+
 def _fill_if_empty(
     session: Session,
     *,
@@ -270,5 +285,6 @@ __all__ = [
     "GenerationResult",
     "generate_for_event",
     "generate_missing",
+    "live_settlement_row",
     "resolve_counterparty",
 ]

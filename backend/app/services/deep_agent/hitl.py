@@ -433,11 +433,65 @@ def _summarize_settle_settlement_cashflow(args: dict[str, Any]) -> str:
         return f"Mark settlement cashflow #{cashflow_id} SETTLED"
 
 
+def _summarize_record_lifecycle_event(args: dict[str, Any]) -> str:
+    """Same rationale as _summarize_book_extracted_trade: the interrupt fires
+    before the tool body, so the raw args are ``{position_id, event_type,
+    event_data}`` — and `position_id=27` tells a human nothing about the trade
+    they are being asked to terminate. Reads the position so the card names it.
+
+    This tool is the general form covering every terminating event (exercise,
+    expire, maturity, knock_out), which is why it carries a builder where its
+    narrower hardcoded siblings do not.
+    """
+    event_type = str(args.get("event_type") or "").strip() or "lifecycle event"
+    data = args.get("event_data")
+    data = data if isinstance(data, dict) else {}
+    head = f"Record {event_type}"
+    extras: list[str] = []
+
+    position_id = args.get("position_id")
+    if isinstance(position_id, int):
+        from app import database
+        from app.models import Position
+
+        try:
+            database.init_db()
+            with database.SessionLocal() as session:
+                position = session.get(Position, position_id)
+                if position is None:
+                    return f"{head} on position #{position_id} (not found)"
+                head += f" on {_compact_value(position.quantity)}"
+                if position.product_type:
+                    head += f" {position.product_type}"
+                if position.underlying:
+                    head += f" / {position.underlying}"
+                extras.append(f"position #{position_id}")
+                if position.status:
+                    extras.append(f"now {position.status}")
+        except Exception:  # noqa: BLE001 - a card must never break the gate
+            return f"{head} on position #{position_id}"
+    elif args.get("source_trade_id"):
+        head += f" on trade {args['source_trade_id']}"
+
+    # Surface the money, if this event carries any.
+    for key in ("settlement_amount", "payoff", "coupon_amount"):
+        if data.get(key) is not None:
+            extras.append(f"{key.replace('_', ' ')} {_compact_value(data[key])}")
+            break
+    if data.get("early") is True:
+        extras.append("EARLY exercise")
+    if data.get("reason"):
+        extras.append(f"reason: {_compact_value(data['reason'])}")
+
+    return head + (f" ({', '.join(extras)})" if extras else "")
+
+
 _SUMMARY_BUILDERS: dict[str, Callable[[dict[str, Any]], str]] = {
     "book_position": _summarize_book_position,
     "register_underlying": _summarize_register_underlying,
     "book_extracted_trade": _summarize_book_extracted_trade,
     "settle_settlement_cashflow": _summarize_settle_settlement_cashflow,
+    "record_lifecycle_event": _summarize_record_lifecycle_event,
 }
 
 

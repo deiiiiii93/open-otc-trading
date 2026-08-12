@@ -1177,11 +1177,16 @@ therefore means "overridden", which is exactly how `resync_cashflow` must treat 
   they are separate `position_lifecycle_events` rows. Dedup ignores **terminal**
   cashflows (`settled` / `void`) so a settle → reopen → settle cycle earns a second
   row **only once the first settlement is terminal**. If the first row is still
-  `pending` — the ordinary desk state — the second `settle` is absorbed by the
-  singleton guard and its amount is **silently dropped**: the lifecycle log then says
-  650 while the blotter still says 500. Measured, not theorised; `reopen` was
-  unreachable until the lifecycle-vocabulary work made it recordable, so this path
-  is new. Resolve (settle/void) or edit the first cashflow before reopening.
+  `pending` — the ordinary desk state — the second `settle` would be absorbed by the
+  singleton guard and its amount **silently dropped**: the lifecycle log would say 650
+  while the blotter still said 500. Measured, not theorised; `reopen` was unreachable
+  until the lifecycle-vocabulary work made it recordable, so this path is new.
+  **`record_lifecycle_event` therefore REFUSES a `reopen` while a non-terminal
+  `settlement` row exists** (`generate.live_settlement_row`, checked in
+  `positions.record_lifecycle_event` so REST, UI and agent all get it). Fail-closed
+  and mutates nothing — the desk settles, voids or edits that cashflow first, and
+  then the reopen legitimately earns a second row. The always-`pending` `premium`
+  row is deliberately not consulted: only the `settlement` leg can be stranded.
   **`coupon` is deliberately NOT singleton** — coupons recur, and deduping them would
   collapse a snowball's whole schedule into one row.
 
@@ -1297,6 +1302,13 @@ HITL `"write"`, like its three hardcoded siblings — a lifecycle event is recal
   `ignore` silently DROPPED a plausible-but-wrong argument: `mark_knockout(
   settlement_amount=900)` returned success with no amount recorded. A loud rejection
   lets a model retry; a silent drop loses the number.
+- **It carries a `_SUMMARY_BUILDERS` entry**, unlike its three narrower siblings: it
+  is the general terminating-event tool, and the interrupt fires before the tool body,
+  so without one the card read `Run record_lifecycle_event (position_id=27, …)`. It
+  now reads `Record exercise on 10.0 AmericanOption / AAPL (position #3, now open,
+  settlement amount 500.0, EARLY exercise)`, and degrades to
+  `Record close on position #999999 (not found)` rather than throwing — a card must
+  never break the gate.
 
 ### Every migration after `0001` must be IDEMPOTENT
 
