@@ -33,6 +33,8 @@ const baseProps = {
   importFeedback: null,
   editingPositionId: null,
   addingLifecycleEvent: false,
+  // Server-owned and fetched by Positions.live; null is the pre-load state.
+  lifecycleVocabulary: null,
 };
 
 const positionRows: PositionRow[] = [

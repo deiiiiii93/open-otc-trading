@@ -15,7 +15,7 @@ import { Select } from '../components/Select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/Tabs';
 import { usePageContextReporter } from '../hooks/usePageContextReporter';
 import { declareActions } from '../lib/pageActions';
-import type { EngineConfigVariant, PageContext, PageContextReporter, PortfolioKind, PricingParameterRow, PositionLifecycleEvent, ProductRoot, ResolvedParam, ResolvedPricingParams } from '../types';
+import type { EngineConfigVariant, LifecycleVocabulary, PageContext, PageContextReporter, PortfolioKind, PricingParameterRow, PositionLifecycleEvent, ProductRoot, ResolvedParam, ResolvedPricingParams } from '../types';
 import './Positions.css';
 
 export type PositionsRiskSummary = {
@@ -128,6 +128,7 @@ type Props = {
   onAddLifecycleEvent?: (row: PositionRow, eventType: string, eventData: Record<string, unknown>) => void | Promise<void>;
   onCancelLifecycleEvent?: (row: PositionRow, event: PositionLifecycleEvent, reason: string | null) => void | Promise<void>;
   addingLifecycleEvent: boolean;
+  lifecycleVocabulary: LifecycleVocabulary | null;
   resolvedParams?: ResolvedPricingParams | null;
   resolvedParamsLoading?: boolean;
   onDetailOpen?: (row: PositionRow) => void;
@@ -170,6 +171,7 @@ export function Positions({
   onAddLifecycleEvent,
   onCancelLifecycleEvent,
   addingLifecycleEvent,
+  lifecycleVocabulary,
   resolvedParams,
   resolvedParamsLoading,
   onDetailOpen,
@@ -777,6 +779,7 @@ export function Positions({
                 onAddLifecycleEvent={onAddLifecycleEvent}
                 onCancelLifecycleEvent={onCancelLifecycleEvent}
                 addingLifecycleEvent={addingLifecycleEvent}
+                lifecycleVocabulary={lifecycleVocabulary}
               />
             ) : null}
           </Modal>
@@ -873,6 +876,7 @@ function PositionDetail({
   onAddLifecycleEvent,
   onCancelLifecycleEvent,
   addingLifecycleEvent,
+  lifecycleVocabulary,
 }: {
   row: PositionRow;
   onPricePosition: (row: PositionRow, request: PositionPricingRequest) => void | Promise<void>;
@@ -886,6 +890,7 @@ function PositionDetail({
   onAddLifecycleEvent?: (row: PositionRow, eventType: string, eventData: Record<string, unknown>) => void | Promise<void>;
   onCancelLifecycleEvent?: (row: PositionRow, event: PositionLifecycleEvent, reason: string | null) => void | Promise<void>;
   addingLifecycleEvent: boolean;
+  lifecycleVocabulary: LifecycleVocabulary | null;
 }) {
   const pricingParameterResolution = useMemo(
     () => pricingParameterResolutionForPosition(row, selectedPricingProfile),
@@ -973,6 +978,7 @@ function PositionDetail({
             onAddEvent={onAddLifecycleEvent ?? (() => {})}
             onCancelEvent={onCancelLifecycleEvent}
             adding={addingLifecycleEvent}
+            vocabulary={lifecycleVocabulary}
           />
         </TabsContent>
 

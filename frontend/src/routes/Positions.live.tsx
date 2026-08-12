@@ -11,6 +11,7 @@ import type {
   ResolvedPricingParams,
   TaskRun,
   PositionLifecycleEvent,
+  LifecycleVocabulary,
 } from '../types';
 import { Positions } from './Positions';
 import { Empty } from '../components/Empty';
@@ -66,6 +67,7 @@ export function PositionsLive({
   const [feedback, setFeedback] = useState<string | null>(null);
   const [editingPositionId, setEditingPositionId] = useState<number | null>(null);
   const [lifecycleEvents, setLifecycleEvents] = useState<PositionLifecycleEvent[]>([]);
+  const [lifecycleVocabulary, setLifecycleVocabulary] = useState<LifecycleVocabulary | null>(null);
   const [addingLifecycleEvent, setAddingLifecycleEvent] = useState(false);
   const [resolvedParams, setResolvedParams] = useState<ResolvedPricingParams | null>(null);
   const [resolvedParamsLoading, setResolvedParamsLoading] = useState(false);
@@ -129,6 +131,7 @@ export function PositionsLive({
 
       const lifecycleEventsList = await fetchLifecycleEvents(desk.id);
       setLifecycleEvents(lifecycleEventsList);
+      setLifecycleVocabulary(await fetchLifecycleVocabulary());
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -481,6 +484,7 @@ export function PositionsLive({
       onAddLifecycleEvent={handleAddLifecycleEvent}
       onCancelLifecycleEvent={handleCancelLifecycleEvent}
       addingLifecycleEvent={addingLifecycleEvent}
+      lifecycleVocabulary={lifecycleVocabulary}
       resolvedParams={resolvedParams}
       resolvedParamsLoading={resolvedParamsLoading}
       onDetailOpen={handleDetailOpen}
@@ -572,6 +576,16 @@ async function fetchLifecycleEvents(portfolioId: number): Promise<PositionLifecy
     return await api<PositionLifecycleEvent[]>(`/api/portfolios/${portfolioId}/lifecycle-events`);
   } catch {
     return [];
+  }
+}
+
+async function fetchLifecycleVocabulary(): Promise<LifecycleVocabulary | null> {
+  // Null on failure leaves the picker disabled rather than falling back to a
+  // stale client-side copy of the vocabulary — which is the bug this replaced.
+  try {
+    return await api<LifecycleVocabulary>('/api/lifecycle-vocabulary');
+  } catch {
+    return null;
   }
 }
 

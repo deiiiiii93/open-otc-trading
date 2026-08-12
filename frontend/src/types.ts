@@ -1916,3 +1916,18 @@ export type ConfirmationBatch = {
   id: number; source: string; default_portfolio_id: number | null;
   task_id: number | null; created_at: string; documents: ConfirmationDocument[];
 };
+
+export type LifecycleFieldSpec = {
+  key: string;
+  label: string;
+  type: 'number' | 'date' | 'text' | 'bool';
+};
+
+/** Server-owned lifecycle event vocabulary. The UI must not keep its own copy:
+ *  the previous hardcoded tables drifted and lost `settle` and `fixing`. */
+export type LifecycleVocabulary = {
+  event_types: Record<string, string | null>;
+  by_family: Record<string, string[]>;
+  retired: string[];
+  event_fields: Record<string, LifecycleFieldSpec[]>;
+};

@@ -1,63 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Check, ChevronDown, Plus, XCircle } from 'lucide-react';
-import type { PositionLifecycleEvent } from '../types';
+import type { LifecycleFieldSpec, LifecycleVocabulary, PositionLifecycleEvent } from '../types';
 import type { PositionRow } from '../routes/Positions';
 import { Button } from './Button';
 import { DatePicker } from './DatePicker';
 import { NumberInput } from './NumberInput';
-
-const PRODUCT_EVENTS: Record<string, string[]> = {
-  SnowballOption: ['close', 'knock_in', 'knock_out', 'coupon_observation', 'coupon_paid', 'maturity', 'custom'],
-  PhoenixOption: ['close', 'autocall', 'coupon_lock', 'coupon_paid', 'memory_coupon', 'maturity', 'custom'],
-  BarrierOption: ['close', 'knock_in', 'knock_out', 'maturity', 'custom'],
-  SingleSharkfinOption: ['close', 'knock_in', 'knock_out', 'maturity', 'custom'],
-  DoubleSharkfinOption: ['close', 'knock_in', 'knock_out', 'maturity', 'custom'],
-};
-
-type FieldSpec = { key: string; label: string; type: 'number' | 'date' | 'text' };
-
-const EVENT_FIELDS: Record<string, FieldSpec[]> = {
-  knock_in: [
-    { key: 'barrier_level', label: 'Barrier Level', type: 'number' },
-    { key: 'observation_date', label: 'Observation Date', type: 'date' },
-  ],
-  knock_out: [
-    { key: 'barrier_level', label: 'Barrier Level', type: 'number' },
-    { key: 'observation_date', label: 'Observation Date', type: 'date' },
-    { key: 'payoff', label: 'Payoff', type: 'number' },
-  ],
-  autocall: [
-    { key: 'autocall_level', label: 'Autocall Level', type: 'number' },
-    { key: 'observation_date', label: 'Observation Date', type: 'date' },
-    { key: 'payoff', label: 'Payoff', type: 'number' },
-  ],
-  coupon_paid: [
-    { key: 'coupon_amount', label: 'Coupon Amount', type: 'number' },
-    { key: 'coupon_date', label: 'Coupon Date', type: 'date' },
-  ],
-  coupon_observation: [
-    { key: 'observation_date', label: 'Observation Date', type: 'date' },
-    { key: 'observed_price', label: 'Observed Price', type: 'number' },
-  ],
-  coupon_lock: [
-    { key: 'lock_date', label: 'Lock Date', type: 'date' },
-    { key: 'locked_coupon_rate', label: 'Locked Coupon Rate', type: 'number' },
-  ],
-  memory_coupon: [
-    { key: 'coupon_amount', label: 'Coupon Amount', type: 'number' },
-    { key: 'memory_periods', label: 'Memory Periods', type: 'number' },
-  ],
-  maturity: [
-    { key: 'maturity_date', label: 'Maturity Date', type: 'date' },
-    { key: 'final_payoff', label: 'Final Payoff', type: 'number' },
-  ],
-  close: [
-    { key: 'reason', label: 'Reason', type: 'text' },
-  ],
-  custom: [
-    { key: 'reason', label: 'Reason', type: 'text' },
-  ],
-};
 
 type Props = {
   row: PositionRow;
@@ -65,17 +12,27 @@ type Props = {
   onAddEvent: (row: PositionRow, eventType: string, eventData: Record<string, unknown>) => void | Promise<void>;
   onCancelEvent?: (row: PositionRow, event: PositionLifecycleEvent, reason: string | null) => void | Promise<void>;
   adding: boolean;
+  /** Server-owned; null while loading. This component keeps no fallback table
+   *  on purpose — the hardcoded copy it replaced had already drifted from the
+   *  backend and silently lost `settle` and `fixing`. */
+  vocabulary: LifecycleVocabulary | null;
 };
 
-export function PositionLifecycleTimeline({ row, events, onAddEvent, onCancelEvent, adding }: Props) {
+export function PositionLifecycleTimeline({ row, events, onAddEvent, onCancelEvent, adding, vocabulary }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [eventType, setEventType] = useState('');
   const [eventData, setEventData] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [eventPickerOpen, setEventPickerOpen] = useState(false);
 
-  const availableEvents = useMemo(() => PRODUCT_EVENTS[row.product_type] ?? ['close', 'custom'], [row.product_type]);
-  const fields = useMemo(() => EVENT_FIELDS[eventType] ?? [], [eventType]);
+  const availableEvents = useMemo(
+    () => vocabulary?.by_family[row.product_type] ?? [],
+    [vocabulary, row.product_type],
+  );
+  const fields: LifecycleFieldSpec[] = useMemo(
+    () => vocabulary?.event_fields[eventType] ?? [],
+    [vocabulary, eventType],
+  );
 
   const updateField = (key: string, value: string) => {
     setEventData((current) => ({ ...current, [key]: value }));
@@ -91,7 +48,12 @@ export function PositionLifecycleTimeline({ row, events, onAddEvent, onCancelEve
     const payload: Record<string, unknown> = {};
     for (const field of fields) {
       const value = eventData[field.key]?.trim();
-      if (value) {
+      if (!value) continue;
+      if (field.type === 'bool') {
+        // Checkboxes are stored as 'true'/'' in the string-keyed form state;
+        // the API must receive a real boolean (e.g. `exercise.early`).
+        payload[field.key] = value === 'true';
+      } else {
         payload[field.key] = field.type === 'number' ? Number(value) : value;
       }
     }
@@ -126,7 +88,7 @@ export function PositionLifecycleTimeline({ row, events, onAddEvent, onCancelEve
               type="button"
               className="wl-positions__lifecycle-toggle"
               onClick={() => setShowForm(true)}
-              disabled={adding}
+              disabled={adding || !vocabulary}
             >
               <Plus size={14} />
               New
@@ -192,6 +154,18 @@ export function PositionLifecycleTimeline({ row, events, onAddEvent, onCancelEve
                       value={eventData[field.key] ?? ''}
                       onChange={(v) => updateField(field.key, v)}
                     />
+                  </div>
+                ) : field.type === 'bool' ? (
+                  <div key={field.key} className="wl-positions__term-field">
+                    <span>{field.label}</span>
+                    <div className="wl-positions__term-boolean-control">
+                      <input
+                        type="checkbox"
+                        aria-label={field.label}
+                        checked={eventData[field.key] === 'true'}
+                        onChange={(e) => updateField(field.key, e.target.checked ? 'true' : '')}
+                      />
+                    </div>
                   </div>
                 ) : (
                   <label key={field.key} className="wl-positions__term-field">
