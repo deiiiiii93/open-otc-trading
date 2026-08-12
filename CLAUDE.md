@@ -1302,13 +1302,16 @@ HITL `"write"`, like its three hardcoded siblings — a lifecycle event is recal
   `ignore` silently DROPPED a plausible-but-wrong argument: `mark_knockout(
   settlement_amount=900)` returned success with no amount recorded. A loud rejection
   lets a model retry; a silent drop loses the number.
-- **It carries a `_SUMMARY_BUILDERS` entry**, unlike its three narrower siblings: it
-  is the general terminating-event tool, and the interrupt fires before the tool body,
-  so without one the card read `Run record_lifecycle_event (position_id=27, …)`. It
-  now reads `Record exercise on 10.0 AmericanOption / AAPL (position #3, now open,
-  settlement amount 500.0, EARLY exercise)`, and degrades to
-  `Record close on position #999999 (not found)` rather than throwing — a card must
-  never break the gate.
+- **All four lifecycle tools carry `_SUMMARY_BUILDERS` entries** sharing one
+  `_lifecycle_subject` helper. The interrupt fires before the tool body, so each could
+  only see `position_id` and every card read `Run close_position (position_id=27)` —
+  a gate in name only. They now read `Close 1000.0 BarrierOption / 000905.SH (position
+  #1, now open, reason: client unwind)`. `_lifecycle_subject` **never raises** (a card
+  that throws breaks the gate it serves): an unknown position degrades to
+  `position #999999 (not found)`, a `source_trade_id` to `trade SB-2026-014`.
+  **Test them through `_summary_for` WITH a `description` present** —
+  HumanInTheLoopMiddleware stamps boilerplate on every action request, and a builder
+  that loses to it is unreachable in the live path however well its unit test passes.
 
 ### Every migration after `0001` must be IDEMPOTENT
 

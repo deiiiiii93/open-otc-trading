@@ -419,6 +419,95 @@ def test_the_approval_card_degrades_honestly_for_an_unknown_position():
     assert "999999" in card or "not found" in card.lower()
 
 
+def test_all_four_lifecycle_cards_name_the_trade(session, book):
+    """close_position / settle_position / mark_knockout each hardcode one event
+    type and showed a bare `position_id=27` — the same "gate is theater" defect
+    the general tool was fixed for, at smaller scale.
+    """
+    from app.services.deep_agent import hitl
+
+    position_id = _book(
+        book.id, "BarrierOption", _BARRIER_TERMS, product_family="barrier", quantity=1.0
+    )
+    cards = {
+        "close_position": {"position_id": position_id, "reason": "client unwind"},
+        "settle_position": {
+            "position_id": position_id,
+            "settlement_amount": 1250.0,
+            "settlement_date": "2026-09-01",
+        },
+        "mark_knockout": {"position_id": position_id, "payoff": 900.0},
+        "record_lifecycle_event": {
+            "position_id": position_id,
+            "event_type": "expire",
+            "event_data": {},
+        },
+    }
+    for name, args in cards.items():
+        card = hitl._summary_for({"name": name, "args": args})
+        assert "BarrierOption" in card, f"{name}: {card}"
+        assert "AAPL" in card, f"{name}: {card}"
+        assert f"position_id={position_id}" not in card, f"{name} still shows raw args"
+
+    assert "client unwind" in hitl._summary_for(
+        {"name": "close_position", "args": cards["close_position"]}
+    )
+    settle_card = hitl._summary_for(
+        {"name": "settle_position", "args": cards["settle_position"]}
+    )
+    assert "1250" in settle_card and "2026-09-01" in settle_card
+    assert "900" in hitl._summary_for(
+        {"name": "mark_knockout", "args": cards["mark_knockout"]}
+    )
+
+
+def test_lifecycle_cards_beat_the_middlewares_boilerplate_description(session, book):
+    """The documented trap: HumanInTheLoopMiddleware stamps every action request
+    with a generic `description`, and a builder that loses to it is unreachable
+    in the live path even though its unit test passes.
+    """
+    from app.services.deep_agent import hitl
+
+    position_id = _book(book.id, "AmericanOption", _VANILLA_TERMS)
+    for name, args in (
+        ("close_position", {"position_id": position_id}),
+        ("settle_position", {"position_id": position_id, "settlement_amount": 10.0}),
+        ("mark_knockout", {"position_id": position_id}),
+    ):
+        card = hitl._summary_for(
+            {
+                "name": name,
+                "description": (
+                    "Tool execution requires approval\n\nTool: "
+                    f"{name}\nArgs: {{'position_id': {position_id}}}"
+                ),
+                "args": args,
+            }
+        )
+        assert "Tool execution requires approval" not in card, name
+        assert "AAPL" in card, name
+
+
+def test_lifecycle_cards_degrade_honestly_for_an_unknown_position():
+    """A card must never break the gate it exists to serve."""
+    from app.services.deep_agent import hitl
+
+    for name in ("close_position", "settle_position", "mark_knockout"):
+        card = hitl._summary_for({"name": name, "args": {"position_id": 999_999}})
+        assert "999999" in card or "not found" in card.lower(), name
+
+
+def test_a_lifecycle_card_can_describe_a_position_by_source_trade_id():
+    """The tools accept source_trade_id instead of position_id; the card must
+    still say something more useful than the tool name."""
+    from app.services.deep_agent import hitl
+
+    card = hitl._summary_for(
+        {"name": "close_position", "args": {"source_trade_id": "SB-2026-014"}}
+    )
+    assert "SB-2026-014" in card
+
+
 def test_lifecycle_inputs_reject_unknown_arguments():
     """A silently-dropped argument is worse than an error: `settlement_amount`
     is a plausible guess for mark_knockout, and pydantic's default `ignore`

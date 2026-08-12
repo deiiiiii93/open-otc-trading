@@ -58,9 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   remedy; once the row is settled, voided or edited, the reopen legitimately earns a
   second settlement row. `reopen` was unreachable before this release, so no existing
   data can be affected.
-- The `record_lifecycle_event` approval card names the trade and the event instead of
-  raw ids (`Record exercise on 10.0 AmericanOption / AAPL …`), so a human is not asked
-  to approve two integers.
+- All four lifecycle approval cards — `close_position`, `settle_position`,
+  `mark_knockout` and `record_lifecycle_event` — name the trade and the action instead
+  of raw ids (`Close 1000.0 BarrierOption / 000905.SH (position #1, now open, reason:
+  client unwind)`), so a human is no longer asked to approve two integers. They share
+  one subject helper that degrades honestly on an unreadable position rather than
+  throwing.
 
 ### Changed
 - Phoenix records `knock_out`/`coupon_observation` instead of

@@ -433,57 +433,110 @@ def _summarize_settle_settlement_cashflow(args: dict[str, Any]) -> str:
         return f"Mark settlement cashflow #{cashflow_id} SETTLED"
 
 
-def _summarize_record_lifecycle_event(args: dict[str, Any]) -> str:
-    """Same rationale as _summarize_book_extracted_trade: the interrupt fires
-    before the tool body, so the raw args are ``{position_id, event_type,
-    event_data}`` — and `position_id=27` tells a human nothing about the trade
-    they are being asked to terminate. Reads the position so the card names it.
+def _lifecycle_subject(args: dict[str, Any]) -> tuple[str, list[str]]:
+    """Describe the position a lifecycle tool's args point at.
 
-    This tool is the general form covering every terminating event (exercise,
-    expire, maturity, knock_out), which is why it carries a builder where its
-    narrower hardcoded siblings do not.
+    Shared by all four lifecycle cards. Same rationale as
+    _summarize_book_extracted_trade: the interrupt fires before the tool body,
+    so every one of these tools can only offer ``position_id`` /
+    ``source_trade_id`` — and `position_id=27` tells a human nothing about the
+    trade they are being asked to close, settle or knock out.
+
+    Returns ``(subject, extras)``. Never raises: a card that throws would break
+    the gate it exists to serve, so an unreadable position degrades to its id.
     """
+    position_id = args.get("position_id")
+    if not isinstance(position_id, int):
+        trade_id = args.get("source_trade_id")
+        if trade_id:
+            return f"trade {_compact_value(trade_id)}", []
+        return "position", []
+
+    from app import database
+    from app.models import Position
+
+    try:
+        database.init_db()
+        with database.SessionLocal() as session:
+            position = session.get(Position, position_id)
+            if position is None:
+                return f"position #{position_id}", ["not found"]
+            subject = _compact_value(position.quantity)
+            if position.product_type:
+                subject += f" {position.product_type}"
+            if position.underlying:
+                subject += f" / {position.underlying}"
+            extras = [f"position #{position_id}"]
+            if position.status:
+                extras.append(f"now {position.status}")
+            return subject, extras
+    except Exception:  # noqa: BLE001 - a card must never break the gate
+        return f"position #{position_id}", []
+
+
+def _lifecycle_card(head: str, extras: list[str]) -> str:
+    return head + (f" ({', '.join(extras)})" if extras else "")
+
+
+def _money_extra(source: dict[str, Any]) -> str | None:
+    """The first cash figure this event carries, if any."""
+    for key in ("settlement_amount", "payoff", "coupon_amount"):
+        if source.get(key) is not None:
+            return f"{key.replace('_', ' ')} {_compact_value(source[key])}"
+    return None
+
+
+def _summarize_close_position(args: dict[str, Any]) -> str:
+    subject, extras = _lifecycle_subject(args)
+    if args.get("reason"):
+        extras.append(f"reason: {_compact_value(args['reason'])}")
+    if args.get("closed_at"):
+        extras.append(f"as of {_compact_value(args['closed_at'])}")
+    return _lifecycle_card(f"Close {subject}", extras)
+
+
+def _summarize_settle_position(args: dict[str, Any]) -> str:
+    subject, extras = _lifecycle_subject(args)
+    money = _money_extra(args)
+    if money:
+        extras.append(money)
+    if args.get("currency"):
+        extras.append(str(args["currency"]))
+    if args.get("settlement_date"):
+        extras.append(f"value {_compact_value(args['settlement_date'])}")
+    if args.get("reason"):
+        extras.append(f"reason: {_compact_value(args['reason'])}")
+    return _lifecycle_card(f"Settle {subject}", extras)
+
+
+def _summarize_mark_knockout(args: dict[str, Any]) -> str:
+    subject, extras = _lifecycle_subject(args)
+    money = _money_extra(args)
+    if money:
+        extras.append(money)
+    for key, label in (("ko_level", "KO level"), ("observed_spot", "observed")):
+        if args.get(key) is not None:
+            extras.append(f"{label} {_compact_value(args[key])}")
+    if args.get("observation_date"):
+        extras.append(f"on {_compact_value(args['observation_date'])}")
+    return _lifecycle_card(f"Mark knocked out: {subject}", extras)
+
+
+def _summarize_record_lifecycle_event(args: dict[str, Any]) -> str:
+    """The general form: the event type is model-supplied, so it leads the card."""
     event_type = str(args.get("event_type") or "").strip() or "lifecycle event"
     data = args.get("event_data")
     data = data if isinstance(data, dict) else {}
-    head = f"Record {event_type}"
-    extras: list[str] = []
+    subject, extras = _lifecycle_subject(args)
 
-    position_id = args.get("position_id")
-    if isinstance(position_id, int):
-        from app import database
-        from app.models import Position
-
-        try:
-            database.init_db()
-            with database.SessionLocal() as session:
-                position = session.get(Position, position_id)
-                if position is None:
-                    return f"{head} on position #{position_id} (not found)"
-                head += f" on {_compact_value(position.quantity)}"
-                if position.product_type:
-                    head += f" {position.product_type}"
-                if position.underlying:
-                    head += f" / {position.underlying}"
-                extras.append(f"position #{position_id}")
-                if position.status:
-                    extras.append(f"now {position.status}")
-        except Exception:  # noqa: BLE001 - a card must never break the gate
-            return f"{head} on position #{position_id}"
-    elif args.get("source_trade_id"):
-        head += f" on trade {args['source_trade_id']}"
-
-    # Surface the money, if this event carries any.
-    for key in ("settlement_amount", "payoff", "coupon_amount"):
-        if data.get(key) is not None:
-            extras.append(f"{key.replace('_', ' ')} {_compact_value(data[key])}")
-            break
+    money = _money_extra(data)
+    if money:
+        extras.append(money)
     if data.get("early") is True:
         extras.append("EARLY exercise")
     if data.get("reason"):
         extras.append(f"reason: {_compact_value(data['reason'])}")
-
-    return head + (f" ({', '.join(extras)})" if extras else "")
+    return _lifecycle_card(f"Record {event_type} on {subject}", extras)
 
 
 _SUMMARY_BUILDERS: dict[str, Callable[[dict[str, Any]], str]] = {
@@ -491,7 +544,12 @@ _SUMMARY_BUILDERS: dict[str, Callable[[dict[str, Any]], str]] = {
     "register_underlying": _summarize_register_underlying,
     "book_extracted_trade": _summarize_book_extracted_trade,
     "settle_settlement_cashflow": _summarize_settle_settlement_cashflow,
+    # All four lifecycle cards share _lifecycle_subject: without a builder they
+    # each showed a bare `position_id=27`, which is a gate in name only.
     "record_lifecycle_event": _summarize_record_lifecycle_event,
+    "close_position": _summarize_close_position,
+    "settle_position": _summarize_settle_position,
+    "mark_knockout": _summarize_mark_knockout,
 }
 
 
