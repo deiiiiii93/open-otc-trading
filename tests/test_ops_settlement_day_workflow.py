@@ -210,3 +210,20 @@ def test_neg_unscoped_summary_totals_fail(loaded):
 
     passed, total = _score_mutated(loaded, mutate)
     assert passed < total
+
+
+def test_grounding_matches_truth_file(loaded):
+    import json
+    truth_path = loaded.definition_path.parent / "ops-settlement-day.truth.json"
+    truth_values = {
+        entry["value"] for entry in json.loads(truth_path.read_text()).values()
+    }
+    manifest_values = {
+        a.value
+        for step in loaded.workflow.steps
+        for a in step.assertions
+        if a.type == "answer_field_quotes"
+    }
+    assert manifest_values <= truth_values, (
+        f"manifest grounding values {manifest_values - truth_values} not in truth file"
+    )

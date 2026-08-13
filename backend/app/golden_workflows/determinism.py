@@ -21,6 +21,7 @@ from typing import Any, Callable
 
 from app.golden_workflows.fixtures import apply_seed
 from app.golden_workflows.registry import get_workflow_bundle
+from app.golden_workflows.schema import WorkflowError
 
 FLAGSHIP_ID = "risk-manager-control-day"
 FLAGSHIP_UNDERLYINGS = ("AAPL", "TSLA", "NVDA")
@@ -54,6 +55,7 @@ _VOLATILE_KEYS = {"created_at", "updated_at", "task_id", "run_id", "id",
                   "queued_at", "completed_at", "as_of", "timestamp",
                   "execution_time", "elapsed", "elapsed_ms", "duration",
                   "duration_ms", "runtime", "generated_at",
+                  "last_checked_at",
                   # derived-over-volatile provenance fingerprints
                   "position_set_hash", "market_evidence_hash",
                   "effective_market_evidence_id"}
@@ -571,6 +573,136 @@ DETERMINISM_REGISTRY[LIMIT_BREACH_ID] = WorkflowDeterminism(
             partial(_validate_task_run, kind="risk", needs="positions", priced=True)),
         "monitoring": ProducerDriver(_adapt_monitoring, _validate_monitoring),
     },
+)
+
+
+# --- Ops Settlement Day determinism ------------------------------------------
+#
+# No pricing anywhere: the driver replays the canonical settlement action
+# sequence through the REAL services on the seeded book and exposes one
+# "settlement" payload for harvest/canonical compare. Order matters: the
+# summary is captured BEFORE the fill and resync, because the workflow grades
+# the step-3 (pre-fill, still-stale) blotter state.
+
+OPS_SETTLEMENT_ID = "ops-settlement-day"
+
+
+def _seed_ops_settlement(session) -> dict:
+    ids = apply_seed(get_workflow_bundle(OPS_SETTLEMENT_ID).fixtures, session)
+    session.commit()
+    return ids
+
+
+def _drive_settlement(session, ids):
+    from sqlalchemy import select
+
+    from app.models import Position, SettlementCashflow
+    from app.services.domains.positions import create_lifecycle_event
+    from app.services.settlement import drift as settlement_drift
+    from app.services.settlement import generate as settlement_generate
+    from app.services.settlement import store as settlement_store
+
+    portfolio_id = ids["portfolios"]["ops"]
+    ko_position_id = ids["positions"]["ko_snowball"]
+
+    create_lifecycle_event(  # the same committing path the agent tool uses
+        session=session,
+        position_id=ko_position_id,
+        event_type="knock_out",
+        event_data={"payoff": 512500.0, "settlement_date": "2026-08-14"},
+        actor="arena_determinism",
+    )
+    settlement_generate.generate_missing(
+        session, portfolio_id=portfolio_id, actor="arena_determinism"
+    )
+    settlement_drift.refresh_drift(
+        session, portfolio_id=portfolio_id, actor="arena_determinism"
+    )
+
+    def _row(cid: int) -> dict:
+        row = settlement_store.get_cashflow(session, cid)
+        return {
+            "amount": row.amount, "derived_amount": row.derived_amount,
+            "status": row.status, "stale": bool(row.stale),
+            "direction": row.direction, "currency": row.currency,
+        }
+
+    ko_row_obj = session.execute(
+        select(SettlementCashflow).where(
+            SettlementCashflow.position_id == ko_position_id,
+            SettlementCashflow.leg_key == "settlement",
+        )
+    ).scalar_one()
+    ko_row = {
+        "amount": ko_row_obj.amount, "derived_amount": ko_row_obj.derived_amount,
+        "status": ko_row_obj.status, "direction": ko_row_obj.direction,
+        "value_date": ko_row_obj.value_date.isoformat()
+        if ko_row_obj.value_date else None,
+    }
+
+    # Same aggregation as get_settlement_summary_tool, reimplemented on the
+    # caller's session rather than importing the @tool-wrapped function.
+    summary_rows = session.execute(
+        select(SettlementCashflow)
+        .join(Position, Position.id == SettlementCashflow.position_id)
+        .where(Position.portfolio_id == portfolio_id)
+    ).scalars().all()
+    by_status: dict[str, int] = {}
+    totals: dict[str, float] = {}
+    stale_count = 0
+    for row in summary_rows:
+        by_status[row.status] = by_status.get(row.status, 0) + 1
+        if row.amount is not None:
+            totals[row.currency] = totals.get(row.currency, 0.0) + float(row.amount)
+        if row.stale:
+            stale_count += 1
+    summary = {
+        "by_status": by_status,
+        "totals_by_currency": totals,
+        "stale_count": stale_count,
+        "total": len(summary_rows),
+    }
+
+    filled = settlement_store.edit_cashflow(
+        session, cashflow_id=ids["settlement_cashflows"]["needs_amount_row"],
+        expected_row_version=1, actor="arena_determinism",
+        amount=83250.0,
+    )
+    resynced = settlement_drift.resync_cashflow(
+        session,
+        cashflow_id=ids["settlement_cashflows"]["stale_override_row"],
+        expected_row_version=1, actor="arena_determinism",
+    )
+    session.commit()
+
+    payload = {
+        "summary": summary,
+        "ko_row": ko_row,
+        "paid_row": _row(ids["settlement_cashflows"]["released_row"]),
+        "filled_row": {"amount": filled.amount, "status": filled.status},
+        "resync_row": {"amount": resynced.amount,
+                       "derived_amount": resynced.derived_amount,
+                       "stale": bool(resynced.stale)},
+    }
+    return None, payload
+
+
+def _validate_settlement(run, payload):
+    if payload["ko_row"]["status"] != "pending":
+        raise WorkflowError("determinism: KO settlement row not pending")
+    if payload["filled_row"]["status"] != "pending":
+        raise WorkflowError("determinism: fill did not promote needs_amount")
+    if payload["resync_row"]["stale"]:
+        raise WorkflowError("determinism: resync left the row stale")
+    if payload["resync_row"]["amount"] == payload["resync_row"]["derived_amount"]:
+        raise WorkflowError("determinism: resync clobbered the override")
+    return _canonical(payload)
+
+
+DETERMINISM_REGISTRY[OPS_SETTLEMENT_ID] = WorkflowDeterminism(
+    workflow_id=OPS_SETTLEMENT_ID,
+    seed_fn=_seed_ops_settlement,
+    drivers={"settlement": ProducerDriver(_drive_settlement, _validate_settlement)},
 )
 
 
