@@ -108,7 +108,11 @@ steps:
     assertions:
       - type: tool_called
         name: update_settlement_cashflow
-        args: {cashflow_id: 9301, amount: 83250.0}
+        # int vs float is a calling convention, not ability (_exact is
+        # type-strict: 83250 != 83250.0). Both are the desk-confirmed print.
+        args_any_of:
+          - {cashflow_id: 9301, amount: 83250.0}
+          - {cashflow_id: 9301, amount: 83250}
       - type: tool_result_path
         tool: update_settlement_cashflow
         path: "status"

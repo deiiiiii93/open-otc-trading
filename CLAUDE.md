@@ -717,6 +717,38 @@ live and harvested paths are identical), skills `limits/monitor-limits` +
   producer); boundaries warning 500 / hard 600 sit strictly between clean and
   breach by construction (guard test).
 
+### ops-settlement-day
+
+The fifth golden workflow (8 steps / **44 points**, persona `trader`,
+**uncalibrated par** — hyperbolic EFF until a live board calibrates it). An
+operations manager works a desk day over the lifecycle-events and settlement
+modules: overnight knock-out → worthless-expiry trap → blotter sweep →
+needs_amount fill → release → drift-vs-override adjudication → settle + notice
+→ fail-closed reopen refusal. The session-wide `void` ban is the waive analog
+(a per-step ban is gameable by voiding early; `success.assertions` only).
+
+- **Zero QuantArk — the first board that does not.** Truth is harvested by
+  driving the real settlement services (`DETERMINISM_REGISTRY` entry), so a
+  QuantArk bump never requires re-harvesting this board. The numbers live in
+  the settlement store, not the pricing engine.
+- **Seeded lifecycle events bypass `create_lifecycle_event`'s allowlist.**
+  Fixture rows are inserted directly, so a family that cannot actually record
+  the seeded type would still load. `test_seeded_event_types_are_reachable_for_their_families`
+  is the reachability guard — the same lesson as constructing
+  `PositionLifecycleEvent(...)` in a unit test: satisfiability is not
+  reachability.
+- **Blotter grounding uses SUMS not counts.** A phantom cashflow from a failed
+  expire trap contributes 0 to the sum, so a model that manufactured one still
+  fails the amount check rather than passing on a count that hid the extra row.
+  Both step-3 tools (`generate_settlement_cashflows`, `get_settlement_summary`)
+  must be portfolio-scoped: an unscoped read on the live DB pulls real desk
+  rows and the grounding numbers silently miss.
+- **The notice tool's `artifacts` entry exists because `trace_harvest` only
+  sees that channel.** `generate_settlement_notice` writes the file; without the
+  standard `artifacts` payload the synthesis axis (`artifact_exists` /
+  `artifact_contains` on step 7) is blind. Removing the entry to "simplify"
+  the tool result would drop four-axes coverage, not just a convenience field.
+
 ### Fixture determinism (Spec A — enables the Model Ability Card)
 
 The flagship producers must yield **byte-identical** numbers across runs so grounding

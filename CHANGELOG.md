@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `ops-settlement-day` arena golden workflow (5th board): an OTC operations
+  manager's day over the lifecycle-events and settlement modules — overnight
+  knock-out recording, the worthless-expiry trap, blotter sweep, needs_amount
+  fill, release, drift-vs-override adjudication, settle + notice, and the
+  fail-closed reopen refusal. 8 steps / 44 checks, persona trader, uncalibrated
+  par, session-wide void ban. The first board with zero QuantArk dependency —
+  truth is harvested from the settlement services alone. Includes two new
+  fixture seed namespaces (`position_lifecycle_events`, `settlement_cashflows`)
+  and the settlement notice tool now emits the standard `artifacts` entry.
 - **Lifecycle events for every bookable product family.** Three new event types —
   `exercise` (with an `early` flag, so American early exercise is distinguishable
   from exercise at expiry), `expire` (terminal, books **no** cash: it is how the
