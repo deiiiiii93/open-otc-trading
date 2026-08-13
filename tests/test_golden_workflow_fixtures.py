@@ -411,3 +411,48 @@ def test_seed_rejects_non_portfolio_scope_type(tmp_path, session):
     bundle["seed"]["risk_limit_versions"][0]["scope_type"] = "underlying"
     with pytest.raises(WorkflowError, match="portfolio"):
         apply_seed(load_fixtures(_write(tmp_path, bundle)), session)
+
+
+def test_lifecycle_and_settlement_namespaces_seed(tmp_path, session):
+    """The two ops-settlement-day namespaces insert with FK resolution, pinned
+    ids, and ISO date parsing for the cashflow date columns."""
+    import json
+    from app import models
+    from app.golden_workflows.fixtures import load_fixtures, apply_seed
+
+    bundle_path = tmp_path / "f.json"
+    bundle_path.write_text(json.dumps({
+        "schema_version": 1,
+        "seed": {
+            "portfolios": [{"alias": "book", "name": "NS Test Book", "id": 9390}],
+            "positions": [{
+                "alias": "pos", "portfolio": "book", "underlying": "TEST.SH",
+                "product_type": "BarrierOption", "quantity": 10, "id": 9391,
+                "status": "closed",
+                "product_kwargs": {"strike": 100.0, "option_type": "CALL",
+                                   "maturity": 0.5, "barrier": 130.0,
+                                   "barrier_type": "UP_OUT"},
+            }],
+            "position_lifecycle_events": [{
+                "alias": "ev", "position": "pos", "event_type": "close",
+                "event_data": {"settlement_amount": 111.0},
+                "created_at": "2026-08-11T22:00:00",
+            }],
+            "settlement_cashflows": [{
+                "alias": "cf", "position": "pos", "lifecycle_event": "ev",
+                "leg_key": "settlement", "direction": "pay", "status": "pending",
+                "amount": 111.0, "derived_amount": 111.0,
+                "value_date": "2026-08-14", "id": 9392,
+            }],
+        },
+        "replay": {},
+    }))
+    ids = apply_seed(load_fixtures(bundle_path), session)
+    cf = session.get(models.SettlementCashflow, 9392)
+    assert cf is not None
+    assert cf.position_id == 9391
+    assert cf.lifecycle_event_id == ids["position_lifecycle_events"]["ev"]
+    assert cf.value_date.isoformat() == "2026-08-14"
+    ev = session.get(models.PositionLifecycleEvent, cf.lifecycle_event_id)
+    assert ev.event_type == "close"
+    assert ev.event_data == {"settlement_amount": 111.0}
