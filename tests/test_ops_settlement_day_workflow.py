@@ -227,3 +227,35 @@ def test_grounding_matches_truth_file(loaded):
     assert manifest_values <= truth_values, (
         f"manifest grounding values {manifest_values - truth_values} not in truth file"
     )
+
+
+def test_purge_sweeps_settlement_children(loaded, session):
+    """settlement_cashflow_events and settlement_notices key only on
+    cashflow_id — the recursive FK child sweep must delete them before their
+    cashflows, or one leaked FK kills every remaining match (the Run-#34
+    class). Seed the bundle, attach a transition-log row and a notice row,
+    purge, and assert the whole family is gone."""
+    from sqlalchemy import select
+    from app import models
+    from app.golden_workflows.fixtures import apply_seed
+    from app.services.arena.runner import _delete_portfolios_with_dependents
+
+    ids = apply_seed(loaded.fixtures, session)
+    cf_id = ids["settlement_cashflows"]["released_row"]
+    session.add(models.SettlementCashflowEvent(
+        cashflow_id=cf_id, action="released", from_status="pending",
+        to_status="released", actor="test"))
+    session.add(models.SettlementNotice(
+        cashflow_id=cf_id, version=1, artifact_path="x.md",
+        content_sha256="0" * 64))
+    session.commit()
+
+    _delete_portfolios_with_dependents(session, [ids["portfolios"]["ops"]])
+    session.commit()
+
+    for model in (models.SettlementCashflow, models.SettlementCashflowEvent,
+                  models.SettlementNotice, models.PositionLifecycleEvent,
+                  models.Position):
+        assert session.execute(select(model)).first() is None
+    assert session.get(models.Portfolio, ids["portfolios"]["ops"]) is None
+
