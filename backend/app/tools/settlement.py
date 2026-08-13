@@ -416,11 +416,24 @@ def generate_settlement_notice_tool(cashflow_id: int) -> dict[str, Any]:
         except SettlementNotFoundError as error:
             session.rollback()
             return {"ok": False, "error": "not_found", "hint": str(error)}
+        # Same pure render the service wrote — payload_snapshot freezes every
+        # value the notice states, so this is byte-stable with the artifact file.
+        content = notice_service.render_notice_markdown(record.payload_snapshot)
         return {
             "ok": True,
             "notice_version": record.version,
             "artifact_path": record.artifact_path,
             "content_sha256": record.content_sha256,
+            # The arena/chat artifact channel only sees tool results carrying
+            # an `artifacts` list (trace_harvest harvests nothing else), and a
+            # notice is genuinely an artifact — same entry shape as
+            # write_report_artifact.
+            "artifacts": [{
+                "path": record.artifact_path,
+                "size_bytes": len(content.encode("utf-8")),
+                "kind": "text",
+                "content": content,
+            }],
         }
 
 
