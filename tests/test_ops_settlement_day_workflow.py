@@ -116,6 +116,7 @@ def test_golden_replay_scores_full_marks(loaded):
     transcript = transcript_from_replay(loaded)
     score, passed, total = scoring.objective_score(transcript, loaded)
     assert passed == total
+    assert total == 44
     assert score == 100.0
 
 
@@ -154,6 +155,21 @@ def test_neg_resync_adopts_derivation_fails(loaded):
             if c["name"] == "record_answer":
                 c["args"] = {"answer": {"effective_amount": 90000.0,
                                         "new_derived_baseline": 90000.0}}
+
+    passed, total = _score_mutated(loaded, mutate)
+    assert passed < total
+
+
+def test_neg_copied_effective_as_baseline_fails(loaded):
+    """Copying 91,000 into both slots still passes new_derived_baseline at
+    default rel_tol 0.02 (|91000−90000|/90000 ≈ 1.11%). Tight 0.005 is
+    the twin-field discriminator."""
+    def mutate(t):
+        step = t.steps[5]
+        for c in step.tool_calls:
+            if c["name"] == "record_answer":
+                c["args"] = {"answer": {"effective_amount": 91000.0,
+                                        "new_derived_baseline": 91000.0}}
 
     passed, total = _score_mutated(loaded, mutate)
     assert passed < total

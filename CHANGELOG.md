@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- ops-settlement-day step-6 `new_derived_baseline` now uses `rel_tol: 0.005`
+  so copying 91,000 into both answer slots no longer matches 90,000.
+
 ### Added
 - `ops-settlement-day` arena golden workflow (5th board): an OTC operations
   manager's day over the lifecycle-events and settlement modules — overnight

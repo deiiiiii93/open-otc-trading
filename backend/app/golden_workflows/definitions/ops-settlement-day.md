@@ -169,6 +169,10 @@ steps:
       - type: answer_field_quotes
         field: new_derived_baseline
         value: 90000.0
+        # Default rel_tol 0.02 would accept 91000 (copying effective into
+        # both slots). |91000-90000|/90000 ≈ 1.11%. 0.005 also rejects
+        # the stale snapshot 88000.
+        rel_tol: 0.005
     replay: step-6-resync
 
   - user: "Treasury confirms yesterday's released payment to Golden Gate Capital (cashflow 9303) went out this morning. Mark it settled and issue its settlement notice. Record your answer by calling record_answer(answer={\"settled_amount\": <number>})."
