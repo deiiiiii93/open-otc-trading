@@ -1083,3 +1083,51 @@ def test_match_dict_surfaces_effort_as_none_when_unpinned(session):
     by_model = {m["model_id"]: m for m in store.get_run(session, rid)["matches"]}
     assert by_model["a"]["reasoning_effort"] is None
     assert by_model["b"]["reasoning_effort"] == "max"
+
+
+# ---- leaderboard: one row per ARM ----
+
+def test_leaderboard_ranks_two_efforts_as_two_rows(session):
+    """Averaging two efforts into one row is the defect merge_runs already
+    refuses — 'the merged row would average two operating regimes'."""
+    rid = _make_run(session, workflow_ids=["wf-a"], model_ids=["model-x"])
+    _make_match_at(session, rid, model_id="model-x", reasoning_effort="low",
+                   objective_score=20.0)
+    _make_match_at(session, rid, model_id="model-x", reasoning_effort="high",
+                   objective_score=30.0)
+    store.set_run_status(session, rid, "completed")
+    session.commit()
+
+    rows = store.leaderboard(session, run_id=rid)
+    assert len(rows) == 2
+    by_effort = {r["reasoning_effort"]: r for r in rows}
+    assert by_effort["high"]["mean_objective"] == 30.0
+    assert by_effort["low"]["mean_objective"] == 20.0
+    assert by_effort["high"]["rank"] == 1
+    assert by_effort["low"]["rank"] == 2
+
+
+def test_leaderboard_unpinned_row_reports_none(session):
+    rid = _make_run(session, workflow_ids=["wf-a"], model_ids=["model-x"])
+    _make_match_at(session, rid, model_id="model-x", reasoning_effort=None,
+                   objective_score=42.0)
+    store.set_run_status(session, rid, "completed")
+    session.commit()
+
+    rows = store.leaderboard(session, run_id=rid)
+    assert [r["reasoning_effort"] for r in rows] == [None]
+
+
+def test_single_effort_board_is_unchanged(session):
+    """The regression gate: a board where every model carries one effort must
+    produce exactly what it produced before effort entered the key."""
+    rid = _make_run(session, workflow_ids=["wf-a"], model_ids=["model-x", "model-y"])
+    _make_match_at(session, rid, model_id="model-x", objective_score=80.0)
+    _make_match_at(session, rid, model_id="model-y", objective_score=60.0)
+    store.set_run_status(session, rid, "completed")
+    session.commit()
+
+    rows = store.leaderboard(session, run_id=rid)
+    assert [(r["model_id"], r["rank"], r["mean_objective"]) for r in rows] == [
+        ("model-x", 1, 80.0), ("model-y", 2, 60.0),
+    ]

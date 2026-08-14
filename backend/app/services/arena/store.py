@@ -368,28 +368,38 @@ def leaderboard(
     from collections import defaultdict
     from app.services.arena import scoring
 
-    model_objectives: dict[str, list[float]] = defaultdict(list)
-    model_subjectives: dict[str, list[float]] = defaultdict(list)
-    model_sub_stdevs: dict[str, list[float]] = defaultdict(list)
-    model_sub_modes: dict[str, list[str]] = defaultdict(list)
-    model_axes: dict[str, dict[str, dict[str, int]]] = defaultdict(dict)
-    scored_counts: dict[str, int] = defaultdict(int)
-    invalid_counts: dict[str, int] = defaultdict(int)
+    # Keyed by ARM — (model_id, effort) — not by model. Collapsing the two into
+    # one row would average two operating regimes, which is exactly what
+    # merge_runs refuses to do: effort measurably moves tool-call count (~22%
+    # fewer at high than low, runs #107/#108) and therefore EFF.
+    # (Every key below is an ARM: `(model_id, effort_or_None)`.)
+    model_objectives: dict[tuple[str, str | None], list[float]] = defaultdict(list)
+    model_subjectives: dict[tuple[str, str | None], list[float]] = defaultdict(list)
+    model_sub_stdevs: dict[tuple[str, str | None], list[float]] = defaultdict(list)
+    model_sub_modes: dict[tuple[str, str | None], list[str]] = defaultdict(list)
+    model_axes: dict[
+        tuple[str, str | None], dict[str, dict[str, int]]] = defaultdict(dict)
+    scored_counts: dict[tuple[str, str | None], int] = defaultdict(int)
+    invalid_counts: dict[tuple[str, str | None], int] = defaultdict(int)
     # Ability card (spec B): per-match FINAL OVR (CON already baked in for
     # multi-trial rows) + base OVR + con + stats, via the aggregate-aware guard.
-    model_final_ovrs: dict[str, list[int]] = defaultdict(list)
-    model_base_ovrs: dict[str, list[int]] = defaultdict(list)
-    model_cons: dict[str, list[int]] = defaultdict(list)
-    model_stat_lists: dict[str, dict[str, list[int]]] = defaultdict(
+    model_final_ovrs: dict[tuple[str, str | None], list[int]] = defaultdict(list)
+    model_base_ovrs: dict[tuple[str, str | None], list[int]] = defaultdict(list)
+    model_cons: dict[tuple[str, str | None], list[int]] = defaultdict(list)
+    model_stat_lists: dict[
+        tuple[str, str | None], dict[str, list[int]]] = defaultdict(
         lambda: defaultdict(list))
 
     for m in matches:
+        # A contestant is (model, effort) — the same model at two efforts ranks
+        # as two rows, never one averaged row.
+        key = (m.model_id, m.reasoning_effort or None)
         if m.status == "invalid":
-            invalid_counts[m.model_id] += 1
+            invalid_counts[key] += 1
             continue
-        scored_counts[m.model_id] += 1
+        scored_counts[key] += 1
         if m.objective_score is not None:
-            model_objectives[m.model_id].append(m.objective_score)
+            model_objectives[key].append(m.objective_score)
         bd = m.score_breakdown or {}
         judge = bd.get("judge") or {}
         # Effective subjective score: prefer the breakdown's judge block, else fall
@@ -398,9 +408,9 @@ def leaderboard(
         if eff_judged is None:
             eff_judged = m.judged_score
         if eff_judged is not None:
-            model_subjectives[m.model_id].append(eff_judged)
+            model_subjectives[key].append(eff_judged)
         if judge.get("judged_stdev") is not None:
-            model_sub_stdevs[m.model_id].append(judge["judged_stdev"])
+            model_sub_stdevs[key].append(judge["judged_stdev"])
         # Per-row provenance (spec D8/D9): explicit mode wins; else a row that has a
         # subjective score is an inferred legacy "panel"; else a judge-missing row is
         # "missing"; else the jury was never intended → "disabled". This keeps legacy
@@ -415,10 +425,10 @@ def leaderboard(
             row_mode = "missing"
         else:
             row_mode = "disabled"
-        model_sub_modes[m.model_id].append(row_mode)
+        model_sub_modes[key].append(row_mode)
         axes = (bd.get("objective") or {}).get("axes") or {}
         for ax, tally in axes.items():
-            slot = model_axes[m.model_id].setdefault(ax, {"passed": 0, "total": 0})
+            slot = model_axes[key].setdefault(ax, {"passed": 0, "total": 0})
             slot["passed"] += tally.get("passed", 0)
             slot["total"] += tally.get("total", 0)
 
@@ -429,12 +439,12 @@ def leaderboard(
         # NOTHING to card_mean.
         card, _reason = _match_card(bd, m.workflow_id)
         if card is not None:
-            model_final_ovrs[m.model_id].append(card["ovr"])
-            model_base_ovrs[m.model_id].append(card.get("base_ovr", card["ovr"]))
+            model_final_ovrs[key].append(card["ovr"])
+            model_base_ovrs[key].append(card.get("base_ovr", card["ovr"]))
             if card.get("con") is not None:
-                model_cons[m.model_id].append(card["con"])
+                model_cons[key].append(card["con"])
             for stat, val in card["stats"].items():
-                model_stat_lists[m.model_id][stat].append(val)
+                model_stat_lists[key][stat].append(val)
 
     def _agg_mode(modes: list[str]) -> str:
         # Worst-visibility-wins so a degraded/failed jury-on row never collapses into
@@ -448,15 +458,16 @@ def leaderboard(
         return modes[0]
 
     rows = []
-    for model_id in set(scored_counts) | set(invalid_counts):
-        objectives = model_objectives.get(model_id, [])
-        subs = model_subjectives.get(model_id, [])
-        stdevs = model_sub_stdevs.get(model_id, [])
-        final_ovrs = model_final_ovrs.get(model_id, [])
-        base_ovrs = model_base_ovrs.get(model_id, [])
-        cons = model_cons.get(model_id, [])
+    for key in set(scored_counts) | set(invalid_counts):
+        model_id, effort = key
+        objectives = model_objectives.get(key, [])
+        subs = model_subjectives.get(key, [])
+        stdevs = model_sub_stdevs.get(key, [])
+        final_ovrs = model_final_ovrs.get(key, [])
+        base_ovrs = model_base_ovrs.get(key, [])
+        cons = model_cons.get(key, [])
         carded_count = len(final_ovrs)
-        scored_count = scored_counts.get(model_id, 0)
+        scored_count = scored_counts.get(key, 0)
         # A card_mean is trustworthy for ranking ONLY when EVERY scored match is
         # carded. A partially-carded model (some matches uncarded — schema drift,
         # missing tool counts) would otherwise rank by the derivable subset while
@@ -474,20 +485,22 @@ def leaderboard(
              "base_ovr": round(sum(base_ovrs) / len(base_ovrs)),
              "con": round(sum(cons) / len(cons)) if cons else None,
              **{stat: round(sum(vals) / len(vals))
-                for stat, vals in model_stat_lists[model_id].items()}}
+                for stat, vals in model_stat_lists[key].items()}}
             if fully_carded else None)
         rows.append({
             "model_id": model_id,
+            # The arm this row scores; None = the run did not pin one.
+            "reasoning_effort": effort,
             "mean_objective": (round(sum(objectives) / len(objectives), 1)
                                if objectives else None),
             "card_mean": card_mean,
             "carded_count": carded_count,
             "subjective_mean": round(sum(subs) / len(subs), 1) if subs else None,
             "subjective_stdev": round(sum(stdevs) / len(stdevs), 1) if stdevs else None,
-            "subjective_mode": _agg_mode(model_sub_modes.get(model_id, [])),
-            "match_count": scored_counts.get(model_id, 0),
-            "invalid_count": invalid_counts.get(model_id, 0),
-            "_obj_tb": scoring.objective_tiebreak_key(dict(model_axes.get(model_id, {}))),
+            "subjective_mode": _agg_mode(model_sub_modes.get(key, [])),
+            "match_count": scored_counts.get(key, 0),
+            "invalid_count": invalid_counts.get(key, 0),
+            "_obj_tb": scoring.objective_tiebreak_key(dict(model_axes.get(key, {}))),
         })
 
     # Rank by OVR mean (spec B5 — numbers-first card): CARDED rows first, ordered
@@ -502,7 +515,8 @@ def leaderboard(
             return (0, -cm["ovr"], scoring.card_tiebreak_key(cm))
         return (1, -(r["mean_objective"] or 0.0), r["_obj_tb"])
 
-    rows.sort(key=lambda r: (_order_key(r), r["model_id"]))
+    rows.sort(key=lambda r: (_order_key(r), r["model_id"],
+                             r["reasoning_effort"] or ""))
     rank = 0
     prev_key: object = object()
     for i, r in enumerate(rows):
