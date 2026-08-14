@@ -1785,3 +1785,76 @@ def test_unpinned_run_does_not_pass_the_kwarg_at_all(session, settings):
         run_dict = arena_store.get_run(s, run_id)
         assert run_dict["matches"][0]["status"] == "scored"
         assert run_dict["matches"][0]["config"]["reasoning_effort"] is None
+
+
+# ---------------------------------------------------------------------------
+# Per-arm efforts across the HTTP boundary
+# ---------------------------------------------------------------------------
+
+
+def test_leaderboard_row_carries_reasoning_effort(session, settings):
+    """Assert at the HTTP layer, not against store.leaderboard.
+
+    get_leaderboard hand-builds an explicit key projection, so a field the store
+    gained is dropped unless it is named there — the store unit test passes while
+    the API serves nothing. Same failure as /api/agent/models silently dropping
+    reasoning_efforts, different mechanism."""
+    client = _make_arena_app(session, settings)
+    rid = arena_store.create_run(session, ["wf-a"], ["model-x"])
+    _seed_scored(session, rid, "model-x", 50.0, effort="high")
+    arena_store.set_run_status(session, rid, "completed")
+    session.commit()
+
+    body = client.get(f"/api/arena/leaderboard?run_id={rid}").json()
+    assert body["rows"][0]["reasoning_effort"] == "high"
+
+
+def test_run_summary_accepts_effort_lists(session, settings):
+    """RunSummary is CONSTRUCTED explicitly, so a list value under a dict[str, str]
+    annotation raises ValidationError and 500s the runs list."""
+    client = _make_arena_app(session, settings)
+    rid = arena_store.create_run(session, ["wf-a"], ["model-x"],
+                                 reasoning_efforts={"model-x": [None, "high"]})
+    session.commit()
+
+    body = client.get("/api/arena/runs").json()
+    row = next(r for r in body["runs"] if r["id"] == rid)
+    assert row["reasoning_efforts"] == {"model-x": [None, "high"]}
+
+
+def test_run_summary_normalises_a_legacy_scalar(session, settings):
+    """A board launched before per-arm lists stored {slug: "high"}."""
+    client = _make_arena_app(session, settings)
+    rid = arena_store.create_run(session, ["wf-a"], ["model-x"])
+    session.get(ArenaRun, rid).reasoning_efforts = {"model-x": "high"}
+    session.commit()
+
+    body = client.get("/api/arena/runs").json()
+    row = next(r for r in body["runs"] if r["id"] == rid)
+    assert row["reasoning_efforts"] == {"model-x": ["high"]}
+
+
+def test_match_summary_carries_reasoning_effort(session, settings):
+    client = _make_arena_app(session, settings)
+    rid = arena_store.create_run(session, ["wf-a"], ["model-x"])
+    _seed_scored(session, rid, "model-x", 50.0, effort="max")
+    session.commit()
+
+    body = client.get(f"/api/arena/runs/{rid}").json()
+    assert body["matches"][0]["reasoning_effort"] == "max"
+
+
+def test_create_run_accepts_two_arms_for_one_model(session, settings):
+    """The whole point: one model, two efforts, one board."""
+    client = _make_arena_app(session, settings)
+    resp = client.post(
+        "/api/arena/runs",
+        json={
+            "workflow_ids": ["risk-manager-control-day"],
+            "model_ids": ["deepseek-v4-pro"],
+            "reasoning_efforts": {"deepseek-v4-pro": [None, "high"]},
+        },
+    )
+    assert resp.status_code == 202, resp.json()
+    run = arena_store.get_run(session, resp.json()["run_id"])
+    assert run["reasoning_efforts"] == {"deepseek-v4-pro": [None, "high"]}

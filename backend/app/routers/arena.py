@@ -32,15 +32,21 @@ class RunSummary(BaseModel):
     created_at: str | None
     workflow_ids: list[str]
     model_ids: list[str]
-    # {model_slug: effort}; a model absent is unpinned (vendor default).
-    # Surfaced on the list so a board's regime is visible without opening a match.
-    reasoning_efforts: dict[str, str] = Field(default_factory=dict)
+    # {model_slug: [effort | null, ...]} — one entry per ARM this model ran at;
+    # null is the explicit unpinned (vendor-default) arm, and a model absent from
+    # the map ran once at its vendor default. Surfaced on the list so a board's
+    # regime is visible without opening a match. Legacy rows stored a bare scalar;
+    # store._run_to_dict normalises it to a list on read.
+    reasoning_efforts: dict[str, list[str | None]] = Field(default_factory=dict)
 
 
 class MatchSummary(BaseModel):
     id: int
     workflow_id: str
     model_id: str
+    # Which regime produced this row; null = unpinned. Part of the contestant key,
+    # so (model_id, reasoning_effort) identifies the arm this match scored.
+    reasoning_effort: str | None = None
     status: str
     objective_score: float | None
     judged_score: float | None
@@ -58,13 +64,16 @@ class CreateRunRequest(BaseModel):
     model_ids: list[str]
     weights: dict | None = None
     trials: int = Field(default=2, ge=1, le=10)
-    # Per-model effort map {model_slug: effort}. Omitted/absent = do not pin, so
-    # that contestant runs at its own vendor default — what boards #8-#104
-    # measured. Per-model because the ladders differ (GLM-5.2 accepts only
-    # high/max, five contestants have no levels at all), so no single value could
-    # express a pinned mixed field. Validated in queue_arena_run so a bad level
-    # fails at launch rather than per-match.
-    reasoning_efforts: dict[str, str] | None = None
+    # Per-model effort ARMS {model_slug: [level | null, ...]}. Two entries for one
+    # model make it two contestants that rank against each other; null is the
+    # explicit unpinned arm. Omitted/absent = do not pin, so that contestant runs
+    # at its own vendor default — what boards #8-#104 measured. Per-model because
+    # the ladders differ (GLM-5.2 accepts only high/max, five contestants have no
+    # levels at all), so no single value could express a pinned mixed field. A
+    # bare string is accepted for backward compatibility with the single-arm form.
+    # Validated per arm in queue_arena_run so a bad level fails at launch rather
+    # than per-match.
+    reasoning_efforts: dict[str, list[str | None] | str] | None = None
 
 
 class DeleteRunsRequest(BaseModel):
@@ -285,6 +294,7 @@ def build_arena_router(
                 id=m["id"],
                 workflow_id=m["workflow_id"],
                 model_id=m["model_id"],
+                reasoning_effort=m.get("reasoning_effort"),
                 status=m["status"],
                 objective_score=m.get("objective_score"),
                 judged_score=m.get("judged_score"),
@@ -344,6 +354,10 @@ def build_arena_router(
         renamed = [
             {
                 "model_id": r["model_id"],
+                # Named explicitly because this projection is an ALLOWLIST: a key
+                # the store gains is served only if it appears here (no
+                # response_model on this route to carry it automatically).
+                "reasoning_effort": r["reasoning_effort"],
                 "rank": r["rank"],
                 # Ability card (spec B5): OVR is the headline ranking axis; the
                 # full card_mean stat block feeds the radar. Null for uncarded rows.
