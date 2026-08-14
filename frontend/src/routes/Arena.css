@@ -863,3 +863,39 @@
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
+
+/* Effort ARMS picker — several levels per model, each a separate contestant.
+   Layout only; the control and label styling are the shared checklist classes. */
+.wl-arena__efforts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-3);
+  border: 0;
+  margin: 0;
+  padding: 0 var(--gap-3) var(--gap-2) var(--gap-5);
+}
+
+.wl-arena__efforts-legend {
+  font-size: var(--type-caps-size);
+  font-weight: var(--type-caps-weight);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  padding: 0;
+}
+
+.wl-arena__efforts-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-1);
+  cursor: pointer;
+}
+
+/* Board row: model name + the arm's effort badge. */
+.wl-arena__model-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-2);
+  min-width: 0;
+}

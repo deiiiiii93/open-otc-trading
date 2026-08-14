@@ -833,6 +833,96 @@ describe('arena runs: New Run modal', () => {
     });
     expect(screen.queryByText(/^Launch$/)).not.toBeInTheDocument();
   });
+
+  // A model with a real effort ladder — the flash model above declares none, so
+  // its picker is hidden entirely (a toggle-only model has no levels to pick).
+  const laddered = {
+    slug: 'gpt-5-5',
+    zenmux_name: 'openai/gpt-5.5',
+    display_name: 'GPT-5.5',
+    reasoning_efforts: ['low', 'medium', 'high'],
+  };
+
+  function setupLadderMocks() {
+    setupNewRunMocks();
+    vi.mocked(arenaApi.listArenaModels).mockResolvedValue({ models: [laddered] });
+    vi.mocked(arenaApi.createArenaRun).mockResolvedValue({ run_id: 60, status: 'pending' });
+  }
+
+  it('launches one run with two effort ARMS for the same model', async () => {
+    setupLadderMocks();
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    fireEvent.click(screen.getByText('New Run'));
+    fireEvent.click(await screen.findByLabelText(/risk-manager-control-day/i));
+    fireEvent.click(screen.getByLabelText('GPT-5.5'));
+    fireEvent.click(screen.getByLabelText(/GPT-5\.5 effort low/i));
+    fireEvent.click(screen.getByLabelText(/GPT-5\.5 effort high/i));
+    fireEvent.click(screen.getByText(/^Launch$/));
+
+    await waitFor(() => expect(arenaApi.createArenaRun).toHaveBeenCalledWith(
+      expect.objectContaining({ reasoning_efforts: { 'gpt-5-5': ['low', 'high'] } }),
+    ));
+  });
+
+  it('sends null for the unpinned Default arm, so a pin can be measured against it', async () => {
+    setupLadderMocks();
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    fireEvent.click(screen.getByText('New Run'));
+    fireEvent.click(await screen.findByLabelText(/risk-manager-control-day/i));
+    fireEvent.click(screen.getByLabelText('GPT-5.5'));
+    fireEvent.click(screen.getByLabelText(/GPT-5\.5 effort default/i));
+    fireEvent.click(screen.getByLabelText(/GPT-5\.5 effort high/i));
+    fireEvent.click(screen.getByText(/^Launch$/));
+
+    await waitFor(() => expect(arenaApi.createArenaRun).toHaveBeenCalledWith(
+      expect.objectContaining({ reasoning_efforts: { 'gpt-5-5': [null, 'high'] } }),
+    ));
+  });
+
+  it('omits a model with no arm ticked, so it runs once at its vendor default', async () => {
+    setupLadderMocks();
+    render(<ArenaLive />);
+    await screen.findByText('1');
+
+    fireEvent.click(screen.getByText('New Run'));
+    fireEvent.click(await screen.findByLabelText(/risk-manager-control-day/i));
+    fireEvent.click(screen.getByLabelText('GPT-5.5'));
+    fireEvent.click(screen.getByText(/^Launch$/));
+
+    await waitFor(() => expect(arenaApi.createArenaRun).toHaveBeenCalledWith(
+      expect.objectContaining({ reasoning_efforts: {} }),
+    ));
+  });
+});
+
+describe('arena leaderboard: one row per ARM', () => {
+  it('renders both arms of one model as distinct rows, each labelled', async () => {
+    const twoArms = [
+      { model_id: 'claude-sonnet', reasoning_effort: 'high', rank: 1, ovr: 82,
+        card_mean: { ovr: 82, GRD: 90, ADH: 80, SYN: 88, EFF: 75, PRC: 70 },
+        avg_objective: 0.9, subjective_mean: null, subjective_stdev: null,
+        subjective_mode: 'disabled', matches: 1, invalid: 0 },
+      { model_id: 'claude-sonnet', reasoning_effort: 'low', rank: 2, ovr: 71,
+        card_mean: { ovr: 71, GRD: 70, ADH: 72, SYN: 68, EFF: 74, PRC: 66 },
+        avg_objective: 0.75, subjective_mean: null, subjective_stdev: null,
+        subjective_mode: 'disabled', matches: 1, invalid: 0 },
+    ];
+    vi.mocked(arenaApi.listArenaRuns).mockResolvedValue({ runs: mockRuns, total: 1 });
+    vi.mocked(arenaApi.listArenaModels).mockResolvedValue({ models: mockModels });
+    vi.mocked(arenaApi.getArenaRun).mockResolvedValue({ run: mockRuns[0], matches: mockMatches });
+    vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({ rows: twoArms });
+
+    render(<ArenaLive />);
+
+    // Two rows for ONE model — with rowKey still keyed on model_id alone these
+    // would be duplicate React keys.
+    expect(await screen.findByText('high')).toBeInTheDocument();
+    expect(await screen.findByText('low')).toBeInTheDocument();
+  });
 });
 
 describe('arena runs: status polling stops on terminal states', () => {

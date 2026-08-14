@@ -114,6 +114,10 @@ export type ArenaRunDetail = {
 
 export type ArenaLeaderboardRow = {
   model_id: string;
+  // A contestant is (model_id, reasoning_effort): the same model pinned at two
+  // efforts is TWO rows that rank against each other. Null = the run did not pin
+  // one, so this arm ran at the vendor default.
+  reasoning_effort?: string | null;
   // Ranking is by the numbers-first ability card OVR (spec B5); `rank` is SHARED
   // across models tied on OVR. Uncarded rows fall back to objective ranking.
   rank: number;
@@ -189,10 +193,13 @@ export type ArenaCreateRunRequest = {
   trials: number;
   weights?: { obj: number; judge: number };
   /**
-   * Per-model effort {model_slug: effort}. A model absent runs at its own vendor
-   * default, as every contestant did on boards #8–#104.
+   * Per-model effort ARMS {model_slug: [level | null, ...]}. Two levels for one
+   * model make it two contestants that rank against each other on the same
+   * board; `null` is the explicit unpinned arm, so a pin can be measured against
+   * how every contestant ran on boards #8–#104. A model absent from the map runs
+   * once at its own vendor default.
    */
-  reasoning_efforts?: Record<string, ArenaReasoningEffort>;
+  reasoning_efforts?: Record<string, (ArenaReasoningEffort | null)[]>;
 };
 
 export type ArenaWorkflowSummary = { id: string; title: string; tags: string[]; step_count: number };

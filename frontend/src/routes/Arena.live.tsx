@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
+import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { Empty } from '../components/Empty';
 import { Modal } from '../components/Modal';
 import { NumberInput } from '../components/NumberInput';
 import { PageScaffold } from '../components/templates/PageScaffold';
 import { Table, type Column } from '../components/Table';
-import { Select } from '../components/Select';
 import {
   createArenaRun,
   reasoningEffortsFor,
@@ -622,11 +622,13 @@ export function ArenaLive() {
   const [selectedWorkflowIds, setSelectedWorkflowIds] = useState<Set<string>>(new Set());
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(new Set());
   const [trials, setTrials] = useState(2);
-  // Effort PER MODEL — the ladders differ, so one value cannot pin a mixed field.
-  // A model absent from the map is unpinned (vendor default), which is what every
-  // board through #104 measured. Pinning matters because effort moves tool-call
-  // count and therefore EFF.
-  const [reasoningEfforts, setReasoningEfforts] = useState<Record<string, string>>({});
+  // Effort ARMS per model — the ladders differ, so one value cannot pin a mixed
+  // field, and SEVERAL levels for one model make it several contestants that rank
+  // against each other. Each entry is a level, or the 'default' sentinel for the
+  // unpinned arm (mapped to wire null at launch), so a pin can be measured against
+  // how every board through #104 actually ran. Pinning matters because effort
+  // moves tool-call count and therefore EFF.
+  const [reasoningEfforts, setReasoningEfforts] = useState<Record<string, string[]>>({});
 
   const copyTranscript = useCallback(async () => {
     if (transcript == null) return;
@@ -780,6 +782,18 @@ export function ArenaLive() {
     });
   }, []);
 
+  // Ticking a level adds an ARM; unticking removes it. No selection = one
+  // contestant at the vendor default, identical to ticking only Default.
+  const toggleEffortLevel = useCallback((slug: string, level: string) => {
+    setReasoningEfforts((prev) => {
+      const current = prev[slug] ?? [];
+      const next = current.includes(level)
+        ? current.filter((l) => l !== level)
+        : [...current, level];
+      return { ...prev, [slug]: next };
+    });
+  }, []);
+
   const canLaunchRun = selectedWorkflowIds.size > 0 && selectedModelIds.size > 0;
 
   const handleLaunchRun = useCallback(() => {
@@ -788,17 +802,24 @@ export function ArenaLive() {
       workflow_ids: Array.from(selectedWorkflowIds),
       model_ids: Array.from(selectedModelIds),
       trials,
-      // Only models that are selected, pinned, AND whose pinned level that model
-      // actually accepts. The third check matters because this state survives a
-      // model being deselected and reselected, and the per-model picker's reset is
-      // display-only — sending a stale level would 422 the whole launch.
+      // One entry per ARM, for selected models only. Levels are re-filtered
+      // against the model's own ladder because this state survives a model being
+      // deselected and reselected and the picker's reset is display-only —
+      // sending a stale level would 422 the whole launch. 'default' always
+      // survives that filter: unpinned is legal for every model, including the
+      // wire-protocol ones that can carry no effort at all.
       reasoning_efforts: Object.fromEntries(
-        Object.entries(reasoningEfforts).filter(([slug, effort]) => {
-          if (!selectedModelIds.has(slug) || effort === 'default') return false;
-          const m = models.find((x) => x.slug === slug);
-          return m ? reasoningEffortsFor(m).includes(effort) : false;
-        }),
-      ) as Record<string, ArenaReasoningEffort>,
+        Array.from(selectedModelIds)
+          .map((slug) => {
+            const model = models.find((x) => x.slug === slug);
+            const allowed = model ? reasoningEffortsFor(model) : [];
+            const arms = (reasoningEfforts[slug] ?? [])
+              .filter((level) => level === 'default' || allowed.includes(level))
+              .map((level) => (level === 'default' ? null : level));
+            return [slug, arms] as const;
+          })
+          .filter(([, arms]) => arms.length > 0),
+      ) as Record<string, (ArenaReasoningEffort | null)[]>,
     })
       .then((res) => {
         setNewRunOpen(false);
@@ -841,7 +862,16 @@ export function ArenaLive() {
         key: 'model',
         header: 'Model',
         width: 'minmax(0, 2fr)',
-        render: (row) => modelDisplayName(row.model_id, models),
+        // A contestant is (model, effort), so an arm must say which regime it
+        // ran at — two rows for one model are otherwise indistinguishable.
+        render: (row) => (
+          <span className="wl-arena__model-cell">
+            {modelDisplayName(row.model_id, models)}
+            {row.reasoning_effort ? (
+              <Badge variant="info">{row.reasoning_effort}</Badge>
+            ) : null}
+          </span>
+        ),
       },
       {
         // Headline ranking axis — the numbers-first ability card OVR (spec B5).
@@ -941,7 +971,13 @@ export function ArenaLive() {
           {leaderboard.length === 0 ? (
             <Empty message="No leaderboard data yet — run an arena evaluation to populate scores." />
           ) : (
-            <Table columns={leaderboardColumns} rows={leaderboard} rowKey={(r) => r.model_id} />
+            <Table
+              columns={leaderboardColumns}
+              rows={leaderboard}
+              // A contestant is (model, effort): keyed on model_id alone, two arms
+              // of one model are duplicate React keys.
+              rowKey={(r) => `${r.model_id}::${r.reasoning_effort ?? ''}`}
+            />
           )}
         </div>
 
@@ -1200,7 +1236,7 @@ export function ArenaLive() {
               <ul className="wl-arena__checklist" role="list" aria-label="Models">
                 {models.map((m) => {
                   const levels = reasoningEffortsFor(m);
-                  const picked = reasoningEfforts[m.slug] ?? 'default';
+                  const arms = reasoningEfforts[m.slug] ?? [];
                   return (
                     <li key={m.slug} className="wl-arena__checklist-item">
                       <label className="wl-arena__checklist-label">
@@ -1213,25 +1249,33 @@ export function ArenaLive() {
                         />
                         <span className="wl-arena__checklist-text">{m.display_name}</span>
                       </label>
-                      {/* Effort is per model because the ladders differ. Shown only
-                          for a selected model, and only when it HAS levels — a
-                          toggle-only model (Qwen3.7, MiniMax M3) has none to pick. */}
+                      {/* Effort is per model because the ladders differ, and
+                          MULTI-select because two levels are two contestants that
+                          rank against each other. 'Default' is the unpinned arm,
+                          so a board can measure a pin against how boards #8-#104
+                          actually ran. Shown only for a selected model, and only
+                          when it HAS levels — a toggle-only model (Qwen3.7,
+                          MiniMax M3) has none to pick. */}
                       {selectedModelIds.has(m.slug) && levels.length > 0 && (
-                        <Select
-                          variant="inline"
-                          label={`${m.display_name} effort`}
-                          value={levels.includes(picked) ? picked : 'default'}
-                          options={[
-                            { value: 'default', label: 'Default' },
-                            ...levels.map((e) => ({
-                              value: e,
-                              label: e.charAt(0).toUpperCase() + e.slice(1),
-                            })),
-                          ]}
-                          onChange={(v) =>
-                            setReasoningEfforts((prev) => ({ ...prev, [m.slug]: v }))
-                          }
-                        />
+                        <fieldset className="wl-arena__efforts">
+                          <legend className="wl-arena__efforts-legend">
+                            {m.display_name} effort
+                          </legend>
+                          {['default', ...levels].map((level) => (
+                            <label key={level} className="wl-arena__efforts-option">
+                              <input
+                                type="checkbox"
+                                className="wl-arena__checklist-checkbox"
+                                aria-label={`${m.display_name} effort ${level}`}
+                                checked={arms.includes(level)}
+                                onChange={() => toggleEffortLevel(m.slug, level)}
+                              />
+                              <span className="wl-arena__checklist-text">
+                                {level.charAt(0).toUpperCase() + level.slice(1)}
+                              </span>
+                            </label>
+                          ))}
+                        </fieldset>
                       )}
                     </li>
                   );
