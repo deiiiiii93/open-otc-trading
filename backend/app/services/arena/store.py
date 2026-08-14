@@ -46,6 +46,7 @@ def create_run(
     model_ids: list[str],
     weights: dict | None = None,
     trials: int = 1,
+    reasoning_efforts: dict | None = None,
 ) -> int:
     """Insert a new ArenaRun in 'queued' status; return its id."""
     run = ArenaRun(
@@ -54,6 +55,7 @@ def create_run(
         model_ids=model_ids,
         weights=weights,
         trials=trials,
+        reasoning_efforts=reasoning_efforts or None,
     )
     session.add(run)
     session.flush()
@@ -167,9 +169,35 @@ def merge_runs(session: Session, source_run_ids: list[int]) -> int:
     for ms in groups.values():
         ms.sort(key=lambda m: (pos[m.run_id], m.id))
 
+    # Refuse to fold matches of the same (workflow, model) driven at DIFFERENT
+    # efforts, and check it per group — that is exactly the key merge folds on, so
+    # it is the granularity that must not mix. Effort measurably moves tool-call
+    # count (hence EFF) and trial dispersion (hence CON), so averaging two regimes
+    # into one row is the same defect class as folding a model whose weights
+    # changed behind a stable id. A run may legitimately pin different efforts for
+    # different models, so a run-level check would be both too coarse and wrong.
+    for (workflow_id, model_id), ms in sorted(groups.items()):
+        efforts = {(m.config or {}).get("reasoning_effort") for m in ms}
+        if len(efforts) > 1:
+            rendered = sorted("unpinned" if e is None else str(e) for e in efforts)
+            raise ValueError(
+                f"cannot merge {model_id} x {workflow_id}: its matches were driven "
+                f"at different reasoning efforts ({rendered}) — the merged row "
+                "would average two operating regimes into one EFF/CON"
+            )
+
     workflow_ids = sorted({wf for wf, _ in groups})
     model_ids = sorted({md for _, md in groups})
-    new_run_id = create_run(session, workflow_ids, model_ids)
+    # Carry each model's (now provably single) effort onto the merged run, so the
+    # aggregate keeps stating which regime produced it.
+    merged_efforts = {
+        model_id: (ms[0].config or {}).get("reasoning_effort")
+        for (_wf, model_id), ms in groups.items()
+        if (ms[0].config or {}).get("reasoning_effort")
+    }
+    new_run_id = create_run(
+        session, workflow_ids, model_ids, reasoning_efforts=merged_efforts or None,
+    )
 
     for (workflow_id, model_id), ms in groups.items():
         trials: list[dict] = []
@@ -628,6 +656,7 @@ def _run_to_dict(run: ArenaRun) -> dict:
         "model_ids": run.model_ids,
         "weights": run.weights,
         "trials": run.trials,
+        "reasoning_efforts": run.reasoning_efforts or {},
         "error": run.error,
         "created_at": run.created_at.isoformat() if run.created_at else None,
         "matches": [_match_to_dict(m) for m in run.matches],

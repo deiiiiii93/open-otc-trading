@@ -837,6 +837,7 @@ def run_match(
     drive: Callable[[int, str, dict], int | None] | None = None,
     harvest: Callable[..., Any] | None = None,
     settle: Callable[[], None] | None = None,
+    reasoning_effort: str | None = None,
 ) -> Any:
     """Run a single arena match and return a MatchTranscript.
 
@@ -845,6 +846,8 @@ def run_match(
         model: ArenaModel descriptor.
         artifact_root: Root directory for copied artifacts.
         run_id: ArenaRun id used to tag the created thread (None in unit tests).
+        reasoning_effort: Effort level pinned onto every turn's model selection,
+            or None to leave the vendor default (the historical behaviour).
         drive: Injectable turn driver ``(thread_id, content, selection) -> None``.
             Defaults to the stream_and_persist-based ``_default_drive``.
         harvest: Injectable transcript harvester ``(thread_id, workflow, model)``.
@@ -864,7 +867,7 @@ def run_match(
     _purge_seeded_trap_sets(loaded, _settings)
     _assert_trap_sets_absent(loaded, _settings)
     artifact_root = Path(artifact_root)
-    selection = arena_model_to_selection(model)
+    selection = arena_model_to_selection(model, reasoning_effort)
 
     # Reset any prior same-named seed, then seed fresh (autoincrement IDs) and
     # create the arena-tagged thread.

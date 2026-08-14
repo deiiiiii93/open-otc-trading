@@ -1,0 +1,78 @@
+[
+  [
+    "Model Ability Card \u2014 OVR",
+    99,
+    "",
+    [
+      [
+        "Grok 4.6",
+        80,
+        "gold",
+        "80"
+      ],
+      [
+        "DeepSeek V4 Pro",
+        79,
+        "silver",
+        "79"
+      ]
+    ]
+  ],
+  [
+    "GRD",
+    99,
+    "",
+    [
+      [
+        "Grok 4.6",
+        96,
+        "gold",
+        "96"
+      ],
+      [
+        "DeepSeek V4 Pro",
+        93,
+        "silver",
+        "93"
+      ]
+    ]
+  ],
+  [
+    "EFF",
+    99,
+    "",
+    [
+      [
+        "Grok 4.6",
+        12,
+        "gold",
+        "12"
+      ],
+      [
+        "DeepSeek V4 Pro",
+        48,
+        "silver",
+        "48"
+      ]
+    ]
+  ],
+  [
+    "CON",
+    99,
+    "",
+    [
+      [
+        "Grok 4.6",
+        90,
+        "gold",
+        "90"
+      ],
+      [
+        "DeepSeek V4 Pro",
+        70,
+        "silver",
+        "70"
+      ]
+    ]
+  ]
+]

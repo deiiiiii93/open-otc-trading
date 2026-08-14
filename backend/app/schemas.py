@@ -163,6 +163,12 @@ class AgentModelSelection(BaseModel):
     channel: str
     provider: str
     model: str
+    # Explicit reasoning effort for this turn. None (the default) sends no
+    # `reasoning_effort` at all, so the vendor default applies — which is what
+    # every turn did before this field existed. Validated server-side by
+    # model_factory.normalize_reasoning_effort, which also refuses an effort for
+    # anthropic-protocol models rather than dropping it silently.
+    reasoning_effort: str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -178,6 +184,13 @@ class AgentModelOption(AgentModelSelection):
     description: str | None = None
     is_default: bool = False
     tags: list[str] = Field(default_factory=list)
+    # This model's own reasoning-effort ladder, so the composer offers only levels
+    # it accepts. MUST be declared here: the endpoint is served through
+    # `response_model=AgentModelConfigOut`, and pydantic SILENTLY DROPS any key the
+    # response model does not name — `agent_model_config` emitted this field
+    # correctly while the API served none of it, and the unit test on the builder
+    # still passed. (Same failure mode as the golden-workflow `scope: session` key.)
+    reasoning_efforts: list[str] = Field(default_factory=list)
 
 
 class AgentChannelOut(BaseModel):

@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OTC Desk Agent Arena — Run #104</title>
+<style>
+:root{
+  --ink:#1a1d21; --muted:#5b6470; --line:#e3e6eb; --bg:#ffffff;
+  --accent:#2f5d8a; --soft:#f4f6f9;
+  --gold:#caa12e; --silver:#9aa0a6; --bronze:#b06a3b; --mid:#3b6fb0; --floor:#c5c9d1;
+  --good:#2e8b57; --neutral:#6b7280; --warn:#d98a2b; --bad:#c0392b; --frontier:#3b6fb0;
+}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+body{
+  font-family:"Charter","Georgia",Cambria,"Times New Roman",serif;
+  color:var(--ink); background:var(--bg); line-height:1.62;
+  max-width:820px; margin:0 auto; padding:56px 40px 80px; font-size:16.5px;
+}
+h1,h2,h3,h4{font-family:-apple-system,"Inter","Segoe UI",Helvetica,Arial,sans-serif;
+  line-height:1.22; letter-spacing:-.01em; color:var(--ink)}
+h1{font-size:2.05rem; margin:.2em 0 .1em; font-weight:800}
+h2{font-size:1.42rem; margin:2.1em 0 .55em; padding-bottom:.28em;
+  border-bottom:2px solid var(--line); font-weight:750}
+h3{font-size:1.12rem; margin:1.7em 0 .5em; font-weight:700; color:#2b3038}
+h1+p em, body>p:first-of-type em{color:var(--muted)}
+p,li{font-size:1rem}
+a{color:var(--accent); text-decoration:none}
+hr{border:none; border-top:1px solid var(--line); margin:2.2em 0}
+code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.86em;
+  background:var(--soft); padding:.1em .35em; border-radius:4px}
+blockquote{margin:1.1em 0; padding:.7em 1.1em; background:var(--soft);
+  border-left:4px solid var(--accent); border-radius:0 6px 6px 0; color:#2b3038}
+blockquote p{margin:.3em 0}
+strong{font-weight:700}
+
+/* tables */
+table{border-collapse:collapse; width:100%; margin:1.1em 0; font-size:.9rem;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+th,td{padding:.5em .7em; border-bottom:1px solid var(--line); text-align:left}
+thead th{background:#f7f9fc; border-bottom:2px solid #d6dbe3; font-weight:700;
+  font-size:.82rem; letter-spacing:.01em; color:#39414c}
+tbody tr:nth-child(even){background:#fbfcfe}
+td:first-child,th:first-child{white-space:nowrap}
+
+/* charts */
+.chart{margin:1.3em 0 1.6em; padding:0}
+.chart .row{display:flex; align-items:center; gap:12px; margin:5px 0;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+.chart .lbl{flex:0 0 168px; text-align:right; font-size:.82rem; color:#39414c; font-weight:600}
+.chart .track{flex:1; height:22px; background:#eef1f5; border-radius:5px; overflow:hidden}
+.chart .bar{display:block; height:100%; border-radius:5px}
+.chart .val{flex:0 0 150px; font-size:.78rem; color:var(--muted); font-variant-numeric:tabular-nums}
+.chart figcaption{margin-top:.7em; font-size:.76rem; color:var(--muted);
+  font-family:-apple-system,"Inter",sans-serif; text-align:right}
+.bar.gold{background:linear-gradient(90deg,#d9b13f,#caa12e)}
+.bar.silver{background:linear-gradient(90deg,#aab0b6,#9aa0a6)}
+.bar.bronze{background:linear-gradient(90deg,#c07c4a,#b06a3b)}
+.bar.mid{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.frontier{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.floor{background:#c5c9d1}
+.bar.good{background:linear-gradient(90deg,#37a169,#2e8b57)}
+.bar.neutral{background:#8a929e}
+.bar.warn{background:linear-gradient(90deg,#e09a3e,#d98a2b)}
+.bar.bad{background:linear-gradient(90deg,#d04b3c,#c0392b)}
+
+/* report header band */
+.masthead{border-bottom:3px solid var(--ink); padding-bottom:.6em; margin-bottom:1.4em}
+.footer-note{margin-top:3em; padding-top:1em; border-top:1px solid var(--line);
+  font-size:.8rem; color:var(--muted); font-family:-apple-system,"Inter",sans-serif}
+
+@page{size:A4; margin:16mm 15mm}
+@media print{
+  body{max-width:none; margin:0; padding:0; font-size:10.6pt}
+  h2{margin-top:1.4em}
+  h2,h3,h4{break-after:avoid}
+  table,.chart,blockquote,figure{break-inside:avoid}
+  tr{break-inside:avoid}
+  a{color:var(--ink)}
+}
+</style>
+</head><body>
+<h1>🏆 OTC Desk Agent Arena — Run #104</h1>
+<p><strong>Grok 4.6 and DeepSeek V4 Pro, across all four golden workflows, two trials each.</strong></p>
+<p><em>2026-08-13 · run <code>#104</code> · 2 models × 4 workflows × 2 trials = 16 model-trials ·
+objective-only scoring (jury off) · all 8 pairs <code>scored</code>, none <code>invalid</code></em></p>
+<hr />
+<h2>Headline — a one-point tie, for opposite reasons</h2>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align: center;">OVR</th>
+<th style="text-align: center;">GRD</th>
+<th style="text-align: center;">ADH</th>
+<th style="text-align: center;">SYN</th>
+<th style="text-align: center;"><strong>EFF</strong></th>
+<th style="text-align: center;">PRC</th>
+<th style="text-align: center;">CON</th>
+<th style="text-align: center;">Objective</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Grok 4.6</strong></td>
+<td style="text-align: center;"><strong>80</strong></td>
+<td style="text-align: center;">96</td>
+<td style="text-align: center;">90</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;"><strong>12</strong></td>
+<td style="text-align: center;">98</td>
+<td style="text-align: center;">90</td>
+<td style="text-align: center;"><strong>96.3</strong></td>
+</tr>
+<tr>
+<td><strong>DeepSeek V4 Pro</strong></td>
+<td style="text-align: center;">79</td>
+<td style="text-align: center;">93</td>
+<td style="text-align: center;">89</td>
+<td style="text-align: center;">84</td>
+<td style="text-align: center;"><strong>48</strong></td>
+<td style="text-align: center;">93</td>
+<td style="text-align: center;">70</td>
+<td style="text-align: center;">90.9</td>
+</tr>
+</tbody>
+</table>
+<p>Grok 4.6 is the better desk operator on <strong>capability</strong> — it beats DeepSeek V4 Pro on
+three of four workflows and leads the objective axis by 5.4 points. It finishes
+<strong>one OVR point ahead</strong>, because efficiency erases almost the entire lead.</p>
+<p>This is the third consecutive board on which raw capability does not decide the
+ranking.</p>
+<h2>The Grok inversion did not get fixed — it got worse</h2>
+<p>Grok 4.5's defining Arena result was an inversion: the field's best objective score
+(98.4 on <code>trader-rfq-booking-day</code>, 62 of 63 checks) delivered in ~64 tool calls
+against a par of 35, for EFF 15 and OVR #5. The models that win raw capability are
+the ones you should not automate.</p>
+<p>Grok 4.6 reproduces the capability and <strong>deepens the cost</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Workflow</th>
+<th style="text-align: center;">par</th>
+<th style="text-align: center;">Grok 4.6 calls</th>
+<th style="text-align: center;">EFF</th>
+<th style="text-align: center;">Objective</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>risk-manager-control-day</code></td>
+<td style="text-align: center;">24</td>
+<td style="text-align: center;"><strong>243</strong></td>
+<td style="text-align: center;"><strong>0</strong></td>
+<td style="text-align: center;">94.8</td>
+</tr>
+<tr>
+<td><code>trader-rfq-booking-day</code></td>
+<td style="text-align: center;">35</td>
+<td style="text-align: center;">92</td>
+<td style="text-align: center;"><strong>0</strong></td>
+<td style="text-align: center;">97.6</td>
+</tr>
+<tr>
+<td><code>high-board-portfolio-review-day</code></td>
+<td style="text-align: center;">24</td>
+<td style="text-align: center;">47</td>
+<td style="text-align: center;">13</td>
+<td style="text-align: center;">94.3</td>
+</tr>
+<tr>
+<td><code>risk-limit-breach-day</code></td>
+<td style="text-align: center;">uncalibrated</td>
+<td style="text-align: center;">32</td>
+<td style="text-align: center;">34</td>
+<td style="text-align: center;">98.7</td>
+</tr>
+</tbody>
+</table>
+<p>EFF is golf-scored on a calibrated par: full marks at or under par, linear decay to
+zero at <strong>2 × par</strong>. Grok 4.6 is not merely past that cliff on the flagship, it is
+<strong>five times</strong> past it — 243 calls against a par of 24. Two of four workflows score a
+literal EFF 0 while scoring 94.8 and 97.6 on correctness.</p>
+<p>The two flagship trials burned <strong>355 and 131</strong> calls. That 2.7× spread inside a
+single pair is invisible in the objective column; it is precisely what CON measures.</p>
+<h2>DeepSeek V4 Pro's counter-example</h2>
+<p>Its <code>risk-limit-breach-day</code> row is the best single result on the board and the shape
+a desk actually wants:</p>
+<blockquote>
+<p><strong>100.0 objective · 38/38 checks on both trials · 22 mean tool calls · OVR 90</strong></p>
+</blockquote>
+<p>DeepSeek V4 Pro is the leaner operator everywhere (48 EFF vs 12) but pays for it in
+two places: <strong>SYN 84 vs 99</strong>, and <strong>CON 70 vs 90</strong> — driven almost entirely by
+<code>high-board-portfolio-review-day</code>, where its two trials scored 24/35 and 32/35 for
+<strong>CON 10</strong> and its worst card (OVR 61). Grok 4.6 is the steadier model despite being
+the more extravagant one.</p>
+<h2>Full board</h2>
+<!-- tables below are generated by scripts/arena_board_tables.py — do not hand-edit -->
+
+<h3>Per-workflow cards</h3>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Workflow</th>
+<th style="text-align: center;">OVR</th>
+<th style="text-align: center;">GRD</th>
+<th style="text-align: center;">ADH</th>
+<th style="text-align: center;">SYN</th>
+<th style="text-align: center;">EFF</th>
+<th style="text-align: center;">PRC</th>
+<th style="text-align: center;">CON</th>
+<th style="text-align: center;">Obj</th>
+<th style="text-align: center;">Trials</th>
+<th style="text-align: center;">Calls</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DeepSeek V4 Pro</td>
+<td>Portfolio Review</td>
+<td style="text-align: center;">61</td>
+<td style="text-align: center;">74</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">40</td>
+<td style="text-align: center;">49</td>
+<td style="text-align: center;">90</td>
+<td style="text-align: center;">10</td>
+<td style="text-align: center;">80.0</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">33</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Pro</td>
+<td>Limit Breach</td>
+<td style="text-align: center;">90</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">50</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">92</td>
+<td style="text-align: center;">100.0</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">22</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Pro</td>
+<td>Risk Control</td>
+<td style="text-align: center;">76</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">68</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">24</td>
+<td style="text-align: center;">90</td>
+<td style="text-align: center;">86</td>
+<td style="text-align: center;">88.5</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">41</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Pro</td>
+<td>Trader RFQ</td>
+<td style="text-align: center;">90</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">89</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">68</td>
+<td style="text-align: center;">94</td>
+<td style="text-align: center;">92</td>
+<td style="text-align: center;">95.2</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">44</td>
+</tr>
+<tr>
+<td>Grok 4.6</td>
+<td>Portfolio Review</td>
+<td style="text-align: center;">78</td>
+<td style="text-align: center;">86</td>
+<td style="text-align: center;">92</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">13</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">89</td>
+<td style="text-align: center;">94.3</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">47</td>
+</tr>
+<tr>
+<td>Grok 4.6</td>
+<td>Limit Breach</td>
+<td style="text-align: center;">88</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">34</td>
+<td style="text-align: center;">96</td>
+<td style="text-align: center;">96</td>
+<td style="text-align: center;">98.7</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">32</td>
+</tr>
+<tr>
+<td>Grok 4.6</td>
+<td>Risk Control</td>
+<td style="text-align: center;">74</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">74</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">79</td>
+<td style="text-align: center;">94.8</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">243</td>
+</tr>
+<tr>
+<td>Grok 4.6</td>
+<td>Trader RFQ</td>
+<td style="text-align: center;">81</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">94</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">96</td>
+<td style="text-align: center;">96</td>
+<td style="text-align: center;">97.6</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">92</td>
+</tr>
+</tbody>
+</table>
+<p>Per-trial tool calls, for the record:</p>
+<table>
+<thead>
+<tr>
+<th>Pair</th>
+<th style="text-align: center;">Trial 1</th>
+<th style="text-align: center;">Trial 2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Grok 4.6 × Risk Control</td>
+<td style="text-align: center;">355</td>
+<td style="text-align: center;">131</td>
+</tr>
+<tr>
+<td>Grok 4.6 × Trader RFQ</td>
+<td style="text-align: center;">96</td>
+<td style="text-align: center;">87</td>
+</tr>
+<tr>
+<td>Grok 4.6 × Portfolio Review</td>
+<td style="text-align: center;">53</td>
+<td style="text-align: center;">41</td>
+</tr>
+<tr>
+<td>Grok 4.6 × Limit Breach</td>
+<td style="text-align: center;">37</td>
+<td style="text-align: center;">27</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Pro × Risk Control</td>
+<td style="text-align: center;">41</td>
+<td style="text-align: center;">41</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Pro × Trader RFQ</td>
+<td style="text-align: center;">43</td>
+<td style="text-align: center;">46</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Pro × Portfolio Review</td>
+<td style="text-align: center;">38</td>
+<td style="text-align: center;">28</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Pro × Limit Breach</td>
+<td style="text-align: center;">25</td>
+<td style="text-align: center;">19</td>
+</tr>
+</tbody>
+</table>
+<h2>Method and caveats</h2>
+<p><strong>This is a standalone board.</strong> It is deliberately <strong>not</strong> merged into runs #20 /</p>
+<h1>33 / #94 / #101. Two reasons, and both matter:</h1>
+<ol>
+<li><strong>DeepSeek upgraded the weights behind <code>deepseek/deepseek-v4-pro</code> on
+   2026-08-13.</strong> The historic V4 Pro rows on earlier boards describe a <em>different
+   model under the same id</em>. <code>merge_runs</code> groups by <code>(workflow_id, model_id)</code>, so
+   merging would silently fold two different models into one aggregate.</li>
+<li><strong><code>risk-limit-breach-day</code>'s manifest changed after its last board</strong> — 39 → 38
+   points on 2026-08-03, dropping the unroutable <code>read-risk-result</code> skill check.
+   Run #101's rows are scored out of 39; this run's are out of 38.</li>
+</ol>
+<p>Cross-board comparisons in this report are therefore made only against <em>published
+figures</em>, as context, never by folding rows together.</p>
+<p><strong>Coverage.</strong> Four golden workflows — the four that existed when the board launched.
+A fifth, <code>ops-settlement-day</code>, was in development on a branch that same day and is
+<strong>not</strong> represented here.</p>
+<p><strong>Configuration.</strong> <code>agent_recursion_limit</code> 100, the same as every prior board. Jury
+off (default since 2026-07-06), so scoring is deterministic-objective only.
+Contestants route through the zenmux channel. Grok 4.6 uses plain
+<code>provider: openai</code> with no <code>protocol: anthropic</code> override, verified by live smoke
+run #103 (100.0 on <code>risk-limit-breach-day</code>, 107 real tool spans).</p>
+<p><strong>Sampling and reasoning effort are NOT pinned — a standing caveat on EFF and CON,
+for this board and every prior one.</strong> Contestant models are constructed with only
+<code>model</code>, <code>api_key</code> and <code>base_url</code>: <code>model_factory</code> sets no <code>temperature</code>, no
+<code>max_tokens</code> and no <code>reasoning_effort</code>. <code>ArenaModel.default_config</code>
+(<code>temperature: 0, max_tokens: 4096</code>) reads like a pin but is <strong>dead for
+contestants</strong> — <code>arena_model_to_selection</code> returns only <code>{channel, provider,
+model}</code>, and the dict's only consumer, <code>arena/channel.py::build_zenmux_chat</code>, is
+imported nowhere in the live path. Every match from run #8 to #104 has therefore
+used vendor-default sampling, not greedy decoding.</p>
+<p>Two consequences, stated rather than smoothed over:</p>
+<ul>
+<li><strong>CON contains sampling noise.</strong> It measures trial dispersion, so a non-zero
+  temperature contributes to it directly. Grok 4.6's 355-vs-131 flagship spread may
+  be partly sampling rather than policy.</li>
+<li><strong>Reasoning effort is uncontrolled — but measured, and the EFF finding survives.</strong>
+  Both models accept <code>reasoning_effort</code> and respond to it: on a minimal prompt Grok
+  4.6 spends 94 reasoning tokens unset, 46 at <code>low</code>, 88 at <code>high</code>; DeepSeek V4 Pro
+  21 / 7 / 21. <strong>Both therefore ran this board at essentially their <code>high</code> default.</strong></li>
+</ul>
+<p>A controlled A/B then measured what effort does to <em>tool-call count</em>, the thing EFF
+  actually scores — DeepSeek V4 Flash × <code>risk-limit-breach-day</code>, 2 trials per arm
+  (runs <strong>#107</strong> <code>low</code> / <strong>#108</strong> <code>high</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Arm</th>
+<th>Tool calls</th>
+<th style="text-align: center;">Mean</th>
+<th style="text-align: center;">Objective</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>low</code></td>
+<td>31, 32</td>
+<td style="text-align: center;">31.5</td>
+<td style="text-align: center;">92.1</td>
+</tr>
+<tr>
+<td><code>high</code></td>
+<td>26, 23</td>
+<td style="text-align: center;">24.5</td>
+<td style="text-align: center;">98.7</td>
+</tr>
+</tbody>
+</table>
+<p>Higher effort produced <strong>~22% fewer</strong> calls, with non-overlapping ranges. Effort is
+  therefore a real influence on EFF, in the direction that penalises <em>low</em> effort —
+  so a model left at a low vendor default would be scored unfairly harshly.</p>
+<p>It does not explain this board. A 22% swing cannot manufacture a 4× EFF gap: Grok
+  4.6's 243 calls against par 24 would still be ~190 at maximum-favourable effort,
+  far past the 2 × par point where the golf curve reaches zero. And both contestants
+  already sat at the lean end of the effect. <strong>The EFF gap is not an effort artefact.</strong></p>
+<p>Limits of that pilot, stated plainly: n=2 per arm against an unpinned temperature,
+  one model on one workflow at the flash tier, arms run sequentially rather than
+  interleaved. The objective difference rests on a single weak <code>low</code> trial (32/38 vs
+  38/38) and should be read as noise; the call-count separation is the signal.</p>
+<p><strong>Interruption.</strong> The board was stopped deliberately at 1/8 pairs ahead of a planned
+network outage and resumed into the same run at 17:30. This matters because
+<code>task._execute</code> catches per-trial exceptions and continues: under a sustained
+outage it would have swept the remaining pairs into <code>invalid</code> and marked the run
+<code>completed</code> — a quietly wrong board. The 1 completed pair was durable; only the
+in-flight pair's work was lost.</p>
+<h2>Ability cards</h2>
+<p>Ten cards in <a href="cards/run104/"><code>cards/run104/</code></a> — two hero cards (the equal-weight
+mean across all four workflows) and eight per-workflow cards.</p>
+<p>The cards are <strong>fully generated</strong> by GPT-Image-2, numbers included, and then
+<strong>verified</strong>: a vision model reads each finished PNG back and the card is rejected
+and re-rolled unless every digit matches the database and every meter shows exactly
+<code>round(value / 10)</code> lit segments out of ten.</p>
+<p><strong>10/10 verified in 13 renders — 3 re-rolls.</strong> Every rejection was an off-by-one pip
+at a rounding boundary (ADH 68 drawn as 6 lit, EFF 68 as 6, PRC 96 and CON 96 as 9),
+plus one meter drawn with 8 segment positions instead of 10. The image model
+<strong>floors</strong> <code>value / 10</code> where the spec rounds half-up, so the error is systematic at
+last digits ≥ 5 rather than random — which is exactly why a spot-check of a sample
+would have under-detected it, and why the gate checks meter geometry and not only
+the digits.</p>
+<p>Stat meters are ten countable segments rather than continuous bars for a measured
+reason: across ten calibration renders, GPT-Image-2 reproduced quoted digits
+perfectly (42/42) but <em>interpolated</em> continuous lengths — an EFF of 36 drew at
+42–60% of its track and flipped rank against its neighbour between two samples of
+one prompt. A countable instruction travels the same faithful path as the digits.</p>
+<p class="footer-note">Rendered from
+<code>docs/arena/2026-08-13-run104-otc-desk-agent-arena.md</code> ·
+OTC Desk Agent Arena · Run #104.</p>
+</body></html>

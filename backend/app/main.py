@@ -999,9 +999,15 @@ def create_app(
     ):
         thread = _get_thread_or_404(thread_id, session)
 
-        resolved_selection = active_agent_service.normalize_model_selection(
-            payload.model.model_dump() if payload.model else None
-        )
+        # A rejected selection is a client error, not a server fault: an unknown
+        # model, or a reasoning_effort the chosen model cannot carry, must come
+        # back as a 422 the composer can show rather than a 500.
+        try:
+            resolved_selection = active_agent_service.normalize_model_selection(
+                payload.model.model_dump() if payload.model else None
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         ensure_thread_workflow_state(session, thread.id)
 
         # Persist the user turn synchronously so it exists even if streaming

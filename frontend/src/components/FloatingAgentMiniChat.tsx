@@ -226,8 +226,10 @@ export function FloatingAgentMiniChat({
         channels={controller.channels}
         selectedModel={controller.selectedModel}
         executionMode={controller.executionMode}
+        reasoningEffort={controller.reasoningEffort}
         onChangeModel={controller.setSelectedModel}
         onChangeMode={controller.setExecutionMode}
+        onChangeReasoningEffort={controller.setReasoningEffort}
         onStopStreaming={controller.stopStreaming}
         onRefreshModels={controller.refreshModels}
         compactModelPicker

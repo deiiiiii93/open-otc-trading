@@ -6,8 +6,10 @@ import { Modal } from '../components/Modal';
 import { NumberInput } from '../components/NumberInput';
 import { PageScaffold } from '../components/templates/PageScaffold';
 import { Table, type Column } from '../components/Table';
+import { Select } from '../components/Select';
 import {
   createArenaRun,
+  reasoningEffortsFor,
   deleteArenaRuns,
   getArenaLeaderboard,
   getArenaRun,
@@ -24,6 +26,7 @@ import {
   type ArenaScoreBreakdown,
   type ArenaCheck,
   type ArenaObjectiveStep,
+  type ArenaReasoningEffort,
   type ArenaWorkflowSummary,
 } from '../lib/arenaApi';
 import './Arena.css';
@@ -619,6 +622,11 @@ export function ArenaLive() {
   const [selectedWorkflowIds, setSelectedWorkflowIds] = useState<Set<string>>(new Set());
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(new Set());
   const [trials, setTrials] = useState(2);
+  // Effort PER MODEL — the ladders differ, so one value cannot pin a mixed field.
+  // A model absent from the map is unpinned (vendor default), which is what every
+  // board through #104 measured. Pinning matters because effort moves tool-call
+  // count and therefore EFF.
+  const [reasoningEfforts, setReasoningEfforts] = useState<Record<string, string>>({});
 
   const copyTranscript = useCallback(async () => {
     if (transcript == null) return;
@@ -780,6 +788,17 @@ export function ArenaLive() {
       workflow_ids: Array.from(selectedWorkflowIds),
       model_ids: Array.from(selectedModelIds),
       trials,
+      // Only models that are selected, pinned, AND whose pinned level that model
+      // actually accepts. The third check matters because this state survives a
+      // model being deselected and reselected, and the per-model picker's reset is
+      // display-only — sending a stale level would 422 the whole launch.
+      reasoning_efforts: Object.fromEntries(
+        Object.entries(reasoningEfforts).filter(([slug, effort]) => {
+          if (!selectedModelIds.has(slug) || effort === 'default') return false;
+          const m = models.find((x) => x.slug === slug);
+          return m ? reasoningEffortsFor(m).includes(effort) : false;
+        }),
+      ) as Record<string, ArenaReasoningEffort>,
     })
       .then((res) => {
         setNewRunOpen(false);
@@ -787,7 +806,10 @@ export function ArenaLive() {
         selectRun(res.run_id);
       })
       .catch((e: unknown) => setError(String(e)));
-  }, [canLaunchRun, selectedWorkflowIds, selectedModelIds, trials, refresh, selectRun]);
+  }, [
+    canLaunchRun, selectedWorkflowIds, selectedModelIds, trials, reasoningEfforts,
+    models, refresh, selectRun,
+  ]);
 
   const chips = [
     `${runs.length} run${runs.length === 1 ? '' : 's'}`,
@@ -1176,20 +1198,44 @@ export function ArenaLive() {
               <Empty message="No models available." />
             ) : (
               <ul className="wl-arena__checklist" role="list" aria-label="Models">
-                {models.map((m) => (
-                  <li key={m.slug} className="wl-arena__checklist-item">
-                    <label className="wl-arena__checklist-label">
-                      <input
-                        type="checkbox"
-                        className="wl-arena__checklist-checkbox"
-                        aria-label={m.display_name}
-                        checked={selectedModelIds.has(m.slug)}
-                        onChange={() => toggleModelSelection(m.slug)}
-                      />
-                      <span className="wl-arena__checklist-text">{m.display_name}</span>
-                    </label>
-                  </li>
-                ))}
+                {models.map((m) => {
+                  const levels = reasoningEffortsFor(m);
+                  const picked = reasoningEfforts[m.slug] ?? 'default';
+                  return (
+                    <li key={m.slug} className="wl-arena__checklist-item">
+                      <label className="wl-arena__checklist-label">
+                        <input
+                          type="checkbox"
+                          className="wl-arena__checklist-checkbox"
+                          aria-label={m.display_name}
+                          checked={selectedModelIds.has(m.slug)}
+                          onChange={() => toggleModelSelection(m.slug)}
+                        />
+                        <span className="wl-arena__checklist-text">{m.display_name}</span>
+                      </label>
+                      {/* Effort is per model because the ladders differ. Shown only
+                          for a selected model, and only when it HAS levels — a
+                          toggle-only model (Qwen3.7, MiniMax M3) has none to pick. */}
+                      {selectedModelIds.has(m.slug) && levels.length > 0 && (
+                        <Select
+                          variant="inline"
+                          label={`${m.display_name} effort`}
+                          value={levels.includes(picked) ? picked : 'default'}
+                          options={[
+                            { value: 'default', label: 'Default' },
+                            ...levels.map((e) => ({
+                              value: e,
+                              label: e.charAt(0).toUpperCase() + e.slice(1),
+                            })),
+                          ]}
+                          onChange={(v) =>
+                            setReasoningEfforts((prev) => ({ ...prev, [m.slug]: v }))
+                          }
+                        />
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>

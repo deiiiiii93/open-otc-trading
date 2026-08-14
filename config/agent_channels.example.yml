@@ -177,6 +177,10 @@ channels:
         provider: openai
         label: Grok 4.5
         tags: [tool-use, reasoning]
+      - id: x-ai/grok-4.6
+        provider: openai
+        label: Grok 4.6
+        tags: [tool-use, reasoning]
 
   - name: deepseek
     label: DeepSeek

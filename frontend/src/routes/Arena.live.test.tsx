@@ -4,7 +4,14 @@ import userEvent from '@testing-library/user-event';
 import { ArenaLive } from './Arena.live';
 
 // Mock the arenaApi module
-vi.mock('../lib/arenaApi', () => ({
+// Stub ONLY the network calls; keep every real constant and pure helper via
+// importOriginal. A wholesale factory mock silently drops non-fetch exports, so
+// each new constant/helper the page uses breaks all 38 tests with an opaque
+// "No X export is defined on the mock" — and a hand-copied stub value can drift
+// from the real one, which for something like the effort ladder would mean the
+// test asserts a menu the app never shows.
+vi.mock('../lib/arenaApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/arenaApi')>()),
   listArenaRuns: vi.fn(),
   getArenaRun: vi.fn(),
   getArenaLeaderboard: vi.fn(),

@@ -6,6 +6,7 @@ import {
   type AgentChannel,
   type AgentExecutionMode,
   type AgentModelSelection,
+  type AgentReasoningEffortChoice,
   type ChatMessage as ChatMessageType,
   type DeskWorkflowSummary,
   type TaskRun,
@@ -32,10 +33,12 @@ type Props = {
   channels?: AgentChannel[];
   selectedModel?: AgentModelSelection | null;
   executionMode?: AgentExecutionMode;
+  reasoningEffort?: AgentReasoningEffortChoice;
   confirmingActionIds?: ReadonlySet<string>;
   taskRunsById?: Record<number, TaskRun>;
   onChangeModel?: (s: AgentModelSelection) => void;
   onChangeMode?: (mode: AgentExecutionMode) => void;
+  onChangeReasoningEffort?: (effort: AgentReasoningEffortChoice) => void;
   onStopStreaming?: () => void;
   onRefreshModels?: () => void;
   onChangeViewMode: (mode: ViewMode) => void;
@@ -86,10 +89,12 @@ export function AgentDesk({
   channels,
   selectedModel,
   executionMode,
+  reasoningEffort,
   confirmingActionIds,
   taskRunsById,
   onChangeModel,
   onChangeMode,
+  onChangeReasoningEffort,
   onStopStreaming,
   onRefreshModels,
   onChangeViewMode,
@@ -188,8 +193,10 @@ export function AgentDesk({
         channels={channels}
         selectedModel={selectedModel}
         executionMode={executionMode}
+        reasoningEffort={reasoningEffort}
         onChangeModel={onChangeModel}
         onChangeMode={onChangeMode}
+        onChangeReasoningEffort={onChangeReasoningEffort}
         onStopStreaming={onStopStreaming}
         onRefreshModels={onRefreshModels}
         viewMode={viewMode}

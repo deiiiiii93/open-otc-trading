@@ -3,7 +3,9 @@ import { useId, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'r
 import type {
   AgentChannel,
   AgentExecutionMode,
+  AgentModelOption,
   AgentModelSelection,
+  AgentReasoningEffortChoice,
   DeskWorkflowSummary,
 } from '../types';
 import type { ViewMode } from '../hooks/useViewMode';
@@ -32,8 +34,10 @@ type Props = {
   channels?: AgentChannel[];
   selectedModel?: AgentModelSelection | null;
   executionMode?: AgentExecutionMode;
+  reasoningEffort?: AgentReasoningEffortChoice;
   onChangeModel?: (s: AgentModelSelection) => void;
   onChangeMode?: (mode: AgentExecutionMode) => void;
+  onChangeReasoningEffort?: (effort: AgentReasoningEffortChoice) => void;
   onStopStreaming?: () => void;
   onRefreshModels?: () => void | Promise<void>;
   compactModelPicker?: boolean;
@@ -73,10 +77,58 @@ const MODE_OPTIONS: ReadonlyArray<{
   },
 ];
 
+// Reasoning effort, weakest → strongest. "Default" is not a level — it sends no
+// `reasoning_effort` at all, so the provider's own default applies (what every
+// turn did before this control existed). Higher effort measurably lowers
+// tool-call count on this desk (~22% fewer between low and high on a paired
+// arena A/B), so it is a real operating choice, not a cosmetic one.
+//
+// The menu is FILTERED PER MODEL from `AgentModelOption.reasoning_efforts` (a
+// vendored models.dev snapshot), because there is no universal ladder: most
+// models take low/medium/high, the GPT-5.6 family takes none…max, GLM-5.2 takes
+// only high/max, and Qwen3.7 / MiniMax M3 have no ladder at all. Offering a level
+// the server would reject is worse than not offering it — the request fails at
+// send time instead of at pick time.
+const EFFORT_LABELS: Record<string, string> = {
+  none: 'None',
+  minimal: 'Minimal',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'X-High',
+  max: 'Max',
+};
+// Display order; anything the model declares that is not listed here still shows,
+// appended, so an upstream addition degrades to "visible but unsorted" rather
+// than "silently hidden".
+const EFFORT_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+
+export function effortOptionsFor(
+  model: AgentModelOption | null | undefined,
+): ReadonlyArray<{ value: AgentReasoningEffortChoice; label: string }> {
+  const declared = model?.reasoning_efforts;
+  // `undefined` = the caller supplied no model info at all (e.g. a bare composer
+  // render) → offer the full ladder. `[]` = the model genuinely accepts none →
+  // offer only "Default".
+  const levels = declared ?? EFFORT_ORDER;
+  const ordered = [
+    ...EFFORT_ORDER.filter((e) => levels.includes(e)),
+    ...levels.filter((e) => !EFFORT_ORDER.includes(e)),
+  ];
+  return [
+    { value: 'default' as AgentReasoningEffortChoice, label: 'Default' },
+    ...ordered.map((e) => ({
+      value: e as AgentReasoningEffortChoice,
+      label: EFFORT_LABELS[e] ?? e,
+    })),
+  ];
+}
+
 export function ChatComposer({
   onSend, sending, streaming,
-  channels, selectedModel, executionMode = 'auto',
-  onChangeModel, onChangeMode, onStopStreaming, onRefreshModels, compactModelPicker = false,
+  channels, selectedModel, executionMode = 'auto', reasoningEffort = 'default',
+  onChangeModel, onChangeMode, onChangeReasoningEffort,
+  onStopStreaming, onRefreshModels, compactModelPicker = false,
   viewMode, onChangeViewMode,
   workflows, onLaunchWorkflow, onRequestParams,
 }: Props) {
@@ -90,6 +142,18 @@ export function ChatComposer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // The selected model's own effort ladder. Resolved from `channels` (the server's
+  // /api/agent/models payload) rather than trusted from `selectedModel`, which is
+  // only a {channel, provider, model} triple and carries no capability data.
+  const selectedOption: AgentModelOption | undefined = selectedModel
+    ? (channels ?? [])
+        .find((c) => c.name === selectedModel.channel)
+        ?.models.find(
+          (m) => m.model === selectedModel.model && m.provider === selectedModel.provider,
+        )
+    : undefined;
+  const effortOptions = effortOptionsFor(selectedOption);
 
   const addFiles = (event: ChangeEvent<HTMLInputElement>) => {
     const picked = Array.from(event.target.files ?? []);
@@ -349,6 +413,20 @@ export function ChatComposer({
             onChange={onChangeModel}
             onRefresh={onRefreshModels}
             compact={compactModelPicker}
+          />
+        )}
+        {onChangeReasoningEffort && (
+          <Select
+            variant="inline"
+            label="Effort"
+            // Switching to a model that lacks the current level must not leave a
+            // stale pick that the server will reject; show Default instead.
+            value={effortOptions.some((o) => o.value === reasoningEffort)
+              ? reasoningEffort
+              : 'default'}
+            options={effortOptions.map((o) => ({ value: o.value, label: o.label }))}
+            onChange={(v) => onChangeReasoningEffort(v as AgentReasoningEffortChoice)}
+            disabled={sending || !!streaming || effortOptions.length === 1}
           />
         )}
         {onChangeMode && (

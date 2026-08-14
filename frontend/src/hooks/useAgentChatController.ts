@@ -6,6 +6,7 @@ import type {
   AgentExecutionMode,
   AgentModelConfig,
   AgentModelSelection,
+  AgentReasoningEffortChoice,
   AgentTodoItem,
   AsyncAgentTask,
   ChatMessage as ChatMessageType,
@@ -45,6 +46,10 @@ type Draft = {
 };
 const EXECUTION_MODE_STORAGE_KEY = 'open-otc:agent:execution-mode';
 const EXECUTION_MODES: readonly AgentExecutionMode[] = ['interactive', 'auto', 'yolo'];
+const REASONING_EFFORT_STORAGE_KEY = 'open-otc:agent:reasoning-effort';
+const REASONING_EFFORT_CHOICES: readonly AgentReasoningEffortChoice[] = [
+  'default', 'minimal', 'low', 'medium', 'high',
+];
 const ACTIVE_TASK_STATUSES = new Set(['queued', 'running']);
 
 export type AgentChatController = {
@@ -60,10 +65,12 @@ export type AgentChatController = {
   channels: AgentChannel[];
   selectedModel: AgentModelSelection | null;
   executionMode: AgentExecutionMode;
+  reasoningEffort: AgentReasoningEffortChoice;
   confirmingActionIds: ReadonlySet<string>;
   taskRunsById: Record<number, TaskRun>;
   setSelectedModel: (selection: AgentModelSelection) => void;
   setExecutionMode: Dispatch<SetStateAction<AgentExecutionMode>>;
+  setReasoningEffort: Dispatch<SetStateAction<AgentReasoningEffortChoice>>;
   setViewMode: (mode: ViewMode) => void;
   selectThread: (id: number) => void;
   createThread: () => Promise<void>;
@@ -139,6 +146,15 @@ export function useAgentChatController(
     EXECUTION_MODE_STORAGE_KEY,
     'auto',
     EXECUTION_MODES,
+  );
+  // Kept OUTSIDE selectedModel on purpose: the effort is a per-session operator
+  // preference, while selectedModel is a model identity compared for equality
+  // against modelConfig.active and fed to ModelPicker. Merged onto the wire
+  // payload at send time instead, so those comparisons stay clean.
+  const [reasoningEffort, setReasoningEffort] = useSessionString<AgentReasoningEffortChoice>(
+    REASONING_EFFORT_STORAGE_KEY,
+    'default',
+    REASONING_EFFORT_CHOICES,
   );
   const [confirmingActionIds, setConfirmingActionIds] = useState<Set<string>>(() => new Set());
   const [taskRunsById, setTaskRunsById] = useState<Record<number, TaskRun>>({});
@@ -482,6 +498,21 @@ export function useAgentChatController(
           return res.json();
         }));
       }
+      // The effort actually sendable for this model: 'default' and any level the
+      // model does not list both resolve to "send nothing".
+      const modelLadder = selectedModel
+        ? (modelConfig?.channels ?? [])
+            .find((c) => c.name === selectedModel.channel)
+            ?.models.find(
+              (m) => m.model === selectedModel.model && m.provider === selectedModel.provider,
+            )?.reasoning_efforts
+        : undefined;
+      const effectiveEffort =
+        reasoningEffort !== 'default' &&
+        (modelLadder === undefined || modelLadder.includes(reasoningEffort))
+          ? reasoningEffort
+          : null;
+
       streamAbortRef.current?.abort();
       streamAbortController = new AbortController();
       streamAbortRef.current = streamAbortController;
@@ -492,7 +523,18 @@ export function useAgentChatController(
         body: JSON.stringify({
           content: message,
           character: 'auto',
-          model: selectedModel,
+          // 'default' means "don't pin" — send no effort at all rather than a
+          // guessed level, so the vendor default applies exactly as it always did.
+          //
+          // Also drop a level the SELECTED model does not accept. The composer
+          // already hides such a level, but that is display only: this state
+          // survives a model switch, so without this a user who picked `high` and
+          // then switched to a model dispatched over the anthropic wire protocol
+          // (glm-5.2, minimax-m3, qwen3.7-max, longcat-2.0 — none of them Claude)
+          // would still send `high` and get a 422 mid-turn.
+          model: selectedModel && effectiveEffort
+            ? { ...selectedModel, reasoning_effort: effectiveEffort }
+            : selectedModel,
           mode: executionMode,
           page_context: pageContext ?? undefined,
           context_usage: contextUsage ?? undefined,
@@ -570,7 +612,7 @@ export function useAgentChatController(
         void reloadGoalFor(threadId);
       }
     }
-  }, [activeId, refresh, selectedModel, executionMode, threadSource, reloadGoalFor]);
+  }, [activeId, refresh, selectedModel, executionMode, reasoningEffort, threadSource, reloadGoalFor]);
 
   const launchWorkflow = useCallback(async (slug: string, mode: 'auto' | 'yolo', args?: Record<string, string>) => {
     let threadId = activeId;
@@ -852,10 +894,12 @@ export function useAgentChatController(
     channels: modelConfig?.channels ?? [],
     selectedModel,
     executionMode,
+    reasoningEffort,
     confirmingActionIds,
     taskRunsById,
     setSelectedModel,
     setExecutionMode,
+    setReasoningEffort,
     setViewMode,
     selectThread: setActiveId,
     createThread,

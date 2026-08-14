@@ -8,6 +8,172 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Arena run #104 — Grok 4.6 vs DeepSeek V4 Pro scorecard board.** All four
+  golden workflows, 2 trials each (16 model-trials), objective-only, all 8 pairs
+  `scored`. Report at `docs/arena/2026-08-13-run104-otc-desk-agent-arena.{md,html,pdf}`
+  with ten generated ability cards in `docs/arena/cards/run104/`.
+
+  Result: **Grok 4.6 OVR 80, DeepSeek V4 Pro OVR 79** — a one-point tie for
+  opposite reasons. Grok 4.6 leads the objective axis 96.3 vs 90.9 and wins three
+  of four workflows, but posts **EFF 12** against DeepSeek's 48, including a
+  literal EFF 0 on two workflows and **243 tool calls against par 24** on the
+  flagship (per-trial 355 and 131). The Grok 4.5 inversion — best capability,
+  worst efficiency — is not fixed in 4.6; it is deeper.
+
+  Deliberately **not merged** into runs #20/#33/#94/#101: DeepSeek changed the
+  weights behind `deepseek/deepseek-v4-pro` on 2026-08-13, and `merge_runs` groups
+  by `(workflow_id, model_id)`, so merging would fold two different models into one
+  aggregate under a single id. `risk-limit-breach-day`'s manifest also moved 39 → 38
+  points after that workflow's last board.
+- **Explicit reasoning-effort choice, in the chat composer and on arena runs.**
+  An **Effort** picker sits left of the composer's Mode picker, and the `/arena`
+  New Run panel gained a **Reasoning effort** select; `scripts/launch_arena_run.py`
+  takes `--reasoning-effort`. Both default to **Default (not pinned)**, which sends
+  no `reasoning_effort` at all, so an untouched desk behaves exactly as before.
+
+  **Levels are per-model and MEASURED.** `scripts/smoke_reasoning_efforts.py`
+  live-probes every model on every level (214 calls, 2026-08-14) and
+  `refresh_model_reasoning.py --merge-probe` folds the result into the snapshot.
+  This exists because models.dev — the open registry OpenCode uses, and the original
+  source here — proved wrong for **every route that mattered**, mostly **too
+  narrow**: it claims `low/medium/high` for deepseek-v4-pro (really all 7),
+  *toggle-only with no levels* for qwen3.7-plus and mimo-v2.5-pro (really all 7),
+  *non-reasoning* for kimi-k2.7-code (really 6, and it refuses `none`), and
+  `none…max` for the GPT-5.6 family which actually **rejects `minimal`**. Gating on
+  it would have blocked working levels on **13 of 22** models.
+
+  So the gate is only as strong as its evidence: a **measured** ladder rejects an
+  off-ladder level; an **unmeasured or unknown** model is allowed through and the
+  provider decides. That is safe because the gateway rejects an unsupported level
+  itself with a precise message — the "silently accepted and ignored" risk that
+  justified local gating does not hold for the reject case. ZenMux's own API cannot
+  answer the question at all: it reports only `capabilities.reasoning: true|false`.
+
+  **Both wire protocols carry effort, through different fields.** OpenAI-compatible
+  models take top-level `reasoning_effort`; anthropic-routed models take
+  **`output_config.effort`**, a named level — not the older `thinking.budget_tokens`
+  budget. An earlier build refused every anthropic-routed model outright, which
+  denied effort to **7 of the 8** models routed that way, four of them not Claude at
+  all (`glm-5.2`, `minimax-m3`, `qwen3.7-max`, `longcat-2.0`). Probe that path with
+  `smoke_reasoning_efforts.py --protocol anthropic`.
+
+  Measured oddities worth knowing: `openai/chat-latest` accepts **only `medium`**;
+  grok-4.5/4.6 reject `none` and `max`; gemini-2.5-pro rejects `none`;
+  **claude-sonnet-4.6 rejects `xhigh`** while opus-4.8 and sonnet-5 accept it.
+  **`claude-haiku-4.5` is the only model on either protocol that accepts no level at
+  all** — it does not reason. Every one of the 29 arena contestants has at least one
+  usable level.
+
+  New: `config/model_reasoning.json` (snapshot, records the upstream sha256),
+  `scripts/refresh_model_reasoning.py` (`--check` fails when stale), and
+  `services/deep_agent/reasoning_capabilities.py`. **Vendored, never fetched at
+  runtime** — the same rule as the exact `quantark` pin and harvested arena
+  fixtures: third-party truth that governs behaviour arrives as a reviewable diff,
+  not a silent change. The ladder is per **route**, not per model (models.dev has
+  `deepseek-v4-pro` at `high,max` direct but `low,medium,high` via ZenMux), so
+  lookups key on `(channel, model_id)`. A model **unknown** to the snapshot is
+  permissive, never "unsupported" — models.dev lags releases (`x-ai/grok-4.6` has
+  no ZenMux entry) and stale data must not block a working model.
+
+  Both pickers filter to what the model accepts, so the UI cannot offer a level the
+  server would reject: the composer from the selected model's ladder, and the arena
+  New Run panel with **one picker per selected model** (hidden entirely for a model
+  with no usable level). Both ladders are derived through the same
+  `effort_rejection` seam `queue_arena_run` uses, so a picker can never disagree
+  with what a launch accepts. Both **send** paths also re-filter before sending —
+  the pickers' resets are display-only and the selection survives a model switch, so
+  picking `high` and then switching to `glm-5.2` used to still send `high` and 422. Arena effort is therefore stored **per model** —
+  `arena_run.reasoning_efforts`, a `{model_slug: effort}` map (migration **0057**,
+  replacing 0056's single column) — because a scalar cannot express a pinned mixed
+  board: the intersection across a real field is usually empty. `queue_arena_run`
+  validates each entry against its own model at launch, and `merge_runs` compares
+  effort per `(workflow, model)` group rather than per run, since a run may
+  legitimately pin different models differently.
+
+  Carried on the **model-selection dict**, where an unset effort is *omitted
+  entirely* rather than sent as `null`. That is load-bearing: `AgentService` reuses
+  its prebuilt orchestrator only when the resolved selection compares equal to
+  `default_model_selection`, so a fourth key present on every turn would silently
+  stop that reuse and rebuild the graph per request. Omitting it also makes a
+  pinned selection unequal to the default by construction, which correctly forces
+  the per-turn model build that applies the effort.
+
+  An explicit effort for an **anthropic-protocol** model is **refused** (422), not
+  dropped: `ChatAnthropic` has no `reasoning_effort` (it budgets thinking in
+  tokens), so forwarding one would report an applied setting that never took
+  effect. The string `"none"` is preserved as a real request ("skip reasoning") and
+  is distinct from unset.
+
+  Arena runs record the regime they ran at — `arena_run.reasoning_effort`
+  (migration **0056**, NULL = unpinned) plus `arena_match.config.reasoning_effort`
+  — so a board can prove which effort produced its EFF and CON. `merge_runs` now
+  **refuses to fold runs with different efforts** (400): it groups by
+  `(workflow_id, model_id)` only, so a mixed merge would average two operating
+  regimes into one row — the same defect class as folding a model whose weights
+  changed behind a stable id. `--resume` reuses the run's own stored effort rather
+  than re-reading the flag.
+- `OPEN_OTC_MODEL_REASONING_EFFORT` — process-wide fallback that sends
+  `reasoning_effort` on the OpenAI-compatible model path. **Unset (the default)
+  reproduces the original behaviour exactly**, so every prior board's semantics are
+  unchanged. Now the *lowest*-precedence source: an explicit per-turn/per-run
+  effort wins over it (explicit-arg → process-env → vendor default, the ladder the
+  gateway bridge already documents). Its remaining use is sweeping a whole process
+  for a controlled A/B without touching each caller.
+
+  It exists because nothing in this repo pinned the knob. Contestant models are
+  built with `model`/`api_key`/`base_url` alone — `model_factory` sets no
+  `reasoning_effort`, no `temperature` and no `max_tokens` — and
+  `ArenaModel.default_config` (`temperature: 0, max_tokens: 4096`) reads like a pin
+  but is **dead for contestants**: `arena_model_to_selection` returns only
+  `{channel, provider, model}`, and the dict's sole consumer,
+  `arena/channel.py::build_zenmux_chat`, is imported nowhere in the live path.
+  Every arena match from run #8 to #104 has used vendor-default sampling.
+
+  Measured with it (runs **#107**/**#108**, DeepSeek V4 Flash ×
+  `risk-limit-breach-day`, 2 trials per arm): `high` effort produced **~22% fewer**
+  tool calls than `low` (24.5 vs 31.5, non-overlapping ranges). Effort is a real
+  influence on EFF, penalising *low* effort — but far too small to explain run
+  #104's 4× EFF gap, and both of that board's contestants measured at essentially
+  their `high` default already.
+- **Grok 4.6 registered as an arena contestant** — `x-ai/grok-4.6` in both
+  `config/agent_channels.yaml` and the tracked `.example.yml`, plus slug
+  `grok-4-6` in `CANDIDATE_MODELS`. Plain `provider: openai`, no `protocol:
+  anthropic` override (verified by live smoke run #103, which scored 100.0 on
+  `risk-limit-breach-day` with 107 real tool spans — a wire-protocol mismatch
+  presents as *zero* tool calls and a prohibition-floor score, not an error).
+- `scripts/launch_arena_run.py` — launches an arena run synchronously with no
+  backend server, for detached long boards, and **resumes an interrupted one**
+  (`--resume RUN_ID`). Note `queue_arena_run` returns `(run_id_int, task_run)`;
+  the first element is an id, not an ORM object.
+
+  Resume exists because a sustained network outage is *worse* than a crash here:
+  `task._execute` catches per-trial exceptions and continues to the next pair, so
+  when every call fails in seconds the loop sweeps all remaining pairs into
+  `invalid` and marks the run `completed` — a quietly wrong board. The safe
+  response to a known outage is to stop the process and resume afterwards.
+  Resume re-runs every pair that is not `scored`, deleting that pair's stale
+  non-scored rows first, and records into the **same** run — a board is one run,
+  and resuming into a second run plus `merge_runs` would fold trials across two
+  different network conditions, which is exactly what merging must never do.
+- `scripts/generate_ability_cards.py` — generates FIFA-style Model Ability Card
+  images for a run via GPT-Image-2 (`openai/gpt-image-2` over ZenMux). Fully
+  generative: the image model draws the whole card including every number, and
+  correctness is enforced by a **read-back gate** — a vision model reads each PNG
+  and the card is rejected and re-rolled unless every digit matches the database
+  and every meter shows exactly `round(value / 10)` lit segments out of ten.
+  Hero cards use `leaderboard`'s `card_mean`, minis use each match's
+  derive-on-read `card`; no score is recomputed.
+
+  Stat meters are **ten countable segments, not continuous bars**. Measured over
+  ten demo renders: the model reproduces quoted digits reliably (42/42 correct)
+  but *interpolates* continuous lengths — an EFF of 36 drew at 42–60% of its
+  track and flipped rank against its neighbour between two samples of one prompt.
+  A countable instruction travels the same faithful path as the digits, and the
+  verifier can count rectangles instead of measuring pixels.
+
+  Trial counts on the card footer come from the breakdown's `n_trials`, **not**
+  `arena_run.trials`: a merged board's run row carries the source run's trials
+  (1) while every match in it is a folded multi-trial aggregate.
 - **Lifecycle events for every bookable product family.** Three new event types —
   `exercise` (with an `early` flag, so American early exercise is distinguishable
   from exercise at expiry), `expire` (terminal, books **no** cash: it is how the

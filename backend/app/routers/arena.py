@@ -32,6 +32,9 @@ class RunSummary(BaseModel):
     created_at: str | None
     workflow_ids: list[str]
     model_ids: list[str]
+    # {model_slug: effort}; a model absent is unpinned (vendor default).
+    # Surfaced on the list so a board's regime is visible without opening a match.
+    reasoning_efforts: dict[str, str] = Field(default_factory=dict)
 
 
 class MatchSummary(BaseModel):
@@ -55,6 +58,13 @@ class CreateRunRequest(BaseModel):
     model_ids: list[str]
     weights: dict | None = None
     trials: int = Field(default=2, ge=1, le=10)
+    # Per-model effort map {model_slug: effort}. Omitted/absent = do not pin, so
+    # that contestant runs at its own vendor default — what boards #8-#104
+    # measured. Per-model because the ladders differ (GLM-5.2 accepts only
+    # high/max, five contestants have no levels at all), so no single value could
+    # express a pinned mixed field. Validated in queue_arena_run so a bad level
+    # fails at launch rather than per-match.
+    reasoning_efforts: dict[str, str] | None = None
 
 
 class DeleteRunsRequest(BaseModel):
@@ -123,6 +133,7 @@ def build_arena_router(
                 model_ids=payload.model_ids,
                 weights=payload.weights,
                 trials=payload.trials,
+                reasoning_efforts=payload.reasoning_efforts,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -244,6 +255,7 @@ def build_arena_router(
                 created_at=r.get("created_at"),
                 workflow_ids=r.get("workflow_ids") or [],
                 model_ids=r.get("model_ids") or [],
+                reasoning_efforts=r.get("reasoning_efforts") or {},
             )
             for r in rows
         ]
@@ -265,6 +277,7 @@ def build_arena_router(
             created_at=run_dict.get("created_at"),
             workflow_ids=run_dict.get("workflow_ids") or [],
             model_ids=run_dict.get("model_ids") or [],
+            reasoning_efforts=run_dict.get("reasoning_efforts") or {},
         )
 
         match_summaries = [
@@ -356,12 +369,44 @@ def build_arena_router(
 
     @router.get("/models")
     def list_models() -> dict[str, Any]:
+        from app.services.arena.models import arena_model_to_selection
+        from app.services.deep_agent.channel_registry import get_registry
+        from app.services.deep_agent.model_factory import (
+            VALID_REASONING_EFFORTS, effort_rejection,
+        )
+
+        registry = get_registry()
+
+        def _efforts(model) -> list[str]:
+            """This contestant's effort ladder, mirroring what a LAUNCH will accept.
+
+            Derived through the same `effort_rejection` seam `queue_arena_run` uses,
+            rather than reading the ladder directly, so the panel can never offer a
+            level the launch refuses. That matters beyond the ladder: glm-5.2,
+            minimax-m3, qwen3.7-max and longcat-2.0 are routed with
+            `protocol: anthropic`, whose client cannot carry ANY effort — reading
+            only the measured ladder showed them a full menu that would 422.
+
+            Empty means no level is usable for this contestant. An unmeasured or
+            unknown model keeps the permissive outer bound, because the server does
+            not gate it either.
+            """
+            selection = arena_model_to_selection(model)
+            return [
+                level for level in VALID_REASONING_EFFORTS
+                if effort_rejection(
+                    registry, selection["channel"], selection["provider"],
+                    selection["model"], level,
+                ) is None
+            ]
+
         return {
             "models": [
                 {
                     "slug": m.slug,
                     "zenmux_name": m.zenmux_name,
                     "display_name": m.display_name,
+                    "reasoning_efforts": _efforts(m),
                 }
                 for m in CANDIDATE_MODELS
             ]

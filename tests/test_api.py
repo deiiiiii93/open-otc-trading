@@ -2562,6 +2562,31 @@ def test_get_agent_models_returns_catalog(tmp_path: Path):
         assert {"name", "label", "type", "healthy", "models"} <= set(first.keys())
 
 
+def test_get_agent_models_serves_the_per_model_effort_ladder(tmp_path: Path):
+    """The composer filters its Effort picker on this field, so it has to survive
+    serialization — not merely be produced by `agent_model_config`.
+
+    Regression: the builder emitted `reasoning_efforts` and its unit test passed,
+    but the endpoint declares `response_model=AgentModelConfigOut` and pydantic
+    SILENTLY DROPS any key the response model does not name. The API served no
+    ladders at all, so the picker offered every level for every model and could
+    hand the server one the model rejects. Assert at the HTTP layer, where the
+    response model actually applies.
+    """
+    client = make_client(tmp_path)
+    data = client.get("/api/agent/models").json()
+    models = [m for ch in data["channels"] for m in ch["models"]]
+    assert models, "no models configured to assert against"
+    for m in models:
+        assert "reasoning_efforts" in m, f"{m['model']} lost its effort ladder"
+        assert isinstance(m["reasoning_efforts"], list)
+    # And at least one model must be genuinely constrained, or the field is
+    # present but carrying no information.
+    assert any(
+        0 < len(m["reasoning_efforts"]) < 7 for m in models
+    ), "no model reports a narrowed ladder — is the models.dev snapshot loading?"
+
+
 def test_post_reload_channels_returns_summary(tmp_path):
     client = make_client(tmp_path)
     response = client.post("/api/agent/channels/reload")

@@ -2600,6 +2600,17 @@ class ArenaRun(Base):
     model_ids: Mapped[list] = mapped_column(JSON, nullable=False)
     weights: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     trials: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    # Reasoning effort PER MODEL: {model_slug: effort}. A model absent from the
+    # map (and NULL/{} overall) means "not pinned — vendor default", the honest
+    # reading of every board from run #8 to #104, where nothing in the stack sent
+    # a reasoning_effort at all. Recorded so a board can prove which regime it
+    # measured, since effort moves tool-call count and therefore the EFF stat.
+    #
+    # Per-model rather than one value per run because the ladders genuinely
+    # differ: across the arena field GLM-5.2 takes only high/max, most models take
+    # low/medium/high, and five are toggle-only. There is NO single level valid
+    # for the whole field, so a scalar could not express a pinned mixed board.
+    reasoning_efforts: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     matches: Mapped[list["ArenaMatch"]] = relationship(

@@ -294,10 +294,31 @@ export type AgentContextUsage = {
   computed_at: string;
 };
 
+/**
+ * Explicit reasoning effort for a turn, weakest → strongest.
+ *
+ * The UNION of what ZenMux names: its Chat Completions `reasoning_effort`
+ * documents minimal/low/medium/high, its Responses `effort` adds `none` and
+ * `xhigh`, and individual models expose extras (`max` on some DeepSeek tiers).
+ * **Per-model support is not published**, so not every level works on every
+ * model — the server-side list is a typo guard, not a per-model contract.
+ *
+ * `'none'` is a real request (skip reasoning), distinct from `'default'`.
+ * `'default'` is a UI-only sentinel meaning "do not pin": it sends no effort at
+ * all, so the provider's own default applies — what every turn did before this
+ * control existed, and the honest label for it, since there is no single
+ * "medium" the vendors agree on.
+ */
+export type AgentReasoningEffort =
+  | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export type AgentReasoningEffortChoice = AgentReasoningEffort | 'default';
+
 export type AgentModelSelection = {
   channel: string;
   provider: string;
   model: string;
+  /** Omitted/null = vendor default. Rejected server-side for anthropic-protocol models. */
+  reasoning_effort?: AgentReasoningEffort | null;
 };
 
 export type AgentModelOption = AgentModelSelection & {
@@ -305,6 +326,18 @@ export type AgentModelOption = AgentModelSelection & {
   description?: string | null;
   is_default?: boolean;
   tags?: string[];
+  /**
+   * Effort levels THIS model accepts, from the vendored models.dev snapshot.
+   * There is no universal ladder — most models take low/medium/high, the GPT-5.6
+   * family takes none…max, GLM-5.2 takes only high/max, and Qwen3.7 / MiniMax M3
+   * take none at all (reasoning is a bare on/off toggle).
+   *
+   * `[]` means "no level is applicable" (toggle-only, non-reasoning, or dispatched
+   * over the anthropic wire protocol, whose client cannot carry an effort). A
+   * model unknown to the snapshot gets the permissive outer bound, matching what
+   * the server accepts, so a new release is never blocked by stale data.
+   */
+  reasoning_efforts?: string[];
 };
 
 export type AgentChannel = {

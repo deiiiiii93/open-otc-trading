@@ -287,7 +287,7 @@ def test_post_runs_empty_model_ids_returns_422(session, settings):
 
 def test_post_runs_unknown_model_returns_422(session, settings):
     # Patch queue_arena_run to raise ValueError for unknown model
-    def fake_queue(sess, *, workflow_ids, model_ids, weights=None, trials=1):
+    def fake_queue(sess, *, workflow_ids, model_ids, weights=None, trials=1, reasoning_efforts=None):
         raise ValueError(f"Unknown model id(s): {model_ids}")
 
     client = _make_arena_app(session, settings, queue_fn=fake_queue)
@@ -299,7 +299,7 @@ def test_post_runs_unknown_model_returns_422(session, settings):
 
 
 def test_post_runs_unknown_workflow_returns_422(session, settings):
-    def fake_queue(sess, *, workflow_ids, model_ids, weights=None, trials=1):
+    def fake_queue(sess, *, workflow_ids, model_ids, weights=None, trials=1, reasoning_efforts=None):
         raise ValueError(f"Unknown workflow_id '{workflow_ids[0]}'")
 
     client = _make_arena_app(session, settings, queue_fn=fake_queue)
@@ -325,7 +325,7 @@ def test_post_runs_valid_returns_202_and_task_run(session, settings):
     # Use the real queue_arena_run but patch the workflow registry
     from app.services.arena.task import queue_arena_run
 
-    def fake_queue(sess, *, workflow_ids, model_ids, weights=None, trials=1):
+    def fake_queue(sess, *, workflow_ids, model_ids, weights=None, trials=1, reasoning_efforts=None):
         # Create run directly in store (skip registry validation)
         run_id = arena_store.create_run(
             sess,
@@ -1503,3 +1503,275 @@ def test_create_run_trials_zero_422(session, settings):
         },
     )
     assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# reasoning_effort — pinning a board's effort regime
+# ---------------------------------------------------------------------------
+
+
+def _seed_scored(session, run_id, model_id, score, effort=None):
+    arena_store.record_match(
+        session, run_id, "wf-a", model_id,
+        objective_score=score, judged_score=None, total_score=score,
+        judge_missing=True, config={"reasoning_effort": effort},
+        transcript_path=None, status="scored",
+    )
+
+
+def test_create_run_rejects_an_unknown_effort_422(session, settings):
+    """A bad level must fail at LAUNCH, not per-match after the board has already
+    burned budget on the first pair."""
+    client = _make_arena_app(session, settings)
+    resp = client.post(
+        "/api/arena/runs",
+        json={
+            "workflow_ids": ["risk-limit-breach-day"],
+            "model_ids": ["gpt-5-5"],
+            "reasoning_efforts": {"gpt-5-5": "ultra"},
+        },
+    )
+    assert resp.status_code == 422
+    assert "reasoning_effort" in resp.json()["detail"]
+
+
+def test_create_run_rejects_an_effort_the_model_does_not_accept(session, settings):
+    """Per-model is the whole point, keyed to MEASURED facts (probe 2026-08-14):
+    grok-4.6 accepts minimal..xhigh but REJECTS `max`, while deepseek-v4-pro accepts
+    all seven. So the same level is legal for one and not the other, and the message
+    must name only the offender."""
+    client = _make_arena_app(session, settings)
+    resp = client.post(
+        "/api/arena/runs",
+        json={
+            "workflow_ids": ["risk-limit-breach-day"],
+            "model_ids": ["deepseek-v4-pro", "grok-4-6"],
+            "reasoning_efforts": {"deepseek-v4-pro": "max", "grok-4-6": "max"},
+        },
+    )
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert "grok-4-6" in detail
+    assert "deepseek-v4-pro" not in detail
+
+
+def test_create_run_accepts_an_effort_for_an_anthropic_routed_model(session, settings):
+    """glm-5.2 is routed `protocol: anthropic`, which does NOT mean it cannot take
+    an effort — that protocol carries one as `output_config.effort`. Measured, it
+    accepts all seven levels. An earlier build refused every anthropic-routed model
+    and so denied effort to 7 of the 8 models routed that way.
+    """
+    client = _make_arena_app(session, settings)
+    resp = client.post(
+        "/api/arena/runs",
+        json={
+            "workflow_ids": ["risk-limit-breach-day"],
+            "model_ids": ["glm-5-2"],
+            "reasoning_efforts": {"glm-5-2": "max"},
+        },
+    )
+    assert resp.status_code == 202
+    run = arena_store.get_run(session, resp.json()["run_id"])
+    assert run["reasoning_efforts"] == {"glm-5-2": "max"}
+
+
+def test_create_run_rejects_an_effort_for_a_non_reasoning_anthropic_model(session, settings):
+    """claude-haiku-4.5 is the one genuine "no effort" case on either protocol: it
+    rejects every level, because it does not reason."""
+    client = _make_arena_app(session, settings)
+    resp = client.post(
+        "/api/arena/runs",
+        json={
+            "workflow_ids": ["risk-limit-breach-day"],
+            "model_ids": ["claude-sonnet-4-6"],
+            "reasoning_efforts": {"claude-sonnet-4-6": "xhigh"},
+        },
+    )
+    # sonnet-4.6 was measured to reject xhigh specifically ("This model does not
+    # support effort level 'xhigh'. Supported levels: high, low, max, medium.").
+    assert resp.status_code == 422
+    assert "does not accept reasoning_effort" in resp.json()["detail"]
+
+
+def test_create_run_accepts_DIFFERENT_efforts_per_model(session, settings):
+    """The reason the map replaced a single value: ladders differ, so a board must
+    be able to pin `max` for deepseek-v4-pro (which accepts it) and `xhigh` for
+    grok-4.6 (which does not accept max) in the same run."""
+    client = _make_arena_app(session, settings)
+    resp = client.post(
+        "/api/arena/runs",
+        json={
+            "workflow_ids": ["risk-limit-breach-day"],
+            "model_ids": ["deepseek-v4-pro", "grok-4-6"],
+            "reasoning_efforts": {"deepseek-v4-pro": "max", "grok-4-6": "xhigh"},
+        },
+    )
+    assert resp.status_code == 202
+    run = arena_store.get_run(session, resp.json()["run_id"])
+    assert run["reasoning_efforts"] == {"deepseek-v4-pro": "max", "grok-4-6": "xhigh"}
+
+
+def test_create_run_rejects_an_effort_outside_a_narrow_measured_ladder(session, settings):
+    """`openai/chat-latest` was measured to accept ONLY `medium` — every other level
+    returns 400. models.dev knows nothing about it, so this is a case where measuring
+    is the only way to know."""
+    client = _make_arena_app(session, settings)
+    resp = client.post(
+        "/api/arena/runs",
+        json={
+            "workflow_ids": ["risk-limit-breach-day"],
+            "model_ids": ["gpt-5-5-instant"],
+            "reasoning_efforts": {"gpt-5-5-instant": "high"},
+        },
+    )
+    assert resp.status_code == 422
+    assert "measured levels are ['medium']" in resp.json()["detail"]
+
+
+def test_create_run_rejects_an_effort_for_a_model_not_in_the_run(session, settings):
+    """A typo'd key would otherwise be silently ignored — the run would launch
+    unpinned while the operator believed it was pinned."""
+    client = _make_arena_app(session, settings)
+    resp = client.post(
+        "/api/arena/runs",
+        json={
+            "workflow_ids": ["risk-limit-breach-day"],
+            "model_ids": ["gpt-5-5"],
+            "reasoning_efforts": {"grok-4-6": "high"},
+        },
+    )
+    assert resp.status_code == 422
+    assert "not one of this run" in resp.json()["detail"]
+
+
+def test_partial_pinning_leaves_other_models_at_their_default(session, settings):
+    client = _make_arena_app(session, settings)
+    resp = client.post(
+        "/api/arena/runs",
+        json={
+            "workflow_ids": ["risk-limit-breach-day"],
+            "model_ids": ["deepseek-v4-pro", "grok-4-6"],
+            "reasoning_efforts": {"deepseek-v4-pro": "high"},
+        },
+    )
+    assert resp.status_code == 202
+    run = arena_store.get_run(session, resp.json()["run_id"])
+    assert run["reasoning_efforts"] == {"deepseek-v4-pro": "high"}
+
+
+def test_merge_refuses_matches_of_one_pair_driven_at_different_efforts(session, settings):
+    """Merge groups by (workflow_id, model_id), so THAT is the granularity that
+    must not mix — a run may legitimately pin different efforts for different
+    models, which a run-level check would wrongly reject."""
+    run_a = arena_store.create_run(
+        session, workflow_ids=["wf-a"], model_ids=["model-x"],
+        reasoning_efforts={"model-x": "low"},
+    )
+    _seed_scored(session, run_a, "model-x", 70.0, effort="low")
+    run_b = arena_store.create_run(
+        session, workflow_ids=["wf-a"], model_ids=["model-x"],
+        reasoning_efforts={"model-x": "high"},
+    )
+    _seed_scored(session, run_b, "model-x", 90.0, effort="high")
+    session.commit()
+
+    client = _make_arena_app(session, settings)
+    resp = client.post("/api/arena/runs/merge", json={"source_run_ids": [run_a, run_b]})
+    assert resp.status_code == 400
+    assert "different reasoning efforts" in resp.json()["detail"]
+
+
+def test_merge_allows_a_run_that_pinned_DIFFERENT_models_differently(session, settings):
+    """Two models pinned differently within the same runs is legitimate; each
+    (workflow, model) group is internally consistent, so the merge must succeed."""
+    ids = []
+    for score in (70.0, 90.0):
+        rid = arena_store.create_run(
+            session, workflow_ids=["wf-a"], model_ids=["model-x", "model-y"],
+            reasoning_efforts={"model-x": "low", "model-y": "high"},
+        )
+        _seed_scored(session, rid, "model-x", score, effort="low")
+        _seed_scored(session, rid, "model-y", score, effort="high")
+        ids.append(rid)
+    session.commit()
+
+    client = _make_arena_app(session, settings)
+    resp = client.post("/api/arena/runs/merge", json={"source_run_ids": ids})
+    assert resp.status_code == 200
+    merged = arena_store.get_run(session, resp.json()["run_id"])
+    assert merged["reasoning_efforts"] == {"model-x": "low", "model-y": "high"}
+
+
+def test_unpinned_runs_still_merge(session, settings):
+    """Every historical run is unpinned; the guard must not block them."""
+    ids = []
+    for score in (70.0, 90.0):
+        rid = arena_store.create_run(session, workflow_ids=["wf-a"], model_ids=["model-x"])
+        _seed_scored(session, rid, "model-x", score)
+        ids.append(rid)
+    session.commit()
+
+    client = _make_arena_app(session, settings)
+    resp = client.post("/api/arena/runs/merge", json={"source_run_ids": ids})
+    assert resp.status_code == 200
+    assert arena_store.get_run(session, resp.json()["run_id"])["reasoning_efforts"] == {}
+
+
+def test_pinned_effort_reaches_run_match_and_is_recorded(session, settings):
+    """End-to-end: the effort a run declares for a model must reach the runner AND
+    be recorded on that model's match, or a board could not prove its regime."""
+    database.configure_database(settings)
+    database.init_db()
+    seen: list[str | None] = []
+
+    with database.SessionLocal() as s:
+        run_id = arena_store.create_run(
+            s, workflow_ids=["wf-a"], model_ids=["gpt-5-5"],
+            reasoning_efforts={"gpt-5-5": "high"},
+        )
+        task = TaskRun(kind=TaskKind.ARENA_RUN.value, status="queued")
+        s.add(task); s.flush(); task_id = task.id; s.commit()
+
+    def fake_run_match(loaded, model, *, artifact_root, run_id=None, reasoning_effort=None):
+        seen.append(reasoning_effort)
+        return _fake_transcript(workflow_id="wf-a", model_id=model.slug)
+
+    from app.services.arena.task import execute_arena_run_task
+    execute_arena_run_task(
+        task_id, run_id, database.SessionLocal,
+        settings=settings, run_match_fn=fake_run_match, get_bundle_fn=_fake_get_bundle,
+    )
+
+    assert seen == ["high"]
+    with database.SessionLocal() as s:
+        run_dict = arena_store.get_run(s, run_id)
+        assert run_dict["reasoning_efforts"] == {"gpt-5-5": "high"}
+        assert run_dict["matches"][0]["config"]["reasoning_effort"] == "high"
+
+
+def test_unpinned_run_does_not_pass_the_kwarg_at_all(session, settings):
+    """run_match_fn is an injected seam (tests and scripts/launch_arena_run.py bring
+    their own). An unpinned run must issue the exact call it always did, so a driver
+    written before this feature keeps working."""
+    database.configure_database(settings)
+    database.init_db()
+
+    with database.SessionLocal() as s:
+        run_id = arena_store.create_run(s, workflow_ids=["wf-a"], model_ids=["gpt-5-5"])
+        task = TaskRun(kind=TaskKind.ARENA_RUN.value, status="queued")
+        s.add(task); s.flush(); task_id = task.id; s.commit()
+
+    # Deliberately the OLD signature — no reasoning_effort parameter.
+    def legacy_run_match(loaded, model, *, artifact_root, run_id=None):
+        return _fake_transcript(workflow_id="wf-a", model_id=model.slug)
+
+    from app.services.arena.task import execute_arena_run_task
+    execute_arena_run_task(
+        task_id, run_id, database.SessionLocal,
+        settings=settings, run_match_fn=legacy_run_match, get_bundle_fn=_fake_get_bundle,
+    )
+
+    with database.SessionLocal() as s:
+        run_dict = arena_store.get_run(s, run_id)
+        assert run_dict["matches"][0]["status"] == "scored"
+        assert run_dict["matches"][0]["config"]["reasoning_effort"] is None

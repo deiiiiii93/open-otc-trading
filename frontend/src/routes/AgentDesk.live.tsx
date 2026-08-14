@@ -108,10 +108,12 @@ function AgentDeskLiveView({
       channels={controller.channels}
       selectedModel={controller.selectedModel}
       executionMode={controller.executionMode}
+      reasoningEffort={controller.reasoningEffort}
       confirmingActionIds={controller.confirmingActionIds}
       taskRunsById={controller.taskRunsById}
       onChangeModel={controller.setSelectedModel}
       onChangeMode={controller.setExecutionMode}
+      onChangeReasoningEffort={controller.setReasoningEffort}
       onStopStreaming={controller.stopStreaming}
       onRefreshModels={controller.refreshModels}
       onChangeViewMode={controller.setViewMode}

@@ -28,6 +28,7 @@ def queue_arena_run(
     model_ids: list[str],
     weights: dict | None = None,
     trials: int = 1,
+    reasoning_efforts: dict[str, str] | None = None,
 ) -> tuple[Any, TaskRun]:
     """Validate inputs, create ArenaRun + TaskRun, flush (no commit).
 
@@ -38,20 +39,34 @@ def queue_arena_run(
         weights:      Optional dict with keys "obj" and "judge".
         trials:       Number of trials to run per (workflow, model) pair,
                       folded into one aggregate match at execution time.
+        reasoning_efforts: Per-model effort map ``{model_slug: effort}``. A model
+                      absent from it runs at the vendor default (what every board
+                      through #104 used). Per-model because the ladders differ —
+                      no single level is valid across the arena field.
 
     Returns:
         (run_id_int, task_run) — run_id_int is the ArenaRun.id.
 
     Raises:
         ValueError: if any workflow_id is unknown, any model_id is unknown,
-                    or either list is empty.
+                    either list is empty, or an effort is not a level its own
+                    model accepts.
     """
     from app.golden_workflows.registry import get_workflow_bundle
+    from app.services.deep_agent.model_factory import normalize_reasoning_effort
 
     if not workflow_ids:
         raise ValueError("workflow_ids must not be empty")
     if not model_ids:
         raise ValueError("model_ids must not be empty")
+
+    # Normalize up-front: a bad effort must fail at launch, not per-match after
+    # the board has already burned budget on the first pair.
+    efforts = {
+        str(k): normalize_reasoning_effort(v)
+        for k, v in (reasoning_efforts or {}).items()
+    }
+    efforts = {k: v for k, v in efforts.items() if v is not None}
 
     # Validate all workflow IDs (raises FileNotFoundError or WorkflowError if unknown)
     for wid in workflow_ids:
@@ -63,12 +78,51 @@ def queue_arena_run(
     # Validate + canonicalize model IDs (raises ValueError if unknown)
     canonical_model_ids = validate_model_ids(model_ids)
 
+    # Each pinned effort must be legal for ITS OWN model, checked here rather than
+    # per-match: `resolve_agent_model_selection` would otherwise reject the
+    # offending model after the run has started and other pairs have already cost
+    # real money. Canonicalize the map's keys to model slugs at the same time, so
+    # a caller may key it by slug or zenmux_name exactly like `model_ids`.
+    canonical_efforts: dict[str, str] = {}
+    if efforts:
+        from app.services.arena.models import arena_model_to_selection, get_model
+        from app.services.deep_agent.channel_registry import get_registry
+        from app.services.deep_agent.model_factory import effort_rejection
+
+        registry = get_registry()
+        known = set(canonical_model_ids)
+        offenders = []
+        for raw_id, effort in efforts.items():
+            slug = validate_model_ids([raw_id])[0]
+            if slug not in known:
+                raise ValueError(
+                    f"reasoning_efforts names {raw_id!r}, which is not one of this "
+                    f"run's models {sorted(known)}"
+                )
+            selection = arena_model_to_selection(get_model(slug))
+            # The SHARED seam, so launch validation and the per-match check cannot
+            # disagree — it also covers wire-protocol models (glm-5.2, minimax-m3,
+            # qwen3.7-max, longcat-2.0) whose client cannot carry an effort at all.
+            reason = effort_rejection(
+                registry, selection["channel"], selection["provider"],
+                selection["model"], effort,
+            )
+            if reason is not None:
+                offenders.append(f"{slug}: {reason}")
+            canonical_efforts[slug] = effort
+        if offenders:
+            raise ValueError(
+                "reasoning_effort is not accepted by the selected model — "
+                + "; ".join(offenders)
+            )
+
     run_id = store.create_run(
         session,
         workflow_ids=workflow_ids,
         model_ids=canonical_model_ids,
         weights=weights,
         trials=trials,
+        reasoning_efforts=canonical_efforts or None,
     )
 
     task = TaskRun(
@@ -267,6 +321,7 @@ def _run_and_score_once(
     judge_fn: Callable | None,
     post: Callable | None,
     trial: int | None = None,
+    reasoning_effort: str | None = None,
 ) -> tuple[str, dict | None, str | None, str | None]:
     """Run and score ONE trial for a (workflow, model) pair.
 
@@ -280,7 +335,14 @@ def _run_and_score_once(
     from app.services.arena import scoring
     from app.services.arena.judge import judge_panel as _judge_panel
 
-    transcript = run_match_fn(loaded, model, artifact_root=artifact_root, run_id=run_id)
+    # Only forward the effort when one is pinned. An unpinned run must issue the
+    # exact call it always did — `run_match_fn` is an injected seam (tests and
+    # scripts/launch_arena_run.py supply their own), so an unconditional new kwarg
+    # would break every existing driver for no behavioural gain.
+    extra = {"reasoning_effort": reasoning_effort} if reasoning_effort else {}
+    transcript = run_match_fn(
+        loaded, model, artifact_root=artifact_root, run_id=run_id, **extra
+    )
 
     # Infra gate: a route/transport failure is not model ability — record it
     # as 'invalid' (excluded from leaderboard means), skip judge+scoring. Two
@@ -375,6 +437,7 @@ def _record_pair(
     last_infra: str | None,
     failed_exc: str | None,
     last_infra_path: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> None:
     """Persist exactly one match row for a (workflow, model) pair after its trials.
 
@@ -387,7 +450,10 @@ def _record_pair(
     """
     from app.services.arena import scoring
 
-    cfg = {"weights": weights, "trials": trials_n}
+    # Per-match provenance: which effort regime produced this row. Recorded on
+    # every status (scored/failed/invalid), because a board that cannot state the
+    # effort its numbers came from cannot defend its EFF or CON columns.
+    cfg = {"weights": weights, "trials": trials_n, "reasoning_effort": reasoning_effort}
     if clean:
         agg = scoring.fold_trial_breakdowns(clean)
 
@@ -504,6 +570,7 @@ def _execute(
     model_ids: list[str] = run_dict["model_ids"]
     weights: dict | None = run_dict.get("weights")
     trials_n = int(run_dict.get("trials") or 1)
+    reasoning_efforts: dict = run_dict.get("reasoning_efforts") or {}
 
     total_units = len(workflow_ids) * len(model_ids) * trials_n
     mark_task_running(session, task_id)
@@ -518,6 +585,8 @@ def _execute(
         for model_id in model_ids:
             loaded = _get_bundle(workflow_id)
             model = get_model(model_id)
+            # This model's own pinned effort; absent = vendor default.
+            model_effort = reasoning_efforts.get(model_id)
 
             clean: list[dict] = []
             last_infra: str | None = None
@@ -540,6 +609,7 @@ def _execute(
                         judge_fn=judge_fn,
                         post=post,
                         trial=trial_index,
+                        reasoning_effort=model_effort,
                     )
                     if status == "scored":
                         clean.append(breakdown)
@@ -556,7 +626,8 @@ def _execute(
 
             _record_pair(session, run_id, workflow_id, model_id, weights, trials_n,
                         clean, last_path, last_infra, failed_exc,
-                        last_infra_path=last_infra_path)
+                        last_infra_path=last_infra_path,
+                        reasoning_effort=model_effort)
             session.commit()
 
     # All pairs processed — always mark completed (individual match failures are ok)

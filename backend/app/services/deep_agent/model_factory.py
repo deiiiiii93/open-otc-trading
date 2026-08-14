@@ -7,6 +7,8 @@ render the "agent disabled" stub without raising.
 """
 from __future__ import annotations
 
+import logging
+import os
 from collections.abc import Mapping
 from typing import Any
 
@@ -15,7 +17,10 @@ from langchain_core.language_models import LanguageModelInput
 from langchain_core.messages import AIMessage, convert_to_messages
 from pydantic import SecretStr
 
+from . import reasoning_capabilities
 from .channel_registry import ChannelRegistry
+
+logger = logging.getLogger(__name__)
 
 try:
     from langchain_deepseek import ChatDeepSeek as _ChatDeepSeek
@@ -105,12 +110,97 @@ def default_agent_model_selection(registry: ChannelRegistry) -> dict[str, str]:
     return registry.default_selection()
 
 
+# Every effort token any routable model is known to accept, ordered weakest →
+# strongest. This is the OUTER BOUND used only when a model's own ladder is
+# unknown; the authoritative per-model answer comes from
+# `reasoning_capabilities` (a vendored models.dev snapshot), because **there is
+# no universal ladder** — most models take low/medium/high, the GPT-5.6 family
+# takes none…max, GLM-5.2 takes only high/max, and MiniMax/MiMo/Qwen3.7 have no
+# ladder at all (reasoning is a bare on/off toggle).
+#
+# ZenMux's own API cannot answer this: `GET /api/v1/models` reports only
+# `capabilities.reasoning: true|false`, with no effort enumeration.
+#
+# Validation exists at all because an unrecognised value is forwarded to the
+# provider and typically IGNORED, so a misspelling reads as "effort had no
+# effect" rather than "effort was never applied". A loud rejection lets the
+# caller retry — the same reason PositionLifecycleReferenceInput sets
+# extra="forbid". Deliberately NOT gated on the desk registry's `reasoning` tag:
+# that tag is hand-maintained and only 13 of 32 models carry it (openai/gpt-5.5,
+# a reasoning model, does not), so gating on it would falsely block real models.
+VALID_REASONING_EFFORTS = (
+    "none", "minimal", "low", "medium", "high", "xhigh", "max",
+)
+
+
+def normalize_reasoning_effort(value: object) -> str | None:
+    """Canonicalize a requested reasoning effort, or None when unset.
+
+    Empty/None means "unset" — the caller sends no `reasoning_effort` at all and
+    the vendor default applies, which is what every turn did before this existed.
+
+    The STRING ``"none"`` is a different thing and is preserved: it explicitly
+    asks the model to skip reasoning, which is a request that gets sent, not an
+    absence of one. Collapsing it to unset would silently turn "no thinking"
+    into "vendor default thinking".
+    """
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    if text not in VALID_REASONING_EFFORTS:
+        raise ValueError(
+            f"unsupported reasoning_effort {text!r}; "
+            f"expected one of {list(VALID_REASONING_EFFORTS)}"
+        )
+    return text
+
+
+def effort_rejection(
+    registry: ChannelRegistry, channel: str, provider: str, model: str, effort: str
+) -> str | None:
+    """Why `effort` cannot be honoured on this route, or None if it can.
+
+    The SINGLE seam for that question, so every caller agrees — used by
+    `resolve_agent_model_selection`, `queue_arena_run` and both UI ladder builders.
+
+    **Protocol is not a blocker; it is a different mechanism.** An earlier version
+    refused every anthropic-routed model on the belief that the protocol "budgets
+    thinking in tokens rather than an effort level". Measured, that is wrong: the
+    Anthropic Messages API takes **`output_config.effort`** — a named level
+    (low/medium/high/xhigh/max) — and langchain's ChatAnthropic exposes it. That
+    blanket refusal wrongly denied effort to 7 of 8 anthropic-routed models,
+    including the four that are not Claude at all (`z-ai/glm-5.2`,
+    `minimax/minimax-m3`, `qwen/qwen3.7-max`, `meituan/longcat-2.0`).
+
+    So the only question left is whether the MODEL accepts the level, which the
+    measured ladder answers for both protocols. `claude-haiku-4.5` is the one real
+    "no effort" case — it rejects every level, because it does not reason.
+    """
+    try:
+        registry.find_model(channel, provider, model)
+    except KeyError:
+        return None  # unknown selection; the caller's own validation reports it
+    return reasoning_capabilities.rejection_reason(channel, model, effort)
+
+
 def resolve_agent_model_selection(
     registry: ChannelRegistry,
     selection: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
     """Validate `selection` against `registry`. Back-fill `channel="zenmux"` for
-    legacy `{provider, model}` rows. Raise ValueError on unknown selections."""
+    legacy `{provider, model}` rows. Raise ValueError on unknown selections.
+
+    An optional `reasoning_effort` key rides along with the triple. It is
+    **omitted entirely when unset**, never emitted as an explicit ``None``: the
+    resolved dict is compared by equality against
+    ``AgentService.default_model_selection`` to decide whether the prebuilt
+    orchestrator can be reused, so a fourth key present on every turn would stop
+    that reuse for every default turn. Omitted-when-unset also means an
+    effort-pinned selection is *by construction* unequal to the default, which
+    correctly forces a per-turn model build that can apply the effort.
+    """
     if selection is None:
         return registry.default_selection()
 
@@ -118,12 +208,76 @@ def resolve_agent_model_selection(
     provider = str(selection.get("provider", ""))
     model = str(selection.get("model", ""))
     try:
-        registry.find_model(channel, provider, model)
+        _, model_desc = registry.find_model(channel, provider, model)
     except KeyError as exc:
         raise ValueError(
             f"unsupported agent model selection {channel}:{provider}:{model}"
         ) from exc
-    return {"channel": channel, "provider": provider, "model": model}
+    resolved = {"channel": channel, "provider": provider, "model": model}
+
+    effort = normalize_reasoning_effort(selection.get("reasoning_effort"))
+    if effort is not None:
+        # Refuse rather than drop: a forwarded-and-ignored effort reports itself as
+        # applied, and a silently-failing instrument is worse than none.
+        reason = effort_rejection(registry, channel, provider, model, effort)
+        if reason is not None:
+            raise ValueError(f"unsupported reasoning_effort: {reason}")
+        resolved["reasoning_effort"] = effort
+    return resolved
+
+
+def _reasoning_effort_override() -> str | None:
+    """Process-wide fallback `reasoning_effort`, from the environment.
+
+    UNSET (the default) reproduces the original behaviour exactly — no
+    `reasoning_effort` is sent and the vendor's own default applies, which is what
+    every arena board from run #8 onward used.
+
+    This is the LOWEST-precedence source: an explicit per-turn / per-run effort on
+    the model selection wins over it, mirroring the gateway bridge's
+    explicit-arg → settings → process-env → default ladder. Its remaining use is
+    sweeping a whole process (a controlled A/B) without touching each caller.
+    """
+    value = (os.getenv("OPEN_OTC_MODEL_REASONING_EFFORT") or "").strip().lower()
+    if not value:
+        return None
+    # Validate the spelling here too. Unvalidated, a typo was forwarded verbatim to
+    # the provider, which ignores it — so a mistyped sweep looked like "effort had
+    # no effect on this model" and would have been read as a finding.
+    return normalize_reasoning_effort(value)
+
+
+def _effort_for(
+    selection: Mapping[str, str] | None,
+    channel_name: str,
+    model_id: str,
+) -> str | None:
+    """Resolve the effort to send: explicit selection first, then the env sweep.
+
+    An EXPLICIT effort is already validated against this model by
+    `resolve_agent_model_selection`, which refuses rather than drops. The env sweep
+    has no such boundary — it is process-wide and blunt — so it is filtered here
+    against the model's own ladder and **skipped with a warning** for a model that
+    has none. Sending it anyway was the original bug: a toggle-only model
+    (Qwen3.7, MiMo) and a non-reasoning one (kimi-k2.7-code) both received
+    `reasoning_effort=high`, which the provider ignores, so an A/B sweep would have
+    silently included models that never varied.
+    """
+    explicit = normalize_reasoning_effort((selection or {}).get("reasoning_effort"))
+    if explicit is not None:
+        return explicit
+
+    swept = _reasoning_effort_override()
+    if swept is None:
+        return None
+    reason = reasoning_capabilities.rejection_reason(channel_name, model_id, swept)
+    if reason is not None:
+        logger.warning(
+            "OPEN_OTC_MODEL_REASONING_EFFORT=%s not applied to %s — %s",
+            swept, model_id, reason,
+        )
+        return None
+    return swept
 
 
 def build_agent_model(
@@ -143,6 +297,13 @@ def build_agent_model(
     # (e.g. minimax) declares protocol="anthropic" and must be dispatched through
     # the Anthropic endpoint, or its tool calls leak into text as unparsed markup.
     if channel.type == "zenmux" and model_desc.wire_protocol == "anthropic":
+        # Effort on this protocol is `output_config.effort` — a NAMED level, not the
+        # OpenAI `reasoning_effort` field and not the older `thinking.budget_tokens`
+        # budget. Sent through `output_config` rather than ChatAnthropic's `effort=`
+        # shorthand because that shorthand is typed to Claude's own ladder
+        # (low..max), while the gateway accepts `none`/`minimal` for the non-Claude
+        # models routed here (glm-5.2, minimax-m3, longcat-2.0) — measured.
+        anth_effort = _effort_for(selection, channel.name, model_desc.id)
         from langchain_anthropic import ChatAnthropic
         assert channel.anthropic_base_url is not None  # validated at load
         return ChatAnthropic(
@@ -152,7 +313,11 @@ def build_agent_model(
             default_headers={"anthropic-version": "2023-06-01"},
             timeout=None,
             stop=None,
+            **({"output_config": {"effort": anth_effort}} if anth_effort else {}),
     )
+
+    effort = _effort_for(selection, channel.name, model_desc.id)
+    extra = {"reasoning_effort": effort} if effort else {}
 
     if model_desc.provider == "deepseek":
         if _ChatDeepSeek is None:
@@ -165,6 +330,7 @@ def build_agent_model(
             model=model_desc.id,
             api_key=SecretStr(channel.api_key) if channel.api_key else SecretStr(""),
             base_url=channel.base_url,
+            **extra,
         )
 
     from langchain_openai import ChatOpenAI
@@ -180,6 +346,7 @@ def build_agent_model(
         api_key=SecretStr(channel.api_key) if channel.api_key else SecretStr(""),
         base_url=channel.base_url,
         stream_usage=True,
+        **extra,
     )
 
 
@@ -190,6 +357,20 @@ def agent_model_config(registry: ChannelRegistry) -> dict[str, object]:
     for ch in registry.channels:
         models_payload: list[dict[str, object]] = []
         for md in ch.models:
+            # Per-model effort ladder, mirroring EXACTLY what the server accepts,
+            # or the UI either offers a level that fails at send time or hides one
+            # that works. Both protocols go through the same measured data — an
+            # anthropic-routed model carries effort via output_config.effort and is
+            # NOT excluded (only claude-haiku-4.5 genuinely accepts no level).
+            #   measured           → the probed ladder (the only data we gate on)
+            #   unmeasured/unknown → the outer bound, matching the permissive
+            #                        server fallback; narrowing to an unverified
+            #                        models.dev ladder would hide working levels.
+            support = reasoning_capabilities.effort_support(ch.name, md.id)
+            efforts = (
+                list(support.efforts) if support is not None and support.measured
+                else list(VALID_REASONING_EFFORTS)
+            )
             models_payload.append({
                 "channel": ch.name,
                 "provider": md.provider,
@@ -197,6 +378,7 @@ def agent_model_config(registry: ChannelRegistry) -> dict[str, object]:
                 "label": md.label,
                 "description": md.description,
                 "tags": list(md.tags),
+                "reasoning_efforts": efforts,
                 "is_default": (
                     ch.name == active["channel"]
                     and md.provider == active["provider"]

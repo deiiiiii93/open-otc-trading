@@ -293,6 +293,13 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         default_config=_DEFAULT_CONFIG,
         provider="openai",
     ),
+    ArenaModel(
+        slug="grok-4-6",
+        zenmux_name="x-ai/grok-4.6",
+        display_name="Grok 4.6",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
 ]
 
 # Build module-level maps (validates uniqueness at import time)
@@ -335,7 +342,9 @@ def get_model(s: str) -> ArenaModel:
     return _BY_SLUG[canonical_model_id(s)]
 
 
-def arena_model_to_selection(model: ArenaModel) -> dict[str, str]:
+def arena_model_to_selection(
+    model: ArenaModel, reasoning_effort: str | None = None
+) -> dict[str, str]:
     """Map an ArenaModel's zenmux_name to a desk model_selection dict.
 
     "openai/gpt-5.5" -> {"channel": "zenmux", "provider": "openai", "model": "openai/gpt-5.5"}
@@ -349,6 +358,12 @@ def arena_model_to_selection(model: ArenaModel) -> dict[str, str]:
     Returning a stripped model id, or a provider that disagrees with the YAML
     entry, would fail ``resolve_agent_model_selection`` before any turn is driven.
 
+    ``reasoning_effort`` pins the run's effort level. It is **omitted when None**
+    so an unpinned board produces exactly the three-key selection every board from
+    run #8 onward used — the historical default is vendor-chosen effort, and a
+    key present-but-null would both misrepresent that and defeat the desk's
+    prebuilt-orchestrator reuse check.
+
     Raises:
         ValueError: if zenmux_name does not contain a '<vendor>/<model>' slash.
     """
@@ -358,7 +373,10 @@ def arena_model_to_selection(model: ArenaModel) -> dict[str, str]:
             f"zenmux_name '{name}' must be '<vendor>/<model>' (e.g. 'openai/gpt-5.5')."
         )
     provider = model.provider or name.split("/", 1)[0]
-    return {"channel": "zenmux", "provider": provider, "model": name}
+    selection = {"channel": "zenmux", "provider": provider, "model": name}
+    if reasoning_effort:
+        selection["reasoning_effort"] = reasoning_effort
+    return selection
 
 
 def validate_model_ids(ids: list[str]) -> list[str]:

@@ -134,6 +134,172 @@ describe('ChatComposer', () => {
     expect(onChangeMode).toHaveBeenCalledWith('yolo');
   });
 
+  it('renders the effort picker defaulting to "default" (not a level)', () => {
+    render(
+      <ChatComposer
+        onSend={() => {}}
+        sending={false}
+        onChangeReasoningEffort={() => {}}
+      />,
+    );
+
+    // "Default" must be the resting state: it sends NO reasoning_effort, so the
+    // vendor default applies exactly as it did before this control existed.
+    expect(screen.getByLabelText('Effort')).toHaveValue('default');
+  });
+
+  it('calls onChangeReasoningEffort with the selected level', async () => {
+    const onChangeReasoningEffort = vi.fn();
+    render(
+      <ChatComposer
+        onSend={() => {}}
+        sending={false}
+        reasoningEffort="default"
+        onChangeReasoningEffort={onChangeReasoningEffort}
+      />,
+    );
+
+    await userEvent.selectOptions(screen.getByLabelText('Effort'), 'high');
+    expect(onChangeReasoningEffort).toHaveBeenCalledWith('high');
+  });
+
+  it('omits the effort picker entirely when no handler is supplied', () => {
+    render(<ChatComposer onSend={() => {}} sending={false} onChangeMode={() => {}} />);
+
+    expect(screen.queryByLabelText('Effort')).toBeNull();
+    expect(screen.getByLabelText('Mode')).toBeInTheDocument();
+  });
+
+  it('offers only the effort levels the selected model declares', () => {
+    // There is no universal ladder: GLM-5.2 really does accept only high/max.
+    // Offering `low` here would fail server-side at send time instead of at pick
+    // time, which is strictly worse for the operator.
+    render(
+      <ChatComposer
+        onSend={() => {}}
+        sending={false}
+        channels={[{
+          name: 'zenmux', label: 'ZenMux', type: 'zenmux', healthy: true,
+          models: [{
+            channel: 'zenmux', provider: 'openai', model: 'z-ai/glm-5.2',
+            label: 'GLM 5.2', reasoning_efforts: ['high', 'max'],
+          }],
+        }]}
+        selectedModel={{ channel: 'zenmux', provider: 'openai', model: 'z-ai/glm-5.2' }}
+        onChangeModel={() => {}}
+        onChangeReasoningEffort={() => {}}
+      />,
+    );
+
+    const values = Array.from(
+      (screen.getByLabelText('Effort') as HTMLSelectElement).options,
+    ).map((o) => o.value);
+    expect(values).toEqual(['default', 'high', 'max']);
+  });
+
+  it('offers only Default (and disables) for a model with no effort ladder', () => {
+    // Qwen3.7 / MiniMax M3 expose reasoning as a bare on/off toggle, and an
+    // anthropic-protocol model's client cannot carry an effort at all.
+    render(
+      <ChatComposer
+        onSend={() => {}}
+        sending={false}
+        channels={[{
+          name: 'zenmux', label: 'ZenMux', type: 'zenmux', healthy: true,
+          models: [{
+            channel: 'zenmux', provider: 'openai', model: 'qwen/qwen3.7-max',
+            label: 'Qwen3.7 Max', reasoning_efforts: [],
+          }],
+        }]}
+        selectedModel={{ channel: 'zenmux', provider: 'openai', model: 'qwen/qwen3.7-max' }}
+        onChangeModel={() => {}}
+        onChangeReasoningEffort={() => {}}
+      />,
+    );
+
+    const select = screen.getByLabelText('Effort') as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['default']);
+    expect(select).toBeDisabled();
+  });
+
+  it('shows Default instead of a stale pick the new model cannot honour', () => {
+    // Switching models must not leave a level selected that the server rejects.
+    render(
+      <ChatComposer
+        onSend={() => {}}
+        sending={false}
+        channels={[{
+          name: 'zenmux', label: 'ZenMux', type: 'zenmux', healthy: true,
+          models: [{
+            channel: 'zenmux', provider: 'openai', model: 'z-ai/glm-5.2',
+            label: 'GLM 5.2', reasoning_efforts: ['high', 'max'],
+          }],
+        }]}
+        selectedModel={{ channel: 'zenmux', provider: 'openai', model: 'z-ai/glm-5.2' }}
+        reasoningEffort="low"
+        onChangeModel={() => {}}
+        onChangeReasoningEffort={() => {}}
+      />,
+    );
+
+    expect(screen.getByLabelText('Effort')).toHaveValue('default');
+  });
+
+  it('falls back to the full ladder when the model is unknown to the snapshot', () => {
+    // models.dev lags new releases, so a model with no declared ladder must keep
+    // every level available rather than lose the control entirely.
+    render(
+      <ChatComposer
+        onSend={() => {}}
+        sending={false}
+        channels={[{
+          name: 'zenmux', label: 'ZenMux', type: 'zenmux', healthy: true,
+          models: [{
+            channel: 'zenmux', provider: 'openai', model: 'x-ai/grok-4.6',
+            label: 'Grok 4.6',
+          }],
+        }]}
+        selectedModel={{ channel: 'zenmux', provider: 'openai', model: 'x-ai/grok-4.6' }}
+        onChangeModel={() => {}}
+        onChangeReasoningEffort={() => {}}
+      />,
+    );
+
+    const values = Array.from(
+      (screen.getByLabelText('Effort') as HTMLSelectElement).options,
+    ).map((o) => o.value);
+    expect(values).toContain('xhigh');
+    expect(values).toContain('max');
+  });
+
+  it('shows no effort levels for a model dispatched over the anthropic protocol', () => {
+    // glm-5.2 / minimax-m3 / qwen3.7-max / longcat-2.0 are NOT Claude models, but
+    // our config routes them with protocol: anthropic, and ChatAnthropic cannot
+    // carry a reasoning_effort — so the server reports [] and the picker must too.
+    render(
+      <ChatComposer
+        onSend={() => {}}
+        sending={false}
+        channels={[{
+          name: 'zenmux', label: 'ZenMux', type: 'zenmux', healthy: true,
+          models: [{
+            channel: 'zenmux', provider: 'openai', model: 'z-ai/glm-5.2',
+            label: 'GLM 5.2', reasoning_efforts: [],
+          }],
+        }]}
+        selectedModel={{ channel: 'zenmux', provider: 'openai', model: 'z-ai/glm-5.2' }}
+        reasoningEffort="high"
+        onChangeModel={() => {}}
+        onChangeReasoningEffort={() => {}}
+      />,
+    );
+
+    const select = screen.getByLabelText('Effort') as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['default']);
+    // A level carried over from the previous model must not remain displayed.
+    expect(select).toHaveValue('default');
+  });
+
   it('disables the mode picker while streaming', () => {
     render(
       <ChatComposer

@@ -8,6 +8,8 @@ export type ArenaRunSummary = {
   created_at: string;
   workflow_ids: string[];
   model_ids: string[];
+  /** null = unpinned (vendor default) — true of every run before this existed. */
+  reasoning_effort?: string | null;
 };
 
 export type ArenaCheck = {
@@ -141,6 +143,8 @@ export type ArenaModel = {
   slug: string;
   zenmux_name: string;
   display_name: string;
+  /** This model's declared effort ladder; absent/[] handled by sharedReasoningEfforts. */
+  reasoning_efforts?: string[];
 };
 
 export type ArenaModelsResponse = {
@@ -152,11 +156,43 @@ export type ArenaRunsResponse = {
   total: number;
 };
 
+/**
+ * Effort levels a run can be pinned to, weakest → strongest; omit/null leaves the
+ * vendor default. The union of what ZenMux names — support varies per model and
+ * is not published, so a level a given contestant lacks is normalised upstream.
+ */
+export const ARENA_REASONING_EFFORTS = [
+  'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max',
+] as const;
+
+/**
+ * The levels one model offers, in canonical weakest→strongest order.
+ *
+ * Effort is chosen PER MODEL, not once per run: the ladders genuinely differ
+ * (GLM-5.2 is high/max only, most models are low/medium/high, Qwen3.7 /
+ * MiniMax M3 have no levels at all), so no single value can pin a mixed field —
+ * an intersection across a large field is usually empty.
+ *
+ * A model with no `reasoning_efforts` array is unknown to the models.dev snapshot
+ * and treated as unconstrained, matching the server's permissive fallback.
+ */
+export function reasoningEffortsFor(model: ArenaModel): string[] {
+  const declared = model.reasoning_efforts;
+  if (!declared) return [...ARENA_REASONING_EFFORTS];
+  return ARENA_REASONING_EFFORTS.filter((e) => declared.includes(e));
+}
+export type ArenaReasoningEffort = (typeof ARENA_REASONING_EFFORTS)[number];
+
 export type ArenaCreateRunRequest = {
   workflow_ids: string[];
   model_ids: string[];
   trials: number;
   weights?: { obj: number; judge: number };
+  /**
+   * Per-model effort {model_slug: effort}. A model absent runs at its own vendor
+   * default, as every contestant did on boards #8–#104.
+   */
+  reasoning_efforts?: Record<string, ArenaReasoningEffort>;
 };
 
 export type ArenaWorkflowSummary = { id: string; title: string; tags: string[]; step_count: number };

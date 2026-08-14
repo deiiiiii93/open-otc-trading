@@ -633,6 +633,155 @@ never by subjective), and exposes `subjective_mean/stdev/mode`.
   exactly the one that got clobbered. Read the per-trial files, not
   `transcript.json`, when diagnosing trial-to-trial variance.
 
+### Reasoning effort: an unset knob is omitted, never sent as null
+
+Effort is chosen in the composer (**Effort**, left of Mode) and per arena run
+(`arena_run.reasoning_effort`, migration `0056`; `--reasoning-effort` on
+`scripts/launch_arena_run.py`), and rides on the **model-selection dict** —
+the one carrier already persisted into `AgentMessage.meta`, replayed by async
+resume, and built by `arena_model_to_selection`.
+
+- **Omitted-when-unset is load-bearing, not tidiness.**
+  `_sync_agent_for_selection` / `_async_agent_for_selection` reuse the *prebuilt*
+  orchestrator only when the resolved selection compares **equal** to
+  `AgentService.default_model_selection`. A fourth key present on every turn — even
+  as an explicit `None` — silently ends that reuse and rebuilds the graph per
+  request. Conversely, a pinned selection is unequal to the default *by
+  construction*, which correctly forces the per-turn build that applies the effort.
+  `resolve_agent_model_selection` and `arena_model_to_selection` both omit it.
+- **There is NO universal ladder, and models.dev is NOT trustworthy for it —
+  MEASURE.** A live probe (`scripts/smoke_reasoning_efforts.py`, 214 calls,
+  2026-08-14) found models.dev wrong for **every route that mattered**, and mostly
+  **too narrow**, which is the dangerous direction: it claims `low/medium/high` for
+  deepseek-v4-pro (really all 7), **toggle-only with no levels** for qwen3.7-plus and
+  mimo-v2.5-pro (really all 7), **non-reasoning** for kimi-k2.7-code (really 6
+  levels, and it *refuses* `none`), and `none…max` for the GPT-5.6 family which
+  actually **rejects `minimal`**. Gating on it would have blocked working levels on
+  **13 of 22** probed models.
+  - **The gate is only as strong as the evidence:** `measured` → reject an
+    off-ladder level; `models.dev` (unmeasured) or unknown → **allow**, the provider
+    decides. That is safe because the gateway refuses an unsupported level itself
+    with a precise message (`"Unsupported value: 'minimal' is not supported with
+    ..."`), so it is a reliable backstop — the "silently accepted and ignored" fear
+    that justified local gating turned out not to hold for the reject case.
+  - Re-measure with `smoke_reasoning_efforts.py --all --out p.json`, then
+    `refresh_model_reasoning.py --merge-probe p.json`. The merge **refuses to mark a
+    model measured while any level was inconclusive** (402/429/5xx/transport), since
+    an incomplete accepted-set would become a hard rejection. Classify on the HTTP
+    STATUS, not the error prose: `tencent/hy3` returns a bare 400 with an EMPTY body
+    for `max`.
+  - Notable measured facts: `openai/chat-latest` accepts **only `medium`**;
+    grok-4.5/4.6 reject `none` and `max`; gemini-2.5-pro rejects `none`
+    ("does not support thinking_budget 0"). `minimal` is rejected by every OpenAI
+    model but accepted by most others.
+  - Data: `config/model_reasoning.json`, refreshed by
+    `scripts/refresh_model_reasoning.py` (`--check` fails when stale). Read through
+    `services/deep_agent/reasoning_capabilities.py`. models.dev is the registry
+    **OpenCode** uses and remains the fallback + the only source of the `toggle`
+    flag; its `interleaved: {field: "reasoning_content"}` is literally the DeepSeek
+    quirk `DeepSeekReasoningChat` hand-implements.
+  - **Vendored, never fetched at runtime.** Same rule as the exact `quantark` pin
+    and the harvested arena fixtures: third-party truth that governs behaviour
+    arrives as a reviewable diff (with the upstream sha256 recorded), not as a
+    silent change. A missing or corrupt snapshot degrades to permissive, never to a
+    crash.
+  - **The ladder is per ROUTE, not per model.** models.dev lists
+    `deepseek-v4-pro` as `high,max` on the direct DeepSeek API but
+    `low,medium,high` via ZenMux — so lookups key on `(channel, model_id)`.
+  - **Unknown is PERMISSIVE, never "unsupported".** models.dev lags releases
+    (`x-ai/grok-4.6` has no ZenMux entry), and stale data must not block a working
+    model. Unknown models fall back to `VALID_REASONING_EFFORTS`, the outer bound.
+  - `tests/test_reasoning_capabilities.py` guards that the outer bound is a
+    superset of every effort in the snapshot — if upstream adds a token we do not
+    know, that token is legal for some model yet rejected for every unknown one.
+    Tests assert **structure and invariants, never a live model's current ladder**
+    (that is a moving target); use `reload_snapshot(data)` to pin a fixture.
+  - ZenMux's own API cannot answer this: `GET /api/v1/models` carries only
+    `capabilities.reasoning: true|false`. And do NOT gate on the desk registry's
+    `reasoning` tag — hand-maintained, only 13 of 32 models carry it, and
+    `openai/gpt-5.5` (a reasoning model) does not.
+  - Validation exists because an unrecognised value is *forwarded and ignored* by
+    the provider, which reads as "effort had no effect" rather than "effort was
+    never applied".
+  - **`effort_rejection(registry, channel, provider, model, effort)` is the SINGLE
+    seam** for "can this route carry this effort", used by
+    `resolve_agent_model_selection`, `queue_arena_run` AND both UI ladder builders.
+    `queue_arena_run` once had its own narrower check, so a board passed launch
+    validation and then died per-match.
+  - **The two protocols carry effort through DIFFERENT fields — neither blocks it.**
+    OpenAI-compatible: top-level `reasoning_effort`. Anthropic: **`output_config.effort`**,
+    a named level (`low/medium/high/xhigh/max`), which is what langchain's
+    `ChatAnthropic.effort` shorthand writes; the older `thinking.budget_tokens`
+    budget is being retired (`budget_tokens` is gone on Opus 4.7 — use
+    `{"type": "adaptive"}` plus `output_config.effort`). We send `output_config`
+    directly rather than the `effort=` shorthand, because that shorthand is typed
+    to Claude's ladder while the gateway accepts `none`/`minimal` for the
+    **non-Claude** models routed over this protocol.
+  - **"Anthropic protocol" never meant "no effort" — that was a wrong assumption
+    that denied effort to 7 of 8 models routed that way**, four of which
+    (`glm-5.2`, `minimax-m3`, `qwen3.7-max`, `longcat-2.0`) are not Claude at all.
+    Measured ladders: opus-4.8 and sonnet-5 `low..max`; **sonnet-4.6 rejects
+    `xhigh`** ("This model does not support effort level 'xhigh'. Supported levels:
+    high, low, max, medium."); glm-5.2 / minimax-m3 / longcat-2.0 accept all seven;
+    qwen3.7-max `low..max`. **`claude-haiku-4.5` is the ONE genuine no-effort model
+    on either protocol** — it rejects every level, because it does not reason.
+    Probe it with `smoke_reasoning_efforts.py --protocol anthropic`.
+  - **Both send paths must drop an unsupported level, not just hide it.** The
+    composer's reset and the arena picker's reset are DISPLAY only; the selection
+    state survives a model switch, so the chat controller and the arena launch
+    payload each re-filter against the model's ladder before sending. Without that,
+    picking `high` then switching to glm-5.2 still sent `high` and 422'd mid-turn.
+  - **`OPEN_OTC_MODEL_REASONING_EFFORT` is filtered per model too**, and its value
+    is spell-checked. It has no request boundary to validate at, and before that it
+    (a) forwarded a typo verbatim and (b) sent `high` to toggle-only and
+    non-reasoning models — so a sweep silently included models that never varied,
+    and both failures read as "effort had no effect on this model" rather than
+    "effort was never applied". A filtered model is **skipped with a WARNING**, not
+    silently: raising would break a process-wide sweep for the models that can take
+    it.
+- **Arena effort is PER MODEL, not per run** (`arena_run.reasoning_efforts`, a
+  `{model_slug: effort}` JSON map — migration `0057` replaced `0056`'s single
+  column). A scalar could not express a pinned mixed board at all: with GLM-5.2 on
+  `high/max`, five contestants toggle-only and most on `low/medium/high`, the
+  intersection across a real field is usually EMPTY. A model absent from the map
+  runs at its vendor default. `queue_arena_run` validates each entry against **its
+  own** model at **launch** (and rejects a key naming a model not in the run, which
+  would otherwise silently leave the board unpinned);
+  `resolve_agent_model_selection` would otherwise reject the offending model
+  per-match, after other pairs had already cost money.
+- **`merge_runs` compares effort per (workflow, model) GROUP, not per run** — that
+  is the key merge folds on, and a run may legitimately pin different models
+  differently, so a run-level check would be both too coarse and wrong. It reads
+  `arena_match.config.reasoning_effort`.
+- **Both pickers filter to what the model accepts**, so the UI can never offer a
+  level the server rejects: the composer from `AgentModelOption.reasoning_efforts`,
+  and the arena New Run panel with one picker per selected model
+  (`reasoningEffortsFor`), hidden entirely for a model with no ladder.
+- **A new field on `agent_model_config` MUST also be declared on the response
+  model.** `/api/agent/models` is served with `response_model=AgentModelConfigOut`,
+  and pydantic **silently drops** any key `AgentModelOption` does not name — the
+  builder emitted `reasoning_efforts` and its unit test passed while the API served
+  none of it, so the composer offered every level for every model. Assert such
+  fields at the **HTTP** layer (`test_api.py`), where the response model applies.
+  Same failure mode as the golden-workflow `scope: session` key.
+- **`"none"` is a request, `None` is an absence.** `"none"` asks the model to skip
+  reasoning and IS sent; collapsing it to unset would turn "no thinking" into
+  "vendor default thinking".
+- **Anthropic protocol REFUSES an effort (422), never drops it.** `ChatAnthropic`
+  has no `reasoning_effort` — it budgets thinking in tokens — so accepting one
+  would report a setting that never took effect.
+- **Precedence is explicit-arg → `OPEN_OTC_MODEL_REASONING_EFFORT` → vendor
+  default**, matching the gateway bridge's documented ladder.
+- **`merge_runs` refuses runs with different efforts.** It groups by
+  `(workflow_id, model_id)` only, so a mixed merge averages two operating regimes
+  into one EFF/CON — the same defect class as folding a model whose weights changed
+  behind a stable id. Effort moves tool-call count (**measured: ~22% fewer calls at
+  `high` than `low`**, runs #107/#108), so it is a real regime, not a preference.
+- `run_match_fn` / `_run_and_score_once` receive the effort kwarg **only when
+  pinned** — those are injected seams (≈20 test fakes plus
+  `scripts/launch_arena_run.py` supply their own), so an unpinned run must issue
+  the exact call it always did.
+
 ### QuantArk is pinned — never install it editable
 
 `pyproject.toml` pins **`quantark==0.3.0`** exactly, not `>=`. QuantArk is the engine the

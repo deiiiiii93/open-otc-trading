@@ -76,3 +76,42 @@ def test_new_vendor_selections_resolve_against_real_registry(slug):
     resolved = resolve_agent_model_selection(get_registry(), sel)  # must not raise
     assert resolved["channel"] == "zenmux"
     assert resolved["provider"] == "openai"
+
+
+def test_effort_is_omitted_when_unpinned():
+    """An unpinned board must produce exactly the three-key selection every board
+    from run #8 to #104 used — a present-but-null key would misstate the
+    historical regime and defeat the desk's prebuilt-orchestrator reuse check."""
+    sel = arena_model_to_selection(_m("openai/gpt-5.5"))
+    assert "reasoning_effort" not in sel
+    assert arena_model_to_selection(_m("openai/gpt-5.5"), None) == sel
+
+
+def test_effort_rides_along_when_pinned():
+    sel = arena_model_to_selection(_m("openai/gpt-5.5"), "high")
+    assert sel == {
+        "channel": "zenmux", "provider": "openai",
+        "model": "openai/gpt-5.5", "reasoning_effort": "high",
+    }
+
+
+def test_pinned_effort_selection_resolves_against_the_tracked_registry():
+    """A pinned selection must still validate end-to-end, or a live board would die
+    per-match after launch rather than at launch.
+
+    Sourced from the TRACKED `agent_channels.example.yml`, not `get_registry()`:
+    the live YAML is gitignored and per-environment (and the Model Maintenance UI
+    rewrites it at runtime), and the process-global registry is order-dependently
+    leaked by the wider suite. The sibling `*_real_registry` tests in this file
+    still use `get_registry()` and fail in a full-suite run for exactly that
+    reason — a pre-existing hermeticity bug, not one to reproduce here.
+    """
+    from app.services.arena.models import get_model
+    from app.services.deep_agent import channel_registry as cr
+    from app.services.deep_agent.model_factory import resolve_agent_model_selection
+
+    registry = cr.load_from_path(
+        cr._REPO_ROOT / "config" / "agent_channels.example.yml"
+    )
+    sel = arena_model_to_selection(get_model("gpt-5-5"), "low")
+    assert resolve_agent_model_selection(registry, sel)["reasoning_effort"] == "low"
