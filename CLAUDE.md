@@ -749,10 +749,14 @@ resume, and built by `arena_model_to_selection`.
   would otherwise silently leave the board unpinned);
   `resolve_agent_model_selection` would otherwise reject the offending model
   per-match, after other pairs had already cost money.
-- **`merge_runs` compares effort per (workflow, model) GROUP, not per run** — that
-  is the key merge folds on, and a run may legitimately pin different models
-  differently, so a run-level check would be both too coarse and wrong. It reads
-  `arena_match.config.reasoning_effort`.
+- **`merge_runs` folds by `(workflow_id, model_id, reasoning_effort)`** — effort is
+  part of the contestant key, so it is part of the fold key. A cross-effort merge
+  therefore produces one merged row **per arm** rather than the 400 it used to
+  return: the fold that refusal protected against (one row averaging two regimes'
+  EFF/CON) is structurally impossible now, and refusing would make merge stricter
+  than launch, which happily puts both arms in one run. Merged runs record
+  per-model effort **lists**, and each merged match carries its arm's effort in
+  both the column and `config`.
 - **Both pickers filter to what the model accepts**, so the UI can never offer a
   level the server rejects: the composer from `AgentModelOption.reasoning_efforts`,
   and the arena New Run panel with one picker per selected model
@@ -772,15 +776,59 @@ resume, and built by `arena_model_to_selection`.
   would report a setting that never took effect.
 - **Precedence is explicit-arg → `OPEN_OTC_MODEL_REASONING_EFFORT` → vendor
   default**, matching the gateway bridge's documented ladder.
-- **`merge_runs` refuses runs with different efforts.** It groups by
-  `(workflow_id, model_id)` only, so a mixed merge averages two operating regimes
-  into one EFF/CON — the same defect class as folding a model whose weights changed
-  behind a stable id. Effort moves tool-call count (**measured: ~22% fewer calls at
-  `high` than `low`**, runs #107/#108), so it is a real regime, not a preference.
+- **Two efforts are two operating regimes, never one averaged row.** Effort moves
+  tool-call count (**measured: ~22% fewer calls at `high` than `low`**, runs
+  #107/#108), so it moves EFF and CON — the same defect class as folding a model
+  whose weights changed behind a stable id. That is why effort is in the
+  contestant key rather than beside it.
 - `run_match_fn` / `_run_and_score_once` receive the effort kwarg **only when
   pinned** — those are injected seams (≈20 test fakes plus
   `scripts/launch_arena_run.py` supply their own), so an unpinned run must issue
   the exact call it always did.
+
+### A contestant is `(model_id, reasoning_effort)`, not a model
+
+One board can rank the same model at several efforts (migration **0058**). The old
+three-column `arena_match` unique key made the second arm collide with the first,
+so this is an identity change, not a UI one.
+
+- **`ArenaMatch.reasoning_effort` is `''` for unpinned, never NULL.** SQL treats
+  NULLs as DISTINCT in a UNIQUE constraint, so a nullable column would silently
+  stop protecting unpinned pairs at the DB level while the Python-level upsert
+  still dedups — a backstop that looks present and is not. `None` is used at every
+  dict/API boundary; `''` only in the column.
+- **`arena_run.reasoning_efforts` values are LISTS of arms** (`{slug: [null,
+  "high"]}`); `null` is the explicit unpinned arm, and a model absent from the map
+  runs once at its vendor default. Legacy scalar values are read as one-element
+  lists by `task.effort_levels_for` and normalised at `store._run_to_dict` —
+  derive on read, never migrate the JSON. A duplicate level within one model's
+  list is **rejected at launch**: it would mint two contestants sharing one key.
+- **0058's backfill reads each row's OWN `config.reasoning_effort`**, never a blind
+  `''`. Flattening historical rows would assert that a `high` board and a `low`
+  board were the same regime, and `merge_runs` — which now groups on the column —
+  would fold them. (On this DB all 347 historical rows were unpinned, so the
+  backfill was precautionary; it becomes load-bearing the first pinned board.)
+- **Anything keyed on `(workflow, model)` is now arm-blind and wrong.** Four sites
+  needed the third key: `store.record_match`'s upsert (the second arm silently
+  clobbered the first), `_save_transcript`'s directory (both arms wrote one
+  `transcript.json` — the same clobber the per-trial copies fixed), and
+  `launch_arena_run.py --resume`'s todo set **and its stale-row cleanup** (a pair
+  read as done when one arm scored, then the run marked `completed` — run #104's
+  failure shape; and the cleanup would delete the other arm's row). **`scorecard.py`'s
+  `model_id → transcript path` map is still arm-blind** and picks one arm
+  arbitrarily — known gap, not part of scoring.
+- **Progress totals count ARMS, not models** (`queue_arena_run` and `_execute`). The
+  old `workflows × models × trials` product under-counts once any model carries two
+  arms, leaving a finished run's progress bar permanently short — it reads as stuck.
+- **`get_leaderboard` has NO `response_model`** — it hand-builds an explicit key
+  projection, so a field the store gains is served only if named there. Different
+  mechanism from `/api/agent/models`' pydantic drop, identical failure: the store
+  unit test passes while the API serves nothing. Assert new board fields in
+  `test_arena_api.py`, at the HTTP layer. `RunSummary` is the opposite case — it is
+  *constructed explicitly*, so a shape change there fails loudly with a
+  `ValidationError` rather than silently.
+- **The board's `rowKey` must include the effort.** Two arms of one model are
+  duplicate React keys otherwise.
 
 ### QuantArk is pinned — never install it editable
 

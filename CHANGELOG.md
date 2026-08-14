@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Arena: one model at several reasoning efforts, ranked on one board.** A
+  contestant is now `(model, reasoning_effort)` rather than a model. The `/arena`
+  New Run panel's per-model effort select became a **checkbox group** — tick `Low`
+  *and* `High` and that model enters the board twice, as two rows that rank
+  against each other; tick **Default** alongside a pinned level to measure a pin
+  against the unpinned baseline every board through #104 actually ran at.
+  `scripts/launch_arena_run.py --reasoning-effort` now takes several levels.
+
+  `ArenaMatch` carries an explicit `reasoning_effort` (migration **0058**, `''` =
+  unpinned) and its unique constraint grew to four columns — the old three-column
+  key made the second arm collide with the first. `arena_run.reasoning_efforts`
+  values became **lists of arms** (`{"gpt-5-5": [null, "high"]}`), with the legacy
+  scalar read as a one-element list rather than migrated. The leaderboard ranks
+  each arm separately, transcripts get a per-arm directory, and `--resume` tracks
+  arms — it previously keyed on `(workflow, model)`, so a resume would see a pair
+  as done because one arm finished, never run the other, and mark the run
+  `completed`.
+
+  **Behaviour change:** a cross-effort `merge_runs` used to fail with 400. It now
+  succeeds, producing one merged row per arm. The fold that refusal protected
+  against — a single row averaging two regimes' EFF/CON — is structurally
+  impossible once effort is in the group key, and refusing would have made merge
+  stricter than launch, which happily puts both arms in one run.
 - **Arena run #104 — Grok 4.6 vs DeepSeek V4 Pro scorecard board.** All four
   golden workflows, 2 trials each (16 model-trials), objective-only, all 8 pairs
   `scored`. Report at `docs/arena/2026-08-13-run104-otc-desk-agent-arena.{md,html,pdf}`
