@@ -37,12 +37,18 @@ def _make_match(session, run_id, *, workflow_id="wf-a", model_id="model-x",
 
 def _make_match_at(session, run_id, *, model_id="model-x", reasoning_effort=None,
                    objective_score=70.0, workflow_id="wf-a"):
-    """A match for ONE ARM — (model, effort) is the contestant key."""
+    """A match for ONE ARM — (model, effort) is the contestant key.
+
+    Carries a trial-shaped ``score_breakdown``; merge_runs skips a match without
+    one, so a breakdown-less helper would silently produce an EMPTY merged run.
+    """
     return store.record_match(
         session, run_id, workflow_id, model_id,
         objective_score=objective_score, judged_score=None, total_score=None,
         judge_missing=False, config={"reasoning_effort": reasoning_effort},
         transcript_path=None, status="scored",
+        score_breakdown={"objective_score": objective_score,
+                         "passed": 1, "total": 1},
         reasoning_effort=reasoning_effort,
     )
 
@@ -1131,3 +1137,39 @@ def test_single_effort_board_is_unchanged(session):
     assert [(r["model_id"], r["rank"], r["mean_objective"]) for r in rows] == [
         ("model-x", 1, 80.0), ("model-y", 2, 60.0),
     ]
+
+
+# ---- merge: fold arm-wise ----
+
+def test_merge_keeps_two_efforts_as_two_merged_rows(session):
+    """Two boards, each carrying both arms, fold arm-wise — never arm-blind."""
+    ids = []
+    for objective_low, objective_high in ((20.0, 30.0), (24.0, 34.0)):
+        rid = _make_run(session, workflow_ids=["wf-a"], model_ids=["model-x"])
+        _make_match_at(session, rid, model_id="model-x", reasoning_effort="low",
+                       objective_score=objective_low)
+        _make_match_at(session, rid, model_id="model-x", reasoning_effort="high",
+                       objective_score=objective_high)
+        store.set_run_status(session, rid, "completed")
+        ids.append(rid)
+    session.commit()
+
+    merged_id = store.merge_runs(session, ids)
+    session.commit()
+
+    matches = store.get_run(session, merged_id)["matches"]
+    assert sorted(m["reasoning_effort"] for m in matches) == ["high", "low"]
+
+
+def test_merged_run_records_effort_lists(session):
+    rid_a = _make_run(session, workflow_ids=["wf-a"], model_ids=["model-x"])
+    _make_match_at(session, rid_a, model_id="model-x", reasoning_effort="high")
+    rid_b = _make_run(session, workflow_ids=["wf-a"], model_ids=["model-x"])
+    _make_match_at(session, rid_b, model_id="model-x", reasoning_effort="high")
+    session.commit()
+
+    merged_id = store.merge_runs(session, [rid_a, rid_b])
+    session.commit()
+    assert store.get_run(session, merged_id)["reasoning_efforts"] == {
+        "model-x": ["high"]
+    }

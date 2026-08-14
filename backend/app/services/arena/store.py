@@ -175,43 +175,37 @@ def merge_runs(session: Session, source_run_ids: list[int]) -> int:
         raise ValueError(f"no scored matches found in runs {ordered}")
 
     pos = {rid: i for i, rid in enumerate(ordered)}
-    groups: dict[tuple[str, str], list[ArenaMatch]] = defaultdict(list)
+    # Effort is part of the contestant key, so it is part of the fold key: two
+    # efforts of one model fold into two merged rows that rank against each other.
+    groups: dict[tuple[str, str, str | None], list[ArenaMatch]] = defaultdict(list)
     for m in matches:
-        groups[(m.workflow_id, m.model_id)].append(m)
+        groups[(m.workflow_id, m.model_id, m.reasoning_effort or None)].append(m)
     for ms in groups.values():
         ms.sort(key=lambda m: (pos[m.run_id], m.id))
 
-    # Refuse to fold matches of the same (workflow, model) driven at DIFFERENT
-    # efforts, and check it per group — that is exactly the key merge folds on, so
-    # it is the granularity that must not mix. Effort measurably moves tool-call
-    # count (hence EFF) and trial dispersion (hence CON), so averaging two regimes
-    # into one row is the same defect class as folding a model whose weights
-    # changed behind a stable id. A run may legitimately pin different efforts for
-    # different models, so a run-level check would be both too coarse and wrong.
-    for (workflow_id, model_id), ms in sorted(groups.items()):
-        efforts = {(m.config or {}).get("reasoning_effort") for m in ms}
-        if len(efforts) > 1:
-            rendered = sorted("unpinned" if e is None else str(e) for e in efforts)
-            raise ValueError(
-                f"cannot merge {model_id} x {workflow_id}: its matches were driven "
-                f"at different reasoning efforts ({rendered}) — the merged row "
-                "would average two operating regimes into one EFF/CON"
-            )
-
-    workflow_ids = sorted({wf for wf, _ in groups})
-    model_ids = sorted({md for _, md in groups})
-    # Carry each model's (now provably single) effort onto the merged run, so the
-    # aggregate keeps stating which regime produced it.
-    merged_efforts = {
-        model_id: (ms[0].config or {}).get("reasoning_effort")
-        for (_wf, model_id), ms in groups.items()
-        if (ms[0].config or {}).get("reasoning_effort")
-    }
+    # A cross-effort merge no longer needs refusing: two efforts of one model land
+    # in DIFFERENT groups, so they become two merged rows that rank against each
+    # other rather than one row averaging two operating regimes. That refusal
+    # (effort moves tool-call count, hence EFF, and trial dispersion, hence CON)
+    # protected against a fold that is now structurally impossible — and keeping
+    # it would make merge arbitrarily stricter than launch, which happily puts
+    # both arms in one run.
+    workflow_ids = sorted({wf for wf, _md, _ef in groups})
+    model_ids = sorted({md for _wf, md, _ef in groups})
+    # Per-model LIST of the arms present, so the merged run states every regime it
+    # contains rather than one of them.
+    merged_efforts: dict[str, list[str]] = {}
+    for (_wf, model_id, effort) in groups:
+        if effort:
+            arms = merged_efforts.setdefault(model_id, [])
+            if effort not in arms:
+                arms.append(effort)
+    merged_efforts = {k: sorted(v) for k, v in merged_efforts.items()}
     new_run_id = create_run(
         session, workflow_ids, model_ids, reasoning_efforts=merged_efforts or None,
     )
 
-    for (workflow_id, model_id), ms in groups.items():
+    for (workflow_id, model_id, effort), ms in groups.items():
         trials: list[dict] = []
         for m in ms:
             bd = m.score_breakdown
@@ -232,8 +226,13 @@ def merge_runs(session: Session, source_run_ids: list[int]) -> int:
             session, new_run_id, workflow_id, model_id,
             objective_score=aggregate["objective_score"], judged_score=None,
             total_score=aggregate["objective_score"], judge_missing=False,
-            config={"merged_from": ordered}, transcript_path=None,
+            # Carry the arm's effort in BOTH the column and config, like
+            # _record_pair does — a merged row that cannot state its regime
+            # cannot defend its EFF or CON either.
+            config={"merged_from": ordered, "reasoning_effort": effort},
+            transcript_path=None,
             status="scored", score_breakdown=aggregate,
+            reasoning_effort=effort,
         )
 
     set_run_status(session, new_run_id, "completed")

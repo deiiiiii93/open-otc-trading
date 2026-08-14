@@ -1511,11 +1511,15 @@ def test_create_run_trials_zero_422(session, settings):
 
 
 def _seed_scored(session, run_id, model_id, score, effort=None):
+    # Both the column and config, exactly as every real writer does (_record_pair,
+    # merge_runs) and as migration 0058 backfilled historical rows. The column is
+    # the contestant key; config is the human-readable provenance copy.
     arena_store.record_match(
         session, run_id, "wf-a", model_id,
         objective_score=score, judged_score=None, total_score=score,
         judge_missing=True, config={"reasoning_effort": effort},
         transcript_path=None, status="scored",
+        reasoning_effort=effort,
     )
 
 
@@ -1659,10 +1663,14 @@ def test_partial_pinning_leaves_other_models_at_their_default(session, settings)
     assert run["reasoning_efforts"] == {"deepseek-v4-pro": ["high"]}
 
 
-def test_merge_refuses_matches_of_one_pair_driven_at_different_efforts(session, settings):
-    """Merge groups by (workflow_id, model_id), so THAT is the granularity that
-    must not mix — a run may legitimately pin different efforts for different
-    models, which a run-level check would wrongly reject."""
+def test_merge_folds_one_model_at_two_efforts_into_two_arms(session, settings):
+    """Merge groups by (workflow_id, model_id, effort), so two efforts of one
+    model become two merged ARMS rather than one row averaging two regimes.
+
+    This used to be a 400. It no longer needs to be: the fold that refusal
+    protected against — one row carrying both regimes' EFF/CON — is now
+    structurally impossible, and refusing would make merge stricter than launch,
+    which happily puts both arms in a single run."""
     run_a = arena_store.create_run(
         session, workflow_ids=["wf-a"], model_ids=["model-x"],
         reasoning_efforts={"model-x": "low"},
@@ -1677,8 +1685,10 @@ def test_merge_refuses_matches_of_one_pair_driven_at_different_efforts(session, 
 
     client = _make_arena_app(session, settings)
     resp = client.post("/api/arena/runs/merge", json={"source_run_ids": [run_a, run_b]})
-    assert resp.status_code == 400
-    assert "different reasoning efforts" in resp.json()["detail"]
+    assert resp.status_code == 200
+
+    merged = arena_store.get_run(session, resp.json()["run_id"])
+    assert merged["reasoning_efforts"] == {"model-x": ["high", "low"]}
 
 
 def test_merge_allows_a_run_that_pinned_DIFFERENT_models_differently(session, settings):
