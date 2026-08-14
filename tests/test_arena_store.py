@@ -35,6 +35,18 @@ def _make_match(session, run_id, *, workflow_id="wf-a", model_id="model-x",
     )
 
 
+def _make_match_at(session, run_id, *, model_id="model-x", reasoning_effort=None,
+                   objective_score=70.0, workflow_id="wf-a"):
+    """A match for ONE ARM — (model, effort) is the contestant key."""
+    return store.record_match(
+        session, run_id, workflow_id, model_id,
+        objective_score=objective_score, judged_score=None, total_score=None,
+        judge_missing=False, config={"reasoning_effort": reasoning_effort},
+        transcript_path=None, status="scored",
+        reasoning_effort=reasoning_effort,
+    )
+
+
 # ---- round-trip tests ----
 
 def test_create_run_returns_id(session):
@@ -1032,3 +1044,42 @@ def test_delete_runs_keeps_orm_identity_map_in_sync(session, agent_thread_factor
 
     assert loaded.arena_run_id is None
     assert session.get(AgentThread, thread.id).arena_run_id is None
+
+
+# ---- contestant key: (run, workflow, model, effort) ----
+
+def test_record_match_two_efforts_are_two_rows(session):
+    """The same model at low and high is two contestants, not an upsert clobber."""
+    rid = _make_run(session)
+    low = _make_match_at(session, rid, reasoning_effort="low")
+    high = _make_match_at(session, rid, reasoning_effort="high")
+    assert low != high
+    assert len(store.get_run(session, rid)["matches"]) == 2
+
+
+def test_record_match_same_effort_updates_one_row(session):
+    rid = _make_run(session)
+    first = _make_match_at(session, rid, reasoning_effort="high", objective_score=10.0)
+    second = _make_match_at(session, rid, reasoning_effort="high", objective_score=20.0)
+    assert first == second
+    matches = store.get_run(session, rid)["matches"]
+    assert len(matches) == 1
+    assert matches[0]["objective_score"] == 20.0
+
+
+def test_record_match_unpinned_updates_one_row(session):
+    """None normalises to '', so two unpinned writes still upsert (not duplicate)."""
+    rid = _make_run(session)
+    first = _make_match_at(session, rid, reasoning_effort=None, objective_score=10.0)
+    second = _make_match_at(session, rid, reasoning_effort=None, objective_score=20.0)
+    assert first == second
+    assert len(store.get_run(session, rid)["matches"]) == 1
+
+
+def test_match_dict_surfaces_effort_as_none_when_unpinned(session):
+    rid = _make_run(session)
+    _make_match_at(session, rid, model_id="a", reasoning_effort=None)
+    _make_match_at(session, rid, model_id="b", reasoning_effort="max")
+    by_model = {m["model_id"]: m for m in store.get_run(session, rid)["matches"]}
+    assert by_model["a"]["reasoning_effort"] is None
+    assert by_model["b"]["reasoning_effort"] == "max"

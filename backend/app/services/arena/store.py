@@ -77,11 +77,22 @@ def record_match(
     status: str,
     error: str | None = None,
     score_breakdown: dict | None = None,
+    reasoning_effort: str | None = None,
 ) -> int:
-    """Upsert an ArenaMatch row; return its id."""
+    """Upsert an ArenaMatch row; return its id.
+
+    ``reasoning_effort`` is part of the contestant key: the same model at two
+    efforts is two rows that rank against each other. ``None`` means the run did
+    not pin one, stored as ``''``.
+    """
+    # '' is the stored form of "unpinned"; the column is part of the contestant
+    # key, so the lookup MUST filter on it or the second arm upserts over the
+    # first and the board reports a completed run with one arm silently missing.
+    effort_key = reasoning_effort or ""
     existing = (
         session.query(ArenaMatch)
-        .filter_by(run_id=run_id, workflow_id=workflow_id, model_id=model_id)
+        .filter_by(run_id=run_id, workflow_id=workflow_id, model_id=model_id,
+                   reasoning_effort=effort_key)
         .one_or_none()
     )
     if existing is not None:
@@ -101,6 +112,7 @@ def record_match(
         run_id=run_id,
         workflow_id=workflow_id,
         model_id=model_id,
+        reasoning_effort=effort_key,
         status=status,
         objective_score=objective_score,
         judged_score=judged_score,
@@ -635,6 +647,9 @@ def _match_to_dict(m: ArenaMatch) -> dict:
         "run_id": m.run_id,
         "workflow_id": m.workflow_id,
         "model_id": m.model_id,
+        # None, not '', at the dict boundary: callers reason about "unpinned" as
+        # an absence, and '' would read as a real level in JSON.
+        "reasoning_effort": m.reasoning_effort or None,
         "status": m.status,
         "objective_score": m.objective_score,
         "judged_score": m.judged_score,
