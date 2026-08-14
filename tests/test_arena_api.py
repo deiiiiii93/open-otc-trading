@@ -1572,7 +1572,7 @@ def test_create_run_accepts_an_effort_for_an_anthropic_routed_model(session, set
     )
     assert resp.status_code == 202
     run = arena_store.get_run(session, resp.json()["run_id"])
-    assert run["reasoning_efforts"] == {"glm-5-2": "max"}
+    assert run["reasoning_efforts"] == {"glm-5-2": ["max"]}
 
 
 def test_create_run_rejects_an_effort_for_a_non_reasoning_anthropic_model(session, settings):
@@ -1608,7 +1608,7 @@ def test_create_run_accepts_DIFFERENT_efforts_per_model(session, settings):
     )
     assert resp.status_code == 202
     run = arena_store.get_run(session, resp.json()["run_id"])
-    assert run["reasoning_efforts"] == {"deepseek-v4-pro": "max", "grok-4-6": "xhigh"}
+    assert run["reasoning_efforts"] == {"deepseek-v4-pro": ["max"], "grok-4-6": ["xhigh"]}
 
 
 def test_create_run_rejects_an_effort_outside_a_narrow_measured_ladder(session, settings):
@@ -1656,7 +1656,7 @@ def test_partial_pinning_leaves_other_models_at_their_default(session, settings)
     )
     assert resp.status_code == 202
     run = arena_store.get_run(session, resp.json()["run_id"])
-    assert run["reasoning_efforts"] == {"deepseek-v4-pro": "high"}
+    assert run["reasoning_efforts"] == {"deepseek-v4-pro": ["high"]}
 
 
 def test_merge_refuses_matches_of_one_pair_driven_at_different_efforts(session, settings):
@@ -1699,7 +1699,7 @@ def test_merge_allows_a_run_that_pinned_DIFFERENT_models_differently(session, se
     resp = client.post("/api/arena/runs/merge", json={"source_run_ids": ids})
     assert resp.status_code == 200
     merged = arena_store.get_run(session, resp.json()["run_id"])
-    assert merged["reasoning_efforts"] == {"model-x": "low", "model-y": "high"}
+    assert merged["reasoning_efforts"] == {"model-x": ["low"], "model-y": ["high"]}
 
 
 def test_unpinned_runs_still_merge(session, settings):
@@ -1745,7 +1745,7 @@ def test_pinned_effort_reaches_run_match_and_is_recorded(session, settings):
     assert seen == ["high"]
     with database.SessionLocal() as s:
         run_dict = arena_store.get_run(s, run_id)
-        assert run_dict["reasoning_efforts"] == {"gpt-5-5": "high"}
+        assert run_dict["reasoning_efforts"] == {"gpt-5-5": ["high"]}
         assert run_dict["matches"][0]["config"]["reasoning_effort"] == "high"
 
 

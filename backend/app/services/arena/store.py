@@ -671,7 +671,13 @@ def _run_to_dict(run: ArenaRun) -> dict:
         "model_ids": run.model_ids,
         "weights": run.weights,
         "trials": run.trials,
-        "reasoning_efforts": run.reasoning_efforts or {},
+        # Always the LIST form at the dict boundary, so every consumer (execute,
+        # --resume, the router's RunSummary) sees one shape. Legacy rows stored a
+        # bare scalar; that is read, never migrated.
+        "reasoning_efforts": {
+            slug: ([levels] if isinstance(levels, str) else list(levels))
+            for slug, levels in (run.reasoning_efforts or {}).items()
+        },
         "error": run.error,
         "created_at": run.created_at.isoformat() if run.created_at else None,
         "matches": [_match_to_dict(m) for m in run.matches],

@@ -1,8 +1,8 @@
 """Arena run queueing and execution.
 
 queue_arena_run  — validate inputs, create ArenaRun + TaskRun, return both.
-execute_arena_run_task — sequential fan-out over (workflow, model) pairs;
-    each pair is run_match + judge_match + score; failures are per-match
+execute_arena_run_task — sequential fan-out over (workflow, model, effort) ARMS;
+    each arm is run_match + judge_match + score; failures are per-match
     (status="failed") and never abort the run.
 """
 from __future__ import annotations
@@ -21,6 +21,28 @@ from app.services.arena import store
 from app.services.arena.models import validate_model_ids
 
 
+def effort_levels_for(
+    reasoning_efforts: dict | None, model_id: str
+) -> list[str | None]:
+    """The effort levels this model runs at in a run, one contestant per level.
+
+    A model absent from the map runs exactly once, at its vendor default — what
+    every board through #104 measured. ``None`` inside the list is the explicit
+    unpinned arm, so a board can rank "as we have always run it" against a pin.
+
+    Accepts the LEGACY scalar form (``{slug: "high"}``, written before efforts
+    became per-arm lists) as a one-element list: derive on read, never migrate
+    the JSON column.
+    """
+    raw = (reasoning_efforts or {}).get(model_id)
+    if raw is None:
+        return [None]
+    if isinstance(raw, str):
+        return [raw or None]
+    levels = [(level or None) for level in raw]
+    return levels or [None]
+
+
 def queue_arena_run(
     session: Session,
     *,
@@ -28,7 +50,7 @@ def queue_arena_run(
     model_ids: list[str],
     weights: dict | None = None,
     trials: int = 1,
-    reasoning_efforts: dict[str, str] | None = None,
+    reasoning_efforts: dict[str, list[str | None] | str] | None = None,
 ) -> tuple[Any, TaskRun]:
     """Validate inputs, create ArenaRun + TaskRun, flush (no commit).
 
@@ -37,20 +59,24 @@ def queue_arena_run(
         workflow_ids: Non-empty list of workflow IDs.
         model_ids:    Non-empty list of model slugs/zenmux_names.
         weights:      Optional dict with keys "obj" and "judge".
-        trials:       Number of trials to run per (workflow, model) pair,
-                      folded into one aggregate match at execution time.
-        reasoning_efforts: Per-model effort map ``{model_slug: effort}``. A model
-                      absent from it runs at the vendor default (what every board
-                      through #104 used). Per-model because the ladders differ —
-                      no single level is valid across the arena field.
+        trials:       Number of trials to run per ARM, folded into one aggregate
+                      match at execution time.
+        reasoning_efforts: Per-model effort ARMS ``{model_slug: [level | None]}``.
+                      Two levels for one model make it two contestants that rank
+                      against each other. ``None`` inside the list is the explicit
+                      unpinned arm; a model absent from the map runs once at the
+                      vendor default (what every board through #104 used).
+                      Per-model because the ladders differ — no single level is
+                      valid across the arena field. A bare string is accepted for
+                      backward compatibility with the single-arm form.
 
     Returns:
         (run_id_int, task_run) — run_id_int is the ArenaRun.id.
 
     Raises:
         ValueError: if any workflow_id is unknown, any model_id is unknown,
-                    either list is empty, or an effort is not a level its own
-                    model accepts.
+                    either list is empty, a model's arms repeat a level, or an
+                    effort is not a level its own model accepts.
     """
     from app.golden_workflows.registry import get_workflow_bundle
     from app.services.deep_agent.model_factory import normalize_reasoning_effort
@@ -59,14 +85,6 @@ def queue_arena_run(
         raise ValueError("workflow_ids must not be empty")
     if not model_ids:
         raise ValueError("model_ids must not be empty")
-
-    # Normalize up-front: a bad effort must fail at launch, not per-match after
-    # the board has already burned budget on the first pair.
-    efforts = {
-        str(k): normalize_reasoning_effort(v)
-        for k, v in (reasoning_efforts or {}).items()
-    }
-    efforts = {k: v for k, v in efforts.items() if v is not None}
 
     # Validate all workflow IDs (raises FileNotFoundError or WorkflowError if unknown)
     for wid in workflow_ids:
@@ -78,13 +96,13 @@ def queue_arena_run(
     # Validate + canonicalize model IDs (raises ValueError if unknown)
     canonical_model_ids = validate_model_ids(model_ids)
 
-    # Each pinned effort must be legal for ITS OWN model, checked here rather than
-    # per-match: `resolve_agent_model_selection` would otherwise reject the
-    # offending model after the run has started and other pairs have already cost
-    # real money. Canonicalize the map's keys to model slugs at the same time, so
-    # a caller may key it by slug or zenmux_name exactly like `model_ids`.
-    canonical_efforts: dict[str, str] = {}
-    if efforts:
+    # Per-model LIST of arms. Each level is validated against ITS OWN model here
+    # rather than per-match: `resolve_agent_model_selection` would otherwise
+    # reject the offending arm after the run has started and other pairs have
+    # already cost real money. Canonicalize the map's keys to model slugs at the
+    # same time, so a caller may key it by slug or zenmux_name like `model_ids`.
+    canonical_efforts: dict[str, list[str | None]] = {}
+    if reasoning_efforts:
         from app.services.arena.models import arena_model_to_selection, get_model
         from app.services.deep_agent.channel_registry import get_registry
         from app.services.deep_agent.model_factory import effort_rejection
@@ -92,24 +110,46 @@ def queue_arena_run(
         registry = get_registry()
         known = set(canonical_model_ids)
         offenders = []
-        for raw_id, effort in efforts.items():
-            slug = validate_model_ids([raw_id])[0]
+        for raw_id, raw_levels in reasoning_efforts.items():
+            slug = validate_model_ids([str(raw_id)])[0]
             if slug not in known:
                 raise ValueError(
                     f"reasoning_efforts names {raw_id!r}, which is not one of this "
                     f"run's models {sorted(known)}"
                 )
+            levels = raw_levels if isinstance(raw_levels, list) else [raw_levels]
+            normalized: list[str | None] = []
+            for level in levels:
+                effort = normalize_reasoning_effort(level)
+                if effort in normalized:
+                    # Two arms with one contestant key: the second would upsert
+                    # over the first and the run would report completed with an
+                    # arm silently missing.
+                    raise ValueError(
+                        f"reasoning_efforts[{slug!r}] lists a duplicate level "
+                        f"{'default' if effort is None else repr(effort)}"
+                    )
+                normalized.append(effort)
+
             selection = arena_model_to_selection(get_model(slug))
-            # The SHARED seam, so launch validation and the per-match check cannot
-            # disagree — it also covers wire-protocol models (glm-5.2, minimax-m3,
-            # qwen3.7-max, longcat-2.0) whose client cannot carry an effort at all.
-            reason = effort_rejection(
-                registry, selection["channel"], selection["provider"],
-                selection["model"], effort,
-            )
-            if reason is not None:
-                offenders.append(f"{slug}: {reason}")
-            canonical_efforts[slug] = effort
+            for effort in normalized:
+                if effort is None:
+                    continue   # unpinned is legal for every model, always
+                # The SHARED seam, so launch validation and the per-match check
+                # cannot disagree — it also covers wire-protocol models (glm-5.2,
+                # minimax-m3, qwen3.7-max, longcat-2.0) whose client cannot carry
+                # an effort at all.
+                reason = effort_rejection(
+                    registry, selection["channel"], selection["provider"],
+                    selection["model"], effort,
+                )
+                if reason is not None:
+                    offenders.append(f"{slug}: {reason}")
+
+            # [None] is exactly "absent" — persisting it would claim a pin that is
+            # not one, and read back identically anyway.
+            if normalized != [None]:
+                canonical_efforts[slug] = normalized
         if offenders:
             raise ValueError(
                 "reasoning_effort is not accepted by the selected model — "
@@ -125,12 +165,19 @@ def queue_arena_run(
         reasoning_efforts=canonical_efforts or None,
     )
 
+    arms = sum(
+        len(effort_levels_for(canonical_efforts, m)) for m in canonical_model_ids
+    )
     task = TaskRun(
         kind=TaskKind.ARENA_RUN.value,
         status=TaskStatus.QUEUED.value,
-        description=f"Arena run: {len(workflow_ids)} workflow(s) × {len(canonical_model_ids)} model(s)",
+        description=(
+            f"Arena run: {len(workflow_ids)} workflow(s) × {arms} contestant(s)"
+        ),
         progress_current=0,
-        progress_total=len(workflow_ids) * len(canonical_model_ids) * trials,
+        # Arms, not models — a model with two efforts is two units of work, and
+        # the old product left a finished run reading as permanently stuck.
+        progress_total=len(workflow_ids) * arms * trials,
         message="Queued arena run",
     )
     session.add(task)
@@ -234,7 +281,8 @@ def _is_infra_contaminated(transcript) -> bool:
 
 def _save_transcript(transcript, artifact_root: Path,
                      workflow_id: str, model_id: str,
-                     trial: int | None = None) -> str | None:
+                     trial: int | None = None,
+                     reasoning_effort: str | None = None) -> str | None:
     """Persist the transcript JSON to disk; best-effort, None on failure.
 
     Writes the canonical ``transcript.json`` (what ArenaMatch.transcript_path
@@ -243,9 +291,13 @@ def _save_transcript(transcript, artifact_root: Path,
     Without the per-trial copy every trial overwrote the same file, so a failing
     early trial was unauditable — exactly the evidence needed to diagnose a
     low-CON row. Returns the canonical path.
+
+    One directory per ARM (``.../<model>/<effort or "default">/``). Two efforts of
+    one model previously wrote the same ``transcript.json`` and the second
+    clobbered the first — the same clobber, one level up.
     """
     try:
-        t_dir = artifact_root / workflow_id / model_id
+        t_dir = artifact_root / workflow_id / model_id / (reasoning_effort or "default")
         t_dir.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(transcript.model_dump(), indent=2)
         t_file = t_dir / "transcript.json"
@@ -350,10 +402,12 @@ def _run_and_score_once(
     # partial run truncated by a provider transport error after real early
     # steps (infra_error). Transcript evidence is still saved for audit.
     if _is_infra_blank(transcript):
-        invalid_path = _save_transcript(transcript, artifact_root, workflow_id, model_id, trial)
+        invalid_path = _save_transcript(transcript, artifact_root, workflow_id, model_id, trial,
+                                    reasoning_effort=reasoning_effort)
         return "invalid", None, "infra_blank", invalid_path
     if _is_infra_contaminated(transcript):
-        invalid_path = _save_transcript(transcript, artifact_root, workflow_id, model_id, trial)
+        invalid_path = _save_transcript(transcript, artifact_root, workflow_id, model_id, trial,
+                                    reasoning_effort=reasoning_effort)
         return "invalid", None, "infra_error", invalid_path
 
     # Subjective judgment: the injected test seam, else a contestant-excluded
@@ -420,7 +474,8 @@ def _run_and_score_once(
         transcript, loaded, judged=judged_score)
 
     # Save transcript to disk
-    transcript_path = _save_transcript(transcript, artifact_root, workflow_id, model_id, trial)
+    transcript_path = _save_transcript(transcript, artifact_root, workflow_id, model_id, trial,
+                                    reasoning_effort=reasoning_effort)
 
     return "scored", breakdown, transcript_path, None
 
@@ -488,6 +543,7 @@ def _record_pair(
             transcript_path=last_path,
             status="scored",
             score_breakdown=agg,
+            reasoning_effort=reasoning_effort,
         )
     elif last_infra is None and failed_exc is not None:
         store.record_match(
@@ -503,6 +559,7 @@ def _record_pair(
             transcript_path=None,
             status="failed",
             error=failed_exc,
+            reasoning_effort=reasoning_effort,
         )
     else:
         store.record_match(
@@ -518,6 +575,7 @@ def _record_pair(
             transcript_path=last_infra_path,
             status="invalid",
             error=last_infra or "infra_blank",
+            reasoning_effort=reasoning_effort,
         )
 
 
@@ -572,65 +630,70 @@ def _execute(
     trials_n = int(run_dict.get("trials") or 1)
     reasoning_efforts: dict = run_dict.get("reasoning_efforts") or {}
 
-    total_units = len(workflow_ids) * len(model_ids) * trials_n
+    # Arms, not models: a model pinned at two efforts is two contestants, so it
+    # is two units of work. The old product left such a run's progress bar short
+    # of its total forever, reading as stuck.
+    arms = sum(len(effort_levels_for(reasoning_efforts, m)) for m in model_ids)
+    total_units = len(workflow_ids) * arms * trials_n
     mark_task_running(session, task_id)
     store.set_run_status(session, run_id, "running")
     session.commit()
 
     completed = 0
 
-    # Sequential fan-out: one pair at a time, N trials per pair folded into a
+    # Sequential fan-out: one ARM at a time, N trials per arm folded into a
     # single aggregate match (trials_n == 1 is the historical single-match path).
     for workflow_id in workflow_ids:
         for model_id in model_ids:
             loaded = _get_bundle(workflow_id)
             model = get_model(model_id)
-            # This model's own pinned effort; absent = vendor default.
-            model_effort = reasoning_efforts.get(model_id)
+            # One contestant per pinned level; a model absent from the map runs
+            # once at its vendor default.
+            for model_effort in effort_levels_for(reasoning_efforts, model_id):
+                clean: list[dict] = []
+                last_infra: str | None = None
+                last_path: str | None = None
+                last_infra_path: str | None = None
+                failed_exc: str | None = None
+                for trial_index in range(trials_n):
+                    try:
+                        status, breakdown, info, invalid_path = _run_and_score_once(
+                            session,
+                            run_id=run_id,
+                            loaded=loaded,
+                            model=model,
+                            workflow_id=workflow_id,
+                            model_id=model_id,
+                            weights=weights,
+                            artifact_root=artifact_root,
+                            cfg=_cfg,
+                            run_match_fn=_run_match_fn,
+                            judge_fn=judge_fn,
+                            post=post,
+                            trial=trial_index,
+                            reasoning_effort=model_effort,
+                        )
+                        if status == "scored":
+                            clean.append(breakdown)
+                            last_path = info      # info is the saved transcript path
+                        else:
+                            last_infra = info     # info is the infra reason
+                            last_infra_path = invalid_path
+                    except Exception:
+                        failed_exc = traceback.format_exc()
 
-            clean: list[dict] = []
-            last_infra: str | None = None
-            last_path: str | None = None
-            last_infra_path: str | None = None
-            failed_exc: str | None = None
-            for trial_index in range(trials_n):
-                try:
-                    status, breakdown, info, invalid_path = _run_and_score_once(
-                        session,
-                        run_id=run_id,
-                        loaded=loaded,
-                        model=model,
-                        workflow_id=workflow_id,
-                        model_id=model_id,
-                        weights=weights,
-                        artifact_root=artifact_root,
-                        cfg=_cfg,
-                        run_match_fn=_run_match_fn,
-                        judge_fn=judge_fn,
-                        post=post,
-                        trial=trial_index,
-                        reasoning_effort=model_effort,
-                    )
-                    if status == "scored":
-                        clean.append(breakdown)
-                        last_path = info          # info is the saved transcript path
-                    else:
-                        last_infra = info         # info is the infra reason
-                        last_infra_path = invalid_path
-                except Exception:
-                    failed_exc = traceback.format_exc()
+                    completed += 1
+                    update_task_progress(session, task_id,
+                                         current=completed, total=total_units)
+                    session.commit()
 
-                completed += 1
-                update_task_progress(session, task_id, current=completed, total=total_units)
+                _record_pair(session, run_id, workflow_id, model_id, weights,
+                             trials_n, clean, last_path, last_infra, failed_exc,
+                             last_infra_path=last_infra_path,
+                             reasoning_effort=model_effort)
                 session.commit()
 
-            _record_pair(session, run_id, workflow_id, model_id, weights, trials_n,
-                        clean, last_path, last_infra, failed_exc,
-                        last_infra_path=last_infra_path,
-                        reasoning_effort=model_effort)
-            session.commit()
-
-    # All pairs processed — always mark completed (individual match failures are ok)
+    # All arms processed — always mark completed (individual match failures are ok)
     store.set_run_status(session, run_id, "completed")
     mark_task_finished(session, task_id, status=TaskStatus.COMPLETED.value)
     session.commit()
