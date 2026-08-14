@@ -2625,6 +2625,12 @@ class ArenaMatch(Base):
     run_id: Mapped[int] = mapped_column(ForeignKey("arena_run.id"), nullable=False, index=True)
     workflow_id: Mapped[str] = mapped_column(String, nullable=False)
     model_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # Which effort regime produced this row. '' means the run did not pin one, so
+    # the vendor default applied — NOT null, because SQL treats NULLs as distinct
+    # in a UNIQUE constraint and two unpinned rows for one pair would both insert.
+    reasoning_effort: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="", server_default="",
+    )
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     objective_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     judged_score: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -2641,9 +2647,12 @@ class ArenaMatch(Base):
     run: Mapped["ArenaRun"] = relationship(back_populates="matches")
 
     __table_args__ = (
+        # A contestant is (model, effort): the same model at low and at high are
+        # two rows that rank against each other, never one averaged row. This
+        # mirrors merge_runs' refusal to fold two efforts into one EFF/CON.
         UniqueConstraint(
-            "run_id", "workflow_id", "model_id",
-            name="uq_arena_match_run_workflow_model",
+            "run_id", "workflow_id", "model_id", "reasoning_effort",
+            name="uq_arena_match_run_workflow_model_effort",
         ),
     )
 
