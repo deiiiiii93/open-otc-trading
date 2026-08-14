@@ -35,8 +35,32 @@ import argparse
 import sys
 
 
+def _resume_todo(run: dict) -> list[tuple[str, str, "str | None"]]:
+    """Arms of this run that are not yet scored, as (workflow, model, effort).
+
+    Keyed by ARM, not by (workflow, model): a resume that treated a pair as done
+    because its unpinned arm scored would never run the pinned arm and would then
+    mark the run completed — this script's own reason for existing, one dimension
+    further in.
+    """
+    from app.services.arena.task import effort_levels_for
+
+    efforts = run.get("reasoning_efforts") or {}
+    done = {
+        (m["workflow_id"], m["model_id"], m.get("reasoning_effort"))
+        for m in run["matches"] if m["status"] == "scored"
+    }
+    arms = [
+        (w, m, effort)
+        for w in run["workflow_ids"]
+        for m in run["model_ids"]
+        for effort in effort_levels_for(efforts, m)
+    ]
+    return [a for a in arms if a not in done]
+
+
 def resume(run_id: int) -> int:
-    """Re-run every pair of *run_id* that is not already ``scored``.
+    """Re-run every ARM of *run_id* that is not already ``scored``.
 
     Mirrors ``task._execute``'s per-pair loop, but skips completed pairs and
     records into the SAME run. Stale non-scored rows for a retried pair are
@@ -65,15 +89,17 @@ def resume(run_id: int) -> int:
         # Resume MUST reuse the run's own efforts, never re-read a flag: resuming
         # a pinned board at a different effort would splice two regimes into one run.
         reasoning_efforts = run.get("reasoning_efforts") or {}
-        done = {(m["workflow_id"], m["model_id"])
-                for m in run["matches"] if m["status"] == "scored"}
-        pairs = [(w, m) for w in run["workflow_ids"] for m in run["model_ids"]]
-        todo = [p for p in pairs if p not in done]
+        todo = _resume_todo(run)
+        from app.services.arena.task import effort_levels_for
+        arms_total = len(run["workflow_ids"]) * sum(
+            len(effort_levels_for(reasoning_efforts, m)) for m in run["model_ids"]
+        )
 
-        print(f"resume run {run_id}: {len(done)} scored, {len(todo)} to run "
-              f"(trials={trials_n}, efforts={reasoning_efforts or 'unpinned'})", flush=True)
-        for w, m in todo:
-            print(f"  todo: {m} x {w}", flush=True)
+        print(f"resume run {run_id}: {arms_total - len(todo)} scored, "
+              f"{len(todo)} to run (trials={trials_n}, "
+              f"efforts={reasoning_efforts or 'unpinned'})", flush=True)
+        for w, m, effort in todo:
+            print(f"  todo: {m} @ {effort or 'default'} x {w}", flush=True)
         if not todo:
             store.set_run_status(session, run_id, "completed")
             session.commit()
@@ -86,20 +112,23 @@ def resume(run_id: int) -> int:
         store.set_run_status(session, run_id, "running")
         session.commit()
 
-        for workflow_id, model_id in todo:
-            # A previous sweep may have left an invalid/failed row for this pair.
+        for workflow_id, model_id, model_effort in todo:
+            # A previous sweep may have left an invalid/failed row for this ARM.
+            # The effort filter matters: without it this would also delete the
+            # OTHER arm's stale row, which its own iteration then never repairs.
             stale = (session.query(ArenaMatch)
                      .filter(ArenaMatch.run_id == run_id,
                              ArenaMatch.workflow_id == workflow_id,
                              ArenaMatch.model_id == model_id,
+                             ArenaMatch.reasoning_effort == (model_effort or ""),
                              ArenaMatch.status != "scored")
                      .all())
             for row in stale:
                 session.delete(row)
             if stale:
                 session.commit()
-                print(f"  cleared {len(stale)} stale row(s) for {model_id} x {workflow_id}",
-                      flush=True)
+                print(f"  cleared {len(stale)} stale row(s) for {model_id} "
+                      f"@ {model_effort or 'default'} x {workflow_id}", flush=True)
 
             loaded = get_workflow_bundle(workflow_id)
             model = get_model(model_id)
@@ -112,7 +141,7 @@ def resume(run_id: int) -> int:
                         workflow_id=workflow_id, model_id=model_id, weights=weights,
                         artifact_root=artifact_root, cfg=cfg, run_match_fn=run_match,
                         judge_fn=None, post=None, trial=trial_index,
-                        reasoning_effort=reasoning_efforts.get(model_id))
+                        reasoning_effort=model_effort)
                     if status == "scored" and breakdown is not None:
                         clean.append(breakdown)
                         last_path = info
@@ -126,19 +155,17 @@ def resume(run_id: int) -> int:
             _record_pair(session, run_id, workflow_id, model_id, weights, trials_n,
                          clean, last_path, last_infra, failed_exc,
                          last_infra_path=last_infra_path,
-                         reasoning_effort=reasoning_efforts.get(model_id))
+                         reasoning_effort=model_effort)
             session.commit()
-            print(f"  recorded {model_id} x {workflow_id} "
+            print(f"  recorded {model_id} @ {model_effort or 'default'} x {workflow_id} "
                   f"({len(clean)}/{trials_n} clean trials)", flush=True)
 
-        remaining = {(m["workflow_id"], m["model_id"])
-                     for m in (store.get_run(session, run_id) or {}).get("matches", [])
-                     if m["status"] == "scored"}
+        remaining = _resume_todo(store.get_run(session, run_id) or run)
         store.set_run_status(
-            session, run_id,
-            "completed" if len(remaining) == len(pairs) else "failed")
+            session, run_id, "completed" if not remaining else "failed")
         session.commit()
-        print(f"DONE resume run={run_id} scored={len(remaining)}/{len(pairs)}", flush=True)
+        print(f"DONE resume run={run_id} "
+              f"scored={arms_total - len(remaining)}/{arms_total}", flush=True)
         return 0
     finally:
         session.close()
@@ -151,17 +178,20 @@ def main() -> int:
     ap.add_argument("--trials", type=int, default=1)
     ap.add_argument(
         "--reasoning-effort",
+        nargs="+",
         choices=["none", "minimal", "low", "medium", "high", "xhigh", "max"],
         default=None,
-        help="Pin EVERY selected model to this effort (expanded to a per-model "
+        help="Pin EVERY selected model to these efforts (expanded to a per-model "
              "map, then validated against each model's own ladder — launch fails "
-             "naming any model that cannot take it). Omitted = vendor default, "
-             "which is what boards #8-#104 measured; pinning makes a board "
-             "non-comparable to them on EFF and CON. Ignored with --resume (the "
-             "run keeps its own).",
+             "naming any model that cannot take one). Give SEVERAL to run each "
+             "model once per level, as separate contestants that rank against "
+             "each other on the same board. Omitted = vendor default, which is "
+             "what boards #8-#104 measured; pinning makes a board non-comparable "
+             "to them on EFF and CON. Ignored with --resume (the run keeps its "
+             "own).",
     )
     ap.add_argument("--resume", type=int, metavar="RUN_ID",
-                    help="Continue an interrupted run: re-run every non-scored pair.")
+                    help="Continue an interrupted run: re-run every non-scored arm.")
     args = ap.parse_args()
 
     if args.resume:
@@ -183,11 +213,12 @@ def main() -> int:
             workflow_ids=list(args.workflows),
             model_ids=list(args.models),
             trials=args.trials,
-            # A scalar flag is sugar for "same effort for every model"; the stored
+            # The flag is sugar for "these efforts for every model"; the stored
             # shape is per-model, since ladders differ and a mixed board may need
-            # different levels. queue_arena_run rejects any model that cannot take it.
+            # different levels. Several levels make each model several ARMS.
+            # queue_arena_run rejects any model that cannot take one of them.
             reasoning_efforts=(
-                {m: args.reasoning_effort for m in args.models}
+                {m: list(args.reasoning_effort) for m in args.models}
                 if args.reasoning_effort else None
             ),
         )
@@ -196,11 +227,13 @@ def main() -> int:
     finally:
         session.close()
 
-    pairs = len(args.workflows) * len(args.models)
+    # Arms, not pairs: several pinned levels make one model several contestants.
+    arms = len(args.workflows) * len(args.models) * max(
+        1, len(args.reasoning_effort or []))
     print(f"RUN_ID={run_id} TASK_ID={task_id} "
-          f"pairs={pairs} trials={args.trials} "
-          f"effort={args.reasoning_effort or 'unpinned'} "
-          f"model_trials={pairs * args.trials}", flush=True)
+          f"arms={arms} trials={args.trials} "
+          f"effort={','.join(args.reasoning_effort) if args.reasoning_effort else 'unpinned'} "
+          f"model_trials={arms * args.trials}", flush=True)
 
     execute_arena_run_task(task_id, run_id)
     print(f"DONE run={run_id}", flush=True)
