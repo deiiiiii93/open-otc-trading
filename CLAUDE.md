@@ -373,6 +373,17 @@ The `/arena` Runs panel launches, deletes, and merges runs (endpoints in
 - The frontend runs list polls while any run is **non-terminal** — poll only on
   `queued`/`running` (the backend emits `queued`, **not** the type union's `pending`);
   `completed`/`failed` are terminal.
+- **`list_runs` must never build match dicts** (`_run_to_dict(include_matches=False)`).
+  `run.matches` is a lazy relationship, so serializing it costs a query per run and
+  then a `_match_to_dict` per match — each deriving an ability card, which **loads a
+  workflow**. The router projects six scalar fields and discards the rest, so all of
+  it was waste: measured **8.417 s to build 349 match dicts for the 87-run page and
+  return 19 KB**, re-fetched every 4s by the polling Arena page (which requests
+  `limit=200`, the router's clamp — so one request covers every run, not a page of
+  20). `get_run` keeps `include_matches=True`; the drilldown is the one caller that
+  needs them. `tests/test_arena_store.py` guards this by asserting that listing runs
+  emits **no `arena_match` SQL at all** — expire the session first, or the identity
+  map hides the lazy load the test exists to catch.
 
 ### Model Ability Card (Spec B, 2026-07-06)
 
@@ -829,6 +840,32 @@ so this is an identity change, not a UI one.
   `ValidationError` rather than silently.
 - **The board's `rowKey` must include the effort.** Two arms of one model are
   duplicate React keys otherwise.
+- **`fold_trial_breakdowns` does NOT lift `diagnosis`.** It lifts `objective`,
+  `objective_score`/`stdev`, `total_score` and `subjective_mode`; `diagnosis`
+  stays inside each entry of `aggregate`. Any reader that goes straight to
+  `score_breakdown.diagnosis` therefore sees nothing for a wrapped match — which
+  silently blanked the drilldown panel and the match-cell snippet for **222 of
+  297 stored matches**. So **"`trials=1` is behavior-preserving" holds for the
+  ability card, not for the diagnosis**: with `n_trials: 1` there is also no trial
+  tab (tabs need `length > 1`), so the data is unreachable rather than merely
+  moved. Read it through `displayDiagnosis` — one trial ⇒ that trial's, more than
+  one ⇒ none, because averaging counts across trials would report a run that never
+  happened (the spread is what CON measures); the Average tab lists each trial's
+  counts instead.
+- **Every surface that shows a contestant must show its effort**, or two arms are
+  indistinguishable: same model, workflow, status and radar. The leaderboard's
+  model column had a `Badge`; the run drilldown's match cells did not, so run #109
+  showed Grok 4.6 twice (OVR 75 and 74) with no way to tell `low` from `high`.
+  A pinned arm gets the badge; an unpinned one gets none — `null` is an absence,
+  not a level.
+- **A THIRD way a field vanishes between store and screen: the TypeScript type.**
+  `/api/arena/runs/{id}` had always sent `reasoning_effort` per match, but
+  `ArenaMatchSummary` did not declare it (only `ArenaLeaderboardRow` did), so the
+  UI could not consume what was already on the wire. This is the same failure as
+  `/api/agent/models`' pydantic drop and `get_leaderboard`'s hand-built key
+  projection, at a different layer — and the loudest of the three, since `tsc`
+  reports it the moment anything reads the field. When a value is in the DB and
+  in the response but not on screen, check the client type before the server.
 
 ### QuantArk is pinned — never install it editable
 
@@ -1226,6 +1263,72 @@ and the server re-validates).
 - The frontend vitest suite is **flaky under load** (slow route tests hit the 5s
   timeout; `main` alone varies 12→18 failures run to run). Compare failing-file sets
   against a same-machine `main` run before blaming a branch.
+
+---
+
+## The chat thread list is scoped, paged, and searched server-side
+
+`GET /api/chat/threads` takes **`?source=`** (scope), **`?limit=`/`?offset=`**
+(page; default 20, max 100) and **`?q=`** (search). Unscoped and unpaged, it
+returned every public thread with every message eagerly loaded —
+`public_thread_query` excludes only `hedge_evidence`, so **arena threads are
+"public" too**, and an arena board mints one thread per match. On this desk that
+was 671 of 719 threads and 59.7 MB of the ~61 MB payload; 3.5 s and 61 MB per call
+became 0.04 s and 662 KB.
+
+- **Search MUST stay server-side now that the list is a page.** The old desk
+  filtered `thread.title + thread.messages[].content` on the client; against a
+  paged list that silently searches only the rows that happened to be fetched,
+  which looks like "no results" rather than "not loaded". `?q=` matches title or
+  message content across every thread in scope (93 of 100 live hits were beyond
+  page 1). It is debounced in the controller and paged like any other query, so a
+  broad term cannot re-open the unbounded payload.
+- **Escape LIKE wildcards.** `%` and `_` are metacharacters, so a desk user
+  searching `100%` or `book_id` would otherwise match rows they never asked for
+  (`_like_pattern` + `ilike(..., escape="\\")`).
+- **Page ordering needs a tiebreaker.** `order_by(updated_at.desc(), id.desc())` —
+  without the id, rows sharing an `updated_at` can repeat on one page and be
+  skipped on the next.
+- **The client pages by a growing window** (`limit` grows, `offset` stays 0)
+  rather than appending at an offset, because the 4s async-task poll re-runs the
+  same fetch: an append scheme would have the poll refresh only the first page.
+  Scopes are fetched with the same limit and the merged list is trimmed back to
+  it — exact, because the newest N of a union always lies inside the union of
+  each list's newest N.
+- **`withActiveThreadPreserved` is not defensive coding.** `activeThread` is
+  derived from the list, so a search whose results omit the open thread would
+  blank the message pane of the conversation being read.
+
+- **A slow sync endpoint is a connection-pool bug waiting to happen.** `get_db`
+  closes its session in a `finally` that runs *after* response serialization, so a
+  handler holds its pooled connection for the whole render — here ~3.5 s of
+  GIL-bound pydantic work, which does not parallelize, so concurrency multiplies
+  hold times instead of overlapping them. FastAPI admits **40** concurrent sync
+  handlers (anyio threadpool) while the engine admits **15** (SQLAlchemy 2.0
+  defaults: `pool_size` 5 + `max_overflow` 10, `pool_timeout` 30 — `database.py`
+  passes no pool arguments). Any handler slow enough for 15 to overlap ends in
+  `QueuePool limit ... connection timed out`. Raising the pool only moves the
+  threshold; the fix is to stop holding a connection through a big serialize.
+- **Diagnosing it: count fds, don't read code first.** `QueuePool` retains only
+  `pool_size` idle connections — overflow connections are *closed* on return — so
+  `lsof -p <worker> | grep open_otc.sqlite3` showing exactly 15 means the pool is
+  pinned at its ceiling. Check `%CPU`/state too: `R` at ~100% says CPU-bound
+  serialization, not lock contention or a leaked session. Note `--reload` means
+  the app runs in a **child** process; the parent holds no DB fds.
+- **Client disconnect does not cancel a sync `def` endpoint.** Starlette runs it to
+  completion in the threadpool, so an abandoned slow request keeps its connection
+  and CPU — retries stack rather than replace, which is what turns a slow page into
+  cascading 500s.
+- **Adding a new thread `source` now needs a decision, not just a string.** The
+  desk only sees what it asks for, so a new source is invisible there unless
+  something requests it. `AgentThreadCreate.source` accepts any non-reserved value.
+- **Per-thread resolution is deliberately NOT scoped.** `get_public_thread` /
+  `_get_thread_or_404` share `public_thread_query`, and a thread must stay
+  reachable by id whatever its source — only the *list* is scoped.
+- The desk's "show arena threads" checkbox is **controlled by the controller**
+  (`includeArena`), because it drives a second scoped fetch rather than filtering
+  an already-downloaded payload. `AgentDesk`'s client-side arena filter stays: it
+  keeps the list honest between toggling off and the re-fetch landing.
 
 ---
 

@@ -225,6 +225,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trade" before, so the orchestrator had nothing to route to and improvised.
 
 ### Fixed
+- **The arena DIAGNOSIS panel was invisible on every trials-wrapped match** —
+  **222 of 297 stored matches (75%)**, i.e. everything from run #20 on.
+  `scoring.fold_trial_breakdowns` lifts `objective`, the scores and
+  `subjective_mode` to the top of an aggregate but leaves `diagnosis` inside each
+  trial, and both the drilldown and the match-cell snippet read only the top
+  level. Not one match in the DB actually lacks a diagnosis.
+
+  Worst on a **single-trial** aggregate such as run #109: trial tabs render only
+  when there is more than one trial, so with `n_trials: 1` there was neither a
+  top-level diagnosis nor a tab to reach it from — the data was unreachable.
+  That also makes the documented "trials=1 is behaviour-preserving" true of the
+  ability card but not of the diagnosis.
+
+  A one-trial aggregate now displays that trial's diagnosis (the wrap is an
+  implementation detail — the trial *is* the match). With more than one trial
+  there is no single honest answer, so the Average tab reports **each trial's own
+  counts** rather than a mean: trials genuinely differ, and that spread is
+  precisely what CON measures. Per-trial tabs already showed the full panel.
+- **Arena match cells didn't say which reasoning-effort arm they were.** A
+  contestant is `(model_id, reasoning_effort)`, so a two-arm run renders two
+  cells with the same model, workflow, status and radar — on run #109 that was
+  Grok 4.6 at `low` (OVR 75) beside Grok 4.6 at `high` (OVR 74), with nothing on
+  screen to tell them apart. The cells now carry the effort as a `Badge`, exactly
+  as the leaderboard's model column already did; an unpinned arm shows no badge,
+  since `null` is an absence rather than a level.
+
+  The API had been sending `reasoning_effort` per match all along — the omission
+  was in the **frontend type**: `ArenaMatchSummary` never declared the field
+  (`ArenaLeaderboardRow` did), so the UI could not read what was on the wire.
+- **`GET /api/arena/runs` spent ~8.4 s building a payload it threw away.**
+  `store.list_runs` serialized every run through `_run_to_dict`, which walks the
+  lazy `run.matches` relationship (a query per run) and runs `_match_to_dict` on
+  each — and that derives an ability card per match, loading a workflow every
+  time. The router then projects only `id`/`status`/`created_at`/`workflow_ids`/
+  `model_ids`/`reasoning_efforts` and discards the rest. Measured on the live DB:
+  **8.417 s to build 349 match dicts for the 87-run page, returning 19 KB**.
+
+  The Arena page re-fetches that list **every 4 s** while any run is
+  non-terminal, with no in-flight guard, so requests overlapped and stacked
+  while a board was running — the same connection-holding pattern as the thread
+  list, reached by a different route (N+1 + derived cards rather than payload
+  size).
+
+  `_run_to_dict` gained `include_matches` (default `True`); the list passes
+  `False`. **8.417 s → 0.008 s in-process, 0.012 s over HTTP, byte-identical
+  response.** `get_run` — the drilldown, the caller that genuinely needs matches
+  — is unchanged and still derives a card per match (verified: 18/18 on run 33).
+- **`GET /api/chat/threads` exhausted the SQLAlchemy connection pool**, 500ing the
+  Agent Desk with `QueuePool limit of size 5 overflow 10 reached, connection timed
+  out, timeout 30.00`. The endpoint returned *every* public thread with *every*
+  message eagerly loaded (`selectinload`) and fully serialized — 719 threads /
+  11,054 messages / ~61 MB on this desk, of which **671 threads and 59.7 MB were
+  arena matches**, because `public_thread_query` excluded only `hedge_evidence`.
+
+  The pool error was a symptom, not the defect: each call pinned a pooled
+  connection through ~3.5 s of GIL-bound serialization (the session closes only
+  after the response is built), and the desk re-fetches every 4 s while an async
+  task runs. Enough overlap and the next caller waits out the 30 s checkout
+  timeout. Measured: one call 3.5 s, six concurrent did not finish in 180 s, and
+  the worker held exactly 15 connections — `pool_size + max_overflow`.
+
+  `list_threads` now takes `?source=` to scope the list, and is **paged**:
+  `?limit=` (default **20**, max 100) + `?offset=`, with the desk offering
+  "Load more". Measured on the live desk: **3.5 s / 61 MB → 0.04 s / 662 KB**.
+  Paging bounds the cost against *any* history, so the arena toggle is bounded
+  too (59.7 MB → 2.6 MB) — previously ticking that box reproduced the original
+  outage. Per-thread resolution (`get_public_thread` / `_get_thread_or_404`) is
+  deliberately **not** scoped or paged: a thread stays reachable by id whatever
+  its source.
+
+  **Behaviour change:** the list returns 20 rows by default where it previously
+  returned every thread. Bounded-by-default is the point — the unbounded list is
+  the defect — and `limit` is capped at 100 so no caller can ask for the old
+  behaviour back.
+
+  Thread search moved **server-side** (`?q=`, matching title *or* message
+  content, case-insensitively, with `%`/`_` escaped to literals). It had to: the
+  list is now one page, so the old client-side filter would have quietly searched
+  only the rows that happened to be loaded. Search spans every thread in scope —
+  verified against the live DB, where 93 of 100 hits lay beyond page 1 — and is
+  debounced and paged so a broad query cannot re-open the unbounded payload.
+
+  The desk's "show arena threads" checkbox became **controlled by the
+  controller** rather than local component state: arena threads are no longer in
+  the payload unless requested, so the toggle now drives the fetch (a second
+  scoped request, merged and re-sorted `updated_at`-desc) instead of filtering
+  what had already been downloaded and thrown away. The client-side filter
+  stays — it keeps the list correct between toggling off and the re-fetch
+  landing.
 - **`open` and `reopen` were declared but allowed for no product**, so the `premium`
   settlement leg could never fire and no position had ever recorded its inception
   cash — the settlement module's documented "cash lifecycle is covered from
