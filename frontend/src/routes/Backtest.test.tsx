@@ -84,7 +84,7 @@ const completedRun = {
     notes: [],
   },
   artifacts: {
-    dashboards: { AAPL: 'backtest_run_3_AAPL.html' },
+    report_html_path: '/srv/data/backtest_reports/3/report.html',
   },
   created_at: '2025-07-01T10:00:00Z',
 };
@@ -347,7 +347,7 @@ describe('BacktestLive', () => {
     });
   });
 
-  it('renders dashboard artifact links for a completed run', async () => {
+  it('renders the HTML report card for a completed run', async () => {
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = requestUrl(input);
       if (url === '/api/portfolios') return response(portfolios);
@@ -361,28 +361,29 @@ describe('BacktestLive', () => {
     await userEvent.click(screen.getByText(/run #3/i));
 
     await waitFor(() =>
-      expect(screen.getByRole('link', { name: /quant-ark dashboard.*aapl/i })).toBeInTheDocument(),
+      expect(screen.getByRole('link', { name: /open full html report/i })).toBeInTheDocument(),
     );
-    expect(screen.getByTitle(/quant-ark dashboard aapl/i)).toHaveAttribute(
+    const frame = screen.getByTitle(/backtest report for run 3/i);
+    expect(frame).toHaveAttribute(
       'src',
-      '/api/backtest/runs/3/artifacts/backtest_run_3_AAPL.html',
+      expect.stringMatching(/^\/api\/backtest\/runs\/3\/artifacts\/report\.html\?t=\d+$/),
     );
     const standaloneLink = screen.getByRole('link', { name: /open standalone tab/i });
     expect(standaloneLink).toHaveAttribute(
       'href',
-      '/api/backtest/runs/3/artifacts/backtest_run_3_AAPL.html',
+      '/api/backtest/runs/3/artifacts/report.html',
     );
     expect(standaloneLink).toHaveAttribute('target', '_blank');
-    const link = screen.getByRole('link', { name: /quant-ark dashboard.*aapl/i });
+    const link = screen.getByRole('link', { name: /open full html report/i });
     expect(link).toHaveAttribute(
       'href',
-      '/api/backtest/runs/3/artifacts/backtest_run_3_AAPL.html',
+      '/api/backtest/runs/3/artifacts/report.html',
     );
-    const downloadLink = screen.getByRole('link', { name: /download dashboard html.*aapl/i });
+    const downloadLink = screen.getByRole('link', { name: /download html report/i });
     expect(downloadLink).toHaveAttribute('download');
     expect(downloadLink).toHaveAttribute(
       'href',
-      '/api/backtest/runs/3/artifacts/backtest_run_3_AAPL.html?download=true',
+      '/api/backtest/runs/3/artifacts/report.html?download=true',
     );
   });
 });

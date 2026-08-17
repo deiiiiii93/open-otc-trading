@@ -1860,7 +1860,8 @@ export type BacktestRun = {
   results?: BacktestResults | null;
   excluded_positions?: Array<{ position_id: number; reason: string }> | null;
   artifacts?: {
-    dashboards?: Record<string, string>;
+    report_html_path?: string | null;
+    notes?: string[];
     [key: string]: unknown;
   } | null;
   created_at: string;
