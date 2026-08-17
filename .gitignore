@@ -48,3 +48,9 @@ open_otc.sqlite
 # generated rednote artifacts
 docs/rednotes/
 docs/confirmations/
+
+# zhihu article drafts (rewritten from docs/arena reports)
+docs/zhihu/
+
+# generated ability-card images (re-renderable from the board data)
+docs/arena/cards/
