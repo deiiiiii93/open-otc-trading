@@ -96,6 +96,11 @@ export type ArenaMatchSummary = {
   id: number;
   workflow_id: string;
   model_id: string;
+  // A contestant is (model_id, reasoning_effort), so a match belongs to ONE arm.
+  // The API has always sent this; the type omitted it, which left the match
+  // cells unable to tell two arms of a model apart. Null = unpinned (the arm ran
+  // at the vendor default).
+  reasoning_effort?: string | null;
   status: string;
   objective_score: number | null;
   judged_score: number | null;

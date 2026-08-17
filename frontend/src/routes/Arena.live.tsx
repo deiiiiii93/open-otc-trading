@@ -267,6 +267,10 @@ function AggregateSummary({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
               {t.judge?.judged_score != null
                 ? ` · judge ${t.judge.judged_score.toFixed(1)}`
                 : ''}
+              {/* Per-trial, never a mean: trials differ (that spread is what
+                  CON measures), so averaging their counts would report a run
+                  that never happened. */}
+              {t.diagnosis?.counts ? ` · ${t.diagnosis.counts}` : ''}
             </span>
           </li>
         ))}
@@ -275,10 +279,25 @@ function AggregateSummary({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
   );
 }
 
+// `fold_trial_breakdowns` lifts the scores and `objective` to the top of an
+// aggregate but NOT `diagnosis`, which stays inside each trial. A ONE-trial
+// aggregate is the match — the wrap is an implementation detail (trials=1 is
+// meant to be behaviour-preserving) — so its diagnosis is the match's. With
+// more than one trial there is no single honest answer, so this returns none
+// and the average view reports each trial's counts instead of a mean.
+function displayDiagnosis(
+  breakdown: ArenaScoreBreakdown,
+): ArenaScoreBreakdown['diagnosis'] {
+  if (breakdown.diagnosis) return breakdown.diagnosis;
+  const trials = breakdown.aggregate;
+  if (Array.isArray(trials) && trials.length === 1) return trials[0]?.diagnosis;
+  return undefined;
+}
+
 function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
   const obj = breakdown.objective;
   const judge = breakdown.judge;
-  const diagnosis = breakdown.diagnosis;
+  const diagnosis = displayDiagnosis(breakdown);
   // Drilldown grouping: "step" (chronological, the default) vs "dimension"
   // (checks regrouped under GRD/ADH/SYN/PRC so a user can read exactly where a
   // stat's points came from and where they were lost). Hook declared before the
@@ -1072,6 +1091,13 @@ export function ArenaLive() {
                       >
                         <span className="wl-arena__match-title">
                           {modelDisplayName(match.model_id, models)}
+                          {/* Two arms of one model are otherwise identical
+                              cells — same name, workflow, status and radar. */}
+                          {match.reasoning_effort ? (
+                            <Badge variant="info" className="wl-arena__match-effort">
+                              {match.reasoning_effort}
+                            </Badge>
+                          ) : null}
                         </span>
                         <span className="wl-arena__match-title" style={{ fontWeight: 'normal', color: 'var(--ink-2)' }}>
                           {match.workflow_id}
@@ -1103,9 +1129,15 @@ export function ArenaLive() {
                             </span>
                           )
                         )}
-                        {match.score_breakdown?.diagnosis?.analysis && (
+                        {/* Same lift as the drilldown: an aggregate keeps its
+                            diagnosis inside the trials, so reading only the top
+                            level blanked this snippet for every trials-wrapped
+                            match. */}
+                        {(match.score_breakdown
+                          ? displayDiagnosis(match.score_breakdown)?.analysis
+                          : null) && (
                           <span className="wl-arena__match-diagnosis">
-                            {match.score_breakdown.diagnosis.analysis}
+                            {displayDiagnosis(match.score_breakdown!)!.analysis}
                           </span>
                         )}
                       </button>

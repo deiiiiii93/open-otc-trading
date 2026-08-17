@@ -221,6 +221,47 @@ describe('ArenaLive', () => {
     expect(invalidCell.querySelector('.wl-arena__match-ability')).toBeNull();
   });
 
+  it('labels each arm with the reasoning effort it ran at', async () => {
+    // A contestant is (model, effort). One model at two efforts is two cells
+    // that are otherwise identical — model, workflow, status and radar all
+    // match — so without the effort they cannot be told apart.
+    setupMocks();
+    vi.mocked(arenaApi.getArenaRun).mockResolvedValue({
+      run: mockRuns[0],
+      matches: [
+        { ...mockMatches[0], id: 370, reasoning_effort: 'low' },
+        { ...mockMatches[0], id: 371, reasoning_effort: 'high' },
+      ],
+    });
+    render(<ArenaLive />);
+
+    await userEvent.click(await screen.findByText('1'));
+
+    const cells = (await screen.findAllByText('workflow-a')).map(
+      (node) => node.closest('.wl-arena__match-cell') as HTMLElement,
+    );
+    expect(cells).toHaveLength(2);
+    expect(within(cells[0]).getByText('low')).toBeInTheDocument();
+    expect(within(cells[1]).getByText('high')).toBeInTheDocument();
+  });
+
+  it('shows no effort badge on an unpinned match', async () => {
+    // `null` is an absence, not a level — matching the leaderboard, which also
+    // renders a badge only for a pinned arm.
+    setupMocks();
+    vi.mocked(arenaApi.getArenaRun).mockResolvedValue({
+      run: mockRuns[0],
+      matches: [{ ...mockMatches[0], reasoning_effort: null }],
+    });
+    render(<ArenaLive />);
+
+    await userEvent.click(await screen.findByText('1'));
+
+    const cell = (await screen.findByText('workflow-a'))
+      .closest('.wl-arena__match-cell') as HTMLElement;
+    expect(cell.querySelector('.wl-arena__match-effort')).toBeNull();
+  });
+
   it('clicking a match fetches the transcript and renders transcript content', async () => {
     setupMocks();
     render(<ArenaLive />);
@@ -263,6 +304,84 @@ describe('ArenaLive', () => {
     expect(screen.getByText('Per-judge (jury)')).toBeInTheDocument();
     expect(screen.getByText('deepseek-v4-pro')).toBeInTheDocument();
     expect(screen.getByText('qwen/qwen3.7-max')).toBeInTheDocument();
+  });
+
+  it('shows the diagnosis of a single-trial aggregate', async () => {
+    // Run #109's shape: `fold_trial_breakdowns` wraps even ONE trial, moving
+    // `diagnosis` into aggregate[0] and lifting no copy to the top. One trial
+    // also means no trial tabs (they need length > 1), so the diagnosis was
+    // unreachable in the UI even though every match in the DB carries one.
+    setupMocks();
+    const trial = mockMatches[0].score_breakdown!;
+    vi.mocked(arenaApi.getArenaRun).mockResolvedValue({
+      run: mockRuns[0],
+      matches: [
+        {
+          ...mockMatches[0],
+          score_breakdown: {
+            n_trials: 1,
+            aggregate: [trial],
+            objective: trial.objective,
+            objective_score: trial.objective_score,
+            card: trial.card,
+          },
+        },
+      ],
+    });
+    render(<ArenaLive />);
+
+    await userEvent.click(await screen.findByText('1'));
+
+    // The match cell's analysis snippet reads the same lifted diagnosis.
+    expect(
+      await screen.findByText(/Over-caution — asked for the portfolio/),
+    ).toBeInTheDocument();
+
+    await userEvent.click(await screen.findByText('workflow-a'));
+
+    expect(await screen.findByText('Score breakdown')).toBeInTheDocument();
+    expect(
+      screen.getByText('1/7 expected skills · 0 tool calls · 1/2 checks'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows each trial its own counts on the Average tab of a multi-trial run', async () => {
+    // With >1 trial there is no single honest diagnosis, so the average view
+    // reports each trial's counts rather than inventing a mean.
+    setupMocks();
+    const trial = mockMatches[0].score_breakdown!;
+    const second = {
+      ...trial,
+      diagnosis: {
+        counts: '4/7 expected skills · 26 tool calls · 2/2 checks',
+        analysis: 'Second trial ran the full loop.',
+        counts_detail: { skills_hit: 4, tool_calls: 26, checks_passed: 2, checks_total: 2 },
+      },
+    };
+    vi.mocked(arenaApi.getArenaRun).mockResolvedValue({
+      run: mockRuns[0],
+      matches: [
+        {
+          ...mockMatches[0],
+          score_breakdown: {
+            n_trials: 2,
+            aggregate: [trial, second],
+            objective: trial.objective,
+            objective_score: trial.objective_score,
+            card: trial.card,
+          },
+        },
+      ],
+    });
+    render(<ArenaLive />);
+
+    await userEvent.click(await screen.findByText('1'));
+    await userEvent.click(await screen.findByText('workflow-a'));
+    // >1 trial renders the tab strip; 'Average' is the default tab.
+    await screen.findByRole('tab', { name: 'Average' });
+
+    expect(screen.getByText(/0 tool calls/)).toBeInTheDocument();
+    expect(screen.getByText(/26 tool calls/)).toBeInTheDocument();
   });
 
   it('toggles the score breakdown between By step and By dimension', async () => {

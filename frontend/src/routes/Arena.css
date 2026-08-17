@@ -310,6 +310,12 @@
   word-break: break-all;
 }
 
+/* Sits inline after the model name. A margin rather than a flex gap on the
+   title, so `word-break` keeps wrapping long model ids as it did. */
+.wl-arena__match-effort {
+  margin-left: var(--gap-1);
+}
+
 .wl-arena__match-score {
   font-family: var(--font-numeric);
   font-size: var(--type-small-size);
