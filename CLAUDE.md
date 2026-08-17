@@ -538,7 +538,7 @@ defects biased ranking, not just scale.
   Worse, grounding is the FIRST objective tie-breaker (annotated "hardest to fake"), so
   contaminating it corrupts ranking, not just score.
 
-### Arena DB hygiene: two purge scopes, two ownership proofs
+### Arena DB hygiene: three purge scopes, two ownership proofs
 
 Golden workflows resolve books **by name**, so leftover rows don't just accumulate —
 they make each successive match's name resolution harder than the last, which biases
@@ -561,6 +561,30 @@ no error anywhere.
 - Both share `_delete_portfolios_with_dependents`, which sweeps dependents by
   introspecting mapped tables for `portfolio_id` / `position_id` in reverse
   FK-dependency order. **Ownership is the caller's job** — that helper re-checks nothing.
+- **`_purge_match_scenario_sets`** reclaims MODEL-CREATED **scenario sets**, the
+  third namespace — a DIRECTORY, not a table, so the baseline is the set of names
+  present pre-match (`scenario_set_name_baseline`) and the trace evidence is
+  `collect_scenario_set_names_saved` (spans of `save_scenario_set` /
+  `generate_scenario_set` — **not** `run_scenario_test`, which merely *names* a set
+  to execute). Also in the `finally`, same permanence argument.
+  - **A reserved-name guard cannot see a near-miss name.** `_purge_seeded_trap_sets`
+    and `_assert_trap_sets_absent` key on the EXACT `trap_absent_sets` entry, and
+    both passed cleanly for five weeks while `stagflation-shock-2011-compact` and
+    `-x10` sat in the library beside them. **A model asked for a set that does not
+    exist does not stop — it invents one**, which is precisely how the near-miss
+    name gets minted. The trap step is the one place guaranteed to provoke this.
+  - Cost, measured: the leaked 45-scenario set turned the flagship's step-8 trap
+    into a 141 KB retrieval problem (Run #109 `high`: 273 calls / 91 errors there,
+    81 of them brute-forcing artifact keys). A leaked on-disk `market-crash` drifted
+    1 scenario → a 5-point grid on 2026-07-09, moving CVaR −7759 → −12175 — which
+    is why the flagship pins the `market_crash` **predefined built-in** and
+    `exclusive_keys` blocks the on-disk set. **Never let a manifest depend on a
+    mutable on-disk set.**
+  - The purge **spares a pre-existing set the model OVERWROTE** (the name is in the
+    baseline). Deletion cannot restore the original and would destroy desk work —
+    so overwrite drift stays a manifest-design problem, not a cleanup one.
+  - Reuse `scenario_catalog._safe_name` when mapping a harvested name to its file;
+    restating the regex would let the purge silently miss what the writer created.
 
 ### Judge fairness & scoring methodology (2026-07-05 reform)
 

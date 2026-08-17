@@ -206,6 +206,12 @@ def _extract_rfq_id(content: Any) -> int | None:
 
 _PORTFOLIO_CREATE_TOOLS = {"create_portfolio"}
 
+# The only two tools that WRITE a named set file (both land in
+# ``scenario_catalog.save_set``). Deliberately excludes ``run_scenario_test``,
+# which merely names a set to execute — running a set is not evidence that this
+# match created it, and treating it as such would delete real desk sets.
+_SCENARIO_SET_WRITE_TOOLS = {"save_scenario_set", "generate_scenario_set"}
+
 
 def _extract_portfolio_id(content: Any) -> int | None:
     """Dig the minted portfolio id out of a create_portfolio result.
@@ -253,6 +259,47 @@ def collect_portfolio_ids_created(thread_id, store=None) -> set[int]:
             pid = _extract_portfolio_id(content)
             if pid is not None:
                 out.add(pid)
+    return out
+
+
+def collect_scenario_set_names_saved(thread_id, store=None) -> set[str]:
+    """Return the scenario-set names this thread's set-WRITING tools saved.
+
+    Mirrors ``collect_portfolio_ids_created``: the caller intersects these with a
+    pre-match name baseline so only sets created BY THIS MATCH are ever deleted.
+
+    Needed because a model-created set is invisible to ``_purge_seeded_trap_sets``,
+    which removes only the exact reserved ``trap_absent_sets`` name. A model asked
+    for a set that does not exist does not stop — it INVENTS one under a near-miss
+    name, and that file then outlives the match. Measured: one 2026-07-09 session
+    left ``stagflation-shock-2011-compact`` (45 scenarios) and ``-x10`` in the live
+    library, and every later board saw them. That is not cosmetic — the flagship's
+    step-8 trap asks for a set that must not exist, so a leaked near-homonym hands
+    the next model a real set to run, and its 141 KB result then dominates the step
+    (Run #109: 273 tool calls, 91 errors on the arm that tried to mine it).
+
+    Evidence, not names: a set is only claimed when a WRITE tool reported saving it.
+    """
+    if store is None:
+        from app.config import get_settings
+        from app.services.tracing.store import get_trace_store
+        store = get_trace_store(get_settings())
+    if hasattr(store, "flush"):
+        store.flush()
+
+    out: set[str] = set()
+    for root in store.list_thread_traces(thread_id, limit=1000):
+        for sp in store.get_trace(root["trace_id"]):
+            if (sp.get("run_type") != "tool"
+                    or sp.get("name") not in _SCENARIO_SET_WRITE_TOOLS):
+                continue
+            content, _name, _tcid = _parse_tool_output(sp.get("outputs"))
+            for scope in (content.get("data"), content):
+                if isinstance(scope, dict) and isinstance(scope.get("name"), str):
+                    name = scope["name"].strip()
+                    if name:
+                        out.add(name)
+                    break
     return out
 
 

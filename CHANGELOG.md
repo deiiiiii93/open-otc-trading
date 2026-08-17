@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Arena: scenario sets a model invents are now reclaimed after the match.**
+  Scenario sets were the last model-writable namespace with no post-match purge —
+  `_purge_seeded_trap_sets` removes only the *exact* reserved `trap_absent_sets`
+  name, but a model asked for a set that does not exist does not stop, it invents
+  one under a **near-miss** name. One 2026-07-09 session left
+  `stagflation-shock-2011-compact` (45 scenarios) and `-x10` in the live library,
+  where they sat for five weeks and were served to every later board by
+  `list_scenario_library`.
+
+  Consequences measured, not theorised: the flagship's step-8 trap asks for a set
+  that must not exist, so the leak handed each model a real set to run, and its
+  141 KB result then dominated the step — Run #109's `high` arm spent **273 tool
+  calls and 91 errors** there, 81 of them brute-forcing artifact key names. A
+  leaked on-disk `market-crash` had already drifted 1 scenario → a 5-point grid
+  the same day, moving CVaR −7759 → −12175 (the flagship pins the `market_crash`
+  *predefined built-in* precisely because of this).
+
+  New `_purge_match_scenario_sets` runs in the same `finally` as the RFQ and
+  portfolio purges, on the same two-part ownership proof: names harvested from
+  this thread's `save_scenario_set` / `generate_scenario_set` spans
+  (`collect_scenario_set_names_saved`) **and** absent from a pre-match name
+  baseline (`scenario_set_name_baseline`). Requiring both means a set a human
+  saved through the REST endpoint mid-run, or any pre-existing desk set the model
+  merely *ran*, is never touched. A pre-existing set the model **overwrote** is
+  deliberately spared — deletion cannot restore the original.
 - ops-settlement-day step-6 `new_derived_baseline` now uses `rel_tol: 0.005`
   so copying 91,000 into both answer slots no longer matches 90,000.
 
