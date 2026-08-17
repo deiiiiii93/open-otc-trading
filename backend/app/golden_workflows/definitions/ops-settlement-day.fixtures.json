@@ -1,0 +1,680 @@
+{
+  "schema_version": 1,
+  "seed": {
+    "portfolios": [
+      {"alias": "ops", "name": "Arena Ops Desk", "id": 9300}
+    ],
+    "positions": [
+      {"alias": "ko_snowball", "portfolio": "ops", "underlying": "000905.SH",
+       "product_type": "SnowballOption", "quantity": 100, "id": 9311,
+       "status": "open",
+       "product_kwargs": {"initial_price": 100.0, "strike": 100.0,
+         "maturity": 1.0, "contract_multiplier": 1.0,
+         "barrier_config": {"ko_barrier": 103.0, "ko_rate": 0.15,
+                            "ki_barrier": 80.0},
+         "initial_date": "2026-06-24", "settlement_date": "2027-06-24"}},
+      {"alias": "expired_put", "portfolio": "ops", "underlying": "AAPL",
+       "product_type": "EuropeanVanillaOption", "quantity": 200, "id": 9312,
+       "status": "open",
+       "product_kwargs": {"strike": 95.0, "option_type": "PUT",
+                          "maturity": 0.1}},
+      {"alias": "unwound_barrier", "portfolio": "ops", "underlying": "700.HK",
+       "product_type": "BarrierOption", "quantity": 500, "id": 9313,
+       "status": "closed",
+       "product_kwargs": {"strike": 100.0, "option_type": "CALL",
+         "maturity": 0.5, "barrier": 130.0, "barrier_type": "UP_OUT"}},
+      {"alias": "drifted_barrier", "portfolio": "ops", "underlying": "600519.SH",
+       "product_type": "BarrierOption", "quantity": 300, "id": 9314,
+       "status": "closed",
+       "product_kwargs": {"strike": 100.0, "option_type": "PUT",
+         "maturity": 0.5, "barrier": 80.0, "barrier_type": "DOWN_OUT"}},
+      {"alias": "paid_barrier", "portfolio": "ops", "underlying": "TSLA",
+       "product_type": "BarrierOption", "quantity": 250, "id": 9315,
+       "status": "closed",
+       "product_kwargs": {"strike": 100.0, "option_type": "CALL",
+         "maturity": 0.25, "barrier": 120.0, "barrier_type": "UP_OUT"}}
+    ],
+    "position_lifecycle_events": [
+      {"alias": "unwound_close", "position": "unwound_barrier",
+       "event_type": "close",
+       "event_data": {"reason": "client unwind, price pending desk confirm"},
+       "created_at": "2026-08-11T22:05:00"},
+      {"alias": "drifted_close", "position": "drifted_barrier",
+       "event_type": "close",
+       "event_data": {"settlement_amount": 90000.0,
+                      "reason": "negotiated unwind; print corrected upstream"},
+       "created_at": "2026-08-11T21:40:00"},
+      {"alias": "paid_close", "position": "paid_barrier",
+       "event_type": "close",
+       "event_data": {"settlement_amount": 47000.0,
+                      "settlement_date": "2026-08-13",
+                      "reason": "client unwind"},
+       "created_at": "2026-08-10T20:15:00"}
+    ],
+    "settlement_cashflows": [
+      {"alias": "needs_amount_row", "position": "unwound_barrier",
+       "lifecycle_event": "unwound_close", "leg_key": "settlement",
+       "direction": "pay", "status": "needs_amount", "id": 9301},
+      {"alias": "stale_override_row", "position": "drifted_barrier",
+       "lifecycle_event": "drifted_close", "leg_key": "settlement",
+       "direction": "pay", "status": "pending", "id": 9302,
+       "amount": 91000.0, "derived_amount": 88000.0,
+       "derived_value_date": "2026-08-14", "value_date": "2026-08-14",
+       "stale": true,
+       "stale_reason": {"kind": "derived_values_changed",
+                        "detail": "event_data.settlement_amount",
+                        "old": {"amount": 88000.0, "value_date": "2026-08-14"},
+                        "new": {"amount": 90000.0, "value_date": "2026-08-14"}}},
+      {"alias": "released_row", "position": "paid_barrier",
+       "lifecycle_event": "paid_close", "leg_key": "settlement",
+       "direction": "pay", "status": "released", "id": 9303,
+       "amount": 47000.0, "derived_amount": 47000.0,
+       "value_date": "2026-08-13", "derived_value_date": "2026-08-13",
+       "counterparty": "Golden Gate Capital"}
+    ]
+  },
+  "replay": {
+    "step-1-ko": {
+      "ai": {
+        "content": "Recording the overnight knock-out and reading back the blotter.",
+        "tool_calls": [
+          {
+            "id": "c1_ko",
+            "name": "record_lifecycle_event",
+            "args": {
+              "position_id": 9311,
+              "event_type": "knock_out",
+              "event_data": {
+                "payoff": 512500.0,
+                "settlement_date": "2026-08-14"
+              }
+            }
+          },
+          {
+            "id": "c1_read",
+            "name": "get_settlement_cashflows",
+            "args": {"position_id": 9311}
+          },
+          {
+            "id": "c1_answer",
+            "name": "record_answer",
+            "args": {
+              "answer": {
+                "payoff_amount": 512500.0,
+                "cashflow_status": "pending"
+              }
+            }
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "c1_ko",
+          "name": "record_lifecycle_event",
+          "content": {
+            "ok": true,
+            "event_id": 9401,
+            "position_id": 9311,
+            "event_type": "knock_out",
+            "new_status": "closed"
+          }
+        },
+        {
+          "tool_call_id": "c1_read",
+          "name": "get_settlement_cashflows",
+          "content": {
+            "cashflows": [
+              {
+                "cashflow_id": 9304,
+                "position_id": 9311,
+                "portfolio_id": 9300,
+                "underlying": "000905.SH",
+                "product_type": "SnowballOption",
+                "event_type": "knock_out",
+                "lifecycle_event_id": 9401,
+                "leg_key": "settlement",
+                "direction": "pay",
+                "amount": 512500.0,
+                "currency": "CNY",
+                "value_date": "2026-08-14",
+                "counterparty": null,
+                "status": "pending",
+                "stale": false,
+                "stale_reason": null,
+                "derived_amount": 512500.0,
+                "derived_basis": "event_data.payoff",
+                "row_version": 1
+              }
+            ],
+            "count": 1
+          }
+        },
+        {
+          "tool_call_id": "c1_answer",
+          "name": "record_answer",
+          "content": {
+            "recorded": true,
+            "fields": {
+              "payoff_amount": 512500.0,
+              "cashflow_status": "pending"
+            }
+          }
+        }
+      ],
+      "skills_routed": ["record-lifecycle-event"],
+      "artifacts": [],
+      "response_text": "Knock-out recorded on position 9311; the settlement blotter shows a pending pay cashflow of 512,500.00 CNY value 2026-08-14."
+    },
+    "step-2-expire": {
+      "ai": {
+        "content": "Recording the worthless AAPL put expiry with no cash obligation.",
+        "tool_calls": [
+          {
+            "id": "c2_expire",
+            "name": "record_lifecycle_event",
+            "args": {
+              "position_id": 9312,
+              "event_type": "expire",
+              "event_data": {
+                "expiry_date": "2026-08-11",
+                "reason": "expired worthless"
+              }
+            }
+          },
+          {
+            "id": "c2_answer",
+            "name": "record_answer",
+            "args": {
+              "answer": {"event_type_recorded": "expire"}
+            }
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "c2_expire",
+          "name": "record_lifecycle_event",
+          "content": {
+            "ok": true,
+            "event_id": 9402,
+            "position_id": 9312,
+            "event_type": "expire",
+            "new_status": "closed"
+          }
+        },
+        {
+          "tool_call_id": "c2_answer",
+          "name": "record_answer",
+          "content": {
+            "recorded": true,
+            "fields": {"event_type_recorded": "expire"}
+          }
+        }
+      ],
+      "skills_routed": [],
+      "artifacts": [],
+      "response_text": "Recorded expire on position 9312; the put ended worthless and no settlement cashflow was created."
+    },
+    "step-3-sweep": {
+      "ai": {
+        "content": "Running the settlement generation safety-net and reading the book summary.",
+        "tool_calls": [
+          {
+            "id": "c3_gen",
+            "name": "generate_settlement_cashflows",
+            "args": {"portfolio_id": 9300}
+          },
+          {
+            "id": "c3_summary",
+            "name": "get_settlement_summary",
+            "args": {"portfolio_id": 9300}
+          },
+          {
+            "id": "c3_answer",
+            "name": "record_answer",
+            "args": {
+              "answer": {
+                "total_cny_amount": 650500.0,
+                "stale_count": 1
+              }
+            }
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "c3_gen",
+          "name": "generate_settlement_cashflows",
+          "content": {
+            "ok": true,
+            "created": 0,
+            "skipped": 4,
+            "filled": 0,
+            "checked": 4,
+            "flagged_stale": 1
+          }
+        },
+        {
+          "tool_call_id": "c3_summary",
+          "name": "get_settlement_summary",
+          "content": {
+            "by_status": {
+              "pending": 2,
+              "needs_amount": 1,
+              "released": 1
+            },
+            "totals_by_currency": {"CNY": 650500.0},
+            "stale_count": 1,
+            "total": 4
+          }
+        },
+        {
+          "tool_call_id": "c3_answer",
+          "name": "record_answer",
+          "content": {
+            "recorded": true,
+            "fields": {
+              "total_cny_amount": 650500.0,
+              "stale_count": 1
+            }
+          }
+        }
+      ],
+      "skills_routed": ["manage-settlement-cashflows"],
+      "artifacts": [],
+      "response_text": "Sweep checked four cashflows and created none; the Arena Ops Desk blotter totals 650,500.00 CNY with one stale row."
+    },
+    "step-4-fill": {
+      "ai": {
+        "content": "Filling the 700.HK unwind amount on cashflow 9301.",
+        "tool_calls": [
+          {
+            "id": "c4_read",
+            "name": "get_settlement_cashflow",
+            "args": {"cashflow_id": 9301}
+          },
+          {
+            "id": "c4_update",
+            "name": "update_settlement_cashflow",
+            "args": {
+              "cashflow_id": 9301,
+              "expected_row_version": 1,
+              "amount": 83250.0,
+              "value_date": "2026-08-15"
+            }
+          },
+          {
+            "id": "c4_answer",
+            "name": "record_answer",
+            "args": {
+              "answer": {
+                "new_status": "pending",
+                "amount": 83250.0
+              }
+            }
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "c4_read",
+          "name": "get_settlement_cashflow",
+          "content": {
+            "cashflow_id": 9301,
+            "position_id": 9313,
+            "portfolio_id": 9300,
+            "underlying": "700.HK",
+            "product_type": "BarrierOption",
+            "event_type": "close",
+            "lifecycle_event_id": 9411,
+            "leg_key": "settlement",
+            "direction": "pay",
+            "amount": null,
+            "currency": "CNY",
+            "value_date": null,
+            "counterparty": null,
+            "status": "needs_amount",
+            "stale": false,
+            "stale_reason": null,
+            "derived_amount": null,
+            "derived_basis": null,
+            "row_version": 1,
+            "events": [],
+            "notices": []
+          }
+        },
+        {
+          "tool_call_id": "c4_update",
+          "name": "update_settlement_cashflow",
+          "content": {
+            "ok": true,
+            "cashflow_id": 9301,
+            "position_id": 9313,
+            "portfolio_id": 9300,
+            "underlying": "700.HK",
+            "product_type": "BarrierOption",
+            "event_type": "close",
+            "lifecycle_event_id": 9411,
+            "leg_key": "settlement",
+            "direction": "pay",
+            "amount": 83250.0,
+            "currency": "CNY",
+            "value_date": "2026-08-15",
+            "counterparty": null,
+            "status": "pending",
+            "stale": false,
+            "stale_reason": null,
+            "derived_amount": null,
+            "derived_basis": null,
+            "row_version": 2
+          }
+        },
+        {
+          "tool_call_id": "c4_answer",
+          "name": "record_answer",
+          "content": {
+            "recorded": true,
+            "fields": {
+              "new_status": "pending",
+              "amount": 83250.0
+            }
+          }
+        }
+      ],
+      "skills_routed": [],
+      "artifacts": [],
+      "response_text": "Filled cashflow 9301 with 83,250.00 CNY value 2026-08-15; status promoted from needs_amount to pending."
+    },
+    "step-5-release": {
+      "ai": {
+        "content": "Releasing the 700.HK unwind payment for tomorrow's run.",
+        "tool_calls": [
+          {
+            "id": "c5_release",
+            "name": "release_settlement_cashflow",
+            "args": {
+              "cashflow_id": 9301,
+              "expected_row_version": 2
+            }
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "c5_release",
+          "name": "release_settlement_cashflow",
+          "content": {
+            "ok": true,
+            "cashflow_id": 9301,
+            "position_id": 9313,
+            "portfolio_id": 9300,
+            "underlying": "700.HK",
+            "product_type": "BarrierOption",
+            "event_type": "close",
+            "lifecycle_event_id": 9411,
+            "leg_key": "settlement",
+            "direction": "pay",
+            "amount": 83250.0,
+            "currency": "CNY",
+            "value_date": "2026-08-15",
+            "counterparty": null,
+            "status": "released",
+            "stale": false,
+            "stale_reason": null,
+            "derived_amount": null,
+            "derived_basis": null,
+            "row_version": 3
+          }
+        }
+      ],
+      "skills_routed": [],
+      "artifacts": [],
+      "response_text": "Released cashflow 9301 (83,250.00 CNY) for the next payment run."
+    },
+    "step-6-resync": {
+      "ai": {
+        "content": "Adjudicating the stale 600519.SH override: keep the desk number, re-baseline derived.",
+        "tool_calls": [
+          {
+            "id": "c6_read",
+            "name": "get_settlement_cashflow",
+            "args": {"cashflow_id": 9302}
+          },
+          {
+            "id": "c6_resync",
+            "name": "resync_settlement_cashflow",
+            "args": {
+              "cashflow_id": 9302,
+              "expected_row_version": 1
+            }
+          },
+          {
+            "id": "c6_answer",
+            "name": "record_answer",
+            "args": {
+              "answer": {
+                "effective_amount": 91000.0,
+                "new_derived_baseline": 90000.0
+              }
+            }
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "c6_read",
+          "name": "get_settlement_cashflow",
+          "content": {
+            "cashflow_id": 9302,
+            "position_id": 9314,
+            "portfolio_id": 9300,
+            "underlying": "600519.SH",
+            "product_type": "BarrierOption",
+            "event_type": "close",
+            "lifecycle_event_id": 9412,
+            "leg_key": "settlement",
+            "direction": "pay",
+            "amount": 91000.0,
+            "currency": "CNY",
+            "value_date": "2026-08-14",
+            "counterparty": null,
+            "status": "pending",
+            "stale": true,
+            "stale_reason": {
+              "kind": "derived_values_changed",
+              "detail": "event_data.settlement_amount",
+              "old": {"amount": 88000.0, "value_date": "2026-08-14"},
+              "new": {"amount": 90000.0, "value_date": "2026-08-14"}
+            },
+            "derived_amount": 88000.0,
+            "derived_basis": "event_data.settlement_amount",
+            "row_version": 1,
+            "events": [],
+            "notices": []
+          }
+        },
+        {
+          "tool_call_id": "c6_resync",
+          "name": "resync_settlement_cashflow",
+          "content": {
+            "ok": true,
+            "cashflow_id": 9302,
+            "position_id": 9314,
+            "portfolio_id": 9300,
+            "underlying": "600519.SH",
+            "product_type": "BarrierOption",
+            "event_type": "close",
+            "lifecycle_event_id": 9412,
+            "leg_key": "settlement",
+            "direction": "pay",
+            "amount": 91000.0,
+            "currency": "CNY",
+            "value_date": "2026-08-14",
+            "counterparty": null,
+            "status": "pending",
+            "stale": false,
+            "stale_reason": null,
+            "derived_amount": 90000.0,
+            "derived_basis": "event_data.settlement_amount",
+            "row_version": 2
+          }
+        },
+        {
+          "tool_call_id": "c6_answer",
+          "name": "record_answer",
+          "content": {
+            "recorded": true,
+            "fields": {
+              "effective_amount": 91000.0,
+              "new_derived_baseline": 90000.0
+            }
+          }
+        }
+      ],
+      "skills_routed": [],
+      "artifacts": [],
+      "response_text": "Resynced cashflow 9302: stale flag cleared and derived baseline now 90,000; the desk override of 91,000 remains the effective amount."
+    },
+    "step-7-settle": {
+      "ai": {
+        "content": "Marking the Golden Gate Capital wire settled and issuing its notice.",
+        "tool_calls": [
+          {
+            "id": "c7_settle",
+            "name": "settle_settlement_cashflow",
+            "args": {
+              "cashflow_id": 9303,
+              "expected_row_version": 1
+            }
+          },
+          {
+            "id": "c7_notice",
+            "name": "generate_settlement_notice",
+            "args": {"cashflow_id": 9303}
+          },
+          {
+            "id": "c7_answer",
+            "name": "record_answer",
+            "args": {
+              "answer": {"settled_amount": 47000.0}
+            }
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "c7_settle",
+          "name": "settle_settlement_cashflow",
+          "content": {
+            "ok": true,
+            "cashflow_id": 9303,
+            "position_id": 9315,
+            "portfolio_id": 9300,
+            "underlying": "TSLA",
+            "product_type": "BarrierOption",
+            "event_type": "close",
+            "lifecycle_event_id": 9413,
+            "leg_key": "settlement",
+            "direction": "pay",
+            "amount": 47000.0,
+            "currency": "CNY",
+            "value_date": "2026-08-13",
+            "counterparty": "Golden Gate Capital",
+            "status": "settled",
+            "stale": false,
+            "stale_reason": null,
+            "derived_amount": 47000.0,
+            "derived_basis": "event_data.settlement_amount",
+            "row_version": 2
+          }
+        },
+        {
+          "tool_call_id": "c7_notice",
+          "name": "generate_settlement_notice",
+          "content": {
+            "ok": true,
+            "notice_version": 1,
+            "artifact_path": "settlement_notice_9303_v1.md",
+            "content_sha256": "abababababababababababababababababababababababababababababababab",
+            "artifacts": [
+              {
+                "path": "settlement_notice_9303_v1.md",
+                "size_bytes": 140,
+                "kind": "text",
+                "content": "# Settlement Notice\n\nCounterparty: Golden Gate Capital\nAmount: 47,000.00 CNY pay\nValue date: 2026-08-13\nCashflow: 9303 (TSLA barrier unwind)"
+              }
+            ]
+          }
+        },
+        {
+          "tool_call_id": "c7_answer",
+          "name": "record_answer",
+          "content": {
+            "recorded": true,
+            "fields": {"settled_amount": 47000.0}
+          }
+        }
+      ],
+      "skills_routed": [],
+      "artifacts": [
+        {
+          "path": "settlement_notice_9303_v1.md",
+          "size_bytes": 140,
+          "kind": "text",
+          "content": "# Settlement Notice\n\nCounterparty: Golden Gate Capital\nAmount: 47,000.00 CNY pay\nValue date: 2026-08-13\nCashflow: 9303 (TSLA barrier unwind)"
+        }
+      ],
+      "response_text": "Settled cashflow 9303 for 47,000.00 CNY to Golden Gate Capital and issued settlement notice v1."
+    },
+    "step-8-reopen": {
+      "ai": {
+        "content": "Attempting the instructed reopen and reporting the fail-closed refusal.",
+        "tool_calls": [
+          {
+            "id": "c8_reopen",
+            "name": "record_lifecycle_event",
+            "args": {
+              "position_id": 9311,
+              "event_type": "reopen",
+              "event_data": {"reason": "KO print disputed"}
+            }
+          },
+          {
+            "id": "c8_answer",
+            "name": "record_answer",
+            "args": {
+              "answer": {
+                "reopen_recorded": "no",
+                "blocker": "non-terminal settlement cashflow exists for the KO"
+              }
+            }
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "c8_reopen",
+          "name": "record_lifecycle_event",
+          "content": {
+            "ok": false,
+            "error": "cannot reopen while a live settlement cashflow exists; settle, void or edit it first"
+          }
+        },
+        {
+          "tool_call_id": "c8_answer",
+          "name": "record_answer",
+          "content": {
+            "recorded": true,
+            "fields": {
+              "reopen_recorded": "no",
+              "blocker": "non-terminal settlement cashflow exists for the KO"
+            }
+          }
+        }
+      ],
+      "skills_routed": [],
+      "artifacts": [],
+      "response_text": "Reopen on position 9311 was refused because a non-terminal settlement cashflow still exists for the knock-out; the KO row was not voided or settled."
+    }
+  }
+}

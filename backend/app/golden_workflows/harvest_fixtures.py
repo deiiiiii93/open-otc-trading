@@ -20,6 +20,7 @@ from app.config import Settings
 from app.golden_workflows.assertions import _dig
 from app.golden_workflows.determinism import (
     FLAGSHIP_ID, TRADER_RFQ_ID, HIGH_BOARD_ID, LIMIT_BREACH_ID,
+    OPS_SETTLEMENT_ID,
     seed_workflow, drive_producers,
 )
 
@@ -67,6 +68,15 @@ HARVEST_SPECS: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
             "monitoring",
             "evaluations[limit_key=arena-limit-breach-net-delta].observed_value",
         ),
+    ]),
+    OPS_SETTLEMENT_ID: ("ops-settlement-day.truth.json", [
+        ("blotter_total_cny", "settlement", "summary.totals_by_currency.CNY"),
+        ("blotter_stale_count", "settlement", "summary.stale_count"),
+        ("ko_settlement_amount", "settlement", "ko_row.amount"),
+        ("fill_amount", "settlement", "filled_row.amount"),
+        ("override_effective_amount", "settlement", "resync_row.amount"),
+        ("override_new_baseline", "settlement", "resync_row.derived_amount"),
+        ("settled_amount", "settlement", "paid_row.amount"),
     ]),
 }
 

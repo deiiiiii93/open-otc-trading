@@ -244,3 +244,48 @@ def test_release_tool_runs_end_to_end_and_reports_conflict(session, settings):
     )
     assert conflict["ok"] is False
     assert conflict["error"] in {"conflict", "invalid"}
+
+
+def test_generate_notice_returns_standard_artifacts_entry(session, settings):
+    """Arena/chat only harvest artifacts from a tool-result `artifacts` list —
+    same shape write_report_artifact emits. Without it, synthesis checks are blind."""
+    from app.models import (
+        Portfolio,
+        Position,
+        PositionLifecycleEvent,
+        SettlementCashflow,
+    )
+    from app.tools.settlement import generate_settlement_notice_tool
+
+    portfolio = Portfolio(name="Notice Tool Book")
+    session.add(portfolio)
+    session.flush()
+    position = Position(
+        portfolio_id=portfolio.id, underlying="AAPL",
+        product_type="SnowballOption", product_kwargs={},
+        quantity=1.0, entry_price=0.0, currency="USD",
+    )
+    session.add(position)
+    session.flush()
+    event = PositionLifecycleEvent(
+        position_id=position.id, event_type="settle", event_data={}
+    )
+    session.add(event)
+    session.flush()
+    cashflow = SettlementCashflow(
+        lifecycle_event_id=event.id, leg_key="settlement",
+        position_id=position.id, currency="USD", direction="pay",
+        amount=1234.56, counterparty="Acme Capital", status="released",
+    )
+    session.add(cashflow)
+    session.commit()
+
+    result = generate_settlement_notice_tool.invoke(
+        {"cashflow_id": cashflow.id}
+    )
+    assert result["ok"] is True
+    (artifact,) = result["artifacts"]
+    assert artifact["kind"] == "text"
+    assert artifact["path"] == result["artifact_path"]
+    assert artifact["size_bytes"] == len(artifact["content"].encode("utf-8"))
+    assert "Acme Capital" in artifact["content"]

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- ops-settlement-day step-6 `new_derived_baseline` now uses `rel_tol: 0.005`
+  so copying 91,000 into both answer slots no longer matches 90,000.
+
 ### Added
 - **Arena: one model at several reasoning efforts, ranked on one board.** A
   contestant is now `(model, reasoning_effort)` rather than a model. The `/arena`
@@ -197,6 +201,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Trial counts on the card footer come from the breakdown's `n_trials`, **not**
   `arena_run.trials`: a merged board's run row carries the source run's trials
   (1) while every match in it is a folded multi-trial aggregate.
+- `ops-settlement-day` arena golden workflow (5th board): an OTC operations
+  manager's day over the lifecycle-events and settlement modules — overnight
+  knock-out recording, the worthless-expiry trap, blotter sweep, needs_amount
+  fill, release, drift-vs-override adjudication, settle + notice, and the
+  fail-closed reopen refusal. 8 steps / 44 checks, persona trader, uncalibrated
+  par, session-wide void ban. The first board with zero QuantArk dependency —
+  truth is harvested from the settlement services alone. Includes two new
+  fixture seed namespaces (`position_lifecycle_events`, `settlement_cashflows`)
+  and the settlement notice tool now emits the standard `artifacts` entry.
 - **Lifecycle events for every bookable product family.** Three new event types —
   `exercise` (with an `early` flag, so American early exercise is distinguishable
   from exercise at expiry), `expire` (terminal, books **no** cash: it is how the

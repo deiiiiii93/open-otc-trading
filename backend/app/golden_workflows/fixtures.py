@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -72,6 +72,15 @@ _NAMESPACES: dict[str, set[str]] = {
         "severity", "status",
     },
     "limit_incident_events": {"alias", "incident", "event_type", "actor"},
+    # Ops-settlement-day family (2026-08-13). Events seeded here bypass
+    # create_lifecycle_event's family allowlist (direct ORM insert), so
+    # tests/test_ops_settlement_day_workflow.py pins that every seeded
+    # event_type is in PRODUCT_LIFECYCLE_EVENTS for its position's family —
+    # satisfiability ≠ reachability.
+    "position_lifecycle_events": {"alias", "position", "event_type"},
+    "settlement_cashflows": {
+        "alias", "position", "lifecycle_event", "leg_key", "direction", "status",
+    },
 }
 
 # FK edges: {child_ns: {field_in_row: parent_ns}}. The positions.rfq edge is
@@ -108,12 +117,18 @@ _FK: dict[str, dict[str, str]] = {
         "incident": "limit_incidents",
         "evaluation": "limit_evaluations",
     },
+    "position_lifecycle_events": {"position": "positions"},
+    "settlement_cashflows": {
+        "position": "positions",
+        "lifecycle_event": "position_lifecycle_events",
+    },
 }
 
 # Insertion order so FK parents exist before children (rfqs before positions).
 _INSERT_ORDER = [
     "instruments", "portfolios", "reports", "pricing_profiles",
-    "pricing_parameter_rows", "market_quotes", "rfqs", "positions", "risk_runs",
+    "pricing_parameter_rows", "market_quotes", "rfqs", "positions",
+    "position_lifecycle_events", "settlement_cashflows", "risk_runs",
     "risk_limits", "risk_limit_versions", "limit_monitoring_runs",
     "limit_source_references", "limit_evaluations", "limit_incidents",
     "limit_incident_events",
@@ -456,6 +471,32 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
                 if "instrument" in row:
                     extra["underlying_id"] = _parent_id("instruments", row["instrument"])
                 obj = models.Position(portfolio_id=portfolio_id, **extra)
+
+            elif ns == "position_lifecycle_events":
+                position_id = _parent_id("positions", row["position"])
+                extra = {
+                    k: v for k, v in row.items()
+                    if k not in ("alias", "position")
+                }
+                if isinstance(extra.get("created_at"), str):
+                    extra["created_at"] = datetime.fromisoformat(extra["created_at"])
+                obj = models.PositionLifecycleEvent(position_id=position_id, **extra)
+
+            elif ns == "settlement_cashflows":
+                position_id = _parent_id("positions", row["position"])
+                event_id = _parent_id(
+                    "position_lifecycle_events", row["lifecycle_event"]
+                )
+                extra = {
+                    k: v for k, v in row.items()
+                    if k not in ("alias", "position", "lifecycle_event")
+                }
+                for key in ("value_date", "derived_value_date"):
+                    if isinstance(extra.get(key), str):
+                        extra[key] = date.fromisoformat(extra[key])
+                obj = models.SettlementCashflow(
+                    position_id=position_id, lifecycle_event_id=event_id, **extra
+                )
 
             elif ns == "risk_runs":
                 portfolio_id = _parent_id("portfolios", row["portfolio"])

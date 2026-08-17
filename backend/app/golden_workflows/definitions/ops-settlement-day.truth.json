@@ -1,0 +1,37 @@
+{
+  "blotter_stale_count": {
+    "path": "summary.stale_count",
+    "producer": "settlement",
+    "value": 1.0
+  },
+  "blotter_total_cny": {
+    "path": "summary.totals_by_currency.CNY",
+    "producer": "settlement",
+    "value": 650500.0
+  },
+  "fill_amount": {
+    "path": "filled_row.amount",
+    "producer": "settlement",
+    "value": 83250.0
+  },
+  "ko_settlement_amount": {
+    "path": "ko_row.amount",
+    "producer": "settlement",
+    "value": 512500.0
+  },
+  "override_effective_amount": {
+    "path": "resync_row.amount",
+    "producer": "settlement",
+    "value": 91000.0
+  },
+  "override_new_baseline": {
+    "path": "resync_row.derived_amount",
+    "producer": "settlement",
+    "value": 90000.0
+  },
+  "settled_amount": {
+    "path": "paid_row.amount",
+    "producer": "settlement",
+    "value": 47000.0
+  }
+}
