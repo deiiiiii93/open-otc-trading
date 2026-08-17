@@ -128,14 +128,27 @@ def agent_thread_factory(session):
 
 @pytest.fixture
 def client(session, settings):
-    """FastAPI TestClient with the test DB already configured by `session`."""
+    """FastAPI TestClient with the test DB already configured by `session`.
+
+    `create_app` calls `configure_settings`, which parks this test's Settings in
+    a module-level override that `get_settings()` returns in preference to
+    reading the environment. Left in place it outlives the test, so a later test
+    that sets an env var and expects it to be read — `test_tracing_router`'s
+    `monkeypatch.setenv("OPEN_OTC_TRACING", "local")` — silently keeps seeing
+    this test's value instead. Individual files worked around it with their own
+    `configure_settings(None)`; clearing it here fixes the class at the source.
+    """
     from fastapi.testclient import TestClient
 
+    from app.config import configure_settings
     from app.main import create_app
 
     app = create_app(settings=settings)
-    with TestClient(app) as c:
-        yield c
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        configure_settings(None)
 
 
 @pytest.fixture
