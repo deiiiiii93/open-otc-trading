@@ -192,6 +192,63 @@ def test_list_runs_pagination(session):
     assert not ids1 & ids2
 
 
+def test_list_runs_never_touches_the_match_table(session):
+    """Listing runs is a summary; it must not load or serialize matches.
+
+    `matches` is a lazy relationship, so building it costs one query per run,
+    and `_match_to_dict` then derives an ability card per match — each of which
+    loads a workflow. The router discards all of it and returns only
+    id/status/created_at/workflow_ids/model_ids/reasoning_efforts, so the whole
+    cost is thrown away. Measured on the live desk: 4.8 s to return 4.8 KB.
+    """
+    from sqlalchemy import event
+
+    run_id = _make_run(session)
+    for n in range(5):
+        _make_match(session, run_id, model_id=f"model-{n}")
+    session.commit()
+
+    statements: list[str] = []
+
+    def record(_conn, _cursor, statement, *_args):
+        statements.append(statement)
+
+    engine = session.get_bind()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        # Without this the identity map already holds the matches, and a lazy
+        # load would never fire — hiding the very thing under test.
+        session.expire_all()
+        rows, total = store.list_runs(session)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert total == 1
+    assert rows[0]["id"] == run_id
+    assert [s for s in statements if "arena_match" in s.lower()] == []
+
+
+def test_list_runs_rows_carry_no_match_payload(session):
+    run_id = _make_run(session)
+    _make_match(session, run_id)
+    session.commit()
+
+    rows, _ = store.list_runs(session)
+
+    assert "matches" not in rows[0]
+
+
+def test_get_run_still_carries_its_matches(session):
+    """The drilldown is the caller that legitimately needs them."""
+    run_id = _make_run(session)
+    _make_match(session, run_id)
+    session.commit()
+
+    run = store.get_run(session, run_id)
+
+    assert len(run["matches"]) == 1
+
+
 # ---- leaderboard tests ----
 
 def test_leaderboard_returns_empty_when_no_completed_run(session):

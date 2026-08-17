@@ -293,7 +293,7 @@ def list_runs(
         .offset(offset)
         .all()
     )
-    return [_run_to_dict(r) for r in rows], total
+    return [_run_to_dict(r, include_matches=False) for r in rows], total
 
 
 def get_match_transcript_path(session: Session, match_id: int) -> str | None:
@@ -676,8 +676,16 @@ def _match_to_dict(m: ArenaMatch) -> dict:
     }
 
 
-def _run_to_dict(run: ArenaRun) -> dict:
-    return {
+def _run_to_dict(run: ArenaRun, *, include_matches: bool = True) -> dict:
+    """Serialize a run.
+
+    `include_matches` is off for the LIST: `matches` is a lazy relationship, so
+    building it costs a query per run and then derives an ability card per match
+    (each loading a workflow) — work the runs list discards, since it projects
+    only id/status/created_at/workflow_ids/model_ids/reasoning_efforts. The
+    drilldown (`get_run`) is the caller that genuinely needs them.
+    """
+    out = {
         "id": run.id,
         "status": run.status,
         "workflow_ids": run.workflow_ids,
@@ -693,5 +701,7 @@ def _run_to_dict(run: ArenaRun) -> dict:
         },
         "error": run.error,
         "created_at": run.created_at.isoformat() if run.created_at else None,
-        "matches": [_match_to_dict(m) for m in run.matches],
     }
+    if include_matches:
+        out["matches"] = [_match_to_dict(m) for m in run.matches]
+    return out
