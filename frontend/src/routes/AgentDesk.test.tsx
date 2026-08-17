@@ -98,8 +98,24 @@ describe('AgentDesk', () => {
     expect(onRenameThread).toHaveBeenCalledWith(1, 'Afternoon desk');
   });
 
-  it('filters threads by title and message content', async () => {
+  it('reports the search term upward instead of filtering locally', async () => {
+    // The list is one page, so a local filter would only ever search what was
+    // fetched. The term goes to the controller, which queries the server across
+    // every thread in the database.
+    const onThreadSearchChange = vi.fn();
+    renderDesk({ onThreadSearchChange });
+
+    await userEvent.type(
+      screen.getByRole('searchbox', { name: /search threads/i }),
+      'v',
+    );
+
+    expect(onThreadSearchChange).toHaveBeenCalledWith('v');
+  });
+
+  it('renders whatever the server returned for a search, without re-filtering', async () => {
     renderDesk({
+      threadSearch: 'vega',
       threads: [
         thread,
         {
@@ -113,11 +129,43 @@ describe('AgentDesk', () => {
       ],
     });
 
-    await userEvent.type(screen.getByRole('searchbox', { name: /search threads/i }), 'vega');
-
+    // 'Morning desk' does not contain "vega"; the server decided it matched, so
+    // the rail must show it rather than second-guess the query.
     expect(screen.getByText('Risk review')).toBeInTheDocument();
-    expect(screen.queryByText('Morning desk')).not.toBeInTheDocument();
-    expect(screen.getByText('1 of 2')).toBeInTheDocument();
+    expect(screen.getByText('Morning desk')).toBeInTheDocument();
+    expect(screen.getByText('2 matching')).toBeInTheDocument();
+  });
+
+  it('offers Load more only when another page may exist', async () => {
+    const onLoadMoreThreads = vi.fn();
+    const { rerender } = renderDesk();
+    expect(screen.queryByRole('button', { name: /load more/i })).not.toBeInTheDocument();
+
+    rerender(
+      <AgentDesk
+        threads={[thread]}
+        activeThreadId={1}
+        sending={false}
+        streaming={false}
+        streamingItem={null}
+        viewMode="compact"
+        moreThreadsAvailable
+        onLoadMoreThreads={onLoadMoreThreads}
+        onChangeViewMode={() => {}}
+        onSelectThread={() => {}}
+        onNewThread={() => {}}
+        onRenameThread={() => {}}
+        onExportThread={() => {}}
+        onDeleteThread={() => {}}
+        onForkThread={() => {}}
+        onSend={() => {}}
+        onConfirmAction={() => {}}
+        onDismissAction={() => {}}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /load more/i }));
+    expect(onLoadMoreThreads).toHaveBeenCalled();
   });
 
   it('renders a trace button per thread when onOpenTrace is provided', async () => {

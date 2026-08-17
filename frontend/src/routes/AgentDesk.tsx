@@ -36,6 +36,20 @@ type Props = {
   reasoningEffort?: AgentReasoningEffortChoice;
   confirmingActionIds?: ReadonlySet<string>;
   taskRunsById?: Record<number, TaskRun>;
+  /**
+   * Owned by the controller, not this component: arena threads are only
+   * FETCHED when this is on, so toggling has to reach the request layer.
+   */
+  showArena?: boolean;
+  onShowArenaChange?: (show: boolean) => void;
+  /**
+   * Search is server-side (the list is one page, so filtering here would only
+   * ever search what happened to be fetched), hence owned by the controller.
+   */
+  threadSearch?: string;
+  onThreadSearchChange?: (term: string) => void;
+  moreThreadsAvailable?: boolean;
+  onLoadMoreThreads?: () => void;
   onChangeModel?: (s: AgentModelSelection) => void;
   onChangeMode?: (mode: AgentExecutionMode) => void;
   onChangeReasoningEffort?: (effort: AgentReasoningEffortChoice) => void;
@@ -92,6 +106,12 @@ export function AgentDesk({
   reasoningEffort,
   confirmingActionIds,
   taskRunsById,
+  showArena = false,
+  onShowArenaChange,
+  threadSearch,
+  onThreadSearchChange,
+  moreThreadsAvailable = false,
+  onLoadMoreThreads,
   onChangeModel,
   onChangeMode,
   onChangeReasoningEffort,
@@ -216,6 +236,12 @@ export function AgentDesk({
         <ThreadRail
           threads={threads}
           activeThreadId={activeThreadId}
+          showArena={showArena}
+          onShowArenaChange={onShowArenaChange}
+          threadSearch={threadSearch}
+          onThreadSearchChange={onThreadSearchChange}
+          moreThreadsAvailable={moreThreadsAvailable}
+          onLoadMoreThreads={onLoadMoreThreads}
           actionsDisabled={sending || !!streaming}
           onSelectThread={onSelectThread}
           onNewThread={onNewThread}
@@ -236,6 +262,12 @@ export function AgentDesk({
 type ThreadRailProps = {
   threads: Thread[];
   activeThreadId: number | null;
+  showArena: boolean;
+  onShowArenaChange?: (show: boolean) => void;
+  threadSearch?: string;
+  onThreadSearchChange?: (term: string) => void;
+  moreThreadsAvailable: boolean;
+  onLoadMoreThreads?: () => void;
   actionsDisabled: boolean;
   onSelectThread: (id: number) => void;
   onNewThread: () => void;
@@ -249,6 +281,12 @@ type ThreadRailProps = {
 function ThreadRail({
   threads,
   activeThreadId,
+  showArena,
+  onShowArenaChange,
+  threadSearch,
+  onThreadSearchChange,
+  moreThreadsAvailable,
+  onLoadMoreThreads,
   actionsDisabled,
   onSelectThread,
   onNewThread,
@@ -261,26 +299,26 @@ function ThreadRail({
   const searchInputId = useId();
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showArena, setShowArena] = useState(false);
+  const searchQuery = threadSearch ?? '';
 
   const filteredThreads = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
+    // Source only. The search term is NOT applied here — it runs server-side
+    // across every thread in the database, because this list is one page and
+    // filtering it locally would quietly search only what was fetched.
     return threads.filter((thread) => {
       // Builder threads live on the Workflows builder surface, and
       // hedge-evidence threads are server-owned storage. Neither belongs here.
       // Arena threads stay behind the toggle. Everything else (desk threads,
       // and legacy rows with no source) shows normally.
+      //
+      // The server no longer sends arena threads unless the toggle asked for
+      // them, but this stays: it keeps the list correct in the window between
+      // toggling off and the re-fetch landing.
       if (thread.source === 'workflow_builder' || thread.source === 'hedge_evidence') return false;
       if (!showArena && thread.source === 'arena') return false;
-      if (!query) return true;
-      const haystack = [
-        thread.title,
-        ...thread.messages.map((message) => message.content),
-      ].join(' ').toLowerCase();
-      return haystack.includes(query);
+      return true;
     });
-  }, [threads, searchQuery, showArena]);
+  }, [threads, showArena]);
 
   const startRename = (thread: Thread) => {
     setEditingId(thread.id);
@@ -307,7 +345,9 @@ function ThreadRail({
           <div>
             <div className="wl-agent-desk__eyebrow">Threads</div>
             <div className="wl-agent-desk__threads-count">
-              {searchQuery.trim() ? `${filteredThreads.length} of ${threads.length}` : `${threads.length} total`}
+              {searchQuery.trim()
+                ? `${filteredThreads.length} matching`
+                : `${filteredThreads.length} shown`}
             </div>
           </div>
           <Button variant="ghost" iconOnly onClick={onNewThread} aria-label="New thread">
@@ -321,8 +361,8 @@ function ThreadRail({
             id={searchInputId}
             type="search"
             value={searchQuery}
-            placeholder="Search threads..."
-            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search all threads..."
+            onChange={(event) => onThreadSearchChange?.(event.target.value)}
             aria-label="Search threads by name or content"
           />
         </label>
@@ -331,7 +371,7 @@ function ThreadRail({
           <input
             type="checkbox"
             checked={showArena}
-            onChange={(event) => setShowArena(event.target.checked)}
+            onChange={(event) => onShowArenaChange?.(event.target.checked)}
           />
           Show arena threads
         </label>
@@ -432,6 +472,16 @@ function ThreadRail({
               </article>
             );
           })
+        )}
+
+        {moreThreadsAvailable && filteredThreads.length > 0 && (
+          <Button
+            variant="ghost"
+            className="wl-agent-desk__load-more"
+            onClick={() => onLoadMoreThreads?.()}
+          >
+            Load more
+          </Button>
         )}
       </div>
     </aside>

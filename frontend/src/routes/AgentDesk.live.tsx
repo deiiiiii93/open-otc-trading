@@ -111,6 +111,12 @@ function AgentDeskLiveView({
       reasoningEffort={controller.reasoningEffort}
       confirmingActionIds={controller.confirmingActionIds}
       taskRunsById={controller.taskRunsById}
+      showArena={controller.includeArena}
+      onShowArenaChange={controller.setIncludeArena}
+      threadSearch={controller.threadSearch}
+      onThreadSearchChange={controller.setThreadSearch}
+      moreThreadsAvailable={controller.moreThreadsAvailable}
+      onLoadMoreThreads={controller.loadMoreThreads}
       onChangeModel={controller.setSelectedModel}
       onChangeMode={controller.setExecutionMode}
       onChangeReasoningEffort={controller.setReasoningEffort}

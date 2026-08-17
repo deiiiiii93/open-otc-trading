@@ -55,6 +55,17 @@ function requestUrl(input: RequestInfo | URL): string {
   return input.toString();
 }
 
+/**
+ * The thread list is requested scoped (`/api/chat/threads?source=desk`), so
+ * these mocks match on the path and ignore the query string.
+ */
+function isThreadListGet(url: string, init?: RequestInit): boolean {
+  return (
+    url.split('?')[0].endsWith('/api/chat/threads')
+    && (!init?.method || init.method === 'GET')
+  );
+}
+
 beforeEach(() => {
   globalThis.fetch = vi.fn();
   window.sessionStorage.clear();
@@ -86,7 +97,7 @@ describe('AgentDeskLive SSE parsing', () => {
     fetchMock.mockImplementation(async (input, init) => {
       const url = requestUrl(input);
       if (url.endsWith('/api/agent/models')) return response(modelCatalog);
-      if (url.endsWith('/api/chat/threads') && (!init?.method || init.method === 'GET')) {
+      if (isThreadListGet(url, init)) {
         threadsRequestCount += 1;
         if (threadsRequestCount === 1) {
           return response([baseThread]);
@@ -171,7 +182,7 @@ describe('AgentDeskLive SSE parsing', () => {
     fetchMock.mockImplementation(async (input, init) => {
       const url = requestUrl(input);
       if (url.endsWith('/api/agent/models')) return response(modelCatalog);
-      if (url.endsWith('/api/chat/threads') && (!init?.method || init.method === 'GET')) {
+      if (isThreadListGet(url, init)) {
         threadsRequestCount += 1;
         return response([
           {
@@ -233,7 +244,7 @@ describe('AgentDeskLive SSE parsing', () => {
     fetchMock.mockImplementation(async (input, init) => {
       const url = requestUrl(input);
       if (url.endsWith('/api/agent/models')) return response(modelCatalog);
-      if (url.endsWith('/api/chat/threads') && (!init?.method || init.method === 'GET')) {
+      if (isThreadListGet(url, init)) {
         threadsRequestCount += 1;
         return response([baseThread]);
       }
@@ -286,7 +297,7 @@ describe('AgentDeskLive SSE parsing', () => {
     fetchMock.mockImplementation(async (input, init) => {
       const url = requestUrl(input);
       if (url.endsWith('/api/agent/models')) return response(modelCatalog);
-      if (url.endsWith('/api/chat/threads') && (!init?.method || init.method === 'GET')) {
+      if (isThreadListGet(url, init)) {
         threadsRequestCount += 1;
         return response(
           threadsRequestCount === 1
@@ -333,7 +344,7 @@ describe('AgentDeskLive SSE parsing', () => {
     fetchMock.mockImplementation(async (input, init) => {
       const url = requestUrl(input);
       if (url.endsWith('/api/agent/models')) return response(modelCatalog);
-      if (url.endsWith('/api/chat/threads') && (!init?.method || init.method === 'GET')) {
+      if (isThreadListGet(url, init)) {
         return response([baseThread]);
       }
       if (url.includes('/messages/stream')) {
@@ -373,7 +384,7 @@ describe('AgentDeskLive SSE parsing', () => {
     fetchMock.mockImplementation(async (input, init) => {
       const url = requestUrl(input);
       if (url.endsWith('/api/agent/models')) return response(modelCatalog);
-      if (url.endsWith('/api/chat/threads') && (!init?.method || init.method === 'GET')) {
+      if (isThreadListGet(url, init)) {
         threadsRequestCount += 1;
         return response(
           threadsRequestCount === 1
@@ -446,7 +457,7 @@ describe('AgentDeskLive SSE parsing', () => {
     fetchMock.mockImplementation(async (input, init) => {
       const url = requestUrl(input);
       if (url.endsWith('/api/agent/models')) return response(modelCatalog);
-      if (url.endsWith('/api/chat/threads') && (!init?.method || init.method === 'GET')) {
+      if (isThreadListGet(url, init)) {
         threadsRequestCount += 1;
         return response([
           {
@@ -489,7 +500,7 @@ describe('AgentDeskLive SSE parsing', () => {
     fetchMock.mockImplementation(async (input, init) => {
       const url = requestUrl(input);
       if (url.endsWith('/api/agent/models')) return response(modelCatalog);
-      if (url.endsWith('/api/chat/threads') && (!init?.method || init.method === 'GET')) {
+      if (isThreadListGet(url, init)) {
         return response([baseThread]);
       }
       if (url.endsWith('/api/chat/threads/1/async_agents')) {
@@ -535,7 +546,7 @@ describe('AgentDeskLive dismiss flow', () => {
     fetchMock.mockImplementation(async (input, init) => {
       const url = requestUrl(input);
       if (url.endsWith('/api/agent/models')) return response(modelCatalog);
-      if (url.endsWith('/api/chat/threads') && (!init?.method || init.method === 'GET')) {
+      if (isThreadListGet(url, init)) {
         return response([{ ...baseThread, messages: [pauseMessage] }]);
       }
       if (url.endsWith('/api/chat/threads/1/async_agents')) return response([]);
@@ -595,7 +606,7 @@ describe('AgentDeskLive dismiss flow', () => {
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
       if (url.endsWith('/api/agent/models')) return response(modelCatalog);
-      if (url === '/api/chat/threads') {
+      if (isThreadListGet(url, init)) {
         return response([{ ...baseThread, messages: [pauseMessage] }]);
       }
       const dismissUrl = '/api/chat/threads/1/messages/10/actions/act-1/dismiss';
@@ -647,7 +658,7 @@ describe('AgentDeskLive dismiss flow', () => {
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
       if (url.endsWith('/api/agent/models')) return response(modelCatalog);
-      if (url === '/api/chat/threads') {
+      if (isThreadListGet(url, init)) {
         return response([{ ...baseThread, messages: [pauseMessage] }]);
       }
       if (url.includes('/dismiss') && init?.method === 'POST') {

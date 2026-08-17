@@ -68,6 +68,15 @@ export type AgentChatController = {
   reasoningEffort: AgentReasoningEffortChoice;
   confirmingActionIds: ReadonlySet<string>;
   taskRunsById: Record<number, TaskRun>;
+  /** Whether arena threads are fetched at all — not merely filtered on screen. */
+  includeArena: boolean;
+  setIncludeArena: Dispatch<SetStateAction<boolean>>;
+  /** The typed search term. Debounced, then run server-side across all threads in scope. */
+  threadSearch: string;
+  setThreadSearch: Dispatch<SetStateAction<string>>;
+  /** Another page may exist; the list endpoint returns rows, not a total. */
+  moreThreadsAvailable: boolean;
+  loadMoreThreads: () => void;
   setSelectedModel: (selection: AgentModelSelection) => void;
   setExecutionMode: Dispatch<SetStateAction<AgentExecutionMode>>;
   setReasoningEffort: Dispatch<SetStateAction<AgentReasoningEffortChoice>>;
@@ -159,11 +168,32 @@ export function useAgentChatController(
   const [confirmingActionIds, setConfirmingActionIds] = useState<Set<string>>(() => new Set());
   const [taskRunsById, setTaskRunsById] = useState<Record<number, TaskRun>>({});
   const [asyncAgentPollNonce, setAsyncAgentPollNonce] = useState(0);
+  // Arena boards mint one thread per match, so they dominate the thread table
+  // (671 of 719 rows, ~59.7 MB of messages, at time of writing). The desk hides
+  // them behind a toggle, so this drives the FETCH — not just a client-side
+  // filter — and the default-off path never pays for them.
+  const [includeArena, setIncludeArena] = useState(false);
+  // The list is paged so its cost stops scaling with history. `threadLimit`
+  // grows by a page on "Load more" and the window is re-fetched from offset 0,
+  // which keeps the 4s poll refreshing exactly what is on screen — an
+  // append-at-offset scheme would have the poll refresh only the first page.
+  const [threadLimit, setThreadLimit] = useState(THREAD_PAGE_SIZE);
+  const [moreThreadsAvailable, setMoreThreadsAvailable] = useState(false);
+  // Two values: what the user is typing, and the debounced term actually sent.
+  // Searching is a real query per keystroke otherwise.
+  const [threadSearchInput, setThreadSearchInput] = useState('');
+  const [threadSearch, setThreadSearch] = useState('');
   const streamAbortRef = useRef<AbortController | null>(null);
+  // Read inside `refresh` without making it a dependency — `refresh` must keep a
+  // stable identity, since an effect re-runs the fetch whenever it changes.
+  // (`activeIdRef`, declared with the goal-mode state below, serves the same
+  // purpose for the active thread id.)
+  const threadsRef = useRef<Thread[]>([]);
   // Keep the latest onToolStart in a ref so streaming closures never capture a
   // stale callback between renders.
   const onToolStartRef = useRef(options?.onToolStart);
   onToolStartRef.current = options?.onToolStart;
+  threadsRef.current = threads;
   const threadSource = options?.threadSource ?? 'desk';
   // Goal mode (spec §G): the active thread's contract/run, plus a clarification ask
   // when the framer needs more before it can draft checkable criteria.
@@ -227,8 +257,51 @@ export function useAgentChatController(
     }
   }, [fetchCatalog]);
 
+  /**
+   * Fetch the threads this controller should hold.
+   *
+   * The backend now accepts `?source=` to scope the list server-side
+   * (`GET /api/chat/threads?source=desk`). Omitting it returns EVERY public
+   * thread — every arena match included — which is the unbounded payload that
+   * exhausted the DB connection pool.
+   *
+   * Contract:
+   *  - always include this controller's own `threadSource` threads;
+   *  - additionally include `arena` threads when `includeArena` is true
+   *    (desk surface only — the builder never shows them);
+   *  - return them sorted updated_at-desc, because the caller below resumes
+   *    "the most recent same-source thread" by taking the first match.
+   *
+   * Scoped requests are merged rather than one unscoped request: the desk path
+   * then never pays for arena history, and the arena cost is paid only while
+   * the toggle is open — which matters because the async-task poll below
+   * re-runs this every 4s.
+   *
+   * `q` is sent to the server rather than filtered here, because the list is a
+   * page: filtering locally would only ever search the page already fetched.
+   */
+  const fetchThreadList = useCallback(async (): Promise<Thread[][]> => {
+    const term = threadSearch.trim();
+    return Promise.all(
+      threadListScopes(threadSource, includeArena).map((scope) => {
+        const params = new URLSearchParams({
+          source: scope,
+          limit: String(threadLimit),
+        });
+        if (term) params.set('q', term);
+        return api<Thread[]>(`/api/chat/threads?${params.toString()}`);
+      }),
+    );
+  }, [threadSource, includeArena, threadLimit, threadSearch]);
+
   const refresh = useCallback(async () => {
-    const list = await api<Thread[]>('/api/chat/threads');
+    const lists = await fetchThreadList();
+    setMoreThreadsAvailable(hasMoreThreads(lists, threadLimit));
+    const list = withActiveThreadPreserved(
+      mergeThreadLists(lists, threadLimit),
+      threadsRef.current,
+      activeIdRef.current,
+    );
     setThreads(list);
     setActiveId((current) => {
       if (current != null && list.some((t) => t.id === current)) return current;
@@ -239,7 +312,23 @@ export function useAgentChatController(
       // resumes the most recent same-source thread.
       return list.find((t) => (t.source ?? 'desk') === threadSource)?.id ?? null;
     });
-  }, [threadSource]);
+  }, [fetchThreadList, threadLimit, threadSource]);
+
+  const loadMoreThreads = useCallback(() => {
+    setThreadLimit((current) => current + THREAD_PAGE_SIZE);
+  }, []);
+
+  // Debounce the typed term into the one that is actually queried.
+  useEffect(() => {
+    const timer = window.setTimeout(() => setThreadSearch(threadSearchInput), 250);
+    return () => window.clearTimeout(timer);
+  }, [threadSearchInput]);
+
+  // A new search (or a scope change) starts from page one — otherwise a window
+  // grown by "Load more" would silently make the next query far more expensive.
+  useEffect(() => {
+    setThreadLimit(THREAD_PAGE_SIZE);
+  }, [threadSearch, threadSource, includeArena]);
 
   useEffect(() => {
     let cancelled = false;
@@ -897,6 +986,12 @@ export function useAgentChatController(
     reasoningEffort,
     confirmingActionIds,
     taskRunsById,
+    includeArena,
+    setIncludeArena,
+    threadSearch: threadSearchInput,
+    setThreadSearch: setThreadSearchInput,
+    moreThreadsAvailable,
+    loadMoreThreads,
     setSelectedModel,
     setExecutionMode,
     setReasoningEffort,
@@ -979,6 +1074,76 @@ function selectionExists(
       model.provider === selected.provider && model.model === selected.model
     ))
   ));
+}
+
+const ARENA_THREAD_SOURCE = 'arena';
+
+/** Threads fetched per page, and the step each "Load more" adds. */
+export const THREAD_PAGE_SIZE = 20;
+
+/**
+ * Which `?source=` scopes one controller must request (pure; for tests).
+ *
+ * Always its own threads, plus arena only when the desk toggle asks for them.
+ * A controller already scoped to arena must not request that scope twice.
+ */
+export function threadListScopes(threadSource: string, includeArena: boolean): string[] {
+  return includeArena && threadSource !== ARENA_THREAD_SOURCE
+    ? [threadSource, ARENA_THREAD_SOURCE]
+    : [threadSource];
+}
+
+/** Newest first; a row with no (or unparseable) `updated_at` sorts last. */
+function threadOrderKey(thread: Thread): number {
+  const parsed = thread.updated_at ? Date.parse(thread.updated_at) : NaN;
+  return Number.isNaN(parsed) ? -Infinity : parsed;
+}
+
+/**
+ * Fold scoped responses back into one updated_at-desc list (pure; for tests).
+ *
+ * Each response is sorted on its own but their concatenation is not, and
+ * `refresh` resumes "the most recent same-source thread" by taking the first
+ * match — so re-sorting here is what keeps auto-selection correct.
+ *
+ * Every scope is fetched with the same `limit`, so the union can hold a
+ * multiple of one page; `limit` trims it back. That is exact rather than
+ * approximate — the true newest N of a union always lies inside the union of
+ * each list's newest N.
+ */
+export function mergeThreadLists(lists: Thread[][], limit?: number): Thread[] {
+  const merged = lists.flat().sort((a, b) => threadOrderKey(b) - threadOrderKey(a));
+  return limit == null ? merged : merged.slice(0, limit);
+}
+
+/**
+ * Whether another page may exist (pure; for tests).
+ *
+ * The list endpoint returns rows, not a total, so a full page is the only
+ * available signal. Conservative by design: it can offer one "Load more" that
+ * turns out to add nothing, which is far better than hiding threads that exist.
+ */
+export function hasMoreThreads(lists: Thread[][], limit: number): boolean {
+  return lists.some((list) => list.length >= limit);
+}
+
+/**
+ * Keep the open thread in the list even when the latest fetch excludes it
+ * (pure; for tests).
+ *
+ * `activeThread` is derived from this list, so a search whose results omit the
+ * open thread would otherwise blank the message pane of the conversation the
+ * user is reading. Only ever re-uses a thread we already held — it never
+ * invents one.
+ */
+export function withActiveThreadPreserved(
+  list: Thread[],
+  previous: Thread[],
+  activeId: number | null,
+): Thread[] {
+  if (activeId == null || list.some((thread) => thread.id === activeId)) return list;
+  const open = previous.find((thread) => thread.id === activeId);
+  return open ? [open, ...list] : list;
 }
 
 export type WorkflowSseEvent = { type: string; data: Record<string, unknown> };

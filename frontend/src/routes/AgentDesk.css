@@ -88,6 +88,10 @@
   font-size: var(--type-small-size);
   padding: var(--gap-3);
 }
+.wl-agent-desk__load-more {
+  align-self: center;
+  margin-top: var(--gap-2);
+}
 .wl-agent-desk__thread-card {
   border: 1px solid transparent;
   background: var(--paper);

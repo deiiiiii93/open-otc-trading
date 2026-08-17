@@ -854,11 +854,33 @@ def create_app(
         return thread
 
     @app.get("/api/chat/threads", response_model=list[AgentThreadOut])
-    def list_threads(session: Session = Depends(get_db)):
+    def list_threads(
+        session: Session = Depends(get_db),
+        source: str | None = Query(
+            None,
+            description=(
+                "Scope the list to threads of one source (e.g. 'desk'). "
+                "Omitted returns every public thread."
+            ),
+        ),
+        q: str | None = Query(
+            None,
+            description=(
+                "Match threads by title or message content, across every "
+                "thread in scope — not merely the page this call returns."
+            ),
+        ),
+        limit: int = Query(20, ge=1, le=100, description="Page size."),
+        offset: int = Query(0, ge=0, description="Rows to skip, for 'load more'."),
+    ):
         return (
-            public_thread_query(session)
+            public_thread_query(session, source=source, search=q)
             .options(selectinload(AgentThread.messages))
-            .order_by(AgentThread.updated_at.desc())
+            # id breaks updated_at ties, without which a row can repeat on one
+            # page and be skipped on the next.
+            .order_by(AgentThread.updated_at.desc(), AgentThread.id.desc())
+            .limit(limit)
+            .offset(offset)
             .all()
         )
 
