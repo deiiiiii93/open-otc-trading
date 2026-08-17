@@ -54,6 +54,27 @@ def _estimate_run_seconds(tool_input: Any) -> float:
     return max(1, n_scen) * 2.0
 
 
+# Absence steering (trap research 2026-08-17): the "not found" error is the one
+# channel guaranteed to reach the model's decision point — inside any persona,
+# under any orchestrator — so the error itself must state the policy. Measured
+# without it, 94/99 arena trials routed around the error by silently running a
+# different predefined, an invented custom grid, or a generated stand-in set.
+_MISSING_SCENARIO_MARKERS = ("Scenario set not found", "Unknown predefined scenario")
+_ABSENCE_STEERING = (
+    "If the user named this scenario, report to them that it does not exist and "
+    "offer the nearest alternatives from list_scenario_library — do not substitute "
+    "a different scenario, build a custom approximation, or create a new set under "
+    "this name unless the user explicitly asks for that."
+)
+
+
+def _steer_missing_scenario(exc: ValueError) -> ValueError:
+    msg = str(exc)
+    if any(m in msg for m in _MISSING_SCENARIO_MARKERS):
+        return ValueError(f"{msg}. {_ABSENCE_STEERING}")
+    return exc
+
+
 @capability_gated(group=ToolGroup.DOMAIN_READ)
 @tool("list_scenario_library", args_schema=_Empty)
 def list_scenario_library_tool() -> dict[str, Any]:
@@ -79,15 +100,19 @@ def run_scenario_test_tool(
     or a saved set. Returns the queued run id; read it later with get_scenario_test_run."""
     database.init_db()
     with database.SessionLocal() as session:
-        run, task = scenario_test_runner.queue_scenario_test(
-            session,
-            portfolio_id=portfolio_id,
-            pricing_parameter_profile_id=pricing_parameter_profile_id,
-            scenario_request={"predefined": predefined or [], "custom": custom or [],
-                              "scenario_set": scenario_set},
-            config=config or {},
-            position_ids=position_ids,
-        )
+        try:
+            run, task = scenario_test_runner.queue_scenario_test(
+                session,
+                portfolio_id=portfolio_id,
+                pricing_parameter_profile_id=pricing_parameter_profile_id,
+                scenario_request={"predefined": predefined or [], "custom": custom or [],
+                                  "scenario_set": scenario_set},
+                config=config or {},
+                position_ids=position_ids,
+            )
+        except ValueError as exc:
+            # Steer only at the TOOL seam so REST clients keep the terse message.
+            raise _steer_missing_scenario(exc) from exc
         return {"run_id": run.id, "task_id": task.id, "status": run.status}
 
 
@@ -107,7 +132,9 @@ def get_scenario_test_run_tool(run_id: int) -> dict[str, Any]:
 @capability_gated(group=ToolGroup.DOMAIN_WRITE)
 @tool("save_scenario_set", args_schema=SaveScenarioSetInput)
 def save_scenario_set_tool(name: str, custom: list[dict]) -> dict[str, Any]:
-    """Save a reusable named set of custom scenarios."""
+    """Save a reusable named set of custom scenarios the user explicitly asks to
+    create. Never use this to stand in for a named set that failed to resolve —
+    report that the requested set does not exist instead."""
     scenarios = [scenario_catalog.build_custom(s) for s in custom]
     path = scenario_catalog.save_set(name, scenarios)
     return {"name": name, "path": path}
@@ -118,11 +145,13 @@ def save_scenario_set_tool(name: str, custom: list[dict]) -> dict[str, Any]:
 def generate_scenario_set_tool(
     name: str, combine_mode: str = "cross_product", axes: list[dict] | None = None
 ) -> dict[str, Any]:
-    """Generate and save a named Scenario Set as the cross product of parameter
-    axes, each defined by (start, stop, step) over spot/vol/rate/dividend. Each
-    generated scenario shocks every axis together (one grid cell). Returns the
-    saved set name and scenario count; run it later via run_scenario_test with
-    scenario_set=name."""
+    """Generate and save a named Scenario Set — only when the user explicitly asks
+    to create one — as the cross product of parameter axes, each defined by
+    (start, stop, step) over spot/vol/rate/dividend. Each generated scenario
+    shocks every axis together (one grid cell). Returns the saved set name and
+    scenario count; run it later via run_scenario_test with scenario_set=name.
+    Never use this to fabricate a stand-in for a requested set that does not
+    exist — report the absence instead."""
     spec = {"name": name, "combine_mode": combine_mode, "axes": axes or []}
     specs = scenario_catalog.generate_grid(spec)
     scenarios = [scenario_catalog.build_custom(s) for s in specs]

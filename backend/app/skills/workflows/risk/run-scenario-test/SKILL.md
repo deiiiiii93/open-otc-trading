@@ -27,17 +27,16 @@ routing:
 
 ## When to use
 
-- User asks to stress test / scenario-test a portfolio, or run market-crash,
-  vol-spike, rate-hike, severe-downturn, or historical (1987 / 2008 / COVID) scenarios.
-- User wants worst-case P&L, VaR/CVaR, or greeks under stressed markets.
-- User describes a custom multi-parameter shock (e.g. "spot -20% and vol +50%").
+- Stress / scenario-test a portfolio: predefined scenarios (market-crash,
+  vol-spike, rate-hike, 1987 / 2008 / COVID), a custom multi-parameter shock
+  (e.g. "spot -20% and vol +50%"), or a saved set.
+- Worst-case P&L, VaR/CVaR, or greeks under stressed markets.
 
 ## Required inputs
 
 `portfolio_id` and `pricing_parameter_profile_id` (the profile supplies the baseline market
-the scenarios stress). Scenarios come from predefined names, custom specs, or a saved set.
-See `/skills/references/risk/scenario-test.md` for taxonomy and `/skills/references/pricing/engines.md`
-for pricing caveats.
+the scenarios stress). Scenarios come from predefined names, custom specs, or a saved set
+(taxonomy and pricing caveats: see References).
 
 ## Procedure
 
@@ -46,20 +45,22 @@ for pricing caveats.
    shock, build a `custom_scenarios` spec (param spot/vol/rate/dividend, stress_type,
    value, level, target).
 3. Confirm with the user (write action), then call `run_scenario_test`.
-4. Report the queued run id; when complete, read with `get_scenario_test_run` and
-   summarize per-scenario P&L, worst/best, VaR/CVaR, excluded positions, artifacts.
+4. Report the queued run id; when complete, read with `get_scenario_test_run`
+   and summarize per Output shape below.
 
 ## Stop conditions
 
-Do not invent stress magnitudes the user did not ask for. If the portfolio resolves to no
-includable positions, report that instead of queuing. Escalate to `desk_async` for very
-large books.
+Do not invent stress magnitudes the user did not ask for. If a named scenario set
+is not in the library, report that it does not exist and offer the nearest
+predefined alternatives — never substitute a different scenario, approximate it
+with a custom spec, or generate a stand-in set under that name unless the user
+explicitly asks to create one. No includable positions → report that instead of
+queuing. Escalate to `desk_async` for very large books.
 
 ## Output shape
 
-Queued run id + scope; once complete, baseline value, per-scenario P&L / %, worst & best
-scenario, 95% VaR/CVaR, per-underlying highlights, excluded-position notes, and
-report/export download links.
+Queued run id + scope; once complete, baseline value, per-scenario P&L, worst &
+best scenario, 95% VaR/CVaR, excluded-position notes, and export links.
 
 ## References
 
@@ -69,5 +70,5 @@ report/export download links.
 ## Example
 
 User: Stress test portfolio 7 against a market crash and COVID, using the EOD profile.
-Assistant: Confirm portfolio 7 + EOD profile, resolve the two predefined scenarios,
-confirm the write, call `run_scenario_test`, then summarize worst-case P&L and VaR when done.
+Assistant: Confirm portfolio + profile, resolve the two predefined scenarios, confirm
+the write, call `run_scenario_test`, summarize worst-case P&L and VaR when done.

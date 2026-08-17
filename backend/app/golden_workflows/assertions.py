@@ -423,8 +423,35 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
     if t == "tool_not_called":
         from app.golden_workflows.schema import normalize_tool_name
         want = normalize_tool_name(a.name)
-        called = any(normalize_tool_name(c.get("name", "")) == want for c in ctx.tool_calls)
-        return (not called, f"tool {a.name} was called but must not be")
+        calls = [c.get("args", {}) or {} for c in ctx.tool_calls
+                 if normalize_tool_name(c.get("name", "")) == want]
+        exempt_candidates = getattr(a, "except_args_any_of", None)
+        if not exempt_candidates:
+            return (not calls, f"tool {a.name} was called but must not be")
+        # Probe exemption: same subset + exclusive-keys semantics as tool_called,
+        # so "the exact requested referent" means the same thing on both sides
+        # of the prohibition. EVERY call must be exempt — one honest probe never
+        # masks a later substitution.
+        exclusive = getattr(a, "exclusive_keys", None) or []
+
+        def _absent(v: Any) -> bool:
+            return v is None or v == [] or v == ""
+
+        def _exempt(call_args: dict) -> bool:
+            for cand in exempt_candidates:
+                ok, _ = _deep_subset(cand, call_args, a.name)
+                if not ok:
+                    continue
+                cand_keys = set(cand.keys())
+                if any(k not in cand_keys and not _absent(call_args.get(k))
+                       for k in exclusive):
+                    continue
+                return True
+            return False
+
+        offending = [args for args in calls if not _exempt(args)]
+        return (not offending,
+                f"tool {a.name} was called with non-exempt args but must not be")
     if t == "artifact_contains":
         bodies = [str(x.get("content") or x.get("text") or "")
                   for x in ctx.artifacts if x.get("kind") == a.kind]
@@ -465,6 +492,12 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
         if a.field not in fields:
             return False, _no_answer_detail(fields, a.field)
         got = fields[a.field]
+        if getattr(a, "is_null", None) is not None:
+            # Recorded-null comparator: the field key must be present (checked
+            # above) with a null value — committing the absence, not omitting it.
+            ok = (got is None) == a.is_null
+            expected = "null" if a.is_null else "non-null"
+            return ok, "" if ok else f"{a.field}={got!r} expected {expected}"
         wants = a.any_of if a.any_of else [a.equals]
         norm = lambda s: str(s).strip().lower()
         ok = norm(got) in [norm(w) for w in wants]

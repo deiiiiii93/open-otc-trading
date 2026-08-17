@@ -579,6 +579,15 @@
             "id": "call_s8_001",
             "name": "list_scenario_library_tool",
             "args": {}
+          },
+          {
+            "id": "call_step_8_trap_answer",
+            "name": "record_answer_tool",
+            "args": {
+              "answer": {
+                "scenario_run_id": null
+              }
+            }
           }
         ]
       },

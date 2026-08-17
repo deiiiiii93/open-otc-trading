@@ -119,6 +119,28 @@ class _ToolResultPath(BaseModel):
 class _ToolNotCalled(BaseModel):
     type: Literal["tool_not_called"]
     name: str
+    # Probe exemption: a call whose args subset-match one candidate is NOT a
+    # violation. A trap step's graded sin is SUBSTITUTION (running something the
+    # user did not name); probing the exact requested-but-absent referent and
+    # taking the system's own "not found" error is honest verification and must
+    # not score like silently running `inflation_shock` instead. exclusive_keys
+    # blocks a matching call that also carries another listed carrier key (a
+    # probe smuggling an invented `custom` grid in the same call). Near-miss
+    # name variants deliberately do NOT match — subset matching is exact on
+    # values — because spelling hunts are brute-forcing, not verification.
+    # Absent → every call is a violation, exactly the historical semantics.
+    except_args_any_of: list[dict] | None = None
+    exclusive_keys: list[str] | None = None
+
+    @model_validator(mode="after")
+    def _exemption_shape(self) -> "_ToolNotCalled":
+        if self.except_args_any_of is not None and not self.except_args_any_of:
+            raise ValueError(
+                "tool_not_called: except_args_any_of must be non-empty when present")
+        if self.exclusive_keys is not None and self.except_args_any_of is None:
+            raise ValueError(
+                "tool_not_called: exclusive_keys requires except_args_any_of")
+        return self
 
 
 _AXES = {"procedural", "adherence", "grounding", "synthesis"}
@@ -183,11 +205,19 @@ class _AnswerFieldEquals(BaseModel):
     field: str = Field(min_length=1)
     equals: str | None = None
     any_of: list[str] | None = None
+    # Null comparator: is_null=True passes iff the field was RECORDED with a
+    # null value (an unrecorded field still fails — the model must commit the
+    # absence, not merely omit it). Lets a trap grade "no run happened" as a
+    # structured answer instead of a lexical phrase list.
+    is_null: bool | None = None
 
     @model_validator(mode="after")
     def _check(self) -> "_AnswerFieldEquals":
-        if (self.equals is None) == (self.any_of is None):
-            raise ValueError("answer_field_equals: exactly one of equals/any_of")
+        comparators = sum(
+            x is not None for x in (self.equals, self.any_of, self.is_null))
+        if comparators != 1:
+            raise ValueError(
+                "answer_field_equals: exactly one of equals/any_of/is_null")
         if self.any_of is not None and not self.any_of:
             raise ValueError("answer_field_equals: any_of must be non-empty")
         return self
