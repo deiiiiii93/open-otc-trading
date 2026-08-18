@@ -20,6 +20,7 @@ sys.path.insert(0, str(HERE))        # for manifest / site_builder
 
 import render_report  # noqa: E402
 import site_builder as sb  # noqa: E402
+from boards import load_boards  # noqa: E402
 from manifest import Post, load_manifest, reading_minutes  # noqa: E402
 from stats import load_snapshot  # noqa: E402
 
@@ -92,6 +93,23 @@ def build(
 
     minutes = {p.stem: reading_minutes((arena_dir / p.file).read_text()) for p in posts}
 
+    # Absent / unreadable / foreign version => None => no page and, crucially, no
+    # nav link: a masthead entry for a page we did not build would 404 sitewide.
+    board_snapshot = load_boards(deploy_dir / "boards.json")
+    has_boards = board_snapshot is not None
+    if not has_boards:
+        result.warnings.append("no boards.json; the site builds without a leaderboard")
+    else:
+        published = {p.file for p in posts}
+        for wf in board_snapshot.get("workflows") or []:
+            for board in wf.get("boards") or []:
+                ref = board.get("post")
+                if ref and ref not in published:
+                    result.warnings.append(
+                        f"board {board.get('label')} links {ref}, which is not "
+                        "published; the report link is omitted"
+                    )
+
     for i, post in enumerate(posts):
         md = arena_dir / post.file
         html_doc, pdf = ensure_document(md, refresh_pdf)
@@ -99,7 +117,10 @@ def build(
 
         newer = posts[i - 1] if i > 0 else None
         older = posts[i + 1] if i + 1 < len(posts) else None
-        page = sb.render_post_page(post, body, minutes[post.stem], theme, newer, older)
+        page = sb.render_post_page(
+            post, body, minutes[post.stem], theme, newer, older,
+            leaderboard=has_boards,
+        )
         (out_dir / post.html_name).write_text(page)
 
         shutil.copy2(md, out_dir / post.file)
@@ -128,9 +149,16 @@ def build(
         result.warnings.append("no fresh stats.json; index renders without counters")
 
     (out_dir / "index.html").write_text(
-        sb.render_index(posts, minutes, theme, snapshot=snapshot)
+        sb.render_index(posts, minutes, theme, snapshot=snapshot,
+                        leaderboard=has_boards)
     )
-    (out_dir / "about.html").write_text(sb.render_about(posts, theme))
+    (out_dir / "about.html").write_text(
+        sb.render_about(posts, theme, leaderboard=has_boards)
+    )
+    if has_boards:
+        (out_dir / "leaderboard.html").write_text(
+            sb.render_leaderboard(board_snapshot, posts, theme)
+        )
     return result
 
 

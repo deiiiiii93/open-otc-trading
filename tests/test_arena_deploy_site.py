@@ -224,3 +224,142 @@ def test_readership_card_escapes_referrer_hosts():
     html = sb.render_index(POSTS, MINUTES, THEME, snapshot=evil)
     assert "&lt;script&gt;" in html
     assert "<script>evil" not in html
+
+
+# --------------------------------------------------------------------------
+# The leaderboard page
+# --------------------------------------------------------------------------
+
+import boards as bd  # noqa: E402
+
+TERRA = {
+    "rank": 1, "model": "gpt-5-6-terra", "effort": None, "ovr": 86,
+    "stats": {"GRD": 99, "ADH": 95, "SYN": 90, "PRC": 87, "EFF": 56},
+    "con": 96, "objective": 89.8, "trials": 2, "invalid": 0,
+}
+LUNA_LOW = {**TERRA, "rank": 2, "model": "gpt-5-6-luna", "effort": "low", "ovr": 85}
+LUNA_MAX = {**TERRA, "rank": 2, "model": "gpt-5-6-luna", "effort": "max", "ovr": 85}
+
+FLAGSHIP = {
+    "id": "risk-manager-control-day", "title": "Risk Manager Control Day",
+    "persona": "risk_manager", "steps": 9, "par": 24,
+    "boards": [{
+        "run": 20, "label": "Run #20", "date": "2026-07-08",
+        "post": "2026-07-13-run20-otc-desk-agent-arena.md",
+        "checks": 39, "carded": True, "models": 3,
+        "rows": [TERRA, LUNA_LOW, LUNA_MAX],
+    }],
+}
+UNMEASURED = {
+    "id": "ops-settlement-day", "title": "Operations Settlement Day",
+    "persona": "trader", "steps": 8, "par": None, "boards": [],
+}
+
+
+def snapshot(*workflows):
+    return {
+        "version": bd.SNAPSHOT_VERSION,
+        "generated_at": "2026-08-18T12:00:00+00:00",
+        "workflows": list(workflows),
+    }
+
+
+def test_leaderboard_names_each_section_by_its_workflow_slug():
+    html = sb.render_leaderboard(snapshot(FLAGSHIP, UNMEASURED), POSTS, THEME)
+    assert "risk-manager-control-day" in html
+    assert "ops-settlement-day" in html
+    assert 'id="risk-manager-control-day"' in html
+
+
+def test_a_workflow_with_no_board_says_so_instead_of_vanishing():
+    """empty != unavailable: the reader must see the gap, not infer it."""
+    html = sb.render_leaderboard(snapshot(FLAGSHIP, UNMEASURED), POSTS, THEME)
+    assert "No board has been run" in html
+    # ...and it sorts after the measured workflow, not before.
+    assert html.index("risk-manager-control-day") < html.index("No board has been run")
+
+
+def test_a_carded_board_shows_ovr_and_every_ability_stat():
+    html = sb.render_leaderboard(snapshot(FLAGSHIP), POSTS, THEME)
+    assert ">OVR<" in html
+    for stat in ("GRD", "ADH", "SYN", "PRC", "EFF"):
+        assert f">{stat}<" in html
+    assert ">86<" in html
+
+
+def test_an_uncarded_board_ranks_on_objective_and_offers_no_ovr_column():
+    """A pre-card board has no OVR. Rendering the column empty would read as
+    'this model scored nothing' rather than 'this instrument had no card'."""
+    legacy = {
+        **FLAGSHIP,
+        "boards": [{
+            "run": 8, "label": "Run #8", "date": "2026-06-26", "post": None,
+            "checks": None, "carded": False, "models": 1,
+            "rows": [{"rank": 1, "model": "claude-sonnet-4-6", "effort": None,
+                      "ovr": None, "stats": {}, "con": None,
+                      "objective": 93.5, "trials": 5, "invalid": 0}],
+        }],
+    }
+    html = sb.render_leaderboard(snapshot(legacy), POSTS, THEME)
+    assert ">OVR<" not in html
+    assert "93.5" in html
+    assert "objective axis" in html
+
+
+def test_every_contestant_row_shows_its_effort_arm():
+    """Two arms of one model are otherwise identical rows."""
+    html = sb.render_leaderboard(snapshot(FLAGSHIP), POSTS, THEME)
+    assert html.count('class="effort"') == 2   # luna/low and luna/max, not terra
+    assert ">low<" in html and ">max<" in html
+
+
+def test_shared_ranks_render_once_per_contestant():
+    html = sb.render_leaderboard(snapshot(FLAGSHIP), POSTS, THEME)
+    assert html.count('class="rank">2<') == 2
+
+
+def test_a_board_links_to_its_report_only_when_that_report_is_published():
+    linked = sb.render_leaderboard(snapshot(FLAGSHIP), POSTS, THEME)
+    assert "2026-07-13-run20-otc-desk-agent-arena.html" not in linked  # not in POSTS
+
+    published = m.Post(
+        file="2026-07-13-run20-otc-desk-agent-arena.md",
+        date=dt.date(2026, 7, 13), tags=("board",),
+        title="Model Ability Cards", blurb="A nine-step task.",
+    )
+    html = sb.render_leaderboard(snapshot(FLAGSHIP), [published], THEME)
+    assert "2026-07-13-run20-otc-desk-agent-arena.html" in html
+
+
+def test_the_masthead_links_the_leaderboard_only_when_one_was_built():
+    assert "leaderboard.html" not in sb.render_index(POSTS, MINUTES, THEME)
+    assert "leaderboard.html" in sb.render_index(
+        POSTS, MINUTES, THEME, leaderboard=True
+    )
+    assert "leaderboard.html" in sb.render_about(POSTS, THEME, leaderboard=True)
+
+
+def test_objective_scores_keep_one_decimal_so_a_ceiling_reads_as_a_measurement():
+    perfect = {**TERRA, "objective": 100.0}
+    html = sb.render_leaderboard(
+        snapshot({**FLAGSHIP, "boards": [{**FLAGSHIP["boards"][0], "rows": [perfect]}]}),
+        POSTS, THEME,
+    )
+    assert ">100.0<" in html
+
+
+def test_a_measured_zero_is_not_rendered_as_a_missing_value():
+    """0 is a result; None is the absence of one. They must not look alike."""
+    floor = {**TERRA, "con": 0, "stats": {**TERRA["stats"], "EFF": 0}}
+    html = sb.render_leaderboard(
+        snapshot({**FLAGSHIP, "boards": [{**FLAGSHIP["boards"][0], "rows": [floor]}]}),
+        POSTS, THEME,
+    )
+    assert '<td class="con">0</td>' in html
+    assert "<td>0</td>" in html
+    assert "&mdash;" not in html
+
+
+def test_a_persona_identifier_is_humanised_for_the_subtitle():
+    html = sb.render_leaderboard(snapshot(FLAGSHIP), POSTS, THEME)
+    assert "risk manager" in html and "risk_manager" not in html

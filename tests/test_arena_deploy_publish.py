@@ -196,3 +196,50 @@ def test_verify_live_passes_when_security_headers_are_present(monkeypatch):
         pub, "fetch_headers", lambda url, timeout=20: {h: "set" for h in SECURITY_HEADERS}
     )
     assert pub.verify_live("https://example.test/arena/", [POST], assets=()) == []
+
+
+# --------------------------------------------------------------------------
+# The leaderboard page
+# --------------------------------------------------------------------------
+
+LEADERBOARD = (
+    '<main class="boards">\n'
+    '<section class="wf" id="risk-manager-control-day"><h2>'
+    "<code>risk-manager-control-day</code></h2></section>\n"
+    '<section class="wf" id="ops-settlement-day"><h2>'
+    "<code>ops-settlement-day</code></h2></section>\n"
+    "</main>\n"
+)
+
+
+def test_workflow_anchors_are_read_from_the_built_page():
+    assert pub.workflow_anchors(LEADERBOARD) == [
+        "risk-manager-control-day", "ops-settlement-day",
+    ]
+    assert pub.workflow_anchors("<p>no leaderboard here</p>") == []
+
+
+def test_verify_live_checks_every_workflow_section_actually_serves(served):
+    base, root = served
+    _good_site(root)
+    root.joinpath("leaderboard.html").write_text(LEADERBOARD)
+
+    anchors = pub.workflow_anchors(LEADERBOARD)
+    assert pub.verify_live(base, [POST], security_headers=(),
+                           workflow_anchors=anchors) == []
+
+    # A 200 proves nothing under the SPA catch-all, so the body must be read:
+    # here the page serves, but one section silently did not ship.
+    root.joinpath("leaderboard.html").write_text(
+        LEADERBOARD.replace('id="ops-settlement-day"', 'id="something-else"')
+    )
+    failures = pub.verify_live(base, [POST], security_headers=(),
+                               workflow_anchors=anchors)
+    assert any("ops-settlement-day" in f for f in failures)
+
+
+def test_verify_live_skips_the_leaderboard_when_none_was_built(served):
+    base, root = served
+    _good_site(root)
+    assert not root.joinpath("leaderboard.html").exists()
+    assert pub.verify_live(base, [POST], security_headers=()) == []

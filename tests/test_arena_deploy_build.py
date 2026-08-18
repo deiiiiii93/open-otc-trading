@@ -182,3 +182,88 @@ def test_build_renders_no_counters_when_there_is_no_snapshot(project, tmp_path):
     assert "Readership" not in index
     assert 'class="reads"' not in index
     assert any("no fresh stats.json" in w for w in result.warnings)
+
+
+# --------------------------------------------------------------------------
+# The leaderboard page
+# --------------------------------------------------------------------------
+
+import json  # noqa: E402
+
+import boards as bdm  # noqa: E402
+
+BOARDS = {
+    "version": bdm.SNAPSHOT_VERSION,
+    "generated_at": "2026-08-18T12:00:00+00:00",
+    "workflows": [{
+        "id": "risk-manager-control-day", "title": "Risk Manager Control Day",
+        "persona": "risk_manager", "steps": 9, "par": 24,
+        "boards": [{
+            "run": 20, "label": "Run #20", "date": "2026-07-08",
+            "post": "2026-08-13-run104-board.md", "checks": 39,
+            "carded": True, "carded_rows": 1, "models": 1, "trials": 2,
+            "rows": [{"rank": 1, "model": "gpt-5-6-terra", "effort": None,
+                      "ovr": 86, "stats": {"GRD": 99, "ADH": 95, "SYN": 90,
+                                           "PRC": 87, "EFF": 56},
+                      "con": 96, "objective": 89.8, "matches": 1, "trials": 2,
+                      "invalid": 0}],
+        }],
+    }],
+}
+
+
+def _bare_deploy(tmp_path: Path) -> Path:
+    """A deploy dir holding only the theme.
+
+    The real one gains boards.json/stats.json the moment anyone runs the
+    pipeline, which would silently invalidate any test whose premise is absence.
+    """
+    deploy = tmp_path / "deploy"
+    deploy.mkdir()
+    (deploy / "theme.css").write_text((DEPLOY / "theme.css").read_text())
+    return deploy
+
+
+def test_build_emits_the_leaderboard_and_links_it_from_every_page(project, tmp_path):
+    mf, arena, out = project
+    deploy = _bare_deploy(tmp_path)
+    (deploy / "boards.json").write_text(json.dumps(BOARDS))
+
+    b.build(mf, arena, deploy, out, refresh_pdf=False)
+
+    assert (out / "leaderboard.html").is_file()
+    assert "risk-manager-control-day" in (out / "leaderboard.html").read_text()
+    for page in ("index.html", "about.html", "2026-08-13-run104-board.html"):
+        assert "leaderboard.html" in (out / page).read_text(), page
+
+
+def test_build_without_a_boards_snapshot_emits_no_page_and_no_dead_link(
+    project, tmp_path
+):
+    mf, arena, out = project
+    deploy = _bare_deploy(tmp_path)
+    assert not (deploy / "boards.json").exists()
+
+    result = b.build(mf, arena, deploy, out, refresh_pdf=False)
+
+    assert not (out / "leaderboard.html").exists()
+    for page in ("index.html", "about.html", "2026-08-13-run104-board.html"):
+        assert "leaderboard.html" not in (out / page).read_text(), page
+    assert any("boards.json" in w for w in result.warnings)
+
+
+def test_build_warns_when_a_board_links_a_report_that_is_not_published(
+    project, tmp_path
+):
+    """A dangling report link is the same defect class as the unwritten-artifact
+    fixture: the page hands the reader a pointer the site cannot resolve."""
+    mf, arena, out = project
+    deploy = _bare_deploy(tmp_path)
+    dangling = json.loads(json.dumps(BOARDS))
+    dangling["workflows"][0]["boards"][0]["post"] = "2020-01-01-not-published.md"
+    (deploy / "boards.json").write_text(json.dumps(dangling))
+
+    result = b.build(mf, arena, deploy, out, refresh_pdf=False)
+
+    assert any("2020-01-01-not-published.md" in w for w in result.warnings)
+    assert "2020-01-01-not-published.html" not in (out / "leaderboard.html").read_text()

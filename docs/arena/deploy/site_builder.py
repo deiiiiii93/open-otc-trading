@@ -39,12 +39,22 @@ def _head(title: str, theme: str, description: str) -> str:
     )
 
 
-def _masthead() -> str:
+def _masthead(leaderboard: bool = False, here: str = "") -> str:
+    """`leaderboard` gates the nav link, so the absence rule reaches the chrome.
+
+    When no boards.json has been exported the page is not built, and a masthead
+    that linked it anyway would 404 on every page of the site.
+    """
+    links = []
+    if leaderboard:
+        cur = ' class="here"' if here == "leaderboard" else ""
+        links.append(f'<a href="./leaderboard.html"{cur}>Leaderboard</a>')
+    links.append('<a href="./about.html">About</a>')
+    links.append(f'<a href="{GITHUB_URL}">GitHub</a>')
     return (
         '<header class="masthead">'
         '<a class="brand" href="/"><span class="mark">A</span><span>Artena</span></a>'
-        '<nav><a href="./about.html">About</a>'
-        f'<a href="{GITHUB_URL}">GitHub</a></nav>'
+        f'<nav>{"".join(links)}</nav>'
         "</header>\n"
     )
 
@@ -147,6 +157,7 @@ def render_index(
     minutes: dict[str, int],
     theme: str,
     snapshot: dict | None = None,
+    leaderboard: bool = False,
 ) -> str:
     """The blog index: masthead, intro, reverse-chronological feed, derived rail.
 
@@ -167,7 +178,7 @@ def render_index(
     return (
         _head(SITE_TITLE, theme, SITE_TAGLINE)
         + '<div class="page">\n'
-        + _masthead()
+        + _masthead(leaderboard)
         + f'<div class="intro"><h1>{escape(SITE_TITLE)}</h1>'
         + f'<p class="lead">{escape(SITE_TAGLINE)}</p></div>\n'
         + '<div class="layout">\n'
@@ -195,6 +206,7 @@ def render_post_page(
     theme: str,
     newer: Post | None,
     older: Post | None,
+    leaderboard: bool = False,
 ) -> str:
     """Wrap a rendered report body in blog chrome.
 
@@ -225,7 +237,7 @@ def render_post_page(
     return (
         _head(f"{post.title} — {SITE_TITLE}", theme, post.blurb)
         + '<div class="post-shell">\n'
-        + _masthead()
+        + _masthead(leaderboard)
         + f'<p class="crumb"><a href="./index.html">Arena</a> / {crumb_tail}</p>\n'
         + f'<div class="byline">{"".join(meta)}</div>\n'
         + f'<div class="post-body">\n{body_html}\n</div>\n'
@@ -235,12 +247,14 @@ def render_post_page(
     )
 
 
-def render_about(posts: list[Post], theme: str) -> str:
+def render_about(
+    posts: list[Post], theme: str, leaderboard: bool = False
+) -> str:
     points = "".join(f"<li>{escape(p)}</li>" for p in ABOUT_POINTS)
     return (
         _head(f"About — {SITE_TITLE}", theme, SITE_TAGLINE)
         + '<div class="post-shell">\n'
-        + _masthead()
+        + _masthead(leaderboard)
         + '<div class="intro"><h1>What the Arena measures</h1>'
         + '<p class="lead">The Arena is built for financial-agent evaluation, not '
         + "generic prompt scoring. Each trial drives live desk workflows and "
@@ -268,6 +282,159 @@ def render_contact_sheet(title: str, image_names: list[str], theme: str) -> str:
         + f"{escape(title)}</p>\n"
         + f"<h1>{escape(title)}</h1>\n"
         + f'<div class="sheet">{figures}</div>\n'
+        + _site_footer()
+        + "</div>\n</body></html>\n"
+    )
+
+
+# ---------------------------------------------------------------------------
+# The leaderboard page
+# ---------------------------------------------------------------------------
+
+LEADERBOARD_TITLE = "Leaderboard"
+LEADERBOARD_LEAD = (
+    "One section per golden workflow, ranked by the Model Ability Card's OVR. "
+    "Boards are never merged across runs: a different field, instrument, or "
+    "manifest revision makes two boards incomparable, so each is published "
+    "exactly as it was measured."
+)
+# Display order follows the card's own presentation (grounding, adherence,
+# synthesis, procedure, efficiency), not the tie-break order.
+STAT_ORDER = ("GRD", "ADH", "SYN", "PRC", "EFF")
+# CON is dispersion across trials, so the trial depth it was measured over is
+# published beside it: a CON derived from a single trial is not a measurement.
+CARDED_HEADERS = ("Rank", "Model", "OVR", *STAT_ORDER, "CON", "Obj", "Trials")
+UNCARDED_HEADERS = ("Rank", "Model", "Obj", "Trials")
+
+
+def _num(value, fmt: str = "g") -> str:
+    """A missing measurement renders as an em dash, never as a zero."""
+    if value is None:
+        return '<span class="none">&mdash;</span>'
+    return format(value, fmt)
+
+
+def _contestant(row: dict) -> str:
+    """Model plus its effort arm. Two arms of one model are otherwise identical."""
+    effort = row.get("effort")
+    badge = f'<span class="effort">{escape(str(effort))}</span>' if effort else ""
+    return f'<td class="model">{escape(str(row.get("model", "")))}{badge}</td>'
+
+
+def _board_rows(board: dict) -> str:
+    carded = bool(board.get("carded"))
+    out = []
+    for row in board.get("rows", []):
+        cells = [f'<td class="rank">{int(row.get("rank", 0))}</td>', _contestant(row)]
+        if carded:
+            stats = row.get("stats") or {}
+            cells.append(f'<td class="ovr">{_num(row.get("ovr"))}</td>')
+            cells += [f"<td>{_num(stats.get(s))}</td>" for s in STAT_ORDER]
+            cells.append(f'<td class="con">{_num(row.get("con"))}</td>')
+        # One decimal always: "100" beside "94.9" reads as a different precision
+        # of measurement rather than the same axis at its ceiling.
+        cells.append(f'<td class="obj">{_num(row.get("objective"), ".1f")}</td>')
+        cells.append(f'<td class="n">{_num(row.get("trials"))}</td>')
+        out.append(f'<tr>{"".join(cells)}</tr>')
+    return "".join(out)
+
+
+def _board(board: dict, by_file: dict[str, Post]) -> str:
+    carded = bool(board.get("carded"))
+    headers = CARDED_HEADERS if carded else UNCARDED_HEADERS
+
+    facts = [escape(str(board.get("date") or ""))]
+    models = board.get("models")
+    if models:
+        facts.append(f"{int(models)} contestants")
+    checks = board.get("checks")
+    if checks:
+        facts.append(f"{int(checks)} checks")
+    trials = board.get("trials")
+    if trials:
+        facts.append(f"{int(trials)} trials each")
+    invalid = sum(int(r.get("invalid") or 0) for r in board.get("rows", []))
+    if invalid:
+        facts.append(f"{invalid} invalid")
+
+    post = by_file.get(str(board.get("post") or ""))
+    if post is not None:
+        facts.append(f'<a href="./{post.html_name}">report</a>')
+
+    note = ""
+    if not carded:
+        note = (
+            '<p class="board-note">Ranked on the objective axis: this board '
+            "predates the Model Ability Card, so it carries no OVR.</p>"
+        )
+
+    head = "".join(f"<th>{h}</th>" for h in headers)
+    return (
+        '<div class="board">'
+        f'<h3>{escape(str(board.get("label") or ""))}'
+        f'<span class="board-facts">{" &middot; ".join(facts)}</span></h3>'
+        f"{note}"
+        '<div class="board-scroll"><table class="board-table">'
+        f"<thead><tr>{head}</tr></thead>"
+        f"<tbody>{_board_rows(board)}</tbody>"
+        "</table></div></div>"
+    )
+
+
+def _workflow_section(wf: dict, by_file: dict[str, Post]) -> str:
+    slug = str(wf.get("id", ""))
+    # The persona is a code identifier (`risk_manager`); uppercased for the
+    # subtitle its underscore reads as a typo rather than a role.
+    persona = str(wf.get("persona") or "").replace("_", " ")
+    facts = [escape(str(wf.get("title") or "")), escape(persona)]
+    if wf.get("steps"):
+        facts.append(f'{int(wf["steps"])} steps')
+    if wf.get("par"):
+        facts.append(f'par {int(wf["par"])}')
+
+    boards = wf.get("boards") or []
+    if boards:
+        body = "".join(_board(b, by_file) for b in boards)
+    else:
+        # empty != unavailable. Omitting the section would let a reader assume
+        # the workflow does not exist, rather than that nobody has run it.
+        body = (
+            '<p class="empty">No board has been run on this workflow yet. '
+            "The workflow exists and is scored; the field does not.</p>"
+        )
+
+    return (
+        f'<section class="wf" id="{escape(slug)}">'
+        f'<h2><code>{escape(slug)}</code></h2>'
+        f'<p class="wf-facts">{" &middot; ".join(facts)}</p>'
+        f"{body}</section>\n"
+    )
+
+
+def render_leaderboard(snapshot: dict, posts: list[Post], theme: str) -> str:
+    """Every board we have, grouped by the workflow it was measured on.
+
+    Nothing here is typed: `snapshot` comes from collect_boards.py, which reads
+    the arena DB through the same ranking kernel the desk UI uses.
+    """
+    from boards import ordered_workflows
+
+    by_file = {p.file: p for p in posts}
+    sections = "".join(
+        _workflow_section(wf, by_file)
+        for wf in ordered_workflows(snapshot.get("workflows") or [])
+    )
+    generated = str(snapshot.get("generated_at", ""))[:10]
+
+    return (
+        _head(f"{LEADERBOARD_TITLE} — {SITE_TITLE}", theme, LEADERBOARD_LEAD)
+        + '<div class="page">\n'
+        + _masthead(True, here="leaderboard")
+        + f'<div class="intro"><h1>{escape(LEADERBOARD_TITLE)}</h1>'
+        + f'<p class="lead">{escape(LEADERBOARD_LEAD)}</p>'
+        + f'<p class="rail-sub">derived from the arena database on {escape(generated)}</p>'
+        + "</div>\n"
+        + f'<main class="boards">\n{sections}</main>\n'
         + _site_footer()
         + "</div>\n</body></html>\n"
     )

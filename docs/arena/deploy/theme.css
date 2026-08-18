@@ -80,3 +80,42 @@ footer.site{margin-top:44px; padding-top:18px; border-top:1px solid var(--line);
 .sheet figcaption{margin-top:8px; font-size:.76rem; color:var(--muted); word-break:break-all}
 .rail-note{margin:.9em 0 0; font-size:.72rem; color:var(--muted); line-height:1.4}
 .entry-meta .reads{color:var(--accent-2); font-weight:600}
+
+/* leaderboard */
+.masthead nav a.here{color:var(--ink); font-weight:700}
+.boards{padding-top:6px}
+.wf{padding:26px 0 10px; border-bottom:1px solid var(--line)}
+.wf h2{margin:0; font-size:1.05rem}
+.wf h2 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.95rem;
+  color:var(--ink); background:var(--paper); border:1px solid var(--line);
+  border-radius:6px; padding:3px 9px}
+.wf-facts{margin:.75em 0 0; font-size:.75rem; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.05em}
+.wf .empty{margin:16px 0 10px; padding:14px 16px; background:var(--paper);
+  border:1px dashed var(--line); border-radius:10px; color:var(--muted); font-size:.88rem}
+.board{margin:20px 0 24px}
+.board h3{margin:0 0 10px; font-size:.95rem; display:flex; gap:12px;
+  align-items:baseline; flex-wrap:wrap}
+.board-facts{font-size:.72rem; color:var(--muted); font-weight:400;
+  text-transform:uppercase; letter-spacing:.05em}
+.board-note{margin:0 0 10px; font-size:.8rem; color:var(--muted); max-width:62ch}
+/* Wide tables scroll inside their own box; the page body never scrolls sideways. */
+.board-scroll{overflow-x:auto; background:var(--paper); border:1px solid var(--line);
+  border-radius:10px}
+.board-table{border-collapse:collapse; width:100%; font-size:.85rem;
+  font-variant-numeric:tabular-nums}
+.board-table th{text-align:right; padding:10px 12px; font-size:.68rem; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.06em; white-space:nowrap; font-weight:600;
+  border-bottom:1px solid var(--line)}
+.board-table td{text-align:right; padding:8px 12px; white-space:nowrap;
+  border-bottom:1px solid var(--bg)}
+.board-table tbody tr:last-child td{border-bottom:none}
+.board-table th:first-child,.board-table td:first-child{text-align:left; width:44px}
+.board-table th:nth-child(2),.board-table td:nth-child(2){text-align:left; width:100%}
+.board-table .rank{color:var(--muted)}
+.board-table .model{font-weight:600}
+.board-table .ovr{font-weight:700; color:var(--accent)}
+.board-table .none{color:var(--line)}
+.effort{margin-left:8px; padding:1px 7px; border-radius:999px; font-size:.68rem;
+  font-weight:600; color:var(--accent-2); background:var(--bg);
+  border:1px solid var(--line); text-transform:uppercase; letter-spacing:.04em}

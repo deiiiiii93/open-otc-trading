@@ -9,6 +9,7 @@ not taken effect.
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 import urllib.error
@@ -82,13 +83,34 @@ def fetch_headers(url: str, timeout: int = 20) -> dict[str, str]:
         return {k.lower(): v for k, v in (e.headers or {}).items()}
 
 
+WF_ANCHOR_RE = re.compile(r'<section class="wf" id="([a-z0-9-]+)"')
+
+
+def _find_anchors(html: str) -> list[str]:
+    return WF_ANCHOR_RE.findall(html)
+
+
+def workflow_anchors(html: str) -> list[str]:
+    """The workflow sections a built leaderboard claims, in page order.
+
+    Read from the artifact rather than re-derived from boards.json, so the check
+    verifies what was actually uploaded rather than what we meant to upload.
+    """
+    return _find_anchors(html)
+
+
 def verify_live(
     base_url: str,
     posts: list[Post],
     assets: tuple[str, ...] = ORPHAN_ASSETS,
     security_headers: tuple[str, ...] = SECURITY_HEADERS,
+    workflow_anchors: tuple[str, ...] | list[str] = (),
 ) -> list[str]:
-    """Return failure messages; an empty list means the site is healthy."""
+    """Return failure messages; an empty list means the site is healthy.
+
+    `workflow_anchors` empty means no leaderboard was built, which is a valid
+    site — not a reason to fail.
+    """
     failures: list[str] = []
 
     status, _, body = fetch(base_url)
@@ -119,6 +141,19 @@ def verify_live(
             failures.append(f"{name}: expected 200, got {status}")
         elif "image" not in ctype:
             failures.append(f"{name}: expected an image content-type, got {ctype!r}")
+
+    if workflow_anchors:
+        status, _, body = fetch(f"{base_url}leaderboard.html")
+        page = body.decode("utf-8", "replace")
+        if status != 200:
+            failures.append(f"leaderboard.html: expected 200, got {status}")
+        else:
+            served = set(_find_anchors(page))
+            for slug in workflow_anchors:
+                if slug not in served:
+                    failures.append(
+                        f"leaderboard.html: no section for workflow {slug}"
+                    )
 
     headers = fetch_headers(base_url) if security_headers else {}
     for name in security_headers:
@@ -160,7 +195,9 @@ def _cmd_publish(args) -> int:
         print("uploaded; verification skipped (--no-verify)")
         return 0
 
-    failures = verify_live(args.base_url, _posts())
+    board_page = build_dir / "leaderboard.html"
+    anchors = workflow_anchors(board_page.read_text()) if board_page.is_file() else []
+    failures = verify_live(args.base_url, _posts(), workflow_anchors=anchors)
     if failures:
         print("\nVERIFICATION FAILED:", file=sys.stderr)
         for f in failures:
