@@ -156,3 +156,71 @@ def test_contact_sheet_renders_one_figure_per_image():
     assert 'src="./hero-grok-4-6.png"' in html
     assert 'href="./index.html"' not in html   # cards live one level down
     assert 'href="../index.html"' in html
+
+
+SNAPSHOT = {
+    "version": 1,
+    "generated_at": "2026-08-18T12:00:00+00:00",
+    "views": {"2026-08-18-run110-luna": 180, "2026-08-13-run104-board": 94, "index": 412},
+    "downloads": {"2026-08-13-run104-board": 22},
+    "referrers": [["news.ycombinator.com", 88], ["t.co", 31]],
+    "total_views": 686,
+    "total_downloads": 22,
+    "bot_lines": 1400,
+    "malformed_lines": 0,
+    "counted_lines": 708,
+}
+
+
+def test_index_without_a_snapshot_renders_no_counters_at_all():
+    """Absence must render NOTHING — a 0 would read as 'nobody', not 'unmeasured'."""
+    html = sb.render_index(POSTS, MINUTES, THEME)
+    assert "Readership" not in html
+    # NB: assert on the MARKUP, not the word "reads" — theme.css is inlined into
+    # every page and contains a `.entry-meta .reads` rule, so a bare substring
+    # check passes here only by accident of the stub theme and fails on the real one.
+    assert 'class="reads"' not in html
+
+
+def test_index_with_a_snapshot_shows_the_readership_card():
+    html = sb.render_index(POSTS, MINUTES, THEME, snapshot=SNAPSHOT)
+    rail = html.split('class="rail"', 1)[1]
+    assert "Readership" in rail
+    assert "686" in rail and "22" in rail
+    assert "news.ycombinator.com" in rail and "88" in rail
+
+
+def test_readership_card_labels_the_snapshot_date_not_last_seen():
+    html = sb.render_index(POSTS, MINUTES, THEME, snapshot=SNAPSHOT)
+    assert "as of 2026-08-18" in html
+
+
+def test_readership_card_surfaces_the_bot_filtered_fraction():
+    html = sb.render_index(POSTS, MINUTES, THEME, snapshot=SNAPSHOT)
+    assert "bot" in html.lower()
+    assert "1,400" in html or "1400" in html
+
+
+def test_per_post_read_counts_appear_only_for_posts_with_data():
+    html = sb.render_index(POSTS, MINUTES, THEME, snapshot=SNAPSHOT)
+    assert "180 reads" in html          # run110 has a count
+    assert "94 reads" in html           # run104 has a count
+    # ">0 reads<" not "0 reads": the latter is a substring of "180 reads".
+    assert ">0 reads<" not in html      # a post with no data shows nothing
+    # the plan post has no entry in SNAPSHOT["views"], so it gets no element
+    assert html.count('class="reads"') == 2
+
+
+def test_per_post_read_counts_are_page_views_not_downloads():
+    """One PDF fetch must not read as a page view."""
+    html = sb.render_index(POSTS, MINUTES, THEME, snapshot=SNAPSHOT)
+    # run104: 94 views + 22 downloads. The feed entry must say 94, never 116.
+    assert "94 reads" in html
+    assert "116 reads" not in html
+
+
+def test_readership_card_escapes_referrer_hosts():
+    evil = dict(SNAPSHOT, referrers=[["<script>evil</script>", 3]])
+    html = sb.render_index(POSTS, MINUTES, THEME, snapshot=evil)
+    assert "&lt;script&gt;" in html
+    assert "<script>evil" not in html

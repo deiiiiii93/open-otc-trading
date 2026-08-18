@@ -56,10 +56,14 @@ def _site_footer() -> str:
     )
 
 
-def _entry(post: Post, minutes: int) -> str:
+def _entry(post: Post, minutes: int, reads: int | None = None) -> str:
     meta = [f'<time datetime="{post.date.isoformat()}">{post.date.isoformat()}</time>']
     meta += [f'<span class="tag">{escape(t)}</span>' for t in post.tags]
     meta.append(f'<span class="read">{minutes} min</span>')
+    # Page views only. Downloads are a separate rail total, so one PDF fetch
+    # cannot read as a page view. No data => no element, never "0 reads".
+    if reads:
+        meta.append(f'<span class="reads">{reads:,} reads</span>')
 
     chips = [post.run] if post.run else []
     chips += list(post.chips)
@@ -105,6 +109,32 @@ def _standings_card(post: Post) -> str:
     )
 
 
+def _readership_card(snapshot: dict) -> str:
+    """Rail card. Only ever called with a snapshot that passed load_snapshot()."""
+    generated = str(snapshot.get("generated_at", ""))[:10]
+    views = int(snapshot.get("total_views", 0))
+    downloads = int(snapshot.get("total_downloads", 0))
+    bots = int(snapshot.get("bot_lines", 0))
+
+    refs = "".join(
+        f"<span>{escape(str(host))}<b>{int(count):,}</b></span>"
+        for host, count in snapshot.get("referrers", [])
+    )
+    refs_html = f'<div class="tag-list">{refs}</div>' if refs else ""
+
+    return (
+        '<section class="rail-card"><h3>Readership</h3>'
+        f'<p class="rail-sub">as of {escape(generated)}</p>'
+        f'<div class="tag-list">'
+        f"<span>views<b>{views:,}</b></span>"
+        f"<span>downloads<b>{downloads:,}</b></span>"
+        f"</div>"
+        f"{refs_html}"
+        f'<p class="rail-note">{bots:,} bot requests filtered out</p>'
+        "</section>\n"
+    )
+
+
 def _tag_card(posts: list[Post]) -> str:
     rows = "".join(
         f"<span>{escape(tag)}<b>{n}</b></span>" for tag, n in tag_counts(posts)
@@ -112,14 +142,26 @@ def _tag_card(posts: list[Post]) -> str:
     return f'<section class="rail-card"><h3>Tags</h3><div class="tag-list">{rows}</div></section>\n'
 
 
-def render_index(posts: list[Post], minutes: dict[str, int], theme: str) -> str:
-    """The blog index: masthead, intro, reverse-chronological feed, derived rail."""
-    feed = "".join(_entry(p, minutes[p.stem]) for p in posts)
+def render_index(
+    posts: list[Post],
+    minutes: dict[str, int],
+    theme: str,
+    snapshot: dict | None = None,
+) -> str:
+    """The blog index: masthead, intro, reverse-chronological feed, derived rail.
+
+    `snapshot` is optional and defaults to None: when readership has not been
+    measured, no counter markup is emitted anywhere on the page.
+    """
+    views = (snapshot or {}).get("views", {})
+    feed = "".join(_entry(p, minutes[p.stem], views.get(p.stem)) for p in posts)
 
     rail = ""
     board = latest_standings(posts)
     if board is not None:
         rail += _standings_card(board)
+    if snapshot is not None:
+        rail += _readership_card(snapshot)
     rail += _tag_card(posts)
 
     return (
