@@ -149,3 +149,57 @@ def aggregate(lines: Iterable[str]) -> Stats:
 
 def top_referrers(stats: Stats, n: int = TOP_REFERRERS) -> list[tuple[str, int]]:
     return sorted(stats.referrers.items(), key=lambda kv: (-kv[1], kv[0]))[:n]
+
+
+import datetime as dt
+import json
+from pathlib import Path
+
+SNAPSHOT_VERSION = 1
+
+
+def to_snapshot(stats: Stats, generated_at: dt.datetime) -> dict:
+    """The publishable subset. No IPs, no user agents, no full referrer URLs."""
+    return {
+        "version": SNAPSHOT_VERSION,
+        "generated_at": generated_at.isoformat(),
+        "views": dict(stats.views),
+        "downloads": dict(stats.downloads),
+        "referrers": [list(pair) for pair in top_referrers(stats)],
+        "total_views": stats.total_views,
+        "total_downloads": stats.total_downloads,
+        "bot_lines": stats.bot_lines,
+        "malformed_lines": stats.malformed_lines,
+        "counted_lines": stats.counted_lines,
+    }
+
+
+def load_snapshot(
+    path: Path, now: dt.datetime, max_age_days: int = STATS_MAX_AGE_DAYS
+) -> dict | None:
+    """The snapshot, or None if it is absent, unreadable, unknown or stale.
+
+    Returning None (rather than an empty Stats) is the whole point: the renderer
+    must be able to distinguish "nobody read it" from "we did not measure", and
+    a zero-filled payload makes those two indistinguishable downstream.
+    """
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("version") != SNAPSHOT_VERSION:
+        return None
+
+    raw = data.get("generated_at")
+    if not isinstance(raw, str):
+        return None
+    try:
+        generated_at = dt.datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if generated_at.tzinfo is None:
+        generated_at = generated_at.replace(tzinfo=dt.timezone.utc)
+
+    if now - generated_at > dt.timedelta(days=max_age_days):
+        return None
+    return data

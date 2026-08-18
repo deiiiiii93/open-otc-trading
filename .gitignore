@@ -57,3 +57,6 @@ docs/arena/cards/
 
 # generated arena blog (rebuildable from posts.yaml + the report markdown)
 docs/arena/deploy/build/
+
+# arena readership snapshot (derived from server logs, recomputable)
+docs/arena/deploy/stats.json

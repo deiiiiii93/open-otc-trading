@@ -154,3 +154,68 @@ def test_top_referrers_is_sorted_by_count_then_name():
 def test_aggregate_of_nothing_is_empty_not_an_error():
     got = st.aggregate([])
     assert got.total_views == 0 and got.views == {} and got.counted_lines == 0
+
+
+import datetime as dt
+import json
+
+
+NOW = dt.datetime(2026, 8, 18, 12, 0, tzinfo=dt.timezone.utc)
+
+
+def _snapshot(tmp_path, generated_at=NOW, **override):
+    agg = st.aggregate([line("/arena/x.html"), line("/arena/x.pdf"), line("/arena/y.html", ua=UA_BOT)])
+    snap = st.to_snapshot(agg, generated_at)
+    snap.update(override)
+    p = tmp_path / "stats.json"
+    p.write_text(json.dumps(snap))
+    return p
+
+
+def test_to_snapshot_carries_only_aggregate_fields():
+    agg = st.aggregate([line("/arena/x.html", referer="https://news.ycombinator.com/")])
+    snap = st.to_snapshot(agg, NOW)
+    assert snap["version"] == st.SNAPSHOT_VERSION
+    assert snap["generated_at"] == NOW.isoformat()
+    assert snap["views"] == {"x": 1}
+    assert snap["referrers"] == [["news.ycombinator.com", 1]]
+    blob = json.dumps(snap)
+    assert "203.0.113.7" not in blob, "no IPs may reach the snapshot"
+    assert "Mozilla" not in blob, "no user agents may reach the snapshot"
+
+
+def test_load_snapshot_returns_the_payload_when_fresh(tmp_path):
+    p = _snapshot(tmp_path)
+    got = st.load_snapshot(p, now=NOW + dt.timedelta(days=1))
+    assert got is not None and got["views"]["x"] == 1
+
+
+def test_load_snapshot_returns_none_when_stale(tmp_path):
+    """Stale MUST render nothing, never zeros."""
+    p = _snapshot(tmp_path)
+    assert st.load_snapshot(p, now=NOW + dt.timedelta(days=15)) is None
+    assert st.load_snapshot(p, now=NOW + dt.timedelta(days=13)) is not None
+
+
+def test_load_snapshot_returns_none_when_absent(tmp_path):
+    assert st.load_snapshot(tmp_path / "nope.json", now=NOW) is None
+
+
+def test_load_snapshot_returns_none_when_unparseable(tmp_path):
+    p = tmp_path / "stats.json"
+    p.write_text("{not json")
+    assert st.load_snapshot(p, now=NOW) is None
+
+
+def test_load_snapshot_returns_none_on_an_unknown_version(tmp_path):
+    p = _snapshot(tmp_path, version=99)
+    assert st.load_snapshot(p, now=NOW) is None
+
+
+def test_load_snapshot_returns_none_when_generated_at_is_missing_or_bad(tmp_path):
+    assert st.load_snapshot(_snapshot(tmp_path, generated_at=NOW), now=NOW) is not None
+    p = _snapshot(tmp_path)
+    data = json.loads(p.read_text())
+    del data["generated_at"]
+    p.write_text(json.dumps(data))
+    assert st.load_snapshot(p, now=NOW) is None
