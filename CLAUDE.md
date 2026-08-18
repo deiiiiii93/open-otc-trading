@@ -1187,6 +1187,57 @@ listing the boards run on it. Two inputs, deliberately separate:
   each to be served, for the same reason it compares titles — a 200 under the SPA
   catch-all proves nothing.
 
+### theme.css owns the report body ON THE WEB; render_report.py owns print
+
+`render_markdown()` returns **bare HTML with no stylesheet**. Only
+`document_html()` — the standalone `docs/arena/*.html` artifact and the PDF —
+attaches `render_report.py`'s CSS. So a blog post page is styled *entirely* by
+`theme.css`, and for months it had no rules for anything inside `.post-body`:
+9 of ~13 pages rendered at browser defaults while the same report was a typeset
+serif document in print. The ASCII-chart figures were invisible outright — a
+`.bar` has no intrinsic size, so 117 rows across 10 charts collapsed to nothing.
+
+- The two stylesheets are **kept in sympathy, never copied**. `render_report.py`
+  stays authoritative for print, and nothing in `theme.css` can reach it —
+  which is what keeps `tests/test_arena_render_report.py`'s byte-identity gate
+  over the six committed report HTMLs green through a site redesign.
+- **Chart bar hues are semantic** (gold/silver/bronze = podium, good/warn/bad =
+  judgment) and are pinned by test to the exact values in `render_report.py`;
+  only the neutral track, rules and table fills are warmed to the blog palette.
+  Letting a hue drift makes one chart say different things in the two media.
+- Markdown tables get `display:block; overflow-x:auto` — the internal table
+  layout survives (rows still generate anonymous table boxes) and a wide board
+  scrolls in its own box. Markdown emits no wrapper element to use instead.
+
+### The editorial voice: serif argues, sans measures
+
+Serif carries the nameplate, headlines, blurbs and report prose; sans carries
+metadata, tables and card stats. `--serif` was declared in `:root` and
+referenced **nowhere** for months, so the warm-paper palette promised a journal
+while every glyph was system sans — `test_the_serif_token_is_used_and_not_merely_declared`
+is the dead-token guard. System fonts only: the stylesheet is inlined and no
+font files ship, so a webfont means adding `.woff2` to `static/` plus a
+`@font-face`.
+
+- **The nameplate is `full` on the index and `compact` everywhere else.** The
+  index has no separate intro band — the title *is* its `<h1>` and the tagline
+  rides with it. On an interior page the page's own heading owns the `<h1>`, so
+  the nameplate title degrades to a link; repeating the tagline there would
+  stack two muted paragraphs above the data and let the site title outweigh the
+  page being read.
+- The small `ARTENA` eyebrow **inherits the root-site link** (`/`) the old
+  `A`-in-a-square brand owned. Folding the title into the header would strand
+  it, because the title now points at the arena index.
+- **Blurbs render markdown code spans; titles never do.** `publish.verify_live`
+  asserts `escape(post.title)` appears verbatim on the served page, so inlining
+  a title breaks the deploy verifier rather than the build — a far worse failure
+  to diagnose. Escape first, then wrap, so the pattern only sees inert text.
+- Boxes were removed from the rail, the board tables and the chips **so that a
+  box still means something** where it is kept: the model cards, where the card
+  metaphor is the measurement's identity.
+- The masthead nav needs ~320px on its own, which leaves nothing for a full
+  title on a phone; it stacks below 720px.
+
 ### Gotchas
 
 - **A 200 proves nothing under `/arena/`.** The open-slides-zero frontend

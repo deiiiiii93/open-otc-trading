@@ -102,5 +102,20 @@ open-slides-zero SPA.
   ranked models on a blended objective+judge score that the 2026-07-05 reform
   retired, so re-deriving them on today's objective axis reorders their own
   published podium.
+- **`theme.css` styles the report body on the web; `render_report.py` styles
+  print.** `render_markdown()` returns bare HTML with no stylesheet — only
+  `document_html()` (the standalone `.html` and the PDF) carries the report's
+  own CSS. Keep the two in sympathy, never copy one into the other. Chart bar
+  hues are semantic and pinned by test to the values in `render_report.py`;
+  only neutrals are warmed to the blog palette.
+- **Serif argues, sans measures.** Nameplate, headlines, blurbs and report prose
+  are serif; metadata, tables and card stats are sans. System fonts only — the
+  stylesheet is inlined and no font files ship.
+- **The nameplate is full on the index, compact elsewhere.** The index has no
+  intro band; its title is the page `<h1>`. Interior pages let their own heading
+  lead. The `ARTENA` eyebrow carries the link to the site root.
+- **Blurbs render `code` spans; titles must not.** `verify_live` compares
+  `escape(post.title)` against the served page, so inlining a title would break
+  the deploy verifier rather than the build.
 - **Rollback** is removing the `location /arena/` block in open-slides-zero and
   redeploying nginx. `frontend/public/arena/` is deliberately still there.

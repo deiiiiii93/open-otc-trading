@@ -1,8 +1,13 @@
+/* Warm-paper editorial theme.
+   Serif carries the argument (titles, headlines, prose); sans carries the
+   evidence (labels, metadata, tables, card stats). --serif was declared here
+   and referenced nowhere for months, which is why the palette promised a
+   journal and the typography delivered a dashboard. */
 :root{
   --bg:#f7f4ee; --paper:#fffdf8; --ink:#191612; --muted:#60584d;
-  --line:#d7cdbf; --accent:#9f351f; --accent-2:#1f5f68;
+  --line:#d7cdbf; --rule:#ebe3d6; --accent:#9f351f; --accent-2:#1f5f68;
   --sans:-apple-system,"Inter","Segoe UI",Helvetica,Arial,sans-serif;
-  --serif:"Charter","Georgia",Cambria,"Times New Roman",serif;
+  --serif:"Charter","Iowan Old Style","Georgia",Cambria,"Times New Roman",serif;
 }
 *{box-sizing:border-box}
 body{margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans);
@@ -11,64 +16,106 @@ a{color:var(--accent); text-decoration:none}
 a:hover{text-decoration:underline}
 .page{max-width:1080px; margin:0 auto; padding:28px 24px 72px}
 
-.masthead{display:flex; align-items:center; justify-content:space-between;
-  padding-bottom:18px; border-bottom:1px solid var(--line)}
-.brand{display:flex; align-items:center; gap:10px; color:var(--ink); font-weight:700;
-  letter-spacing:-.01em}
-.brand .mark{display:grid; place-items:center; width:28px; height:28px; border-radius:7px;
-  background:var(--accent); color:#fff; font-size:.85rem; font-weight:800}
-.masthead nav{display:flex; gap:20px; font-size:.9rem}
+/* ---- nameplate ---------------------------------------------------------
+   Full on the index, where the site title IS the page's h1 and the tagline
+   rides with it. Compact everywhere else: the page's own heading must lead,
+   and a repeated tagline stacks two muted paragraphs above the data. */
+.masthead{display:flex; align-items:flex-start; justify-content:space-between;
+  gap:36px; padding-bottom:20px; border-bottom:1px solid var(--line)}
+.masthead.compact{align-items:center; padding-bottom:14px}
+.plate{min-width:0}
+.masthead.compact .plate{display:flex; align-items:baseline; gap:11px; min-width:0}
+.eyebrow{display:block; font-size:.63rem; text-transform:uppercase;
+  letter-spacing:.18em; font-weight:700; color:var(--accent)}
+.masthead.compact .eyebrow{display:inline; flex-shrink:0}
+.plate-title{display:block; margin:.16em 0 0; font-family:var(--serif);
+  font-weight:400; font-size:2.3rem; line-height:1.06; letter-spacing:-.005em;
+  color:var(--ink)}
+.masthead.compact .plate-title{margin:0; font-size:1.02rem; font-weight:600;
+  letter-spacing:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.strap{margin:.46em 0 0; max-width:54ch; font-family:var(--serif);
+  font-size:1rem; color:var(--muted); line-height:1.45}
+.masthead nav{display:flex; gap:19px; font-size:.8rem; flex-shrink:0; padding-top:2px}
+.masthead.compact nav{padding-top:0}
 .masthead nav a{color:var(--muted)}
+.masthead nav a.here{color:var(--ink); font-weight:700}
+/* The nav needs ~320px on its own, which leaves nothing for a full title on a
+   phone. Stack instead of letting the plate be crushed to an ellipsis. */
+@media (max-width:720px){
+  .masthead,.masthead.compact{flex-direction:column; align-items:flex-start; gap:14px}
+  .masthead nav,.masthead.compact nav{flex-wrap:wrap; gap:8px 16px; padding-top:0}
+  .plate-title{font-size:1.75rem}
+  .masthead.compact .plate{flex-wrap:wrap; gap:2px 10px}
+  .masthead.compact .plate-title{white-space:normal; overflow:visible; font-size:1rem}
+}
 
-.intro{padding:38px 0 26px; border-bottom:1px solid var(--line)}
-.intro h1{margin:0 0 .3em; font-size:2.1rem; letter-spacing:-.02em; line-height:1.15}
-.intro .lead{margin:0; max-width:60ch; color:var(--muted); font-size:1.02rem}
+/* ---- page heading (interior pages only) ---- */
+.intro{padding:28px 0 22px; border-bottom:1px solid var(--line)}
+.intro h1{margin:0 0 .2em; font-family:var(--serif); font-weight:400;
+  font-size:2.05rem; line-height:1.1; letter-spacing:-.005em}
+.intro .lead{margin:0; max-width:58ch; font-family:var(--serif); font-size:1rem;
+  color:var(--muted); line-height:1.45}
+.derived{margin:1em 0 0; font-size:.68rem; text-transform:uppercase;
+  letter-spacing:.1em; color:var(--muted)}
 
-.layout{display:grid; grid-template-columns:minmax(0,1fr) 268px; gap:40px; padding-top:8px}
+.layout{display:grid; grid-template-columns:minmax(0,1fr) 268px; gap:44px}
 @media (max-width:860px){ .layout{grid-template-columns:minmax(0,1fr)} }
 
-.entry{padding:26px 0; border-bottom:1px solid var(--line)}
-.entry-meta{display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-  font-size:.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em}
-.entry h2{margin:.4em 0 .3em; font-size:1.3rem; line-height:1.3; letter-spacing:-.01em}
+/* ---- feed ---- */
+.entry{padding:22px 0; border-bottom:1px solid var(--line)}
+.feed .entry:last-child{border-bottom:none}
+.entry-meta,.byline{display:flex; align-items:center; gap:9px; flex-wrap:wrap;
+  font-size:.68rem; color:var(--muted); text-transform:uppercase; letter-spacing:.1em}
+/* One separator style for the whole row. Three competing treatments — a
+   bordered pill, plain text and a coloured span — read as clutter. */
+.entry-meta > * + *::before,.byline > * + *::before{content:"\00b7";
+  margin-right:9px; color:var(--line)}
+.entry h2{margin:.42em 0 0; font-family:var(--serif); font-weight:400;
+  font-size:1.32rem; line-height:1.25; letter-spacing:-.005em}
 .entry h2 a{color:var(--ink)}
-.entry .blurb{margin:0; color:var(--muted); max-width:62ch}
-.tag{padding:2px 8px; border-radius:999px; background:var(--paper);
-  border:1px solid var(--line); color:var(--accent-2); font-weight:600}
-.chips{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
-.chip{padding:2px 9px; border-radius:5px; background:var(--paper);
-  border:1px solid var(--line); font-size:.76rem; color:var(--muted)}
-
-.rail{display:flex; flex-direction:column; gap:18px}
-.rail-card{background:var(--paper); border:1px solid var(--line); border-radius:10px;
-  padding:16px 16px 18px}
-.rail-card h3{margin:0; font-size:.76rem; text-transform:uppercase; letter-spacing:.08em;
+/* The newest post leads. A feed where every item is the same size has no
+   editorial opinion about what to read first. */
+.entry.lead h2{margin-top:.3em; font-size:1.95rem; line-height:1.16}
+.entry.lead .blurb{font-size:1.04rem}
+.entry .blurb{margin:.35em 0 0; max-width:58ch; font-family:var(--serif);
+  font-size:.97rem; color:var(--muted); line-height:1.5}
+.tag{color:var(--accent-2); font-weight:700}
+.blurb code,.lead code,.strap code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.86em; background:var(--paper); border:1px solid var(--rule);
+  border-radius:4px; padding:.04em .32em}
+.chips{display:flex; gap:9px; flex-wrap:wrap; margin-top:10px; font-size:.72rem;
   color:var(--muted)}
-.rail-sub{margin:.35em 0 .9em; font-size:.85rem; color:var(--ink); font-weight:600}
+.chip + .chip::before{content:"\00b7"; margin-right:9px; color:var(--line)}
+
+/* ---- rail ---- */
+.rail{display:flex; flex-direction:column; gap:26px; padding-top:24px}
+.rail-card h3{margin:0; padding-bottom:8px; border-bottom:1px solid var(--line);
+  font-size:.64rem; text-transform:uppercase; letter-spacing:.12em;
+  color:var(--muted); font-weight:700}
+.rail-sub{margin:.6em 0 .8em; font-family:var(--serif); font-size:.92rem;
+  color:var(--ink)}
 .rank-row{display:grid; grid-template-columns:16px minmax(0,1fr) 30px; gap:8px;
   align-items:baseline; margin:9px 0; font-size:.83rem}
 .rank-row .rank{color:var(--muted); font-variant-numeric:tabular-nums}
 .rank-row .model{font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .rank-row .score{text-align:right; font-variant-numeric:tabular-nums; font-weight:700}
 .rank-row .note{grid-column:2/4; color:var(--muted); font-size:.75rem; margin-top:-2px}
-.bar-track{grid-column:1/4; height:4px; border-radius:3px; background:var(--line)}
-.bar-fill{display:block; height:100%; border-radius:3px; background:var(--accent)}
+.bar-track{grid-column:1/4; height:3px; border-radius:2px; background:var(--rule)}
+.bar-fill{display:block; height:100%; border-radius:2px; background:var(--accent)}
 .tag-list{display:flex; flex-direction:column; gap:7px; margin-top:12px; font-size:.85rem}
 .tag-list span{display:flex; justify-content:space-between; color:var(--muted)}
-.tag-list b{color:var(--ink); font-weight:600}
+.tag-list b{color:var(--ink); font-weight:600; font-variant-numeric:tabular-nums}
+.rail-note{margin:.9em 0 0; font-size:.72rem; color:var(--muted); line-height:1.4}
+.entry-meta .reads{color:var(--accent-2); font-weight:600}
 
-footer.site{margin-top:44px; padding-top:18px; border-top:1px solid var(--line);
+footer.site{margin-top:52px; padding-top:18px; border-top:1px solid var(--line);
   font-size:.82rem; color:var(--muted)}
 
-/* post pages: chrome only — the report body keeps render_report.py's own CSS */
+/* ---- post pages ---- */
 .post-shell{max-width:880px; margin:0 auto; padding:28px 24px 72px}
-.crumb{font-size:.82rem; color:var(--muted); margin-bottom:6px}
+.crumb{margin:18px 0 6px; font-size:.82rem; color:var(--muted)}
 .crumb a{color:var(--muted)}
-.byline{display:flex; gap:10px; flex-wrap:wrap; font-size:.78rem; color:var(--muted);
-  text-transform:uppercase; letter-spacing:.05em; padding-bottom:18px;
-  border-bottom:1px solid var(--line); margin-bottom:8px}
-.post-body{background:var(--paper); border:1px solid var(--line); border-radius:12px;
-  padding:8px 34px 26px; margin-top:22px}
+.byline{padding-bottom:18px; border-bottom:1px solid var(--line); margin-bottom:8px}
 .post-nav{display:flex; justify-content:space-between; gap:18px; flex-wrap:wrap;
   margin-top:26px; padding-top:18px; border-top:1px solid var(--line); font-size:.88rem}
 .post-nav .downloads{color:var(--muted)}
@@ -78,37 +125,111 @@ footer.site{margin-top:44px; padding-top:18px; border-top:1px solid var(--line);
   border-radius:10px; padding:12px}
 .sheet img{width:100%; height:auto; display:block; border-radius:6px}
 .sheet figcaption{margin-top:8px; font-size:.76rem; color:var(--muted); word-break:break-all}
-.rail-note{margin:.9em 0 0; font-size:.72rem; color:var(--muted); line-height:1.4}
-.entry-meta .reads{color:var(--accent-2); font-weight:600}
 
-/* leaderboard */
-.masthead nav a.here{color:var(--ink); font-weight:700}
+/* ---- the report body, as rendered on the WEB ---------------------------
+   render_report.render_markdown() returns bare HTML with no stylesheet —
+   only document_html() (the standalone .html artifact and the PDF) carries
+   render_report.py's own CSS. So without this block the site's largest
+   surface falls back to browser defaults and the chart bars, which have no
+   intrinsic size, render invisible.
+
+   These rules are kept in sympathy with that stylesheet, never copied from
+   it: the PDF stays authoritative, and nothing here can reach print. Bar
+   HUES are semantic (podium, judgment) and must match the PDF exactly; the
+   neutral track, rules and header fills are warmed to this palette. */
+.post-body{margin-top:22px; padding:10px 40px 34px; background:var(--paper);
+  border:1px solid var(--line); border-radius:12px;
+  font-family:var(--serif); font-size:1.02rem; line-height:1.68; color:var(--ink)}
+.post-body h1,.post-body h2,.post-body h3,.post-body h4{font-family:var(--sans);
+  line-height:1.22; letter-spacing:-.012em; color:var(--ink)}
+.post-body h1{margin:.7em 0 .1em; font-size:1.95rem; font-weight:800}
+.post-body h2{margin:2em 0 .5em; padding-bottom:.28em; font-size:1.34rem;
+  font-weight:700; border-bottom:2px solid var(--line)}
+.post-body h3{margin:1.7em 0 .45em; font-size:1.06rem; font-weight:700}
+.post-body p{margin:0 0 1.05em}
+.post-body p,.post-body li{max-width:72ch}
+.post-body ul,.post-body ol{padding-left:1.25em}
+.post-body li{margin:.3em 0}
+.post-body hr{border:none; border-top:1px solid var(--line); margin:2.2em 0}
+.post-body a{color:var(--accent)}
+.post-body img{max-width:100%; height:auto}
+.post-body code{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  font-size:.86em; background:var(--bg); border:1px solid var(--rule);
+  border-radius:4px; padding:.06em .34em}
+.post-body pre{overflow-x:auto; background:var(--bg); border:1px solid var(--line);
+  border-radius:8px; padding:12px 14px; font-size:.82rem; line-height:1.5}
+.post-body pre code{background:none; border:none; padding:0}
+.post-body blockquote{margin:1.1em 0; padding:.6em 1.1em; color:var(--muted);
+  background:var(--bg); border-left:3px solid var(--accent); border-radius:0 6px 6px 0}
+.post-body blockquote p{margin:.3em 0}
+/* display:block keeps the internal table layout (rows/cells still generate
+   anonymous table boxes) while letting a wide board scroll in its own box
+   instead of pushing the page sideways. Markdown emits no wrapper to use. */
+.post-body table{display:block; overflow-x:auto; max-width:100%;
+  border-collapse:collapse; margin:1.2em 0; font-family:var(--sans);
+  font-size:.86rem; font-variant-numeric:tabular-nums}
+.post-body th,.post-body td{padding:.5em .7em; text-align:left;
+  border-bottom:1px solid var(--rule)}
+.post-body thead th{background:var(--bg); border-bottom:2px solid var(--line);
+  font-size:.7rem; text-transform:uppercase; letter-spacing:.06em;
+  color:var(--muted); font-weight:700; white-space:nowrap}
+.post-body tbody tr:nth-child(even){background:#fbf8f2}
+.post-body td:first-child,.post-body th:first-child{white-space:nowrap}
+.post-body .chart{margin:1.3em 0 1.6em; padding:0}
+.post-body .chart .row{display:flex; align-items:center; gap:12px; margin:5px 0;
+  font-family:var(--sans)}
+.post-body .chart .lbl{flex:0 0 168px; text-align:right; font-size:.8rem;
+  color:var(--muted); font-weight:600}
+.post-body .chart .track{flex:1; height:20px; background:var(--rule);
+  border-radius:5px; overflow:hidden}
+.post-body .chart .bar{display:block; height:100%; border-radius:5px}
+.post-body .chart .val{flex:0 0 150px; font-size:.76rem; color:var(--muted);
+  font-variant-numeric:tabular-nums}
+.post-body .chart figcaption{margin-top:.7em; font-size:.74rem; color:var(--muted);
+  font-family:var(--sans); text-align:right}
+.post-body .bar.gold{background:linear-gradient(90deg,#d9b13f,#caa12e)}
+.post-body .bar.silver{background:linear-gradient(90deg,#aab0b6,#9aa0a6)}
+.post-body .bar.bronze{background:linear-gradient(90deg,#c07c4a,#b06a3b)}
+.post-body .bar.mid{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.post-body .bar.frontier{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.post-body .bar.floor{background:#c8c2b6}
+.post-body .bar.good{background:linear-gradient(90deg,#37a169,#2e8b57)}
+.post-body .bar.neutral{background:#8a8378}
+.post-body .bar.warn{background:linear-gradient(90deg,#e09a3e,#d98a2b)}
+.post-body .bar.bad{background:linear-gradient(90deg,#d04b3c,#c0392b)}
+@media (max-width:640px){
+  .post-body{padding:8px 20px 26px}
+  .post-body .chart .lbl{flex:0 0 108px; font-size:.72rem}
+  .post-body .chart .val{flex:0 0 96px}
+}
+
+/* ---- leaderboard ---- */
 .boards{padding-top:6px}
 .wf{padding:26px 0 10px; border-bottom:1px solid var(--line)}
-.wf h2{margin:0; font-size:1.05rem}
-.wf h2 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.95rem;
-  color:var(--ink); background:var(--paper); border:1px solid var(--line);
-  border-radius:6px; padding:3px 9px}
-.wf-facts{margin:.75em 0 0; font-size:.75rem; color:var(--muted);
-  text-transform:uppercase; letter-spacing:.05em}
-.wf .empty{margin:16px 0 10px; padding:14px 16px; background:var(--paper);
-  border:1px dashed var(--line); border-radius:10px; color:var(--muted); font-size:.88rem}
-.board{margin:20px 0 24px}
-.board h3{margin:0 0 10px; font-size:.95rem; display:flex; gap:12px;
-  align-items:baseline; flex-wrap:wrap}
-.board-facts{font-size:.72rem; color:var(--muted); font-weight:400;
-  text-transform:uppercase; letter-spacing:.05em}
-.board-note{margin:0 0 10px; font-size:.8rem; color:var(--muted); max-width:62ch}
+.wf h2{margin:0; font-family:var(--serif); font-weight:400; font-size:1.35rem}
+.wf h2 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.9rem; color:var(--ink); background:var(--paper);
+  border:1px solid var(--line); border-radius:6px; padding:3px 9px}
+.wf-facts{margin:.75em 0 0; font-size:.7rem; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.07em}
+.wf .empty{margin:16px 0 10px; padding:14px 0; color:var(--muted);
+  font-family:var(--serif); font-size:.95rem}
+.board{margin:22px 0 26px}
+.board h3{margin:0 0 4px; font-family:var(--serif); font-weight:600;
+  font-size:1.02rem; display:flex; gap:12px; align-items:baseline; flex-wrap:wrap}
+.board-facts{font-family:var(--sans); font-size:.68rem; color:var(--muted);
+  font-weight:400; text-transform:uppercase; letter-spacing:.07em}
+.board-note{margin:.5em 0 0; max-width:62ch; font-family:var(--serif);
+  font-size:.9rem; color:var(--muted)}
 /* Wide tables scroll inside their own box; the page body never scrolls sideways. */
-.board-scroll{overflow-x:auto; background:var(--paper); border:1px solid var(--line);
-  border-radius:10px}
+.board-scroll{overflow-x:auto; margin-top:12px}
 .board-table{border-collapse:collapse; width:100%; font-size:.85rem;
   font-variant-numeric:tabular-nums}
-.board-table th{text-align:right; padding:10px 12px; font-size:.68rem; color:var(--muted);
-  text-transform:uppercase; letter-spacing:.06em; white-space:nowrap; font-weight:600;
+.board-table th{text-align:right; padding:9px 12px; font-size:.64rem; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.07em; white-space:nowrap; font-weight:700;
   border-bottom:1px solid var(--line)}
 .board-table td{text-align:right; padding:8px 12px; white-space:nowrap;
-  border-bottom:1px solid var(--bg)}
+  border-bottom:1px solid var(--rule)}
 .board-table tbody tr:last-child td{border-bottom:none}
 .board-table th:first-child,.board-table td:first-child{text-align:left; width:44px}
 .board-table th:nth-child(2),.board-table td:nth-child(2){text-align:left; width:100%}
@@ -116,16 +237,19 @@ footer.site{margin-top:44px; padding-top:18px; border-top:1px solid var(--line);
 .board-table .model{font-weight:600}
 .board-table .ovr{font-weight:700; color:var(--accent)}
 .board-table .none{color:var(--line)}
-.effort{margin-left:8px; padding:1px 7px; border-radius:999px; font-size:.68rem;
-  font-weight:600; color:var(--accent-2); background:var(--bg);
+.effort{margin-left:8px; padding:1px 7px; border-radius:999px; font-size:.66rem;
+  font-weight:700; color:var(--accent-2); background:var(--bg);
   border:1px solid var(--line); text-transform:uppercase; letter-spacing:.04em}
 
-/* model cards */
-.board-heading{margin:18px 0 10px; font-size:.72rem; color:var(--muted);
-  text-transform:uppercase; letter-spacing:.06em; font-weight:600}
+/* ---- model cards ------------------------------------------------------
+   These keep their box on purpose: the page is called Model Cards and the
+   card metaphor is the measurement's identity. Boxes were removed elsewhere
+   so that a box still means something here. */
+.board-heading{margin:20px 0 10px; font-family:var(--serif); font-weight:600;
+  font-size:.98rem; color:var(--ink)}
 .mgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(268px,1fr));
   gap:14px; margin:12px 0 4px}
-.mcard{background:var(--paper); border:1px solid var(--line); border-radius:10px;
+.mcard{background:var(--paper); border:1px solid var(--line); border-radius:8px;
   padding:14px 16px 12px}
 .mcard-head{display:flex; align-items:center; gap:12px}
 .mcard-ovr{display:flex; flex-direction:column; align-items:center; line-height:1;
@@ -133,27 +257,27 @@ footer.site{margin-top:44px; padding-top:18px; border-top:1px solid var(--line);
 .mcard-ovr b{font-size:1.65rem; font-weight:800; color:var(--accent);
   font-variant-numeric:tabular-nums; letter-spacing:-.02em}
 .mcard-ovr small{margin-top:3px; font-size:.6rem; color:var(--muted);
-  text-transform:uppercase; letter-spacing:.08em; font-weight:600}
+  text-transform:uppercase; letter-spacing:.08em; font-weight:700}
 .mcard-id{display:flex; flex-direction:column; gap:4px; min-width:0}
-.mcard-name{font-weight:700; font-size:.92rem; overflow:hidden;
-  text-overflow:ellipsis; white-space:nowrap}
+.mcard-name{font-family:var(--serif); font-weight:600; font-size:.98rem;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .mcard-meta{display:flex; align-items:center; gap:7px}
 .mcard-rank{font-size:.72rem; font-weight:700; color:var(--muted);
   font-variant-numeric:tabular-nums}
 .mcard-pos{padding:1px 8px; border-radius:999px; background:var(--bg);
-  border:1px solid var(--line); font-size:.66rem; font-weight:600;
+  border:1px solid var(--line); font-size:.64rem; font-weight:700;
   color:var(--accent-2); text-transform:uppercase; letter-spacing:.05em}
 .mcard-stats{display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:4px;
-  margin-top:13px; padding-top:11px; border-top:1px solid var(--line)}
+  margin-top:13px; padding-top:11px; border-top:1px solid var(--rule)}
 .mcard-stats span{display:flex; flex-direction:column; align-items:center; gap:2px}
 .mcard-stats b{font-size:.88rem; font-weight:700; font-variant-numeric:tabular-nums}
-.mcard-stats small{font-size:.58rem; color:var(--muted); text-transform:uppercase;
-  letter-spacing:.05em; font-weight:600}
+.mcard-stats small{font-size:.57rem; color:var(--muted); text-transform:uppercase;
+  letter-spacing:.05em; font-weight:700}
 .mcard-stats .muted b, .mcard-stats .muted small{color:var(--line)}
-.mcard-spread{margin:11px 0 0; font-size:.72rem; color:var(--muted);
-  text-transform:uppercase; letter-spacing:.04em}
+.mcard-spread{margin:11px 0 0; font-size:.7rem; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.05em}
 .mcard-boards{list-style:none; margin:9px 0 0; padding:9px 0 0;
-  border-top:1px solid var(--line); font-size:.75rem}
+  border-top:1px solid var(--rule); font-size:.75rem}
 .mcard-boards li{display:grid; grid-template-columns:minmax(0,1fr) 30px 26px;
   align-items:baseline; gap:6px; padding:2px 0; color:var(--muted)}
 .mcard-boards code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;

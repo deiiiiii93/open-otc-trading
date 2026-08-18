@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The arena blog is set as an editorial page rather than a dashboard.** Serif
+  now carries the argument (nameplate, headlines, blurbs, report prose) and sans
+  carries the evidence (metadata, tables, card stats). `theme.css` had declared a
+  `--serif` token in `:root` and referenced it nowhere, so the warm-paper palette
+  promised a journal while every glyph was system sans; a regression test now
+  fails if that token goes unused again. The index's separate intro band is gone:
+  the site title and tagline are the header, so the feed starts immediately, and
+  the newest post gets a lead-story size. Interior pages carry a **compact**
+  nameplate so the page's own heading leads — repeating the tagline there would
+  stack two muted paragraphs above the data and let the site title outweigh the
+  page being read. The `A`-in-a-square brand becomes a small `ARTENA` eyebrow,
+  which inherits the link to the site root that the brand owned; without it that
+  link would be stranded, since the title now points at the arena index. Boxes
+  are removed from the rail, the board tables and the meta chips so that a box
+  still means something where it is kept — the model cards, whose card metaphor
+  is the measurement's identity. Entry metadata leads with the tag as a kicker
+  and uses one separator style instead of three competing treatments.
+
+### Fixed
+- **Report bodies were unstyled on the web** — the site's largest surface, and
+  9 of its ~13 pages. `render_report.render_markdown()` returns bare HTML with no
+  stylesheet; only `document_html()` (the standalone `.html` artifact and the
+  PDF) carries `render_report.py`'s CSS. `theme.css` had no rules for anything
+  inside `.post-body`, so reports fell back to browser defaults while the same
+  report rendered as a typeset serif document in print. **The ASCII-chart figures
+  were invisible entirely** — 117 chart rows across 10 charts whose bars have no
+  intrinsic size and so collapsed to nothing without a `.track`/`.bar` rule.
+  `theme.css` now styles the report body for the web, kept in sympathy with that
+  stylesheet rather than copied from it: bar hues are semantic (podium, judgment)
+  and are pinned by test to match the PDF exactly, while the neutral track, rules
+  and table fills are warmed to the blog palette. Nothing here touches
+  `render_report.py`, so print output is provably unchanged — the byte-identity
+  test over the six committed report HTMLs still passes.
+- **Markdown code spans in `posts.yaml` blurbs published as literal backticks.**
+  Blurbs are authored beside markdown prose and carry `low`/`par` style spans;
+  escaping alone shipped the backticks. They are now escaped first and then
+  wrapped, so the pattern only ever sees inert text. Deliberately not applied to
+  titles: `publish.verify_live` asserts `escape(post.title)` appears on the
+  served page, so inlining a title would break the deploy verifier rather than
+  the build.
+- **The arena masthead overflowed on a phone.** The nav needs ~320px on its own,
+  which left nothing for the title; the header now stacks and the nav wraps below
+  720px.
+
 ### Added
 - **A Blog link in the arena masthead**, and the current page is marked in the
   nav. The brand links to the site root rather than `/arena/`, so the leaderboard

@@ -479,3 +479,146 @@ def test_the_current_page_is_marked_in_the_nav():
     board = nav_of(sb.render_leaderboard(models_snapshot(FLAGSHIP), POSTS, THEME))
     assert '<a href="./index.html">Blog</a>' in board
     assert 'leaderboard.html" class="here"' in board
+
+
+# --------------------------------------------------------------------------
+# The nameplate header
+# --------------------------------------------------------------------------
+
+def test_the_index_carries_the_full_nameplate_instead_of_an_intro_band():
+    """Title and tagline moved INTO the header, so the standalone intro block
+    must be gone — otherwise the index prints its own identity twice."""
+    html = sb.render_index(POSTS, MINUTES, THEME)
+    assert '<h1 class="plate-title">' in html
+    assert 'class="strap"' in html
+    assert sb.SITE_TAGLINE in html
+    assert 'class="intro"' not in html
+
+
+def test_interior_pages_use_a_compact_nameplate_so_their_own_title_leads():
+    """A repeated tagline stacks two muted paragraphs above the data, and the
+    site title would outweigh the page the reader is actually on."""
+    pages = [
+        sb.render_leaderboard(models_snapshot(FLAGSHIP), POSTS, THEME),
+        sb.render_models(models_snapshot(FLAGSHIP), THEME),
+        sb.render_about(POSTS, THEME),
+        sb.render_post_page(MEMO, "<p>body</p>", 8, THEME, None, None),
+    ]
+    for html in pages:
+        assert 'class="masthead compact"' in html
+        assert 'class="strap"' not in html
+
+
+def test_the_site_title_is_the_index_h1_and_a_link_everywhere_else():
+    """Two <h1>s on one page is what this prevents: on an interior page the
+    page's own heading owns the h1, so the nameplate must not claim one."""
+    assert sb.render_index(POSTS, MINUTES, THEME).count("<h1") == 1
+
+    board = sb.render_leaderboard(models_snapshot(FLAGSHIP), POSTS, THEME)
+    assert board.count("<h1") == 1
+    assert f'<a class="plate-title" href="./index.html">{sb.SITE_TITLE}</a>' in board
+
+
+def test_a_post_page_leaves_the_h1_to_the_report_body():
+    html = sb.render_post_page(MEMO, "<p>body</p>", 8, THEME, None, None)
+    assert "<h1" not in html
+
+
+def test_the_eyebrow_keeps_the_link_to_the_root_site():
+    """The old A-in-a-square brand owned `/`. Folding the title into the header
+    would strand that link, since the big title points at the arena index."""
+    for html in (
+        sb.render_index(POSTS, MINUTES, THEME),
+        sb.render_about(POSTS, THEME),
+        sb.render_post_page(MEMO, "<p>body</p>", 8, THEME, None, None),
+    ):
+        assert '<a class="eyebrow" href="/">Artena</a>' in html
+
+
+def test_entry_meta_leads_with_the_tag_as_a_kicker():
+    """What kind of piece, then when. Date-first read as a log line."""
+    meta = sb.render_index(POSTS, MINUTES, THEME).split('class="entry-meta"', 1)[1]
+    assert meta.index('class="tag"') < meta.index("<time")
+
+
+# --------------------------------------------------------------------------
+# theme.css invariants
+# --------------------------------------------------------------------------
+
+def test_the_serif_token_is_used_and_not_merely_declared():
+    """--serif sat in :root unused for months while every glyph on the site was
+    sans. A declared token that nothing references is a dead intention."""
+    css = (DEPLOY / "theme.css").read_text()
+    assert "--serif:" in css
+    assert css.count("var(--serif)") >= 3
+
+
+def test_report_bodies_are_styled_on_the_web_not_only_in_print():
+    """render_markdown() returns bare HTML with NO stylesheet — only
+    document_html() (the standalone artifact and the PDF) carries
+    render_report.py's CSS. Without these rules the site's largest surface
+    falls back to browser defaults, and the chart bars render invisible."""
+    css = (DEPLOY / "theme.css").read_text()
+    for selector in (
+        ".post-body p", ".post-body h2", ".post-body table",
+        ".post-body .chart", ".post-body .bar",
+    ):
+        assert selector in css, selector
+
+
+def test_report_chart_bars_keep_the_semantic_colours_the_pdf_uses():
+    """Bar hue carries meaning (podium, judgment). The neutral track and labels
+    may warm up to the blog palette; these must not drift from the PDF, or the
+    same chart says different things in the two media."""
+    theme = (DEPLOY / "theme.css").read_text()
+    report = (DEPLOY.parent / "render_report.py").read_text()
+    for colour in ("#caa12e", "#9aa0a6", "#b06a3b", "#2e8b57", "#c0392b"):
+        assert colour in report, f"{colour} is no longer the report's own"
+        assert colour in theme, f"{colour} missing from the web rendering"
+
+
+# --------------------------------------------------------------------------
+# Blurbs carry markdown code spans
+# --------------------------------------------------------------------------
+
+def _post(blurb="b", title="T"):
+    return m.Post(
+        file="2026-08-18-x.md", date=dt.date(2026, 8, 18), tags=("research",),
+        title=title, blurb=blurb,
+    )
+
+
+def test_a_blurb_renders_code_spans_instead_of_publishing_backticks():
+    """Blurbs are authored in posts.yaml beside markdown prose, so they carry
+    `low`-style spans. Escaping alone published the backticks verbatim."""
+    p = _post(blurb="Effort is a step at `low`, not a dial.")
+    html = sb.render_index([p], {p.stem: 4}, THEME)
+    assert "<code>low</code>" in html
+    assert "`low`" not in html
+
+
+def test_a_blurb_code_span_cannot_smuggle_markup():
+    """Escape FIRST, then wrap — so the pattern only ever sees escaped text."""
+    p = _post(blurb="run `<script>alert(1)</script>` now")
+    html = sb.render_index([p], {p.stem: 4}, THEME)
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+
+
+def test_the_meta_description_stays_plain_text():
+    """<meta content> is not a place for tags; only the visible blurb is
+    inlined."""
+    p = _post(blurb="a `code` span")
+    html = sb.render_index([p], {p.stem: 4}, THEME)
+    head = html.split("</head>", 1)[0]
+    assert "<code>" not in head
+
+
+def test_titles_are_never_inlined_because_verify_live_compares_them_verbatim():
+    """publish.verify_live asserts escape(post.title) appears on the served
+    page. Rendering markdown in a title would break the deploy verifier rather
+    than the build, which is a far worse failure to diagnose."""
+    from html import escape as esc
+    p = _post(title="Why `par` matters")
+    html = sb.render_index([p], {p.stem: 4}, THEME)
+    assert esc(p.title) in html

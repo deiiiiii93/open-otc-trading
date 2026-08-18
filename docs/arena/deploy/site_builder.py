@@ -5,6 +5,7 @@ the way the hand-typed Run #94 leaderboards did.
 """
 from __future__ import annotations
 
+import re
 from html import escape
 from pathlib import Path
 
@@ -25,6 +26,26 @@ GITHUB_URL = "https://github.com/deiiiiii93/open-otc-trading"
 RAIL_AXIS_MAX = 99.0
 
 
+_CODE_SPAN = re.compile(r"`([^`]+)`")
+
+
+def _inline(text: str) -> str:
+    """Escape, then honour markdown code spans.
+
+    Blurbs are authored in `posts.yaml` beside markdown prose and routinely
+    carry `low`/`par` style spans, which plain escaping published as literal
+    backticks. Escaping FIRST is what makes this safe: the pattern only ever
+    wraps text that is already inert.
+
+    Deliberately NOT applied to titles. `publish.verify_live` asserts that
+    `escape(post.title)` appears on the served page, so inlining a title would
+    break the deploy verifier rather than the build — a much worse failure to
+    diagnose. It is also not applied to the <meta> description, where markup
+    does not belong.
+    """
+    return _CODE_SPAN.sub(r"<code>\1</code>", escape(text))
+
+
 def load_theme(deploy_dir: Path) -> str:
     return (deploy_dir / "theme.css").read_text()
 
@@ -39,8 +60,22 @@ def _head(title: str, theme: str, description: str) -> str:
     )
 
 
-def _masthead(leaderboard: bool = False, here: str = "", models: bool = False) -> str:
-    """The flags gate the nav links, so the absence rule reaches the chrome.
+def _masthead(
+    leaderboard: bool = False,
+    here: str = "",
+    models: bool = False,
+    nameplate: str = "compact",
+) -> str:
+    """The site nameplate plus nav.
+
+    `nameplate="full"` belongs to the index alone: there the site title IS the
+    page's <h1> and the tagline rides with it, which is why the index carries
+    no separate intro band. Everywhere else it is compact — the page's own
+    heading has to lead, and repeating the tagline would stack two muted
+    paragraphs above the data while the site title outweighed the page the
+    reader is actually on.
+
+    The flags gate the nav links, so the absence rule reaches the chrome.
 
     When a page was not built, a masthead that linked it anyway would 404 on every
     page of the site. The two flags are separate because a snapshot exported
@@ -51,8 +86,8 @@ def _masthead(leaderboard: bool = False, here: str = "", models: bool = False) -
         return f'<a href="{href}"{cur}>{label}</a>'
 
     # Unconditional, unlike the two derived pages: index.html is always built,
-    # and the brand points at the site root rather than /arena/ — so without this
-    # the leaderboard and cards pages are one-way doors out of the feed.
+    # and the eyebrow points at the site root rather than /arena/ — so without
+    # this the leaderboard and cards pages are one-way doors out of the feed.
     links = [link("./index.html", "Blog", "blog")]
     if leaderboard:
         links.append(link("./leaderboard.html", "Leaderboard", "leaderboard"))
@@ -60,9 +95,22 @@ def _masthead(leaderboard: bool = False, here: str = "", models: bool = False) -
         links.append(link("./models.html", "Model Cards", "models"))
     links.append(link("./about.html", "About", "about"))
     links.append(f'<a href="{GITHUB_URL}">GitHub</a>')
+
+    full = nameplate == "full"
+    # The eyebrow inherits the root-site link the old A-in-a-square brand owned.
+    # Folding the title into the header would otherwise strand it, since the
+    # title now points at the arena index.
+    plate = '<a class="eyebrow" href="/">Artena</a>'
+    plate += (
+        f'<h1 class="plate-title">{escape(SITE_TITLE)}</h1>' if full
+        else f'<a class="plate-title" href="./index.html">{escape(SITE_TITLE)}</a>'
+    )
+    if full:
+        plate += f'<p class="strap">{escape(SITE_TAGLINE)}</p>'
+
     return (
-        '<header class="masthead">'
-        '<a class="brand" href="/"><span class="mark">A</span><span>Artena</span></a>'
+        f'<header class="{"masthead" if full else "masthead compact"}">'
+        f'<div class="plate">{plate}</div>'
         f'<nav>{"".join(links)}</nav>'
         "</header>\n"
     )
@@ -75,9 +123,14 @@ def _site_footer() -> str:
     )
 
 
-def _entry(post: Post, minutes: int, reads: int | None = None) -> str:
-    meta = [f'<time datetime="{post.date.isoformat()}">{post.date.isoformat()}</time>']
-    meta += [f'<span class="tag">{escape(t)}</span>' for t in post.tags]
+def _entry(
+    post: Post, minutes: int, reads: int | None = None, lead: bool = False
+) -> str:
+    # Kicker first: what kind of piece, then when. Date-first read as a log line.
+    meta = [f'<span class="tag">{escape(t)}</span>' for t in post.tags]
+    meta.append(
+        f'<time datetime="{post.date.isoformat()}">{post.date.isoformat()}</time>'
+    )
     meta.append(f'<span class="read">{minutes} min</span>')
     # Page views only. Downloads are a separate rail total, so one PDF fetch
     # cannot read as a page view. No data => no element, never "0 reads".
@@ -95,10 +148,10 @@ def _entry(post: Post, minutes: int, reads: int | None = None) -> str:
         )
 
     return (
-        '<article class="entry">'
+        f'<article class="{"entry lead" if lead else "entry"}">'
         f'<div class="entry-meta">{"".join(meta)}</div>'
         f'<h2><a href="./{post.html_name}">{escape(post.title)}</a></h2>'
-        f'<p class="blurb">{escape(post.blurb)}</p>'
+        f'<p class="blurb">{_inline(post.blurb)}</p>'
         f"{chip_html}"
         "</article>\n"
     )
@@ -175,7 +228,12 @@ def render_index(
     measured, no counter markup is emitted anywhere on the page.
     """
     views = (snapshot or {}).get("views", {})
-    feed = "".join(_entry(p, minutes[p.stem], views.get(p.stem)) for p in posts)
+    # The newest post leads. A feed where every item is the same size has no
+    # editorial opinion about what to read first.
+    feed = "".join(
+        _entry(p, minutes[p.stem], views.get(p.stem), lead=(i == 0))
+        for i, p in enumerate(posts)
+    )
 
     rail = ""
     board = latest_standings(posts)
@@ -188,9 +246,7 @@ def render_index(
     return (
         _head(SITE_TITLE, theme, SITE_TAGLINE)
         + '<div class="page">\n'
-        + _masthead(leaderboard, here="blog", models=models)
-        + f'<div class="intro"><h1>{escape(SITE_TITLE)}</h1>'
-        + f'<p class="lead">{escape(SITE_TAGLINE)}</p></div>\n'
+        + _masthead(leaderboard, here="blog", models=models, nameplate="full")
         + '<div class="layout">\n'
         + f'<main class="feed">\n{feed}</main>\n'
         + f'<aside class="rail">\n{rail}</aside>\n'
@@ -225,8 +281,10 @@ def render_post_page(
     rendered from the un-chromed document, so nothing here can affect print.
     """
     crumb_tail = escape(post.run or post.title)
-    meta = [f'<time datetime="{post.date.isoformat()}">{post.date.isoformat()}</time>']
-    meta += [f'<span class="tag">{escape(t)}</span>' for t in post.tags]
+    meta = [f'<span class="tag">{escape(t)}</span>' for t in post.tags]
+    meta.append(
+        f'<time datetime="{post.date.isoformat()}">{post.date.isoformat()}</time>'
+    )
     meta.append(f'<span class="read">{minutes} min read</span>')
 
     nav = []
@@ -443,7 +501,7 @@ def render_leaderboard(snapshot: dict, posts: list[Post], theme: str) -> str:
         + _masthead(True, here="leaderboard", models=bool(snapshot.get("models")))
         + f'<div class="intro"><h1>{escape(LEADERBOARD_TITLE)}</h1>'
         + f'<p class="lead">{escape(LEADERBOARD_LEAD)}</p>'
-        + f'<p class="rail-sub">derived from the arena database on {escape(generated)}</p>'
+        + f'<p class="derived">derived from the arena database on {escape(generated)}</p>'
         + "</div>\n"
         + f'<main class="boards">\n{sections}</main>\n'
         + _site_footer()
@@ -602,7 +660,7 @@ def render_models(snapshot: dict, theme: str) -> str:
         + _masthead(True, here="models", models=True)
         + f'<div class="intro"><h1>{escape(MODELS_TITLE)}</h1>'
         + f'<p class="lead">{escape(MODELS_LEAD)}</p>'
-        + f'<p class="rail-sub">derived from the arena database on {escape(generated)}</p>'
+        + f'<p class="derived">derived from the arena database on {escape(generated)}</p>'
         + "</div>\n"
         + f'<main class="boards">\n{consolidated}{"".join(sections)}</main>\n'
         + _site_footer()
