@@ -385,6 +385,8 @@ def _assertion_label(a) -> str:
     if t == "response_quotes_value":
         return f"response quotes value {a.value}"
     if t == "answer_field_equals":
+        if getattr(a, "is_null", None) is not None:
+            return f"answer {a.field} is {'null' if a.is_null else 'non-null'}"
         return f"answer {a.field} = {a.equals or a.any_of}"
     if t == "answer_field_quotes":
         return f"answer {a.field} quotes {a.value}"

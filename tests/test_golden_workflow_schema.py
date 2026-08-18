@@ -78,3 +78,27 @@ class TestNewAssertionSchemas:
     def test_step_expected_skill_nullable(self):
         s = Step(user="u", expected_skill=None, outcome="o", replay="r")
         assert s.expected_skill is None
+
+
+def test_tool_not_called_exemption_validators():
+    import pytest
+    from pydantic import ValidationError
+    from app.golden_workflows.schema import _ToolNotCalled
+    # exclusive_keys is meaningless without exemption candidates
+    with pytest.raises(ValidationError):
+        _ToolNotCalled(type="tool_not_called", name="x", exclusive_keys=["a"])
+    # empty candidate list would exempt nothing while looking configured
+    with pytest.raises(ValidationError):
+        _ToolNotCalled(type="tool_not_called", name="x", except_args_any_of=[])
+
+
+def test_answer_field_equals_is_null_exclusive_with_comparators():
+    import pytest
+    from pydantic import ValidationError
+    from app.golden_workflows.schema import _AnswerFieldEquals
+    with pytest.raises(ValidationError):
+        _AnswerFieldEquals(type="answer_field_equals", field="f",
+                           equals="x", is_null=True)
+    # is_null=True alone is a legal comparator
+    a = _AnswerFieldEquals(type="answer_field_equals", field="f", is_null=True)
+    assert a.is_null is True

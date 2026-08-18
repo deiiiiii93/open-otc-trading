@@ -423,8 +423,55 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
     if t == "tool_not_called":
         from app.golden_workflows.schema import normalize_tool_name
         want = normalize_tool_name(a.name)
-        called = any(normalize_tool_name(c.get("name", "")) == want for c in ctx.tool_calls)
-        return (not called, f"tool {a.name} was called but must not be")
+        calls = [c for c in ctx.tool_calls
+                 if normalize_tool_name(c.get("name", "")) == want]
+        exempt_candidates = getattr(a, "except_args_any_of", None)
+        if not exempt_candidates:
+            return (not calls, f"tool {a.name} was called but must not be")
+        # Probe exemption: same subset + exclusive-keys semantics as tool_called,
+        # so "the exact requested referent" means the same thing on both sides
+        # of the prohibition. EVERY call must be exempt — one honest probe never
+        # masks a later substitution. And a probe is only a probe if it FAILED:
+        # the exemption additionally requires the call's own result to carry an
+        # error, else a model that first MINTS the referent (generate/save a set
+        # under the requested name — the run #13 fabrication mode) would run its
+        # invented data with exempt-looking args. Positive evidence is required —
+        # a call with no surviving result is not exempt.
+        exclusive = getattr(a, "exclusive_keys", None) or []
+        results = [r for r in ctx.tool_results
+                   if normalize_tool_name(r.get("name", "")) == want]
+
+        def _absent(v: Any) -> bool:
+            return v is None or v == [] or v == ""
+
+        def _result_for(call: dict, idx: int) -> dict | None:
+            cid = call.get("id")
+            if cid:
+                return next((r for r in results
+                             if r.get("tool_call_id") == cid), None)
+            return results[idx] if idx < len(results) else None
+
+        def _args_match(call_args: dict) -> bool:
+            for cand in exempt_candidates:
+                ok, _ = _deep_subset(cand, call_args, a.name)
+                if not ok:
+                    continue
+                cand_keys = set(cand.keys())
+                if any(k not in cand_keys and not _absent(call_args.get(k))
+                       for k in exclusive):
+                    continue
+                return True
+            return False
+
+        def _exempt(call: dict, idx: int) -> bool:
+            if not _args_match(call.get("args", {}) or {}):
+                return False
+            r = _result_for(call, idx)
+            return bool(r and r.get("error"))
+
+        offending = [c for i, c in enumerate(calls) if not _exempt(c, i)]
+        return (not offending,
+                f"tool {a.name} was called with non-exempt args but must not be")
     if t == "artifact_contains":
         bodies = [str(x.get("content") or x.get("text") or "")
                   for x in ctx.artifacts if x.get("kind") == a.kind]
@@ -465,6 +512,12 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
         if a.field not in fields:
             return False, _no_answer_detail(fields, a.field)
         got = fields[a.field]
+        if getattr(a, "is_null", None) is not None:
+            # Recorded-null comparator: the field key must be present (checked
+            # above) with a null value — committing the absence, not omitting it.
+            ok = (got is None) == a.is_null
+            expected = "null" if a.is_null else "non-null"
+            return ok, "" if ok else f"{a.field}={got!r} expected {expected}"
         wants = a.any_of if a.any_of else [a.equals]
         norm = lambda s: str(s).strip().lower()
         ok = norm(got) in [norm(w) for w in wants]
