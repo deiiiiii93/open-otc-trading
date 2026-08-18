@@ -128,3 +128,97 @@ def render_index(posts: list[Post], minutes: dict[str, int], theme: str) -> str:
         + _site_footer()
         + "</div>\n</body></html>\n"
     )
+
+
+ABOUT_POINTS = [
+    "Stateful, multi-step OTC derivatives workflows driven end to end.",
+    "Headless operation with no human approval between steps.",
+    "Repeated trials, to separate average ability from reliability.",
+    "Artifacts published as stable HTML, PDF, Markdown, and data files.",
+]
+CONTACT_EMAIL = "yaofuxin1993@gmail.com"
+
+
+def render_post_page(
+    post: Post,
+    body_html: str,
+    minutes: int,
+    theme: str,
+    newer: Post | None,
+    older: Post | None,
+) -> str:
+    """Wrap a rendered report body in blog chrome.
+
+    The body arrives verbatim from render_report.render_markdown, and the PDF is
+    rendered from the un-chromed document, so nothing here can affect print.
+    """
+    crumb_tail = escape(post.run or post.title)
+    meta = [f'<time datetime="{post.date.isoformat()}">{post.date.isoformat()}</time>']
+    meta += [f'<span class="tag">{escape(t)}</span>' for t in post.tags]
+    meta.append(f'<span class="read">{minutes} min read</span>')
+
+    nav = []
+    if newer is not None:
+        nav.append(f'<a href="./{newer.html_name}">&larr; {escape(newer.title)}</a>')
+    else:
+        nav.append("<span></span>")
+    nav.append(
+        '<span class="downloads">'
+        f'<a href="./{post.file}">Markdown</a> &middot; '
+        f'<a href="./{post.pdf_name}">PDF</a>'
+        "</span>"
+    )
+    if older is not None:
+        nav.append(f'<a href="./{older.html_name}">{escape(older.title)} &rarr;</a>')
+    else:
+        nav.append("<span></span>")
+
+    return (
+        _head(f"{post.title} — {SITE_TITLE}", theme, post.blurb)
+        + '<div class="post-shell">\n'
+        + _masthead()
+        + f'<p class="crumb"><a href="./index.html">Arena</a> / {crumb_tail}</p>\n'
+        + f'<div class="byline">{"".join(meta)}</div>\n'
+        + f'<div class="post-body">\n{body_html}\n</div>\n'
+        + f'<div class="post-nav">{"".join(nav)}</div>\n'
+        + _site_footer()
+        + "</div>\n</body></html>\n"
+    )
+
+
+def render_about(posts: list[Post], theme: str) -> str:
+    points = "".join(f"<li>{escape(p)}</li>" for p in ABOUT_POINTS)
+    return (
+        _head(f"About — {SITE_TITLE}", theme, SITE_TAGLINE)
+        + '<div class="post-shell">\n'
+        + _masthead()
+        + '<div class="intro"><h1>What the Arena measures</h1>'
+        + '<p class="lead">The Arena is built for financial-agent evaluation, not '
+        + "generic prompt scoring. Each trial drives live desk workflows and "
+        + "reconstructs the transcript from the system's own trace log.</p></div>\n"
+        + f'<div class="post-body"><ul>{points}</ul>'
+        + f"<p>{len(posts)} reports published. "
+        + f'Contact <a href="mailto:{CONTACT_EMAIL}">{CONTACT_EMAIL}</a> or read the '
+        + f'source at <a href="{GITHUB_URL}">{escape(GITHUB_URL)}</a>.</p></div>\n'
+        + _site_footer()
+        + "</div>\n</body></html>\n"
+    )
+
+
+def render_contact_sheet(title: str, image_names: list[str], theme: str) -> str:
+    """An index for an assets directory, so a bare `](cards/run104/)` link resolves."""
+    figures = "".join(
+        f'<figure><img src="./{escape(n)}" alt="{escape(n)}" loading="lazy">'
+        f"<figcaption>{escape(n)}</figcaption></figure>"
+        for n in image_names
+    )
+    return (
+        _head(f"{title} — {SITE_TITLE}", theme, title)
+        + '<div class="post-shell">\n'
+        + '<p class="crumb"><a href="../index.html">Arena</a> / '
+        + f"{escape(title)}</p>\n"
+        + f"<h1>{escape(title)}</h1>\n"
+        + f'<div class="sheet">{figures}</div>\n'
+        + _site_footer()
+        + "</div>\n</body></html>\n"
+    )

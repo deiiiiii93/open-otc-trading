@@ -94,3 +94,52 @@ def test_index_inlines_the_theme_and_declares_utf8():
 def test_load_theme_reads_the_css_file():
     css = sb.load_theme(DEPLOY)
     assert "--accent" in css and len(css) > 200
+
+
+BODY = "<h1>Run #104</h1><p>Body text with a number 96.3.</p>"
+
+
+def test_post_page_carries_the_report_body_verbatim():
+    html = sb.render_post_page(BOARD, BODY, 12, THEME, newer=MEMO, older=None)
+    assert BODY in html
+
+
+def test_post_page_has_breadcrumb_and_byline():
+    html = sb.render_post_page(BOARD, BODY, 12, THEME, newer=MEMO, older=None)
+    assert 'href="./index.html"' in html
+    assert "Run #104" in html
+    assert "2026-08-13" in html and "board" in html and "12 min" in html
+
+
+def test_post_page_links_markdown_and_pdf():
+    html = sb.render_post_page(BOARD, BODY, 12, THEME, newer=MEMO, older=None)
+    assert 'href="./2026-08-13-run104-board.md"' in html
+    assert 'href="./2026-08-13-run104-board.pdf"' in html
+
+
+def test_post_page_navigation_omits_missing_neighbours():
+    newest = sb.render_post_page(MEMO, BODY, 8, THEME, newer=None, older=BOARD)
+    assert "2026-08-13-run104-board.html" in newest
+    oldest = sb.render_post_page(BOARD, BODY, 12, THEME, newer=MEMO, older=None)
+    assert oldest.count("post-nav") == 1
+    assert "2026-08-18-run110-luna.html" in oldest
+
+
+def test_post_page_escapes_titles_in_chrome():
+    html = sb.render_post_page(MEMO, BODY, 8, THEME, newer=None, older=BOARD)
+    assert "&lt;agent&gt;" in html
+
+
+def test_about_page_has_method_and_contact():
+    html = sb.render_about(POSTS, THEME)
+    assert "yaofuxin1993@gmail.com" in html
+    assert sb.GITHUB_URL in html
+    assert "Repeated trials" in html
+
+
+def test_contact_sheet_renders_one_figure_per_image():
+    html = sb.render_contact_sheet("Run #104 ability cards", ["hero-grok-4-6.png", "mini-a.png"], THEME)
+    assert html.count("<figure>") == 2
+    assert 'src="./hero-grok-4-6.png"' in html
+    assert 'href="./index.html"' not in html   # cards live one level down
+    assert 'href="../index.html"' in html
