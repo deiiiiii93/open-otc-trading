@@ -701,3 +701,21 @@ def test_the_provisional_section_is_a_verifiable_anchor():
 
     html = sb.render_models(_with_provisional(FLAGSHIP), THEME)
     assert "provisional" in publish.workflow_anchors(html)
+
+
+def test_a_provisional_run_links_its_report_when_published():
+    """The caveat that makes a provisional card readable usually lives in the
+    report, so the reader needs a route to it."""
+    entry = {**PROVISIONAL, "post": BOARD.file}
+    snap = {**models_snapshot(FLAGSHIP), "provisional": [entry]}
+    section = sb.render_models(snap, THEME, POSTS).split(
+        'id="provisional"', 1)[1].split("</section>", 1)[0]
+    assert f'href="./{BOARD.html_name}"' in section and ">report<" in section
+
+
+def test_a_provisional_report_link_is_omitted_when_the_post_is_unpublished():
+    """A link the site cannot resolve is worse than no link — same rule as a
+    board's, and the same dangling-pointer class as an unwritten fixture."""
+    entry = {**PROVISIONAL, "post": "2020-01-01-nope.md"}
+    snap = {**models_snapshot(FLAGSHIP), "provisional": [entry]}
+    assert "2020-01-01-nope" not in sb.render_models(snap, THEME, POSTS)

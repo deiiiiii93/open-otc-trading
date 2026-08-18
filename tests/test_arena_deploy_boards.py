@@ -442,3 +442,12 @@ def test_an_uncarded_workflow_shrinks_coverage_but_not_the_total():
 def test_shape_provisional_refuses_a_run_with_nothing_to_publish(entries):
     with pytest.raises(bd.BoardsError, match="run 113"):
         bd.shape_provisional(PROV_REF, entries, date="d")
+
+
+def test_a_provisional_entry_may_link_its_report(tmp_path):
+    path = write_yaml(tmp_path, "provisional:\n  - {run: 104, post: r.md}\n")
+    assert bd.load_provisional_refs(path)[0].post == "r.md"
+    assert bd.shape_provisional(
+        bd.ProvisionalRef(run=104, label="Run #104", post="r.md"),
+        [_entry("a", 90)], date="d",
+    )["post"] == "r.md"

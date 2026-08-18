@@ -306,3 +306,29 @@ def test_a_snapshot_without_model_cards_still_builds_the_leaderboard(tmp_path, p
     assert not (out / "models.html").exists()
     assert "models.html" not in (out / "index.html").read_text()
     assert any("no model cards" in w for w in result.warnings)
+
+
+def test_build_warns_when_a_provisional_run_links_an_unpublished_report(
+    project, tmp_path
+):
+    """Same dangling-pointer check as a board's, on the other manifest section."""
+    mf, arena, out = project
+    deploy = _bare_deploy(tmp_path)
+    snap = {**BOARDS, "models": [MODEL_CARD], "provisional": [{
+        "run": 104, "label": "Run #104", "date": "2026-08-13",
+        "post": "2020-01-01-not-published.md", "note": None, "models": 1,
+        "cards": [{"model": "deepseek-v4-pro", "effort": None, "ovr": 79,
+                   "ovr_min": 61, "ovr_max": 90,
+                   "stats": {"GRD": 93, "ADH": 89, "SYN": 84, "PRC": 93, "EFF": 48},
+                   "con": 70, "position": "Sniper", "coverage": 4,
+                   "workflows_total": 4, "trials": 2,
+                   "per_workflow": [{"workflow": "risk-limit-breach-day", "ovr": 90}]}],
+    }]}
+    (deploy / "boards.json").write_text(json.dumps(snap))
+
+    result = b.build(mf, arena, deploy, out, refresh_pdf=False)
+
+    assert any("2020-01-01-not-published.md" in w for w in result.warnings)
+    assert "2020-01-01-not-published.html" not in (out / "models.html").read_text()
+    # The card itself still publishes; only the unresolvable link is dropped.
+    assert "deepseek-v4-pro" in (out / "models.html").read_text()

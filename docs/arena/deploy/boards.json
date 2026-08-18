@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-18T08:05:14.341138+00:00",
+  "generated_at": "2026-08-18T08:20:05.668291+00:00",
   "models": [
     {
       "boards_total": 4,
@@ -870,6 +870,90 @@
     {
       "cards": [
         {
+          "con": 90,
+          "coverage": 4,
+          "effort": null,
+          "model": "grok-4-6",
+          "ovr": 80,
+          "ovr_max": 88,
+          "ovr_min": 74,
+          "per_workflow": [
+            {
+              "ovr": 88,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 81,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 78,
+              "workflow": "high-board-portfolio-review-day"
+            },
+            {
+              "ovr": 74,
+              "workflow": "risk-manager-control-day"
+            }
+          ],
+          "position": "Playmaker",
+          "stats": {
+            "ADH": 90,
+            "EFF": 12,
+            "GRD": 96,
+            "PRC": 98,
+            "SYN": 99
+          },
+          "trials": 2,
+          "workflows_total": 4
+        },
+        {
+          "con": 70,
+          "coverage": 4,
+          "effort": null,
+          "model": "deepseek-v4-pro",
+          "ovr": 79,
+          "ovr_max": 90,
+          "ovr_min": 61,
+          "per_workflow": [
+            {
+              "ovr": 90,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 90,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 76,
+              "workflow": "risk-manager-control-day"
+            },
+            {
+              "ovr": 61,
+              "workflow": "high-board-portfolio-review-day"
+            }
+          ],
+          "position": "Sniper",
+          "stats": {
+            "ADH": 89,
+            "EFF": 48,
+            "GRD": 93,
+            "PRC": 93,
+            "SYN": 84
+          },
+          "trials": 2,
+          "workflows_total": 4
+        }
+      ],
+      "date": "2026-08-13",
+      "label": "Run #104",
+      "models": 2,
+      "note": "An A/B probe against Grok 4.6 over four workflows, two trials each \u2014 a pair, not a field, so neither card is ranked. Read this as a DIFFERENT model from the deepseek-v4-pro card above: DeepSeek replaced the weights behind that id on 2026-08-13, so the boards measure the earlier one. risk-limit-breach-day was also rescored 39 \u2192 38 points after Run #101, so objective figures are not comparable across the two.",
+      "post": "2026-08-13-run104-otc-desk-agent-arena.md",
+      "run": 104
+    },
+    {
+      "cards": [
+        {
           "con": null,
           "coverage": 5,
           "effort": null,
@@ -915,6 +999,7 @@
       "label": "Run #113",
       "models": 1,
       "note": "A single-model smoke across all five golden workflows, one trial each. Published for its ability card only: with no field there is no rank to report, and one trial cannot disperse, so CON is not measured.",
+      "post": null,
       "run": 113
     }
   ],

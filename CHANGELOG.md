@@ -24,7 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provisional is rejected: the two make contradictory claims about whether it
   had a field. First entry: **Run #113, `gemini-3-7-flash`** — OVR 90 across all
   five golden workflows at one trial each, including `ops-settlement-day`, which
-  has no board at all.
+  has no board at all. **Run #104** follows: the Grok 4.6 / DeepSeek V4 Pro A/B
+  probe, published as both arms (publishing one side of a declared A/B would be
+  a distortion, and Grok 4.6 has no card anywhere else). A provisional entry may
+  carry a `post`, so a card links the report that argues its caveats — load-
+  bearing for #104, whose note has to say that **DeepSeek replaced the weights
+  behind `deepseek-v4-pro` on 2026-08-13**: the boards above measure the earlier
+  model under the same id, so its contested OVR 87 and this card's OVR 79 are
+  two different models, not a regression. An unpublished `post` is dropped with
+  a build warning, exactly as on a board.
 
 ### Changed
 - **The arena blog is set as an editorial page rather than a dashboard.** Serif

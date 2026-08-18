@@ -1205,6 +1205,15 @@ leaderboard refuses to merge runs.
 - **Publish the trial depth beside an em-dash CON.** CON needs trials to
   disperse, so a 1-trial run has none; without the depth on the card a reader
   cannot tell "not measured" from "perfectly consistent".
+- **A provisional entry may carry a `post`.** The caveat that makes an unranked
+  card readable usually lives in the report — Run #104's card exists only
+  because DeepSeek replaced the weights behind `deepseek-v4-pro` on 2026-08-13,
+  so its OVR 79 and the boards' OVR 87 are two different models under one id,
+  not a regression. `render_models` therefore takes `posts`; an unpublished
+  reference is dropped with a build warning, as on a board.
+- **Publish every arm of an A/B probe, not the interesting one.** Run #104
+  publishes Grok 4.6 beside DeepSeek V4 Pro: showing one side of a declared
+  pair reports a comparison as if it were a measurement.
 - A run declared as **both** a board and provisional is rejected — the two make
   contradictory claims about whether it had a field.
 - Export goes through **`store.get_run`**, not `_derive_card` on the raw column:

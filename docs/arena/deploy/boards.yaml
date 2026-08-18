@@ -39,6 +39,16 @@ boards:
     workflow: risk-limit-breach-day
 
 provisional:
+  - run: 104
+    post: 2026-08-13-run104-otc-desk-agent-arena.md
+    note: >-
+      An A/B probe against Grok 4.6 over four workflows, two trials each — a
+      pair, not a field, so neither card is ranked. Read this as a DIFFERENT
+      model from the deepseek-v4-pro card above: DeepSeek replaced the weights
+      behind that id on 2026-08-13, so the boards measure the earlier one.
+      risk-limit-breach-day was also rescored 39 → 38 points after Run #101,
+      so objective figures are not comparable across the two.
+
   - run: 113
     note: >-
       A single-model smoke across all five golden workflows, one trial each.

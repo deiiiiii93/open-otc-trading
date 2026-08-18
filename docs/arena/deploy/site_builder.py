@@ -648,15 +648,21 @@ def _provisional_card(card: dict) -> str:
     )
 
 
-def _provisional_section(entries: list[dict]) -> str:
+def _provisional_section(entries: list[dict], by_file: dict) -> str:
     blocks = []
     for entry in entries:
         cards = "".join(_provisional_card(c) for c in entry.get("cards") or [])
-        date = escape(str(entry.get("date") or ""))
+        facts = [escape(str(entry.get("date") or ""))] if entry.get("date") else []
+        # An unpublished `post` is simply omitted, exactly as on a board: a link
+        # the site cannot resolve is worse than no link.
+        post = by_file.get(str(entry.get("post") or ""))
+        if post is not None:
+            facts.append(f'<a href="./{post.html_name}">report</a>')
         note = entry.get("note")
         blocks.append(
             f'<p class="board-heading">{escape(str(entry.get("label") or ""))}'
-            + (f' <span class="board-facts">{date}</span>' if date else "")
+            + (f' <span class="board-facts">{" &middot; ".join(facts)}</span>'
+               if facts else "")
             + "</p>"
             + (f'<p class="board-note">{escape(str(note))}</p>' if note else "")
             + f'<div class="mgrid">{cards}</div>'
@@ -680,7 +686,7 @@ def _cards_section(title: str, subtitle: str, body: str, anchor: str = "") -> st
     )
 
 
-def render_models(snapshot: dict, theme: str) -> str:
+def render_models(snapshot: dict, theme: str, posts: list | tuple = ()) -> str:
     """Consolidated cards first, then the per-workflow cards they average."""
     from boards import ordered_workflows
 
@@ -694,8 +700,9 @@ def render_models(snapshot: dict, theme: str) -> str:
 
     # Absence reaches the section, not just the cards: no cards-only run means
     # no heading at all, rather than an empty "Provisional" with nothing under it.
+    by_file = {p.file: p for p in posts}
     provisional = (
-        _provisional_section(snapshot["provisional"])
+        _provisional_section(snapshot["provisional"], by_file)
         if snapshot.get("provisional") else ""
     )
 

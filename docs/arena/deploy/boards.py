@@ -28,7 +28,7 @@ BOARD_OPTIONAL = {"label", "post"}
 BOARD_ALLOWED = BOARD_REQUIRED | BOARD_OPTIONAL
 
 PROVISIONAL_REQUIRED = {"run"}
-PROVISIONAL_OPTIONAL = {"label", "note"}
+PROVISIONAL_OPTIONAL = {"label", "note", "post"}
 PROVISIONAL_ALLOWED = PROVISIONAL_REQUIRED | PROVISIONAL_OPTIONAL
 
 SNAPSHOT_VERSION = 1
@@ -73,6 +73,7 @@ class ProvisionalRef:
     run: int
     label: str
     note: str | None = None
+    post: str | None = None
 
 
 def _provisional_ref(raw: object, index: int) -> ProvisionalRef:
@@ -95,10 +96,12 @@ def _provisional_ref(raw: object, index: int) -> ProvisionalRef:
         raise BoardsError(f"{where}: run must be an integer, got {run!r}")
 
     note = raw.get("note")
+    post = raw.get("post")
     return ProvisionalRef(
         run=run,
         label=str(raw.get("label") or f"Run #{run}").strip(),
         note=str(note).strip() if note else None,
+        post=str(post) if post else None,
     )
 
 
@@ -417,6 +420,7 @@ def shape_provisional(ref: ProvisionalRef, entries: list[dict], date: str) -> di
         "label": ref.label,
         "date": date,
         "note": ref.note,
+        "post": ref.post,
         "models": len(cards),
         "cards": cards,
     }

@@ -108,14 +108,21 @@ def build(
                 "boards.json carries no model cards; re-run `deploy.sh boards`"
             )
         published = {p.file for p in posts}
-        for wf in board_snapshot.get("workflows") or []:
-            for board in wf.get("boards") or []:
-                ref = board.get("post")
-                if ref and ref not in published:
-                    result.warnings.append(
-                        f"board {board.get('label')} links {ref}, which is not "
-                        "published; the report link is omitted"
-                    )
+        linked = [
+            (board.get("label"), board.get("post"))
+            for wf in board_snapshot.get("workflows") or []
+            for board in wf.get("boards") or []
+        ]
+        linked += [
+            (entry.get("label"), entry.get("post"))
+            for entry in board_snapshot.get("provisional") or []
+        ]
+        for label, ref in linked:
+            if ref and ref not in published:
+                result.warnings.append(
+                    f"board {label} links {ref}, which is not "
+                    "published; the report link is omitted"
+                )
 
     for i, post in enumerate(posts):
         md = arena_dir / post.file
@@ -168,7 +175,7 @@ def build(
         )
     if has_models:
         (out_dir / "models.html").write_text(
-            sb.render_models(board_snapshot, theme)
+            sb.render_models(board_snapshot, theme, posts)
         )
     return result
 

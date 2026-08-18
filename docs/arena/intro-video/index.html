@@ -3,29 +3,225 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=1920, height=1080" />
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js" integrity="sha384-sG0Hv1tP1lZCk9KQmrIbY/XNwi+OY84GQqhMscbnsoBFqAz8KNCil1kvfL3Hbbk2" crossorigin="anonymous"></script>
     <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
+      @font-face { font-family: "Newsreader"; font-style: normal; font-weight: 200 800;
+        src: url("fonts/newsreader-var.woff2") format("woff2"); }
+      @font-face { font-family: "Newsreader"; font-style: italic; font-weight: 200 800;
+        src: url("fonts/newsreader-italic-var.woff2") format("woff2"); }
+      @font-face { font-family: "Archivo"; font-style: normal; font-weight: 100 900;
+        src: url("fonts/archivo-var.woff2") format("woff2"); }
+
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: 1920px; height: 1080px; overflow: hidden;
+        background: #f7f4ee;
       }
-      html,
-      body {
-        margin: 0;
-        width: 1920px;
-        height: 1080px;
-        overflow: hidden;
-        background: #000;
+      body { font-family: "Archivo", "Helvetica Neue", Helvetica, Arial, sans-serif; color: #191612; }
+      .serif { font-family: "Newsreader", Georgia, serif; }
+      .mono { font-family: "IBM Plex Mono", Menlo, monospace; }
+
+      #root { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #f7f4ee; }
+
+      .scene {
+        position: absolute; top: 0; left: 0; width: 1920px; height: 1080px;
+        overflow: hidden; background: #f7f4ee;
       }
-      body {
-        font-family: "Inter", sans-serif;
+      #s1 { z-index: 1; }
+      #s2 { z-index: 2; opacity: 0; }
+      #s3 { z-index: 3; opacity: 0; }
+      #s4 { z-index: 4; opacity: 0; }
+      #s5 { z-index: 5; opacity: 0; }
+
+      /* ---- global plate furniture ---- */
+      #grain {
+        position: absolute; inset: 0; z-index: 40; pointer-events: none; opacity: .5;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.10 0 0 0 0 0.09 0 0 0 0 0.07 0 0 0 0.10 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
       }
-      code,
-      pre,
-      .monospace {
-        font-family: "JetBrains Mono", monospace;
+      #plate-furniture { position: absolute; inset: 0; z-index: 42; pointer-events: none; }
+      .regmark { position: absolute; width: 26px; height: 26px; opacity: 0.55; }
+      .regmark.tl { top: 40px; left: 44px;  border-top: 2px solid #60584d; border-left: 2px solid #60584d; }
+      .regmark.tr { top: 40px; right: 44px; border-top: 2px solid #60584d; border-right: 2px solid #60584d; }
+      .regmark.bl { bottom: 40px; left: 44px;  border-bottom: 2px solid #60584d; border-left: 2px solid #60584d; }
+      .regmark.br { bottom: 40px; right: 44px; border-bottom: 2px solid #60584d; border-right: 2px solid #60584d; }
+
+      /* ---- shared decorative pieces ---- */
+      .ghost {
+        position: absolute; font-weight: 500; line-height: 0.8; color: #191612;
+        pointer-events: none; user-select: none;
       }
+      .glow { position: absolute; border-radius: 50%; pointer-events: none; }
+      .hrule { position: absolute; left: 160px; right: 160px; height: 2px; background: #d7cdbf; transform-origin: left center; }
+      .kicker {
+        font-family: "IBM Plex Mono", Menlo, monospace; font-size: 19px; font-weight: 600;
+        letter-spacing: .22em; color: #9f351f;
+      }
+      .stamp { height: 4px; background: #9f351f; transform-origin: left center; border-radius: 2px; }
+
+      /* ================= SCENE 1 · nameplate ================= */
+      #s1-ghost { font-size: 1150px; top: -150px; right: -120px; opacity: .06; }
+      #s1-glow { width: 1500px; height: 1500px; top: -550px; left: -450px;
+        background: radial-gradient(circle, rgba(159,53,31,.11) 0%, rgba(159,53,31,0) 62%); }
+      .ledgerline { position: absolute; top: 0; bottom: 0; width: 1.5px; background: #d7cdbf; opacity: .5; transform-origin: center top; }
+      #s1-ledger-a { left: 1210px; }
+      #s1-ledger-b { left: 1660px; }
+      #s1-rule-top { top: 178px; }
+      #s1-rule-bot { bottom: 132px; }
+      .cornernote { position: absolute; top: 96px; font-size: 18px; letter-spacing: .14em; color: #60584d; }
+      #s1-note-l { left: 160px; }
+      #s1-note-r { right: 160px; }
+      #s1-nav { position: absolute; top: 220px; right: 160px; display: flex; gap: 34px;
+        font-size: 21px; font-weight: 600; color: #60584d; }
+      #s1-nav .here { color: #191612; font-weight: 800; }
+      .s1-content {
+        position: relative; width: 100%; height: 100%;
+        display: flex; flex-direction: column; justify-content: center;
+        padding: 60px 160px 100px; gap: 0;
+      }
+      #s1-eyebrow { font-size: 27px; font-weight: 800; letter-spacing: .2em; color: #9f351f; }
+      #s1-stamp { width: 132px; margin-top: 14px; }
+      .line-clip { overflow: hidden; }
+      #s1-title-1, #s1-title-2 {
+        display: block; font-size: 128px; font-weight: 400; line-height: 1.05;
+        letter-spacing: -0.012em;
+      }
+      #s1-title-wrap { margin-top: 30px; }
+      #s1-strap {
+        margin-top: 34px; max-width: 980px; font-size: 33px; font-style: italic;
+        color: #60584d; line-height: 1.45; font-weight: 400;
+      }
+      #s1-chips { display: flex; gap: 18px; align-items: center; margin-top: 46px;
+        font-size: 19px; letter-spacing: .12em; color: #60584d; }
+      #s1-chips .dot { color: #9f351f; font-weight: 700; }
+
+      /* ================= SCENE 2 · workflows ================= */
+      #s2-ghost { font-size: 980px; bottom: -300px; left: -110px; opacity: .055; }
+      #s2-glow { width: 1400px; height: 1400px; top: -420px; right: -420px;
+        background: radial-gradient(circle, rgba(31,95,104,.10) 0%, rgba(31,95,104,0) 62%); }
+      .s2-content {
+        position: relative; width: 100%; height: 100%;
+        display: grid; grid-template-columns: 620px minmax(0, 1fr); gap: 96px;
+        align-items: center; padding: 120px 160px 130px;
+      }
+      .s2-left { display: flex; flex-direction: column; }
+      #s2-h { margin-top: 22px; font-size: 71px; font-weight: 400; line-height: 1.1; letter-spacing: -0.012em; }
+      #s2-sub { margin-top: 24px; font-size: 30px; font-style: italic; color: #60584d; line-height: 1.45; }
+      #s2-ticks { margin-top: 44px; display: flex; flex-direction: column; gap: 20px; }
+      .tickrow { display: flex; align-items: center; gap: 16px; font-size: 24px; font-weight: 600; color: #191612; }
+      .tickbox { width: 15px; height: 15px; border: 2.5px solid #1f5f68; border-radius: 3px; position: relative; flex-shrink: 0; }
+      .tickbox::after { content: ""; position: absolute; inset: 2.5px; background: #1f5f68; border-radius: 1px; }
+      .s2-right { position: relative; }
+      #s2-tablehead {
+        display: grid; grid-template-columns: minmax(0,1fr) 250px 110px; gap: 24px;
+        font-size: 18px; letter-spacing: .16em; color: #60584d; font-weight: 500;
+        padding-bottom: 16px;
+      }
+      #s2-tablehead .num { text-align: right; }
+      #s2-headrule { height: 2.5px; background: #191612; transform-origin: left center; }
+      .wf-row {
+        display: grid; grid-template-columns: minmax(0,1fr) 250px 110px; gap: 24px;
+        align-items: baseline; padding: 25px 0 0;
+      }
+      .wf-row .name { font-size: 27px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; }
+      .wf-row .persona { font-family: "IBM Plex Mono", Menlo, monospace; font-size: 19px; color: #1f5f68; font-weight: 600; }
+      .wf-row .steps { font-size: 28px; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+      .wf-row .steps small { font-size: 17px; font-weight: 600; color: #60584d; margin-left: 6px; letter-spacing: .04em; }
+      .wf-underline { height: 1.5px; background: #d7cdbf; margin-top: 22px; transform-origin: left center; }
+      #s2-cap { position: absolute; bottom: 66px; right: 160px; font-size: 18px;
+        letter-spacing: .14em; color: #60584d; }
+
+      /* ================= SCENE 3 · ability card ================= */
+      #s3-ghost { font-size: 560px; top: -70px; left: 430px; opacity: .05; letter-spacing: -.02em; }
+      #s3-glow { width: 1700px; height: 1700px; top: -380px; right: -520px;
+        background: radial-gradient(circle, rgba(159,53,31,.13) 0%, rgba(159,53,31,0) 60%); }
+      .s3-content {
+        position: relative; width: 100%; height: 100%;
+        display: grid; grid-template-columns: minmax(0,1fr) 700px; gap: 86px;
+        align-items: center; padding: 110px 150px;
+      }
+      .s3-left { display: flex; flex-direction: column; }
+      #s3-h { margin-top: 22px; font-size: 71px; font-weight: 400; line-height: 1.1; letter-spacing: -0.012em; }
+      #s3-sub { margin-top: 24px; max-width: 620px; font-size: 30px; font-style: italic; color: #60584d; line-height: 1.45; }
+      #s3-prov { margin-top: 48px; font-size: 19px; line-height: 1.9; letter-spacing: .13em; color: #60584d; }
+      #s3-prov b { color: #191612; font-weight: 600; }
+      .card-persp { perspective: 1500px; }
+      #card {
+        background: #fffdf8; border: 2.5px solid #d7cdbf; border-radius: 16px;
+        padding: 44px 48px 38px; box-shadow: 0 24px 70px rgba(25,22,18,.13);
+        transform-origin: center center;
+      }
+      .card-top { display: flex; align-items: flex-start; justify-content: space-between; }
+      #card-name { font-size: 47px; font-weight: 500; letter-spacing: -0.01em; }
+      #card-chip {
+        display: inline-flex; margin-top: 14px; padding: 7px 16px; border: 2px solid #1f5f68;
+        border-radius: 999px; font-family: "IBM Plex Mono", Menlo, monospace;
+        font-size: 17px; font-weight: 600; letter-spacing: .16em; color: #1f5f68;
+      }
+      .ovr-block { text-align: right; }
+      #ovr-num {
+        display: inline-block; font-size: 142px; font-weight: 500; line-height: .9;
+        color: #9f351f; font-variant-numeric: tabular-nums; min-width: 190px;
+        transform-origin: right center;
+      }
+      .ovr-label { font-family: "IBM Plex Mono", Menlo, monospace; font-size: 18px;
+        letter-spacing: .3em; color: #60584d; margin-top: 8px; }
+      #ovr-stamp { width: 190px; margin-left: auto; margin-top: 12px; }
+      #card-stats { margin-top: 34px; display: flex; flex-direction: column; gap: 19px; }
+      .stat-row { display: grid; grid-template-columns: 72px minmax(0,1fr) 76px; gap: 20px; align-items: center; }
+      .stat-row .lab { font-family: "IBM Plex Mono", Menlo, monospace; font-size: 20px;
+        font-weight: 600; letter-spacing: .1em; color: #60584d; }
+      .stat-row .track { height: 12px; background: #ebe3d6; border-radius: 6px; overflow: hidden; }
+      .stat-row .fill { display: block; height: 100%; background: #9f351f; border-radius: 6px; transform-origin: left center; }
+      .stat-row .val { font-size: 26px; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+      #card-foot { margin-top: 30px; padding-top: 20px; border-top: 1.5px solid #ebe3d6;
+        font-size: 16px; letter-spacing: .1em; color: #60584d; }
+
+      /* ================= SCENE 4 · standings ================= */
+      #s4-ghost { font-size: 1050px; top: -180px; right: -70px; opacity: .05; }
+      #s4-glow { width: 1500px; height: 1500px; bottom: -600px; left: -350px;
+        background: radial-gradient(circle, rgba(159,53,31,.10) 0%, rgba(159,53,31,0) 62%); }
+      .s4-content {
+        position: relative; width: 100%; height: 100%;
+        display: flex; flex-direction: column; padding: 104px 200px 96px;
+      }
+      .s4-head { display: flex; align-items: baseline; justify-content: space-between; gap: 60px; }
+      #s4-h { margin-top: 20px; font-size: 64px; font-weight: 400; letter-spacing: -0.012em; }
+      #s4-sub { max-width: 560px; font-size: 27px; font-style: italic; color: #60584d;
+        line-height: 1.45; text-align: right; }
+      #s4-board { margin-top: 44px; display: flex; flex-direction: column; gap: 21px; }
+      .lb-row { display: grid; grid-template-columns: 64px minmax(0,1fr) 100px; gap: 22px; align-items: baseline; }
+      .lb-row .rank { font-family: "IBM Plex Mono", Menlo, monospace; font-size: 22px; color: #60584d; font-variant-numeric: tabular-nums; }
+      .lb-row .model { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
+      .lb-row .ovr { font-size: 33px; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+      .lb-track { grid-column: 1 / 4; height: 9px; border-radius: 5px; background: #ebe3d6; overflow: hidden; margin-top: 2px; }
+      .lb-fill { display: block; height: 100%; border-radius: 5px; transform-origin: left center; background: #9f351f; }
+      .lb-fill.gold   { background: linear-gradient(90deg, #d9b13f, #caa12e); }
+      .lb-fill.silver { background: linear-gradient(90deg, #aab0b6, #9aa0a6); }
+      .lb-fill.bronze { background: linear-gradient(90deg, #c07c4a, #b06a3b); }
+      #s4-foot { margin-top: auto; display: flex; justify-content: space-between; align-items: baseline;
+        font-size: 18px; letter-spacing: .14em; color: #60584d; }
+
+      /* ================= SCENE 5 · colophon ================= */
+      #s5-glow { width: 1600px; height: 1600px; top: -520px; left: 160px;
+        background: radial-gradient(circle, rgba(159,53,31,.09) 0%, rgba(159,53,31,0) 62%); }
+      #s5-rule-top { top: 178px; }
+      #s5-rule-bot { bottom: 132px; }
+      .s5-inner {
+        position: relative; width: 100%; height: 100%;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        text-align: center; padding: 120px 160px; gap: 0;
+      }
+      #s5-eyebrow { font-size: 26px; font-weight: 800; letter-spacing: .34em; color: #9f351f; }
+      #s5-h { margin-top: 30px; font-size: 92px; font-weight: 400; letter-spacing: -0.012em; }
+      #s5-stamp { width: 120px; margin: 38px auto 0; transform-origin: center center; }
+      #s5-url {
+        margin-top: 40px; display: inline-block; padding: 22px 46px;
+        background: #fffdf8; border: 2.5px solid #d7cdbf; border-radius: 14px;
+        font-size: 34px; font-weight: 600; letter-spacing: .06em; color: #191612;
+        box-shadow: 0 16px 46px rgba(25,22,18,.10);
+      }
+      #s5-url b { color: #9f351f; font-weight: 600; }
+      #s5-sub { margin-top: 34px; font-size: 19px; letter-spacing: .22em; color: #60584d; }
     </style>
   </head>
   <body>
@@ -33,26 +229,352 @@
       id="root"
       data-composition-id="main"
       data-start="0"
-      data-duration="10"
+      data-duration="29.5"
       data-width="1920"
       data-height="1080"
     >
-      
-      
-
-      <!--
-        Add your clips here. Example:
-        <div id="title" class="clip" data-start="0" data-duration="5" data-track-index="1"
-             style="font-size: 64px; color: #fff; padding: 40px">
-          Hello World
+      <!-- ============ SCENE 1 · nameplate ============ -->
+      <div id="s1" class="scene">
+        <div id="s1-glow" class="glow" data-layout-ignore></div>
+        <div id="s1-ghost" class="ghost serif" data-layout-ignore>A</div>
+        <div id="s1-ledger-a" class="ledgerline" data-layout-ignore></div>
+        <div id="s1-ledger-b" class="ledgerline" data-layout-ignore></div>
+        <div id="s1-rule-top" class="hrule"></div>
+        <div id="s1-rule-bot" class="hrule"></div>
+        <div id="s1-note-l" class="cornernote mono">ARTENA &middot; EST. 2026</div>
+        <div id="s1-note-r" class="cornernote mono">WWW.ARTENA.ONE/ARENA</div>
+        <div id="s1-nav">
+          <span class="here">Blog</span><span>Leaderboard</span><span>Model Cards</span><span>About</span>
         </div>
-      -->
+        <div class="s1-content">
+          <div id="s1-eyebrow">ARTENA</div>
+          <div id="s1-stamp" class="stamp"></div>
+          <div id="s1-title-wrap">
+            <div class="line-clip"><span id="s1-title-1" class="serif">The OTC Desk</span></div>
+            <div class="line-clip"><span id="s1-title-2" class="serif">Agent Arena</span></div>
+          </div>
+          <p id="s1-strap" class="serif">
+            Controlled, repeated-trial evaluations of LLMs operating a real
+            structured-derivatives trading desk.
+          </p>
+          <div id="s1-chips" class="mono">
+            <span class="chip">CONTROLLED</span><span class="dot">&middot;</span>
+            <span class="chip">REPEATED TRIALS</span><span class="dot">&middot;</span>
+            <span class="chip">NO HUMAN IN THE LOOP</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ SCENE 2 · the desk days ============ -->
+      <div id="s2" class="scene">
+        <div id="s2-glow" class="glow" data-layout-ignore></div>
+        <div id="s2-ghost" class="ghost serif" data-layout-ignore>5</div>
+        <div class="s2-content">
+          <div class="s2-left">
+            <div id="s2-kicker" class="kicker">THE ARENA</div>
+            <h2 id="s2-h" class="serif">Five golden<br />workflows.</h2>
+            <p id="s2-sub" class="serif">A real desk day &mdash; priced, hedged, settled &mdash; replayed for every model.</p>
+            <div id="s2-ticks">
+              <div class="tickrow"><span class="tickbox"></span>Deterministic checks, not vibes</div>
+              <div class="tickrow"><span class="tickbox"></span>Truth harvested from a real pricing engine</div>
+              <div class="tickrow"><span class="tickbox"></span>No LLM judge in the score</div>
+            </div>
+          </div>
+          <div class="s2-right">
+            <div id="s2-tablehead" class="mono">
+              <span>WORKFLOW</span><span>PERSONA</span><span class="num">STEPS</span>
+            </div>
+            <div id="s2-headrule"></div>
+            <div class="wf-row" id="wf1">
+              <span class="name">Risk Manager Control Day</span>
+              <span class="persona">risk_manager</span>
+              <span class="steps">9<small>STEPS</small></span>
+              <span class="wf-underline" style="grid-column: 1 / 4"></span>
+            </div>
+            <div class="wf-row" id="wf2">
+              <span class="name">Trader RFQ-to-Booking Day</span>
+              <span class="persona">trader</span>
+              <span class="steps">10<small>STEPS</small></span>
+              <span class="wf-underline" style="grid-column: 1 / 4"></span>
+            </div>
+            <div class="wf-row" id="wf3">
+              <span class="name">High-Board Portfolio Review</span>
+              <span class="persona">high_board</span>
+              <span class="steps">8<small>STEPS</small></span>
+              <span class="wf-underline" style="grid-column: 1 / 4"></span>
+            </div>
+            <div class="wf-row" id="wf4">
+              <span class="name">Risk Limit Breach Day</span>
+              <span class="persona">risk_manager</span>
+              <span class="steps">7<small>STEPS</small></span>
+              <span class="wf-underline" style="grid-column: 1 / 4"></span>
+            </div>
+            <div class="wf-row" id="wf5">
+              <span class="name">Operations Settlement Day</span>
+              <span class="persona">trader</span>
+              <span class="steps">8<small>STEPS</small></span>
+              <span class="wf-underline" style="grid-column: 1 / 4"></span>
+            </div>
+          </div>
+        </div>
+        <div id="s2-cap" class="mono">SCORED BY DETERMINISTIC ASSERTIONS &middot; UP TO 63 CHECKS A DAY</div>
+      </div>
+
+      <!-- ============ SCENE 3 · the ability card ============ -->
+      <div id="s3" class="scene">
+        <div id="s3-glow" class="glow" data-layout-ignore></div>
+        <div id="s3-ghost" class="ghost serif" data-layout-ignore>OVR</div>
+        <div class="s3-content">
+          <div class="s3-left">
+            <div id="s3-kicker" class="kicker">THE MEASUREMENT</div>
+            <h2 id="s3-h" class="serif">Every model gets<br />an ability card.</h2>
+            <p id="s3-sub" class="serif">Six stats from a desk day&rsquo;s checks &mdash; none of them another LLM&rsquo;s opinion.</p>
+            <div id="s3-prov" class="mono">
+              <b>RUN #101</b> &middot; RISK LIMIT BREACH DAY<br />
+              18 MODELS &middot; REPEATED TRIALS
+            </div>
+          </div>
+          <div class="card-persp">
+            <div id="card">
+              <div class="card-top">
+                <div>
+                  <div id="card-name" class="serif">kimi-2-7</div>
+                  <span id="card-chip">SNIPER</span>
+                </div>
+                <div class="ovr-block">
+                  <span id="ovr-num" class="serif">0</span>
+                  <div class="ovr-label">OVR</div>
+                  <div id="ovr-stamp" class="stamp"></div>
+                </div>
+              </div>
+              <div id="card-stats">
+                <div class="stat-row"><span class="lab">GRD</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="val">0</span></div>
+                <div class="stat-row"><span class="lab">ADH</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="val">0</span></div>
+                <div class="stat-row"><span class="lab">SYN</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="val">0</span></div>
+                <div class="stat-row"><span class="lab">EFF</span><span class="track"><span class="fill" style="width:56.6%"></span></span><span class="val">0</span></div>
+                <div class="stat-row"><span class="lab">PRC</span><span class="track"><span class="fill" style="width:87.9%"></span></span><span class="val">0</span></div>
+                <div class="stat-row"><span class="lab">CON</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="val">0</span></div>
+              </div>
+              <div id="card-foot" class="mono">SIX AXES &middot; SCALE 0&ndash;99 &middot; EFF IS SCORED AGAINST PAR</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ SCENE 4 · the standings ============ -->
+      <div id="s4" class="scene">
+        <div id="s4-glow" class="glow" data-layout-ignore></div>
+        <div id="s4-ghost" class="ghost serif" data-layout-ignore>1</div>
+        <div class="s4-content">
+          <div class="s4-head">
+            <div>
+              <div id="s4-kicker" class="kicker">THE STANDINGS</div>
+              <h2 id="s4-h" class="serif">Published, never merged.</h2>
+            </div>
+            <p id="s4-sub" class="serif">Averaging cards is sound; merging boards is not.</p>
+          </div>
+          <div id="s4-board">
+            <div class="lb-row" id="lb1">
+              <span class="rank">01</span><span class="model">gemini-3-6-flash</span><span class="ovr">0</span>
+              <span class="lb-track"><span class="lb-fill gold" style="width:90.9%"></span></span>
+            </div>
+            <div class="lb-row" id="lb2">
+              <span class="rank">02</span><span class="model">gpt-5-6-terra</span><span class="ovr">0</span>
+              <span class="lb-track"><span class="lb-fill silver" style="width:88.9%"></span></span>
+            </div>
+            <div class="lb-row" id="lb3">
+              <span class="rank">03</span><span class="model">deepseek-v4-pro</span><span class="ovr">0</span>
+              <span class="lb-track"><span class="lb-fill bronze" style="width:87.9%"></span></span>
+            </div>
+            <div class="lb-row" id="lb4">
+              <span class="rank">04</span><span class="model">grok-4-5</span><span class="ovr">0</span>
+              <span class="lb-track"><span class="lb-fill" style="width:86.9%"></span></span>
+            </div>
+            <div class="lb-row" id="lb5">
+              <span class="rank">05</span><span class="model">deepseek-v4-flash</span><span class="ovr">0</span>
+              <span class="lb-track"><span class="lb-fill" style="width:84.8%"></span></span>
+            </div>
+            <div class="lb-row" id="lb6">
+              <span class="rank">06</span><span class="model">gpt-5-6-luna</span><span class="ovr">0</span>
+              <span class="lb-track"><span class="lb-fill" style="width:83.8%"></span></span>
+            </div>
+          </div>
+          <div id="s4-foot" class="mono">
+            <span>CONSOLIDATED CARDS &middot; 4 BOARDS &middot; 2026</span>
+            <span>OVR ON THE FIXED 0&ndash;99 AXIS</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ SCENE 5 · colophon ============ -->
+      <div id="s5" class="scene">
+        <div id="s5-glow" class="glow" data-layout-ignore></div>
+        <div class="s5-inner">
+          <div id="s5-rule-top" class="hrule"></div>
+          <div id="s5-rule-bot" class="hrule"></div>
+          <div id="s5-eyebrow">ARTENA</div>
+          <h2 id="s5-h" class="serif">Read the measurements.</h2>
+          <div id="s5-stamp" class="stamp"></div>
+          <div id="s5-url" class="mono">www.artena.one<b>/arena</b></div>
+          <div id="s5-sub" class="mono">REPORTS &middot; LEADERBOARD &middot; MODEL CARDS</div>
+        </div>
+      </div>
+
+      <!-- global plate furniture -->
+      <div id="grain" data-layout-ignore></div>
+      <div id="plate-furniture" data-layout-ignore>
+        <div class="regmark tl"></div>
+        <div class="regmark tr"></div>
+        <div class="regmark bl"></div>
+        <div class="regmark br"></div>
+      </div>
     </div>
 
     <script>
       window.__timelines = window.__timelines || {};
-      const tl = gsap.timeline({ paused: true });
-      // Example: tl.from("#title", { opacity: 0, y: -50, duration: 1 }, 0);
+      var tl = gsap.timeline({ paused: true });
+
+      // Seek-safe counter: proxy value -> textContent (tabular-nums + fixed width in CSS).
+      function count(sel, target, at, dur, ease) {
+        var el = document.querySelector(sel);
+        var state = { v: 0 };
+        tl.to(state, {
+          v: target, duration: dur, ease: ease,
+          onUpdate: function () { el.textContent = Math.round(state.v); },
+        }, at);
+      }
+
+      /* ================= SCENE 1 · 0 – 6.2 ================= */
+      tl.fromTo("#s1-rule-top", { scaleX: 0 }, { scaleX: 1, duration: 0.8, ease: "power2.out" }, 0.15);
+      tl.fromTo("#s1-rule-bot", { scaleX: 0 }, { scaleX: 1, duration: 0.9, ease: "power1.inOut" }, 1.7);
+      tl.fromTo(["#s1-ledger-a", "#s1-ledger-b"],
+        { scaleY: 0 }, { scaleY: 1, duration: 1.1, ease: "power1.inOut", stagger: 0.15 }, 0.2);
+      tl.fromTo(["#s1-note-l", "#s1-note-r"],
+        { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "sine.out", stagger: 0.2 }, 0.35);
+      tl.fromTo("#s1-eyebrow",
+        { opacity: 0, x: -22 },
+        { opacity: 1, x: 0, duration: 0.9, ease: "power3.out" }, 0.25);
+      tl.fromTo("#s1-stamp", { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "expo.out" }, 0.6);
+      tl.fromTo("#s1-title-1", { y: 145 }, { y: 0, duration: 0.85, ease: "power4.out" }, 0.8);
+      tl.fromTo("#s1-title-2", { y: 145 }, { y: 0, duration: 0.85, ease: "power4.out" }, 0.95);
+      tl.fromTo("#s1-nav > span",
+        { y: -20, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: "power2.out", stagger: 0.09 }, 1.0);
+      tl.fromTo("#s1-strap", { y: 36, opacity: 0 }, { y: 0, opacity: 1, duration: 0.8, ease: "power2.out" }, 1.65);
+      tl.fromTo("#s1-chips > span",
+        { y: 16, opacity: 0 }, { y: 0, opacity: 1, duration: 0.45, ease: "back.out(1.4)", stagger: 0.1 }, 2.15);
+      // ambient: ghost glyph drifts, glow breathes
+      tl.fromTo("#s1-ghost", { x: -36 }, { x: 30, duration: 6.9, ease: "sine.inOut" }, 0);
+      tl.fromTo("#s1-glow", { scale: 0.92 }, { scale: 1.08, duration: 6.9, ease: "sine.inOut" }, 0);
+
+      /* ---- T1 · 6.2 · blur crossfade (calm accent) ---- */
+      tl.to("#s1", { filter: "blur(12px)", scale: 1.03, opacity: 0, duration: 0.7, ease: "power2.inOut" }, 6.2);
+      tl.fromTo("#s2",
+        { opacity: 0, filter: "blur(12px)", scale: 0.975 },
+        { opacity: 1, filter: "blur(0px)", scale: 1, duration: 0.7, ease: "power2.inOut" }, 6.35);
+      tl.set("#s1", { visibility: "hidden" }, 7.15);
+
+      /* ================= SCENE 2 · 6.2 – 13.2 ================= */
+      tl.fromTo("#s2-kicker", { x: -26, opacity: 0 }, { x: 0, opacity: 1, duration: 0.5, ease: "power2.out" }, 6.6);
+      tl.fromTo("#s2-h", { y: 42, opacity: 0 }, { y: 0, opacity: 1, duration: 0.75, ease: "power3.out" }, 6.75);
+      tl.fromTo("#s2-sub", { y: 26, opacity: 0 }, { y: 0, opacity: 1, duration: 0.7, ease: "power2.out" }, 7.0);
+      tl.fromTo(".tickrow",
+        { x: -32, opacity: 0 }, { x: 0, opacity: 1, duration: 0.5, ease: "power3.out", stagger: 0.14 }, 7.35);
+      tl.fromTo("#s2-tablehead", { y: -14, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: "sine.out" }, 6.8);
+      tl.fromTo("#s2-headrule", { scaleX: 0 }, { scaleX: 1, duration: 0.6, ease: "power2.inOut" }, 6.9);
+      tl.fromTo(".wf-row",
+        { x: 74, opacity: 0 }, { x: 0, opacity: 1, duration: 0.6, ease: "power4.out", stagger: 0.13 }, 7.05);
+      tl.fromTo(".wf-underline",
+        { scaleX: 0 }, { scaleX: 1, duration: 0.55, ease: "power2.inOut", stagger: 0.13 }, 7.3);
+      tl.fromTo("#s2-cap", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "sine.out" }, 8.6);
+      // ambient
+      tl.fromTo("#s2-ghost", { y: 34 }, { y: -30, duration: 7.4, ease: "sine.inOut" }, 6.3);
+      tl.fromTo("#s2-glow", { scale: 0.95 }, { scale: 1.1, duration: 7.4, ease: "sine.inOut" }, 6.3);
+
+      /* ---- T2 · 13.2 · push slide (primary) ---- */
+      tl.to("#s2", { x: -1920, duration: 0.55, ease: "power3.inOut" }, 13.2);
+      tl.fromTo("#s3", { x: 1920, opacity: 1 }, { x: 0, opacity: 1, duration: 0.55, ease: "power3.inOut" }, 13.2);
+      tl.set("#s2", { visibility: "hidden" }, 13.9);
+
+      /* ================= SCENE 3 · 13.2 – 20.6 (PEAK) ================= */
+      tl.fromTo("#s3-kicker", { x: -26, opacity: 0 }, { x: 0, opacity: 1, duration: 0.5, ease: "power2.out" }, 13.5);
+      tl.fromTo("#s3-h", { y: 42, opacity: 0 }, { y: 0, opacity: 1, duration: 0.75, ease: "power3.out" }, 13.65);
+      tl.fromTo("#s3-sub", { y: 26, opacity: 0 }, { y: 0, opacity: 1, duration: 0.7, ease: "power2.out" }, 13.95);
+      tl.fromTo("#s3-prov", { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "sine.out" }, 14.5);
+      // the card tilts in (single combined transform tween), then floats
+      tl.fromTo("#card",
+        { x: 96, opacity: 0, rotationY: -16 },
+        { x: 0, opacity: 1, rotationY: -8, duration: 0.85, ease: "expo.out" }, 13.6);
+      tl.to("#card", { rotationY: -5, duration: 5.6, ease: "sine.inOut" }, 14.6);
+      tl.fromTo("#card-name", { y: 20, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: "power2.out" }, 14.15);
+      tl.fromTo(".ovr-label", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "sine.out" }, 14.3);
+      tl.fromTo(".stat-row",
+        { x: 28, opacity: 0 }, { x: 0, opacity: 1, duration: 0.45, ease: "power2.out", stagger: 0.1 }, 14.45);
+      tl.fromTo("#card-foot", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "sine.out" }, 15.3);
+      // stat chord: all six bars + values land together (same ease, same duration)
+      tl.fromTo(".stat-row .fill",
+        { scaleX: 0 }, { scaleX: 1, duration: 1.1, ease: "power3.out" }, 15.0);
+      count("#s3 .stat-row:nth-child(1) .val", 99, 15.0, 1.1, "power3.out");
+      count("#s3 .stat-row:nth-child(2) .val", 99, 15.0, 1.1, "power3.out");
+      count("#s3 .stat-row:nth-child(3) .val", 99, 15.0, 1.1, "power3.out");
+      count("#s3 .stat-row:nth-child(4) .val", 56, 15.0, 1.1, "power3.out");
+      count("#s3 .stat-row:nth-child(5) .val", 87, 15.0, 1.1, "power3.out");
+      count("#s3 .stat-row:nth-child(6) .val", 99, 15.0, 1.1, "power3.out");
+      // OVR counts up while growing in place (counting-dynamic-scale)
+      count("#ovr-num", 91, 15.2, 1.8, "expo.out");
+      tl.fromTo("#ovr-num", { scale: 0.55 }, { scale: 1, duration: 1.8, ease: "expo.out" }, 15.2);
+      tl.fromTo("#ovr-stamp", { scaleX: 0 }, { scaleX: 1, duration: 0.45, ease: "expo.out" }, 17.0);
+      tl.fromTo("#card-chip",
+        { scale: 0.6, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.5, ease: "back.out(1.8)" }, 17.15);
+      // ambient
+      tl.fromTo("#s3-ghost", { x: -24 }, { x: 26, duration: 7.9, ease: "sine.inOut" }, 13.3);
+      tl.fromTo("#s3-glow", { scale: 0.95 }, { scale: 1.1, duration: 7.9, ease: "sine.inOut" }, 13.3);
+
+      /* ---- T3 · 20.6 · push slide (primary) ---- */
+      tl.to("#s3", { x: -1920, duration: 0.55, ease: "power3.inOut" }, 20.6);
+      tl.fromTo("#s4", { x: 1920, opacity: 1 }, { x: 0, opacity: 1, duration: 0.55, ease: "power3.inOut" }, 20.6);
+      tl.set("#s3", { visibility: "hidden" }, 21.3);
+
+      /* ================= SCENE 4 · 20.6 – 26.2 ================= */
+      tl.fromTo("#s4-kicker", { x: -26, opacity: 0 }, { x: 0, opacity: 1, duration: 0.5, ease: "power2.out" }, 20.9);
+      tl.fromTo("#s4-h", { y: 38, opacity: 0 }, { y: 0, opacity: 1, duration: 0.7, ease: "power3.out" }, 21.05);
+      tl.fromTo("#s4-sub", { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: 0.7, ease: "power2.out" }, 21.3);
+      tl.fromTo(".lb-row",
+        { y: 36, opacity: 0 }, { y: 0, opacity: 1, duration: 0.55, ease: "power3.out", stagger: 0.11 }, 21.35);
+      // board chord: fills + values share ease/duration and land as one beat
+      tl.fromTo(".lb-fill", { scaleX: 0 }, { scaleX: 1, duration: 0.9, ease: "power2.out", stagger: 0.11 }, 21.75);
+      count("#lb1 .ovr", 90, 21.75, 0.9, "power2.out");
+      count("#lb2 .ovr", 88, 21.86, 0.9, "power2.out");
+      count("#lb3 .ovr", 87, 21.97, 0.9, "power2.out");
+      count("#lb4 .ovr", 86, 22.08, 0.9, "power2.out");
+      count("#lb5 .ovr", 84, 22.19, 0.9, "power2.out");
+      count("#lb6 .ovr", 83, 22.3, 0.9, "power2.out");
+      tl.fromTo("#s4-foot", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "sine.out" }, 23.6);
+      // ambient
+      tl.fromTo("#s4-ghost", { x: 22 }, { x: -28, duration: 6.4, ease: "sine.inOut" }, 20.7);
+      tl.fromTo("#s4-glow", { scale: 0.95 }, { scale: 1.08, duration: 6.4, ease: "sine.inOut" }, 20.7);
+
+      /* ---- T4 · 26.2 · blur crossfade (wind-down) ---- */
+      tl.to("#s4", { filter: "blur(14px)", scale: 1.03, opacity: 0, duration: 0.8, ease: "power2.inOut" }, 26.2);
+      tl.fromTo("#s5",
+        { opacity: 0, filter: "blur(12px)", scale: 0.98 },
+        { opacity: 1, filter: "blur(0px)", scale: 1, duration: 0.8, ease: "power2.inOut" }, 26.4);
+      tl.set("#s4", { visibility: "hidden" }, 27.3);
+
+      /* ================= SCENE 5 · 26.2 – 29.5 ================= */
+      tl.fromTo(["#s5-rule-top", "#s5-rule-bot"],
+        { scaleX: 0 }, { scaleX: 1, duration: 0.8, ease: "power1.inOut", stagger: 0.12 }, 26.55);
+      tl.fromTo("#s5-eyebrow",
+        { opacity: 0, y: -16 },
+        { opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }, 26.6);
+      tl.fromTo("#s5-h", { y: 38, opacity: 0 }, { y: 0, opacity: 1, duration: 0.8, ease: "power3.out" }, 26.75);
+      tl.fromTo("#s5-stamp", { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "expo.out" }, 27.15);
+      tl.fromTo("#s5-url",
+        { scale: 0.92, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.6, ease: "back.out(1.6)" }, 27.25);
+      tl.fromTo("#s5-sub", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "sine.out" }, 27.6);
+      tl.fromTo("#s5-glow", { scale: 1 }, { scale: 1.05, duration: 3.0, ease: "sine.inOut" }, 26.4);
+      // final resolve (only the last scene may fade out)
+      tl.to(["#s5 .s5-inner", "#plate-furniture"], { opacity: 0, duration: 0.55, ease: "power2.in" }, 28.85);
+
       window.__timelines["main"] = tl;
     </script>
   </body>
