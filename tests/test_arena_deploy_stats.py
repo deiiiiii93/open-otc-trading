@@ -219,3 +219,66 @@ def test_load_snapshot_returns_none_when_generated_at_is_missing_or_bad(tmp_path
     del data["generated_at"]
     p.write_text(json.dumps(data))
     assert st.load_snapshot(p, now=NOW) is None
+
+
+import collect_stats as cs  # noqa: E402
+
+
+def test_fetch_cmd_cats_every_rotated_generation():
+    cmd = cs.fetch_cmd("u@h", "/k.pem", "/logs/arena.log*")
+    assert cmd[0] == "ssh"
+    assert any("/k.pem" in part for part in cmd)
+    assert cmd[-2] == "u@h"
+    # `cat arena.log*` must include rotated files, so aggregation stays stateless
+    assert "arena.log*" in cmd[-1]
+    assert "cat" in cmd[-1]
+
+
+def test_rotate_cmd_keeps_a_bounded_number_of_generations():
+    cmd = cs.rotate_cmd("u@h", "/k.pem", "/logs/arena.log", keep=4)
+    body = cmd[-1]
+    assert "arena.log.4" in body           # oldest generation is dropped
+    assert "nginx -s reopen" in body       # nginx must reopen after the mv
+    assert "arena.log.1" in body
+
+
+def test_rotate_threshold_is_fifty_megabytes():
+    assert cs.ROTATE_BYTES == 50 * 1024 * 1024
+    assert cs.ROTATE_KEEP == 4
+
+
+def test_main_writes_no_snapshot_when_the_log_is_absent(tmp_path, monkeypatch):
+    """An all-zero snapshot is indistinguishable from 'nobody read it'."""
+    out = tmp_path / "stats.json"
+
+    class _Missing:
+        returncode = 1
+        stdout = ""
+        stderr = "cat: no such file"
+
+    monkeypatch.setattr(cs.subprocess, "run", lambda *a, **k: _Missing())
+    assert cs.main(["--out", str(out)]) == 1
+    assert not out.exists()
+
+
+def test_main_writes_a_snapshot_from_fetched_lines(tmp_path, monkeypatch):
+    out = tmp_path / "stats.json"
+    log = "\n".join([
+        line("/arena/2026-08-18-run110-luna.html"),
+        line("/arena/2026-08-18-run110-luna.html", ua=UA_BOT),
+        line("/arena/2026-08-18-run110-luna.pdf"),
+    ])
+
+    class _Ok:
+        returncode = 0
+        stdout = log
+        stderr = ""
+
+    monkeypatch.setattr(cs.subprocess, "run", lambda *a, **k: _Ok())
+    assert cs.main(["--out", str(out), "--no-rotate"]) == 0
+
+    snap = json.loads(out.read_text())
+    assert snap["views"]["2026-08-18-run110-luna"] == 1
+    assert snap["downloads"]["2026-08-18-run110-luna"] == 1
+    assert snap["bot_lines"] == 1
+    assert "generated_at" in snap

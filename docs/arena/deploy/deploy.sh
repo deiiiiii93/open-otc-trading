@@ -3,6 +3,7 @@
 #
 #   deploy.sh build [--no-pdf]     render the site into build/ (local only)
 #   deploy.sh preview              serve build/ on http://localhost:8080
+#   deploy.sh stats                pull the access log and refresh stats.json
 #   deploy.sh publish [--dry-run]  rsync build/ to the server, then verify
 #   deploy.sh status               manifest vs live — what is not published yet
 #   deploy.sh bootstrap            ONE TIME: cut /arena/ over to the static dir
@@ -26,6 +27,7 @@ shift || true
 case "$cmd" in
   build)     exec "$PY" "$HERE/build.py" "$@" ;;
   publish)   exec "$PY" "$HERE/publish.py" publish "$@" ;;
+  stats)     exec "$PY" "$HERE/collect_stats.py" "$@" ;;
   status)    exec "$PY" "$HERE/publish.py" status "$@" ;;
   bootstrap) exec "$HERE/server/bootstrap.sh" "$@" ;;
   preview)
