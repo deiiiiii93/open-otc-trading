@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A Blog link in the arena masthead**, and the current page is marked in the
+  nav. The brand links to the site root rather than `/arena/`, so the leaderboard
+  and model-cards pages had no route back to the feed at all. Unlike the two
+  derived pages the link is unconditional, because `index.html` is always built.
 - **Arena Model Cards page** (`/arena/models.html`). A FIFA-style ability card per
   contestant: OVR, the archetype badge (from the desk's own `_card_position`, not
   a reimplementation), the six-stat strip GRD/ADH/SYN/PRC/EFF/CON, and the

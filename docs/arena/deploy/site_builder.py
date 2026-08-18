@@ -46,14 +46,19 @@ def _masthead(leaderboard: bool = False, here: str = "", models: bool = False) -
     page of the site. The two flags are separate because a snapshot exported
     before model cards existed carries boards but no `models` block.
     """
-    links = []
+    def link(href: str, label: str, key: str) -> str:
+        cur = ' class="here"' if here == key else ""
+        return f'<a href="{href}"{cur}>{label}</a>'
+
+    # Unconditional, unlike the two derived pages: index.html is always built,
+    # and the brand points at the site root rather than /arena/ — so without this
+    # the leaderboard and cards pages are one-way doors out of the feed.
+    links = [link("./index.html", "Blog", "blog")]
     if leaderboard:
-        cur = ' class="here"' if here == "leaderboard" else ""
-        links.append(f'<a href="./leaderboard.html"{cur}>Leaderboard</a>')
+        links.append(link("./leaderboard.html", "Leaderboard", "leaderboard"))
     if models:
-        cur = ' class="here"' if here == "models" else ""
-        links.append(f'<a href="./models.html"{cur}>Model Cards</a>')
-    links.append('<a href="./about.html">About</a>')
+        links.append(link("./models.html", "Model Cards", "models"))
+    links.append(link("./about.html", "About", "about"))
     links.append(f'<a href="{GITHUB_URL}">GitHub</a>')
     return (
         '<header class="masthead">'
@@ -183,7 +188,7 @@ def render_index(
     return (
         _head(SITE_TITLE, theme, SITE_TAGLINE)
         + '<div class="page">\n'
-        + _masthead(leaderboard, models=models)
+        + _masthead(leaderboard, here="blog", models=models)
         + f'<div class="intro"><h1>{escape(SITE_TITLE)}</h1>'
         + f'<p class="lead">{escape(SITE_TAGLINE)}</p></div>\n'
         + '<div class="layout">\n'
@@ -260,7 +265,7 @@ def render_about(
     return (
         _head(f"About — {SITE_TITLE}", theme, SITE_TAGLINE)
         + '<div class="post-shell">\n'
-        + _masthead(leaderboard, models=models)
+        + _masthead(leaderboard, here="about", models=models)
         + '<div class="intro"><h1>What the Arena measures</h1>'
         + '<p class="lead">The Arena is built for financial-agent evaluation, not '
         + "generic prompt scoring. Each trial drives live desk workflows and "

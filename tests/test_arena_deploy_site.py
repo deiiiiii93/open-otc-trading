@@ -439,3 +439,43 @@ def test_card_footnotes_join_with_a_separator_entity_not_an_escaped_one():
     html = sb.render_models(models_snapshot(FLAGSHIP), THEME)
     assert "&amp;middot;" not in html
     assert "obj 89.8 &middot; 2 trials" in html
+
+
+# --------------------------------------------------------------------------
+# Masthead navigation
+# --------------------------------------------------------------------------
+
+def test_every_page_links_back_to_the_blog_feed():
+    """The brand points at the main site root, not /arena/, so without this the
+    leaderboard and cards pages are one-way doors out of the feed."""
+    pages = [
+        sb.render_index(POSTS, MINUTES, THEME, leaderboard=True, models=True),
+        sb.render_about(POSTS, THEME, leaderboard=True, models=True),
+        sb.render_leaderboard(models_snapshot(FLAGSHIP), POSTS, THEME),
+        sb.render_models(models_snapshot(FLAGSHIP), THEME),
+        sb.render_post_page(MEMO, "<p>body</p>", 8, THEME, None, None,
+                            leaderboard=True, models=True),
+    ]
+    for html in pages:
+        nav = html[html.index("<nav>"):html.index("</nav>")]
+        assert '<a href="./index.html"' in nav and ">Blog<" in nav
+
+
+def test_the_blog_link_is_unconditional_unlike_the_derived_pages():
+    """index.html is always built; the leaderboard and cards pages are not."""
+    nav = sb.render_index(POSTS, MINUTES, THEME)
+    nav = nav[nav.index("<nav>"):nav.index("</nav>")]
+    assert ">Blog<" in nav
+    assert "leaderboard.html" not in nav and "models.html" not in nav
+
+
+def test_the_current_page_is_marked_in_the_nav():
+    def nav_of(html):
+        return html[html.index("<nav>"):html.index("</nav>")]
+
+    index = nav_of(sb.render_index(POSTS, MINUTES, THEME, leaderboard=True))
+    assert '<a href="./index.html" class="here">Blog</a>' in index
+
+    board = nav_of(sb.render_leaderboard(models_snapshot(FLAGSHIP), POSTS, THEME))
+    assert '<a href="./index.html">Blog</a>' in board
+    assert 'leaderboard.html" class="here"' in board
