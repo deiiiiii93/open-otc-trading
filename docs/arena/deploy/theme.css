@@ -1,0 +1,80 @@
+:root{
+  --bg:#f7f4ee; --paper:#fffdf8; --ink:#191612; --muted:#60584d;
+  --line:#d7cdbf; --accent:#9f351f; --accent-2:#1f5f68;
+  --sans:-apple-system,"Inter","Segoe UI",Helvetica,Arial,sans-serif;
+  --serif:"Charter","Georgia",Cambria,"Times New Roman",serif;
+}
+*{box-sizing:border-box}
+body{margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans);
+  line-height:1.6; -webkit-font-smoothing:antialiased}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+.page{max-width:1080px; margin:0 auto; padding:28px 24px 72px}
+
+.masthead{display:flex; align-items:center; justify-content:space-between;
+  padding-bottom:18px; border-bottom:1px solid var(--line)}
+.brand{display:flex; align-items:center; gap:10px; color:var(--ink); font-weight:700;
+  letter-spacing:-.01em}
+.brand .mark{display:grid; place-items:center; width:28px; height:28px; border-radius:7px;
+  background:var(--accent); color:#fff; font-size:.85rem; font-weight:800}
+.masthead nav{display:flex; gap:20px; font-size:.9rem}
+.masthead nav a{color:var(--muted)}
+
+.intro{padding:38px 0 26px; border-bottom:1px solid var(--line)}
+.intro h1{margin:0 0 .3em; font-size:2.1rem; letter-spacing:-.02em; line-height:1.15}
+.intro .lead{margin:0; max-width:60ch; color:var(--muted); font-size:1.02rem}
+
+.layout{display:grid; grid-template-columns:minmax(0,1fr) 268px; gap:40px; padding-top:8px}
+@media (max-width:860px){ .layout{grid-template-columns:minmax(0,1fr)} }
+
+.entry{padding:26px 0; border-bottom:1px solid var(--line)}
+.entry-meta{display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  font-size:.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em}
+.entry h2{margin:.4em 0 .3em; font-size:1.3rem; line-height:1.3; letter-spacing:-.01em}
+.entry h2 a{color:var(--ink)}
+.entry .blurb{margin:0; color:var(--muted); max-width:62ch}
+.tag{padding:2px 8px; border-radius:999px; background:var(--paper);
+  border:1px solid var(--line); color:var(--accent-2); font-weight:600}
+.chips{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
+.chip{padding:2px 9px; border-radius:5px; background:var(--paper);
+  border:1px solid var(--line); font-size:.76rem; color:var(--muted)}
+
+.rail{display:flex; flex-direction:column; gap:18px}
+.rail-card{background:var(--paper); border:1px solid var(--line); border-radius:10px;
+  padding:16px 16px 18px}
+.rail-card h3{margin:0; font-size:.76rem; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--muted)}
+.rail-sub{margin:.35em 0 .9em; font-size:.85rem; color:var(--ink); font-weight:600}
+.rank-row{display:grid; grid-template-columns:16px minmax(0,1fr) 30px; gap:8px;
+  align-items:baseline; margin:9px 0; font-size:.83rem}
+.rank-row .rank{color:var(--muted); font-variant-numeric:tabular-nums}
+.rank-row .model{font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.rank-row .score{text-align:right; font-variant-numeric:tabular-nums; font-weight:700}
+.rank-row .note{grid-column:2/4; color:var(--muted); font-size:.75rem; margin-top:-2px}
+.bar-track{grid-column:1/4; height:4px; border-radius:3px; background:var(--line)}
+.bar-fill{display:block; height:100%; border-radius:3px; background:var(--accent)}
+.tag-list{display:flex; flex-direction:column; gap:7px; margin-top:12px; font-size:.85rem}
+.tag-list span{display:flex; justify-content:space-between; color:var(--muted)}
+.tag-list b{color:var(--ink); font-weight:600}
+
+footer.site{margin-top:44px; padding-top:18px; border-top:1px solid var(--line);
+  font-size:.82rem; color:var(--muted)}
+
+/* post pages: chrome only — the report body keeps render_report.py's own CSS */
+.post-shell{max-width:880px; margin:0 auto; padding:28px 24px 72px}
+.crumb{font-size:.82rem; color:var(--muted); margin-bottom:6px}
+.crumb a{color:var(--muted)}
+.byline{display:flex; gap:10px; flex-wrap:wrap; font-size:.78rem; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.05em; padding-bottom:18px;
+  border-bottom:1px solid var(--line); margin-bottom:8px}
+.post-body{background:var(--paper); border:1px solid var(--line); border-radius:12px;
+  padding:8px 34px 26px; margin-top:22px}
+.post-nav{display:flex; justify-content:space-between; gap:18px; flex-wrap:wrap;
+  margin-top:26px; padding-top:18px; border-top:1px solid var(--line); font-size:.88rem}
+.post-nav .downloads{color:var(--muted)}
+.sheet{display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:18px;
+  margin-top:24px}
+.sheet figure{margin:0; background:var(--paper); border:1px solid var(--line);
+  border-radius:10px; padding:12px}
+.sheet img{width:100%; height:auto; display:block; border-radius:6px}
+.sheet figcaption{margin-top:8px; font-size:.76rem; color:var(--muted); word-break:break-all}
