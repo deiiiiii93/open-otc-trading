@@ -23,6 +23,9 @@ BEGIN_MARK = "# >>> arena blog — managed by docs/arena/deploy/server/patch_osz
 END_MARK = "# <<< arena blog <<<"
 
 ARENA_MOUNT = "      - ./runtime/arena:/var/www/arena:ro\n"
+# Mounting the DIRECTORY is what makes file logging work: it replaces the nginx
+# image's `access.log -> /dev/stdout` symlink with a real directory.
+LOG_MOUNT = "      - ./runtime/nginx-logs:/var/log/nginx\n"
 COMPOSE_ANCHOR = "      - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro\n"
 NGINX_ANCHOR = "    location / {\n        proxy_pass http://osz_frontend;\n"
 
@@ -91,14 +94,16 @@ def patch_nginx(conf_text: str, block: str) -> str:
 
 
 def patch_compose(compose_text: str) -> str:
-    if ARENA_MOUNT.strip() in compose_text:
-        return compose_text
     if COMPOSE_ANCHOR not in compose_text:
         raise PatchError(
             "compose.prod.yml does not mount deploy/nginx/default.conf — refusing "
             "to guess which service should receive the arena mount"
         )
-    return compose_text.replace(COMPOSE_ANCHOR, COMPOSE_ANCHOR + ARENA_MOUNT, 1)
+    out = compose_text
+    for mount in (ARENA_MOUNT, LOG_MOUNT):
+        if mount.strip() not in out:
+            out = out.replace(COMPOSE_ANCHOR, COMPOSE_ANCHOR + mount, 1)
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:

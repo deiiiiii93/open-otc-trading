@@ -170,3 +170,24 @@ def test_live_config_still_carries_the_anchor_this_patch_depends_on():
     """Smoke check only — never assert this gitignored file's full contents."""
     live = (Path("/Users/fuxinyao/open-slides-zero") / "deploy/nginx/default.conf").read_text()
     assert po.NGINX_ANCHOR in live
+
+
+def test_arena_location_writes_an_access_log():
+    directives = [
+        ln for ln in po.ARENA_LOCATION.splitlines()
+        if ln.strip() and not ln.strip().startswith("#")
+    ]
+    assert any("access_log" in ln and "arena.log" in ln for ln in directives)
+    # access_log is safe here; the inheritance-replacement rule is add_header-only
+    assert not any("add_header" in ln for ln in directives)
+
+
+def test_patch_compose_adds_the_log_mount():
+    out = po.patch_compose(PRISTINE_COMPOSE)
+    assert out.count("./runtime/nginx-logs:/var/log/nginx") == 1
+    assert out.count("./runtime/arena:/var/www/arena:ro") == 1
+
+
+def test_patch_compose_with_both_mounts_is_idempotent():
+    once = po.patch_compose(PRISTINE_COMPOSE)
+    assert po.patch_compose(once) == once
