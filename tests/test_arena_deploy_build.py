@@ -168,8 +168,17 @@ def test_build_renders_no_counters_when_the_snapshot_is_stale(project, tmp_path)
     assert 'class="reads"' not in index
 
 
-def test_build_renders_no_counters_when_there_is_no_snapshot(project):
+def test_build_renders_no_counters_when_there_is_no_snapshot(project, tmp_path):
+    """Must use a TEMP deploy dir: the real one gains a stats.json the moment
+    anyone runs `deploy.sh stats`, which would make this test's premise false."""
     mf, arena, out = project
-    b.build(mf, arena, DEPLOY, out, refresh_pdf=False)
+    deploy = tmp_path / "deploy"
+    deploy.mkdir()
+    (deploy / "theme.css").write_text((DEPLOY / "theme.css").read_text())
+    assert not (deploy / "stats.json").exists()
+
+    result = b.build(mf, arena, deploy, out, refresh_pdf=False)
     index = (out / "index.html").read_text()
     assert "Readership" not in index
+    assert 'class="reads"' not in index
+    assert any("no fresh stats.json" in w for w in result.warnings)
