@@ -101,14 +101,14 @@ def test_publish_refuses_when_there_is_no_build(tmp_path, monkeypatch):
 def test_verify_live_passes_on_a_healthy_site(served):
     base, root = served
     _good_site(root)
-    assert pub.verify_live(base, [POST]) == []
+    assert pub.verify_live(base, [POST], security_headers=()) == []
 
 
 def test_verify_live_fails_when_a_post_is_missing_from_the_index(served):
     base, root = served
     _good_site(root)
     root.joinpath("index.html").write_text("<p>nothing here</p>")
-    failures = pub.verify_live(base, [POST])
+    failures = pub.verify_live(base, [POST], security_headers=())
     assert any("index" in f for f in failures)
 
 
@@ -116,7 +116,7 @@ def test_verify_live_fails_when_a_post_page_lacks_its_title(served):
     base, root = served
     _good_site(root)
     root.joinpath("2026-08-18-run110-luna.html").write_text("<h1>Wrong document</h1>")
-    failures = pub.verify_live(base, [POST])
+    failures = pub.verify_live(base, [POST], security_headers=())
     assert any("2026-08-18-run110-luna.html" in f for f in failures)
 
 
@@ -124,7 +124,7 @@ def test_verify_live_fails_when_an_orphan_asset_is_gone(served):
     base, root = served
     _good_site(root)
     root.joinpath("model-ability-card-bg-v2.webp").unlink()
-    failures = pub.verify_live(base, [POST])
+    failures = pub.verify_live(base, [POST], security_headers=())
     assert any("model-ability-card-bg-v2.webp" in f for f in failures)
 
 
@@ -132,11 +132,11 @@ def test_verify_live_requires_a_404_on_an_absent_path(served):
     """The whole point: an SPA fallback answering 200 everywhere must be caught."""
     base, root = served
     _good_site(root)
-    assert pub.verify_live(base, [POST]) == []
+    assert pub.verify_live(base, [POST], security_headers=()) == []
 
     # Simulate the catch-all by making the probe path resolve to a real file.
     root.joinpath(pub.ABSENT_PROBE).write_text("SPA fallback served this")
-    failures = pub.verify_live(base, [POST])
+    failures = pub.verify_live(base, [POST], security_headers=())
     assert any("404" in f for f in failures)
 
 
@@ -151,4 +151,48 @@ def test_verify_live_compares_escaped_titles(served):
         '<a href="./x.html">Risk &amp; &lt;agent&gt; performance</a>'
     )
     root.joinpath("x.html").write_text("<h1>Risk &amp; &lt;agent&gt; performance</h1>")
-    assert pub.verify_live(base, [tricky], assets=()) == []
+    assert pub.verify_live(base, [tricky], assets=(), security_headers=()) == []
+
+
+SECURITY_HEADERS = (
+    "content-security-policy",
+    "strict-transport-security",
+    "x-frame-options",
+    "x-content-type-options",
+    "referrer-policy",
+    "permissions-policy",
+)
+
+
+def test_verify_live_flags_missing_security_headers(monkeypatch):
+    """A location-level add_header silently drops every inherited one.
+
+    The cutover shipped exactly that defect and the verifier reported a clean
+    deploy, because it only ever looked at status codes and body text.
+    """
+    def _fake_fetch(url, timeout=20):
+        body = b"<h1>Reasoning effort study</h1>2026-08-18-run110-luna.html"
+        if url.endswith(pub.ABSENT_PROBE):
+            return 404, "", b""
+        return 200, "text/html", body
+
+    monkeypatch.setattr(pub, "fetch", _fake_fetch)
+    monkeypatch.setattr(pub, "fetch_headers", lambda url, timeout=20: {"cache-control": "public"})
+
+    failures = pub.verify_live("https://example.test/arena/", [POST], assets=())
+    for h in SECURITY_HEADERS:
+        assert any(h in f for f in failures), f"{h} not reported missing"
+
+
+def test_verify_live_passes_when_security_headers_are_present(monkeypatch):
+    def _fake_fetch(url, timeout=20):
+        body = b"<h1>Reasoning effort study</h1>2026-08-18-run110-luna.html"
+        if url.endswith(pub.ABSENT_PROBE):
+            return 404, "", b""
+        return 200, "text/html", body
+
+    monkeypatch.setattr(pub, "fetch", _fake_fetch)
+    monkeypatch.setattr(
+        pub, "fetch_headers", lambda url, timeout=20: {h: "set" for h in SECURITY_HEADERS}
+    )
+    assert pub.verify_live("https://example.test/arena/", [POST], assets=()) == []

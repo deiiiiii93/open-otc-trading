@@ -35,6 +35,20 @@ ORPHAN_ASSETS = ("model-ability-card-bg-v1.webp", "model-ability-card-bg-v2.webp
 
 ABSENT_PROBE = "__deploy_probe_absent__.html"
 
+# Set at the `server` level in open-slides-zero's nginx config. They are checked
+# because nginx inherits `add_header` "if and only if there are no add_header
+# directives defined on the current level" — so ONE add_header in the /arena/
+# location silently drops all six. That shipped, and a verifier that looked only
+# at status codes and body text reported a clean deploy.
+SECURITY_HEADERS = (
+    "content-security-policy",
+    "strict-transport-security",
+    "x-frame-options",
+    "x-content-type-options",
+    "referrer-policy",
+    "permissions-policy",
+)
+
 
 def rsync_cmd(src: Path, host: str, remote: str, key: str, dry_run: bool) -> list[str]:
     # -v is load-bearing, not cosmetic: rsync only emits "deleting <path>" lines
@@ -58,8 +72,21 @@ def fetch(url: str, timeout: int = 20) -> tuple[int, str, bytes]:
         return e.code, (e.headers.get("Content-Type", "") if e.headers else ""), e.read()
 
 
+def fetch_headers(url: str, timeout: int = 20) -> dict[str, str]:
+    """Lower-cased response headers for a HEAD-equivalent fetch."""
+    req = urllib.request.Request(url, headers={"User-Agent": "arena-deploy/1"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return {k.lower(): v for k, v in r.headers.items()}
+    except urllib.error.HTTPError as e:
+        return {k.lower(): v for k, v in (e.headers or {}).items()}
+
+
 def verify_live(
-    base_url: str, posts: list[Post], assets: tuple[str, ...] = ORPHAN_ASSETS
+    base_url: str,
+    posts: list[Post],
+    assets: tuple[str, ...] = ORPHAN_ASSETS,
+    security_headers: tuple[str, ...] = SECURITY_HEADERS,
 ) -> list[str]:
     """Return failure messages; an empty list means the site is healthy."""
     failures: list[str] = []
@@ -92,6 +119,14 @@ def verify_live(
             failures.append(f"{name}: expected 200, got {status}")
         elif "image" not in ctype:
             failures.append(f"{name}: expected an image content-type, got {ctype!r}")
+
+    headers = fetch_headers(base_url) if security_headers else {}
+    for name in security_headers:
+        if name not in headers:
+            failures.append(
+                f"index: missing security header {name!r} — an `add_header` in the "
+                "/arena/ location discards ALL inherited ones; use `expires` instead"
+            )
 
     status, _, _ = fetch(f"{base_url}{ABSENT_PROBE}")
     if status != 404:
