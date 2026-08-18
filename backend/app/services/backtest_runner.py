@@ -485,10 +485,10 @@ def _compute_backtest_source(
         "resolved_position_ids": [position.id for position in resolved.positions],
     }
     artifacts: dict[str, Any] = {}
-    if write_artifacts and status == "completed" and raw:
+    if write_artifacts and status == "completed":
         settings = get_settings()
         artifacts = backtest_svc.write_artifacts(
-            raw=raw,
+            results=results,
             run_id=resolved.backtest_run_id,
             formats=resolved.config.get(
                 "export_formats",

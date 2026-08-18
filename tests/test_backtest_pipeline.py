@@ -227,18 +227,65 @@ def test_shape_underlying_aggregates_into_portfolio():
     assert agg["num_trades"] == 2
 
 
-def test_dashboard_adapter_exposes_first_book_product_for_quantark_dashboard():
-    class _BookProduct:
-        product = object()
+def test_write_artifacts_renders_repo_html_report(tmp_path):
+    results = {
+        "window": {"start": "2024-01-02", "end": "2024-04-30"},
+        "engine": "PDE",
+        "vol_source": "flat:30",
+        "portfolio": {
+            "total_pnl": 50.0, "hedge_pnl": 2.0, "num_trades": 2,
+            "num_underlyings": 1, "sharpe": 0.5, "max_drawdown": 10.0,
+            "var_95": 1.0, "cvar_95": 2.0,
+            "pnl_series": [
+                {"date": "2024-01-02", "total_pnl": 10.0, "hedge_pnl": 1.0},
+                {"date": "2024-01-03", "total_pnl": 25.0, "hedge_pnl": 2.0},
+            ],
+        },
+        "by_underlying": [
+            {
+                "underlying": "000905",
+                "num_products": 2,
+                "summary": {"total_pnl": 25.0, "hedge_pnl": 2.0, "num_trades": 1},
+                "lifecycle_events": [
+                    {"type": "KO", "date": "2024-01-03", "cashflow": 123.0}
+                ],
+            }
+        ],
+        "excluded_positions": [{"position_id": 1, "reason": "closed"}],
+        "notes": ["note one"],
+    }
+    artifacts = bt.write_artifacts(
+        results=results, run_id=9, formats=["html"], base_dir=str(tmp_path)
+    )
+    assert artifacts["report_html_path"] is not None
+    content = open(artifacts["report_html_path"], encoding="utf-8").read()
+    assert "Backtest #9" in content
+    assert "000905" in content
+    assert "Cumulative P" in content
+    assert "Lifecycle Events" in content
+    assert "KO" in content
+    assert "excluded" in content.lower()
+    assert "note one" in content
 
-    class _BookConfig:
-        underlying = "000905"
-        products = [_BookProduct()]
 
-    class _BookResults:
-        config = _BookConfig()
+def test_write_artifacts_records_note_for_unsupported_formats(tmp_path):
+    artifacts = bt.write_artifacts(
+        results={"portfolio": {}}, run_id=10, formats=["xlsx"], base_dir=str(tmp_path)
+    )
+    assert any("xlsx" in note for note in artifacts["notes"])
 
-    adapter_config = bt._DashboardAdapter(_BookResults()).config
 
-    assert adapter_config.product is _BookConfig.products[0].product
-    assert adapter_config.underlying == "000905"
+def test_render_report_html_escapes_values():
+    from app.services.domains.backtest_report import render_backtest_report_html
+
+    results = {
+        "window": {"start": "2024-01-02", "end": "2024-04-30"},
+        "portfolio": {"total_pnl": 1.0, "num_trades": 0, "num_underlyings": 1},
+        "by_underlying": [
+            {"underlying": "<script>alert(1)</script>", "summary": {"total_pnl": 1.0}}
+        ],
+    }
+    html_out = render_backtest_report_html(results, title="Backtest <title>")
+    assert "<script>alert(1)</script>" not in html_out
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html_out
+    assert "Backtest &lt;title&gt;" in html_out

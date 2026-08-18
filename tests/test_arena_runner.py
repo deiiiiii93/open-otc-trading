@@ -944,3 +944,204 @@ def test_purge_scrubs_dangling_scope_config_portfolio_ids(session):
     version = session.get(RiskLimitVersion, version_id)
     assert version is not None  # immortal — survives the purge
     assert ctrl_id not in (version.scope_config.get("portfolio_ids") or [])
+
+
+# --- model-created scenario sets: trace + baseline reclamation -----------------
+# Scenario sets were the one model-writable namespace with no post-match purge:
+# `_purge_seeded_trap_sets` only removes the exact reserved trap name, so a
+# near-miss name a model invents ("stagflation-shock-2011-compact") survived every
+# later match. Run #109 measured the cost — the leaked 45-scenario set turned the
+# trap step into a 141 KB retrieval problem.
+
+def test_collect_scenario_set_names_saved_harvests_both_writers():
+    """Both set writers put the saved name in their output; a tool that merely
+    RUNS a named set is not evidence that this match created it."""
+    import json as _json
+    from app.services.arena.trace_harvest import collect_scenario_set_names_saved
+
+    class _Store:
+        def list_thread_traces(self, thread_id, limit=1000):
+            return [{"trace_id": "t1"}]
+
+        def get_trace(self, trace_id):
+            def out(payload):
+                return _json.dumps({"output": payload})
+            return [
+                {"run_type": "tool", "name": "save_scenario_set",
+                 "outputs": out({"name": "hand-made", "path": "/x/hand-made.yaml"})},
+                {"run_type": "tool", "name": "generate_scenario_set",
+                 "outputs": out({"name": "grid-2011", "num_scenarios": 45,
+                                 "path": "/x/grid-2011.yaml"})},
+                # Reading/running a set is NOT creating it.
+                {"run_type": "tool", "name": "run_scenario_test",
+                 "outputs": out({"scenario_set": "market-crash", "run_id": 2})},
+            ]
+
+    assert collect_scenario_set_names_saved(7, store=_Store()) == {"hand-made", "grid-2011"}
+
+
+def test_purge_match_scenario_sets_removes_model_created_set(tmp_path, monkeypatch):
+    """A set this match's model minted is removed — both the .yaml and its
+    .set.json sidecar — so the next match's library is the one the board expects."""
+    from app.config import Settings
+    from app.services.arena import runner
+
+    d = tmp_path / "scenario_sets"; d.mkdir()
+    (d / "stagflation-shock-2011-compact.yaml").write_text("scenarios: []\n")
+    (d / "stagflation-shock-2011-compact.set.json").write_text("{}")
+    monkeypatch.setattr(
+        runner, "collect_scenario_set_names_saved",
+        lambda _tid: {"stagflation-shock-2011-compact"}, raising=False)
+
+    runner._purge_match_scenario_sets(7, set(), Settings(scenario_sets_dir=str(d)))
+
+    assert not (d / "stagflation-shock-2011-compact.yaml").exists()
+    assert not (d / "stagflation-shock-2011-compact.set.json").exists()
+
+
+def test_purge_match_scenario_sets_spares_preexisting_name(tmp_path, monkeypatch):
+    """A set that existed BEFORE the match is never deleted, even when the model
+    re-saved (overwrote) it: the baseline is the ownership proof, mirroring the
+    `id > baseline` guard on portfolios/RFQs. The overwrite itself is NOT undone —
+    a manifest must not depend on a mutable on-disk set."""
+    from app.config import Settings
+    from app.services.arena import runner
+
+    d = tmp_path / "scenario_sets"; d.mkdir()
+    (d / "market-crash.yaml").write_text("scenarios: []\n")
+    monkeypatch.setattr(
+        runner, "collect_scenario_set_names_saved",
+        lambda _tid: {"market-crash"}, raising=False)
+
+    runner._purge_match_scenario_sets(
+        7, {"market-crash"}, Settings(scenario_sets_dir=str(d)))
+
+    assert (d / "market-crash.yaml").exists()
+
+
+def test_purge_match_scenario_sets_spares_untraced_file(tmp_path, monkeypatch):
+    """A set that appeared during the match but is NOT in this thread's trace —
+    e.g. a human saving one through the REST endpoint — is left alone. Requiring
+    BOTH proofs is what stops the purge eating someone else's desk work."""
+    from app.config import Settings
+    from app.services.arena import runner
+
+    d = tmp_path / "scenario_sets"; d.mkdir()
+    (d / "desk-authored.yaml").write_text("scenarios: []\n")
+    monkeypatch.setattr(
+        runner, "collect_scenario_set_names_saved", lambda _tid: set(), raising=False)
+
+    runner._purge_match_scenario_sets(7, set(), Settings(scenario_sets_dir=str(d)))
+
+    assert (d / "desk-authored.yaml").exists()
+
+
+def test_purge_match_scenario_sets_never_raises(tmp_path, monkeypatch):
+    """Cleanup is hygiene and must never mask a match outcome (same contract as
+    _purge_match_portfolios), so a collector blowing up is swallowed."""
+    from app.config import Settings
+    from app.services.arena import runner
+
+    def boom(_tid):
+        raise RuntimeError("trace store down")
+
+    monkeypatch.setattr(
+        runner, "collect_scenario_set_names_saved", boom, raising=False)
+    runner._purge_match_scenario_sets(
+        7, set(), Settings(scenario_sets_dir=str(tmp_path)))  # no raise
+
+
+def test_run_match_purges_match_created_scenario_sets_in_finally(tmp_path, monkeypatch):
+    """The scenario-set purge is WIRED into the same finally as the RFQ/portfolio
+    ones, and receives the pre-match name baseline. Unit-testing the purge alone
+    would pass even if nothing ever called it — which is exactly how this namespace
+    went unreclaimed while the other two were covered."""
+    import app.services.arena.runner as runner
+
+    # Settings is a frozen dataclass, so stub the baseline reader itself; its own
+    # directory-reading behaviour is covered by the baseline unit test below.
+    monkeypatch.setattr(
+        runner, "scenario_set_name_baseline", lambda _s: {"desk-authored"})
+
+    monkeypatch.setattr(runner, "apply_seed", lambda b, s: {})
+    monkeypatch.setattr(runner, "_purge_seeded_portfolios", lambda s, b: None)
+    monkeypatch.setattr(runner, "_purge_match_rfqs", lambda *a: None)
+    monkeypatch.setattr(runner, "_purge_match_portfolios", lambda *a: None)
+
+    class _Thread:
+        def __init__(self, **kw):
+            self.id = 4242
+            for k, v in kw.items():
+                setattr(self, k, v)
+
+    monkeypatch.setattr(runner, "AgentThread", _Thread)
+
+    class _Q:
+        def scalar(self):
+            return 0
+
+    class _Sess:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def add(self, obj):
+            pass
+
+        def commit(self):
+            pass
+
+        def execute(self, *a, **k):
+            return None
+
+        def query(self, *a, **k):
+            return _Q()
+
+    monkeypatch.setattr(
+        runner, "database",
+        type("D", (), {"SessionLocal": staticmethod(lambda *a, **k: _Sess())})())
+
+    seen: list[tuple[int, set]] = []
+    monkeypatch.setattr(
+        runner, "_purge_match_scenario_sets",
+        lambda thread_id, baseline, settings: seen.append((thread_id, set(baseline))))
+
+    def boom_harvest(thread_id, workflow, model, **kw):
+        raise RuntimeError("harvest blew up")
+
+    with pytest.raises(RuntimeError, match="harvest blew up"):
+        run_match(
+            _Loaded(), get_model("gpt-5-5"), artifact_root=tmp_path, run_id=7,
+            drive=lambda *a: None, harvest=boom_harvest, settle=lambda: None,
+        )
+
+    assert seen == [(4242, {"desk-authored"})]
+
+
+def test_scenario_set_name_baseline_reads_both_suffixes(tmp_path):
+    """The baseline keys on the logical set name: a set is two files (.yaml plus a
+    .set.json sidecar) and both must collapse to one stem, or the purge would think
+    the sidecar of a pre-existing set was newly created."""
+    from app.config import Settings
+    from app.services.arena.runner import scenario_set_name_baseline
+
+    d = tmp_path / "scenario_sets"; d.mkdir()
+    (d / "market-crash.yaml").write_text("scenarios: []\n")
+    (d / "market-crash.set.json").write_text("{}")
+    (d / "grid-only.yaml").write_text("scenarios: []\n")
+    (d / "notes.txt").write_text("ignored")
+
+    assert scenario_set_name_baseline(
+        Settings(scenario_sets_dir=str(d))) == {"market-crash", "grid-only"}
+
+
+def test_scenario_set_name_baseline_missing_dir_is_empty(tmp_path):
+    """A library directory that does not exist yet is an empty baseline, not a
+    crash — the purge must stay best-effort on a fresh checkout."""
+    from app.config import Settings
+    from app.services.arena.runner import scenario_set_name_baseline
+
+    assert scenario_set_name_baseline(
+        Settings(scenario_sets_dir=str(tmp_path / "nope"))) == set()

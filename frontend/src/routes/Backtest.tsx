@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   CartesianGrid,
   Legend,
@@ -161,12 +161,61 @@ function UnderlyingRow({ u }: { u: BacktestUnderlying }) {
   );
 }
 
+function ReportCard({ run, reportBasename }: { run: BacktestRun; reportBasename: string }) {
+  // Browsers cache iframe content aggressively; append a per-selection cache-bust
+  // timestamp so the iframe always fetches the latest report when the run is loaded.
+  const cacheBust = useMemo(() => Date.now(), [run.id]);
+  const reportUrl = `${backtestArtifactUrl(run.id, reportBasename)}?t=${cacheBust}`;
+
+  return (
+    <div className="wl-backtest__report-card-section">
+      <div className="wl-backtest__report-card">
+        <div className="wl-backtest__report-card-head">
+          <span>HTML Report</span>
+          <div className="wl-backtest__report-head-actions">
+            <a
+              href={backtestArtifactUrl(run.id, reportBasename)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="wl-backtest__artifact-link wl-backtest__artifact-link--compact"
+            >
+              Open standalone tab
+            </a>
+          </div>
+        </div>
+        <iframe
+          title={`Backtest report for run ${run.id}`}
+          src={reportUrl}
+          className="wl-backtest__report-frame"
+        />
+        <div className="wl-backtest__report-actions">
+          <a
+            href={backtestArtifactUrl(run.id, reportBasename)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="wl-backtest__artifact-link"
+          >
+            Open full HTML report
+          </a>
+          <a
+            href={backtestArtifactUrl(run.id, reportBasename, { download: true })}
+            download
+            className="wl-backtest__artifact-link"
+          >
+            Download HTML report
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RunReport({ run }: { run: BacktestRun }) {
   const results = run.results ?? {};
   const portfolio = results.portfolio;
   const byUnderlying: BacktestUnderlying[] = results.by_underlying ?? [];
-  const dashboards = run.artifacts?.dashboards ?? {};
-  const dashboardEntries = Object.entries(dashboards);
+  const reportHtmlPath = run.artifacts?.report_html_path ?? null;
+  const reportBasename = reportHtmlPath?.split('/').pop() ?? null;
 
   if (run.status === 'running' || run.status === 'queued') {
     return (
@@ -311,51 +360,9 @@ function RunReport({ run }: { run: BacktestRun }) {
         </div>
       )}
 
-      {/* Dashboard artifact links */}
-      {dashboardEntries.length > 0 && (
-        <div className="wl-backtest__dashboard-section">
-          <h4 className="wl-backtest__underlying-title">Quant-Ark Dashboards</h4>
-          {dashboardEntries.map(([underlying, path]) => (
-            <div key={underlying} className="wl-backtest__dashboard-card">
-              <div className="wl-backtest__dashboard-card-head">
-                <span>{underlying}</span>
-                <div className="wl-backtest__dashboard-head-actions">
-                  <span>Deep-dive HTML</span>
-                  <a
-                    href={backtestArtifactUrl(run.id, path)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="wl-backtest__dashboard-link wl-backtest__dashboard-link--compact"
-                  >
-                    Open standalone tab
-                  </a>
-                </div>
-              </div>
-              <iframe
-                title={`Quant-Ark dashboard ${underlying}`}
-                src={backtestArtifactUrl(run.id, path)}
-                className="wl-backtest__dashboard-frame"
-              />
-              <div className="wl-backtest__dashboard-actions">
-                <a
-                  href={backtestArtifactUrl(run.id, path)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="wl-backtest__dashboard-link"
-                >
-                  Open full quant-ark dashboard — {underlying}
-                </a>
-                <a
-                  href={backtestArtifactUrl(run.id, path, { download: true })}
-                  download
-                  className="wl-backtest__dashboard-link"
-                >
-                  Download dashboard HTML — {underlying}
-                </a>
-              </div>
-            </div>
-          ))}
-        </div>
+      {/* HTML report artifact */}
+      {reportBasename && (
+        <ReportCard run={run} reportBasename={reportBasename} />
       )}
 
       {/* Excluded positions note */}

@@ -25,6 +25,7 @@ from app.services.arena.models import arena_model_to_selection
 from app.services.arena.trace_harvest import (
     collect_portfolio_ids_created,
     collect_rfq_ids_touched,
+    collect_scenario_set_names_saved,
     transcript_from_trace,
 )
 
@@ -754,6 +755,81 @@ def _assert_trap_sets_absent(loaded, settings) -> None:
             )
 
 
+def scenario_set_name_baseline(settings) -> set[str]:
+    """Snapshot the set names present BEFORE a match, for the post-match purge.
+
+    Names, not ids — a scenario set is a file, so ``_safe_name(name)`` is its
+    identity. Both suffixes map to one logical set, so the stem is the key.
+    """
+    from pathlib import Path
+
+    d = Path(settings.scenario_sets_dir)
+    if not d.is_dir():
+        return set()
+    return {
+        f.name[: -len(".set.json")] if f.name.endswith(".set.json") else f.stem
+        for f in d.iterdir()
+        if f.suffix in {".yaml", ".json"}
+    }
+
+
+def _purge_match_scenario_sets(thread_id: int, name_baseline: set[str], settings) -> None:
+    """Best-effort cleanup of scenario sets CREATED BY THIS MATCH: names harvested
+    from this thread's set-writing spans AND absent from the pre-match baseline.
+
+    Runs in a ``finally`` for the same reason as ``_purge_match_{rfqs,portfolios}``:
+    a leak here is PERMANENT, because the next match's baseline is taken after the
+    leaked file already exists, so its "not in baseline" guard can never re-catch it.
+    Until this existed, scenario sets were the ONLY model-writable namespace with no
+    post-match reclamation — ``_purge_seeded_trap_sets`` removes just the exact
+    reserved ``trap_absent_sets`` name, and a model that cannot find the set it was
+    asked for invents one under a NEAR-MISS name instead.
+
+    Why it matters beyond tidiness: the flagship's step-8 trap asks for a set that
+    must not exist. A leaked ``stagflation-shock-2011-compact`` hands the next model
+    a real 45-scenario set to run, and its 141 KB result then dominates the step
+    (Run #109: 273 tool calls / 91 errors on the arm that tried to mine it). It also
+    moves grounding truth — an on-disk ``market-crash`` drifted 1 scenario → a
+    5-point grid on 2026-07-09, shifting CVaR -7759 → -12175.
+
+    Fail-safe: requires BOTH the trace evidence and the baseline, so a set a HUMAN
+    saved through the REST endpoint mid-run, or any pre-existing desk set the model
+    merely ran, is never touched. Note the baseline deliberately spares a
+    pre-existing set the model OVERWROTE — deletion cannot restore the original, and
+    removing it would destroy desk work; the standing rule is that a manifest must
+    never depend on a mutable on-disk set (the flagship pins the ``market_crash``
+    predefined built-in for exactly this reason). Never raises — cleanup is hygiene
+    and must not mask a match failure.
+    """
+    from pathlib import Path
+
+    from app.services.domains.scenario_catalog import _safe_name
+
+    try:
+        created = collect_scenario_set_names_saved(thread_id)
+        names = sorted(created - set(name_baseline or ()))
+        if not names:
+            return
+        d = Path(settings.scenario_sets_dir)
+        for name in names:
+            # Reuse the WRITER's own sanitizer rather than restating the regex:
+            # a model-chosen name is sanitized on the way in, so any divergence
+            # here would silently fail to find the file it just created.
+            try:
+                safe = _safe_name(name)
+            except ValueError:
+                continue
+            for suffix in (".yaml", ".set.json"):
+                f = d / f"{safe}{suffix}"
+                if f.exists():
+                    f.unlink()
+                    logger.info("arena: purged match-created scenario set %s", f)
+    except Exception:  # noqa: BLE001 — best-effort; never mask the match outcome
+        logger.warning(
+            "arena scenario-set cleanup failed for thread %s", thread_id, exc_info=True
+        )
+
+
 def _assert_no_foreign_active_limits(session, bundle) -> None:
     """Fail match setup when a foreign active limit would join the live re-monitor.
 
@@ -927,6 +1003,12 @@ def run_match(
             session.query(func.max(models.Portfolio.id)).scalar() or 0
         )
 
+    # Same discipline for the scenario-set library, which is a DIRECTORY rather than
+    # a table, so the high-water mark is the set of names present now. A model asked
+    # for a set that does not exist invents one under a near-miss name, and nothing
+    # reclaimed it before this baseline existed (see _purge_match_scenario_sets).
+    set_name_baseline = scenario_set_name_baseline(_settings)
+
     # Drive every workflow step as one YOLO turn on the same thread, waiting for
     # queued background tasks to finish before the next step reads their results.
     # The RFQ cleanup runs in a finally so an aborted match still purges the RFQs
@@ -940,6 +1022,7 @@ def run_match(
     finally:
         _purge_match_rfqs(thread_id, rfq_id_baseline)
         _purge_match_portfolios(thread_id, portfolio_id_baseline)
+        _purge_match_scenario_sets(thread_id, set_name_baseline, _settings)
         with database.SessionLocal() as session:
             _purge_arena_market_quotes(session)  # no seeded quote outlives the match
         if seeded_report_ids:

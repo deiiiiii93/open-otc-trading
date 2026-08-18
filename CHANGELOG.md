@@ -8,10 +8,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Arena: scenario sets a model invents are now reclaimed after the match.**
+  Scenario sets were the last model-writable namespace with no post-match purge —
+  `_purge_seeded_trap_sets` removes only the *exact* reserved `trap_absent_sets`
+  name, but a model asked for a set that does not exist does not stop, it invents
+  one under a **near-miss** name. One 2026-07-09 session left
+  `stagflation-shock-2011-compact` (45 scenarios) and `-x10` in the live library,
+  where they sat for five weeks and were served to every later board by
+  `list_scenario_library`.
+
+  Consequences measured, not theorised: the flagship's step-8 trap asks for a set
+  that must not exist, so the leak handed each model a real set to run, and its
+  141 KB result then dominated the step — Run #109's `high` arm spent **273 tool
+  calls and 91 errors** there, 81 of them brute-forcing artifact key names. A
+  leaked on-disk `market-crash` had already drifted 1 scenario → a 5-point grid
+  the same day, moving CVaR −7759 → −12175 (the flagship pins the `market_crash`
+  *predefined built-in* precisely because of this).
+
+  New `_purge_match_scenario_sets` runs in the same `finally` as the RFQ and
+  portfolio purges, on the same two-part ownership proof: names harvested from
+  this thread's `save_scenario_set` / `generate_scenario_set` spans
+  (`collect_scenario_set_names_saved`) **and** absent from a pre-match name
+  baseline (`scenario_set_name_baseline`). Requiring both means a set a human
+  saved through the REST endpoint mid-run, or any pre-existing desk set the model
+  merely *ran*, is never touched. A pre-existing set the model **overwrote** is
+  deliberately spared — deletion cannot restore the original.
 - ops-settlement-day step-6 `new_derived_baseline` now uses `rel_tol: 0.005`
   so copying 91,000 into both answer slots no longer matches 90,000.
 
+### Changed
+- **Backtest: the HTML report now shares the scenario-test report's visual
+  language.** The QuantArk per-underlying dashboards are replaced by a
+  repo-native `report.html` (summary KPIs, inline-SVG cumulative P&L chart,
+  by-underlying table with lifecycle events, exclusions and notes) rendered by
+  the new `domains/backtest_report.py` from shaped results; shared style tokens
+  live in `domains/report_style.py`, consumed by both renderers. `write_artifacts`
+  records `report_html_path` (mirroring scenario_test) and the dashboard adapter
+  is dropped; the Backtest page swaps the dashboards section for an HTML Report
+  card (iframe preview + open/download).
+- Workbench run cards align the status badge to the card's top-right corner.
+
 ### Added
+- **Arena run #110: the reasoning-effort study the effort-arms feature was built
+  for.** `gpt-5-6-luna` at four pinned arms (`none/low/high/max`) × all five
+  golden workflows × 2 trials, design predeclared before launch
+  (`docs/arena/2026-08-17-luna-reasoning-effort-plan.md`, findings in
+  `docs/arena/2026-08-18-run110-luna-reasoning-effort.md`). Headline: effort is
+  a **step at `low`, not a dial** — `none→low` buys the whole quality jump
+  (+4.9 objective points) while being *cheaper than not thinking*; above `low`,
+  quality is flat (+1.0, inside trial noise) while wall-clock triples and calls
+  grow 50%; the sign is task-shaped (procedural flagship −3.8, judgment-heavy
+  high-board +18.6); trap/prohibition compliance is unmoved at every arm.
 - **Arena: one model at several reasoning efforts, ranked on one board.** A
   contestant is now `(model, reasoning_effort)` rather than a model. The `/arena`
   New Run panel's per-model effort select became a **checkbox group** — tick `Low`

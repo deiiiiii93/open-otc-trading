@@ -10,7 +10,7 @@ The flow per run:
   3. build per-underlying Book configs (Task 2.4 bridge);
   4. run ``BookAutocallableBacktestEngine`` per config;
   5. shape each result, aggregate a portfolio P&L path + risk metrics;
-  6. (artifacts) render the quant-ark dashboard HTML via an adapter.
+  6. (artifacts) render the repo-native HTML report from the shaped results.
 """
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ from app.services import (
     hedging_universe,
     quantark,
 )
+from app.services.domains import backtest_report
 from app.services.underlyings import akshare_asset_class, akshare_symbol
 from app.services.source_evidence import (
     backtest_position_evidence,
@@ -605,7 +606,8 @@ def run_pipeline(
 
     Returns ``(status, results_dict, excluded, raw)`` where status in
     {completed, empty}. ``raw`` is a list of ``(underlying, BookBacktestResults)``
-    consumed by ``write_artifacts``.
+    retained for callers that need the engine-native objects; artifact rendering
+    uses the shaped ``results_dict``.
     """
     quantark.ensure_quantark_path()
     from quantark.backtest.otc import (
@@ -794,102 +796,18 @@ def _align_portfolio_pnl(per_underlying: list[dict]) -> list[dict]:
 # Artifacts
 # ---------------------------------------------------------------------------
 
-class _DashboardAdapter:
-    """Adapt a ``BookBacktestResults`` to the property/name surface that
-    ``AutocallableBacktestDashboard`` reads.
+def write_artifacts(*, results: dict, run_id: int, formats: list[str], base_dir: str) -> dict:
+    """Render the repo-native HTML report. Never raises: failures → notes.
 
-    The dashboard accesses ``results.states_df`` etc. as PROPERTIES (no parens)
-    and uses ``rebalance_df`` (singular), while ``BookBacktestResults`` exposes
-    METHODS and ``rebalances_df`` (plural). This wrapper bridges the two:
-      * each df name is a @property that calls the underlying method;
-      * ``rebalance_df`` maps to ``results.rebalances_df()``;
-      * any missing/erroring df returns an empty DataFrame so the dashboard
-        degrades instead of crashing.
-    """
-
-    def __init__(self, results: Any):
-        self._results = results
-
-    def _safe(self, method_name: str):
-        import pandas as pd
-
-        fn = getattr(self._results, method_name, None)
-        if fn is None:
-            return pd.DataFrame()
-        try:
-            df = fn()
-            return df if df is not None else pd.DataFrame()
-        except Exception:
-            return pd.DataFrame()
-
-    @property
-    def states_df(self):
-        return self._safe("states_df")
-
-    @property
-    def greeks_df(self):
-        return self._safe("greeks_df")
-
-    @property
-    def rebalance_df(self):  # singular name the dashboard expects
-        return self._safe("rebalances_df")
-
-    @property
-    def trades_df(self):
-        return self._safe("trades_df")
-
-    @property
-    def actions_df(self):
-        return self._safe("actions_df")
-
-    @property
-    def daily_event_summary_df(self):
-        return self._safe("daily_event_summary_df")
-
-    @property
-    def event_probability_df(self):
-        return self._safe("event_probability_df")
-
-    @property
-    def surfaces_df(self):
-        return self._safe("surfaces_df")
-
-    @property
-    def config(self):
-        config = getattr(self._results, "config", None)
-        if config is None or hasattr(config, "product"):
-            return config
-        products = getattr(config, "products", None) or []
-        product = getattr(products[0], "product", None) if products else None
-        if product is None:
-            return config
-
-        class _ConfigAdapter:
-            def __getattr__(self, name: str):
-                return getattr(config, name)
-
-        adapter = _ConfigAdapter()
-        adapter.product = product
-        return adapter
-
-    def get_summary(self):
-        try:
-            return self._results.get_summary()
-        except Exception:
-            return {}
-
-
-def write_artifacts(*, raw: list, run_id: int, formats: list[str], base_dir: str) -> dict:
-    """Render per-underlying quant-ark dashboards. Never raises: failures → notes.
-
-    ``raw`` is the list of ``(underlying, BookBacktestResults)`` from
-    ``run_pipeline``. ``formats`` is accepted for parity with the scenario-test
-    signature; HTML dashboards are always attempted. ``BookBacktestResults`` has
-    no ``export_to_excel`` (verified against the quant-ark API), so no Excel/
-    parquet export is attempted — recorded as a note only when ``formats`` asks.
+    Mirrors ``domains/scenario_test.write_artifacts``: the shaped ``results``
+    dict from ``run_pipeline`` is rendered into a self-contained ``report.html``
+    that shares the scenario-test report's visual style (see
+    ``backtest_report.py`` / ``report_style.py``). ``formats`` is accepted for
+    parity with the scenario-test signature; backtest results have no
+    Excel/parquet exporter, so non-html formats are recorded as a note only.
     """
     out_dir = os.path.join(base_dir, str(run_id))
-    artifacts: dict[str, Any] = {"dashboards": {}, "notes": []}
+    artifacts: dict[str, Any] = {"report_html_path": None, "notes": []}
     try:
         os.makedirs(out_dir, exist_ok=True)
     except Exception as exc:
@@ -897,33 +815,24 @@ def write_artifacts(*, raw: list, run_id: int, formats: list[str], base_dir: str
         return artifacts
 
     try:
-        quantark.ensure_quantark_path()
-        from quantark.backtest.otc import (
-            AutocallableBacktestDashboard,
-            AutocallableDashboardConfig,
+        report_path = os.path.join(out_dir, "report.html")
+        html = backtest_report.render_backtest_report_html(
+            dict(results or {}), title=f"Backtest #{run_id}"
         )
+        with open(report_path, "w", encoding="utf-8") as fh:
+            fh.write(html)
+        if os.path.exists(report_path):
+            artifacts["report_html_path"] = report_path
     except Exception as exc:
-        artifacts["notes"].append(f"dashboard import skipped: {exc}")
-        return artifacts
+        artifacts["notes"].append(f"report skipped: {exc}")
 
-    for underlying, results in raw or []:
-        try:
-            adapter = _DashboardAdapter(results)
-            dashboard = AutocallableBacktestDashboard(adapter, AutocallableDashboardConfig())
-            out_path = os.path.join(out_dir, f"dashboard_{underlying}.html")
-            dashboard.write_html(out_path)
-            if os.path.exists(out_path):
-                artifacts["dashboards"][str(underlying)] = out_path
-        except Exception as exc:
-            artifacts["notes"].append(f"dashboard for {underlying} skipped: {exc}")
-
-    # BookBacktestResults exposes no export_to_excel/parquet writer; record the
-    # gap if a non-html export format was requested so callers aren't surprised.
+    # Backtest has no export_to_excel/parquet writer; record the gap if a
+    # non-html export format was requested so callers aren't surprised.
     extra_formats = [f for f in (formats or []) if str(f).lower() not in ("html", "")]
     if extra_formats:
         artifacts["notes"].append(
-            f"export formats {extra_formats} unsupported: BookBacktestResults has "
-            "no export_to_excel/parquet writer (html dashboard only)"
+            f"export formats {extra_formats} unsupported: backtest results have "
+            "no export_to_excel/parquet writer (html report only)"
         )
 
     return artifacts

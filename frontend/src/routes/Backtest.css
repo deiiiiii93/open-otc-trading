@@ -397,15 +397,15 @@
   border-bottom: 0;
 }
 
-/* Dashboard artifacts */
+/* HTML report artifact */
 
-.wl-backtest__dashboard-section {
+.wl-backtest__report-card-section {
   display: flex;
   flex-direction: column;
   gap: var(--gap-2);
 }
 
-.wl-backtest__dashboard-card {
+.wl-backtest__report-card {
   border: 1px solid var(--hairline-2);
   background: var(--paper);
   display: flex;
@@ -414,7 +414,7 @@
   padding: var(--gap-2);
 }
 
-.wl-backtest__dashboard-card-head {
+.wl-backtest__report-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -426,7 +426,7 @@
   text-transform: uppercase;
 }
 
-.wl-backtest__dashboard-head-actions {
+.wl-backtest__report-head-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -434,7 +434,7 @@
   gap: var(--gap-2);
 }
 
-.wl-backtest__dashboard-frame {
+.wl-backtest__report-frame {
   width: 100%;
   height: min(70vh, 40rem);
   min-height: 22.5rem;
@@ -442,13 +442,13 @@
   background: var(--paper-2);
 }
 
-.wl-backtest__dashboard-actions {
+.wl-backtest__report-actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--gap-2);
 }
 
-.wl-backtest__dashboard-link {
+.wl-backtest__artifact-link {
   width: fit-content;
   border: 1px solid var(--hairline-2);
   background: var(--paper);
@@ -458,16 +458,16 @@
   text-decoration: none;
   display: inline-block;
 }
-.wl-backtest__dashboard-link:hover {
+.wl-backtest__artifact-link:hover {
   border-color: var(--ink);
   background: var(--paper-2);
 }
-.wl-backtest__dashboard-link:focus-visible {
+.wl-backtest__artifact-link:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
-.wl-backtest__dashboard-link--compact {
+.wl-backtest__artifact-link--compact {
   padding: var(--gap-1) var(--gap-2);
 }
 

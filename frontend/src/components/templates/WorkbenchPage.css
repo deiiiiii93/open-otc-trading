@@ -116,7 +116,7 @@
 }
 
 .wl-workbench__run-status {
-  justify-self: start;
+  justify-self: end;
   max-width: 100%;
   min-width: 0;
   overflow: hidden;
