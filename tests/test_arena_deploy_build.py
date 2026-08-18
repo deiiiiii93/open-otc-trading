@@ -108,3 +108,11 @@ def test_missing_from_live_reports_unlinked_posts(project):
     live = '<a href="./2026-08-18-run110-luna.html">Reasoning effort study</a>'
     assert b.missing_from_live(live, posts) == ["2026-08-13-run104-board.html"]
     assert b.missing_from_live(live + "2026-08-13-run104-board.html", posts) == []
+
+
+def test_build_copies_tracked_static_assets_into_the_site_root(project):
+    """The orphan card backgrounds must survive rsync --delete."""
+    mf, arena, out = project
+    b.build(mf, arena, DEPLOY, out, refresh_pdf=False)
+    for name in ("model-ability-card-bg-v1.webp", "model-ability-card-bg-v2.webp"):
+        assert (out / name).is_file(), f"{name} missing — rsync --delete would drop it"
