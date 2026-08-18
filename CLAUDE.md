@@ -1116,6 +1116,59 @@ counts, prev/next and the standings rail are all derived, so the index cannot
 freeze the way the hand-typed Run #94 leaderboards did (that is why the site sat
 at Run #94 while Run #104 was rendered and never shipped).
 
+### The leaderboard is derived; only the curation is editorial
+
+`/arena/leaderboard.html` is one section per golden workflow, named by its slug,
+listing the boards run on it. Two inputs, deliberately separate:
+
+- **`boards.yaml`** says which runs *are* boards. A run is not a board — the arena
+  DB holds one-model smokes and A/B probes on the same workflows as the real
+  fields — and only a human can draw that line.
+- **`boards.json`** holds every number, exported by `deploy.sh boards`
+  (`collect_boards.py`) from the arena DB through **`store.leaderboard`**, the same
+  ranking kernel the desk UI uses. Nothing is hand-typed, so the page cannot
+  disagree with the app. `site_builder` stays pure stdlib and only renders it — the
+  backend import lives in the export step, exactly as the server round-trip lives
+  in `collect_stats.py`.
+
+- **The export refuses a run that spans more than its declared workflow.**
+  `store.leaderboard` aggregates a run's matches into one row per contestant with
+  **no workflow filter**, so runs #104 and #110 (4 and 5 workflows) would publish a
+  cross-workflow average under a single workflow's heading. `boards.yaml` declares
+  the workflow and `shape_board` asserts it against the DB.
+- **`matches` and `trials` are different numbers.** The runner folds a contestant's
+  trials into ONE aggregate match, so a 2-trial contestant has `match_count` 1.
+  Publishing match counts as trials reports every multi-trial board as
+  single-trial — and CON, which exists only because trials disperse, then looks
+  like it came from one sample. The per-contestant depth comes from
+  `score_breakdown.n_trials`; a board publishes a common depth only when every
+  contestant agrees (Run #94 does not — `gemini-3-5-flash` ran 1 trial, and its
+  row honestly shows CON `—`).
+- **The check count is read from each board's OWN stored breakdown**, never
+  re-derived from today's manifest. Run #101 exports as **39** checks even though
+  `risk-limit-breach-day` is a 38-check workflow now — the 39th was deleted
+  *because* that very board proved it unroutable. Re-deriving would relabel a
+  historical board with an instrument that did not exist when it ran, the same
+  comparability error the page's "boards are never merged across runs" rule exists
+  to prevent.
+- **Card-era boards only.** Runs #8/#9 are excluded on purpose: their reports
+  ranked models on the blended objective+judge score that the 2026-07-05 reform
+  retired, so re-deriving them on today's objective axis **reorders their own
+  published podium** (Run #8's report headlines an Opus 4.8 / GPT-5.5 tie; the
+  objective axis puts Sonnet 4.6 first). A leaderboard that contradicts the report
+  it links to is worse than one that omits it.
+- **`boards.json` is TRACKED; `stats.json` is not.** Both are derived, but the
+  arena DB lives under the gitignored `data/`, so a checkout without it could not
+  rebuild the leaderboard — and the absence rule would silently degrade it to no
+  page. Tracking also makes a change in published scores a reviewable diff.
+- **Absence reaches the chrome.** No `boards.json` ⇒ no page **and no nav link**:
+  a masthead entry for a page the build did not produce would 404 sitewide. A
+  workflow with no board keeps its section and says so, because omitting it would
+  read as "this workflow does not exist" rather than "nobody has run it".
+- `verify_live` reads the workflow anchors out of the **built** page and requires
+  each to be served, for the same reason it compares titles — a 200 under the SPA
+  catch-all proves nothing.
+
 ### Gotchas
 
 - **A 200 proves nothing under `/arena/`.** The open-slides-zero frontend

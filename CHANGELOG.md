@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Arena Leaderboard page** (`/arena/leaderboard.html`). One section per golden
+  workflow, named by its slug, listing the boards run on it: Run #20
+  (`risk-manager-control-day`), #33 (`trader-rfq-booking-day`), #94
+  (`high-board-portfolio-review-day`) and #101 (`risk-limit-breach-day`, an
+  18-model field that was scored but never written up). Every number is derived
+  by `deploy.sh boards` from the arena database through `store.leaderboard` — the
+  same ranking kernel the desk UI uses — so no score is hand-typed and the page
+  cannot disagree with the app. `boards.yaml` curates which runs count as boards
+  and pins each to its workflow; the export refuses a run that spans more than
+  the workflow it declares, since `store.leaderboard` has no workflow filter and
+  a multi-workflow run (#104, #110) would otherwise publish a cross-workflow
+  average under one heading. Boards are never merged across runs, each carries
+  the check count from its own stored breakdown rather than today's manifest, and
+  a workflow with no board renders an explicit "no board has been run" rather
+  than being omitted. `ops-settlement-day` is currently that case. Runs #8 and #9
+  are excluded: their reports ranked on a blended objective+judge score the
+  2026-07-05 reform retired, so re-deriving them reorders their own podium.
 - **Arena readership counters.** nginx logs `/arena/` requests to a mounted
   volume; `deploy.sh stats` fetches and aggregates them locally with a
   stdlib-only parser into `stats.json`, and the index renders a READERSHIP rail
