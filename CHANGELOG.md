@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Arena readership counters.** nginx logs `/arena/` requests to a mounted
+  volume; `deploy.sh stats` fetches and aggregates them locally with a
+  stdlib-only parser into `stats.json`, and the index renders a READERSHIP rail
+  card plus per-post view counts. No JavaScript, no third party, no CSP change,
+  and PDF/Markdown downloads are counted — none of which a pixel or JS tracker
+  could do. Bots and non-200/304 responses are excluded and the filtered count is
+  displayed. Absent, unparseable or >14-day-old stats render **no** counters at
+  all rather than zeros; `as of <date>` is when `stats` last ran, not the newest
+  request seen.
 - **Arena report publishing pipeline** (`docs/arena/deploy/`). `posts.yaml` is the
   single source of truth for <https://www.artena.one/arena/>, which is now a
   generated blog: reverse-chronological tagged feed, a standings rail derived from

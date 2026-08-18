@@ -42,5 +42,13 @@ open-slides-zero SPA.
   reports "Running" and `nginx -s reload` re-reads the stale inode, so the change
   appears to apply and does not. Compare `stat -c %i` inside and outside the
   container before doubting the config.
+- **Readership counters are a build-time snapshot, not live.** `deploy.sh stats`
+  refreshes `stats.json`; `build` embeds whatever it finds. If the snapshot is
+  missing or older than 14 days the counters render **nothing** — never zeros,
+  because "0 views" that means "not measured" is a lie the page cannot walk back.
+  Run `stats` immediately before a `publish`, or you ship yesterday's numbers.
+- **Counts exclude bots and non-200/304 responses**, and the filtered count is
+  shown in the rail. Raw counts on a low-traffic site are mostly crawlers — note
+  `curl` is treated as a bot, so your own probes never inflate the numbers.
 - **Rollback** is removing the `location /arena/` block in open-slides-zero and
   redeploying nginx. `frontend/public/arena/` is deliberately still there.

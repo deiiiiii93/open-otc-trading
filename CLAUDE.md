@@ -1164,6 +1164,16 @@ at Run #94 while Run #104 was rendered and never shipped).
   commit there, `git checkout` is not a revert path, and `patch_osz.py` must be
   able to REPLACE an existing block rather than only insert one. The real
   rollback is the server-side `default.conf.pre-arena` backup bootstrap makes.
+- **Readership counters are derived, snapshot-based, and fail to NOTHING.**
+  `stats.py` is pure and stdlib-only (GoAccess was considered and dropped so the
+  published numbers stay unit-testable). Missing / unparseable / older than
+  `STATS_MAX_AGE_DAYS` (14) ⇒ no counter markup, never zeros — the `empty` vs
+  `unavailable` rule applied to a public page. `as of <date>` is when `stats` last
+  ran, NOT `last_seen`, which a single crawler hit would make look fresh.
+  Aggregation is stateless: every run re-reads `arena.log*` including rotated
+  generations, so `stats.json` is pure derived data and losing it costs nothing.
+  Per-post counts are page views only — downloads are a separate rail total, so
+  one PDF fetch cannot read as a page view.
 - **Standings bars use a fixed 0–99 axis** (`RAIL_AXIS_MAX`), not the leader's
   score. Scaling to the leader renders every bar near-full-width in a tight field
   (Run #104 is 80 vs 79) so they stop reading as measurements.
