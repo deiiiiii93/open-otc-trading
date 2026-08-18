@@ -1,0 +1,1380 @@
+{
+  "generated_at": "2026-08-18T06:22:20.799346+00:00",
+  "version": 1,
+  "workflows": [
+    {
+      "boards": [
+        {
+          "carded": true,
+          "carded_rows": 18,
+          "checks": 35,
+          "date": "2026-07-29",
+          "label": "Run #94",
+          "models": 18,
+          "post": "2026-07-29-run94-otc-desk-agent-arena.md",
+          "rows": [
+            {
+              "con": 99,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "gemini-3-6-flash",
+              "objective": 100.0,
+              "ovr": 99,
+              "rank": 1,
+              "stats": {
+                "ADH": 99,
+                "EFF": 99,
+                "GRD": 99,
+                "PRC": 99,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 99,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "grok-4-5",
+              "objective": 100.0,
+              "ovr": 96,
+              "rank": 2,
+              "stats": {
+                "ADH": 99,
+                "EFF": 80,
+                "GRD": 99,
+                "PRC": 99,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 96,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "deepseek-v4-flash",
+              "objective": 94.3,
+              "ovr": 91,
+              "rank": 3,
+              "stats": {
+                "ADH": 99,
+                "EFF": 81,
+                "GRD": 91,
+                "PRC": 94,
+                "SYN": 89
+              },
+              "trials": 2
+            },
+            {
+              "con": 76,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "deepseek-v4-pro",
+              "objective": 94.3,
+              "ovr": 88,
+              "rank": 4,
+              "stats": {
+                "ADH": 99,
+                "EFF": 68,
+                "GRD": 95,
+                "PRC": 86,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 92,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "qwen-3-7-max",
+              "objective": 91.4,
+              "ovr": 88,
+              "rank": 5,
+              "stats": {
+                "ADH": 99,
+                "EFF": 76,
+                "GRD": 82,
+                "PRC": 90,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 50,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "longcat-2-0",
+              "objective": 95.7,
+              "ovr": 83,
+              "rank": 6,
+              "stats": {
+                "ADH": 99,
+                "EFF": 72,
+                "GRD": 90,
+                "PRC": 94,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 99,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "gpt-5-6-terra",
+              "objective": 82.9,
+              "ovr": 83,
+              "rank": 7,
+              "stats": {
+                "ADH": 99,
+                "EFF": 82,
+                "GRD": 82,
+                "PRC": 81,
+                "SYN": 59
+              },
+              "trials": 2
+            },
+            {
+              "con": 86,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "step-3-7-flash",
+              "objective": 85.8,
+              "ovr": 81,
+              "rank": 8,
+              "stats": {
+                "ADH": 99,
+                "EFF": 74,
+                "GRD": 74,
+                "PRC": 90,
+                "SYN": 79
+              },
+              "trials": 2
+            },
+            {
+              "con": 59,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "claude-sonnet-5",
+              "objective": 84.2,
+              "ovr": 79,
+              "rank": 9,
+              "stats": {
+                "ADH": 92,
+                "EFF": 84,
+                "GRD": 74,
+                "PRC": 81,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 30,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "gpt-5-6-luna",
+              "objective": 87.1,
+              "ovr": 74,
+              "rank": 10,
+              "stats": {
+                "ADH": 99,
+                "EFF": 82,
+                "GRD": 78,
+                "PRC": 94,
+                "SYN": 69
+              },
+              "trials": 2
+            },
+            {
+              "con": null,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "gemini-3-5-flash",
+              "objective": 85.7,
+              "ovr": 74,
+              "rank": 11,
+              "stats": {
+                "ADH": 99,
+                "EFF": 33,
+                "GRD": 74,
+                "PRC": 99,
+                "SYN": 59
+              },
+              "trials": 1
+            },
+            {
+              "con": 40,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "hunyuan-3",
+              "objective": 80.0,
+              "ovr": 71,
+              "rank": 12,
+              "stats": {
+                "ADH": 99,
+                "EFF": 78,
+                "GRD": 82,
+                "PRC": 81,
+                "SYN": 40
+              },
+              "trials": 2
+            },
+            {
+              "con": 33,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "kimi-2-7",
+              "objective": 77.2,
+              "ovr": 68,
+              "rank": 13,
+              "stats": {
+                "ADH": 99,
+                "EFF": 76,
+                "GRD": 78,
+                "PRC": 76,
+                "SYN": 40
+              },
+              "trials": 2
+            },
+            {
+              "con": 40,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "mimo-2-5",
+              "objective": 74.3,
+              "ovr": 68,
+              "rank": 14,
+              "stats": {
+                "ADH": 99,
+                "EFF": 76,
+                "GRD": 74,
+                "PRC": 68,
+                "SYN": 50
+              },
+              "trials": 2
+            },
+            {
+              "con": 0,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "doubao-seed-2-1-pro",
+              "objective": 82.8,
+              "ovr": 66,
+              "rank": 15,
+              "stats": {
+                "ADH": 99,
+                "EFF": 78,
+                "GRD": 78,
+                "PRC": 90,
+                "SYN": 50
+              },
+              "trials": 2
+            },
+            {
+              "con": 10,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "mimo-2-5-pro",
+              "objective": 75.7,
+              "ovr": 65,
+              "rank": 16,
+              "stats": {
+                "ADH": 99,
+                "EFF": 76,
+                "GRD": 78,
+                "PRC": 68,
+                "SYN": 50
+              },
+              "trials": 2
+            },
+            {
+              "con": 99,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "glm-5-2",
+              "objective": 62.9,
+              "ovr": 64,
+              "rank": 17,
+              "stats": {
+                "ADH": 99,
+                "EFF": 64,
+                "GRD": 70,
+                "PRC": 58,
+                "SYN": 0
+              },
+              "trials": 2
+            },
+            {
+              "con": 0,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "minimax-m3",
+              "objective": 48.6,
+              "ovr": 42,
+              "rank": 18,
+              "stats": {
+                "ADH": 78,
+                "EFF": 35,
+                "GRD": 50,
+                "PRC": 32,
+                "SYN": 40
+              },
+              "trials": 2
+            }
+          ],
+          "run": 94,
+          "trials": null
+        }
+      ],
+      "id": "high-board-portfolio-review-day",
+      "par": 24,
+      "persona": "high_board",
+      "steps": 8,
+      "title": "High-Board Portfolio Review Day"
+    },
+    {
+      "boards": [],
+      "id": "ops-settlement-day",
+      "par": null,
+      "persona": "trader",
+      "steps": 8,
+      "title": "Operations Settlement Day"
+    },
+    {
+      "boards": [
+        {
+          "carded": true,
+          "carded_rows": 18,
+          "checks": 39,
+          "date": "2026-08-02",
+          "label": "Run #101",
+          "models": 18,
+          "post": null,
+          "rows": [
+            {
+              "con": 99,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "kimi-2-7",
+              "objective": 94.9,
+              "ovr": 91,
+              "rank": 1,
+              "stats": {
+                "ADH": 99,
+                "EFF": 56,
+                "GRD": 99,
+                "PRC": 87,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 96,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "gpt-5-6-terra",
+              "objective": 97.4,
+              "ovr": 90,
+              "rank": 2,
+              "stats": {
+                "ADH": 99,
+                "EFF": 49,
+                "GRD": 99,
+                "PRC": 93,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 96,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "grok-4-5",
+              "objective": 100.0,
+              "ovr": 90,
+              "rank": 3,
+              "stats": {
+                "ADH": 99,
+                "EFF": 44,
+                "GRD": 99,
+                "PRC": 99,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 96,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "mimo-2-5-pro",
+              "objective": 96.2,
+              "ovr": 89,
+              "rank": 4,
+              "stats": {
+                "ADH": 99,
+                "EFF": 47,
+                "GRD": 99,
+                "PRC": 90,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 92,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "deepseek-v4-pro",
+              "objective": 97.4,
+              "ovr": 89,
+              "rank": 5,
+              "stats": {
+                "ADH": 99,
+                "EFF": 44,
+                "GRD": 99,
+                "PRC": 93,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 92,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "gemini-3-6-flash",
+              "objective": 96.2,
+              "ovr": 88,
+              "rank": 6,
+              "stats": {
+                "ADH": 99,
+                "EFF": 42,
+                "GRD": 99,
+                "PRC": 90,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 96,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "deepseek-v4-flash",
+              "objective": 98.7,
+              "ovr": 88,
+              "rank": 7,
+              "stats": {
+                "ADH": 99,
+                "EFF": 33,
+                "GRD": 99,
+                "PRC": 96,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 86,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "gemini-3-5-flash",
+              "objective": 96.2,
+              "ovr": 86,
+              "rank": 8,
+              "stats": {
+                "ADH": 94,
+                "EFF": 44,
+                "GRD": 99,
+                "PRC": 93,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 86,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "qwen-3-7-max",
+              "objective": 94.8,
+              "ovr": 86,
+              "rank": 9,
+              "stats": {
+                "ADH": 94,
+                "EFF": 41,
+                "GRD": 99,
+                "PRC": 90,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 92,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "gpt-5-6-luna",
+              "objective": 96.2,
+              "ovr": 86,
+              "rank": 10,
+              "stats": {
+                "ADH": 94,
+                "EFF": 35,
+                "GRD": 99,
+                "PRC": 93,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 86,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "minimax-m3",
+              "objective": 93.6,
+              "ovr": 85,
+              "rank": 11,
+              "stats": {
+                "ADH": 86,
+                "EFF": 49,
+                "GRD": 99,
+                "PRC": 93,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 96,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "hunyuan-3",
+              "objective": 94.9,
+              "ovr": 84,
+              "rank": 12,
+              "stats": {
+                "ADH": 94,
+                "EFF": 19,
+                "GRD": 99,
+                "PRC": 90,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 86,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "longcat-2-0",
+              "objective": 91.0,
+              "ovr": 83,
+              "rank": 13,
+              "stats": {
+                "ADH": 99,
+                "EFF": 24,
+                "GRD": 99,
+                "PRC": 79,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 43,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "mimo-2-5",
+              "objective": 87.2,
+              "ovr": 72,
+              "rank": 14,
+              "stats": {
+                "ADH": 99,
+                "EFF": 44,
+                "GRD": 99,
+                "PRC": 79,
+                "SYN": 50
+              },
+              "trials": 2
+            },
+            {
+              "con": 82,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "doubao-seed-2-1-pro",
+              "objective": 84.6,
+              "ovr": 72,
+              "rank": 15,
+              "stats": {
+                "ADH": 86,
+                "EFF": 26,
+                "GRD": 74,
+                "PRC": 84,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 36,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "step-3-7-flash",
+              "objective": 88.4,
+              "ovr": 71,
+              "rank": 16,
+              "stats": {
+                "ADH": 99,
+                "EFF": 43,
+                "GRD": 99,
+                "PRC": 82,
+                "SYN": 50
+              },
+              "trials": 2
+            },
+            {
+              "con": 13,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "glm-5-2",
+              "objective": 82.1,
+              "ovr": 66,
+              "rank": 17,
+              "stats": {
+                "ADH": 86,
+                "EFF": 52,
+                "GRD": 74,
+                "PRC": 78,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 30,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "claude-sonnet-5",
+              "objective": 83.3,
+              "ovr": 63,
+              "rank": 18,
+              "stats": {
+                "ADH": 76,
+                "EFF": 26,
+                "GRD": 74,
+                "PRC": 87,
+                "SYN": 99
+              },
+              "trials": 2
+            }
+          ],
+          "run": 101,
+          "trials": 2
+        }
+      ],
+      "id": "risk-limit-breach-day",
+      "par": null,
+      "persona": "risk_manager",
+      "steps": 7,
+      "title": "Risk Limit Breach Day"
+    },
+    {
+      "boards": [
+        {
+          "carded": true,
+          "carded_rows": 17,
+          "checks": 39,
+          "date": "2026-07-08",
+          "label": "Run #20",
+          "models": 17,
+          "post": "2026-07-13-run20-otc-desk-agent-arena.md",
+          "rows": [
+            {
+              "con": 92,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "gpt-5-6-terra",
+              "objective": 89.8,
+              "ovr": 86,
+              "rank": 1,
+              "stats": {
+                "ADH": 68,
+                "EFF": 76,
+                "GRD": 99,
+                "PRC": 92,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 96,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "glm-5-2",
+              "objective": 91.0,
+              "ovr": 85,
+              "rank": 2,
+              "stats": {
+                "ADH": 74,
+                "EFF": 60,
+                "GRD": 99,
+                "PRC": 92,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 96,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "gpt-5-6-luna",
+              "objective": 91.1,
+              "ovr": 84,
+              "rank": 3,
+              "stats": {
+                "ADH": 74,
+                "EFF": 55,
+                "GRD": 99,
+                "PRC": 92,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 96,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "deepseek-v4-pro",
+              "objective": 84.6,
+              "ovr": 84,
+              "rank": 4,
+              "stats": {
+                "ADH": 68,
+                "EFF": 82,
+                "GRD": 99,
+                "PRC": 86,
+                "SYN": 86
+              },
+              "trials": 2
+            },
+            {
+              "con": 92,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "mimo-2-5-pro",
+              "objective": 88.5,
+              "ovr": 82,
+              "rank": 5,
+              "stats": {
+                "ADH": 68,
+                "EFF": 54,
+                "GRD": 99,
+                "PRC": 90,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 69,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "claude-sonnet-5",
+              "objective": 88.5,
+              "ovr": 77,
+              "rank": 6,
+              "stats": {
+                "ADH": 68,
+                "EFF": 46,
+                "GRD": 99,
+                "PRC": 90,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 96,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "longcat-2-0",
+              "objective": 89.7,
+              "ovr": 76,
+              "rank": 7,
+              "stats": {
+                "ADH": 68,
+                "EFF": 12,
+                "GRD": 99,
+                "PRC": 92,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 63,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "deepseek-v4-flash",
+              "objective": 87.2,
+              "ovr": 75,
+              "rank": 8,
+              "stats": {
+                "ADH": 68,
+                "EFF": 41,
+                "GRD": 99,
+                "PRC": 88,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 89,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "doubao-seed-2-1-pro",
+              "objective": 87.2,
+              "ovr": 75,
+              "rank": 9,
+              "stats": {
+                "ADH": 68,
+                "EFF": 17,
+                "GRD": 99,
+                "PRC": 88,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 63,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "qwen-3-7-max",
+              "objective": 85.9,
+              "ovr": 75,
+              "rank": 10,
+              "stats": {
+                "ADH": 62,
+                "EFF": 50,
+                "GRD": 99,
+                "PRC": 88,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 86,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "grok-4-5",
+              "objective": 91.0,
+              "ovr": 73,
+              "rank": 11,
+              "stats": {
+                "ADH": 68,
+                "EFF": 4,
+                "GRD": 99,
+                "PRC": 94,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 82,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "kimi-2-7",
+              "objective": 80.8,
+              "ovr": 73,
+              "rank": 12,
+              "stats": {
+                "ADH": 62,
+                "EFF": 42,
+                "GRD": 89,
+                "PRC": 81,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 50,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "mimo-2-5",
+              "objective": 89.8,
+              "ovr": 72,
+              "rank": 13,
+              "stats": {
+                "ADH": 74,
+                "EFF": 62,
+                "GRD": 79,
+                "PRC": 94,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 82,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "hunyuan-3",
+              "objective": 75.7,
+              "ovr": 69,
+              "rank": 14,
+              "stats": {
+                "ADH": 62,
+                "EFF": 18,
+                "GRD": 99,
+                "PRC": 72,
+                "SYN": 86
+              },
+              "trials": 2
+            },
+            {
+              "con": 69,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "step-3-7-flash",
+              "objective": 84.6,
+              "ovr": 69,
+              "rank": 15,
+              "stats": {
+                "ADH": 62,
+                "EFF": 51,
+                "GRD": 89,
+                "PRC": 92,
+                "SYN": 74
+              },
+              "trials": 2
+            },
+            {
+              "con": 76,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "gemini-3-5-flash",
+              "objective": 85.9,
+              "ovr": 61,
+              "rank": 16,
+              "stats": {
+                "ADH": 62,
+                "EFF": 0,
+                "GRD": 69,
+                "PRC": 94,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 69,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "minimax-m3",
+              "objective": 79.5,
+              "ovr": 60,
+              "rank": 17,
+              "stats": {
+                "ADH": 74,
+                "EFF": 16,
+                "GRD": 79,
+                "PRC": 85,
+                "SYN": 50
+              },
+              "trials": 2
+            }
+          ],
+          "run": 20,
+          "trials": 2
+        }
+      ],
+      "id": "risk-manager-control-day",
+      "par": 24,
+      "persona": "risk_manager",
+      "steps": 9,
+      "title": "Risk Manager Control Day"
+    },
+    {
+      "boards": [
+        {
+          "carded": true,
+          "carded_rows": 18,
+          "checks": 63,
+          "date": "2026-07-20",
+          "label": "Run #33",
+          "models": 18,
+          "post": "2026-07-20-run33-otc-desk-agent-arena.md",
+          "rows": [
+            {
+              "con": 79,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "gpt-5-6-terra",
+              "objective": 96.0,
+              "ovr": 91,
+              "rank": 1,
+              "stats": {
+                "ADH": 94,
+                "EFF": 84,
+                "GRD": 96,
+                "PRC": 94,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 89,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "gpt-5-6-luna",
+              "objective": 95.2,
+              "ovr": 89,
+              "rank": 2,
+              "stats": {
+                "ADH": 94,
+                "EFF": 59,
+                "GRD": 99,
+                "PRC": 90,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 92,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "deepseek-v4-pro",
+              "objective": 92.8,
+              "ovr": 86,
+              "rank": 3,
+              "stats": {
+                "ADH": 96,
+                "EFF": 52,
+                "GRD": 90,
+                "PRC": 87,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 66,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "gemini-3-6-flash",
+              "objective": 96.8,
+              "ovr": 84,
+              "rank": 4,
+              "stats": {
+                "ADH": 96,
+                "EFF": 44,
+                "GRD": 99,
+                "PRC": 92,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 96,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "grok-4-5",
+              "objective": 98.4,
+              "ovr": 84,
+              "rank": 5,
+              "stats": {
+                "ADH": 96,
+                "EFF": 15,
+                "GRD": 99,
+                "PRC": 96,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 89,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "glm-5-2",
+              "objective": 93.7,
+              "ovr": 84,
+              "rank": 6,
+              "stats": {
+                "ADH": 94,
+                "EFF": 34,
+                "GRD": 96,
+                "PRC": 88,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 96,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "mimo-2-5-pro",
+              "objective": 91.3,
+              "ovr": 84,
+              "rank": 7,
+              "stats": {
+                "ADH": 89,
+                "EFF": 40,
+                "GRD": 96,
+                "PRC": 85,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 99,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "deepseek-v4-flash",
+              "objective": 88.9,
+              "ovr": 84,
+              "rank": 8,
+              "stats": {
+                "ADH": 92,
+                "EFF": 40,
+                "GRD": 93,
+                "PRC": 78,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 96,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "hunyuan-3",
+              "objective": 88.9,
+              "ovr": 82,
+              "rank": 9,
+              "stats": {
+                "ADH": 94,
+                "EFF": 30,
+                "GRD": 93,
+                "PRC": 75,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 73,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "qwen-3-7-max",
+              "objective": 95.2,
+              "ovr": 81,
+              "rank": 10,
+              "stats": {
+                "ADH": 94,
+                "EFF": 25,
+                "GRD": 99,
+                "PRC": 90,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 56,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "claude-sonnet-5",
+              "objective": 92.1,
+              "ovr": 81,
+              "rank": 11,
+              "stats": {
+                "ADH": 89,
+                "EFF": 53,
+                "GRD": 99,
+                "PRC": 85,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 86,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "gemini-3-5-flash",
+              "objective": 96.8,
+              "ovr": 80,
+              "rank": 12,
+              "stats": {
+                "ADH": 99,
+                "EFF": 3,
+                "GRD": 96,
+                "PRC": 92,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 99,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "doubao-seed-2-1-pro",
+              "objective": 95.2,
+              "ovr": 80,
+              "rank": 13,
+              "stats": {
+                "ADH": 99,
+                "EFF": 0,
+                "GRD": 93,
+                "PRC": 90,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 50,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "kimi-2-7",
+              "objective": 88.8,
+              "ovr": 72,
+              "rank": 14,
+              "stats": {
+                "ADH": 94,
+                "EFF": 48,
+                "GRD": 96,
+                "PRC": 85,
+                "SYN": 50
+              },
+              "trials": 2
+            },
+            {
+              "con": 76,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "step-3-7-flash",
+              "objective": 84.2,
+              "ovr": 68,
+              "rank": 15,
+              "stats": {
+                "ADH": 86,
+                "EFF": 4,
+                "GRD": 70,
+                "PRC": 88,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 43,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "minimax-m3",
+              "objective": 79.3,
+              "ovr": 62,
+              "rank": 16,
+              "stats": {
+                "ADH": 84,
+                "EFF": 26,
+                "GRD": 84,
+                "PRC": 76,
+                "SYN": 50
+              },
+              "trials": 2
+            },
+            {
+              "con": 0,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "mimo-2-5",
+              "objective": 86.5,
+              "ovr": 62,
+              "rank": 17,
+              "stats": {
+                "ADH": 89,
+                "EFF": 31,
+                "GRD": 67,
+                "PRC": 94,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 63,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "longcat-2-0",
+              "objective": 67.4,
+              "ovr": 46,
+              "rank": 18,
+              "stats": {
+                "ADH": 72,
+                "EFF": 0,
+                "GRD": 46,
+                "PRC": 82,
+                "SYN": 50
+              },
+              "trials": 2
+            }
+          ],
+          "run": 33,
+          "trials": 2
+        }
+      ],
+      "id": "trader-rfq-booking-day",
+      "par": 35,
+      "persona": "trader",
+      "steps": 10,
+      "title": "Trader RFQ-to-Booking Day"
+    }
+  ]
+}

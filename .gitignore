@@ -60,3 +60,5 @@ docs/arena/deploy/build/
 
 # arena readership snapshot (derived from server logs, recomputable)
 docs/arena/deploy/stats.json
+# NB boards.json is deliberately NOT ignored: the arena DB lives under the
+# gitignored data/, so a checkout without it could not rebuild the leaderboard.
