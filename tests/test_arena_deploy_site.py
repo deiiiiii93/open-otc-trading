@@ -66,10 +66,23 @@ def test_index_rail_uses_the_newest_post_with_standings():
     assert "obj 96.3" in rail
 
 
-def test_index_rail_bar_widths_are_relative_to_the_top_score():
+def test_index_rail_bar_widths_use_a_fixed_axis_not_the_leader():
+    """Scaling to the leader makes every bar ~full width in a tight field."""
     html = sb.render_index(POSTS, MINUTES, THEME)
-    assert "width:100.0%" in html      # rank 1, score 80
-    assert "width:98.8%" in html       # rank 2, score 79 -> 79/80
+    assert "width:80.8%" in html       # rank 1, score 80 / 99
+    assert "width:79.8%" in html       # rank 2, score 79 / 99
+    assert "width:100.0%" not in html
+
+
+def test_index_rail_axis_grows_for_scores_above_the_default():
+    tall = m.Post(
+        file="x.md", date=BOARD.date, tags=("board",), title="T", blurb="b",
+        standings=(m.Standing(rank=1, model="A", score=150),
+                   m.Standing(rank=2, model="B", score=75)),
+    )
+    html = sb.render_index([tall], {"x": 3}, THEME)
+    assert "width:100.0%" in html      # 150 becomes the axis
+    assert "width:50.0%" in html       # 75 / 150
 
 
 def test_index_rail_omits_standings_card_when_no_post_has_them():

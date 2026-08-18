@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OTC Desk Agent Arena — Run #110</title>
+<style>
+:root{
+  --ink:#1a1d21; --muted:#5b6470; --line:#e3e6eb; --bg:#ffffff;
+  --accent:#2f5d8a; --soft:#f4f6f9;
+  --gold:#caa12e; --silver:#9aa0a6; --bronze:#b06a3b; --mid:#3b6fb0; --floor:#c5c9d1;
+  --good:#2e8b57; --neutral:#6b7280; --warn:#d98a2b; --bad:#c0392b; --frontier:#3b6fb0;
+}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+body{
+  font-family:"Charter","Georgia",Cambria,"Times New Roman",serif;
+  color:var(--ink); background:var(--bg); line-height:1.62;
+  max-width:820px; margin:0 auto; padding:56px 40px 80px; font-size:16.5px;
+}
+h1,h2,h3,h4{font-family:-apple-system,"Inter","Segoe UI",Helvetica,Arial,sans-serif;
+  line-height:1.22; letter-spacing:-.01em; color:var(--ink)}
+h1{font-size:2.05rem; margin:.2em 0 .1em; font-weight:800}
+h2{font-size:1.42rem; margin:2.1em 0 .55em; padding-bottom:.28em;
+  border-bottom:2px solid var(--line); font-weight:750}
+h3{font-size:1.12rem; margin:1.7em 0 .5em; font-weight:700; color:#2b3038}
+h1+p em, body>p:first-of-type em{color:var(--muted)}
+p,li{font-size:1rem}
+a{color:var(--accent); text-decoration:none}
+hr{border:none; border-top:1px solid var(--line); margin:2.2em 0}
+code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.86em;
+  background:var(--soft); padding:.1em .35em; border-radius:4px}
+blockquote{margin:1.1em 0; padding:.7em 1.1em; background:var(--soft);
+  border-left:4px solid var(--accent); border-radius:0 6px 6px 0; color:#2b3038}
+blockquote p{margin:.3em 0}
+strong{font-weight:700}
+
+/* tables */
+table{border-collapse:collapse; width:100%; margin:1.1em 0; font-size:.9rem;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+th,td{padding:.5em .7em; border-bottom:1px solid var(--line); text-align:left}
+thead th{background:#f7f9fc; border-bottom:2px solid #d6dbe3; font-weight:700;
+  font-size:.82rem; letter-spacing:.01em; color:#39414c}
+tbody tr:nth-child(even){background:#fbfcfe}
+td:first-child,th:first-child{white-space:nowrap}
+
+/* charts */
+.chart{margin:1.3em 0 1.6em; padding:0}
+.chart .row{display:flex; align-items:center; gap:12px; margin:5px 0;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+.chart .lbl{flex:0 0 168px; text-align:right; font-size:.82rem; color:#39414c; font-weight:600}
+.chart .track{flex:1; height:22px; background:#eef1f5; border-radius:5px; overflow:hidden}
+.chart .bar{display:block; height:100%; border-radius:5px}
+.chart .val{flex:0 0 150px; font-size:.78rem; color:var(--muted); font-variant-numeric:tabular-nums}
+.chart figcaption{margin-top:.7em; font-size:.76rem; color:var(--muted);
+  font-family:-apple-system,"Inter",sans-serif; text-align:right}
+.bar.gold{background:linear-gradient(90deg,#d9b13f,#caa12e)}
+.bar.silver{background:linear-gradient(90deg,#aab0b6,#9aa0a6)}
+.bar.bronze{background:linear-gradient(90deg,#c07c4a,#b06a3b)}
+.bar.mid{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.frontier{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.floor{background:#c5c9d1}
+.bar.good{background:linear-gradient(90deg,#37a169,#2e8b57)}
+.bar.neutral{background:#8a929e}
+.bar.warn{background:linear-gradient(90deg,#e09a3e,#d98a2b)}
+.bar.bad{background:linear-gradient(90deg,#d04b3c,#c0392b)}
+
+/* report header band */
+.masthead{border-bottom:3px solid var(--ink); padding-bottom:.6em; margin-bottom:1.4em}
+.footer-note{margin-top:3em; padding-top:1em; border-top:1px solid var(--line);
+  font-size:.8rem; color:var(--muted); font-family:-apple-system,"Inter",sans-serif}
+
+@page{size:A4; margin:16mm 15mm}
+@media print{
+  body{max-width:none; margin:0; padding:0; font-size:10.6pt}
+  h2{margin-top:1.4em}
+  h2,h3,h4{break-after:avoid}
+  table,.chart,blockquote,figure{break-inside:avoid}
+  tr{break-inside:avoid}
+  a{color:var(--ink)}
+}
+</style>
+</head><body>
+<h1>Run #110 — does reasoning_effort improve arena performance? (gpt-5.6-luna)</h1>
+<p><strong>Date:</strong> 2026-08-17 → 2026-08-18 (single detached process, ~13.5 h)
+<strong>Design:</strong> predeclared in <code>2026-08-17-luna-reasoning-effort-plan.md</code> before launch.
+One model (<code>gpt-5-6-luna</code>, zenmux), four pinned arms (<code>none / low / high / max</code>),
+all 5 golden workflows as paired blocks, 2 trials per cell → 40 trials.
+<strong>Board health: 20/20 arms scored, 0 invalid, 0 infra deaths</strong> — every predeclared
+validity rule held; no cell was excluded.</p>
+<h2>Headline answer</h2>
+<p><strong>No — "higher effort ⇒ better agent" is not what the data shows.</strong> For luna on
+this arena, reasoning_effort behaves as two different dials at once:</p>
+<ol>
+<li><strong>Zero → some reasoning is the real jump.</strong> Every reasoning arm beats <code>none</code>
+   by ~5 points mean objective (<code>none</code> 88.9 vs <code>low</code> 93.8 / <code>high</code> 93.3 /
+   <code>max</code> 94.8). And <code>low</code> achieves that while being <em>cheaper than none</em>
+   (29.1 calls, 10.2 min/trial vs 30.8 calls, 11.1 min/trial): a little thinking
+   <em>reduces</em> total work by cutting flailing.</li>
+<li><strong>Above <code>low</code>, quality is flat but cost explodes.</strong> <code>max</code> buys +1.0 objective
+   point over <code>low</code> for <strong>3.3× wall-clock</strong> (33.8 vs 10.2 min/trial) and <strong>+50%
+   tool calls</strong> (43.9 vs 29.1). <code>high</code> buys nothing over <code>low</code> (93.3 vs 93.8).
+   Within-ladder differences are inside per-cell trial noise (stdev 1–4); the
+   cost differences are not.</li>
+</ol>
+<p>By mean OVR (which prices efficiency in), <strong><code>low</code> is the best operating point:
+86.9</strong>, vs 81.8 (<code>none</code>), 81.6 (<code>high</code>), 82.7 (<code>max</code>).</p>
+<h2>The board</h2>
+<table>
+<thead>
+<tr>
+<th>workflow</th>
+<th>none</th>
+<th>low</th>
+<th>high</th>
+<th>max</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>risk-manager-control-day (flagship)</td>
+<td><strong>94.8</strong></td>
+<td>93.6</td>
+<td>91.1</td>
+<td>91.0</td>
+</tr>
+<tr>
+<td>high-board-portfolio-review-day</td>
+<td>71.4</td>
+<td>84.3</td>
+<td>78.6</td>
+<td><strong>90.0</strong></td>
+</tr>
+<tr>
+<td>trader-rfq-booking-day</td>
+<td>94.5</td>
+<td>93.7</td>
+<td><strong>96.8</strong></td>
+<td><strong>96.8</strong></td>
+</tr>
+<tr>
+<td>risk-limit-breach-day</td>
+<td>97.4</td>
+<td>97.3</td>
+<td><strong>100.0</strong></td>
+<td>96.1</td>
+</tr>
+<tr>
+<td>ops-settlement-day</td>
+<td>86.3</td>
+<td><strong>100.0</strong></td>
+<td><strong>100.0</strong></td>
+<td><strong>100.0</strong></td>
+</tr>
+<tr>
+<td><strong>mean objective</strong></td>
+<td>88.9</td>
+<td>93.8</td>
+<td>93.3</td>
+<td><strong>94.8</strong></td>
+</tr>
+<tr>
+<td><strong>mean OVR (card)</strong></td>
+<td>81.8</td>
+<td><strong>86.9</strong></td>
+<td>81.6</td>
+<td>82.7</td>
+</tr>
+<tr>
+<td>mean calls/trial</td>
+<td>30.8</td>
+<td><strong>29.1</strong></td>
+<td>38.6</td>
+<td>43.9</td>
+</tr>
+<tr>
+<td>mean wall min/trial</td>
+<td>11.1</td>
+<td><strong>10.2</strong></td>
+<td>14.2</td>
+<td>33.8</td>
+</tr>
+<tr>
+<td>mean trial stdev</td>
+<td>3.98</td>
+<td><strong>1.06</strong></td>
+<td>2.20</td>
+<td>1.72</td>
+</tr>
+</tbody>
+</table>
+<h2>Effort's value depends on the workflow's shape</h2>
+<ul>
+<li><strong>Procedural, well-routed loops (flagship): effort <em>hurts</em>.</strong> Monotone decline
+  94.8 → 91.0. At <code>max</code>, luna skipped reading the <code>read-risk-result</code> skill doc
+  entirely (0/2 vs 2/2 at <code>none</code>) — more internal reasoning substituted for
+  following the documented procedure. Calls balloon (29 at <code>low</code> → 47–62), EFF
+  collapses (67 → 1.5–17).</li>
+<li><strong>Judgment/selection-heavy (high-board): effort <em>pays</em>, a lot.</strong> +18.6 points
+  <code>none</code>→<code>max</code> (71.4 → 90.0). The <code>none</code> arm failed exactly the inference work:
+  step-6 retrieval of the prior governed valuation (0/2), the final governance
+  artifact (1/2), the required tool ordering (0/2).</li>
+<li><strong>Numeric solving (trader-rfq): only high+ clears the hard check.</strong> The step-1
+  achieved-price-within-tolerance check went 0/2 at <code>none</code> and <code>low</code>, 2/2 at
+  <code>high</code> and <code>max</code> — a genuine reasoning win no amount of procedure-following
+  buys.</li>
+<li><strong>Near-ceiling ops workflows: <code>low</code> is already enough.</strong> ops-settlement is
+  100.0 at every reasoning level; <code>none</code> dropped one trial to 72.7 by skipping
+  settlement reads and fumbling the reopen-refusal answer (diligence failures,
+  not capability ones).</li>
+</ul>
+<h2>Consistency and tails</h2>
+<ul>
+<li><code>none</code> is the least consistent arm (mean trial stdev 3.98; ops-settlement
+  trials split 72.7 / 100.0). Adaptive zero-reasoning makes performance a coin
+  flip on judgment moments.</li>
+<li><code>max</code> has extreme latency tails: one high-board trial ran <strong>107 minutes</strong>
+  (median max trial ≈ 24 min).</li>
+<li>A parallel probe study on this same run found trap/prohibition compliance
+  <strong>8/8 at all four efforts</strong> — effort moves exploration volume, never policy.</li>
+</ul>
+<h2>Mechanism (check-level tally)</h2>
+<p>Losses at <code>none</code> are <em>diligence</em> failures — steps skipped, answers given without
+fetching evidence. Losses at <code>high</code>/<code>max</code> are <em>over-execution</em> failures — extra
+exploration displacing the documented procedure (skill-doc skips, occasional
+grounding slips at 2× par call volume), plus the EFF collapse the golf curve is
+designed to price. Correctness axes (GRD/ADH/SYN) barely move above <code>low</code>; the
+call count moves ~50%.</p>
+<p>Replicates the cross-model pattern: the "Grok inversion" (EFF crash at high
+effort) is not grok-specific — luna shows the same shape once effort is pinned,
+inverting the #107/#108 deepseek observation (fewer calls at high) — the
+direction of the effort→calls relationship is model-family-specific.</p>
+<h2>Limitations (predeclared)</h2>
+<ul>
+<li>n = 2 trials × 5 blocks per arm; within-ladder ordering (low vs high vs max)
+  is not resolved — only <code>none</code> vs <code>any</code> is outside noise.</li>
+<li>Arms ran sequentially (same process), so arm order correlates with
+  time-of-day; per-trial wall times show no drift step, and 0 infra deaths.</li>
+<li>Token spend is not recorded in transcripts; wall-clock and call counts are the
+  cost proxies.</li>
+<li>One model, one provider route. The deepseek contrast above says do not
+  generalize the calls-vs-effort direction across families.</li>
+</ul>
+<h2>Desk recommendation</h2>
+<p>Run luna at <strong><code>low</code></strong> for routine desk work (best OVR, cheapest, most
+consistent); escalate to <strong><code>high</code>/<code>max</code> only for judgment-heavy or
+solve-type tasks</strong> (high-board-style reviews, price solving), accepting 2–3×
+wall-clock. Never run <code>none</code> for anything with judgment moments: the mean looks
+acceptable but the variance is where it bites.</p>
+<h2>Artifacts</h2>
+<ul>
+<li>Run: arena run <strong>#110</strong> (matches + per-trial transcripts under
+  <code>artifacts/arena/110/</code>).</li>
+<li>Analysis script: session scratchpad <code>analyze_run110.py</code> (read-only over the
+  live DB; board, card means, paired deltas, per-check tally).</li>
+<li>Plan (predeclared): <code>docs/arena/2026-08-17-luna-reasoning-effort-plan.md</code>.</li>
+</ul>
+<p class="footer-note">Rendered from
+<code>docs/arena/2026-08-18-run110-luna-reasoning-effort.md</code> ·
+OTC Desk Agent Arena · Run #110.</p>
+</body></html>

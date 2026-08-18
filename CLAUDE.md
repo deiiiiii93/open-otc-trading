@@ -1095,6 +1095,66 @@ can score against harvested truth. Package: `golden_workflows/determinism.py`
 
 ---
 
+## Arena report publishing (the artena.one blog)
+
+`https://www.artena.one/arena/` is generated from a manifest and shipped by rsync.
+Package: `docs/arena/deploy/` — `posts.yaml` (the manifest), `manifest.py` (loader
++ validation), `site_builder.py` (pure HTML), `build.py` (orchestration),
+`publish.py` (transport + live verification), `theme.css`, `static/` (tracked
+passthrough assets), `server/` (nginx block, `patch_osz.py`, `bootstrap.sh`).
+Entry point: `docs/arena/deploy/deploy.sh build | preview | publish | status |
+bootstrap`.
+
+### The manifest is authoritative
+
+A markdown file absent from `posts.yaml`, or carrying `publish: false`, is not
+published — reports are **not** discovered by globbing `docs/arena/`, which also
+holds plans and drafts. `title` and `blurb` are editorial and **required**: a
+missing `blurb` fails the build rather than deriving one from the first paragraph,
+which for a research memo is a provenance line, not a headline. Reading time, tag
+counts, prev/next and the standings rail are all derived, so the index cannot
+freeze the way the hand-typed Run #94 leaderboards did (that is why the site sat
+at Run #94 while Run #104 was rendered and never shipped).
+
+### Gotchas
+
+- **A 200 proves nothing under `/arena/`.** The open-slides-zero frontend
+  container answers `try_files $uri $uri/ /index.html`, so before the nginx alias
+  existed *every* path returned 200 — including nonsense ones. `verify_live`
+  therefore reads bodies, compares **HTML-escaped** titles (a raw compare
+  false-alarms on any title containing `&` or `<`), and requires a **404** on
+  `ABSENT_PROBE`. That 404 is the control that proves the alias is serving rather
+  than the SPA.
+- **`rsync --delete` is live.** Anything on the server no build produces is
+  removed. The two `model-ability-card-bg-*.webp` files existed ONLY on the server
+  (hand-uploaded so a GPT-Image-2 card run could fetch a background by public URL)
+  and are referenced from nowhere in either repo — they are now tracked in
+  `deploy/static/` and copied into every build. `bootstrap.sh` additionally refuses
+  to cut over if a dry run reports any deletion.
+- **The PDF renders from the UN-chromed document.** `render_report.py` owns
+  markdown→HTML; `site_builder` wraps the same body in blog chrome for the web.
+  Print output therefore cannot drift when the site design changes — that is
+  structural, not a discipline to remember.
+- **`render_report.py` must stay importable.** It used to read `sys.argv` and write
+  files at module scope, so importing it under pytest rendered the *test file* into
+  `tests/test_arena_render_report.{html,pdf}` via headless Chrome, and a bare import
+  rewrote `docs/arena/2026-06-27-run8-*.pdf`. `tests/test_arena_render_report.py`
+  pins both: byte-identity against all six committed report HTMLs (sha256) and
+  import purity by **content hash**, not filename set — an overwrite is invisible to
+  a name-set comparison.
+- **Standings bars use a fixed 0–99 axis** (`RAIL_AXIS_MAX`), not the leader's
+  score. Scaling to the leader renders every bar near-full-width in a tight field
+  (Run #104 is 80 vs 79) so they stop reading as measurements.
+- **`docs/arena/cards/` is gitignored,** so a clean checkout publishes no card
+  images; the build warns and continues. That is expected, not a failure.
+- **Rollback is removing the `location /arena/` block** in open-slides-zero and
+  redeploying nginx. `frontend/public/arena/` is deliberately retained, so the
+  previous site is still there and no data restore is involved.
+- **`site_builder.py` is NOT named `site.py`** — `site` is a stdlib module, and the
+  file's directory reaches `sys.path`. There is no `templates/` dir either:
+  `jinja2` is not installed, so templates are f-string functions.
+
+
 ## Model maintenance UI
 
 A web console to add/edit/delete LLM **channels and models** — and set the registry

@@ -1,0 +1,107 @@
+# The arena blog feed. Authoritative for publication: a report absent from this
+# file is not published, whatever exists in docs/arena/.
+#
+# Required: file, date, tags, title, blurb.  Optional: run, chips, standings,
+# assets, publish.  A missing blurb FAILS THE BUILD by design — never let a
+# generated first paragraph ship as editorial copy.
+
+- file: 2026-08-18-run110-luna-reasoning-effort.md
+  date: 2026-08-18
+  tags: [research]
+  title: "Does reasoning_effort improve agent performance?"
+  blurb: >
+    Effort is a step at `low`, not a dial. Zero to some reasoning buys ~5 points
+    and costs less; above `low`, quality is flat while wall-clock triples.
+  chips: ["1 model", "4 efforts", "40 trials"]
+  publish: true
+
+- file: 2026-08-17-trap-step-absent-referent.md
+  date: 2026-08-17
+  tags: [research]
+  title: "Do models fail the trap step? Yes, but not the way we thought"
+  blurb: >
+    Prohibitions hold at 94-100% when nothing pushes against them, and collapse
+    to 5% when the requested act IS the banned one. Trap failure is completion
+    pressure, not weak instruction-following.
+  chips: ["runs #10-#109", "99 trials"]
+  publish: true
+
+- file: 2026-08-17-luna-reasoning-effort-plan.md
+  date: 2026-08-17
+  tags: [method]
+  title: "Pre-registration: the reasoning-effort ladder study"
+  blurb: >
+    The design, arms, and validity rules for Run #110, published as they were
+    predeclared before launch.
+  publish: true
+
+- file: 2026-08-13-run104-otc-desk-agent-arena.md
+  date: 2026-08-13
+  tags: [board]
+  run: "Run #104"
+  chips: ["2 models", "4 workflows", "2 trials"]
+  title: "Grok 4.6 edges DeepSeek V4 Pro, for opposite reasons"
+  blurb: >
+    A one-point tie: Grok leads the objective axis 96.3 to 90.9 and wins three of
+    four workflows, but posts EFF 12 at 243 tool calls against par 24. The
+    inversion is not fixed, it is deeper.
+  standings:
+    - {rank: 1, model: "Grok 4.6", score: 80, note: "objective 96.3, EFF 12"}
+    - {rank: 2, model: "DeepSeek V4 Pro", score: 79, note: "100.0 objective in 22 calls"}
+  assets: [cards/run104]
+  publish: true
+
+- file: 2026-07-29-run94-otc-desk-agent-arena.md
+  date: 2026-07-29
+  tags: [board]
+  run: "Run #94"
+  chips: ["18 models"]
+  title: "Board governance review: the ranking signal migrates"
+  blurb: >
+    Gemini 3.6 Flash posts the Arena's first perfect card while the governance
+    workflow moves the deciding signal from efficiency to synthesis.
+  publish: true
+
+- file: 2026-07-20-run33-otc-desk-agent-arena.md
+  date: 2026-07-20
+  tags: [board]
+  run: "Run #33"
+  chips: ["17 models", "2 trials"]
+  title: "Trader RFQ booking day: operator rankings replicate"
+  blurb: >
+    GPT-5.6 Terra defends its title on a second workflow. Objective capability
+    saturates again, so efficiency and consistency decide the operator ranking.
+  publish: true
+
+- file: 2026-07-13-run20-otc-desk-agent-arena.md
+  date: 2026-07-13
+  tags: [board]
+  run: "Run #20"
+  chips: ["16 models", "2 trials"]
+  title: "Model Ability Cards: measuring the long-run operator"
+  blurb: >
+    A nine-step, 39-point task separates raw capability from the efficiency and
+    consistency that determine whether an agent can be left to run unattended.
+  publish: true
+
+- file: 2026-06-28-run9-otc-desk-agent-arena.md
+  date: 2026-06-28
+  tags: [board]
+  run: "Run #9"
+  chips: ["9 flash models", "5 trials"]
+  title: "The flash tier: latency is not a price claim"
+  blurb: >
+    Gemini 3.5 Flash wins the placed board at $14.28 a match, dearer than the
+    frontier models. Step 3.7 Flash lands 0.1 behind and costs 14x less.
+  publish: true
+
+- file: 2026-06-27-run8-otc-desk-agent-arena.md
+  date: 2026-06-27
+  tags: [board]
+  run: "Run #8"
+  chips: ["10 models", "5 trials"]
+  title: "Risk manager control day: the first frontier board"
+  blurb: >
+    Claude Opus 4.8 and GPT-5.5 finish in a statistical tie at the top, and the
+    cost-efficiency ranking inverts the quality ranking outright.
+  publish: true

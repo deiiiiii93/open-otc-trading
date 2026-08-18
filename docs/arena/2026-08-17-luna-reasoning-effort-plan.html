@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OTC Desk Agent Arena — Run</title>
+<style>
+:root{
+  --ink:#1a1d21; --muted:#5b6470; --line:#e3e6eb; --bg:#ffffff;
+  --accent:#2f5d8a; --soft:#f4f6f9;
+  --gold:#caa12e; --silver:#9aa0a6; --bronze:#b06a3b; --mid:#3b6fb0; --floor:#c5c9d1;
+  --good:#2e8b57; --neutral:#6b7280; --warn:#d98a2b; --bad:#c0392b; --frontier:#3b6fb0;
+}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+body{
+  font-family:"Charter","Georgia",Cambria,"Times New Roman",serif;
+  color:var(--ink); background:var(--bg); line-height:1.62;
+  max-width:820px; margin:0 auto; padding:56px 40px 80px; font-size:16.5px;
+}
+h1,h2,h3,h4{font-family:-apple-system,"Inter","Segoe UI",Helvetica,Arial,sans-serif;
+  line-height:1.22; letter-spacing:-.01em; color:var(--ink)}
+h1{font-size:2.05rem; margin:.2em 0 .1em; font-weight:800}
+h2{font-size:1.42rem; margin:2.1em 0 .55em; padding-bottom:.28em;
+  border-bottom:2px solid var(--line); font-weight:750}
+h3{font-size:1.12rem; margin:1.7em 0 .5em; font-weight:700; color:#2b3038}
+h1+p em, body>p:first-of-type em{color:var(--muted)}
+p,li{font-size:1rem}
+a{color:var(--accent); text-decoration:none}
+hr{border:none; border-top:1px solid var(--line); margin:2.2em 0}
+code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.86em;
+  background:var(--soft); padding:.1em .35em; border-radius:4px}
+blockquote{margin:1.1em 0; padding:.7em 1.1em; background:var(--soft);
+  border-left:4px solid var(--accent); border-radius:0 6px 6px 0; color:#2b3038}
+blockquote p{margin:.3em 0}
+strong{font-weight:700}
+
+/* tables */
+table{border-collapse:collapse; width:100%; margin:1.1em 0; font-size:.9rem;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+th,td{padding:.5em .7em; border-bottom:1px solid var(--line); text-align:left}
+thead th{background:#f7f9fc; border-bottom:2px solid #d6dbe3; font-weight:700;
+  font-size:.82rem; letter-spacing:.01em; color:#39414c}
+tbody tr:nth-child(even){background:#fbfcfe}
+td:first-child,th:first-child{white-space:nowrap}
+
+/* charts */
+.chart{margin:1.3em 0 1.6em; padding:0}
+.chart .row{display:flex; align-items:center; gap:12px; margin:5px 0;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+.chart .lbl{flex:0 0 168px; text-align:right; font-size:.82rem; color:#39414c; font-weight:600}
+.chart .track{flex:1; height:22px; background:#eef1f5; border-radius:5px; overflow:hidden}
+.chart .bar{display:block; height:100%; border-radius:5px}
+.chart .val{flex:0 0 150px; font-size:.78rem; color:var(--muted); font-variant-numeric:tabular-nums}
+.chart figcaption{margin-top:.7em; font-size:.76rem; color:var(--muted);
+  font-family:-apple-system,"Inter",sans-serif; text-align:right}
+.bar.gold{background:linear-gradient(90deg,#d9b13f,#caa12e)}
+.bar.silver{background:linear-gradient(90deg,#aab0b6,#9aa0a6)}
+.bar.bronze{background:linear-gradient(90deg,#c07c4a,#b06a3b)}
+.bar.mid{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.frontier{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.floor{background:#c5c9d1}
+.bar.good{background:linear-gradient(90deg,#37a169,#2e8b57)}
+.bar.neutral{background:#8a929e}
+.bar.warn{background:linear-gradient(90deg,#e09a3e,#d98a2b)}
+.bar.bad{background:linear-gradient(90deg,#d04b3c,#c0392b)}
+
+/* report header band */
+.masthead{border-bottom:3px solid var(--ink); padding-bottom:.6em; margin-bottom:1.4em}
+.footer-note{margin-top:3em; padding-top:1em; border-top:1px solid var(--line);
+  font-size:.8rem; color:var(--muted); font-family:-apple-system,"Inter",sans-serif}
+
+@page{size:A4; margin:16mm 15mm}
+@media print{
+  body{max-width:none; margin:0; padding:0; font-size:10.6pt}
+  h2{margin-top:1.4em}
+  h2,h3,h4{break-after:avoid}
+  table,.chart,blockquote,figure{break-inside:avoid}
+  tr{break-inside:avoid}
+  a{color:var(--ink)}
+}
+</style>
+</head><body>
+<h1>Does reasoning_effort improve arena performance? — predeclared plan</h1>
+<p><strong>Date:</strong> 2026-08-17 (declared BEFORE launch)
+<strong>Question:</strong> Does raising <code>reasoning_effort</code> make an LLM perform better on the
+desk's golden-workflow arena — and is the relationship monotonic?</p>
+<h2>Design</h2>
+<ul>
+<li><strong>Model (fixed):</strong> <code>gpt-5-6-luna</code> (<code>openai/gpt-5.6-luna</code>, zenmux route).
+  Measured ladder (2026-08-14 probe): <code>none, low, medium, high, xhigh, max</code>;
+  <code>minimal</code> rejected.</li>
+<li><strong>Arms (4):</strong> <code>none</code>, <code>low</code>, <code>high</code>, <code>max</code> — both ends of the ladder plus the
+  common contrast pair. One contestant per arm (<code>(model_id, reasoning_effort)</code>
+  identity, migration 0058).</li>
+<li><strong>Workflows (5, all current):</strong> <code>risk-manager-control-day</code>,
+  <code>high-board-portfolio-review-day</code>, <code>trader-rfq-booking-day</code>,
+  <code>risk-limit-breach-day</code>, <code>ops-settlement-day</code>. Each workflow is a paired
+  block: every arm faces the same fixtures, truth values, and scorer.</li>
+<li><strong>Trials:</strong> 2 per (workflow, arm) → 40 trials, folded per-cell by
+  <code>fold_trial_breakdowns</code>. Run #107 vs #108 showed a 6.6-point swing at
+  identical config, so single trials cannot support a conclusion.</li>
+<li><strong>Jury:</strong> off (default). Objective-only scoring — deterministic.</li>
+<li><strong>Route sanity (pre-launch, measured):</strong> trivial prompt at <code>high</code> spends 0
+  reasoning tokens (adaptive); a snowball-payoff question spends 0 at <code>none</code>
+  (answer muddled) vs 1,034 at <code>high</code> (answer correct). The knob is live on
+  this route.</li>
+</ul>
+<h2>Predeclared metrics</h2>
+<ol>
+<li><strong>Primary:</strong> objective score (%) per (workflow, arm) cell, compared across
+   arms <strong>paired by workflow</strong>. Hypothesis under test: score is
+   non-decreasing in effort.</li>
+<li><strong>Secondary:</strong> ability-card axes (GRD/ADH/SYN/PRC/EFF, OVR), tool calls per
+   trial, per-cell trial stdev (consistency), error counts, wall-clock per
+   trial (match timestamps + transcript timing), reasoning/completion token
+   spend where recorded.</li>
+<li><strong>Mechanism:</strong> per-check pass-rate tally across arms (the validity-audit
+   instrument) to locate WHERE effort helps or hurts (grounding vs adherence
+   vs synthesis vs procedural vs efficiency).</li>
+</ol>
+<h2>Predeclared validity rules</h2>
+<ul>
+<li>Trials that die infra (<code>invalid</code>, <code>_is_infra_blank</code> / infra-contaminated)
+  are excluded; a cell with 0 clean trials is reported <strong>missing, never
+  imputed</strong>.</li>
+<li>If more than ~20% of trials are infra-dead, stop and <code>--resume</code> rather than
+  conclude from a swept board.</li>
+<li>This board is pinned-effort and therefore <strong>not comparable to historical
+  boards</strong> (#8–#104) on EFF/CON; all comparisons are within-board.</li>
+<li>Arms run sequentially in one process, so arm order is confounded with
+  time-of-day/provider load; we report per-trial timing so a drift would be
+  visible, and we do not interpret sub-point score differences.</li>
+<li>n = 5 workflow blocks × 2 trials. We report signs and means of paired
+  differences; no significance theater beyond what n supports.</li>
+</ul>
+<h2>Cost accounting (predeclared as a first-class result)</h2>
+<p>Higher effort that buys +1 point at 3× wall-clock and token cost is a
+finding, not a footnote. Cost per arm is reported beside score.</p>
+<p class="footer-note">Rendered from
+<code>docs/arena/2026-08-17-luna-reasoning-effort-plan.md</code> ·
+OTC Desk Agent Arena · Run.</p>
+</body></html>

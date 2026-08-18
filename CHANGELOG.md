@@ -7,7 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Arena report publishing pipeline** (`docs/arena/deploy/`). `posts.yaml` is the
+  single source of truth for <https://www.artena.one/arena/>, which is now a
+  generated blog: reverse-chronological tagged feed, a standings rail derived from
+  the newest board, and post pages wrapped in site chrome. `deploy.sh build |
+  preview | publish | status | bootstrap`. Publishing is an rsync to a static
+  directory behind an nginx alias — it no longer rebuilds the open-slides-zero SPA
+  (`npm ci` + Vite + container build) to ship a markdown file. Publishes Run #104
+  (rendered 2026-08-17, never shipped) plus the reasoning-effort study, its
+  pre-registration, and the trap-step memo. Live verification asserts on body
+  content and requires a 404 on an absent path, because the SPA catch-all returns
+  200 for every path under `/arena/` and so a status check proves nothing.
+  The two `model-ability-card-bg-*.webp` files, which existed only on the server
+  and are referenced from nowhere in either repo, are now tracked under
+  `docs/arena/deploy/static/`; `rsync --delete` would otherwise have removed two
+  live URLs.
+
 ### Changed
+- `docs/arena/render_report.py` split into importable functions with a `main()`
+  guard. Output is byte-identical — gated by a sha256 test against all six
+  committed report HTML files. The old module read `sys.argv` and wrote files at
+  IMPORT time, so importing it from a test rendered the test file itself
+  (`tests/test_arena_render_report.{html,pdf}` via headless Chrome) and importing
+  it with no arguments silently rewrote `docs/arena/2026-06-27-run8-*.pdf`.
+- `docs/arena/README.md` report links now point at artena.one instead of
+  htmlpreview.github.io.
 - **Flagship trap step now grades substitution, not attempt — and a structured
   absence answer replaces the phrase list.** The 2026-08-17 trap research (99
   scored trials) found the step-8 prohibition dead at 5/99 since run #12 while
@@ -1798,6 +1823,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### In progress
 - Additional **long-workflow match designs** for the Agent Arena.
+
+### Fixed
+- `markdown` was imported by `docs/arena/render_report.py` but never declared in
+  `pyproject.toml`.
 
 ## [0.1.0] — 2026-06-27
 

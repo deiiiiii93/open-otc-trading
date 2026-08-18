@@ -17,6 +17,13 @@ SITE_TAGLINE = (
 )
 GITHUB_URL = "https://github.com/deiiiiii93/open-otc-trading"
 
+# Standings bars are drawn against a FIXED axis, not against the leader's score.
+# OVR is a 0-99 scale, so 80 renders at ~81% and the absolute level is legible.
+# Scaling to max(scores) instead makes the leader always 100% and — in a tight
+# field like Run #104's 80 vs 79 — renders every bar as a near-full-width line
+# that reads as a divider rather than a measurement.
+RAIL_AXIS_MAX = 99.0
+
 
 def load_theme(deploy_dir: Path) -> str:
     return (deploy_dir / "theme.css").read_text()
@@ -75,10 +82,10 @@ def _entry(post: Post, minutes: int) -> str:
 
 
 def _standings_card(post: Post) -> str:
-    top = max(s.score for s in post.standings) or 1
+    axis = max(RAIL_AXIS_MAX, max(s.score for s in post.standings))
     rows = []
     for s in post.standings:
-        pct = s.score / top * 100
+        pct = max(s.score / axis * 100, 0.0)
         note = f'<span class="note">{escape(s.note)}</span>' if s.note else ""
         rows.append(
             '<div class="rank-row">'
