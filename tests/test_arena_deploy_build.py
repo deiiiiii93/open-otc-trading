@@ -116,3 +116,60 @@ def test_build_copies_tracked_static_assets_into_the_site_root(project):
     b.build(mf, arena, DEPLOY, out, refresh_pdf=False)
     for name in ("model-ability-card-bg-v1.webp", "model-ability-card-bg-v2.webp"):
         assert (out / name).is_file(), f"{name} missing — rsync --delete would drop it"
+
+
+import datetime as dt
+import json
+
+STATS_NOW = dt.datetime(2026, 8, 18, 12, 0, tzinfo=dt.timezone.utc)
+
+
+def _write_stats(deploy_dir: Path, generated_at: dt.datetime) -> Path:
+    p = deploy_dir / "stats.json"
+    p.write_text(json.dumps({
+        "version": 1,
+        "generated_at": generated_at.isoformat(),
+        "views": {"2026-08-18-run110-luna": 180},
+        "downloads": {},
+        "referrers": [["news.ycombinator.com", 88]],
+        "total_views": 180,
+        "total_downloads": 0,
+        "bot_lines": 900,
+        "malformed_lines": 0,
+        "counted_lines": 180,
+    }))
+    return p
+
+
+def test_build_renders_counters_when_a_fresh_snapshot_exists(project, tmp_path):
+    mf, arena, out = project
+    deploy = tmp_path / "deploy"
+    deploy.mkdir()
+    (deploy / "theme.css").write_text((DEPLOY / "theme.css").read_text())
+    _write_stats(deploy, STATS_NOW)
+
+    b.build(mf, arena, deploy, out, refresh_pdf=False, now=STATS_NOW)
+    index = (out / "index.html").read_text()
+    assert "Readership" in index and "180 reads" in index
+
+
+def test_build_renders_no_counters_when_the_snapshot_is_stale(project, tmp_path):
+    mf, arena, out = project
+    deploy = tmp_path / "deploy"
+    deploy.mkdir()
+    (deploy / "theme.css").write_text((DEPLOY / "theme.css").read_text())
+    _write_stats(deploy, STATS_NOW - dt.timedelta(days=30))
+
+    b.build(mf, arena, deploy, out, refresh_pdf=False, now=STATS_NOW)
+    index = (out / "index.html").read_text()
+    assert "Readership" not in index
+    # the real theme.css IS inlined here, and it contains a `.reads` rule —
+    # so this must check the markup, not the word
+    assert 'class="reads"' not in index
+
+
+def test_build_renders_no_counters_when_there_is_no_snapshot(project):
+    mf, arena, out = project
+    b.build(mf, arena, DEPLOY, out, refresh_pdf=False)
+    index = (out / "index.html").read_text()
+    assert "Readership" not in index

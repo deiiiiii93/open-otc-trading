@@ -7,6 +7,7 @@ every run so a deleted post cannot linger.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import shutil
 import sys
 from dataclasses import dataclass, field
@@ -20,6 +21,7 @@ sys.path.insert(0, str(HERE))        # for manifest / site_builder
 import render_report  # noqa: E402
 import site_builder as sb  # noqa: E402
 from manifest import Post, load_manifest, reading_minutes  # noqa: E402
+from stats import load_snapshot  # noqa: E402
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
 STATIC_DIR_NAME = "static"
@@ -78,6 +80,7 @@ def build(
     deploy_dir: Path,
     out_dir: Path,
     refresh_pdf: bool = True,
+    now: dt.datetime | None = None,
 ) -> BuildResult:
     posts = load_manifest(manifest_path, arena_dir)
     theme = sb.load_theme(deploy_dir)
@@ -117,7 +120,16 @@ def build(
             if f.is_file():
                 shutil.copy2(f, out_dir / f.name)
 
-    (out_dir / "index.html").write_text(sb.render_index(posts, minutes, theme))
+    # Absent / stale / unparseable => None => no counter markup anywhere.
+    snapshot = load_snapshot(
+        deploy_dir / "stats.json", now or dt.datetime.now(dt.timezone.utc)
+    )
+    if snapshot is None:
+        result.warnings.append("no fresh stats.json; index renders without counters")
+
+    (out_dir / "index.html").write_text(
+        sb.render_index(posts, minutes, theme, snapshot=snapshot)
+    )
     (out_dir / "about.html").write_text(sb.render_about(posts, theme))
     return result
 
