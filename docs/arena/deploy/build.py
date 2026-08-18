@@ -97,9 +97,16 @@ def build(
     # nav link: a masthead entry for a page we did not build would 404 sitewide.
     board_snapshot = load_boards(deploy_dir / "boards.json")
     has_boards = board_snapshot is not None
+    # A snapshot exported before model cards existed carries boards but no
+    # `models` block, so the two pages are gated separately.
+    has_models = bool(has_boards and board_snapshot.get("models"))
     if not has_boards:
         result.warnings.append("no boards.json; the site builds without a leaderboard")
     else:
+        if not has_models:
+            result.warnings.append(
+                "boards.json carries no model cards; re-run `deploy.sh boards`"
+            )
         published = {p.file for p in posts}
         for wf in board_snapshot.get("workflows") or []:
             for board in wf.get("boards") or []:
@@ -119,7 +126,7 @@ def build(
         older = posts[i + 1] if i + 1 < len(posts) else None
         page = sb.render_post_page(
             post, body, minutes[post.stem], theme, newer, older,
-            leaderboard=has_boards,
+            leaderboard=has_boards, models=has_models,
         )
         (out_dir / post.html_name).write_text(page)
 
@@ -150,14 +157,18 @@ def build(
 
     (out_dir / "index.html").write_text(
         sb.render_index(posts, minutes, theme, snapshot=snapshot,
-                        leaderboard=has_boards)
+                        leaderboard=has_boards, models=has_models)
     )
     (out_dir / "about.html").write_text(
-        sb.render_about(posts, theme, leaderboard=has_boards)
+        sb.render_about(posts, theme, leaderboard=has_boards, models=has_models)
     )
     if has_boards:
         (out_dir / "leaderboard.html").write_text(
             sb.render_leaderboard(board_snapshot, posts, theme)
+        )
+    if has_models:
+        (out_dir / "models.html").write_text(
+            sb.render_models(board_snapshot, theme)
         )
     return result
 

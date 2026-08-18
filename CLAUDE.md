@@ -1165,6 +1165,24 @@ listing the boards run on it. Two inputs, deliberately separate:
   a masthead entry for a page the build did not produce would 404 sitewide. A
   workflow with no board keeps its section and says so, because omitting it would
   read as "this workflow does not exist" rather than "nobody has run it".
+- **Averaging CARDS is sound; merging BOARDS is not** — the rule that lets
+  `/arena/models.html` exist beside a leaderboard that refuses to merge runs. A
+  card is an ABSOLUTE measurement (`passed/total` per axis, EFF against that
+  workflow's own par), so it does not depend on who else was in the field; a
+  leaderboard position does. The Run #110 report takes the same mean across five
+  workflows. What a mean still hides is the spread, so `consolidated_cards`
+  publishes `ovr_min`/`ovr_max`, the coverage (`3 of 4 boards`), and a per-board
+  entry for EVERY board — an uncontested one rendering an em dash, because a
+  short list reads as "ranked low" rather than "was not in that field"
+  (`gemini-3-6-flash` is absent from Run #20 because it did not exist yet).
+- **The archetype comes from `scoring._card_position`**, imported by the exporter
+  rather than reimplemented in the deploy package. It is private, but it is the
+  single definition of the Sniper/Anchor/Playmaker/All-rounder rule; a copy is how
+  a published label silently drifts from the desk's. A move breaks the export
+  loudly instead.
+- **Escape the parts, not the joined string.** `escape(" &middot; ".join(facts))`
+  yields `&amp;middot;`, which renders as literal `&middot;` text — and the
+  stylesheet uppercases it to `&MIDDOT;`. Only the live render caught it.
 - `verify_live` reads the workflow anchors out of the **built** page and requires
   each to be served, for the same reason it compares titles — a 200 under the SPA
   catch-all proves nothing.

@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Arena Model Cards page** (`/arena/models.html`). A FIFA-style ability card per
+  contestant: OVR, the archetype badge (from the desk's own `_card_position`, not
+  a reimplementation), the six-stat strip GRD/ADH/SYN/PRC/EFF/CON, and the
+  per-board record. A consolidated section averages each model across every
+  workflow it contested, followed by one section per workflow holding the
+  measurements that average is made of. Averaging cards is sound where merging
+  leaderboards is not — a card is absolute (`passed/total` per axis, EFF against
+  that workflow's own par) rather than relative to the field — but the mean hides
+  the spread, so each card publishes `min-max`, its coverage (`3 of 4 boards`),
+  and marks an uncontested board with an em dash rather than omitting the row.
+  Derived from the same `boards.json`; a snapshot without a `models` block builds
+  the leaderboard and skips this page rather than losing both.
 - **Arena Leaderboard page** (`/arena/leaderboard.html`). One section per golden
   workflow, named by its slug, listing the boards run on it: Run #20
   (`risk-manager-control-day`), #33 (`trader-rfq-booking-day`), #94

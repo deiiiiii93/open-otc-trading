@@ -267,3 +267,42 @@ def test_build_warns_when_a_board_links_a_report_that_is_not_published(
 
     assert any("2020-01-01-not-published.md" in w for w in result.warnings)
     assert "2020-01-01-not-published.html" not in (out / "leaderboard.html").read_text()
+
+
+MODEL_CARD = {
+    "model": "gpt-5-6-terra", "effort": None, "ovr": 88, "ovr_min": 83,
+    "ovr_max": 91, "stats": {"GRD": 94, "ADH": 90, "SYN": 89, "PRC": 90, "EFF": 73},
+    "con": 92, "position": "Sniper", "coverage": 1, "boards_total": 1,
+    "per_board": [{"workflow": "risk-manager-control-day", "label": "Run #20",
+                   "ovr": 88, "rank": 1, "field": 17}],
+}
+
+
+def test_build_emits_the_model_cards_page_and_links_it(project, tmp_path):
+    mf, arena, out = project
+    deploy = _bare_deploy(tmp_path)
+    (deploy / "boards.json").write_text(
+        json.dumps({**BOARDS, "models": [MODEL_CARD]})
+    )
+
+    b.build(mf, arena, deploy, out, refresh_pdf=False)
+
+    assert (out / "models.html").is_file()
+    assert "gpt-5-6-terra" in (out / "models.html").read_text()
+    for page in ("index.html", "about.html", "leaderboard.html"):
+        assert "models.html" in (out / page).read_text(), page
+
+
+def test_a_snapshot_without_model_cards_still_builds_the_leaderboard(tmp_path, project):
+    """The two pages are gated separately: a snapshot exported before model cards
+    existed carries boards but no `models` block, and must not lose both."""
+    mf, arena, out = project
+    deploy = _bare_deploy(tmp_path)
+    (deploy / "boards.json").write_text(json.dumps(BOARDS))   # no "models" key
+
+    result = b.build(mf, arena, deploy, out, refresh_pdf=False)
+
+    assert (out / "leaderboard.html").is_file()
+    assert not (out / "models.html").exists()
+    assert "models.html" not in (out / "index.html").read_text()
+    assert any("no model cards" in w for w in result.warnings)

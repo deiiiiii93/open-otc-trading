@@ -105,11 +105,12 @@ def verify_live(
     assets: tuple[str, ...] = ORPHAN_ASSETS,
     security_headers: tuple[str, ...] = SECURITY_HEADERS,
     workflow_anchors: tuple[str, ...] | list[str] = (),
+    model_anchors: tuple[str, ...] | list[str] = (),
 ) -> list[str]:
     """Return failure messages; an empty list means the site is healthy.
 
-    `workflow_anchors` empty means no leaderboard was built, which is a valid
-    site — not a reason to fail.
+    An empty anchor list means that page was not built, which is a valid site —
+    not a reason to fail.
     """
     failures: list[str] = []
 
@@ -142,18 +143,19 @@ def verify_live(
         elif "image" not in ctype:
             failures.append(f"{name}: expected an image content-type, got {ctype!r}")
 
-    if workflow_anchors:
-        status, _, body = fetch(f"{base_url}leaderboard.html")
+    for page_name, anchors in (("leaderboard.html", workflow_anchors),
+                               ("models.html", model_anchors)):
+        if not anchors:
+            continue
+        status, _, body = fetch(f"{base_url}{page_name}")
         page = body.decode("utf-8", "replace")
         if status != 200:
-            failures.append(f"leaderboard.html: expected 200, got {status}")
-        else:
-            served = set(_find_anchors(page))
-            for slug in workflow_anchors:
-                if slug not in served:
-                    failures.append(
-                        f"leaderboard.html: no section for workflow {slug}"
-                    )
+            failures.append(f"{page_name}: expected 200, got {status}")
+            continue
+        served = set(_find_anchors(page))
+        for slug in anchors:
+            if slug not in served:
+                failures.append(f"{page_name}: no section for workflow {slug}")
 
     headers = fetch_headers(base_url) if security_headers else {}
     for name in security_headers:
@@ -195,9 +197,15 @@ def _cmd_publish(args) -> int:
         print("uploaded; verification skipped (--no-verify)")
         return 0
 
-    board_page = build_dir / "leaderboard.html"
-    anchors = workflow_anchors(board_page.read_text()) if board_page.is_file() else []
-    failures = verify_live(args.base_url, _posts(), workflow_anchors=anchors)
+    def _anchors_of(name: str) -> list[str]:
+        page = build_dir / name
+        return workflow_anchors(page.read_text()) if page.is_file() else []
+
+    failures = verify_live(
+        args.base_url, _posts(),
+        workflow_anchors=_anchors_of("leaderboard.html"),
+        model_anchors=_anchors_of("models.html"),
+    )
     if failures:
         print("\nVERIFICATION FAILED:", file=sys.stderr)
         for f in failures:

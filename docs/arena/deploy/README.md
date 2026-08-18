@@ -27,6 +27,11 @@ run on it. Scores are never typed: `boards.yaml` names which runs are boards, an
 A run is not a board: the database holds one-model smokes and A/B probes on the
 same workflows, so only the runs listed reach the page.
 
+The same export also builds **Model Cards** (`models.html`): a consolidated card
+per contestant averaged over every workflow it contested, then the per-workflow
+cards that average is made of. Both pages come from `boards.json` — there is no
+second input to keep in step.
+
 ## How it works
 
 `render_report.py` owns markdown → HTML. The PDF renders from the un-chromed
@@ -83,6 +88,16 @@ open-slides-zero SPA.
   `match_count` 1. Publishing match counts as trials would report every board as
   single-trial — and CON, which exists only because trials disperse, would look
   like it came from one sample.
+- **Averaging CARDS is sound; merging BOARDS is not.** A card is absolute —
+  `passed/total` per axis, EFF against that workflow's own par — so it does not
+  depend on who else was in the field. A leaderboard position does. That is why
+  the consolidated model card exists while the leaderboard never merges runs.
+  The mean still hides the spread, so every card publishes `min-max`, its
+  coverage (`3 of 4 boards`), and the per-board record behind it.
+- **An uncontested board renders an em dash, never a missing row.** A short list
+  reads as "this model ranked low", which is a different claim from "this model
+  was not in that field". `gemini-3-6-flash` is the live case: it is absent from
+  Run #20 because it did not exist yet.
 - **Card-era boards only.** Runs #8 and #9 are deliberately absent: their reports
   ranked models on a blended objective+judge score that the 2026-07-05 reform
   retired, so re-deriving them on today's objective axis reorders their own

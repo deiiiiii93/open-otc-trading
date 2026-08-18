@@ -119,3 +119,46 @@ footer.site{margin-top:44px; padding-top:18px; border-top:1px solid var(--line);
 .effort{margin-left:8px; padding:1px 7px; border-radius:999px; font-size:.68rem;
   font-weight:600; color:var(--accent-2); background:var(--bg);
   border:1px solid var(--line); text-transform:uppercase; letter-spacing:.04em}
+
+/* model cards */
+.board-heading{margin:18px 0 10px; font-size:.72rem; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.06em; font-weight:600}
+.mgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(268px,1fr));
+  gap:14px; margin:12px 0 4px}
+.mcard{background:var(--paper); border:1px solid var(--line); border-radius:10px;
+  padding:14px 16px 12px}
+.mcard-head{display:flex; align-items:center; gap:12px}
+.mcard-ovr{display:flex; flex-direction:column; align-items:center; line-height:1;
+  min-width:44px}
+.mcard-ovr b{font-size:1.65rem; font-weight:800; color:var(--accent);
+  font-variant-numeric:tabular-nums; letter-spacing:-.02em}
+.mcard-ovr small{margin-top:3px; font-size:.6rem; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.08em; font-weight:600}
+.mcard-id{display:flex; flex-direction:column; gap:4px; min-width:0}
+.mcard-name{font-weight:700; font-size:.92rem; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap}
+.mcard-meta{display:flex; align-items:center; gap:7px}
+.mcard-rank{font-size:.72rem; font-weight:700; color:var(--muted);
+  font-variant-numeric:tabular-nums}
+.mcard-pos{padding:1px 8px; border-radius:999px; background:var(--bg);
+  border:1px solid var(--line); font-size:.66rem; font-weight:600;
+  color:var(--accent-2); text-transform:uppercase; letter-spacing:.05em}
+.mcard-stats{display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:4px;
+  margin-top:13px; padding-top:11px; border-top:1px solid var(--line)}
+.mcard-stats span{display:flex; flex-direction:column; align-items:center; gap:2px}
+.mcard-stats b{font-size:.88rem; font-weight:700; font-variant-numeric:tabular-nums}
+.mcard-stats small{font-size:.58rem; color:var(--muted); text-transform:uppercase;
+  letter-spacing:.05em; font-weight:600}
+.mcard-stats .muted b, .mcard-stats .muted small{color:var(--line)}
+.mcard-spread{margin:11px 0 0; font-size:.72rem; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.04em}
+.mcard-boards{list-style:none; margin:9px 0 0; padding:9px 0 0;
+  border-top:1px solid var(--line); font-size:.75rem}
+.mcard-boards li{display:grid; grid-template-columns:minmax(0,1fr) 30px 26px;
+  align-items:baseline; gap:6px; padding:2px 0; color:var(--muted)}
+.mcard-boards code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.68rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.mcard-boards .board-label{display:none}
+.mcard-boards .ovr{text-align:right; font-weight:700; color:var(--ink);
+  font-variant-numeric:tabular-nums}
+.mcard-boards .place{text-align:right; font-variant-numeric:tabular-nums}

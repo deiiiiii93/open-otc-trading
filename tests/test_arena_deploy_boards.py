@@ -259,3 +259,77 @@ def test_shape_board_publishes_a_common_trial_depth_but_not_a_mixed_one():
                            date="2026-07-08", checks=39, trials_by_arm=arms)
     assert mixed["trials"] is None
     assert [r["trials"] for r in mixed["rows"]] == [2, 1]
+
+
+# --------------------------------------------------------------------------
+# Consolidated (all-workflow) model cards
+# --------------------------------------------------------------------------
+
+def _row(model, ovr, rank=1, con=90, eff=50, **kw):
+    return {"rank": rank, "model": model, "effort": kw.get("effort"), "ovr": ovr,
+            "stats": {"GRD": 90, "ADH": 90, "SYN": 90, "PRC": 90, "EFF": eff},
+            "con": con, "objective": 90.0, "matches": 1, "trials": 2, "invalid": 0}
+
+
+def _wf(wid, label, rows):
+    return {"id": wid, "title": wid.title(), "persona": "trader", "steps": 8,
+            "par": None, "boards": [{"run": 1, "label": label, "date": "2026-07-01",
+                                     "post": None, "checks": 39, "carded": True,
+                                     "carded_rows": len(rows), "models": len(rows),
+                                     "trials": 2, "rows": rows}]}
+
+
+TWO_WORKFLOWS = [
+    _wf("alpha-day", "Run #1", [_row("wide", 96, 1), _row("steady", 84, 2)]),
+    _wf("beta-day", "Run #2", [_row("steady", 88, 1), _row("wide", 72, 2),
+                               _row("newcomer", 90, 3)]),
+]
+
+
+def test_consolidated_card_averages_a_model_across_the_boards_it_contested():
+    cards = {c["model"]: c for c in bd.consolidated_cards(TWO_WORKFLOWS)}
+    assert cards["wide"]["ovr"] == 84          # (96 + 72) / 2
+    assert cards["steady"]["ovr"] == 86        # (84 + 88) / 2
+
+
+def test_consolidated_card_publishes_the_spread_because_the_mean_hides_it():
+    """deepseek-v4-pro spans 84-89 and minimax-m3 spans 42-85; a single mean
+    presents those as the same kind of measurement."""
+    cards = {c["model"]: c for c in bd.consolidated_cards(TWO_WORKFLOWS)}
+    assert (cards["wide"]["ovr_min"], cards["wide"]["ovr_max"]) == (72, 96)
+    assert (cards["steady"]["ovr_min"], cards["steady"]["ovr_max"]) == (84, 88)
+
+
+def test_consolidated_card_states_coverage_and_marks_the_boards_not_contested():
+    cards = {c["model"]: c for c in bd.consolidated_cards(TWO_WORKFLOWS)}
+    newcomer = cards["newcomer"]
+    assert newcomer["coverage"] == 1 and newcomer["boards_total"] == 2
+    # An entry per board, so a gap is visible rather than inferred from a shorter list.
+    assert [e["ovr"] for e in newcomer["per_board"]] == [None, 90]
+    assert [e["workflow"] for e in newcomer["per_board"]] == ["alpha-day", "beta-day"]
+
+
+def test_consolidated_cards_rank_by_mean_then_coverage_then_name():
+    order = [c["model"] for c in bd.consolidated_cards(TWO_WORKFLOWS)]
+    assert order == ["newcomer", "steady", "wide"]   # 90, 86, 84
+
+    tied = bd.consolidated_cards([
+        _wf("alpha-day", "Run #1", [_row("full", 80, 1), _row("partial", 80, 2)]),
+        _wf("beta-day", "Run #2", [_row("full", 80, 1)]),
+    ])
+    # Same mean; the model measured on more boards is the better-evidenced one.
+    assert [c["model"] for c in tied] == ["full", "partial"]
+
+
+def test_a_contestant_is_model_plus_effort_arm_in_the_consolidation_too():
+    arms = bd.consolidated_cards([
+        _wf("alpha-day", "Run #1", [_row("luna", 85, 1, effort="low"),
+                                    _row("luna", 78, 2, effort="max")]),
+    ])
+    assert [(c["model"], c["effort"]) for c in arms] == [("luna", "low"), ("luna", "max")]
+
+
+def test_an_uncarded_contestant_gets_no_consolidated_card():
+    """A pre-card board contributes no OVR, so there is nothing to average."""
+    legacy = _wf("alpha-day", "Run #1", [dict(_row("old", 0), ovr=None, stats={}, con=None)])
+    assert bd.consolidated_cards([legacy]) == []

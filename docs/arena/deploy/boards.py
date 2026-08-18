@@ -231,3 +231,84 @@ def shape_board(
         ),
         "rows": shaped,
     }
+
+
+# ---------------------------------------------------------------------------
+# Consolidated model cards (all workflows averaged)
+# ---------------------------------------------------------------------------
+
+def _flat_boards(workflows: list[dict]) -> list[tuple[dict, dict]]:
+    """(workflow, board) pairs in the order given. One board per workflow today,
+    but the shape does not assume it."""
+    return [(w, b) for w in workflows for b in (w.get("boards") or [])]
+
+
+def consolidated_cards(workflows: list[dict]) -> list[dict]:
+    """A career card per contestant: its ability card averaged across boards.
+
+    Averaging here is defensible where merging a LEADERBOARD is not. A card is an
+    ABSOLUTE measurement — passed/total per axis, EFF against that workflow's own
+    par — so it does not depend on who else was in the field, and each board's card
+    has already been normalised to its own instrument. (The Run #110 report takes
+    the same mean across five workflows.) What a mean does hide is the spread, so
+    ovr_min/ovr_max and a per-board breakdown are published beside it rather than
+    left for the reader to reconstruct.
+
+    Uncarded rows contribute nothing: there is no OVR to average.
+    """
+    flat = _flat_boards(workflows)
+    order: list[tuple[str, str | None]] = []
+    acc: dict[tuple[str, str | None], dict] = {}
+
+    for index, (_wf, board) in enumerate(flat):
+        for row in board.get("rows") or []:
+            if row.get("ovr") is None:
+                continue
+            key = (str(row["model"]), row.get("effort") or None)
+            if key not in acc:
+                order.append(key)
+                acc[key] = {"ovrs": [], "cons": [], "stats": {}, "at": {}}
+            slot = acc[key]
+            slot["ovrs"].append(int(row["ovr"]))
+            if row.get("con") is not None:
+                slot["cons"].append(int(row["con"]))
+            for stat, value in (row.get("stats") or {}).items():
+                slot["stats"].setdefault(stat, []).append(int(value))
+            slot["at"][index] = row
+
+    def mean(values: list[int]) -> int:
+        return round(sum(values) / len(values))
+
+    cards = []
+    for key in order:
+        model, effort = key
+        slot = acc[key]
+        # An entry for EVERY board, contested or not, so a gap in a model's
+        # record is visible on the card instead of inferred from a short list.
+        per_board = []
+        for index, (wf, board) in enumerate(flat):
+            row = slot["at"].get(index)
+            per_board.append({
+                "workflow": wf.get("id"),
+                "label": board.get("label"),
+                "ovr": int(row["ovr"]) if row else None,
+                "rank": int(row["rank"]) if row else None,
+                "field": board.get("models"),
+            })
+        cards.append({
+            "model": model,
+            "effort": effort,
+            "ovr": mean(slot["ovrs"]),
+            "ovr_min": min(slot["ovrs"]),
+            "ovr_max": max(slot["ovrs"]),
+            "stats": {s: mean(v) for s, v in slot["stats"].items()},
+            "con": mean(slot["cons"]) if slot["cons"] else None,
+            "coverage": len(slot["ovrs"]),
+            "boards_total": len(flat),
+            "per_board": per_board,
+        })
+
+    # Coverage breaks a tie on the mean: between two equal means, the one measured
+    # on more boards is the better-evidenced claim.
+    cards.sort(key=lambda c: (-c["ovr"], -c["coverage"], c["model"], c["effort"] or ""))
+    return cards

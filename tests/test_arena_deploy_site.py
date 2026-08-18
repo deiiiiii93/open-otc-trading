@@ -363,3 +363,79 @@ def test_a_measured_zero_is_not_rendered_as_a_missing_value():
 def test_a_persona_identifier_is_humanised_for_the_subtitle():
     html = sb.render_leaderboard(snapshot(FLAGSHIP), POSTS, THEME)
     assert "risk manager" in html and "risk_manager" not in html
+
+
+# --------------------------------------------------------------------------
+# The model cards page
+# --------------------------------------------------------------------------
+
+CAREER = {
+    "model": "gemini-3-6-flash", "effort": None, "ovr": 90,
+    "ovr_min": 84, "ovr_max": 99,
+    "stats": {"GRD": 99, "ADH": 98, "SYN": 99, "PRC": 94, "EFF": 62},
+    "con": 86, "position": "Sniper", "coverage": 1, "boards_total": 2,
+    "per_board": [
+        {"workflow": "risk-manager-control-day", "label": "Run #20",
+         "ovr": None, "rank": None, "field": 17},
+        {"workflow": "ops-settlement-day", "label": "Run #99",
+         "ovr": 99, "rank": 1, "field": 18},
+    ],
+}
+
+
+def models_snapshot(*workflows, models=(CAREER,)):
+    return {**snapshot(*workflows), "models": list(models)}
+
+
+def test_models_page_has_a_consolidated_section_and_one_per_workflow():
+    html = sb.render_models(models_snapshot(FLAGSHIP, UNMEASURED), THEME)
+    assert "All workflows" in html
+    assert 'id="risk-manager-control-day"' in html
+    # The consolidated view comes first: it is the page's headline claim.
+    assert html.index("All workflows") < html.index('id="risk-manager-control-day"')
+
+
+def test_a_consolidated_card_publishes_the_spread_beside_the_mean():
+    html = sb.render_models(models_snapshot(FLAGSHIP), THEME)
+    assert ">90<" in html and "84&ndash;99" in html
+    assert "Sniper" in html
+
+
+def test_a_consolidated_card_states_coverage_and_marks_an_uncontested_board():
+    """A short list would let the reader assume the model simply ranked low."""
+    html = sb.render_models(models_snapshot(FLAGSHIP), THEME)
+    assert "1 of 2 boards" in html
+    card = html[html.index('class="mcard"'):]
+    assert "Run #20" in card and "&mdash;" in card
+
+
+def test_a_per_workflow_card_shows_that_board_rank_not_a_career_average():
+    html = sb.render_models(models_snapshot(FLAGSHIP), THEME)
+    board = html[html.index('id="risk-manager-control-day"'):]
+    assert 'class="mcard-rank">#1<' in board
+    assert ">86<" in board          # terra's OVR on this board, not its career mean
+
+
+def test_model_cards_show_the_effort_arm():
+    arms = {**CAREER, "model": "gpt-5-6-luna", "effort": "low"}
+    html = sb.render_models(models_snapshot(FLAGSHIP, models=(arms,)), THEME)
+    assert 'class="effort">low<' in html
+
+
+def test_a_workflow_with_no_board_still_says_so_on_the_cards_page():
+    html = sb.render_models(models_snapshot(FLAGSHIP, UNMEASURED), THEME)
+    assert "No board has been run" in html
+
+
+def test_the_masthead_links_the_cards_page_only_when_one_was_built():
+    assert "models.html" not in sb.render_index(POSTS, MINUTES, THEME)
+    assert "models.html" in sb.render_index(POSTS, MINUTES, THEME, models=True)
+    assert "models.html" in sb.render_about(POSTS, THEME, models=True)
+
+
+def test_card_footnotes_join_with_a_separator_entity_not_an_escaped_one():
+    """escape() over the joined string yields &amp;middot;, which renders as
+    literal '&middot;' text — and uppercased by the stylesheet at that."""
+    html = sb.render_models(models_snapshot(FLAGSHIP), THEME)
+    assert "&amp;middot;" not in html
+    assert "obj 89.8 &middot; 2 trials" in html

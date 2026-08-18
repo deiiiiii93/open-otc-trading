@@ -25,7 +25,8 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(REPO / "backend"))
 
 from boards import (  # noqa: E402
-    BoardsError, SNAPSHOT_VERSION, load_board_refs, shape_board,
+    BoardsError, SNAPSHOT_VERSION, consolidated_cards, load_board_refs,
+    ordered_workflows, shape_board,
 )
 
 DEFAULT_DB = REPO / "data" / "open_otc.sqlite3"
@@ -62,6 +63,25 @@ def _checks_denominator(matches) -> int | None:
     if len(totals) != 1:
         return None
     return totals.pop()
+
+
+def _stamp_positions(cards: list[dict]) -> None:
+    """Attach the FIFA-style archetype to each card, in place.
+
+    `scoring._card_position` is private but it is the SINGLE definition of the
+    archetype rule, and reimplementing ten lines here is exactly how a published
+    label drifts from the desk's. If it is ever moved the import fails loudly at
+    export time rather than quietly disagreeing.
+    """
+    from app.services.arena.scoring import _card_position
+
+    for card in cards:
+        stats = card.get("stats") or {}
+        card["position"] = (
+            _card_position(stats)
+            if all(k in stats for k in ("GRD", "ADH", "SYN", "EFF", "PRC"))
+            else None
+        )
 
 
 def collect(session, refs) -> dict:
@@ -118,10 +138,21 @@ def collect(session, refs) -> dict:
         raise BoardsError(
             f"boards declared for unknown workflow(s): {sorted(by_workflow)}"
         )
+    # Section order is decided once, here, so a consolidated card's per-board
+    # list reads in the same order as the page's workflow sections.
+    workflows = ordered_workflows(workflows)
+    for wf in workflows:
+        for board in wf["boards"]:
+            _stamp_positions(board["rows"])
+
+    models = consolidated_cards(workflows)
+    _stamp_positions(models)
+
     return {
         "version": SNAPSHOT_VERSION,
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "workflows": workflows,
+        "models": models,
     }
 
 
@@ -148,7 +179,8 @@ def main(argv: list[str] | None = None) -> int:
     total = sum(len(w["boards"]) for w in measured)
     print(
         f"exported {total} boards across {len(measured)} workflows "
-        f"({len(snapshot['workflows']) - len(measured)} with none) -> {args.out}"
+        f"({len(snapshot['workflows']) - len(measured)} with none), "
+        f"{len(snapshot['models'])} consolidated model cards -> {args.out}"
     )
     for w in measured:
         for b in w["boards"]:

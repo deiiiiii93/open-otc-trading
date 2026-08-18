@@ -39,16 +39,20 @@ def _head(title: str, theme: str, description: str) -> str:
     )
 
 
-def _masthead(leaderboard: bool = False, here: str = "") -> str:
-    """`leaderboard` gates the nav link, so the absence rule reaches the chrome.
+def _masthead(leaderboard: bool = False, here: str = "", models: bool = False) -> str:
+    """The flags gate the nav links, so the absence rule reaches the chrome.
 
-    When no boards.json has been exported the page is not built, and a masthead
-    that linked it anyway would 404 on every page of the site.
+    When a page was not built, a masthead that linked it anyway would 404 on every
+    page of the site. The two flags are separate because a snapshot exported
+    before model cards existed carries boards but no `models` block.
     """
     links = []
     if leaderboard:
         cur = ' class="here"' if here == "leaderboard" else ""
         links.append(f'<a href="./leaderboard.html"{cur}>Leaderboard</a>')
+    if models:
+        cur = ' class="here"' if here == "models" else ""
+        links.append(f'<a href="./models.html"{cur}>Model Cards</a>')
     links.append('<a href="./about.html">About</a>')
     links.append(f'<a href="{GITHUB_URL}">GitHub</a>')
     return (
@@ -158,6 +162,7 @@ def render_index(
     theme: str,
     snapshot: dict | None = None,
     leaderboard: bool = False,
+    models: bool = False,
 ) -> str:
     """The blog index: masthead, intro, reverse-chronological feed, derived rail.
 
@@ -178,7 +183,7 @@ def render_index(
     return (
         _head(SITE_TITLE, theme, SITE_TAGLINE)
         + '<div class="page">\n'
-        + _masthead(leaderboard)
+        + _masthead(leaderboard, models=models)
         + f'<div class="intro"><h1>{escape(SITE_TITLE)}</h1>'
         + f'<p class="lead">{escape(SITE_TAGLINE)}</p></div>\n'
         + '<div class="layout">\n'
@@ -207,6 +212,7 @@ def render_post_page(
     newer: Post | None,
     older: Post | None,
     leaderboard: bool = False,
+    models: bool = False,
 ) -> str:
     """Wrap a rendered report body in blog chrome.
 
@@ -237,7 +243,7 @@ def render_post_page(
     return (
         _head(f"{post.title} — {SITE_TITLE}", theme, post.blurb)
         + '<div class="post-shell">\n'
-        + _masthead(leaderboard)
+        + _masthead(leaderboard, models=models)
         + f'<p class="crumb"><a href="./index.html">Arena</a> / {crumb_tail}</p>\n'
         + f'<div class="byline">{"".join(meta)}</div>\n'
         + f'<div class="post-body">\n{body_html}\n</div>\n'
@@ -248,13 +254,13 @@ def render_post_page(
 
 
 def render_about(
-    posts: list[Post], theme: str, leaderboard: bool = False
+    posts: list[Post], theme: str, leaderboard: bool = False, models: bool = False
 ) -> str:
     points = "".join(f"<li>{escape(p)}</li>" for p in ABOUT_POINTS)
     return (
         _head(f"About — {SITE_TITLE}", theme, SITE_TAGLINE)
         + '<div class="post-shell">\n'
-        + _masthead(leaderboard)
+        + _masthead(leaderboard, models=models)
         + '<div class="intro"><h1>What the Arena measures</h1>'
         + '<p class="lead">The Arena is built for financial-agent evaluation, not '
         + "generic prompt scoring. Each trial drives live desk workflows and "
@@ -429,12 +435,171 @@ def render_leaderboard(snapshot: dict, posts: list[Post], theme: str) -> str:
     return (
         _head(f"{LEADERBOARD_TITLE} — {SITE_TITLE}", theme, LEADERBOARD_LEAD)
         + '<div class="page">\n'
-        + _masthead(True, here="leaderboard")
+        + _masthead(True, here="leaderboard", models=bool(snapshot.get("models")))
         + f'<div class="intro"><h1>{escape(LEADERBOARD_TITLE)}</h1>'
         + f'<p class="lead">{escape(LEADERBOARD_LEAD)}</p>'
         + f'<p class="rail-sub">derived from the arena database on {escape(generated)}</p>'
         + "</div>\n"
         + f'<main class="boards">\n{sections}</main>\n'
+        + _site_footer()
+        + "</div>\n</body></html>\n"
+    )
+
+
+# ---------------------------------------------------------------------------
+# The model cards page
+# ---------------------------------------------------------------------------
+
+MODELS_TITLE = "Model Cards"
+MODELS_LEAD = (
+    "One ability card per contestant. The consolidated card averages a model "
+    "across every workflow it contested; the per-workflow cards below are the "
+    "measurements it averages. A card is absolute, not relative to the field, "
+    "which is why averaging cards is sound where merging leaderboards is not."
+)
+CARD_STATS = (*STAT_ORDER, "CON")
+
+
+def _stat_strip(stats: dict, con) -> str:
+    cells = []
+    for stat in CARD_STATS:
+        value = con if stat == "CON" else (stats or {}).get(stat)
+        muted = ' class="muted"' if value is None else ""
+        cells.append(
+            f"<span{muted}><b>{_num(value)}</b><small>{stat}</small></span>"
+        )
+    return f'<div class="mcard-stats">{"".join(cells)}</div>'
+
+
+def _mcard_head(name: str, effort, ovr, position, rank=None) -> str:
+    badge = f'<span class="effort">{escape(str(effort))}</span>' if effort else ""
+    pos = f'<span class="mcard-pos">{escape(str(position))}</span>' if position else ""
+    place = f'<span class="mcard-rank">#{int(rank)}</span>' if rank else ""
+    return (
+        '<header class="mcard-head">'
+        f'<span class="mcard-ovr"><b>{_num(ovr)}</b><small>OVR</small></span>'
+        '<span class="mcard-id">'
+        f'<span class="mcard-name">{escape(name)}{badge}</span>'
+        f'<span class="mcard-meta">{place}{pos}</span>'
+        "</span></header>"
+    )
+
+
+def _career_card(card: dict) -> str:
+    """The consolidated card: mean, spread, coverage, and the record behind them."""
+    rows = []
+    for entry in card.get("per_board") or []:
+        ovr = entry.get("ovr")
+        # An uncontested board renders an em dash rather than being omitted: a
+        # short list reads as "ranked low", which is a different claim.
+        place = (
+            f'<span class="place">#{int(entry["rank"])}</span>'
+            if entry.get("rank") else ""
+        )
+        rows.append(
+            '<li>'
+            f'<code>{escape(str(entry.get("workflow") or ""))}</code>'
+            f'<span class="board-label">{escape(str(entry.get("label") or ""))}</span>'
+            f'<span class="ovr">{_num(ovr)}</span>{place}'
+            "</li>"
+        )
+
+    coverage = int(card.get("coverage") or 0)
+    total = int(card.get("boards_total") or 0)
+    spread = (
+        f'{_num(card.get("ovr_min"))}&ndash;{_num(card.get("ovr_max"))} '
+        f"across {coverage} of {total} boards"
+    )
+    return (
+        '<article class="mcard" '
+        f'id="model-{escape(str(card.get("model", "")))}">'
+        + _mcard_head(str(card.get("model", "")), card.get("effort"),
+                      card.get("ovr"), card.get("position"))
+        + _stat_strip(card.get("stats") or {}, card.get("con"))
+        + f'<p class="mcard-spread">{spread}</p>'
+        + f'<ul class="mcard-boards">{"".join(rows)}</ul>'
+        + "</article>"
+    )
+
+
+def _board_card(row: dict, board: dict) -> str:
+    """One contestant's card on ONE board — the measurement, not an average."""
+    facts = []
+    if row.get("objective") is not None:
+        facts.append(f'obj {format(row["objective"], ".1f")}')
+    if row.get("trials"):
+        facts.append(f'{int(row["trials"])} trials')
+    if row.get("invalid"):
+        facts.append(f'{int(row["invalid"])} invalid')
+
+    return (
+        '<article class="mcard">'
+        + _mcard_head(str(row.get("model", "")), row.get("effort"),
+                      row.get("ovr"), row.get("position"), rank=row.get("rank"))
+        + _stat_strip(row.get("stats") or {}, row.get("con"))
+        # Escape each fact, then join with the raw separator entity. Escaping
+        # the JOINED string yields &amp;middot;, which renders literally.
+        + f'<p class="mcard-spread">{" &middot; ".join(escape(f) for f in facts)}</p>'
+        + "</article>"
+    )
+
+
+def _cards_section(title: str, subtitle: str, body: str, anchor: str = "") -> str:
+    ident = f' id="{escape(anchor)}"' if anchor else ""
+    return (
+        f'<section class="wf"{ident}>'
+        f"<h2>{title}</h2>"
+        f'<p class="wf-facts">{subtitle}</p>'
+        f"{body}</section>\n"
+    )
+
+
+def render_models(snapshot: dict, theme: str) -> str:
+    """Consolidated cards first, then the per-workflow cards they average."""
+    from boards import ordered_workflows
+
+    cards = snapshot.get("models") or []
+    consolidated = _cards_section(
+        "All workflows",
+        f"{len(cards)} contestants &middot; each card averaged across the boards "
+        "it contested",
+        f'<div class="mgrid">{"".join(_career_card(c) for c in cards)}</div>',
+    )
+
+    sections = []
+    for wf in ordered_workflows(snapshot.get("workflows") or []):
+        slug = str(wf.get("id", ""))
+        persona = str(wf.get("persona") or "").replace("_", " ")
+        facts = " &middot; ".join(
+            escape(x) for x in (str(wf.get("title") or ""), persona) if x
+        )
+        boards = wf.get("boards") or []
+        if boards:
+            body = "".join(
+                f'<p class="board-heading">{escape(str(b.get("label") or ""))}</p>'
+                f'<div class="mgrid">'
+                f'{"".join(_board_card(r, b) for r in b.get("rows") or [])}</div>'
+                for b in boards
+            )
+        else:
+            body = (
+                '<p class="empty">No board has been run on this workflow yet. '
+                "The workflow exists and is scored; the field does not.</p>"
+            )
+        sections.append(
+            _cards_section(f"<code>{escape(slug)}</code>", facts, body, anchor=slug)
+        )
+
+    generated = str(snapshot.get("generated_at", ""))[:10]
+    return (
+        _head(f"{MODELS_TITLE} — {SITE_TITLE}", theme, MODELS_LEAD)
+        + '<div class="page">\n'
+        + _masthead(True, here="models", models=True)
+        + f'<div class="intro"><h1>{escape(MODELS_TITLE)}</h1>'
+        + f'<p class="lead">{escape(MODELS_LEAD)}</p>'
+        + f'<p class="rail-sub">derived from the arena database on {escape(generated)}</p>'
+        + "</div>\n"
+        + f'<main class="boards">\n{consolidated}{"".join(sections)}</main>\n'
         + _site_footer()
         + "</div>\n</body></html>\n"
     )

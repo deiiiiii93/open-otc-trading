@@ -243,3 +243,20 @@ def test_verify_live_skips_the_leaderboard_when_none_was_built(served):
     _good_site(root)
     assert not root.joinpath("leaderboard.html").exists()
     assert pub.verify_live(base, [POST], security_headers=()) == []
+
+
+def test_verify_live_checks_the_model_cards_page_the_same_way(served):
+    base, root = served
+    _good_site(root)
+    root.joinpath("models.html").write_text(LEADERBOARD)
+    anchors = pub.workflow_anchors(LEADERBOARD)
+
+    assert pub.verify_live(base, [POST], security_headers=(),
+                           model_anchors=anchors) == []
+
+    root.joinpath("models.html").write_text(
+        LEADERBOARD.replace('id="ops-settlement-day"', 'id="gone"')
+    )
+    failures = pub.verify_live(base, [POST], security_headers=(),
+                               model_anchors=anchors)
+    assert any("models.html" in f and "ops-settlement-day" in f for f in failures)
