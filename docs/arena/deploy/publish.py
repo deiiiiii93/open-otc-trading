@@ -37,7 +37,11 @@ ABSENT_PROBE = "__deploy_probe_absent__.html"
 
 
 def rsync_cmd(src: Path, host: str, remote: str, key: str, dry_run: bool) -> list[str]:
-    cmd = ["rsync", "-az", "--delete"]
+    # -v is load-bearing, not cosmetic: rsync only emits "deleting <path>" lines
+    # when verbose, and bootstrap.sh's safety guard greps for exactly those to
+    # refuse a cutover that would remove server files no build produces. Without
+    # it the guard silently matches nothing and always passes.
+    cmd = ["rsync", "-azv", "--delete"]
     if dry_run:
         cmd.append("-n")
     cmd += ["-e", f"ssh -i {key} -o StrictHostKeyChecking=accept-new"]

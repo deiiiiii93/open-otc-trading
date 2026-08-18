@@ -53,8 +53,11 @@ def _good_site(root: Path) -> None:
 def test_rsync_cmd_uses_archive_delete_and_the_ssh_key():
     cmd = pub.rsync_cmd(Path("/tmp/build"), "u@h", "/opt/arena/", "/k.pem", dry_run=False)
     assert cmd[0] == "rsync"
-    assert "-az" in cmd and "--delete" in cmd
+    assert "--delete" in cmd
     assert "-n" not in cmd
+    # verbose is required: bootstrap.sh's deletion guard greps "deleting <path>",
+    # which rsync only prints when verbose.
+    assert "-azv" in cmd
     assert any("/k.pem" in part for part in cmd)
     assert cmd[-2].endswith("/"), "source must end in / or rsync nests a directory"
     assert cmd[-1] == "u@h:/opt/arena/"
