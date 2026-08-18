@@ -27,6 +27,12 @@ run on it. Scores are never typed: `boards.yaml` names which runs are boards, an
 A run is not a board: the database holds one-model smokes and A/B probes on the
 same workflows, so only the runs listed reach the page.
 
+A run that is not a board can still be published as **cards only**, under
+`provisional:` in the same file. A one-model smoke has no field, so a rank of
+#1 of 1 measures nothing — but an ability card is absolute and stays meaningful
+with no opponent. Those cards appear on `models.html` under *Provisional*, carry
+no rank, and never reach the leaderboard.
+
 The same export also builds **Model Cards** (`models.html`): a consolidated card
 per contestant averaged over every workflow it contested, then the per-workflow
 cards that average is made of. Both pages come from `boards.json` — there is no

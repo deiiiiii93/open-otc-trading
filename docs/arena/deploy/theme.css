@@ -283,6 +283,8 @@ footer.site{margin-top:52px; padding-top:18px; border-top:1px solid var(--line);
 .mcard-boards code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
   font-size:.68rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .mcard-boards .board-label{display:none}
+/* A cards-only run has no field, so its rows carry no place column at all. */
+.mcard-boards.no-rank li{grid-template-columns:minmax(0,1fr) 30px}
 .mcard-boards .ovr{text-align:right; font-weight:700; color:var(--ink);
   font-variant-numeric:tabular-nums}
 .mcard-boards .place{text-align:right; font-variant-numeric:tabular-nums}

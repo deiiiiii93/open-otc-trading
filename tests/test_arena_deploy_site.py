@@ -622,3 +622,82 @@ def test_titles_are_never_inlined_because_verify_live_compares_them_verbatim():
     p = _post(title="Why `par` matters")
     html = sb.render_index([p], {p.stem: 4}, THEME)
     assert esc(p.title) in html
+
+
+# --------------------------------------------------------------------------
+# Provisional cards (a cards-only run: measured, never ranked)
+# --------------------------------------------------------------------------
+
+PROVISIONAL = {
+    "run": 113,
+    "label": "Run #113",
+    "date": "2026-08-18",
+    "note": "A single-model smoke across all five golden workflows.",
+    "models": 1,
+    "cards": [{
+        "model": "gemini-3-7-flash", "effort": None, "ovr": 90,
+        "ovr_min": 86, "ovr_max": 92,
+        "stats": {"GRD": 99, "ADH": 96, "SYN": 99, "PRC": 96, "EFF": 48},
+        "con": None, "position": "Sniper", "coverage": 5, "workflows_total": 5,
+        "trials": 1,
+        "per_workflow": [
+            {"workflow": "high-board-portfolio-review-day", "ovr": 92},
+            {"workflow": "ops-settlement-day", "ovr": 86},
+        ],
+    }],
+}
+
+
+def _with_provisional(*workflows):
+    return {**models_snapshot(*workflows), "provisional": [PROVISIONAL]}
+
+
+def test_a_provisional_run_renders_its_card_with_the_run_and_the_note():
+    html = sb.render_models(_with_provisional(FLAGSHIP), THEME)
+    assert "gemini-3-7-flash" in html
+    assert "Run #113" in html
+    assert PROVISIONAL["note"] in html
+
+
+def test_a_provisional_card_carries_no_rank_anywhere():
+    """A one-model run has no field, so #1 of 1 measures nothing. Rank is absent
+    by construction here, not blanked with an em dash after the fact."""
+    html = sb.render_models(_with_provisional(FLAGSHIP), THEME)
+    section = html.split('id="provisional"', 1)[1].split("</section>", 1)[0]
+    assert 'class="place"' not in section
+    assert 'class="mcard-rank"' not in section
+    # The per-workflow rows drop the place column entirely rather than render an
+    # empty one. (A bare "#1" substring check is wrong here: the run LABEL is
+    # "Run #113".)
+    assert 'class="mcard-boards no-rank"' in section
+
+
+def test_a_provisional_card_states_its_trial_depth_and_coverage():
+    """CON is an em dash here; without the trial count a reader cannot tell
+    whether that means unmeasured or perfectly consistent."""
+    html = sb.render_models(_with_provisional(FLAGSHIP), THEME)
+    section = html.split('id="provisional"', 1)[1].split("</section>", 1)[0]
+    assert "1 trial" in section
+    assert "5 workflows" in section
+    assert "&mdash;" in section          # CON, not measured
+
+
+def test_the_provisional_section_sits_after_the_consolidated_grid():
+    html = sb.render_models(_with_provisional(FLAGSHIP), THEME)
+    assert html.index("All workflows") < html.index('id="provisional"')
+    assert html.index('id="provisional"') < html.index('id="risk-manager-control-day"')
+
+
+def test_a_snapshot_with_no_provisional_runs_renders_no_such_section():
+    html = sb.render_models(models_snapshot(FLAGSHIP), THEME)
+    assert 'id="provisional"' not in html
+    assert "Provisional" not in html
+
+
+def test_the_provisional_section_is_a_verifiable_anchor():
+    """publish.verify_live reads section anchors out of the BUILT page and
+    requires each to be served, so the section must carry one."""
+    import publish
+
+    html = sb.render_models(_with_provisional(FLAGSHIP), THEME)
+    assert "provisional" in publish.workflow_anchors(html)

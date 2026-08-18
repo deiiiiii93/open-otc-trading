@@ -1187,6 +1187,36 @@ listing the boards run on it. Two inputs, deliberately separate:
   each to be served, for the same reason it compares titles — a 200 under the SPA
   catch-all proves nothing.
 
+### A run may be published as CARDS ONLY (`provisional:`)
+
+`boards.yaml` has two sections. `boards:` are ranked and reach the leaderboard;
+`provisional:` are published as **cards only** and never appear there. The split
+exists because **a rank is relative and a card is absolute**: a one-model smoke
+has no field, so #1 of 1 measures nothing, but `passed/total` per axis with EFF
+against each workflow's own par stays meaningful with no opponent. That is the
+same asymmetry that lets `consolidated_cards` average across workflows while the
+leaderboard refuses to merge runs.
+
+- A provisional entry declares **no workflow**, unlike a board — its
+  measurements are published one per workflow instead of folded into one row, so
+  the multi-workflow guard that `shape_board` enforces does not apply.
+- **Nothing provisional carries a rank, by construction**, not by blanking one.
+  `_provisional_card` omits the place column entirely (`.mcard-boards.no-rank`).
+- **Publish the trial depth beside an em-dash CON.** CON needs trials to
+  disperse, so a 1-trial run has none; without the depth on the card a reader
+  cannot tell "not measured" from "perfectly consistent".
+- A run declared as **both** a board and provisional is rejected — the two make
+  contradictory claims about whether it had a field.
+- Export goes through **`store.get_run`**, not `_derive_card` on the raw column:
+  `fold_trial_breakdowns` does not lift `diagnosis`, so deriving from a wrapped
+  breakdown's top level returns `missing_tool_count` for every match — including
+  `trials=1` ones, which are wrapped too.
+- The top level of `boards.yaml` may now be a mapping; **a bare list is still
+  valid** and means "all boards". When reading its sections, `value or []` is
+  wrong — `{}` and `""` are falsy, so a wrong-typed section would silently
+  become an empty one and the whole leaderboard would vanish without a word.
+  Absent (`None`) is the only legitimate empty.
+
 ### theme.css owns the report body ON THE WEB; render_report.py owns print
 
 `render_markdown()` returns **bare HTML with no stylesheet**. Only

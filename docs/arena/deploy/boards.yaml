@@ -7,24 +7,40 @@
 #
 # Required: run, workflow.  Optional: label (defaults to "Run #<n>"), post.
 #
+# `provisional:` lists runs published as CARDS ONLY — never on the leaderboard.
+# A one-model smoke has no field, so a rank of #1 of 1 measures nothing; but an
+# ability card is an ABSOLUTE measurement (passed/total per axis, EFF against
+# each workflow's own par), so it stays meaningful with no opponent. That is the
+# same asymmetry that lets a consolidated card average across workflows while
+# the leaderboard never merges runs.
+# Required: run.  Optional: label, note.
+#
 # Card-era boards only. Runs #8 and #9 are deliberately absent: their reports
 # ranked models on a blended objective+judge score that the 2026-07-05 scoring
 # reform retired, so re-deriving them on today's objective axis reorders their
 # own published podium. They stay readable as reports rather than being
 # republished under a ranking their text does not support.
 
-- run: 20
-  workflow: risk-manager-control-day
-  post: 2026-07-13-run20-otc-desk-agent-arena.md
+boards:
+  - run: 20
+    workflow: risk-manager-control-day
+    post: 2026-07-13-run20-otc-desk-agent-arena.md
 
-- run: 33
-  workflow: trader-rfq-booking-day
-  post: 2026-07-20-run33-otc-desk-agent-arena.md
+  - run: 33
+    workflow: trader-rfq-booking-day
+    post: 2026-07-20-run33-otc-desk-agent-arena.md
 
-- run: 94
-  workflow: high-board-portfolio-review-day
-  post: 2026-07-29-run94-otc-desk-agent-arena.md
+  - run: 94
+    workflow: high-board-portfolio-review-day
+    post: 2026-07-29-run94-otc-desk-agent-arena.md
 
-# No report: the field was run and scored, but never written up.
-- run: 101
-  workflow: risk-limit-breach-day
+  # No report: the field was run and scored, but never written up.
+  - run: 101
+    workflow: risk-limit-breach-day
+
+provisional:
+  - run: 113
+    note: >-
+      A single-model smoke across all five golden workflows, one trial each.
+      Published for its ability card only: with no field there is no rank to
+      report, and one trial cannot disperse, so CON is not measured.

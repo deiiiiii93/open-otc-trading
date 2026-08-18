@@ -26,7 +26,7 @@ sys.path.insert(0, str(REPO / "backend"))
 
 from boards import (  # noqa: E402
     BoardsError, SNAPSHOT_VERSION, consolidated_cards, load_board_refs,
-    ordered_workflows, shape_board,
+    load_provisional_refs, ordered_workflows, shape_board, shape_provisional,
 )
 
 DEFAULT_DB = REPO / "data" / "open_otc.sqlite3"
@@ -84,7 +84,48 @@ def _stamp_positions(cards: list[dict]) -> None:
         )
 
 
-def collect(session, refs) -> dict:
+def collect_provisional(session, refs) -> list[dict]:
+    """Cards-only runs -> one published card per contestant.
+
+    Goes through `store.get_run`, the same serializer the desk drilldown uses,
+    rather than deriving from the raw column. That is load-bearing:
+    `fold_trial_breakdowns` does NOT lift `diagnosis`, so `_derive_card` against
+    a wrapped breakdown's top level returns `missing_tool_count` for every
+    multi-trial-shaped match — which is all of them, `trials=1` included.
+    """
+    from app.models import ArenaRun
+    from app.services.arena.store import get_run
+
+    out = []
+    for ref in refs:
+        run = session.get(ArenaRun, ref.run)
+        if run is None:
+            raise BoardsError(f"run {ref.run} is not in this database")
+
+        entries = []
+        for m in (get_run(session, ref.run) or {}).get("matches") or []:
+            if m.get("status") != "scored":
+                continue
+            bd = m.get("score_breakdown") or {}
+            card = bd.get("card") or {}
+            n = bd.get("n_trials")
+            entries.append({
+                "model": m.get("model_id"),
+                "effort": m.get("reasoning_effort") or None,
+                "workflow": m.get("workflow_id"),
+                "ovr": card.get("ovr"),
+                "stats": card.get("stats") or {},
+                "con": card.get("con"),
+                "trials": n if isinstance(n, int) and not isinstance(n, bool) else None,
+            })
+
+        shaped = shape_provisional(ref, entries, date=str(run.created_at)[:10])
+        _stamp_positions(shaped["cards"])
+        out.append(shaped)
+    return out
+
+
+def collect(session, refs, provisional_refs=()) -> dict:
     from app.golden_workflows.registry import list_workflows
     from app.models import ArenaMatch, ArenaRun
     from app.services.arena.store import leaderboard
@@ -153,6 +194,7 @@ def collect(session, refs) -> dict:
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "workflows": workflows,
         "models": models,
+        "provisional": collect_provisional(session, provisional_refs),
     }
 
 
@@ -170,9 +212,10 @@ def main(argv: list[str] | None = None) -> int:
     from sqlalchemy.orm import sessionmaker
 
     refs = load_board_refs(args.manifest)
+    provisional_refs = load_provisional_refs(args.manifest)
     engine = read_only_engine(args.db.resolve())
     with sessionmaker(bind=engine)() as session:
-        snapshot = collect(session, refs)
+        snapshot = collect(session, refs, provisional_refs)
 
     args.out.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n")
     measured = [w for w in snapshot["workflows"] if w["boards"]]
@@ -182,6 +225,12 @@ def main(argv: list[str] | None = None) -> int:
         f"({len(snapshot['workflows']) - len(measured)} with none), "
         f"{len(snapshot['models'])} consolidated model cards -> {args.out}"
     )
+    for entry in snapshot["provisional"]:
+        names = ", ".join(c["model"] for c in entry["cards"])
+        print(
+            f"  provisional {entry['label']:<10} {names} "
+            f"({entry['cards'][0]['coverage']} workflows, unranked)"
+        )
     for w in measured:
         for b in w["boards"]:
             mixed = (

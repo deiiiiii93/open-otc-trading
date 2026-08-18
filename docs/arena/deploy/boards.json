@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-18T06:43:19.138820+00:00",
+  "generated_at": "2026-08-18T08:05:14.341138+00:00",
   "models": [
     {
       "boards_total": 4,
@@ -864,6 +864,58 @@
         "PRC": 72,
         "SYN": 60
       }
+    }
+  ],
+  "provisional": [
+    {
+      "cards": [
+        {
+          "con": null,
+          "coverage": 5,
+          "effort": null,
+          "model": "gemini-3-7-flash",
+          "ovr": 90,
+          "ovr_max": 92,
+          "ovr_min": 86,
+          "per_workflow": [
+            {
+              "ovr": 92,
+              "workflow": "high-board-portfolio-review-day"
+            },
+            {
+              "ovr": 92,
+              "workflow": "risk-manager-control-day"
+            },
+            {
+              "ovr": 90,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 88,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 86,
+              "workflow": "ops-settlement-day"
+            }
+          ],
+          "position": "Sniper",
+          "stats": {
+            "ADH": 96,
+            "EFF": 48,
+            "GRD": 99,
+            "PRC": 96,
+            "SYN": 99
+          },
+          "trials": 1,
+          "workflows_total": 5
+        }
+      ],
+      "date": "2026-08-18",
+      "label": "Run #113",
+      "models": 1,
+      "note": "A single-model smoke across all five golden workflows, one trial each. Published for its ability card only: with no field there is no rank to report, and one trial cannot disperse, so CON is not measured.",
+      "run": 113
     }
   ],
   "version": 1,

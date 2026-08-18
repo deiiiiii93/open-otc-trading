@@ -333,3 +333,112 @@ def test_an_uncarded_contestant_gets_no_consolidated_card():
     """A pre-card board contributes no OVR, so there is nothing to average."""
     legacy = _wf("alpha-day", "Run #1", [dict(_row("old", 0), ovr=None, stats={}, con=None)])
     assert bd.consolidated_cards([legacy]) == []
+
+
+# --------------------------------------------------------------------------
+# Provisional entries: cards-only runs
+# --------------------------------------------------------------------------
+
+MAPPING_MANIFEST = """
+boards:
+  - {run: 20, workflow: risk-manager-control-day}
+provisional:
+  - {run: 113, note: a smoke}
+"""
+
+
+def test_a_bare_list_is_still_a_valid_manifest_and_means_all_boards(tmp_path):
+    """The shape the file had before cards-only runs existed. Rejecting it would
+    fail the whole build over a format change that carries no new information."""
+    path = write_yaml(tmp_path, "- {run: 20, workflow: risk-manager-control-day}\n")
+    assert [r.run for r in bd.load_board_refs(path)] == [20]
+    assert bd.load_provisional_refs(path) == []
+
+
+def test_the_mapping_form_splits_boards_from_provisional(tmp_path):
+    path = write_yaml(tmp_path, MAPPING_MANIFEST)
+    assert [r.run for r in bd.load_board_refs(path)] == [20]
+    prov = bd.load_provisional_refs(path)
+    assert [(r.run, r.label, r.note) for r in prov] == [(113, "Run #113", "a smoke")]
+
+
+def test_a_provisional_entry_needs_no_workflow(tmp_path):
+    """Unlike a board, a cards-only run may span several: its measurements are
+    published one per workflow instead of folded into a single row."""
+    path = write_yaml(tmp_path, "provisional:\n  - {run: 113}\n")
+    assert bd.load_board_refs(path) == []
+    assert not hasattr(bd.load_provisional_refs(path)[0], "workflow")
+
+
+@pytest.mark.parametrize("text,fragment", [
+    ("provisional:\n  - {run: 113, workflow: x}\n", "unknown key"),
+    ("provisional:\n  - {note: hi}\n", "missing required key"),
+    ("provisional:\n  - {run: true}\n", "must be an integer"),
+    ("provisional:\n  - {run: 113}\n  - {run: 113}\n", "duplicate provisional"),
+    ("boards: {}\n", "'boards' must be a list"),
+    ("nonsense: 1\n", "unknown top-level key"),
+])
+def test_provisional_validation_fails_loud(tmp_path, text, fragment):
+    with pytest.raises(bd.BoardsError, match=fragment):
+        bd.load_provisional_refs(write_yaml(tmp_path, text))
+        bd.load_board_refs(write_yaml(tmp_path, text))
+
+
+def test_a_run_may_not_be_both_a_board_and_provisional(tmp_path):
+    """The two make contradictory claims about whether the run had a field."""
+    path = write_yaml(
+        tmp_path,
+        "boards:\n  - {run: 113, workflow: risk-limit-breach-day}\n"
+        "provisional:\n  - {run: 113}\n",
+    )
+    with pytest.raises(bd.BoardsError, match="both a board and provisional"):
+        bd.load_board_refs(path)
+
+
+PROV_REF = bd.ProvisionalRef(run=113, label="Run #113", note=None)
+
+
+def _entry(workflow, ovr, **kw):
+    return {
+        "model": "gemini-3-7-flash", "effort": None, "workflow": workflow,
+        "ovr": ovr, "stats": {"GRD": 99, "ADH": 96, "SYN": 99, "PRC": 96, "EFF": 48},
+        "con": None, "trials": 1, **kw,
+    }
+
+
+def test_shape_provisional_averages_the_cards_and_publishes_the_spread():
+    out = bd.shape_provisional(
+        PROV_REF, [_entry("a", 92), _entry("b", 86), _entry("c", 90)], date="2026-08-18"
+    )
+    (card,) = out["cards"]
+    assert (card["ovr"], card["ovr_min"], card["ovr_max"]) == (89, 86, 92)
+    assert card["coverage"] == 3 and card["workflows_total"] == 3
+    assert card["trials"] == 1
+    # Highest first, so the card leads with the model's best showing.
+    assert [e["workflow"] for e in card["per_workflow"]] == ["a", "c", "b"]
+
+
+def test_a_provisional_card_never_carries_a_rank():
+    out = bd.shape_provisional(PROV_REF, [_entry("a", 92)], date="2026-08-18")
+    (card,) = out["cards"]
+    assert "rank" not in card
+    assert all("rank" not in e for e in card["per_workflow"])
+
+
+def test_con_is_none_when_no_trial_dispersed():
+    """CON needs trials to disperse; a single-trial run has none to average."""
+    out = bd.shape_provisional(PROV_REF, [_entry("a", 92), _entry("b", 86)], date="d")
+    assert out["cards"][0]["con"] is None
+
+
+def test_an_uncarded_workflow_shrinks_coverage_but_not_the_total():
+    """So "4 of 5" stays visible rather than silently reading as a 4-workflow run."""
+    entries = [_entry("a", 92), _entry("b", 86), _entry("c", None)]
+    (card,) = bd.shape_provisional(PROV_REF, entries, date="d")["cards"]
+    assert card["coverage"] == 2 and card["workflows_total"] == 3
+
+
+@pytest.mark.parametrize("entries", [[], [_entry("a", None)]])
+def test_shape_provisional_refuses_a_run_with_nothing_to_publish(entries):
+    with pytest.raises(bd.BoardsError, match="run 113"):
+        bd.shape_provisional(PROV_REF, entries, date="d")

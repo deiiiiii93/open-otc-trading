@@ -607,6 +607,69 @@ def _board_card(row: dict, board: dict) -> str:
     )
 
 
+PROVISIONAL_TITLE = "Provisional"
+PROVISIONAL_LEAD = (
+    "Runs measured outside a contested field. An ability card is an absolute "
+    "measurement — passed/total per axis, EFF against each workflow's own par — "
+    "so it stays meaningful with no opponent. A rank does not: with no field, a "
+    "first place measures nothing. Nothing here carries one, and nothing here "
+    "reaches the leaderboard."
+)
+
+
+def _provisional_card(card: dict) -> str:
+    """One cards-only measurement. Structurally rankless, not rank-blanked."""
+    rows = "".join(
+        f'<li><code>{escape(str(e.get("workflow") or ""))}</code>'
+        f'<span class="ovr">{_num(e.get("ovr"))}</span></li>'
+        for e in card.get("per_workflow") or []
+    )
+    coverage = int(card.get("coverage") or 0)
+    total = int(card.get("workflows_total") or coverage)
+    facts = [
+        f'{_num(card.get("ovr_min"))}&ndash;{_num(card.get("ovr_max"))} across '
+        + (f"{coverage} workflows" if coverage == total
+           else f"{coverage} of {total} workflows")
+    ]
+    # The trial depth has to be stated: CON renders as an em dash here, and
+    # without the depth a reader cannot tell "not measured" from "perfect".
+    trials = card.get("trials")
+    if trials:
+        n = int(trials)
+        facts.append(f'{n} trial{"s" if n != 1 else ""}')
+    return (
+        '<article class="mcard">'
+        + _mcard_head(str(card.get("model", "")), card.get("effort"),
+                      card.get("ovr"), card.get("position"))
+        + _stat_strip(card.get("stats") or {}, card.get("con"))
+        + f'<p class="mcard-spread">{" &middot; ".join(facts)}</p>'
+        + f'<ul class="mcard-boards no-rank">{rows}</ul>'
+        + "</article>"
+    )
+
+
+def _provisional_section(entries: list[dict]) -> str:
+    blocks = []
+    for entry in entries:
+        cards = "".join(_provisional_card(c) for c in entry.get("cards") or [])
+        date = escape(str(entry.get("date") or ""))
+        note = entry.get("note")
+        blocks.append(
+            f'<p class="board-heading">{escape(str(entry.get("label") or ""))}'
+            + (f' <span class="board-facts">{date}</span>' if date else "")
+            + "</p>"
+            + (f'<p class="board-note">{escape(str(note))}</p>' if note else "")
+            + f'<div class="mgrid">{cards}</div>'
+        )
+    n = sum(len(e.get("cards") or []) for e in entries)
+    return _cards_section(
+        escape(PROVISIONAL_TITLE),
+        f'{n} card{"s" if n != 1 else ""} &middot; measured, never ranked',
+        f'<p class="board-note">{escape(PROVISIONAL_LEAD)}</p>' + "".join(blocks),
+        anchor="provisional",
+    )
+
+
 def _cards_section(title: str, subtitle: str, body: str, anchor: str = "") -> str:
     ident = f' id="{escape(anchor)}"' if anchor else ""
     return (
@@ -627,6 +690,13 @@ def render_models(snapshot: dict, theme: str) -> str:
         f"{len(cards)} contestants &middot; each card averaged across the boards "
         "it contested",
         f'<div class="mgrid">{"".join(_career_card(c) for c in cards)}</div>',
+    )
+
+    # Absence reaches the section, not just the cards: no cards-only run means
+    # no heading at all, rather than an empty "Provisional" with nothing under it.
+    provisional = (
+        _provisional_section(snapshot["provisional"])
+        if snapshot.get("provisional") else ""
     )
 
     sections = []
@@ -662,7 +732,7 @@ def render_models(snapshot: dict, theme: str) -> str:
         + f'<p class="lead">{escape(MODELS_LEAD)}</p>'
         + f'<p class="derived">derived from the arena database on {escape(generated)}</p>'
         + "</div>\n"
-        + f'<main class="boards">\n{consolidated}{"".join(sections)}</main>\n'
+        + f'<main class="boards">\n{consolidated}{provisional}{"".join(sections)}</main>\n'
         + _site_footer()
         + "</div>\n</body></html>\n"
     )

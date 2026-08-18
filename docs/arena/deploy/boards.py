@@ -27,6 +27,10 @@ BOARD_REQUIRED = {"run", "workflow"}
 BOARD_OPTIONAL = {"label", "post"}
 BOARD_ALLOWED = BOARD_REQUIRED | BOARD_OPTIONAL
 
+PROVISIONAL_REQUIRED = {"run"}
+PROVISIONAL_OPTIONAL = {"label", "note"}
+PROVISIONAL_ALLOWED = PROVISIONAL_REQUIRED | PROVISIONAL_OPTIONAL
+
 SNAPSHOT_VERSION = 1
 
 
@@ -48,6 +52,54 @@ class BoardRef:
     workflow: str
     label: str
     post: str | None = None
+
+
+@dataclass(frozen=True)
+class ProvisionalRef:
+    """A run published as CARDS ONLY, never as a board.
+
+    A run is not a board. A one-model smoke has no field, so a rank of #1 of 1
+    measures nothing — but an ability card is an ABSOLUTE measurement
+    (passed/total per axis, EFF against each workflow's own par), so it stays
+    meaningful with no opponent. That asymmetry is the whole reason this exists
+    beside the leaderboard instead of inside it, and why nothing derived from it
+    ever carries a rank.
+
+    Deliberately carries NO workflow: unlike a board, a cards-only run is free to
+    span several, because its measurements are published one per workflow rather
+    than folded into a single row.
+    """
+
+    run: int
+    label: str
+    note: str | None = None
+
+
+def _provisional_ref(raw: object, index: int) -> ProvisionalRef:
+    if not isinstance(raw, dict):
+        raise BoardsError(f"provisional #{index}: must be a mapping, got {raw!r}")
+    where = f"provisional #{index} (run {raw.get('run', '?')})"
+
+    unknown = set(raw) - PROVISIONAL_ALLOWED
+    if unknown:
+        raise BoardsError(
+            f"{where}: unknown key(s) {sorted(unknown)}; "
+            f"allowed {sorted(PROVISIONAL_ALLOWED)}"
+        )
+    missing = PROVISIONAL_REQUIRED - set(raw)
+    if missing:
+        raise BoardsError(f"{where}: missing required key(s) {sorted(missing)}")
+
+    run = raw["run"]
+    if not isinstance(run, int) or isinstance(run, bool):
+        raise BoardsError(f"{where}: run must be an integer, got {run!r}")
+
+    note = raw.get("note")
+    return ProvisionalRef(
+        run=run,
+        label=str(raw.get("label") or f"Run #{run}").strip(),
+        note=str(note).strip() if note else None,
+    )
 
 
 def _ref(raw: object, index: int) -> BoardRef:
@@ -82,15 +134,64 @@ def _ref(raw: object, index: int) -> BoardRef:
     )
 
 
-def load_board_refs(path: Path) -> list[BoardRef]:
-    """Load and validate boards.yaml. Order is preserved; the caller groups."""
+def _sections(path: Path) -> tuple[list, list]:
+    """(boards, provisional) raw entry lists from boards.yaml.
+
+    A bare list at the top level is still a valid manifest and means "all
+    boards" — the shape the file had before cards-only runs existed. Accepting
+    it keeps an older manifest readable instead of failing the whole build over
+    a format change that carries no new information.
+    """
     if not path.is_file():
         raise BoardsError(f"boards manifest not found at {path}")
     raw = yaml.safe_load(path.read_text()) or []
-    if not isinstance(raw, list):
-        raise BoardsError(f"{path}: top level must be a list of entries")
+    if isinstance(raw, list):
+        return raw, []
+    if not isinstance(raw, dict):
+        raise BoardsError(
+            f"{path}: top level must be a list of boards, or a mapping with "
+            "'boards' and optional 'provisional' keys"
+        )
+    unknown = set(raw) - {"boards", "provisional"}
+    if unknown:
+        raise BoardsError(f"{path}: unknown top-level key(s) {sorted(unknown)}")
+    boards = raw.get("boards")
+    prov = raw.get("provisional")
+    for name, value in (("boards", boards), ("provisional", prov)):
+        # `value or []` would be wrong here: {} and "" are falsy, so a
+        # wrong-typed section would silently become an empty one and the whole
+        # leaderboard would vanish without a word. Absent (None) is the only
+        # legitimate empty.
+        if value is not None and not isinstance(value, list):
+            raise BoardsError(f"{path}: '{name}' must be a list, got {value!r}")
+    return boards or [], prov or []
 
+
+def load_provisional_refs(path: Path) -> list[ProvisionalRef]:
+    """Load and validate the cards-only entries. Order is preserved."""
+    _, raw = _sections(path)
+    refs = [_provisional_ref(entry, i) for i, entry in enumerate(raw)]
+    seen: set[int] = set()
+    for r in refs:
+        if r.run in seen:
+            raise BoardsError(f"duplicate provisional entry: run {r.run}")
+        seen.add(r.run)
+    return refs
+
+
+def load_board_refs(path: Path) -> list[BoardRef]:
+    """Load and validate boards.yaml. Order is preserved; the caller groups."""
+    raw, prov = _sections(path)
     refs = [_ref(entry, i) for i, entry in enumerate(raw)]
+
+    # A run cannot be both a ranked board and an unranked measurement — the two
+    # make contradictory claims about whether it had a field.
+    board_runs = {r["run"] for r in raw if isinstance(r, dict) and "run" in r}
+    for entry in prov:
+        if isinstance(entry, dict) and entry.get("run") in board_runs:
+            raise BoardsError(
+                f"run {entry['run']} is declared as both a board and provisional"
+            )
 
     seen: set[tuple[int, str]] = set()
     for r in refs:
@@ -237,6 +338,90 @@ def shape_board(
 # Consolidated model cards (all workflows averaged)
 # ---------------------------------------------------------------------------
 
+def _mean(values: list[int]) -> int:
+    return round(sum(values) / len(values))
+
+
+def _average_cards(cards: list[dict]) -> dict:
+    """The mean of a set of ABSOLUTE ability cards, plus the spread it hides.
+
+    Shared by the consolidated career card and the provisional card so there is
+    exactly one definition of "averaging cards" — the operation the site claims
+    is sound where merging leaderboards is not. Callers pass only carded entries.
+    """
+    ovrs = [int(c["ovr"]) for c in cards]
+    cons = [int(c["con"]) for c in cards if c.get("con") is not None]
+    stats: dict[str, list[int]] = {}
+    for c in cards:
+        for stat, value in (c.get("stats") or {}).items():
+            stats.setdefault(stat, []).append(int(value))
+    return {
+        "ovr": _mean(ovrs),
+        "ovr_min": min(ovrs),
+        "ovr_max": max(ovrs),
+        "stats": {s: _mean(v) for s, v in stats.items()},
+        # CON needs trials to disperse; a single-trial run has none to average.
+        "con": _mean(cons) if cons else None,
+        "coverage": len(ovrs),
+    }
+
+
+def shape_provisional(ref: ProvisionalRef, entries: list[dict], date: str) -> dict:
+    """A cards-only run: one card per contestant, averaged over its workflows.
+
+    `entries` is one measurement per (contestant, workflow). Nothing here carries
+    a rank, by construction rather than by omission — see ProvisionalRef.
+    """
+    if not entries:
+        raise BoardsError(f"run {ref.run}: no measurements to publish")
+
+    order: list[tuple[str, str | None]] = []
+    groups: dict[tuple[str, str | None], list[dict]] = {}
+    for e in entries:
+        key = (str(e["model"]), e.get("effort") or None)
+        if key not in groups:
+            order.append(key)
+            groups[key] = []
+        groups[key].append(e)
+
+    cards = []
+    for model, effort in order:
+        group = groups[(model, effort)]
+        carded = [e for e in group if e.get("ovr") is not None]
+        # Uncarded contributes nothing to average; a contestant with no card at
+        # all is dropped rather than published as a zero.
+        if not carded:
+            continue
+        depths = {e.get("trials") for e in carded}
+        cards.append({
+            "model": model,
+            "effort": effort,
+            **_average_cards(carded),
+            # Distinct from coverage: how many workflows the run actually scored
+            # for this contestant, so "4 of 5" stays visible when one is uncarded.
+            "workflows_total": len({e.get("workflow") for e in group}),
+            "trials": depths.pop() if len(depths) == 1 else None,
+            "per_workflow": [
+                {"workflow": e.get("workflow"), "ovr": int(e["ovr"])}
+                for e in sorted(carded, key=lambda x: (-int(x["ovr"]),
+                                                       str(x.get("workflow") or "")))
+            ],
+        })
+
+    if not cards:
+        raise BoardsError(f"run {ref.run}: no carded measurements to publish")
+
+    cards.sort(key=lambda c: (-c["ovr"], c["model"], c["effort"] or ""))
+    return {
+        "run": ref.run,
+        "label": ref.label,
+        "date": date,
+        "note": ref.note,
+        "models": len(cards),
+        "cards": cards,
+    }
+
+
 def _flat_boards(workflows: list[dict]) -> list[tuple[dict, dict]]:
     """(workflow, board) pairs in the order given. One board per workflow today,
     but the shape does not assume it."""
@@ -267,17 +452,10 @@ def consolidated_cards(workflows: list[dict]) -> list[dict]:
             key = (str(row["model"]), row.get("effort") or None)
             if key not in acc:
                 order.append(key)
-                acc[key] = {"ovrs": [], "cons": [], "stats": {}, "at": {}}
+                acc[key] = {"rows": [], "at": {}}
             slot = acc[key]
-            slot["ovrs"].append(int(row["ovr"]))
-            if row.get("con") is not None:
-                slot["cons"].append(int(row["con"]))
-            for stat, value in (row.get("stats") or {}).items():
-                slot["stats"].setdefault(stat, []).append(int(value))
+            slot["rows"].append(row)
             slot["at"][index] = row
-
-    def mean(values: list[int]) -> int:
-        return round(sum(values) / len(values))
 
     cards = []
     for key in order:
@@ -298,12 +476,7 @@ def consolidated_cards(workflows: list[dict]) -> list[dict]:
         cards.append({
             "model": model,
             "effort": effort,
-            "ovr": mean(slot["ovrs"]),
-            "ovr_min": min(slot["ovrs"]),
-            "ovr_max": max(slot["ovrs"]),
-            "stats": {s: mean(v) for s, v in slot["stats"].items()},
-            "con": mean(slot["cons"]) if slot["cons"] else None,
-            "coverage": len(slot["ovrs"]),
+            **_average_cards(slot["rows"]),
             "boards_total": len(flat),
             "per_board": per_board,
         })

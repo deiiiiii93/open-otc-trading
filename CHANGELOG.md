@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Provisional model cards** — a run published as cards only, never on the
+  leaderboard. `boards.yaml` grows an optional `provisional:` section (the top
+  level may now be a mapping; a bare list is still read as "all boards"), and
+  `models.html` renders a Provisional section after the consolidated grid.
+  The asymmetry is the point: a one-model smoke has no field, so a rank of #1
+  of 1 measures nothing, but an ability card is an **absolute** measurement
+  (`passed/total` per axis, EFF against each workflow's own par) and stays
+  meaningful with no opponent — the same asymmetry that already lets a
+  consolidated card average across workflows while the leaderboard never merges
+  runs. Provisional cards carry no rank **by construction** rather than by
+  blanking one, publish their trial depth beside the em-dash CON (so a reader
+  can tell "not measured" from "perfectly consistent"), and state coverage as
+  `4 of 5` when a workflow is uncarded. A run declared as both a board and
+  provisional is rejected: the two make contradictory claims about whether it
+  had a field. First entry: **Run #113, `gemini-3-7-flash`** — OVR 90 across all
+  five golden workflows at one trial each, including `ops-settlement-day`, which
+  has no board at all.
+
 ### Changed
 - **The arena blog is set as an editorial page rather than a dashboard.** Serif
   now carries the argument (nameplate, headlines, blurbs, report prose) and sans
