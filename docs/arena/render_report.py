@@ -1,32 +1,26 @@
 #!/usr/bin/env python3
-"""Render the run-8 arena markdown into a styled, self-contained HTML report.
+"""Render an arena markdown report into a styled, self-contained HTML report.
 
-The three ASCII bar charts in the markdown are swapped for real CSS bar charts so
-the HTML/PDF read better than monospace blocks. Output is a single .html file with
+The ASCII bar charts in the markdown are swapped for real CSS bar charts so the
+HTML/PDF read better than monospace blocks. Output is a single .html file with
 all CSS inlined (no external assets) so the PDF render is deterministic.
+
+Importable: `render_markdown()` is reused by docs/arena/deploy/site_builder.py to
+build the web version, which wraps the same body in blog chrome. The PDF is
+rendered from the un-chromed document, so print output cannot drift when the site
+design changes.
 """
 import json
 import re
 import subprocess
 import sys
 from pathlib import Path
+
 import markdown
 
-# Default to the run-8 report living next to this script; override with argv[1].
 HERE = Path(__file__).resolve().parent
-SRC = (Path(sys.argv[1]) if len(sys.argv) > 1
-       else HERE / "2026-06-27-run8-otc-desk-agent-arena.md").resolve()
-OUT_HTML = SRC.with_suffix(".html")
-OUT_PDF = SRC.with_suffix(".pdf")
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-
-# Each report carries the same three ASCII charts; for HTML/PDF we swap them for
-# real CSS bar charts. The chart data is per-report: a sibling `<src>.charts.json`
-# (a list of [caption, axis_max, unit, rows] specs, rows = [label, value, cls,
-# vlabel]) overrides the built-in run-8 defaults below, so every new run is a
-# drop-in — no code edit, just author the report + its charts sidecar.
-RUN_LABEL = next((m.group(0).replace("run", "Run #")
-                  for m in [re.search(r"run\d+", SRC.name)] if m), "Run")
+DEFAULT_SRC = HERE / "2026-06-27-run8-otc-desk-agent-arena.md"
 
 # ---------------------------------------------------------------- chart data ---
 # (label, value, css-class)  — class drives the bar colour
@@ -67,13 +61,27 @@ PPD = ("Score per dollar (est.) — cost-efficiency inverts the quality ranking"
     ("Qwen 3.7 Max",       0, "floor", "0"),
 ])
 
-_SIDECAR = SRC.with_suffix(".charts.json")
-if _SIDECAR.exists():
-    # Sidecar: [[caption, axis_max, unit, [[label, value, cls, vlabel], ...]], ...]
-    _specs = [(s[0], s[1], s[2], [tuple(r) for r in s[3]])
-              for s in json.loads(_SIDECAR.read_text())]
-else:
-    _specs = [LEADERBOARD, RELIABILITY, PPD]
+DEFAULT_SPECS = [LEADERBOARD, RELIABILITY, PPD]
+
+
+def run_label(src: Path) -> str:
+    """"...run110..." -> "Run #110"; no run number in the name -> "Run"."""
+    m = re.search(r"run\d+", src.name)
+    return m.group(0).replace("run", "Run #") if m else "Run"
+
+
+def chart_specs(src: Path) -> list:
+    """A sibling `<src>.charts.json` overrides the built-in run-8 defaults.
+
+    Sidecar: [[caption, axis_max, unit, [[label, value, cls, vlabel], ...]], ...]
+    """
+    sidecar = src.with_suffix(".charts.json")
+    if not sidecar.exists():
+        return list(DEFAULT_SPECS)
+    return [
+        (s[0], s[1], s[2], [tuple(r) for r in s[3]])
+        for s in json.loads(sidecar.read_text())
+    ]
 
 
 def chart_html(spec):
@@ -88,36 +96,41 @@ def chart_html(spec):
             f'<span class="val">{vlabel}</span>'
             '</div>'
         )
-    out.append(f'<figcaption>{caption} · axis 0–{axis_max} {unit}</figcaption>')
+    out.append(f'<figcaption>{caption} \u00b7 axis 0\u2013{axis_max} {unit}</figcaption>')
     out.append('</figure>')
     return "\n".join(out)
 
-# --------------------------------------------------- swap ASCII blocks -> charts
-md_text = SRC.read_text()
-chart_blocks = list(re.finditer(r"```[^\n]*\n.*?█.*?```", md_text, flags=re.DOTALL))
-n_blocks = len(chart_blocks)
-charts = iter([chart_html(s) for s in _specs[:n_blocks]])
-sentinels = []
 
-def _sub(_m):
-    tok = f"@@CHART_{len(sentinels)}@@"
-    try:
-        sentinels.append(next(charts))
-    except StopIteration:
-        sentinels.append("")
-    return tok
+def render_markdown(src: Path) -> tuple[str, str]:
+    """Return (body_html, run_label) for one report markdown file."""
+    md_text = src.read_text()
+    specs = chart_specs(src)
+    # fenced blocks that contain a full-block char are our ASCII charts
+    pattern = r"```[^\n]*\n.*?\u2588.*?```"
+    n_blocks = len(re.findall(pattern, md_text, flags=re.DOTALL))
+    charts = iter([chart_html(s) for s in specs[:n_blocks]])
+    sentinels: list[str] = []
 
-# fenced blocks that contain a full-block char are our ASCII charts
-md_text = re.sub(r"```[^\n]*\n.*?█.*?```", _sub, md_text, flags=re.DOTALL)
+    def _sub(_m):
+        tok = f"@@CHART_{len(sentinels)}@@"
+        try:
+            sentinels.append(next(charts))
+        except StopIteration:
+            sentinels.append("")
+        return tok
 
-body = markdown.markdown(
-    md_text,
-    extensions=["tables", "fenced_code", "attr_list", "sane_lists", "md_in_html"],
-)
+    md_text = re.sub(pattern, _sub, md_text, flags=re.DOTALL)
 
-# python-markdown wraps a lone sentinel paragraph in <p>…</p>
-for i, html in enumerate(sentinels):
-    body = body.replace(f"<p>@@CHART_{i}@@</p>", html).replace(f"@@CHART_{i}@@", html)
+    body = markdown.markdown(
+        md_text,
+        extensions=["tables", "fenced_code", "attr_list", "sane_lists", "md_in_html"],
+    )
+
+    # python-markdown wraps a lone sentinel paragraph in <p>...</p>
+    for i, html in enumerate(sentinels):
+        body = body.replace(f"<p>@@CHART_{i}@@</p>", html).replace(f"@@CHART_{i}@@", html)
+    return body, run_label(src)
+
 
 CSS = """
 :root{
@@ -196,32 +209,52 @@ td:first-child,th:first-child{white-space:nowrap}
 }
 """
 
-doc = f"""<!doctype html>
+
+def document_html(body: str, label: str, src_name: str) -> str:
+    """The standalone print-tuned document. This is what the PDF renders from."""
+    return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OTC Desk Agent Arena — {RUN_LABEL}</title>
+<title>OTC Desk Agent Arena \u2014 {label}</title>
 <style>{CSS}</style>
 </head><body>
 {body}
 <p class="footer-note">Rendered from
-<code>docs/arena/{SRC.name}</code> ·
-OTC Desk Agent Arena · {RUN_LABEL}.</p>
+<code>docs/arena/{src_name}</code> \u00b7
+OTC Desk Agent Arena \u00b7 {label}.</p>
 </body></html>
 """
 
-OUT_HTML.write_text(doc)
-print(f"wrote {OUT_HTML}  ({len(doc):,} bytes)")
 
-# ------------------------------------------------------- render PDF via Chrome
-# Headless Chrome is the highest-fidelity HTML->PDF path: it honours @page,
-# @media print, and print-color-adjust (so the chart colours survive).
-if Path(CHROME).exists():
+def write_pdf(html_path: Path, pdf_path: Path) -> bool:
+    """Headless Chrome honours @page, @media print and print-color-adjust."""
+    if not Path(CHROME).exists():
+        print(f"skipped PDF (Chrome not found at {CHROME})")
+        return False
     subprocess.run(
         [CHROME, "--headless=new", "--disable-gpu", "--no-pdf-header-footer",
          "--run-all-compositor-stages-before-draw",
-         f"--print-to-pdf={OUT_PDF}", OUT_HTML.as_uri()],
+         f"--print-to-pdf={pdf_path}", html_path.as_uri()],
         check=True, capture_output=True,
     )
-    print(f"wrote {OUT_PDF}")
-else:
-    print(f"skipped PDF (Chrome not found at {CHROME})")
+    print(f"wrote {pdf_path}")
+    return True
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    src = (Path(args[0]) if args else DEFAULT_SRC).resolve()
+    out_html = src.with_suffix(".html")
+    out_pdf = src.with_suffix(".pdf")
+
+    body, label = render_markdown(src)
+    doc = document_html(body, label, src.name)
+    out_html.write_text(doc)
+    print(f"wrote {out_html}  ({len(doc):,} bytes)")
+
+    write_pdf(out_html, out_pdf)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
