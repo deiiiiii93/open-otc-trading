@@ -55,6 +55,16 @@ step "5/6 patching open-slides-zero and backing up the live nginx config"
 "${SSH[@]}" "cp -a '$DEPLOY_DIR/deploy/nginx/default.conf' '$DEPLOY_DIR/deploy/nginx/default.conf.pre-arena'"
 ( cd "$OSZ" && ./scripts/deploy_incremental.sh --service nginx )
 
+# --force-recreate is REQUIRED, not belt-and-braces. compose.prod.yml
+# bind-mounts default.conf as a SINGLE FILE, and deploy_incremental ships it via
+# `tar -xzf`, which unlinks and recreates the file — a new inode. The running
+# container's mount still resolves to the OLD inode, so nginx keeps serving a
+# file that no longer exists on disk. `up -d` prints "Running" (nothing in the
+# service definition changed) and even `nginx -s reload` re-reads the stale
+# inode. Measured: host inode 139852 / mtime 13:30 vs container inode 143857 /
+# mtime 05:08, with nginx -t passing against the correct file the whole time.
+"${SSH[@]}" "cd '$DEPLOY_DIR' && sudo docker compose --env-file .env.production -f compose.prod.yml up -d --force-recreate nginx"
+
 step "6/6 verifying"
 ok=0
 for _ in $(seq 1 15); do

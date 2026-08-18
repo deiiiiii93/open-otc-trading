@@ -1142,6 +1142,28 @@ at Run #94 while Run #104 was rendered and never shipped).
   pins both: byte-identity against all six committed report HTMLs (sha256) and
   import purity by **content hash**, not filename set — an overwrite is invisible to
   a name-set comparison.
+- **NEVER use `add_header` in the `/arena/` location.** nginx inherits
+  `add_header` from the server level "if and only if there are no add_header
+  directives defined on the current level", so ONE `Cache-Control` line there
+  discards CSP, HSTS, X-Frame-Options, nosniff, Referrer-Policy AND
+  Permissions-Policy for every `/arena/` response. That shipped, and the deploy
+  verifier called it healthy because it only checked status and body — it now
+  asserts the six headers. Use `expires`, a different directive family that does
+  not trigger the replacement rule.
+- **A single-file bind mount pins an INODE, not a path.** `compose.prod.yml`
+  mounts `deploy/nginx/default.conf` as one file, and `deploy_incremental.sh`
+  ships it with `tar -xzf`, which unlinks and recreates it. The running
+  container's mount still resolves to the OLD inode, so nginx serves a file that
+  no longer exists on disk — `up -d` prints "Running" (the service definition is
+  unchanged), `nginx -t` passes against the correct file, and `nginx -s reload`
+  faithfully re-reads the stale inode. Only `up -d --force-recreate nginx`
+  re-resolves it. **When a bind-mounted config edit does not take, compare
+  `stat -c %i` inside and outside the container before doubting the config.**
+- **open-slides-zero gitignores its own deployment files** (`compose.prod.yml`,
+  `deploy/`, `scripts/` — "local deployment packaging"). So there is nothing to
+  commit there, `git checkout` is not a revert path, and `patch_osz.py` must be
+  able to REPLACE an existing block rather than only insert one. The real
+  rollback is the server-side `default.conf.pre-arena` backup bootstrap makes.
 - **Standings bars use a fixed 0–99 axis** (`RAIL_AXIS_MAX`), not the leader's
   score. Scaling to the leader renders every bar near-full-width in a tight field
   (Run #104 is 80 vs 79) so they stop reading as measurements.

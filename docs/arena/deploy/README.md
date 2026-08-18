@@ -36,5 +36,11 @@ open-slides-zero SPA.
 - **Standings bars use a fixed 0–99 axis**, not the leader's score. Scaling to the
   leader makes every bar near-full-width in a tight field (Run #104 is 80 vs 79)
   and they stop reading as measurements.
+- **An nginx config edit needs `--force-recreate`.** `default.conf` is a
+  single-file bind mount and the deploy ships it with `tar`, which makes a new
+  inode; the running container's mount still points at the old one. `up -d`
+  reports "Running" and `nginx -s reload` re-reads the stale inode, so the change
+  appears to apply and does not. Compare `stat -c %i` inside and outside the
+  container before doubting the config.
 - **Rollback** is removing the `location /arena/` block in open-slides-zero and
   redeploying nginx. `frontend/public/arena/` is deliberately still there.
