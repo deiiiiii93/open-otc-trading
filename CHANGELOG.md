@@ -36,7 +36,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ops-settlement-day step-6 `new_derived_baseline` now uses `rel_tol: 0.005`
   so copying 91,000 into both answer slots no longer matches 90,000.
 
+### Changed
+- **Backtest: the HTML report now shares the scenario-test report's visual
+  language.** The QuantArk per-underlying dashboards are replaced by a
+  repo-native `report.html` (summary KPIs, inline-SVG cumulative P&L chart,
+  by-underlying table with lifecycle events, exclusions and notes) rendered by
+  the new `domains/backtest_report.py` from shaped results; shared style tokens
+  live in `domains/report_style.py`, consumed by both renderers. `write_artifacts`
+  records `report_html_path` (mirroring scenario_test) and the dashboard adapter
+  is dropped; the Backtest page swaps the dashboards section for an HTML Report
+  card (iframe preview + open/download).
+- Workbench run cards align the status badge to the card's top-right corner.
+
 ### Added
+- **Arena run #110: the reasoning-effort study the effort-arms feature was built
+  for.** `gpt-5-6-luna` at four pinned arms (`none/low/high/max`) × all five
+  golden workflows × 2 trials, design predeclared before launch
+  (`docs/arena/2026-08-17-luna-reasoning-effort-plan.md`, findings in
+  `docs/arena/2026-08-18-run110-luna-reasoning-effort.md`). Headline: effort is
+  a **step at `low`, not a dial** — `none→low` buys the whole quality jump
+  (+4.9 objective points) while being *cheaper than not thinking*; above `low`,
+  quality is flat (+1.0, inside trial noise) while wall-clock triples and calls
+  grow 50%; the sign is task-shaped (procedural flagship −3.8, judgment-heavy
+  high-board +18.6); trap/prohibition compliance is unmoved at every arm.
 - **Arena: one model at several reasoning efforts, ranked on one board.** A
   contestant is now `(model, reasoning_effort)` rather than a model. The `/arena`
   New Run panel's per-model effort select became a **checkbox group** — tick `Low`
