@@ -54,3 +54,6 @@ docs/zhihu/
 
 # generated ability-card images (re-renderable from the board data)
 docs/arena/cards/
+
+# generated arena blog (rebuildable from posts.yaml + the report markdown)
+docs/arena/deploy/build/
