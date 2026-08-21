@@ -8,6 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`OPEN_OTC_AGENT_MAX_OUTPUT_TOKENS`** (`Settings.agent_max_output_tokens`,
+  default **32768**) — an explicit output-token budget for the Anthropic wire
+  protocol, declared at both config sites and passed to `ChatAnthropic` by
+  `build_agent_model`. Previously nothing was passed, so `langchain_anthropic`
+  applied its own `_FALLBACK_MAX_OUTPUT_TOKENS` of **4096** — the default it uses
+  whenever it has no profile for a model id, and it has none for **any** id routed
+  through the ZenMux gateway, `anthropic/claude-opus-4.8` included, because the
+  vendor prefix defeats its lookup. So every Anthropic-protocol contestant in every
+  historical board ran capped at 4096 while every OpenAI-protocol contestant ran at
+  its provider default: a handicap on ~9 models that nobody declared. The
+  `ChatOpenAI` branch still sends no `max_tokens` **on purpose** — capping it would
+  recreate the same asymmetry in the other direction. All nine Anthropic-protocol
+  routes were probed and accept 32768 and 65536; the value is a setting rather than
+  a constant so a future route with a smaller ceiling can be lowered without a code
+  change. **Boards from run #115 on are not strictly comparable to #8–#114 for
+  Anthropic-protocol models.**
+- **`glm-5.3` registered as a desk model and arena contestant** — slug
+  `glm-5-3`, `z-ai/glm-5.3` on the zenmux channel, added to all three places a
+  model needs before it can be dispatched: `CANDIDATE_MODELS`,
+  `config/agent_channels.yaml`, and the tracked `.example.yml` (the live file is
+  gitignored, so registering in only one is invisible to every other checkout).
+  It arrives carrying glm-5.2's `protocol: anthropic` pin by **inheritance, not
+  by its own evidence**: the empty tool-call-id defect that pin exists for is a
+  gateway/vendor-family trait rather than a version one, and it surfaces only
+  under a real match — never on an isolated probe — so a new GLM starts pinned
+  and may be un-pinned only against a live match that proves it unnecessary.
 - **Provisional model cards** — a run published as cards only, never on the
   leaderboard. `boards.yaml` grows an optional `provisional:` section (the top
   level may now be a mapping; a bare list is still read as "all boards"), and
@@ -54,6 +80,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and uses one separator style instead of three competing treatments.
 
 ### Fixed
+- **Silent output truncation on the Anthropic protocol.** A model that exhausted
+  the 4096-token budget mid-thought emitted a lone `reasoning` block — no text, no
+  tool call — so the turn produced **nothing** while its span still reported
+  `status=success`. The arena's `_is_infra_blank` gate could not see it: that gate
+  corroborates blankness with step **errors**, and a truncation raises none, so the
+  match was recorded as a legitimate `scored` result. One layer deeper than the 402
+  deaths that fooled Run #10 — not a failed call, a successful one that ran out of
+  room. Measured on run #114 (`glm-5.3`): truncation on 6–14% of LLM calls per
+  workflow against **0 in 349** for the OpenAI-protocol baseline, killing five turns
+  outright — one of them an artifact step whose content was
+  `['reasoning', 'invalid_tool_call']`, a tool call severed mid-emission, which
+  alone cost that workflow its whole synthesis axis. Note truncation does **not**
+  uniformly destroy a score (two workflows on the same run scored 100.0 and 90.9,
+  because the agent loop often recovers on the next turn), so its presence is not
+  grounds to invalidate a match and a good score is not proof of its absence —
+  `completion_tokens` at exactly the cap is the only reliable tell, and it lives
+  only in the trace DB's LLM spans.
 - **Report bodies were unstyled on the web** — the site's largest surface, and
   9 of its ~13 pages. `render_report.render_markdown()` returns bare HTML with no
   stylesheet; only `document_html()` (the standalone `.html` artifact and the

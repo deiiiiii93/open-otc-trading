@@ -148,6 +148,13 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         provider="openai",
     ),
     ArenaModel(
+        slug="glm-5-3",
+        zenmux_name="z-ai/glm-5.3",
+        display_name="GLM 5.3",
+        default_config=_DEFAULT_CONFIG,
+        provider="openai",
+    ),
+    ArenaModel(
         slug="kimi-2-7",
         zenmux_name="moonshotai/kimi-k2.7-code",
         display_name="Kimi 2.7",

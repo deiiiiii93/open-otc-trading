@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from app.config import get_settings
 from app.services.deep_agent.channel_registry import (
     ChannelDescriptor,
     ChannelRegistry,
@@ -617,3 +618,36 @@ def test_effort_rejection_is_the_shared_seam():
     assert effort_rejection(
         _registry(), "zenmux", "openai", "no/such-model", "high"
     ) is None
+
+
+def test_anthropic_protocol_gets_an_explicit_max_tokens_not_langchains_fallback():
+    """The Anthropic branch must SEND max_tokens, never inherit langchain's default.
+
+    langchain-anthropic applies ``_FALLBACK_MAX_OUTPUT_TOKENS`` (4096) whenever it
+    has no profile for the model id, and it has none for any id routed through the
+    ZenMux gateway — ``anthropic/…`` ones included, because the vendor prefix
+    defeats its lookup. The resulting cap truncated reasoning models mid-thought:
+    the turn emits a lone ``reasoning`` block with no text and no tool call, so it
+    produces nothing while the span still reports ``success``. Arena run #114 lost
+    five turns that way and the infra-blank gate could not see it, because that
+    gate corroborates blankness with step ERRORS and a truncation raises none.
+    """
+    from langchain_anthropic.chat_models import _FALLBACK_MAX_OUTPUT_TOKENS
+
+    model = build_agent_model(_registry())
+    assert model.max_tokens == get_settings().agent_max_output_tokens
+    assert model.max_tokens > _FALLBACK_MAX_OUTPUT_TOKENS
+
+
+def test_openai_protocol_sends_no_max_tokens_so_the_provider_default_applies():
+    """The two protocols must not handicap each other.
+
+    ChatOpenAI deliberately sends no ``max_tokens``, so an OpenAI-protocol
+    contestant runs at its provider default. Capping it here would re-introduce
+    the asymmetry the Anthropic fix exists to remove — in the other direction.
+    """
+    model = build_agent_model(
+        _registry(),
+        selection={"channel": "zenmux", "provider": "openai", "model": "openai/gpt-5.4"},
+    )
+    assert getattr(model, "max_tokens", None) is None

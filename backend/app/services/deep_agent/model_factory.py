@@ -17,6 +17,8 @@ from langchain_core.language_models import LanguageModelInput
 from langchain_core.messages import AIMessage, convert_to_messages
 from pydantic import SecretStr
 
+from app.config import get_settings
+
 from . import reasoning_capabilities
 from .channel_registry import ChannelRegistry
 
@@ -306,6 +308,20 @@ def build_agent_model(
         anth_effort = _effort_for(selection, channel.name, model_desc.id)
         from langchain_anthropic import ChatAnthropic
         assert channel.anthropic_base_url is not None  # validated at load
+        # max_tokens is EXPLICIT because langchain-anthropic otherwise applies
+        # `_FALLBACK_MAX_OUTPUT_TOKENS` (4096) whenever it has no profile for the
+        # model id — and it has none for ANY id routed here, `anthropic/…` ones
+        # included, because the ZenMux vendor prefix defeats its lookup. That cap
+        # silenced reasoning models mid-thought: a truncated turn emits a lone
+        # `reasoning` block with no text and no tool call, so the turn produces
+        # NOTHING while the span still reports success. Arena run #114 lost 5 turns
+        # that way (glm-5.3 truncated on 6-14% of calls per workflow; the
+        # OpenAI-protocol baseline truncated 0 times in 349), and the harness's
+        # infra-blank gate could not see it — it corroborates blankness with step
+        # ERRORS, and there are none. The OpenAI branch below deliberately sends no
+        # max_tokens at all, so it already gets the provider default; this keeps
+        # the two protocols from handicapping each other.
+        max_out = int(get_settings().agent_max_output_tokens)
         return ChatAnthropic(
             model_name=model_desc.id,
             api_key=SecretStr(channel.api_key or ""),
@@ -313,6 +329,7 @@ def build_agent_model(
             default_headers={"anthropic-version": "2023-06-01"},
             timeout=None,
             stop=None,
+            max_tokens=max_out,
             **({"output_config": {"effort": anth_effort}} if anth_effort else {}),
     )
 
@@ -341,6 +358,16 @@ def build_agent_model(
     # the trace token columns (prompt/completion/total) exactly like ChatAnthropic,
     # giving exact, run-isolated per-match token counts — no external billing API
     # needed. (ChatAnthropic already reports usage natively.)
+    # UNSET by default, and that is the correct default: sending no max_tokens
+    # lets the provider apply the model's own ceiling, which is what "let every
+    # model score at its best" means here. Pinning a number would CAP models whose
+    # native ceiling is higher — the Anthropic-path bug in reverse. It exists as an
+    # opt-in solely so a budget can be varied deliberately (the effort-vs-budget
+    # study), never as a production default.
+    openai_max_out = get_settings().agent_openai_max_output_tokens
+    if openai_max_out:
+        extra["max_tokens"] = int(openai_max_out)
+
     return ChatOpenAI(
         model=model_desc.id,
         api_key=SecretStr(channel.api_key) if channel.api_key else SecretStr(""),

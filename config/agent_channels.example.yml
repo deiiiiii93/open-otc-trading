@@ -71,6 +71,16 @@ channels:
         protocol: anthropic
         label: GLM 5.2
         tags: [tool-use, reasoning]
+      - id: z-ai/glm-5.3
+        provider: openai
+        # Starts pinned by INHERITANCE from glm-5.2 above, not by its own
+        # evidence. The empty tool-call-id defect is a gateway/vendor-family
+        # trait rather than a version one, and it surfaces only under a real
+        # match -- so a new GLM arrives pinned and may be un-pinned only against
+        # a live match that proves it unnecessary.
+        protocol: anthropic
+        label: GLM 5.3
+        tags: [tool-use, reasoning]
       - id: moonshotai/kimi-k2.7-code
         provider: openai
         label: Kimi 2.7

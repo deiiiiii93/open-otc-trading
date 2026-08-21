@@ -700,6 +700,67 @@ never by subjective), and exposes `subjective_mean/stdev/mode`.
   exactly the one that got clobbered. Read the per-trial files, not
   `transcript.json`, when diagnosing trial-to-trial variance.
 
+### Long arena runs wedge silently — watch the trace clock, not the process
+
+Measured twice (runs #115 and #117, 2026-08-19/20, ~90 min and ~40 min lost). The
+run process stays alive at **0% CPU** holding one ESTABLISHED socket to the local
+proxy; the run status stays `running`; nothing raises and nothing exits.
+
+- **`timeout=None` is passed to `ChatAnthropic` deliberately**, and the OpenAI path
+  has a stream-chunk timeout that DOES fire (`langchain_openai.stream_chunk_timeout
+  fired` appears in the log) — and the process hung anyway. The hang is **below**
+  the layer that owns a timeout, so adding one on the other protocol would not
+  catch it either.
+- **The only reliable signal is the trace clock.** Poll
+  `max(start_time)` on `trace_runs`; quiet for >20 min with the process alive means
+  wedged. Score and status are useless here — silence looks exactly like work.
+- **Recovery is SIGKILL then `--resume <run>`**, which re-runs every non-`scored`
+  arm and deletes its stale rows first. Same recipe as the run #8 proxy wedge.
+- **A resume must RE-SUPPLY every process-level setting.** `reasoning_effort` is
+  persisted on the run, but an output budget
+  (`OPEN_OTC_AGENT_MAX_OUTPUT_TOKENS` / `..._OPENAI_...`) is env-only with no
+  `arena_run` column, so a resume that omits it silently finishes the run at a
+  DIFFERENT budget than it started with. Nothing in the stored data would reveal
+  that — for a budget study it silently contaminates the independent variable.
+
+### Output budget: the Anthropic protocol had a hidden 4096 cap
+
+`build_agent_model` now passes an explicit `max_tokens`
+(`Settings.agent_max_output_tokens`, `OPEN_OTC_AGENT_MAX_OUTPUT_TOKENS`, default
+**32768**) to `ChatAnthropic`. It previously passed none, so `langchain_anthropic`
+applied `_FALLBACK_MAX_OUTPUT_TOKENS` = **4096** — the value it uses whenever it has
+no profile for the model id, and it has none for **any** id routed through ZenMux,
+`anthropic/claude-opus-4.8` included (the vendor prefix defeats its lookup). Every
+Anthropic-protocol contestant in every board through #114 therefore ran capped,
+while every OpenAI-protocol contestant ran at its provider default.
+
+- **A truncated turn is invisible to every gate we have.** It emits a lone
+  `reasoning` block — no text, no tool call — so the step produces nothing, yet the
+  span is `status=success` because the HTTP call really did succeed.
+  `_is_infra_blank` corroborates blankness with step **errors** and a truncation
+  raises none, so the match is recorded `scored`. **`completion_tokens` exactly at
+  the cap is the only tell, and it lives only in the trace DB's LLM spans** — not in
+  the score, the diagnosis, or the transcript. This is one layer deeper than the 402
+  deaths of Run #10: not a failed call, a successful one that ran out of room.
+- **Truncation is not automatic invalidation, and a good score is not proof of its
+  absence.** On run #114 `glm-5.3` truncated on 6–14% of calls per workflow (the
+  OpenAI-protocol baseline: 0 of 349) yet still scored 100.0 and 90.9 on two of
+  five, because the agent loop usually recovers next turn. It costs points only when
+  the lost turn was scoring-critical — one severed `invalid_tool_call` on an
+  artifact step took a whole synthesis axis to zero.
+- **The `ChatOpenAI` branch deliberately sends no `max_tokens`.** Capping it would
+  recreate the asymmetry in the other direction. The two protocols are kept level by
+  giving one an explicit generous budget and the other none.
+- **Probe, don't assume.** All nine Anthropic-protocol routes accept 32768 *and*
+  65536; it is a setting rather than a constant so a future route with a smaller
+  ceiling can be lowered without a code change.
+- **`arena/channel.py` is DEAD CODE and a decoy.** Its `build_zenmux_chat` and the
+  `_DEFAULT_CONFIG = {"temperature": 0, "max_tokens": 4096}` it reads are referenced
+  only by `tests/test_arena_models.py`. Raising that constant changes nothing in
+  production — it looks exactly like the cap you are hunting.
+- **Comparability:** boards from run #115 on are not strictly like-for-like with
+  #8–#114 for Anthropic-protocol models, which previously ran handicapped.
+
 ### Reasoning effort: an unset knob is omitted, never sent as null
 
 Effort is chosen in the composer (**Effort**, left of Mode) and per arena run
