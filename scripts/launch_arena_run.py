@@ -43,18 +43,20 @@ def _resume_todo(run: dict) -> list[tuple[str, str, "str | None"]]:
     mark the run completed — this script's own reason for existing, one dimension
     further in.
     """
-    from app.services.arena.task import effort_levels_for
+    from app.services.arena.task import arms_for
 
     efforts = run.get("reasoning_efforts") or {}
+    budgets = run.get("max_output_tokens") or {}
     done = {
-        (m["workflow_id"], m["model_id"], m.get("reasoning_effort"))
+        (m["workflow_id"], m["model_id"], m.get("reasoning_effort"),
+         m.get("max_output_tokens"))
         for m in run["matches"] if m["status"] == "scored"
     }
     arms = [
-        (w, m, effort)
+        (w, m, effort, budget)
         for w in run["workflow_ids"]
         for m in run["model_ids"]
-        for effort in effort_levels_for(efforts, m)
+        for effort, budget in arms_for(efforts, budgets, m)
     ]
     return [a for a in arms if a not in done]
 
@@ -89,17 +91,26 @@ def resume(run_id: int) -> int:
         # Resume MUST reuse the run's own efforts, never re-read a flag: resuming
         # a pinned board at a different effort would splice two regimes into one run.
         reasoning_efforts = run.get("reasoning_efforts") or {}
+        # Same rule for the output budget, and it is the reason this matters at
+        # all: the budget used to be env-only with no column, so a resume that
+        # omitted OPEN_OTC_AGENT_MAX_OUTPUT_TOKENS silently finished the run at a
+        # DIFFERENT budget than it started with, and nothing in the stored data
+        # would reveal it. Reading it off the run makes that impossible.
+        max_output_tokens = run.get("max_output_tokens") or {}
         todo = _resume_todo(run)
-        from app.services.arena.task import effort_levels_for
+        from app.services.arena.task import arms_for
         arms_total = len(run["workflow_ids"]) * sum(
-            len(effort_levels_for(reasoning_efforts, m)) for m in run["model_ids"]
+            len(arms_for(reasoning_efforts, max_output_tokens, m))
+            for m in run["model_ids"]
         )
 
         print(f"resume run {run_id}: {arms_total - len(todo)} scored, "
               f"{len(todo)} to run (trials={trials_n}, "
-              f"efforts={reasoning_efforts or 'unpinned'})", flush=True)
-        for w, m, effort in todo:
-            print(f"  todo: {m} @ {effort or 'default'} x {w}", flush=True)
+              f"efforts={reasoning_efforts or 'unpinned'}, "
+              f"budgets={max_output_tokens or 'unpinned'})", flush=True)
+        for w, m, effort, budget in todo:
+            print(f"  todo: {m} @ {effort or 'default'}"
+                  f"/{budget or 'default'} x {w}", flush=True)
         if not todo:
             store.set_run_status(session, run_id, "completed")
             session.commit()
@@ -112,7 +123,7 @@ def resume(run_id: int) -> int:
         store.set_run_status(session, run_id, "running")
         session.commit()
 
-        for workflow_id, model_id, model_effort in todo:
+        for workflow_id, model_id, model_effort, model_budget in todo:
             # A previous sweep may have left an invalid/failed row for this ARM.
             # The effort filter matters: without it this would also delete the
             # OTHER arm's stale row, which its own iteration then never repairs.
@@ -121,6 +132,7 @@ def resume(run_id: int) -> int:
                              ArenaMatch.workflow_id == workflow_id,
                              ArenaMatch.model_id == model_id,
                              ArenaMatch.reasoning_effort == (model_effort or ""),
+                             ArenaMatch.max_output_tokens == (model_budget or 0),
                              ArenaMatch.status != "scored")
                      .all())
             for row in stale:
@@ -128,7 +140,8 @@ def resume(run_id: int) -> int:
             if stale:
                 session.commit()
                 print(f"  cleared {len(stale)} stale row(s) for {model_id} "
-                      f"@ {model_effort or 'default'} x {workflow_id}", flush=True)
+                      f"@ {model_effort or 'default'}/{model_budget or 'default'}"
+                      f" x {workflow_id}", flush=True)
 
             loaded = get_workflow_bundle(workflow_id)
             model = get_model(model_id)
@@ -141,7 +154,8 @@ def resume(run_id: int) -> int:
                         workflow_id=workflow_id, model_id=model_id, weights=weights,
                         artifact_root=artifact_root, cfg=cfg, run_match_fn=run_match,
                         judge_fn=None, post=None, trial=trial_index,
-                        reasoning_effort=model_effort)
+                        reasoning_effort=model_effort,
+                        max_output_tokens=model_budget)
                     if status == "scored" and breakdown is not None:
                         clean.append(breakdown)
                         last_path = info
@@ -155,9 +169,11 @@ def resume(run_id: int) -> int:
             _record_pair(session, run_id, workflow_id, model_id, weights, trials_n,
                          clean, last_path, last_infra, failed_exc,
                          last_infra_path=last_infra_path,
-                         reasoning_effort=model_effort)
+                         reasoning_effort=model_effort,
+                         max_output_tokens=model_budget)
             session.commit()
-            print(f"  recorded {model_id} @ {model_effort or 'default'} x {workflow_id} "
+            print(f"  recorded {model_id} @ {model_effort or 'default'}"
+                  f"/{model_budget or 'default'} x {workflow_id} "
                   f"({len(clean)}/{trials_n} clean trials)", flush=True)
 
         remaining = _resume_todo(store.get_run(session, run_id) or run)
@@ -190,6 +206,23 @@ def main() -> int:
              "to them on EFF and CON. Ignored with --resume (the run keeps its "
              "own).",
     )
+    ap.add_argument(
+        "--max-output-tokens",
+        nargs="+",
+        type=int,
+        default=None,
+        help="Pin EVERY selected model to these output-token budgets (expanded "
+             "to a per-model map). Give SEVERAL to run each model once per "
+             "budget, as separate contestants that rank against each other on "
+             "the same board — that is the A/B runs #118/#119 had to do as two "
+             "separate runs. Omitted = the process default "
+             "(OPEN_OTC_AGENT_MAX_OUTPUT_TOKENS), which is what every board "
+             "through #117 measured. Budget is a REGIME: #118 vs #119 differ by "
+             "16.4 mean objective on this alone, so a pinned board is not "
+             "comparable to an unpinned one. Ignored with --resume (the run "
+             "keeps its own, which is the point — the budget used to be env-only "
+             "and a resume could silently change it).",
+    )
     ap.add_argument("--resume", type=int, metavar="RUN_ID",
                     help="Continue an interrupted run: re-run every non-scored arm.")
     args = ap.parse_args()
@@ -221,18 +254,27 @@ def main() -> int:
                 {m: list(args.reasoning_effort) for m in args.models}
                 if args.reasoning_effort else None
             ),
+            # Same sugar, same per-model stored shape. Several budgets make each
+            # model several ARMS, so a single run can carry the whole A/B.
+            max_output_tokens=(
+                {m: list(args.max_output_tokens) for m in args.models}
+                if args.max_output_tokens else None
+            ),
         )
         session.commit()
         task_id = task.id
     finally:
         session.close()
 
-    # Arms, not pairs: several pinned levels make one model several contestants.
-    arms = len(args.workflows) * len(args.models) * max(
-        1, len(args.reasoning_effort or []))
+    # Arms, not pairs: pinned levels and pinned budgets MULTIPLY — a model at two
+    # efforts and two budgets is four contestants.
+    arms = (len(args.workflows) * len(args.models)
+            * max(1, len(args.reasoning_effort or []))
+            * max(1, len(args.max_output_tokens or [])))
     print(f"RUN_ID={run_id} TASK_ID={task_id} "
           f"arms={arms} trials={args.trials} "
           f"effort={','.join(args.reasoning_effort) if args.reasoning_effort else 'unpinned'} "
+          f"budget={','.join(map(str, args.max_output_tokens)) if args.max_output_tokens else 'unpinned'} "
           f"model_trials={arms * args.trials}", flush=True)
 
     execute_arena_run_task(task_id, run_id)

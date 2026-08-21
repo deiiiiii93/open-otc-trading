@@ -2611,6 +2611,18 @@ class ArenaRun(Base):
     # low/medium/high, and five are toggle-only. There is NO single level valid
     # for the whole field, so a scalar could not express a pinned mixed board.
     reasoning_efforts: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Output-token budget PER MODEL, same arm shape as reasoning_efforts:
+    # {model_slug: [budget | null, ...]}. null is the explicit unpinned arm (the
+    # process default), and a model absent from the map runs once at that
+    # default. Recorded because budget is a REGIME, not a detail: runs #118/#119
+    # measured 0/8 vs 7/8 artifacts and +16.4 mean objective on the budget alone,
+    # so a board that cannot say which budget it ran at cannot be compared.
+    #
+    # It rides here rather than in an env var because a resume must re-supply
+    # every process-level setting: OPEN_OTC_AGENT_MAX_OUTPUT_TOKENS has no
+    # column, so a resume that omitted it silently finished a run at a DIFFERENT
+    # budget than it started with, and nothing in the stored data would reveal it.
+    max_output_tokens: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     matches: Mapped[list["ArenaMatch"]] = relationship(
@@ -2631,6 +2643,16 @@ class ArenaMatch(Base):
     reasoning_effort: Mapped[str] = mapped_column(
         String(20), nullable=False, default="", server_default="",
     )
+    # Which output-budget regime produced this row. 0 means the run did not pin
+    # one, so the process default applied — NOT null, for the same reason
+    # reasoning_effort uses '' rather than NULL: SQL treats NULLs as DISTINCT in
+    # a UNIQUE constraint, so a nullable column would silently stop protecting
+    # unpinned pairs at the DB level while the Python-level upsert still dedups
+    # — a backstop that looks present and is not. 0 is safe as the sentinel
+    # because a zero-token budget is not a meaningful setting.
+    max_output_tokens: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     objective_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     judged_score: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -2647,12 +2669,16 @@ class ArenaMatch(Base):
     run: Mapped["ArenaRun"] = relationship(back_populates="matches")
 
     __table_args__ = (
-        # A contestant is (model, effort): the same model at low and at high are
-        # two rows that rank against each other, never one averaged row. This
-        # mirrors merge_runs' refusal to fold two efforts into one EFF/CON.
+        # A contestant is (model, effort, budget): the same model at low and at
+        # high, or at 4096 and at 32768, are separate rows that rank against
+        # each other, never one averaged row. This mirrors merge_runs' refusal
+        # to fold two regimes into one EFF/CON — and budget is a regime by
+        # measurement, not by analogy: runs #118/#119 differ by 16.4 mean
+        # objective on the budget alone.
         UniqueConstraint(
             "run_id", "workflow_id", "model_id", "reasoning_effort",
-            name="uq_arena_match_run_workflow_model_effort",
+            "max_output_tokens",
+            name="uq_arena_match_run_wf_model_effort_budget",
         ),
     )
 

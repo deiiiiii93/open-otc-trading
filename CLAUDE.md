@@ -760,6 +760,32 @@ while every OpenAI-protocol contestant ran at its provider default.
   production — it looks exactly like the cap you are hunting.
 - **Comparability:** boards from run #115 on are not strictly like-for-like with
   #8–#114 for Anthropic-protocol models, which previously ran handicapped.
+- **Truncation is now MEASURED and FLAGGED, never invalidated.** The instrument is
+  `response_metadata` — `stop_reason: "max_tokens"` (Anthropic) or
+  `finish_reason: "length"` (OpenAI); **both** are read, because a detector that
+  knows only one goes blind the moment the other protocol's budget is pinned.
+  `trace_harvest._llm_truncation` → `MatchStep.truncations` →
+  `diagnose_heuristic` → `score_breakdown.truncation` → the leaderboard row,
+  the match cell and the API.
+  - **The score is NEVER adjusted.** Truncation costs points only when the lost
+    turn was scoring-critical, which the harness cannot know — run #114 scored
+    100.0 and 90.9 on two workflows that truncated. The flag is a caveat on the
+    measurement, not a penalty, and marking such a match `invalid` would silently
+    shrink historical boards (Run #20 loses four contestants).
+  - **The flag is deliberately NOT appended to a step's `errors`.** That list is
+    what `_is_infra_blank` reads; putting it there would BE the invalidation this
+    design rejects.
+  - **`truncation: null` means never measured, and is not `calls: 0`.** Every
+    board through #114 ran capped and really did truncate; a confident zero for
+    them would assert the opposite. Same `empty` vs `unavailable` discipline the
+    report module enforces.
+  - It is carried at the breakdown's **top level** because `fold_trial_breakdowns`
+    does not lift `diagnosis` and every match is wrapped, single-trial included —
+    the same trap that blanked the drilldown for 222 of 297 stored matches.
+  - **`severed_tool_call` is the expensive case**: content blocks
+    `['text', 'invalid_tool_call']` with `completion_tokens` exactly on the cap.
+    The model HAD chosen its tool and the cap cut the JSON argument, so the call
+    never ran — that is how one lost turn takes a whole axis with it.
 
 ### Reasoning effort: an unset knob is omitted, never sent as null
 
@@ -914,11 +940,48 @@ resume, and built by `arena_model_to_selection`.
   `scripts/launch_arena_run.py` supply their own), so an unpinned run must issue
   the exact call it always did.
 
-### A contestant is `(model_id, reasoning_effort)`, not a model
+### A contestant is `(model_id, reasoning_effort, max_output_tokens)`
 
-One board can rank the same model at several efforts (migration **0058**). The old
-three-column `arena_match` unique key made the second arm collide with the first,
-so this is an identity change, not a UI one.
+One board can rank the same model at several efforts (migration **0058**) and at
+several output budgets (migration **0059**). Each widening made the previous
+unique key let the new arm collide with the first, so these are identity changes,
+not UI ones.
+
+**Budget earns its place by measurement, not analogy:** runs #118 (4096) and #119
+(32768) produced an artifact in **0/8** vs **7/8** trials and differ by **16.4
+mean objective** — on the budget alone. Everything the effort key does, the
+budget key does identically: `''`/`0` sentinels rather than NULL, per-model arm
+LISTS, omitted-when-unset on the selection dict, part of the `merge_runs` fold
+key, part of `--resume`'s todo set and stale-row cleanup, part of the transcript
+directory, and part of the React `rowKey`.
+
+- **Arms are the CROSS PRODUCT of the two axes.** `task.arms_for` is the single
+  definition, read by the execution loop, the progress total AND the launch-time
+  count — so a run cannot execute a different number of contestants than it
+  counted. A model at two efforts and two budgets is **four** contestants;
+  counting models leaves the progress bar permanently short, reading as stuck.
+- **A resume re-supplies the budget FROM THE RUN.** This is the hole 0059 closed:
+  the budget was env-only (`OPEN_OTC_AGENT_MAX_OUTPUT_TOKENS`) with no column, so
+  a resume that omitted the env var silently finished the run at a DIFFERENT
+  budget than it started with — and nothing in the stored data would reveal it.
+- **A pinned budget applies to BOTH wire protocols.** An anthropic-only budget arm
+  would leave every OpenAI-protocol contestant at its provider default under both
+  arms and report a null result as if the budget had been varied.
+- **Migration 0058 had to be taught about being superseded.** `0001_initial`
+  materialises today's ORM, so a fresh DB arrives at revision 1 already carrying
+  0059's 5-column key; 0058 looked for its own 4-column *name*, found it absent,
+  and added it alongside — and the 4-column key **forbids the second budget arm**.
+  It now no-ops when a constraint already extends its columns, matched on
+  **COLUMNS not names** (the pre-0058 table's constraint is unnamed, so a
+  name-based test reads it as "superseded" and skips the real conversion).
+  `test_migration_fresh_chain` cannot catch this class — adding a redundant
+  constraint succeeds — so the guards are 0058's and 0059's idempotency tests.
+- **SQLite reflection only recovers a constraint NAME from a single-line
+  `CONSTRAINT <name> UNIQUE (...)`.** A test fixture that splits it across two
+  lines reflects the constraint as unnamed, so `drop_constraint` by name matches
+  nothing and the rebuild silently leaves the old key behind — the fixture passes
+  while proving nothing. Both 0058's and 0059's fixtures declare it on one line,
+  matching what alembic emits and what the live DB contains.
 
 - **`ArenaMatch.reasoning_effort` is `''` for unpinned, never NULL.** SQL treats
   NULLs as DISTINCT in a UNIQUE constraint, so a nullable column would silently

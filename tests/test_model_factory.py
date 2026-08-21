@@ -651,3 +651,53 @@ def test_openai_protocol_sends_no_max_tokens_so_the_provider_default_applies():
         selection={"channel": "zenmux", "provider": "openai", "model": "openai/gpt-5.4"},
     )
     assert getattr(model, "max_tokens", None) is None
+
+
+# ---------------------------------------------------------------------------
+# A pinned output budget rides the model-selection dict (M4)
+# ---------------------------------------------------------------------------
+
+def test_pinned_budget_overrides_the_settings_default_on_the_anthropic_branch():
+    model = build_agent_model(_registry(), selection={
+        "channel": "zenmux", "provider": "anthropic",
+        "model": "anthropic/claude-sonnet-4-6", "max_output_tokens": 4096,
+    })
+    assert model.max_tokens == 4096
+
+
+def test_pinned_budget_also_applies_on_the_openai_branch():
+    """A budget arm must not be silently anthropic-only.
+
+    Without this the OpenAI-protocol contestants would run at their provider
+    default under BOTH arms of a budget A/B and report a null result as if the
+    budget had actually been varied.
+    """
+    model = build_agent_model(_registry(), selection={
+        "channel": "zenmux", "provider": "openai", "model": "openai/gpt-5.4",
+        "max_output_tokens": 8192,
+    })
+    assert model.max_tokens == 8192
+
+
+def test_resolved_selection_omits_the_budget_when_unset():
+    """Omitted-when-unset keeps the prebuilt-orchestrator reuse check working:
+    the resolved dict is compared by EQUALITY against the default selection, so
+    a fifth key present on every turn would end that reuse for every turn."""
+    from app.services.deep_agent.model_factory import resolve_agent_model_selection
+    resolved = resolve_agent_model_selection(_registry(), {
+        "channel": "zenmux", "provider": "openai", "model": "openai/gpt-5.4",
+    })
+    assert "max_output_tokens" not in resolved
+
+
+def test_resolved_selection_refuses_a_nonsense_budget_rather_than_clamping():
+    """0 is the DB sentinel for "unpinned", so accepting it would make a pin
+    indistinguishable from none; a coerced value would report a regime that
+    never ran."""
+    from app.services.deep_agent.model_factory import resolve_agent_model_selection
+    for bad in (0, -1, "abc"):
+        with pytest.raises(ValueError):
+            resolve_agent_model_selection(_registry(), {
+                "channel": "zenmux", "provider": "openai",
+                "model": "openai/gpt-5.4", "max_output_tokens": bad,
+            })

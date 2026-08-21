@@ -8,6 +8,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Output budget is a run VARIANT and part of the contestant key.** A contestant
+  is now `(model_id, reasoning_effort, max_output_tokens)`. Migration **0059**
+  adds `arena_run.max_output_tokens` (the per-model arm map
+  `{slug: [budget | null, ...]}`, mirroring `reasoning_efforts`) and
+  `arena_match.max_output_tokens`, and widens the unique key to five columns.
+  `scripts/launch_arena_run.py` grows `--max-output-tokens` (repeatable), so the
+  A/B that runs #118/#119 had to do as two separate runs is now two arms of one.
+  - **Budget earns arm status by measurement, not analogy.** Runs #118 (4096) and
+    #119 (32768) produced an artifact in **0/8** and **7/8** trials and differ by
+    **16.4 mean objective** — on the budget alone. Folding two budgets into one
+    row is the same defect as folding two efforts, and `merge_runs` now groups on
+    all three keys so it is structurally impossible.
+  - **`0` is the stored "unpinned", never NULL** — SQL treats NULLs as DISTINCT in
+    a UNIQUE constraint, so a nullable column would silently stop protecting
+    unpinned pairs at the DB level while the Python upsert still dedups. `None` is
+    used at every dict/API boundary; `0` only in the column.
+  - **The budget rides the model-selection dict** and is **omitted when unset**,
+    exactly like `reasoning_effort`: the resolved selection is compared by
+    equality against `AgentService.default_model_selection` to decide whether the
+    prebuilt orchestrator can be reused, so a key present on every turn — even as
+    `None` — silently ends that reuse. It applies to **both** wire protocols; a
+    budget arm that were anthropic-only would report a null result for every
+    OpenAI-protocol contestant as if the budget had been varied.
+  - **A resume re-supplies it from the run.** The budget was previously env-only
+    with no column, so a resume that omitted `OPEN_OTC_AGENT_MAX_OUTPUT_TOKENS`
+    silently finished the run at a **different** budget than it started with, and
+    nothing in the stored data would reveal it. `--resume`'s todo set and its
+    stale-row cleanup are both keyed by the full arm.
+  - Arms are the **cross product** of the two axes (`task.arms_for` is the single
+    definition, read by the execution loop, the progress total and the launch
+    count) — a model at two efforts and two budgets is four contestants. Counting
+    models would leave the progress bar permanently short, reading as stuck.
+
+### Fixed
+- **Migration 0058 created a redundant, STRICTER unique constraint on every fresh
+  database.** `0001_initial` materialises today's ORM, so a fresh DB arrives at
+  revision 1 already carrying 0059's 5-column contestant key; 0058's guard looked
+  for its own 4-column *name*, found it absent, and added it alongside — and the
+  4-column key forbids the second output-budget arm. It now no-ops when a
+  constraint already extends its columns (matched on COLUMNS, not names, because
+  the pre-0058 table's constraint is unnamed). `test_migration_fresh_chain` cannot
+  see this class of bug — adding a redundant constraint succeeds — so the guard is
+  0058's and 0059's own idempotency tests.
 - **Output-budget truncation is now measured and flagged.** The harness reads
   `response_metadata` for `stop_reason: "max_tokens"` (Anthropic protocol) or
   `finish_reason: "length"` (OpenAI protocol) on every LLM span and carries the

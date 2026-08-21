@@ -357,7 +357,9 @@ def get_model(s: str) -> ArenaModel:
 
 
 def arena_model_to_selection(
-    model: ArenaModel, reasoning_effort: str | None = None
+    model: ArenaModel,
+    reasoning_effort: str | None = None,
+    max_output_tokens: int | None = None,
 ) -> dict[str, str]:
     """Map an ArenaModel's zenmux_name to a desk model_selection dict.
 
@@ -390,6 +392,10 @@ def arena_model_to_selection(
     selection = {"channel": "zenmux", "provider": provider, "model": name}
     if reasoning_effort:
         selection["reasoning_effort"] = reasoning_effort
+    # Omitted when unset for the same reason as effort — a fourth/fifth key
+    # present on every turn defeats the prebuilt-orchestrator reuse check.
+    if max_output_tokens:
+        selection["max_output_tokens"] = max_output_tokens
     return selection
 
 

@@ -225,7 +225,39 @@ def resolve_agent_model_selection(
         if reason is not None:
             raise ValueError(f"unsupported reasoning_effort: {reason}")
         resolved["reasoning_effort"] = effort
+
+    # Output budget rides the same carrier as effort — the model-selection dict —
+    # and is OMITTED when unset for the same load-bearing reason: the resolved
+    # dict is compared by equality against AgentService.default_model_selection
+    # to decide whether the prebuilt orchestrator can be reused, so a key present
+    # on every turn (even as None) would silently end that reuse.
+    budget = normalize_max_output_tokens(selection.get("max_output_tokens"))
+    if budget is not None:
+        resolved["max_output_tokens"] = budget
     return resolved
+
+
+def normalize_max_output_tokens(raw: object) -> int | None:
+    """Validate an output-token budget; None means unset (use the default).
+
+    Refuses rather than clamps. A budget is the independent variable of a budget
+    study, so a value silently coerced into something else would report a regime
+    that never ran — the same reason an unrecognised reasoning effort is refused
+    instead of forwarded.
+    """
+    if raw is None or raw == "":
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"max_output_tokens must be an integer, got {raw!r}")
+    if value <= 0:
+        # 0 is the DB sentinel for "unpinned" and never a real budget; a
+        # negative one is nonsense. Both would otherwise reach the provider.
+        raise ValueError(
+            f"max_output_tokens must be a positive integer, got {value}"
+        )
+    return value
 
 
 def _reasoning_effort_override() -> str | None:
@@ -247,6 +279,18 @@ def _reasoning_effort_override() -> str | None:
     # the provider, which ignores it — so a mistyped sweep looked like "effort had
     # no effect on this model" and would have been read as a finding.
     return normalize_reasoning_effort(value)
+
+
+def _max_output_tokens_for(selection: Mapping[str, str] | None) -> int | None:
+    """A budget pinned on the selection, else None (caller applies its default).
+
+    Explicit-selection-first, exactly like _effort_for. This is what makes an
+    output budget a per-ARM setting rather than a process-wide one: the arena
+    runs two budgets inside a single run, so a process env var could not express
+    the board at all — and, being env-only, it silently survived a resume at the
+    wrong value.
+    """
+    return normalize_max_output_tokens((selection or {}).get("max_output_tokens"))
 
 
 def _effort_for(
@@ -321,7 +365,10 @@ def build_agent_model(
         # ERRORS, and there are none. The OpenAI branch below deliberately sends no
         # max_tokens at all, so it already gets the provider default; this keeps
         # the two protocols from handicapping each other.
-        max_out = int(get_settings().agent_max_output_tokens)
+        max_out = (
+            _max_output_tokens_for(selection)
+            or int(get_settings().agent_max_output_tokens)
+        )
         return ChatAnthropic(
             model_name=model_desc.id,
             api_key=SecretStr(channel.api_key or ""),
@@ -364,7 +411,14 @@ def build_agent_model(
     # native ceiling is higher — the Anthropic-path bug in reverse. It exists as an
     # opt-in solely so a budget can be varied deliberately (the effort-vs-budget
     # study), never as a production default.
-    openai_max_out = get_settings().agent_openai_max_output_tokens
+    # A budget PINNED on the selection applies to both protocols. Without this
+    # branch a budget arm would be silently anthropic-only, so an OpenAI-protocol
+    # contestant would run at its provider default under both arms and report a
+    # null result as if the budget had been tested.
+    openai_max_out = (
+        _max_output_tokens_for(selection)
+        or get_settings().agent_openai_max_output_tokens
+    )
     if openai_max_out:
         extra["max_tokens"] = int(openai_max_out)
 

@@ -169,6 +169,10 @@ class AgentModelSelection(BaseModel):
     # model_factory.normalize_reasoning_effort, which also refuses an effort for
     # anthropic-protocol models rather than dropping it silently.
     reasoning_effort: str | None = None
+    # Explicit output-token budget for this turn. None sends the process default.
+    # Like reasoning_effort it is OMITTED (not null) from the resolved selection
+    # when unset, so a default turn still reuses the prebuilt orchestrator.
+    max_output_tokens: int | None = None
 
     @model_validator(mode="before")
     @classmethod

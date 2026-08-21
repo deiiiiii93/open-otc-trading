@@ -630,6 +630,12 @@ function TruncationBadge({
   );
 }
 
+/** Compact output budget for a badge: 32768 -> "32k". Unpinned renders nothing
+ *  at the call site — null is an absence, not a level, exactly like effort. */
+function formatBudget(tokens: number): string {
+  return tokens % 1024 === 0 ? `${tokens / 1024}k` : String(tokens);
+}
+
 function statusClass(status: string): string {
   if (status === 'completed') return 'wl-arena__status--completed';
   if (status === 'failed') return 'wl-arena__status--failed';
@@ -941,6 +947,12 @@ export function ArenaLive() {
             {row.reasoning_effort ? (
               <Badge variant="info">{row.reasoning_effort}</Badge>
             ) : null}
+            {/* The other half of the contestant key. Without it two budget arms
+                of one model are indistinguishable: same name, workflow, status
+                and radar — the same gap that showed Grok 4.6 twice on run #109. */}
+            {row.max_output_tokens ? (
+              <Badge variant="ink">{formatBudget(row.max_output_tokens)}</Badge>
+            ) : null}
             <TruncationBadge truncation={row.truncation} />
           </span>
         ),
@@ -1048,7 +1060,8 @@ export function ArenaLive() {
               rows={leaderboard}
               // A contestant is (model, effort): keyed on model_id alone, two arms
               // of one model are duplicate React keys.
-              rowKey={(r) => `${r.model_id}::${r.reasoning_effort ?? ''}`}
+              rowKey={(r) =>
+                `${r.model_id}::${r.reasoning_effort ?? ''}::${r.max_output_tokens ?? ''}`}
             />
           )}
         </div>
@@ -1149,6 +1162,11 @@ export function ArenaLive() {
                           {match.reasoning_effort ? (
                             <Badge variant="info" className="wl-arena__match-effort">
                               {match.reasoning_effort}
+                            </Badge>
+                          ) : null}
+                          {match.max_output_tokens ? (
+                            <Badge variant="ink" className="wl-arena__match-effort">
+                              {formatBudget(match.max_output_tokens)}
                             </Badge>
                           ) : null}
                           <TruncationBadge

@@ -48,6 +48,15 @@ def _uniques(table: str) -> set[str]:
     return {u["name"] for u in inspect(op.get_bind()).get_unique_constraints(table)}
 
 
+def _superseded(table: str) -> bool:
+    """True if a unique constraint already extends _NEW_COLS (a later shape)."""
+    n = len(_NEW_COLS)
+    return any(
+        list(u["column_names"])[:n] == _NEW_COLS and len(u["column_names"]) > n
+        for u in inspect(op.get_bind()).get_unique_constraints(table)
+    )
+
+
 def upgrade() -> None:
     if "arena_match" not in _tables():
         return
@@ -68,7 +77,19 @@ def upgrade() -> None:
         ))
 
     uniques = _uniques("arena_match")
-    if _NEW_UQ not in uniques:
+    # Superseded = some existing unique constraint already EXTENDS this one, i.e.
+    # its columns start with these four. 0001_initial create_all materialises
+    # today's ORM, so a fresh database arrives here already carrying 0059's
+    # 5-column (…, max_output_tokens) constraint. Creating this 4-column one
+    # anyway would leave the table with BOTH — and the 4-column one is STRICTER,
+    # so it would silently forbid the second output-budget arm that 0059 exists
+    # to allow. The fresh-chain test cannot see that (adding a redundant
+    # constraint succeeds); 0058's own idempotency test is what caught it.
+    #
+    # Matched on COLUMNS, not names: the pre-0058 table's 3-column constraint is
+    # UNNAMED, so a name-based test would read it as "superseded" and skip the
+    # real conversion this migration exists to perform.
+    if not _superseded("arena_match") and _NEW_UQ not in uniques:
         # batch_alter_table, never a direct constraint op: SQLite cannot alter a
         # constraint in place, so alembic rebuilds the table (create, copy, drop,
         # rename) and carries the rows, sibling FKs and other indexes across.

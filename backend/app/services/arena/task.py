@@ -43,6 +43,46 @@ def effort_levels_for(
     return levels or [None]
 
 
+def budget_arms_for(
+    max_output_tokens: dict | None, model_id: str
+) -> list[int | None]:
+    """The output-token budgets this model runs at, one contestant per budget.
+
+    A model absent from the map runs exactly once at the process default — what
+    every board through #117 measured. ``None`` inside the list is the explicit
+    unpinned arm, so a board can rank "as we have always run it" against a pin.
+
+    Accepts a bare scalar as a one-element list for symmetry with
+    ``effort_levels_for``: derive on read, never migrate the JSON column.
+    """
+    raw = (max_output_tokens or {}).get(model_id)
+    if raw is None:
+        return [None]
+    if not isinstance(raw, list):
+        return [int(raw) or None]
+    budgets = [(int(b) if b else None) for b in raw]
+    return budgets or [None]
+
+
+def arms_for(
+    reasoning_efforts: dict | None,
+    max_output_tokens: dict | None,
+    model_id: str,
+) -> list[tuple[str | None, int | None]]:
+    """Every (effort, budget) contestant arm this model runs in a run.
+
+    The CROSS PRODUCT of the two axes, and the single definition of "an arm" —
+    the execution loop, the progress total and the launch-time count all read it,
+    so a run cannot execute a different number of contestants than it counted.
+    An unpinned model yields exactly ``[(None, None)]``, one arm at the defaults.
+    """
+    return [
+        (effort, budget)
+        for effort in effort_levels_for(reasoning_efforts, model_id)
+        for budget in budget_arms_for(max_output_tokens, model_id)
+    ]
+
+
 def queue_arena_run(
     session: Session,
     *,
@@ -51,6 +91,7 @@ def queue_arena_run(
     weights: dict | None = None,
     trials: int = 1,
     reasoning_efforts: dict[str, list[str | None] | str] | None = None,
+    max_output_tokens: dict[str, list[int | None] | int] | None = None,
 ) -> tuple[Any, TaskRun]:
     """Validate inputs, create ArenaRun + TaskRun, flush (no commit).
 
@@ -156,6 +197,39 @@ def queue_arena_run(
                 + "; ".join(offenders)
             )
 
+    # Per-model LIST of budget arms, validated at LAUNCH for the same reason as
+    # effort: a bad value discovered per-match rejects the arm only after other
+    # pairs have already cost real money.
+    canonical_budgets: dict[str, list[int | None]] = {}
+    if max_output_tokens:
+        from app.services.deep_agent.model_factory import normalize_max_output_tokens
+
+        known = set(canonical_model_ids)
+        for raw_id, raw_budgets in max_output_tokens.items():
+            slug = validate_model_ids([str(raw_id)])[0]
+            if slug not in known:
+                raise ValueError(
+                    f"max_output_tokens names {raw_id!r}, which is not one of this "
+                    f"run's models {sorted(known)}"
+                )
+            budgets = raw_budgets if isinstance(raw_budgets, list) else [raw_budgets]
+            normalized: list[int | None] = []
+            for budget in budgets:
+                value = normalize_max_output_tokens(budget)
+                if value in normalized:
+                    # Two arms with one contestant key: the second would upsert
+                    # over the first and the run would report completed with an
+                    # arm silently missing.
+                    raise ValueError(
+                        f"max_output_tokens[{slug!r}] lists a duplicate budget "
+                        f"{'default' if value is None else value}"
+                    )
+                normalized.append(value)
+            # [None] is exactly "absent" — persisting it would claim a pin that
+            # is not one, and read back identically anyway.
+            if normalized != [None]:
+                canonical_budgets[slug] = normalized
+
     run_id = store.create_run(
         session,
         workflow_ids=workflow_ids,
@@ -163,10 +237,16 @@ def queue_arena_run(
         weights=weights,
         trials=trials,
         reasoning_efforts=canonical_efforts or None,
+        max_output_tokens=canonical_budgets or None,
     )
 
+    # Arms are the CROSS PRODUCT of effort and budget arms: a model pinned at two
+    # efforts and two budgets is four contestants. Counting models (or only one
+    # axis) leaves the progress bar permanently short of its total, which reads
+    # as a stuck run.
     arms = sum(
-        len(effort_levels_for(canonical_efforts, m)) for m in canonical_model_ids
+        len(arms_for(canonical_efforts, canonical_budgets, m))
+        for m in canonical_model_ids
     )
     task = TaskRun(
         kind=TaskKind.ARENA_RUN.value,
@@ -282,7 +362,8 @@ def _is_infra_contaminated(transcript) -> bool:
 def _save_transcript(transcript, artifact_root: Path,
                      workflow_id: str, model_id: str,
                      trial: int | None = None,
-                     reasoning_effort: str | None = None) -> str | None:
+                     reasoning_effort: str | None = None,
+                     max_output_tokens: int | None = None) -> str | None:
     """Persist the transcript JSON to disk; best-effort, None on failure.
 
     Writes the canonical ``transcript.json`` (what ArenaMatch.transcript_path
@@ -292,12 +373,18 @@ def _save_transcript(transcript, artifact_root: Path,
     early trial was unauditable — exactly the evidence needed to diagnose a
     low-CON row. Returns the canonical path.
 
-    One directory per ARM (``.../<model>/<effort or "default">/``). Two efforts of
-    one model previously wrote the same ``transcript.json`` and the second
-    clobbered the first — the same clobber, one level up.
+    One directory per ARM
+    (``.../<model>/<effort or "default">[-tok<budget>]/``). Two efforts of one
+    model previously wrote the same ``transcript.json`` and the second clobbered
+    the first — the same clobber, one level up. Budget joins the path for the
+    same reason, and the suffix is OMITTED when unpinned so every historical
+    run's paths are byte-identical to what they already are.
     """
     try:
-        t_dir = artifact_root / workflow_id / model_id / (reasoning_effort or "default")
+        arm = reasoning_effort or "default"
+        if max_output_tokens:
+            arm = f"{arm}-tok{max_output_tokens}"
+        t_dir = artifact_root / workflow_id / model_id / arm
         t_dir.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(transcript.model_dump(), indent=2)
         t_file = t_dir / "transcript.json"
@@ -374,6 +461,7 @@ def _run_and_score_once(
     post: Callable | None,
     trial: int | None = None,
     reasoning_effort: str | None = None,
+    max_output_tokens: int | None = None,
 ) -> tuple[str, dict | None, str | None, str | None]:
     """Run and score ONE trial for a (workflow, model) pair.
 
@@ -392,6 +480,8 @@ def _run_and_score_once(
     # scripts/launch_arena_run.py supply their own), so an unconditional new kwarg
     # would break every existing driver for no behavioural gain.
     extra = {"reasoning_effort": reasoning_effort} if reasoning_effort else {}
+    if max_output_tokens:
+        extra["max_output_tokens"] = max_output_tokens
     transcript = run_match_fn(
         loaded, model, artifact_root=artifact_root, run_id=run_id, **extra
     )
@@ -403,11 +493,13 @@ def _run_and_score_once(
     # steps (infra_error). Transcript evidence is still saved for audit.
     if _is_infra_blank(transcript):
         invalid_path = _save_transcript(transcript, artifact_root, workflow_id, model_id, trial,
-                                    reasoning_effort=reasoning_effort)
+                                    reasoning_effort=reasoning_effort,
+                                    max_output_tokens=max_output_tokens)
         return "invalid", None, "infra_blank", invalid_path
     if _is_infra_contaminated(transcript):
         invalid_path = _save_transcript(transcript, artifact_root, workflow_id, model_id, trial,
-                                    reasoning_effort=reasoning_effort)
+                                    reasoning_effort=reasoning_effort,
+                                    max_output_tokens=max_output_tokens)
         return "invalid", None, "infra_error", invalid_path
 
     # Subjective judgment: the injected test seam, else a contestant-excluded
@@ -486,7 +578,8 @@ def _run_and_score_once(
 
     # Save transcript to disk
     transcript_path = _save_transcript(transcript, artifact_root, workflow_id, model_id, trial,
-                                    reasoning_effort=reasoning_effort)
+                                    reasoning_effort=reasoning_effort,
+                                    max_output_tokens=max_output_tokens)
 
     return "scored", breakdown, transcript_path, None
 
@@ -504,6 +597,7 @@ def _record_pair(
     failed_exc: str | None,
     last_infra_path: str | None = None,
     reasoning_effort: str | None = None,
+    max_output_tokens: int | None = None,
 ) -> None:
     """Persist exactly one match row for a (workflow, model) pair after its trials.
 
@@ -519,7 +613,9 @@ def _record_pair(
     # Per-match provenance: which effort regime produced this row. Recorded on
     # every status (scored/failed/invalid), because a board that cannot state the
     # effort its numbers came from cannot defend its EFF or CON columns.
-    cfg = {"weights": weights, "trials": trials_n, "reasoning_effort": reasoning_effort}
+    cfg = {"weights": weights, "trials": trials_n,
+           "reasoning_effort": reasoning_effort,
+           "max_output_tokens": max_output_tokens}
     if clean:
         agg = scoring.fold_trial_breakdowns(clean)
 
@@ -555,6 +651,7 @@ def _record_pair(
             status="scored",
             score_breakdown=agg,
             reasoning_effort=reasoning_effort,
+            max_output_tokens=max_output_tokens,
         )
     elif last_infra is None and failed_exc is not None:
         store.record_match(
@@ -571,6 +668,7 @@ def _record_pair(
             status="failed",
             error=failed_exc,
             reasoning_effort=reasoning_effort,
+            max_output_tokens=max_output_tokens,
         )
     else:
         store.record_match(
@@ -587,6 +685,7 @@ def _record_pair(
             status="invalid",
             error=last_infra or "infra_blank",
             reasoning_effort=reasoning_effort,
+            max_output_tokens=max_output_tokens,
         )
 
 
@@ -640,11 +739,14 @@ def _execute(
     weights: dict | None = run_dict.get("weights")
     trials_n = int(run_dict.get("trials") or 1)
     reasoning_efforts: dict = run_dict.get("reasoning_efforts") or {}
+    max_output_tokens: dict = run_dict.get("max_output_tokens") or {}
 
-    # Arms, not models: a model pinned at two efforts is two contestants, so it
-    # is two units of work. The old product left such a run's progress bar short
-    # of its total forever, reading as stuck.
-    arms = sum(len(effort_levels_for(reasoning_efforts, m)) for m in model_ids)
+    # Arms, not models: a model pinned at two efforts and two budgets is FOUR
+    # contestants, so it is four units of work. The old product left such a run's
+    # progress bar short of its total forever, reading as stuck.
+    arms = sum(
+        len(arms_for(reasoning_efforts, max_output_tokens, m)) for m in model_ids
+    )
     total_units = len(workflow_ids) * arms * trials_n
     mark_task_running(session, task_id)
     store.set_run_status(session, run_id, "running")
@@ -658,9 +760,11 @@ def _execute(
         for model_id in model_ids:
             loaded = _get_bundle(workflow_id)
             model = get_model(model_id)
-            # One contestant per pinned level; a model absent from the map runs
-            # once at its vendor default.
-            for model_effort in effort_levels_for(reasoning_efforts, model_id):
+            # One contestant per (effort, budget) arm; a model absent from both
+            # maps runs once at the vendor/process defaults.
+            for model_effort, model_budget in arms_for(
+                reasoning_efforts, max_output_tokens, model_id
+            ):
                 clean: list[dict] = []
                 last_infra: str | None = None
                 last_path: str | None = None
@@ -683,6 +787,7 @@ def _execute(
                             post=post,
                             trial=trial_index,
                             reasoning_effort=model_effort,
+                            max_output_tokens=model_budget,
                         )
                         if status == "scored":
                             clean.append(breakdown)
@@ -701,7 +806,8 @@ def _execute(
                 _record_pair(session, run_id, workflow_id, model_id, weights,
                              trials_n, clean, last_path, last_infra, failed_exc,
                              last_infra_path=last_infra_path,
-                             reasoning_effort=model_effort)
+                             reasoning_effort=model_effort,
+                             max_output_tokens=model_budget)
                 session.commit()
 
     # All arms processed — always mark completed (individual match failures are ok)
