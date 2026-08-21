@@ -357,3 +357,75 @@ floor for that workflow, so it is a hint, not a result.
 right-censored models (`claude-sonnet-4-6`, `claude-sonnet-5`, `longcat-2-0`,
 `minimax-m3`) still have unknowable appetite and every historical board of theirs
 ran silently capped at 4096.
+
+---
+
+# Re-measurement of the four right-censored models (run #120, 2026-08-21)
+
+The four models whose historical distributions stopped dead just under 4096 were
+re-run on `risk-manager-control-day` — the workflow where each was clipped most,
+and common to all four — at the post-fix 32768 budget.
+
+| model | obj uncapped | capped-era | calls | p50 | p95 | max | over 4096 |
+|---|---|---|---|---|---|---|---|
+| claude-sonnet-4-6 | **97.4** | 68.4 † | 67 | 164 | 2,978 | 3,201 | 0 |
+| claude-sonnet-5 | **97.4** | 88.5 | 65 | 216 | 2,029 | **4,581** | 2 (3.1%) |
+| minimax-m3 | **89.7** | 79.5 | 59 | 132 | 1,034 | 2,246 | 0 |
+| longcat-2-0 | 7.7 | 89.7 | 342 | — | — | — | **run failed — see below** |
+
+† Run #10, recorded as ~70% infra-contaminated by ZenMux 402s — the weakest of the
+four baselines and not a usable comparison.
+
+## Answer: the handicap was real but marginal
+
+These are **short-turn** models. p95 between 1,034 and 2,978; only `claude-sonnet-5`
+crossed 4096 at all, and only to 4,581 — about 12% over. Against doubao (p99 10,246)
+or glm-5.3 (max 12,314) this is the very tip of a short distribution.
+
+So their 1.0–2.4% clipped calls were genuine dead turns, but **8192 would have
+removed essentially all of the binding**. Their historical boards are mildly
+suppressed, **not invalidated**, and the published leaderboard does not need
+re-deriving.
+
+Both trustworthy score comparisons moved about **+9** (sonnet-5 88.5 → 97.4;
+minimax 79.5 → 89.7). Same direction twice is consistent with a small real gain, but
+each sits inside the ~15-point single-trial noise floor for this workflow, so it is
+*consistent with* a budget effect rather than evidence of one.
+
+**Power caveat, stated because it bounds the claim:** 59–67 calls per model cannot
+characterise a 1–2% tail — the expected number of clipped calls in 67 draws at 2.4%
+is ~1.6, so `claude-sonnet-4-6`'s zero is unremarkable and does NOT show its ceiling
+is 3,201. The historical record (1,000+ calls each) remains the better evidence that
+the tail exists; these runs measure its **shape**, not its frequency.
+
+## longcat-2.0 is currently unusable, and it is not the budget
+
+`longcat-2-0` scored **7.7** — the blank-transcript floor (inaction still satisfies
+the three `tool_not_called` prohibitions). Cause: it emitted `task()` calls with
+**empty arguments** (no `description`, no `subagent_type`), failing pydantic
+validation every time, looping to the 300 recursion limit on all nine steps.
+
+A paired A/B (run #121, both budgets as arms of one run) reproduces the failure at
+**4096 as well as 32768**, so the 2026-08-19 output-budget change is **not** the
+cause:
+
+| | run #120 @32768 | run #121 @4096 |
+|---|---|---|
+| `TaskToolSchema` errors | 332 | 55+ |
+| `GraphRecursionError` | all 9 steps | present |
+| completion tokens recorded | none | none |
+
+Two independent signals changed at once — malformed tool arguments **and** usage
+metadata disappearing from every response — which points at the provider rather
+than at any parameter set here. This is the same class as the DeepSeek v4-pro weight
+swap: **today's `longcat-2.0` is not the model that scored 89.7 in Run #20**, and its
+board history describes a different model than its current behaviour.
+
+An isolated probe returns 6/6 well-formed tool calls at both budgets, so this is
+load-dependent and only a real match reveals it — the documented behaviour for this
+model family (glm-5.2 / minimax / qwen3.7-max / longcat), and the reason the A/B had
+to be a real run rather than a probe.
+
+**Consequence:** longcat's true appetite remains unmeasured — not because of
+censoring but because the model cannot complete a run. Any board including it should
+be read with that caveat.
