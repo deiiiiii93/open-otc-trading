@@ -18,6 +18,9 @@ from typing import Any, Callable
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from sqlalchemy import select
+
+from app.models import ArenaRun, TaskRun
 from app.services.arena.models import CANDIDATE_MODELS
 from app.services.arena import store as arena_store
 
@@ -219,6 +222,63 @@ def build_arena_router(
             "deleted_run_ids": out["deleted_run_ids"],
             "match_count": out["match_count"],
             "files_removed": files_removed,
+        }
+
+    # ------------------------------------------------------------------
+    # POST /api/arena/runs/{run_id}/cancel
+    # ------------------------------------------------------------------
+
+    @router.post("/runs/{run_id}/cancel")
+    def cancel_arena_run(run_id: int, session=Depends(_get_db)) -> dict[str, Any]:
+        """Ask a non-terminal arena run to stop at its next arm boundary.
+
+        Sets `cancel_requested` on the task driving the run; `_execute` checks it
+        between arms. A match in flight cannot be interrupted, so the arm that is
+        running finishes and is RECORDED before the loop stops — cancelling
+        discards no completed work, at the cost of up to one arm of delay.
+
+        Killing the process is NOT an alternative: the task row outlives it, so a
+        worker can pick the run up and silently resume it under a different
+        environment.
+        """
+        # Select the status COLUMN, not the run: `get_run` builds every match dict
+        # and derives an ability card per match, which loads a workflow — measured
+        # at seconds for a large run. Cancelling needs one string.
+        status = session.execute(
+            select(ArenaRun.status).where(ArenaRun.id == run_id)
+        ).scalar_one_or_none()
+        if status is None:
+            raise HTTPException(status_code=404, detail=f"ArenaRun not found: {run_id}")
+
+        if status in ("completed", "failed"):
+            # 409 rather than a silent 200: the UI would otherwise show
+            # "cancelling..." forever on a run that has already stopped.
+            raise HTTPException(
+                status_code=409,
+                detail=f"run {run_id} is already terminal ({status})",
+            )
+
+        task = session.execute(
+            select(TaskRun)
+            .where(TaskRun.arena_run_id == run_id)
+            .order_by(TaskRun.id.desc())
+        ).scalars().first()
+        if task is None:
+            # Runs queued before task_runs.arena_run_id existed carry no link.
+            # They are all terminal, so this is a historical row, not a live one.
+            raise HTTPException(
+                status_code=409,
+                detail=f"run {run_id} has no linked task to cancel",
+            )
+
+        task.cancel_requested = True
+        session.commit()
+
+        return {
+            "run_id": run_id,
+            "task_id": task.id,
+            "cancel_requested": True,
+            "status": status,
         }
 
     # ------------------------------------------------------------------

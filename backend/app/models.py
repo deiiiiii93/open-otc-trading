@@ -2331,6 +2331,14 @@ class TaskRun(Base):
     limit_monitoring_run_id: Mapped[int | None] = mapped_column(
         ForeignKey("limit_monitoring_runs.id"), index=True, nullable=True
     )
+    # The task driving an arena board. An arena run had NO link to its task —
+    # not a column, not even in the description — so given a run id nothing
+    # could find the row whose `cancel_requested` to flip, and a stuck run
+    # could only be matched to its task by hand. ondelete=SET NULL because
+    # deleting a run must not delete the task record of what it did.
+    arena_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("arena_run.id", ondelete="SET NULL"), index=True, nullable=True
+    )
     parent_thread_id: Mapped[int | None] = mapped_column(
         ForeignKey("agent_threads.id", ondelete="SET NULL"),
         index=True,

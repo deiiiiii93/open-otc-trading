@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`POST /api/arena/runs/{id}/cancel`** — the trigger for the cancellation the
+  arena loop already honours. Before this, `cancel_requested` could only be set by
+  a manual `UPDATE` on the database, so the mechanism existed with nothing able to
+  reach it. Requires **`task_runs.arena_run_id`** (migration `0060`): an arena run
+  had **no link at all** to the task driving it — not a column, not even a hint in
+  `description` — so given a run id nothing could find the flag to flip, and a
+  stuck run could only be matched to its task by comparing timestamps by hand.
+  `task_runs` already carries this shape for seven other domains, so it follows the
+  established column pattern rather than inventing a second link. `ondelete="SET
+  NULL"`: deleting a run must not delete the record of the task that ran it.
+  Returns **409** on a terminal run rather than a silent 200 — the UI would
+  otherwise show "cancelling…" forever on a run that has already stopped — and 409
+  on a pre-`0060` run, which carries no link but is necessarily terminal anyway.
+  The status lookup selects the **column**, not the run: `get_run` builds every
+  match dict and derives an ability card per match, which loads a workflow, and
+  cancelling needs one string. **The Arena page has no Stop control yet**, so the
+  endpoint is currently callable only directly.
 - **Output budget is a run VARIANT and part of the contestant key.** A contestant
   is now `(model_id, reasoning_effort, max_output_tokens)`. Migration **0059**
   adds `arena_run.max_output_tokens` (the per-model arm map

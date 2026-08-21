@@ -252,6 +252,9 @@ def queue_arena_run(
     task = TaskRun(
         kind=TaskKind.ARENA_RUN.value,
         status=TaskStatus.QUEUED.value,
+        # The link that makes a run cancellable: `cancel_requested` lives on the
+        # task, so without this nothing could find the flag from a run id.
+        arena_run_id=run_id,
         description=(
             f"Arena run: {len(workflow_ids)} workflow(s) × {arms} contestant(s)"
         ),
