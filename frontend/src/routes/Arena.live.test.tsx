@@ -609,6 +609,47 @@ describe('ArenaLive', () => {
     expect(screen.getByText('partial')).toBeInTheDocument();
   });
 
+  it('flags a truncated contestant on the board row without changing its score', async () => {
+    setupMocks();
+    vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({
+      rows: [
+        { model_id: 'claude-sonnet', rank: 1, avg_objective: 0.9, subjective_mean: null,
+          subjective_mode: 'disabled', matches: 2, invalid: 0,
+          truncation: { calls: 4, severed_tool_calls: 1, matches_affected: 1,
+            matches_measured: 2, matches_total: 2 } },
+      ],
+    });
+    render(<ArenaLive />);
+    expect(await screen.findByText('Claude Sonnet')).toBeInTheDocument();
+    // The flag is visible on the ROW, not buried in the drilldown, and it
+    // qualifies the score rather than replacing it: the row still ranks #1.
+    // (That the score itself is unadjusted is pinned backend-side by
+    // test_truncation_does_not_change_the_score.)
+    expect(screen.getByText(/clipped/)).toBeInTheDocument();
+    expect(screen.getByText('#1')).toBeInTheDocument();
+  });
+
+  it('shows no truncation flag for a board that predates the instrument', async () => {
+    // null means NEVER MEASURED, not "measured and clean". Boards before run
+    // #115 ran under langchain's 4096 fallback and really did truncate, so an
+    // absent flag must never read as a clean bill of health.
+    setupMocks();
+    vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({
+      rows: [
+        { model_id: 'claude-sonnet', rank: 1, avg_objective: 0.9, subjective_mean: null,
+          subjective_mode: 'disabled', matches: 2, invalid: 0, truncation: null },
+        { model_id: 'gpt-4o', rank: 2, avg_objective: 0.8, subjective_mean: null,
+          subjective_mode: 'disabled', matches: 2, invalid: 0,
+          truncation: { calls: 0, severed_tool_calls: 0, matches_affected: 0,
+            matches_measured: 2, matches_total: 2 } },
+      ],
+    });
+    render(<ArenaLive />);
+    expect(await screen.findByText('Claude Sonnet')).toBeInTheDocument();
+    // Neither an unmeasured row nor a measured-clean row shows the badge.
+    expect(screen.queryByText(/clipped/)).not.toBeInTheDocument();
+  });
+
   it('hides the Subjective column when every leaderboard row is jury-disabled', async () => {
     setupMocks();
     vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({

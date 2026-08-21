@@ -306,6 +306,39 @@ def fold_trial_breakdowns(trials: list[dict]) -> dict:
         "objective_stdev": obj_stdev,
         "total_score": obj_mean,
         "subjective_mode": trials[0].get("subjective_mode", "disabled"),
+        # SUMMED across trials, unlike ``objective`` (trial 0 only) and
+        # ``objective_score`` (the mean). Neither of those is right for a
+        # caveat: a mean would dilute one badly-clipped trial into invisibility,
+        # and trial 0 alone would hide truncation that only happened in trial 1.
+        # ``trials_affected`` keeps the spread readable — 1 of 3 trials clipped
+        # is a different claim from 3 of 3.
+        "truncation": _fold_truncation(trials),
+    }
+
+
+def _fold_truncation(trials: list[dict]) -> dict | None:
+    """Sum the per-trial truncation blocks, or None if none was ever recorded.
+
+    ``None`` means NOT MEASURED and is not the same claim as ``calls: 0``, which
+    means measured and clean. Every board before this instrument existed carries
+    no block at all — and those boards really did truncate — so folding their
+    absence into a confident zero would state the opposite of what happened.
+    ``trials_measured`` exposes the coverage for the one case that can mix them:
+    merge_runs folding a pre-instrument run with a post-instrument one.
+    """
+    measured = [t["truncation"] for t in trials
+                if isinstance(t.get("truncation"), dict)]
+    if not measured:
+        return None
+    return {
+        "calls": sum(int(b.get("calls") or 0) for b in measured),
+        "steps": sum(int(b.get("steps") or 0) for b in measured),
+        "severed_tool_calls": sum(
+            int(b.get("severed_tool_calls") or 0) for b in measured
+        ),
+        "trials_affected": sum(1 for b in measured if b.get("calls")),
+        "trials_measured": len(measured),
+        "trials_total": len(trials),
     }
 
 
@@ -569,6 +602,30 @@ def _workflow_call_count(transcript: MatchTranscript, loaded) -> int:
     return total
 
 
+def truncation_summary(transcript: MatchTranscript) -> dict:
+    """Count the LLM calls in *transcript* that ran out of output budget.
+
+    Truncation NEVER changes the score. A capped turn is a caveat on the
+    measurement, not a reason to discard it: sweeping such matches to
+    ``invalid`` would silently shrink historical boards (Run #20 would lose four
+    contestants), and truncation does not reliably destroy a score anyway — run
+    #114 scored 100.0 and 90.9 on two workflows that truncated, because the
+    agent loop usually recovers on the next turn. It costs points only when the
+    lost turn was scoring-critical. So the harness scores the match and flags
+    it, and the reader decides what the flag is worth.
+    """
+    per_step = [len(s.truncations or []) for s in transcript.steps]
+    severed = sum(
+        1 for s in transcript.steps for t in (s.truncations or [])
+        if t.get("severed_tool_call")
+    )
+    return {
+        "calls": sum(per_step),
+        "steps": sum(1 for n in per_step if n),
+        "severed_tool_calls": severed,
+    }
+
+
 def diagnose_heuristic(
     transcript: MatchTranscript,
     loaded,
@@ -591,6 +648,7 @@ def diagnose_heuristic(
 
     tool_calls = _workflow_call_count(transcript, loaded)
     errors = sum(len(s.errors) for s in transcript.steps)
+    trunc = truncation_summary(transcript)
 
     parts = [
         f"{skills_hit}/{skills_total} expected skills",
@@ -599,6 +657,14 @@ def diagnose_heuristic(
     ]
     if errors:
         parts.append(f"{errors} error" + ("" if errors == 1 else "s"))
+    # The truncation flag rides in the human-readable summary too, not just the
+    # structured counts: the summary is what the match cell and the drilldown
+    # print, and a caveat nobody reads is not a caveat.
+    if trunc["calls"]:
+        parts.append(
+            f"{trunc['calls']} truncated"
+            + (" (tool call severed)" if trunc["severed_tool_calls"] else "")
+        )
     summary = " · ".join(parts)
 
     return {
@@ -609,6 +675,9 @@ def diagnose_heuristic(
         "checks_passed": passed,
         "checks_total": total,
         "errors": errors,
+        "truncated_calls": trunc["calls"],
+        "truncated_steps": trunc["steps"],
+        "severed_tool_calls": trunc["severed_tool_calls"],
     }
 
 

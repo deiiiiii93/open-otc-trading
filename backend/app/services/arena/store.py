@@ -11,6 +11,38 @@ from sqlalchemy.orm import Session
 from app.models import AgentThread, ArenaRun, ArenaMatch
 
 
+def _match_truncation(bd: dict) -> dict | None:
+    """The output-budget truncation block for one match, or None if unmeasured.
+
+    Read from the breakdown's TOP level, which is where the multi-trial fold
+    lifts it to. Reading ``diagnosis`` instead would find nothing on any wrapped
+    match — the fold does not lift ``diagnosis``, and every match is wrapped,
+    including single-trial ones. That is the same trap that blanked the
+    drilldown for 222 of 297 stored matches.
+
+    None means the match predates the instrument, which is NOT the same claim as
+    ``calls: 0``. Every board through #114 ran capped and really did truncate;
+    reporting a confident zero for them would assert the opposite.
+    """
+    block = bd.get("truncation") if isinstance(bd, dict) else None
+    return block if isinstance(block, dict) else None
+
+
+def _agg_truncation(blocks: list[dict | None]) -> dict | None:
+    """Aggregate per-match truncation blocks for one leaderboard contestant."""
+    measured = [b for b in blocks if isinstance(b, dict)]
+    if not measured:
+        return None
+    return {
+        "calls": sum(int(b.get("calls") or 0) for b in measured),
+        "severed_tool_calls": sum(
+            int(b.get("severed_tool_calls") or 0) for b in measured),
+        "matches_affected": sum(1 for b in measured if b.get("calls")),
+        "matches_measured": len(measured),
+        "matches_total": len(blocks),
+    }
+
+
 def _derive_card(bd: dict, workflow_id: str) -> tuple[dict | None, str | None]:
     """Derive an ability card from a stored score_breakdown, or (None, reason).
 
@@ -388,6 +420,12 @@ def leaderboard(
     model_stat_lists: dict[
         tuple[str, str | None], dict[str, list[int]]] = defaultdict(
         lambda: defaultdict(list))
+    # Output-budget truncation per contestant. Kept as a list of per-match
+    # blocks (None for a match recorded before the instrument existed) so the
+    # row can report coverage rather than silently averaging measured and
+    # unmeasured matches into one confident number.
+    model_truncations: dict[
+        tuple[str, str | None], list[dict | None]] = defaultdict(list)
 
     for m in matches:
         # A contestant is (model, effort) — the same model at two efforts ranks
@@ -400,6 +438,7 @@ def leaderboard(
         if m.objective_score is not None:
             model_objectives[key].append(m.objective_score)
         bd = m.score_breakdown or {}
+        model_truncations[key].append(_match_truncation(bd))
         judge = bd.get("judge") or {}
         # Effective subjective score: prefer the breakdown's judge block, else fall
         # back to the top-level column (oldest rows persisted the score only there).
@@ -499,6 +538,9 @@ def leaderboard(
             "subjective_mode": _agg_mode(model_sub_modes.get(key, [])),
             "match_count": scored_counts.get(key, 0),
             "invalid_count": invalid_counts.get(key, 0),
+            # None = this contestant's matches predate the instrument, NOT
+            # "measured and clean". Boards before run #115 really did truncate.
+            "truncation": _agg_truncation(model_truncations.get(key, [])),
             "_obj_tb": scoring.objective_tiebreak_key(dict(model_axes.get(key, {}))),
         })
 
@@ -670,6 +712,10 @@ def _match_to_dict(m: ArenaMatch) -> dict:
         "judge_missing": m.judge_missing,
         "config": m.config,
         "score_breakdown": _serialized_breakdown(m),
+        # Hoisted beside the score, not left inside the breakdown: the match
+        # CELL renders this, and a cell that has to walk into score_breakdown
+        # would show nothing for exactly the wrapped matches that carry it.
+        "truncation": _match_truncation(m.score_breakdown or {}),
         "transcript_path": m.transcript_path,
         "error": m.error,
         "created_at": m.created_at.isoformat() if m.created_at else None,

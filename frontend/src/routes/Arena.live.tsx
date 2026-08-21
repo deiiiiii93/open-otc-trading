@@ -24,6 +24,7 @@ import {
   type ArenaRunDetail,
   type ArenaRunSummary,
   type ArenaScoreBreakdown,
+  type ArenaTruncation,
   type ArenaCheck,
   type ArenaObjectiveStep,
   type ArenaReasoningEffort,
@@ -578,6 +579,57 @@ function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
   );
 }
 
+/**
+ * The visible truncation flag (desk decision, 2026-08-20: "score it with a
+ * visible flag").
+ *
+ * Deliberately NOT a status change. Sweeping truncated matches to `invalid`
+ * would silently shrink historical boards — Run #20 would lose four
+ * contestants — and truncation does not reliably destroy a score: run #114
+ * scored 100.0 and 90.9 on two workflows that truncated, because the agent loop
+ * usually recovers on the next turn. It costs points only when the lost turn
+ * was scoring-critical, which the harness cannot know. So the match keeps its
+ * score and the reader gets told what the score is exposed to.
+ *
+ * Renders nothing when `calls` is 0 (measured, clean) AND nothing when
+ * `truncation` is null (never measured) — an absent flag must not be read as a
+ * clean bill of health for a board that predates the instrument.
+ */
+function TruncationBadge({
+  truncation,
+  className = '',
+}: {
+  truncation?: ArenaTruncation | null;
+  className?: string;
+}) {
+  if (!truncation || !truncation.calls) return null;
+  const severed = truncation.severed_tool_calls;
+  const scope =
+    truncation.matches_affected != null
+      ? `${truncation.matches_affected} of ${truncation.matches_measured} matches`
+      : truncation.trials_affected != null
+        ? `${truncation.trials_affected} of ${truncation.trials_measured} trials`
+        : null;
+  const title = [
+    `${truncation.calls} LLM call${truncation.calls === 1 ? '' : 's'} hit the output-token ceiling and were cut mid-emission.`,
+    scope ? `Affected ${scope}.` : null,
+    severed
+      ? `${severed} severed a tool call mid-argument, so the call never ran — that is where a truncation costs points.`
+      : 'No tool call was severed; the agent loop most likely recovered on the next turn.',
+    'The score is unadjusted: this is a caveat on the measurement, not a penalty.',
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return (
+    <span title={title} className={className}>
+      <Badge variant="warn">
+        clipped &times;{truncation.calls}
+        {severed ? ' \u2020' : ''}
+      </Badge>
+    </span>
+  );
+}
+
 function statusClass(status: string): string {
   if (status === 'completed') return 'wl-arena__status--completed';
   if (status === 'failed') return 'wl-arena__status--failed';
@@ -889,6 +941,7 @@ export function ArenaLive() {
             {row.reasoning_effort ? (
               <Badge variant="info">{row.reasoning_effort}</Badge>
             ) : null}
+            <TruncationBadge truncation={row.truncation} />
           </span>
         ),
       },
@@ -1098,6 +1151,10 @@ export function ArenaLive() {
                               {match.reasoning_effort}
                             </Badge>
                           ) : null}
+                          <TruncationBadge
+                            truncation={match.truncation}
+                            className="wl-arena__match-effort"
+                          />
                         </span>
                         <span className="wl-arena__match-title" style={{ fontWeight: 'normal', color: 'var(--ink-2)' }}>
                           {match.workflow_id}

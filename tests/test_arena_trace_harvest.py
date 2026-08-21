@@ -273,3 +273,76 @@ def test_record_answer_survives_trace_harvest_into_answer_fields():
     assert evaluate_assertion(q, actx)[0] is True
     e = _AnswerFieldEquals(type="answer_field_equals", field="hotspot", equals="AAPL")
     assert evaluate_assertion(e, actx)[0] is True
+
+
+# ---------------------------------------------------------------------------
+# Output-budget truncation (the instrument M2 added)
+#
+# Shapes below are copied from REAL spans in the live trace DB, not invented:
+# a truncated Anthropic call carries stop_reason "max_tokens" with
+# completion_tokens sitting exactly on the cap, and its content blocks are
+# ['text', 'invalid_tool_call'] — the tool call severed mid-emission.
+# ---------------------------------------------------------------------------
+
+def _llm_span(*, stop_reason=None, finish_reason=None, blocks=None, text="ok"):
+    md = {}
+    if stop_reason is not None:
+        md["stop_reason"] = stop_reason
+    if finish_reason is not None:
+        md["finish_reason"] = finish_reason
+    message = {"kwargs": {"response_metadata": md}}
+    if blocks is not None:
+        message["kwargs"]["content"] = [{"type": b} for b in blocks]
+    return {
+        "run_type": "llm", "name": "ChatAnthropic", "start_time": "1",
+        "inputs": None,
+        "outputs": json.dumps({"generations": [[{"text": text, "message": message}]]}),
+    }
+
+
+def test_anthropic_max_tokens_is_detected_as_truncation():
+    from app.services.arena.trace_harvest import _llm_truncation
+    span = _llm_span(stop_reason="max_tokens", blocks=["text", "invalid_tool_call"])
+    got = _llm_truncation(span["outputs"])
+    assert got == {"reason": "stop_reason=max_tokens", "severed_tool_call": True}
+
+
+def test_openai_length_is_detected_as_truncation():
+    """The OpenAI protocol names it differently, and a detector that reads only
+    the Anthropic field goes blind the moment an OpenAI budget is pinned."""
+    from app.services.arena.trace_harvest import _llm_truncation
+    got = _llm_truncation(_llm_span(finish_reason="length", blocks=["text"])["outputs"])
+    assert got == {"reason": "finish_reason=length", "severed_tool_call": False}
+
+
+def test_completed_turns_are_not_truncation():
+    from app.services.arena.trace_harvest import _llm_truncation
+    for md in ({"stop_reason": "end_turn"}, {"stop_reason": "tool_use"},
+               {"finish_reason": "stop"}, {"finish_reason": "tool_calls"}, {}):
+        span = _llm_span(**{k: v for k, v in md.items()})
+        assert _llm_truncation(span["outputs"]) is None, md
+    assert _llm_truncation(None) is None
+    assert _llm_truncation("not json") is None
+
+
+def test_truncation_reaches_the_match_step_but_never_the_error_list():
+    """A truncated turn must stay SCORED and flagged, never swept to invalid.
+
+    ``errors`` feeds _is_infra_blank. Appending truncation there would sweep the
+    match out of the board — silently shrinking Run #20 by four contestants —
+    and truncation does not reliably destroy a score anyway.
+    """
+    from app.golden_workflows.transcript import extract_step_from_events
+    turn = _spans_to_turn_events(0, "u", [
+        _llm_span(stop_reason="max_tokens", blocks=["text", "invalid_tool_call"]),
+    ])
+    assert turn["errors"] == []
+    step = extract_step_from_events(turn)
+    assert len(step.truncations) == 1
+    assert step.truncations[0]["severed_tool_call"] is True
+    assert step.truncations[0]["name"] == "ChatAnthropic"
+
+
+def test_untruncated_turn_records_an_empty_list_not_a_missing_key():
+    turn = _spans_to_turn_events(0, "u", [_llm_span(stop_reason="end_turn")])
+    assert turn["truncations"] == []

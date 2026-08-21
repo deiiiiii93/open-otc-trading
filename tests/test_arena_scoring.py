@@ -783,3 +783,90 @@ def test_fold_trial_breakdowns_single_trial_zero_stdev():
     assert agg["n_trials"] == 1
     assert agg["objective_stdev"] == 0.0
     assert agg["objective_score"] == 88.5
+
+
+# ---------------------------------------------------------------------------
+# Output-budget truncation: scored and flagged, never invalidated, never scored
+# differently. "Score it with a visible flag" — the desk decision of 2026-08-20.
+# ---------------------------------------------------------------------------
+
+_TRUNC = {"reason": "stop_reason=max_tokens", "severed_tool_call": True}
+
+
+def _truncation_fixture():
+    """One workflow, two identical transcripts except one truncated a turn."""
+    steps_spec = [{
+        "user": "u", "expected_skill": None, "outcome": "o", "replay": "r1",
+        "assertions": [{"type": "tool_called", "name": "get_latest_risk_run"}],
+    }]
+    loaded = _mini_loaded(steps_spec)
+    call = [{"id": "c1", "name": "get_latest_risk_run", "args": {}}]
+    clean = _transcript("mini-test", [_step_dict(0, tool_calls=call)])
+    clipped = _transcript("mini-test", [
+        _step_dict(0, tool_calls=call, truncations=[_TRUNC, _TRUNC])])
+    return loaded, clean, clipped
+
+
+def test_truncation_does_not_change_the_score():
+    """The flag is a caveat on the measurement, not a penalty applied to it.
+
+    Truncation costs points only where the lost turn was scoring-critical, and
+    the harness cannot know that — run #114 scored 100.0 and 90.9 on two
+    workflows that truncated, because the agent loop usually recovers next turn.
+    So the score is whatever the transcript earned; the flag reports the risk.
+    """
+    loaded, clean, clipped = _truncation_fixture()
+    assert objective_score(clipped, loaded) == objective_score(clean, loaded)
+
+
+def test_diagnose_heuristic_counts_truncation_and_says_so_in_the_summary():
+    loaded, clean, clipped = _truncation_fixture()
+
+    d = diagnose_heuristic(clipped, loaded)
+    assert d["truncated_calls"] == 2
+    assert d["truncated_steps"] == 1
+    assert d["severed_tool_calls"] == 2
+    # The summary is what the match cell prints; a caveat nobody reads is none.
+    assert "2 truncated" in d["summary"]
+    assert "tool call severed" in d["summary"]
+
+    clean_d = diagnose_heuristic(clean, loaded)
+    assert clean_d["truncated_calls"] == 0
+    assert "truncated" not in clean_d["summary"]
+
+
+def test_fold_lifts_truncation_to_the_top_level_summed_across_trials():
+    """It must survive the multi-trial wrap to reach the board row and the card.
+
+    fold_trial_breakdowns does NOT lift ``diagnosis``, and every match is
+    wrapped — single-trial ones included — so a flag left in the diagnosis is
+    unreachable for exactly the rows that carry it.
+    """
+    from app.services.arena.scoring import fold_trial_breakdowns
+    folded = fold_trial_breakdowns([
+        {"objective_score": 80.0,
+         "truncation": {"calls": 3, "steps": 2, "severed_tool_calls": 1}},
+        {"objective_score": 90.0,
+         "truncation": {"calls": 0, "steps": 0, "severed_tool_calls": 0}},
+    ])
+    assert folded["truncation"] == {
+        "calls": 3, "steps": 2, "severed_tool_calls": 1,
+        "trials_affected": 1, "trials_measured": 2, "trials_total": 2,
+    }
+    # Summed, never averaged: a mean would dilute one badly-clipped trial into
+    # invisibility, and trial 0 alone would miss truncation unique to trial 1.
+    assert folded["objective_score"] == 85.0
+
+
+def test_unmeasured_truncation_folds_to_none_not_to_zero():
+    """`empty` vs `unavailable`, applied to a public caveat.
+
+    Every board through #114 ran capped and really did truncate. Folding their
+    absent block into ``calls: 0`` would assert the opposite of what happened.
+    """
+    from app.services.arena.scoring import fold_trial_breakdowns
+    assert fold_trial_breakdowns([{"objective_score": 80.0}])["truncation"] is None
+    # Measured and genuinely clean is a DIFFERENT claim, and says so.
+    clean = fold_trial_breakdowns(
+        [{"objective_score": 80.0, "truncation": {"calls": 0}}])["truncation"]
+    assert clean is not None and clean["calls"] == 0

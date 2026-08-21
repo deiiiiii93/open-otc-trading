@@ -1230,3 +1230,65 @@ def test_merged_run_records_effort_lists(session):
     assert store.get_run(session, merged_id)["reasoning_efforts"] == {
         "model-x": ["high"]
     }
+
+
+# ---------------------------------------------------------------------------
+# Output-budget truncation reaches the board row, and absence stays honest
+# ---------------------------------------------------------------------------
+
+def _trunc_match(session, run_id, model_id, truncation, *, workflow_id="wf-a"):
+    return store.record_match(
+        session, run_id, workflow_id, model_id,
+        objective_score=70.0, judged_score=None, total_score=70.0,
+        judge_missing=False, config={}, transcript_path=None, status="scored",
+        score_breakdown={"objective_score": 70.0, "passed": 1, "total": 1,
+                         **({"truncation": truncation} if truncation else {})},
+    )
+
+
+def test_leaderboard_reports_truncation_per_contestant(session):
+    rid = _make_run(session, ["wf-a", "wf-b"], ["m-clip"])
+    store.set_run_status(session, rid, "completed")
+    _trunc_match(session, rid, "m-clip",
+                 {"calls": 4, "steps": 2, "severed_tool_calls": 1})
+    _trunc_match(session, rid, "m-clip",
+                 {"calls": 0, "steps": 0, "severed_tool_calls": 0},
+                 workflow_id="wf-b")
+    session.expire_all()
+
+    row = next(r for r in store.leaderboard(session, run_id=rid)
+               if r["model_id"] == "m-clip")
+    assert row["truncation"] == {
+        "calls": 4, "severed_tool_calls": 1,
+        "matches_affected": 1, "matches_measured": 2, "matches_total": 2,
+    }
+
+
+def test_leaderboard_truncation_is_none_for_pre_instrument_matches(session):
+    """Never report an unmeasured board as clean.
+
+    Every board through #114 ran under langchain's 4096 fallback and really did
+    truncate; those rows carry no block at all. Folding that absence into
+    ``calls: 0`` would state the opposite of what happened, which is the same
+    `empty` vs `unavailable` error the report module exists to avoid.
+    """
+    rid = _make_run(session, ["wf-a"], ["m-legacy"])
+    store.set_run_status(session, rid, "completed")
+    _trunc_match(session, rid, "m-legacy", None)
+    session.expire_all()
+
+    row = next(r for r in store.leaderboard(session, run_id=rid)
+               if r["model_id"] == "m-legacy")
+    assert row["truncation"] is None
+
+
+def test_match_dict_hoists_truncation_beside_the_score(session):
+    """The match CELL renders it, so it cannot live only inside the breakdown."""
+    rid = _make_run(session, ["wf-a"], ["m-clip"])
+    _trunc_match(session, rid, "m-clip",
+                 {"calls": 2, "steps": 1, "severed_tool_calls": 2})
+    session.expire_all()
+    got = store.get_run(session, rid)
+    match = got["matches"][0]
+    assert match["truncation"]["calls"] == 2
+    assert match["truncation"]["severed_tool_calls"] == 2

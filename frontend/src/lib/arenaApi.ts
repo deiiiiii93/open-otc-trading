@@ -92,6 +92,29 @@ export type ArenaScoreBreakdown = {
   aggregate?: ArenaScoreBreakdown[];
 };
 
+/**
+ * Output-budget truncation: LLM calls that hit the max-output-token ceiling and
+ * were cut mid-emission. `null` means NEVER MEASURED — the match predates the
+ * instrument — which is not the same claim as zero. Boards before run #115 ran
+ * under langchain's 4096 fallback and really did truncate.
+ *
+ * `severed_tool_calls` is what makes it expensive: the cap landed mid-argument,
+ * so the tool call was downgraded to `invalid_tool_call` and never ran.
+ */
+export type ArenaTruncation = {
+  calls: number;
+  severed_tool_calls: number;
+  // Per-match block (drilldown) carries steps/trials; the board row carries
+  // matches_*. Both are optional so one type serves both shapes.
+  steps?: number;
+  trials_affected?: number;
+  trials_measured?: number;
+  trials_total?: number;
+  matches_affected?: number;
+  matches_measured?: number;
+  matches_total?: number;
+};
+
 export type ArenaMatchSummary = {
   id: number;
   workflow_id: string;
@@ -108,6 +131,9 @@ export type ArenaMatchSummary = {
   judge_missing: boolean;
   transcript_path: string | null;
   score_breakdown: ArenaScoreBreakdown | null;
+  // Hoisted beside the score so the match cell can render it without walking
+  // into score_breakdown — where the multi-trial fold buries the diagnosis.
+  truncation?: ArenaTruncation | null;
   // Corroborating failure reason (e.g. "infra_blank" for invalid matches).
   error?: string | null;
 };
@@ -139,6 +165,8 @@ export type ArenaLeaderboardRow = {
   subjective_stdev?: number | null;
   subjective_mode?: string;
   matches: number;
+  // Summed across this contestant's matches; null = never measured.
+  truncation?: ArenaTruncation | null;
   // Infra-invalid match count — excluded from the averages, surfaced so
   // degraded routes stay visible.
   invalid?: number;

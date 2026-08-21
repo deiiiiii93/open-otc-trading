@@ -54,6 +54,12 @@ class MatchSummary(BaseModel):
     judge_missing: bool
     transcript_path: str | None
     score_breakdown: dict | None = None
+    # Output-budget truncation for this match; null = never measured (the match
+    # predates the instrument), which is NOT the same claim as zero. Declared
+    # here because this route HAS a response_model, and pydantic silently drops
+    # any key the model does not name — the store would serve it and the wire
+    # would not carry it.
+    truncation: dict | None = None
     # Corroborating failure reason (e.g. "infra_blank" for invalid matches) —
     # exclusions must be auditable, not just visible as a count.
     error: str | None = None
@@ -302,6 +308,7 @@ def build_arena_router(
                 judge_missing=m.get("judge_missing", False),
                 transcript_path=m.get("transcript_path"),
                 score_breakdown=m.get("score_breakdown"),
+                truncation=m.get("truncation"),
                 error=m.get("error"),
             )
             for m in (run_dict.get("matches") or [])
@@ -372,6 +379,8 @@ def build_arena_router(
                 "subjective_mode": r["subjective_mode"],
                 "matches": r["match_count"],
                 "invalid": r["invalid_count"],
+                # Null = this contestant's matches predate the instrument.
+                "truncation": r.get("truncation"),
             }
             for r in rows
         ]

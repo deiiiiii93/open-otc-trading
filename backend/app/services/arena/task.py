@@ -454,6 +454,17 @@ def _run_and_score_once(
         "objective_score": round(obj_score, 1),
         "total_score": t_score,
     }
+    # Truncation is a TOP-LEVEL block, not merely a diagnosis key, because
+    # fold_trial_breakdowns does not lift ``diagnosis`` — it stays buried inside
+    # each aggregate entry, which is exactly how the drilldown and match cell
+    # went blank for 222 of 297 stored matches. A flag the reader cannot reach
+    # is not a flag, and this one has to survive the multi-trial wrap to reach
+    # the board row and the card.
+    breakdown["truncation"] = {
+        "calls": heuristic["truncated_calls"],
+        "steps": heuristic["truncated_steps"],
+        "severed_tool_calls": heuristic["severed_tool_calls"],
+    }
     if judge_result is not None:
         breakdown["judge"] = {
             "rubric_scores": judge_result.rubric_scores,

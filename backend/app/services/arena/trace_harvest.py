@@ -129,12 +129,73 @@ def _llm_text(outputs_raw: Any) -> str:
     return gen.get("text") or _message_content_text(gen)
 
 
+# A turn that ran out of output budget. Both wire protocols report it in
+# ``response_metadata`` under their own name — Anthropic ``stop_reason:
+# "max_tokens"``, OpenAI ``finish_reason: "length"`` — so a detector that reads
+# only one goes blind the moment the other protocol's budget is pinned.
+#
+# This is the ONLY reliable instrument. A truncated turn is invisible everywhere
+# else we look: the HTTP call really did succeed, so the span is
+# ``status=success`` and raises no error, which means ``_is_infra_blank`` (which
+# corroborates blankness with step ERRORS) cannot see it and the match is
+# recorded as a legitimate score. ``completion_tokens`` sitting exactly on the
+# cap corroborates it, but only if you already know the cap; the reason field
+# describes itself.
+_TRUNCATION_REASONS = {
+    "stop_reason": "max_tokens",   # Anthropic protocol
+    "finish_reason": "length",     # OpenAI protocol
+}
+
+
+def _response_metadata(gen: dict) -> dict:
+    if not isinstance(gen, dict):
+        return {}
+    kwargs = (gen.get("message") or {}).get("kwargs")
+    md = kwargs.get("response_metadata") if isinstance(kwargs, dict) else None
+    return md if isinstance(md, dict) else {}
+
+
+def _llm_truncation(outputs_raw: Any) -> dict | None:
+    """Return truncation evidence for an LLM span, or None if it completed.
+
+    ``severed_tool_call`` is what makes a truncation expensive rather than
+    merely wasteful: when the cap lands mid-emission the model HAD chosen its
+    tool and the JSON argument was cut, so langchain downgrades the block from
+    ``tool_call`` to ``invalid_tool_call``. The call never reaches the harness,
+    the step produces nothing, and the assertions that graded that call score
+    zero — which is how a single lost turn can take a whole axis with it.
+    """
+    parsed = _loads(outputs_raw) or {}
+    try:
+        gen = parsed["generations"][0][0]
+    except (KeyError, IndexError, TypeError):
+        return None
+    md = _response_metadata(gen)
+    reason = next(
+        (f"{field}={md.get(field)}" for field, value in _TRUNCATION_REASONS.items()
+         if md.get(field) == value),
+        None,
+    )
+    if reason is None:
+        return None
+    content = (gen.get("message") or {}).get("kwargs", {}).get("content")
+    blocks = (
+        [c.get("type") for c in content if isinstance(c, dict)]
+        if isinstance(content, list) else []
+    )
+    return {
+        "reason": reason,
+        "severed_tool_call": "invalid_tool_call" in blocks,
+    }
+
+
 def _spans_to_turn_events(index: int, user: str, spans: list[dict]) -> dict:
     tool_calls: list[dict] = []
     tool_results: list[dict] = []
     artifacts: list[dict] = []
     skill_spans: list[tuple[str, str]] = []
     errors: list[dict] = []
+    truncations: list[dict] = []
     response_text = ""
 
     for sp in spans:
@@ -173,6 +234,17 @@ def _spans_to_turn_events(index: int, user: str, spans: list[dict]) -> dict:
             txt = _llm_text(sp.get("outputs"))
             if txt:
                 response_text = txt
+            clipped = _llm_truncation(sp.get("outputs"))
+            if clipped is not None:
+                # Deliberately NOT appended to ``errors``: that list feeds the
+                # infra-blank gate, and a truncated match must stay SCORED and
+                # visibly flagged rather than be swept to ``invalid``. Sweeping
+                # it would silently shrink historical boards — Run #20 would
+                # lose four contestants — and a truncation does not reliably
+                # destroy a score anyway (run #114 scored 100.0 and 90.9 on two
+                # workflows that truncated), so its presence is a caveat on the
+                # measurement, not grounds to discard it.
+                truncations.append({**clipped, "name": name})
 
     skills_routed = [s for _, s in sorted(skill_spans, key=lambda x: x[0])]
     return {
@@ -185,6 +257,7 @@ def _spans_to_turn_events(index: int, user: str, spans: list[dict]) -> dict:
         "artifacts": artifacts,
         "response_text": response_text,
         "errors": errors,
+        "truncations": truncations,
     }
 
 
@@ -365,7 +438,7 @@ def transcript_from_trace(thread_id, workflow, model, *, store=None) -> MatchTra
             turn = {
                 "index": i, "user": wf_step.user, "messages": [],
                 "tool_calls": [], "tool_results": [], "skills_routed": [],
-                "artifacts": [], "response_text": "",
+                "artifacts": [], "response_text": "", "truncations": [],
                 "errors": [{"type": "missing_trace", "step": i}],
             }
         steps.append(extract_step_from_events(turn))

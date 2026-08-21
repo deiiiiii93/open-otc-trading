@@ -8,6 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Output-budget truncation is now measured and flagged.** The harness reads
+  `response_metadata` for `stop_reason: "max_tokens"` (Anthropic protocol) or
+  `finish_reason: "length"` (OpenAI protocol) on every LLM span and carries the
+  count through `MatchStep.truncations` → `diagnose_heuristic` →
+  `score_breakdown.truncation` → the leaderboard row, the match cell and the
+  API. Both protocols are read because a detector that knows only one goes blind
+  the moment the other's budget is pinned. `severed_tool_call` records the
+  expensive case: when the cap lands mid-argument the tool call is downgraded to
+  `invalid_tool_call` and never runs, which is how one lost turn takes a whole
+  axis with it.
+  - **A truncated match stays `scored` and is flagged — never `invalid`.**
+    Sweeping it out would silently shrink historical boards (Run #20 loses four
+    contestants) and truncation does not reliably destroy a score: run #114
+    scored 100.0 and 90.9 on two workflows that truncated, because the agent loop
+    usually recovers on the next turn. **The score is never adjusted** — the flag
+    is a caveat on the measurement, not a penalty.
+  - **The flag is deliberately NOT appended to a step's `errors`,** which is what
+    `_is_infra_blank` reads; that would be the invalidation this design rejects.
+  - **`null` means never measured and is not the same claim as zero.** Every
+    board through #114 ran under langchain's 4096 fallback and really did
+    truncate; those rows carry no block, and folding their absence into a
+    confident `calls: 0` would state the opposite of what happened.
+  - Carried at the breakdown's **top level**, because `fold_trial_breakdowns`
+    does not lift `diagnosis` and every match is wrapped — single-trial ones
+    included — so a flag left in the diagnosis is unreachable for exactly the
+    rows that carry it.
 - **`OPEN_OTC_AGENT_MAX_OUTPUT_TOKENS`** (`Settings.agent_max_output_tokens`,
   default **32768**) — an explicit output-token budget for the Anthropic wire
   protocol, declared at both config sites and passed to `ChatAnthropic` by
