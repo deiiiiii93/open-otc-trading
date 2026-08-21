@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OTC Desk Agent Arena — Run</title>
+<style>
+:root{
+  --ink:#1a1d21; --muted:#5b6470; --line:#e3e6eb; --bg:#ffffff;
+  --accent:#2f5d8a; --soft:#f4f6f9;
+  --gold:#caa12e; --silver:#9aa0a6; --bronze:#b06a3b; --mid:#3b6fb0; --floor:#c5c9d1;
+  --good:#2e8b57; --neutral:#6b7280; --warn:#d98a2b; --bad:#c0392b; --frontier:#3b6fb0;
+}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+body{
+  font-family:"Charter","Georgia",Cambria,"Times New Roman",serif;
+  color:var(--ink); background:var(--bg); line-height:1.62;
+  max-width:820px; margin:0 auto; padding:56px 40px 80px; font-size:16.5px;
+}
+h1,h2,h3,h4{font-family:-apple-system,"Inter","Segoe UI",Helvetica,Arial,sans-serif;
+  line-height:1.22; letter-spacing:-.01em; color:var(--ink)}
+h1{font-size:2.05rem; margin:.2em 0 .1em; font-weight:800}
+h2{font-size:1.42rem; margin:2.1em 0 .55em; padding-bottom:.28em;
+  border-bottom:2px solid var(--line); font-weight:750}
+h3{font-size:1.12rem; margin:1.7em 0 .5em; font-weight:700; color:#2b3038}
+h1+p em, body>p:first-of-type em{color:var(--muted)}
+p,li{font-size:1rem}
+a{color:var(--accent); text-decoration:none}
+hr{border:none; border-top:1px solid var(--line); margin:2.2em 0}
+code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.86em;
+  background:var(--soft); padding:.1em .35em; border-radius:4px}
+blockquote{margin:1.1em 0; padding:.7em 1.1em; background:var(--soft);
+  border-left:4px solid var(--accent); border-radius:0 6px 6px 0; color:#2b3038}
+blockquote p{margin:.3em 0}
+strong{font-weight:700}
+
+/* tables */
+table{border-collapse:collapse; width:100%; margin:1.1em 0; font-size:.9rem;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+th,td{padding:.5em .7em; border-bottom:1px solid var(--line); text-align:left}
+thead th{background:#f7f9fc; border-bottom:2px solid #d6dbe3; font-weight:700;
+  font-size:.82rem; letter-spacing:.01em; color:#39414c}
+tbody tr:nth-child(even){background:#fbfcfe}
+td:first-child,th:first-child{white-space:nowrap}
+
+/* charts */
+.chart{margin:1.3em 0 1.6em; padding:0}
+.chart .row{display:flex; align-items:center; gap:12px; margin:5px 0;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+.chart .lbl{flex:0 0 168px; text-align:right; font-size:.82rem; color:#39414c; font-weight:600}
+.chart .track{flex:1; height:22px; background:#eef1f5; border-radius:5px; overflow:hidden}
+.chart .bar{display:block; height:100%; border-radius:5px}
+.chart .val{flex:0 0 150px; font-size:.78rem; color:var(--muted); font-variant-numeric:tabular-nums}
+.chart figcaption{margin-top:.7em; font-size:.76rem; color:var(--muted);
+  font-family:-apple-system,"Inter",sans-serif; text-align:right}
+.bar.gold{background:linear-gradient(90deg,#d9b13f,#caa12e)}
+.bar.silver{background:linear-gradient(90deg,#aab0b6,#9aa0a6)}
+.bar.bronze{background:linear-gradient(90deg,#c07c4a,#b06a3b)}
+.bar.mid{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.frontier{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.floor{background:#c5c9d1}
+.bar.good{background:linear-gradient(90deg,#37a169,#2e8b57)}
+.bar.neutral{background:#8a929e}
+.bar.warn{background:linear-gradient(90deg,#e09a3e,#d98a2b)}
+.bar.bad{background:linear-gradient(90deg,#d04b3c,#c0392b)}
+
+/* report header band */
+.masthead{border-bottom:3px solid var(--ink); padding-bottom:.6em; margin-bottom:1.4em}
+.footer-note{margin-top:3em; padding-top:1em; border-top:1px solid var(--line);
+  font-size:.8rem; color:var(--muted); font-family:-apple-system,"Inter",sans-serif}
+
+@page{size:A4; margin:16mm 15mm}
+@media print{
+  body{max-width:none; margin:0; padding:0; font-size:10.6pt}
+  h2{margin-top:1.4em}
+  h2,h3,h4{break-after:avoid}
+  table,.chart,blockquote,figure{break-inside:avoid}
+  tr{break-inside:avoid}
+  a{color:var(--ink)}
+}
+</style>
+</head><body>
+<h1>Does GLM really fail at artifact-writing tools? — predeclared design</h1>
+<p><strong>Question.</strong> GLM-5.2 and GLM-5.3 score SYN 0 on the two golden workflows whose
+deliverable is a long report. Is that a tool-calling capability deficit, or an
+artifact of the output-token budget the harness gave them?</p>
+<p>Predeclared <strong>before</strong> any run in this study executed. Arms, scorer and pass
+criteria are fixed here so the analysis cannot be fitted afterwards (CLAUDE.md,
+<em>A/B evidence standard for agent-behaviour features</em>).</p>
+<h2>Hypothesis</h2>
+<p><strong>H1.</strong> The failure is a budget artifact, not a capability deficit. The
+artifact-writing call is the single largest output emission in a golden
+workflow — its argument <em>is</em> the deliverable — so a global <code>max_tokens</code> cap
+truncates that one call preferentially over every other tool call, whose
+arguments are a handful of ids and numbers.</p>
+<p><strong>H0.</strong> GLM cannot reliably emit <code>write_report_artifact</code> regardless of budget.</p>
+<h2>Prior evidence (already owned, not re-run)</h2>
+<ul>
+<li>Both GLM ids carry <code>protocol: anthropic</code> in <code>config/agent_channels.yaml</code>
+  (pinned 2026-07-29, <code>5db78b3</code>, for an unrelated empty-tool-call-id defect), so
+  both were subject to langchain-anthropic's <code>_FALLBACK_MAX_OUTPUT_TOKENS</code> =
+  <strong>4096</strong> in every historical run.</li>
+<li><strong>Measured body sizes</strong> of 354 successful <code>write_report_artifact</code> calls:
+  median ≈ 1,595 tokens, p75 ≈ 2,526, p95 ≈ 3,851, max ≈ 5,365. The body <strong>alone</strong>
+  exceeds 3,000 tokens in 16% of cases, leaving under 1,096 for reasoning and
+  call syntax inside a 4096 budget.</li>
+<li><strong>Natural experiment, Run #114 → #115</strong> (glm-5.3, same 5 workflows, 1 trial,
+  same day, budget the only change):</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>workflow</th>
+<th>#114 (4096)</th>
+<th>#115 (uncapped)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>risk-manager-control-day</td>
+<td>SYN 0/4, obj 82.1</td>
+<td>SYN 4/4, obj 100.0</td>
+</tr>
+<tr>
+<td>high-board-portfolio-review-day</td>
+<td>SYN 0/5, obj 68.6</td>
+<td>SYN 4/5, obj 77.1</td>
+</tr>
+<tr>
+<td>trader-rfq-booking-day</td>
+<td>SYN 5/5, obj 65.1</td>
+<td>SYN 5/5, obj 96.8</td>
+</tr>
+<tr>
+<td>risk-limit-breach-day</td>
+<td>SYN 3/3, obj 100.0</td>
+<td>SYN 3/3, obj 100.0</td>
+</tr>
+<tr>
+<td>ops-settlement-day</td>
+<td>SYN 2/2, obj 90.9</td>
+<td>SYN 2/2, obj 90.9</td>
+</tr>
+</tbody>
+</table>
+<p><code>completion_tokens</code> maxed at <strong>exactly 4096</strong> on all five #114 threads and
+  reached <strong>12,314</strong> in #115. #114 made <strong>zero</strong> artifact-tool calls on the two
+  failing workflows; #115 called it on all five.</p>
+<p>This is suggestive but is n=1 per cell, unrandomised, and covers <strong>only
+glm-5.3</strong>. GLM-5.2 has no post-fix run at all. Hence this study.</p>
+<h2>Arms</h2>
+<p>2 models × 2 workflows × 2 trials × 2 budgets = <strong>16 matches</strong>, as two runs.</p>
+<ul>
+<li><strong>Models</strong> — <code>glm-5.2</code>, <code>glm-5.3</code> (both anthropic-protocol).</li>
+<li><strong>Workflows</strong> — <code>high-board-portfolio-review-day</code> and
+  <code>risk-manager-control-day</code>: the two where the failure appears, and the two
+  with the largest deliverables. The three workflows GLM already passes are
+  deliberately excluded — they are the within-model control that the effect is
+  size-dependent rather than model-wide.</li>
+<li><strong>Budgets</strong> — <code>4096</code> (reproduces the historical condition) and <code>32768</code> (the
+  post-fix default).</li>
+</ul>
+<p><strong>Budget is a separate RUN, not a separate arm.</strong> It is a process-level setting
+(<code>OPEN_OTC_AGENT_MAX_OUTPUT_TOKENS</code>) with no column on <code>arena_run</code>, so it cannot
+enter the contestant key the way <code>reasoning_effort</code> did in migration 0058.</p>
+<ul>
+<li>The two runs <strong>must never be merged.</strong> <code>merge_runs</code> folds by
+  <code>(workflow_id, model_id, reasoning_effort)</code>; budget is not in that key, so a
+  merge would average two operating regimes into one row.</li>
+<li>Runs execute <strong>strictly sequentially</strong>. Golden workflows resolve books by NAME
+  and the purges are name-scoped, so two concurrent arena runs on one database
+  contaminate each other's fixtures silently.</li>
+<li>No agent code is modified. Both arms use the existing env-var seam.</li>
+</ul>
+<h2>Scorer (fixed in advance)</h2>
+<p>Primary outcome, per trial, binary:</p>
+<blockquote>
+<p><strong>artifact produced</strong> — the transcript contains a <code>write_report_artifact</code>
+call at the graded step AND a resulting <code>kind="text"</code> artifact.</p>
+</blockquote>
+<p>Secondary, per trial: SYN <code>passed/total</code>, <code>objective_score</code>, <code>tool_calls</code>, and —
+from the trace DB — the count of LLM spans with <code>completion_tokens</code> at the arm's
+budget (the truncation signature).</p>
+<h2>Pass criteria</h2>
+<p><strong>H1 is supported</strong> iff, across the 8 trials per arm:</p>
+<ol>
+<li>arm B (32768) produces the artifact in <strong>≥ 75%</strong> of trials, AND</li>
+<li>arm A (4096) produces it in <strong>≤ 25%</strong> of trials, AND</li>
+<li>arm A shows truncated spans (<code>completion_tokens</code> == 4096) on the failing
+   trials while arm B shows none at its own budget.</li>
+</ol>
+<p><strong>H1 is refuted</strong> if arm B's artifact rate is under 50% — that would show the
+budget is not what gates the call.</p>
+<p>Anything between is reported as <strong>inconclusive</strong>, not rounded toward H1.</p>
+<h2>Reporting commitments</h2>
+<p>Per-trial raw results are retained (<code>artifacts/arena/&lt;run&gt;/…</code>, per-trial
+transcripts). Regressions and costs are reported alongside wins: a budget lift
+that fixes SYN but inflates tool calls or token spend is reported as such. A
+model that fails in arm B is reported as a genuine capability finding.</p>
+<p class="footer-note">Rendered from
+<code>docs/arena/2026-08-20-glm-artifact-tool-study-design.md</code> ·
+OTC Desk Agent Arena · Run.</p>
+</body></html>

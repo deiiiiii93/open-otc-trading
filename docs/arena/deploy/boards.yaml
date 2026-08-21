@@ -54,3 +54,18 @@ provisional:
       A single-model smoke across all five golden workflows, one trial each.
       Published for its ability card only: with no field there is no rank to
       report, and one trial cannot disperse, so CON is not measured.
+
+  - run: 115
+    note: >-
+      A single-model smoke across all five golden workflows, one trial each —
+      cards only, for the same reasons as Run #113 above: no field means no
+      rank, and one trial cannot disperse, so CON is not measured. This is also
+      the FIRST run after the Anthropic-protocol output budget was raised from
+      langchain's 4096-token fallback to 32768. GLM 5.3 routes over that
+      protocol, and the capped attempt (Run #114, unpublished) truncated on
+      5-13% of its calls per workflow — a truncated turn emits reasoning and
+      nothing else, so it produced no text and no tool call at all. That attempt
+      averaged OVR 72 against 84 here, with risk-manager-control-day moving
+      67 → 87 on the budget alone. Read EFF against the older boards with care:
+      every Anthropic-protocol contestant on them ran under a cap this run did
+      not.
