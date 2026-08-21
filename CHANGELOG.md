@@ -25,6 +25,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   match dict and derives an ability card per match, which loads a workflow, and
   cancelling needs one string. **The Arena page has no Stop control yet**, so the
   endpoint is currently callable only directly.
+- **Progressive position-field query scheme** — `describe_position_fields` (new
+  read tool) plus a catalog-backed, still select-only `query_positions`. A
+  settlement-alert thread showed the failure this fixes: asked which positions
+  need settlement or are nearest to maturity, the agent got only
+  `get_positions`' ~13 identity fields and answered "Not available" for every
+  date — `exercise_date`/`settlement_date`/`maturity_date` live on the
+  normalized product tables and were unreachable. The new
+  `position_field_catalog` module is the single source of truth: one spec per
+  selectable field (name, value type, meaning) feeds the `query_positions`
+  column allowlist, the `describe_position_fields` payload, and the `select`
+  argument description, so the three surfaces cannot drift. `query_positions`
+  gains the product-level groups (`product.*`, `option.*`, `futures.*`) through
+  a `product_id` outer join — `order_by=["option.exercise_date", "asc"]` now
+  answers "nearest to maturity" — and stays strictly select-only: rows carry
+  exactly the fields named, and anything outside the catalog (e.g.
+  `product_kwargs`) is rejected. Legacy column aliases keep resolving but stay
+  out of the agent-facing catalog. `describe_position_fields`,
+  `query_positions`, and `get_position_summaries` are now in
+  `DEEP_AGENT_TOOL_NAMES` too — the latter two were registered in
+  `QUANT_AGENT_TOOLS` but absent from the deep-agent allowlist, so every
+  persona silently dropped them even though the persona prompts reference them.
 - **Output budget is a run VARIANT and part of the contestant key.** A contestant
   is now `(model_id, reasoning_effort, max_output_tokens)`. Migration **0059**
   adds `arena_run.max_output_tokens` (the per-model arm map

@@ -288,6 +288,93 @@ def test_query_positions_tool_uses_structured_filters_and_selects():
     assert result["positions"][0]["snowball.ki_barrier"] == 80.0
 
 
+def test_describe_position_fields_tool_lists_selectable_catalog():
+    from app.tools.positions import describe_position_fields_tool
+
+    result = describe_position_fields_tool.invoke({})
+
+    assert result["source"] == "position_field_catalog"
+    assert result["select_only"] is True
+    names = {
+        field["name"] for group in result["groups"] for field in group["fields"]
+    }
+    # The dates the settlement-alert thread needed but get_positions never
+    # returns: product-level option/futures dates plus the kwargs mirrors.
+    assert "option.exercise_date" in names
+    assert "option.settlement_date" in names
+    assert "option.maturity_date" in names
+    assert "futures.maturity_date" in names
+    assert "option_core.expiry_date" in names
+    assert "barrier_state.nearest_barrier_date" in names
+    # Unlisted legacy aliases stay queryable but out of the agent catalog.
+    assert "position_id" not in names
+    assert "option_core.position_id" not in names
+
+
+def test_query_positions_selects_product_level_dates_only():
+    from app.tools.positions import query_positions_tool
+
+    pid = _make_portfolio()
+    with database.SessionLocal() as session:
+        product = create_or_get_product(
+            session,
+            ProductSpec(
+                asset_class="equity",
+                product_family="option",
+                quantark_class="EuropeanVanillaOption",
+                underlying="000300.SH",
+                currency="CNY",
+                terms={
+                    "strike": 100.0,
+                    "option_type": "CALL",
+                    "exercise_date": "2026-09-18",
+                    "settlement_date": "2026-09-18",
+                },
+            ),
+            reuse=False,
+        )
+        session.add(
+            Position(
+                portfolio_id=pid,
+                product_id=product.id,
+                underlying="000300.SH",
+                product_type="EuropeanVanillaOption",
+                product_kwargs={},
+                engine_name="BlackScholesEngine",
+                engine_kwargs={},
+                quantity=1,
+                entry_price=0,
+                status="open",
+            )
+        )
+        session.commit()
+
+    result = query_positions_tool.invoke(
+        {
+            "portfolio_id": pid,
+            "select": ["id", "option.exercise_date", "option.settlement_date"],
+            "order_by": ["option.exercise_date", "asc"],
+        }
+    )
+
+    assert result["returned_count"] == 1
+    row = result["positions"][0]
+    assert row["option.exercise_date"] == "2026-09-18"
+    assert row["option.settlement_date"] == "2026-09-18"
+    # Select-only: rows carry exactly the requested fields, nothing more.
+    assert set(row) == {"id", "option.exercise_date", "option.settlement_date"}
+
+
+def test_query_positions_rejects_fields_outside_the_catalog():
+    from app.tools.positions import query_positions_tool
+
+    pid = _make_portfolio()
+    with pytest.raises(ValueError, match="Unknown query_positions column"):
+        query_positions_tool.invoke(
+            {"portfolio_id": pid, "select": ["product_kwargs"]}
+        )
+
+
 def test_query_product_tools_read_normalized_product_tables_without_product_kwargs():
     with database.SessionLocal() as session:
         product = create_or_get_product(
