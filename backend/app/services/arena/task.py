@@ -13,6 +13,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import database
@@ -689,6 +690,23 @@ def _record_pair(
         )
 
 
+def _cancel_requested(session: Session, task_id: int) -> bool:
+    """Has someone asked this run to stop?
+
+    Selects the COLUMN, not the entity, on purpose: an entity load can be served
+    from the session's identity map, and the flag is flipped by a DIFFERENT
+    process (the API, a human, another worker), so a cached row would never show
+    it. A column select always reaches the database. The loop commits after every
+    trial, so each check also starts a fresh transaction and sees the other
+    process's commit.
+    """
+    return bool(
+        session.execute(
+            select(TaskRun.cancel_requested).where(TaskRun.id == task_id)
+        ).scalar_one_or_none()
+    )
+
+
 def _execute(
     session: Session,
     task_id: int,
@@ -765,6 +783,23 @@ def _execute(
             for model_effort, model_budget in arms_for(
                 reasoning_efforts, max_output_tokens, model_id
             ):
+                # Checkpoint at the ARM boundary. A match in flight cannot be
+                # interrupted (the same constraint async_agents documents for the
+                # graph), so the contract is: finish and RECORD the arm that is
+                # running, then stop before the next one. Cancelling therefore
+                # discards no completed work.
+                if _cancel_requested(session, task_id):
+                    store.set_run_status(
+                        session, run_id, "failed",
+                        error=f"cancelled after {completed} of {total_units} units",
+                    )
+                    mark_task_finished(
+                        session, task_id,
+                        status=TaskStatus.FAILED.value,
+                        message="cancelled during run",
+                    )
+                    session.commit()
+                    return
                 clean: list[dict] = []
                 last_infra: str | None = None
                 last_path: str | None = None

@@ -716,6 +716,16 @@ proxy; the run status stays `running`; nothing raises and nothing exits.
   wedged. Score and status are useless here — silence looks exactly like work.
 - **Recovery is SIGKILL then `--resume <run>`**, which re-runs every non-`scored`
   arm and deletes its stale rows first. Same recipe as the run #8 proxy wedge.
+- **Killing the process does NOT stop the run — set `cancel_requested` instead.**
+  The `task_runs` row outlives the process, so any worker can pick the run up and
+  resume it: run #121 was killed at the launcher, its row stayed `running`, and a
+  `uvicorn --reload` dev server's worker resumed it at `.env`'s recursion limit
+  (100) rather than the launcher's (300). `arena/task.py::_execute` now honours
+  `cancel_requested` at the **arm boundary** — the arm in flight finishes and is
+  recorded, then the loop stops and marks the run `failed` (`cancelled after N of
+  M units`), never `completed`. A match cannot be interrupted mid-flight, so
+  expect up to one arm of delay. **A run left non-terminal is what invites the
+  silent resume**, so always leave it terminal.
 - **A resume must RE-SUPPLY every process-level setting.** `reasoning_effort` is
   persisted on the run, but an output budget
   (`OPEN_OTC_AGENT_MAX_OUTPUT_TOKENS` / `..._OPENAI_...`) is env-only with no

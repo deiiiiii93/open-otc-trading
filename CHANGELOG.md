@@ -42,6 +42,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     models would leave the progress bar permanently short, reading as stuck.
 
 ### Fixed
+- **An arena run can now be stopped without killing its process.**
+  `arena/task.py::_execute` honours `cancel_requested`, checked at the **arm
+  boundary** — a match in flight cannot be interrupted (the same constraint
+  `async_agents/runner.py` documents for the graph), so the contract is: finish
+  and RECORD the arm that is running, then stop before the next one. Cancelling
+  therefore discards no completed work. The run is marked `failed` with
+  `cancelled after N of M units` rather than `completed`, because reporting
+  success would let a partial board be read as a full one. Previously the flag
+  was honoured by `async_agents/runner.py` (three separate checks) and ignored
+  entirely here, so the only way to stop a board was to find and kill its
+  process — and **the task row outlives the process**: run #121 was killed at
+  the launcher, its `task_runs` row stayed `running`, and a `uvicorn --reload`
+  dev server's worker picked it up and resumed it at `.env`'s recursion limit
+  (100) instead of the launcher's (300), which is where the
+  `GraphRecursionError` reports came from. The check selects the **column**, not
+  the entity: an entity load can be served from the session identity map, and the
+  flag is set by a different process, so a cached row would never show it.
 - **Migration 0058 created a redundant, STRICTER unique constraint on every fresh
   database.** `0001_initial` materialises today's ORM, so a fresh DB arrives at
   revision 1 already carrying 0059's 5-column contestant key; 0058's guard looked
