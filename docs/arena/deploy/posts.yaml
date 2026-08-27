@@ -5,6 +5,17 @@
 # assets, publish.  A missing blurb FAILS THE BUILD by design — never let a
 # generated first paragraph ship as editorial copy.
 
+- file: 2026-08-26-run129-flash-tier-board.md
+  date: 2026-08-27
+  tags: [research]
+  title: "The flash tier, re-measured — and then re-run at `low`"
+  blurb: >
+    Seven models, five workflows, two efforts, 140 trials on a repaired harness.
+    At each model's ceiling the most correct agent finishes third; pinned to
+    `low` the board reorders and `low` costs most of the field under a point.
+  chips: ["7 models", "runs #129-#130", "140 trials"]
+  publish: true
+
 - file: 2026-08-21-glm-artifact-tool-study.md
   date: 2026-08-21
   tags: [research]

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-19T15:13:19.931240+00:00",
+  "generated_at": "2026-08-27T03:00:44.262239+00:00",
   "models": [
     {
       "boards_total": 4,
@@ -7,14 +7,14 @@
       "coverage": 3,
       "effort": null,
       "model": "gemini-3-6-flash",
-      "ovr": 90,
+      "ovr": 93,
       "ovr_max": 99,
       "ovr_min": 84,
       "per_board": [
         {
           "field": 18,
           "label": "Run #101",
-          "ovr": 88,
+          "ovr": 96,
           "rank": 6,
           "workflow": "risk-limit-breach-day"
         },
@@ -43,7 +43,7 @@
       "position": "Sniper",
       "stats": {
         "ADH": 98,
-        "EFF": 62,
+        "EFF": 79,
         "GRD": 99,
         "PRC": 94,
         "SYN": 99
@@ -55,15 +55,15 @@
       "coverage": 4,
       "effort": null,
       "model": "gpt-5-6-terra",
-      "ovr": 88,
-      "ovr_max": 91,
+      "ovr": 90,
+      "ovr_max": 98,
       "ovr_min": 83,
       "per_board": [
         {
           "field": 18,
           "label": "Run #101",
-          "ovr": 90,
-          "rank": 2,
+          "ovr": 98,
+          "rank": 1,
           "workflow": "risk-limit-breach-day"
         },
         {
@@ -91,7 +91,7 @@
       "position": "Sniper",
       "stats": {
         "ADH": 90,
-        "EFF": 73,
+        "EFF": 85,
         "GRD": 94,
         "PRC": 90,
         "SYN": 89
@@ -103,14 +103,14 @@
       "coverage": 4,
       "effort": null,
       "model": "deepseek-v4-pro",
-      "ovr": 87,
-      "ovr_max": 89,
+      "ovr": 88,
+      "ovr_max": 96,
       "ovr_min": 84,
       "per_board": [
         {
           "field": 18,
           "label": "Run #101",
-          "ovr": 89,
+          "ovr": 96,
           "rank": 5,
           "workflow": "risk-limit-breach-day"
         },
@@ -139,7 +139,7 @@
       "position": "Sniper",
       "stats": {
         "ADH": 90,
-        "EFF": 62,
+        "EFF": 74,
         "GRD": 96,
         "PRC": 88,
         "SYN": 96
@@ -151,14 +151,14 @@
       "coverage": 4,
       "effort": null,
       "model": "grok-4-5",
-      "ovr": 86,
-      "ovr_max": 96,
+      "ovr": 88,
+      "ovr_max": 98,
       "ovr_min": 73,
       "per_board": [
         {
           "field": 18,
           "label": "Run #101",
-          "ovr": 90,
+          "ovr": 98,
           "rank": 3,
           "workflow": "risk-limit-breach-day"
         },
@@ -187,7 +187,7 @@
       "position": "Sniper",
       "stats": {
         "ADH": 90,
-        "EFF": 36,
+        "EFF": 49,
         "GRD": 99,
         "PRC": 97,
         "SYN": 99
@@ -195,19 +195,19 @@
     },
     {
       "boards_total": 4,
-      "con": 88,
+      "con": 87,
       "coverage": 4,
       "effort": null,
       "model": "deepseek-v4-flash",
-      "ovr": 84,
-      "ovr_max": 91,
+      "ovr": 86,
+      "ovr_max": 92,
       "ovr_min": 75,
       "per_board": [
         {
           "field": 18,
           "label": "Run #101",
-          "ovr": 88,
-          "rank": 7,
+          "ovr": 92,
+          "rank": 10,
           "workflow": "risk-limit-breach-day"
         },
         {
@@ -235,7 +235,7 @@
       "position": "Sniper",
       "stats": {
         "ADH": 90,
-        "EFF": 49,
+        "EFF": 57,
         "GRD": 96,
         "PRC": 89,
         "SYN": 96
@@ -243,19 +243,19 @@
     },
     {
       "boards_total": 4,
-      "con": 77,
+      "con": 78,
       "coverage": 4,
       "effort": null,
       "model": "gpt-5-6-luna",
-      "ovr": 83,
-      "ovr_max": 89,
+      "ovr": 85,
+      "ovr_max": 93,
       "ovr_min": 74,
       "per_board": [
         {
           "field": 18,
           "label": "Run #101",
-          "ovr": 86,
-          "rank": 10,
+          "ovr": 93,
+          "rank": 9,
           "workflow": "risk-limit-breach-day"
         },
         {
@@ -283,7 +283,7 @@
       "position": "Sniper",
       "stats": {
         "ADH": 90,
-        "EFF": 58,
+        "EFF": 68,
         "GRD": 94,
         "PRC": 92,
         "SYN": 92
@@ -295,15 +295,15 @@
       "coverage": 4,
       "effort": null,
       "model": "qwen-3-7-max",
-      "ovr": 82,
-      "ovr_max": 88,
+      "ovr": 84,
+      "ovr_max": 94,
       "ovr_min": 75,
       "per_board": [
         {
           "field": 18,
           "label": "Run #101",
-          "ovr": 86,
-          "rank": 9,
+          "ovr": 94,
+          "rank": 8,
           "workflow": "risk-limit-breach-day"
         },
         {
@@ -331,7 +331,7 @@
       "position": "Playmaker",
       "stats": {
         "ADH": 87,
-        "EFF": 48,
+        "EFF": 61,
         "GRD": 95,
         "PRC": 90,
         "SYN": 99
@@ -343,14 +343,14 @@
       "coverage": 4,
       "effort": null,
       "model": "mimo-2-5-pro",
-      "ovr": 80,
-      "ovr_max": 89,
+      "ovr": 82,
+      "ovr_max": 98,
       "ovr_min": 65,
       "per_board": [
         {
           "field": 18,
           "label": "Run #101",
-          "ovr": 89,
+          "ovr": 98,
           "rank": 4,
           "workflow": "risk-limit-breach-day"
         },
@@ -379,7 +379,7 @@
       "position": "Sniper",
       "stats": {
         "ADH": 89,
-        "EFF": 54,
+        "EFF": 67,
         "GRD": 93,
         "PRC": 83,
         "SYN": 87
@@ -387,50 +387,50 @@
     },
     {
       "boards_total": 4,
-      "con": 78,
+      "con": 83,
       "coverage": 4,
       "effort": null,
-      "model": "hunyuan-3",
-      "ovr": 76,
-      "ovr_max": 84,
-      "ovr_min": 69,
+      "model": "gemini-3-5-flash",
+      "ovr": 78,
+      "ovr_max": 95,
+      "ovr_min": 61,
       "per_board": [
         {
           "field": 18,
           "label": "Run #101",
-          "ovr": 84,
-          "rank": 12,
+          "ovr": 95,
+          "rank": 7,
           "workflow": "risk-limit-breach-day"
         },
         {
           "field": 18,
           "label": "Run #94",
-          "ovr": 71,
-          "rank": 12,
+          "ovr": 74,
+          "rank": 11,
           "workflow": "high-board-portfolio-review-day"
         },
         {
           "field": 18,
           "label": "Run #33",
-          "ovr": 82,
-          "rank": 9,
+          "ovr": 80,
+          "rank": 12,
           "workflow": "trader-rfq-booking-day"
         },
         {
           "field": 17,
           "label": "Run #20",
-          "ovr": 69,
-          "rank": 14,
+          "ovr": 61,
+          "rank": 16,
           "workflow": "risk-manager-control-day"
         }
       ],
-      "position": "Sniper",
+      "position": "Anchor",
       "stats": {
-        "ADH": 87,
-        "EFF": 36,
-        "GRD": 93,
-        "PRC": 80,
-        "SYN": 81
+        "ADH": 88,
+        "EFF": 33,
+        "GRD": 84,
+        "PRC": 94,
+        "SYN": 89
       }
     },
     {
@@ -439,15 +439,15 @@
       "coverage": 4,
       "effort": null,
       "model": "kimi-2-7",
-      "ovr": 76,
-      "ovr_max": 91,
+      "ovr": 78,
+      "ovr_max": 98,
       "ovr_min": 68,
       "per_board": [
         {
           "field": 18,
           "label": "Run #101",
-          "ovr": 91,
-          "rank": 1,
+          "ovr": 98,
+          "rank": 2,
           "workflow": "risk-limit-breach-day"
         },
         {
@@ -475,7 +475,7 @@
       "position": "Sniper",
       "stats": {
         "ADH": 88,
-        "EFF": 56,
+        "EFF": 66,
         "GRD": 90,
         "PRC": 82,
         "SYN": 72
@@ -483,18 +483,66 @@
     },
     {
       "boards_total": 4,
-      "con": 54,
+      "con": 78,
+      "coverage": 4,
+      "effort": null,
+      "model": "hunyuan-3",
+      "ovr": 76,
+      "ovr_max": 82,
+      "ovr_min": 69,
+      "per_board": [
+        {
+          "field": 18,
+          "label": "Run #101",
+          "ovr": 81,
+          "rank": 13,
+          "workflow": "risk-limit-breach-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #94",
+          "ovr": 71,
+          "rank": 12,
+          "workflow": "high-board-portfolio-review-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #33",
+          "ovr": 82,
+          "rank": 9,
+          "workflow": "trader-rfq-booking-day"
+        },
+        {
+          "field": 17,
+          "label": "Run #20",
+          "ovr": 69,
+          "rank": 14,
+          "workflow": "risk-manager-control-day"
+        }
+      ],
+      "position": "Sniper",
+      "stats": {
+        "ADH": 87,
+        "EFF": 32,
+        "GRD": 93,
+        "PRC": 80,
+        "SYN": 81
+      }
+    },
+    {
+      "boards_total": 4,
+      "con": 47,
       "coverage": 4,
       "effort": null,
       "model": "claude-sonnet-5",
       "ovr": 75,
       "ovr_max": 81,
-      "ovr_min": 63,
+      "ovr_min": 62,
       "per_board": [
         {
           "field": 18,
           "label": "Run #101",
-          "ovr": 63,
+          "ovr": 62,
           "rank": 18,
           "workflow": "risk-limit-breach-day"
         },
@@ -523,7 +571,7 @@
       "position": "Playmaker",
       "stats": {
         "ADH": 81,
-        "EFF": 52,
+        "EFF": 57,
         "GRD": 86,
         "PRC": 86,
         "SYN": 99
@@ -531,55 +579,7 @@
     },
     {
       "boards_total": 4,
-      "con": 83,
-      "coverage": 4,
-      "effort": null,
-      "model": "gemini-3-5-flash",
-      "ovr": 75,
-      "ovr_max": 86,
-      "ovr_min": 61,
-      "per_board": [
-        {
-          "field": 18,
-          "label": "Run #101",
-          "ovr": 86,
-          "rank": 8,
-          "workflow": "risk-limit-breach-day"
-        },
-        {
-          "field": 18,
-          "label": "Run #94",
-          "ovr": 74,
-          "rank": 11,
-          "workflow": "high-board-portfolio-review-day"
-        },
-        {
-          "field": 18,
-          "label": "Run #33",
-          "ovr": 80,
-          "rank": 12,
-          "workflow": "trader-rfq-booking-day"
-        },
-        {
-          "field": 17,
-          "label": "Run #20",
-          "ovr": 61,
-          "rank": 16,
-          "workflow": "risk-manager-control-day"
-        }
-      ],
-      "position": "Anchor",
-      "stats": {
-        "ADH": 88,
-        "EFF": 20,
-        "GRD": 84,
-        "PRC": 94,
-        "SYN": 89
-      }
-    },
-    {
-      "boards_total": 4,
-      "con": 74,
+      "con": 71,
       "coverage": 4,
       "effort": null,
       "model": "glm-5-2",
@@ -590,7 +590,7 @@
         {
           "field": 18,
           "label": "Run #101",
-          "ovr": 66,
+          "ovr": 68,
           "rank": 17,
           "workflow": "risk-limit-breach-day"
         },
@@ -619,7 +619,7 @@
       "position": "Anchor",
       "stats": {
         "ADH": 88,
-        "EFF": 52,
+        "EFF": 60,
         "GRD": 85,
         "PRC": 79,
         "SYN": 74
@@ -627,115 +627,19 @@
     },
     {
       "boards_total": 4,
-      "con": 68,
-      "coverage": 4,
-      "effort": null,
-      "model": "doubao-seed-2-1-pro",
-      "ovr": 73,
-      "ovr_max": 80,
-      "ovr_min": 66,
-      "per_board": [
-        {
-          "field": 18,
-          "label": "Run #101",
-          "ovr": 72,
-          "rank": 15,
-          "workflow": "risk-limit-breach-day"
-        },
-        {
-          "field": 18,
-          "label": "Run #94",
-          "ovr": 66,
-          "rank": 15,
-          "workflow": "high-board-portfolio-review-day"
-        },
-        {
-          "field": 18,
-          "label": "Run #33",
-          "ovr": 80,
-          "rank": 13,
-          "workflow": "trader-rfq-booking-day"
-        },
-        {
-          "field": 17,
-          "label": "Run #20",
-          "ovr": 75,
-          "rank": 9,
-          "workflow": "risk-manager-control-day"
-        }
-      ],
-      "position": "Anchor",
-      "stats": {
-        "ADH": 88,
-        "EFF": 30,
-        "GRD": 86,
-        "PRC": 88,
-        "SYN": 87
-      }
-    },
-    {
-      "boards_total": 4,
-      "con": 74,
-      "coverage": 4,
-      "effort": null,
-      "model": "longcat-2-0",
-      "ovr": 72,
-      "ovr_max": 83,
-      "ovr_min": 46,
-      "per_board": [
-        {
-          "field": 18,
-          "label": "Run #101",
-          "ovr": 83,
-          "rank": 13,
-          "workflow": "risk-limit-breach-day"
-        },
-        {
-          "field": 18,
-          "label": "Run #94",
-          "ovr": 83,
-          "rank": 6,
-          "workflow": "high-board-portfolio-review-day"
-        },
-        {
-          "field": 18,
-          "label": "Run #33",
-          "ovr": 46,
-          "rank": 18,
-          "workflow": "trader-rfq-booking-day"
-        },
-        {
-          "field": 17,
-          "label": "Run #20",
-          "ovr": 76,
-          "rank": 7,
-          "workflow": "risk-manager-control-day"
-        }
-      ],
-      "position": "Playmaker",
-      "stats": {
-        "ADH": 84,
-        "EFF": 27,
-        "GRD": 84,
-        "PRC": 87,
-        "SYN": 87
-      }
-    },
-    {
-      "boards_total": 4,
-      "con": 67,
+      "con": 66,
       "coverage": 4,
       "effort": null,
       "model": "step-3-7-flash",
-      "ovr": 72,
+      "ovr": 74,
       "ovr_max": 81,
       "ovr_min": 68,
       "per_board": [
         {
           "field": 18,
           "label": "Run #101",
-          "ovr": 71,
-          "rank": 16,
+          "ovr": 77,
+          "rank": 15,
           "workflow": "risk-limit-breach-day"
         },
         {
@@ -763,7 +667,7 @@
       "position": "Anchor",
       "stats": {
         "ADH": 86,
-        "EFF": 43,
+        "EFF": 54,
         "GRD": 83,
         "PRC": 88,
         "SYN": 76
@@ -771,18 +675,114 @@
     },
     {
       "boards_total": 4,
-      "con": 33,
+      "con": 60,
+      "coverage": 4,
+      "effort": null,
+      "model": "doubao-seed-2-1-pro",
+      "ovr": 73,
+      "ovr_max": 80,
+      "ovr_min": 66,
+      "per_board": [
+        {
+          "field": 18,
+          "label": "Run #101",
+          "ovr": 70,
+          "rank": 16,
+          "workflow": "risk-limit-breach-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #94",
+          "ovr": 66,
+          "rank": 15,
+          "workflow": "high-board-portfolio-review-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #33",
+          "ovr": 80,
+          "rank": 13,
+          "workflow": "trader-rfq-booking-day"
+        },
+        {
+          "field": 17,
+          "label": "Run #20",
+          "ovr": 75,
+          "rank": 9,
+          "workflow": "risk-manager-control-day"
+        }
+      ],
+      "position": "Anchor",
+      "stats": {
+        "ADH": 88,
+        "EFF": 34,
+        "GRD": 86,
+        "PRC": 88,
+        "SYN": 87
+      }
+    },
+    {
+      "boards_total": 4,
+      "con": 68,
+      "coverage": 4,
+      "effort": null,
+      "model": "longcat-2-0",
+      "ovr": 72,
+      "ovr_max": 83,
+      "ovr_min": 46,
+      "per_board": [
+        {
+          "field": 18,
+          "label": "Run #101",
+          "ovr": 81,
+          "rank": 12,
+          "workflow": "risk-limit-breach-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #94",
+          "ovr": 83,
+          "rank": 6,
+          "workflow": "high-board-portfolio-review-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #33",
+          "ovr": 46,
+          "rank": 18,
+          "workflow": "trader-rfq-booking-day"
+        },
+        {
+          "field": 17,
+          "label": "Run #20",
+          "ovr": 76,
+          "rank": 7,
+          "workflow": "risk-manager-control-day"
+        }
+      ],
+      "position": "Playmaker",
+      "stats": {
+        "ADH": 84,
+        "EFF": 29,
+        "GRD": 84,
+        "PRC": 87,
+        "SYN": 87
+      }
+    },
+    {
+      "boards_total": 4,
+      "con": 32,
       "coverage": 4,
       "effort": null,
       "model": "mimo-2-5",
-      "ovr": 68,
-      "ovr_max": 72,
+      "ovr": 70,
+      "ovr_max": 79,
       "ovr_min": 62,
       "per_board": [
         {
           "field": 18,
           "label": "Run #101",
-          "ovr": 72,
+          "ovr": 79,
           "rank": 14,
           "workflow": "risk-limit-breach-day"
         },
@@ -811,7 +811,7 @@
       "position": "Anchor",
       "stats": {
         "ADH": 90,
-        "EFF": 53,
+        "EFF": 65,
         "GRD": 80,
         "PRC": 84,
         "SYN": 74
@@ -823,14 +823,14 @@
       "coverage": 4,
       "effort": null,
       "model": "minimax-m3",
-      "ovr": 62,
-      "ovr_max": 85,
+      "ovr": 64,
+      "ovr_max": 92,
       "ovr_min": 42,
       "per_board": [
         {
           "field": 18,
           "label": "Run #101",
-          "ovr": 85,
+          "ovr": 92,
           "rank": 11,
           "workflow": "risk-limit-breach-day"
         },
@@ -859,7 +859,7 @@
       "position": "Anchor",
       "stats": {
         "ADH": 80,
-        "EFF": 32,
+        "EFF": 42,
         "GRD": 78,
         "PRC": 72,
         "SYN": 60
@@ -870,53 +870,16 @@
     {
       "cards": [
         {
-          "con": 90,
-          "coverage": 4,
-          "effort": null,
-          "model": "grok-4-6",
-          "ovr": 80,
-          "ovr_max": 88,
-          "ovr_min": 74,
-          "per_workflow": [
-            {
-              "ovr": 88,
-              "workflow": "risk-limit-breach-day"
-            },
-            {
-              "ovr": 81,
-              "workflow": "trader-rfq-booking-day"
-            },
-            {
-              "ovr": 78,
-              "workflow": "high-board-portfolio-review-day"
-            },
-            {
-              "ovr": 74,
-              "workflow": "risk-manager-control-day"
-            }
-          ],
-          "position": "Playmaker",
-          "stats": {
-            "ADH": 90,
-            "EFF": 12,
-            "GRD": 96,
-            "PRC": 98,
-            "SYN": 99
-          },
-          "trials": 2,
-          "workflows_total": 4
-        },
-        {
-          "con": 70,
+          "con": 72,
           "coverage": 4,
           "effort": null,
           "model": "deepseek-v4-pro",
-          "ovr": 79,
-          "ovr_max": 90,
+          "ovr": 82,
+          "ovr_max": 99,
           "ovr_min": 61,
           "per_workflow": [
             {
-              "ovr": 90,
+              "ovr": 99,
               "workflow": "risk-limit-breach-day"
             },
             {
@@ -935,10 +898,47 @@
           "position": "Sniper",
           "stats": {
             "ADH": 89,
-            "EFF": 48,
+            "EFF": 60,
             "GRD": 93,
             "PRC": 93,
             "SYN": 84
+          },
+          "trials": 2,
+          "workflows_total": 4
+        },
+        {
+          "con": 86,
+          "coverage": 4,
+          "effort": null,
+          "model": "grok-4-6",
+          "ovr": 81,
+          "ovr_max": 91,
+          "ovr_min": 74,
+          "per_workflow": [
+            {
+              "ovr": 91,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 81,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 78,
+              "workflow": "high-board-portfolio-review-day"
+            },
+            {
+              "ovr": 74,
+              "workflow": "risk-manager-control-day"
+            }
+          ],
+          "position": "Playmaker",
+          "stats": {
+            "ADH": 90,
+            "EFF": 21,
+            "GRD": 96,
+            "PRC": 98,
+            "SYN": 99
           },
           "trials": 2,
           "workflows_total": 4
@@ -947,7 +947,7 @@
       "date": "2026-08-13",
       "label": "Run #104",
       "models": 2,
-      "note": "An A/B probe against Grok 4.6 over four workflows, two trials each \u2014 a pair, not a field, so neither card is ranked. Read this as a DIFFERENT model from the deepseek-v4-pro card above: DeepSeek replaced the weights behind that id on 2026-08-13, so the boards measure the earlier one. risk-limit-breach-day was also rescored 39 \u2192 38 points after Run #101, so objective figures are not comparable across the two.",
+      "note": "An A/B probe against Grok 4.6 over four workflows, two trials each \u2014 a pair, not a field, so neither card is ranked. Read this as a DIFFERENT model from the deepseek-v4-pro card above: DeepSeek replaced the weights behind that id on 2026-08-13, so the boards measure the earlier one. risk-limit-breach-day was also rescored 39 \u2192 38 points after Run #101, so objective figures are not comparable across the two. RESCORED 2026-08-27: risk-limit-breach-day and ops-settlement-day were given calibrated pars (25 and 30) where they previously had none, so EFF on those two workflows was being scored against a theoretical minimum no real run achieves. Cards derive on read, so this card's figures are the recalculated ones; the affected per-workflow OVRs rose by 1 to 9 points and every other workflow is unchanged.",
       "post": "2026-08-13-run104-otc-desk-agent-arena.md",
       "run": 104
     },
@@ -958,10 +958,14 @@
           "coverage": 5,
           "effort": null,
           "model": "gemini-3-7-flash",
-          "ovr": 90,
-          "ovr_max": 92,
-          "ovr_min": 86,
+          "ovr": 91,
+          "ovr_max": 98,
+          "ovr_min": 87,
           "per_workflow": [
+            {
+              "ovr": 98,
+              "workflow": "risk-limit-breach-day"
+            },
             {
               "ovr": 92,
               "workflow": "high-board-portfolio-review-day"
@@ -971,22 +975,18 @@
               "workflow": "risk-manager-control-day"
             },
             {
-              "ovr": 90,
-              "workflow": "risk-limit-breach-day"
-            },
-            {
               "ovr": 88,
               "workflow": "trader-rfq-booking-day"
             },
             {
-              "ovr": 86,
+              "ovr": 87,
               "workflow": "ops-settlement-day"
             }
           ],
           "position": "Sniper",
           "stats": {
             "ADH": 96,
-            "EFF": 48,
+            "EFF": 60,
             "GRD": 99,
             "PRC": 96,
             "SYN": 99
@@ -998,7 +998,7 @@
       "date": "2026-08-18",
       "label": "Run #113",
       "models": 1,
-      "note": "A single-model smoke across all five golden workflows, one trial each. Published for its ability card only: with no field there is no rank to report, and one trial cannot disperse, so CON is not measured.",
+      "note": "A single-model smoke across all five golden workflows, one trial each. Published for its ability card only: with no field there is no rank to report, and one trial cannot disperse, so CON is not measured. RESCORED 2026-08-27: risk-limit-breach-day and ops-settlement-day were given calibrated pars (25 and 30) where they previously had none, so EFF on those two workflows was being scored against a theoretical minimum no real run achieves. Cards derive on read, so this card's figures are the recalculated ones; the affected per-workflow OVRs rose by 1 to 9 points and every other workflow is unchanged.",
       "post": null,
       "run": 113
     },
@@ -1009,12 +1009,12 @@
           "coverage": 5,
           "effort": null,
           "model": "glm-5-3",
-          "ovr": 84,
-          "ovr_max": 91,
+          "ovr": 87,
+          "ovr_max": 99,
           "ovr_min": 69,
           "per_workflow": [
             {
-              "ovr": 91,
+              "ovr": 99,
               "workflow": "risk-limit-breach-day"
             },
             {
@@ -1022,12 +1022,12 @@
               "workflow": "trader-rfq-booking-day"
             },
             {
-              "ovr": 87,
-              "workflow": "risk-manager-control-day"
+              "ovr": 90,
+              "workflow": "ops-settlement-day"
             },
             {
-              "ovr": 81,
-              "workflow": "ops-settlement-day"
+              "ovr": 87,
+              "workflow": "risk-manager-control-day"
             },
             {
               "ovr": 69,
@@ -1037,7 +1037,7 @@
           "position": "Playmaker",
           "stats": {
             "ADH": 92,
-            "EFF": 37,
+            "EFF": 58,
             "GRD": 93,
             "PRC": 91,
             "SYN": 95
@@ -1049,9 +1049,603 @@
       "date": "2026-08-19",
       "label": "Run #115",
       "models": 1,
-      "note": "A single-model smoke across all five golden workflows, one trial each \u2014 cards only, for the same reasons as Run #113 above: no field means no rank, and one trial cannot disperse, so CON is not measured. This is also the FIRST run after the Anthropic-protocol output budget was raised from langchain's 4096-token fallback to 32768. GLM 5.3 routes over that protocol, and the capped attempt (Run #114, unpublished) truncated on 5-13% of its calls per workflow \u2014 a truncated turn emits reasoning and nothing else, so it produced no text and no tool call at all. That attempt averaged OVR 72 against 84 here, with risk-manager-control-day moving 67 \u2192 87 on the budget alone. Read EFF against the older boards with care: every Anthropic-protocol contestant on them ran under a cap this run did not.",
+      "note": "A single-model smoke across all five golden workflows, one trial each \u2014 cards only, for the same reasons as Run #113 above: no field means no rank, and one trial cannot disperse, so CON is not measured. This is also the FIRST run after the Anthropic-protocol output budget was raised from langchain's 4096-token fallback to 32768. GLM 5.3 routes over that protocol, and the capped attempt (Run #114, unpublished) truncated on 5-13% of its calls per workflow \u2014 a truncated turn emits reasoning and nothing else, so it produced no text and no tool call at all. That attempt averaged OVR 72 against 84 here, with risk-manager-control-day moving 67 \u2192 87 on the budget alone. Read EFF against the older boards with care: every Anthropic-protocol contestant on them ran under a cap this run did not. RESCORED 2026-08-27: risk-limit-breach-day and ops-settlement-day were given calibrated pars (25 and 30) where they previously had none, so EFF on those two workflows was being scored against a theoretical minimum no real run achieves. Cards derive on read, so this card's figures are the recalculated ones; the affected per-workflow OVRs rose by 1 to 9 points and every other workflow is unchanged.",
       "post": null,
       "run": 115
+    },
+    {
+      "cards": [
+        {
+          "con": 89,
+          "coverage": 5,
+          "effort": "max",
+          "model": "gpt-5-6-luna",
+          "ovr": 84,
+          "ovr_max": 98,
+          "ovr_min": 73,
+          "per_workflow": [
+            {
+              "ovr": 98,
+              "workflow": "ops-settlement-day"
+            },
+            {
+              "ovr": 93,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 81,
+              "workflow": "risk-manager-control-day"
+            },
+            {
+              "ovr": 74,
+              "workflow": "high-board-portfolio-review-day"
+            },
+            {
+              "ovr": 73,
+              "workflow": "trader-rfq-booking-day"
+            }
+          ],
+          "position": "Playmaker",
+          "stats": {
+            "ADH": 94,
+            "EFF": 47,
+            "GRD": 91,
+            "PRC": 90,
+            "SYN": 95
+          },
+          "trials": 2,
+          "workflows_total": 5
+        },
+        {
+          "con": 87,
+          "coverage": 5,
+          "effort": "max",
+          "model": "qwen-3-8-27b",
+          "ovr": 84,
+          "ovr_max": 94,
+          "ovr_min": 75,
+          "per_workflow": [
+            {
+              "ovr": 94,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 84,
+              "workflow": "high-board-portfolio-review-day"
+            },
+            {
+              "ovr": 84,
+              "workflow": "risk-manager-control-day"
+            },
+            {
+              "ovr": 82,
+              "workflow": "ops-settlement-day"
+            },
+            {
+              "ovr": 75,
+              "workflow": "trader-rfq-booking-day"
+            }
+          ],
+          "position": "Playmaker",
+          "stats": {
+            "ADH": 86,
+            "EFF": 58,
+            "GRD": 91,
+            "PRC": 89,
+            "SYN": 99
+          },
+          "trials": 2,
+          "workflows_total": 5
+        },
+        {
+          "con": 89,
+          "coverage": 5,
+          "effort": "xhigh",
+          "model": "gemini-3-7-flash",
+          "ovr": 83,
+          "ovr_max": 96,
+          "ovr_min": 77,
+          "per_workflow": [
+            {
+              "ovr": 96,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 85,
+              "workflow": "ops-settlement-day"
+            },
+            {
+              "ovr": 79,
+              "workflow": "risk-manager-control-day"
+            },
+            {
+              "ovr": 78,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 77,
+              "workflow": "high-board-portfolio-review-day"
+            }
+          ],
+          "position": "Playmaker",
+          "stats": {
+            "ADH": 92,
+            "EFF": 31,
+            "GRD": 95,
+            "PRC": 92,
+            "SYN": 99
+          },
+          "trials": 2,
+          "workflows_total": 5
+        },
+        {
+          "con": 69,
+          "coverage": 5,
+          "effort": "max",
+          "model": "deepseek-v4-flash-ds",
+          "ovr": 81,
+          "ovr_max": 89,
+          "ovr_min": 67,
+          "per_workflow": [
+            {
+              "ovr": 89,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 88,
+              "workflow": "ops-settlement-day"
+            },
+            {
+              "ovr": 82,
+              "workflow": "risk-manager-control-day"
+            },
+            {
+              "ovr": 81,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 67,
+              "workflow": "high-board-portfolio-review-day"
+            }
+          ],
+          "position": "Playmaker",
+          "stats": {
+            "ADH": 91,
+            "EFF": 54,
+            "GRD": 91,
+            "PRC": 88,
+            "SYN": 97
+          },
+          "trials": 2,
+          "workflows_total": 5
+        },
+        {
+          "con": 50,
+          "coverage": 5,
+          "effort": "xhigh",
+          "model": "hunyuan-3",
+          "ovr": 80,
+          "ovr_max": 91,
+          "ovr_min": 54,
+          "per_workflow": [
+            {
+              "ovr": 91,
+              "workflow": "ops-settlement-day"
+            },
+            {
+              "ovr": 88,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 87,
+              "workflow": "risk-manager-control-day"
+            },
+            {
+              "ovr": 79,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 54,
+              "workflow": "high-board-portfolio-review-day"
+            }
+          ],
+          "position": "Anchor",
+          "stats": {
+            "ADH": 93,
+            "EFF": 78,
+            "GRD": 88,
+            "PRC": 82,
+            "SYN": 77
+          },
+          "trials": null,
+          "workflows_total": 5
+        },
+        {
+          "con": 58,
+          "coverage": 5,
+          "effort": "max",
+          "model": "minimax-m3",
+          "ovr": 72,
+          "ovr_max": 93,
+          "ovr_min": 52,
+          "per_workflow": [
+            {
+              "ovr": 93,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 82,
+              "workflow": "ops-settlement-day"
+            },
+            {
+              "ovr": 81,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 52,
+              "workflow": "high-board-portfolio-review-day"
+            },
+            {
+              "ovr": 52,
+              "workflow": "risk-manager-control-day"
+            }
+          ],
+          "position": "Anchor",
+          "stats": {
+            "ADH": 86,
+            "EFF": 55,
+            "GRD": 79,
+            "PRC": 82,
+            "SYN": 79
+          },
+          "trials": 2,
+          "workflows_total": 5
+        },
+        {
+          "con": 52,
+          "coverage": 5,
+          "effort": "high",
+          "model": "mimo-2-5",
+          "ovr": 70,
+          "ovr_max": 79,
+          "ovr_min": 54,
+          "per_workflow": [
+            {
+              "ovr": 79,
+              "workflow": "ops-settlement-day"
+            },
+            {
+              "ovr": 79,
+              "workflow": "risk-manager-control-day"
+            },
+            {
+              "ovr": 79,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 60,
+              "workflow": "high-board-portfolio-review-day"
+            },
+            {
+              "ovr": 54,
+              "workflow": "risk-limit-breach-day"
+            }
+          ],
+          "position": "Anchor",
+          "stats": {
+            "ADH": 80,
+            "EFF": 63,
+            "GRD": 77,
+            "PRC": 82,
+            "SYN": 81
+          },
+          "trials": 2,
+          "workflows_total": 5
+        }
+      ],
+      "date": "2026-08-26",
+      "label": "Run #129 \u2014 flash tier at each model's effort ceiling",
+      "models": 7,
+      "note": "A real seven-model field, but across all five golden workflows at once, so it is published as cards rather than a ranked board: a leaderboard section covers one workflow, and folding five into a single row per contestant would publish a cross-workflow average under one workflow's heading. Two trials per cell. This is the first flash-tier field measured after four harness defects were fixed \u2014 the Anthropic-protocol 4096-token output cap, the unpinned ZenMux upstream lottery, the unmeasurable truncated turn and malformed tool call, and the dead trap step \u2014 so it is NOT comparable to runs #8-#126 for these models. Every model ran at its OWN measured effort ceiling (max, xhigh or high depending on the route), which makes this a capability measurement, not a shippable configuration; run #130 below is the same field pinned to `low`.",
+      "post": "2026-08-26-run129-flash-tier-board.md",
+      "run": 129
+    },
+    {
+      "cards": [
+        {
+          "con": 86,
+          "coverage": 5,
+          "effort": "low",
+          "model": "gemini-3-7-flash",
+          "ovr": 86,
+          "ovr_max": 98,
+          "ovr_min": 73,
+          "per_workflow": [
+            {
+              "ovr": 98,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 90,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 85,
+              "workflow": "ops-settlement-day"
+            },
+            {
+              "ovr": 84,
+              "workflow": "high-board-portfolio-review-day"
+            },
+            {
+              "ovr": 73,
+              "workflow": "risk-manager-control-day"
+            }
+          ],
+          "position": "Playmaker",
+          "stats": {
+            "ADH": 94,
+            "EFF": 76,
+            "GRD": 84,
+            "PRC": 91,
+            "SYN": 99
+          },
+          "trials": 2,
+          "workflows_total": 5
+        },
+        {
+          "con": 86,
+          "coverage": 5,
+          "effort": "low",
+          "model": "deepseek-v4-flash-ds",
+          "ovr": 84,
+          "ovr_max": 92,
+          "ovr_min": 73,
+          "per_workflow": [
+            {
+              "ovr": 92,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 88,
+              "workflow": "ops-settlement-day"
+            },
+            {
+              "ovr": 88,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 79,
+              "workflow": "risk-manager-control-day"
+            },
+            {
+              "ovr": 73,
+              "workflow": "high-board-portfolio-review-day"
+            }
+          ],
+          "position": "Playmaker",
+          "stats": {
+            "ADH": 88,
+            "EFF": 61,
+            "GRD": 91,
+            "PRC": 90,
+            "SYN": 95
+          },
+          "trials": 2,
+          "workflows_total": 5
+        },
+        {
+          "con": 80,
+          "coverage": 5,
+          "effort": "low",
+          "model": "qwen-3-8-27b",
+          "ovr": 81,
+          "ovr_max": 95,
+          "ovr_min": 53,
+          "per_workflow": [
+            {
+              "ovr": 95,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 93,
+              "workflow": "risk-manager-control-day"
+            },
+            {
+              "ovr": 82,
+              "workflow": "ops-settlement-day"
+            },
+            {
+              "ovr": 80,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 53,
+              "workflow": "high-board-portfolio-review-day"
+            }
+          ],
+          "position": "Sniper",
+          "stats": {
+            "ADH": 84,
+            "EFF": 76,
+            "GRD": 88,
+            "PRC": 81,
+            "SYN": 79
+          },
+          "trials": 2,
+          "workflows_total": 5
+        },
+        {
+          "con": 63,
+          "coverage": 5,
+          "effort": "low",
+          "model": "hunyuan-3",
+          "ovr": 79,
+          "ovr_max": 91,
+          "ovr_min": 61,
+          "per_workflow": [
+            {
+              "ovr": 91,
+              "workflow": "ops-settlement-day"
+            },
+            {
+              "ovr": 83,
+              "workflow": "risk-manager-control-day"
+            },
+            {
+              "ovr": 83,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 76,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 61,
+              "workflow": "high-board-portfolio-review-day"
+            }
+          ],
+          "position": "Sniper",
+          "stats": {
+            "ADH": 89,
+            "EFF": 63,
+            "GRD": 89,
+            "PRC": 85,
+            "SYN": 79
+          },
+          "trials": null,
+          "workflows_total": 5
+        },
+        {
+          "con": 67,
+          "coverage": 5,
+          "effort": "low",
+          "model": "gpt-5-6-luna",
+          "ovr": 78,
+          "ovr_max": 96,
+          "ovr_min": 49,
+          "per_workflow": [
+            {
+              "ovr": 96,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 94,
+              "workflow": "ops-settlement-day"
+            },
+            {
+              "ovr": 79,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 74,
+              "workflow": "high-board-portfolio-review-day"
+            },
+            {
+              "ovr": 49,
+              "workflow": "risk-manager-control-day"
+            }
+          ],
+          "position": "Anchor",
+          "stats": {
+            "ADH": 91,
+            "EFF": 67,
+            "GRD": 81,
+            "PRC": 87,
+            "SYN": 83
+          },
+          "trials": 2,
+          "workflows_total": 5
+        },
+        {
+          "con": 79,
+          "coverage": 5,
+          "effort": "low",
+          "model": "minimax-m3",
+          "ovr": 77,
+          "ovr_max": 98,
+          "ovr_min": 61,
+          "per_workflow": [
+            {
+              "ovr": 98,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 86,
+              "workflow": "ops-settlement-day"
+            },
+            {
+              "ovr": 72,
+              "workflow": "risk-manager-control-day"
+            },
+            {
+              "ovr": 66,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 61,
+              "workflow": "high-board-portfolio-review-day"
+            }
+          ],
+          "position": "Anchor",
+          "stats": {
+            "ADH": 88,
+            "EFF": 56,
+            "GRD": 80,
+            "PRC": 80,
+            "SYN": 87
+          },
+          "trials": 2,
+          "workflows_total": 5
+        },
+        {
+          "con": 70,
+          "coverage": 5,
+          "effort": "low",
+          "model": "mimo-2-5",
+          "ovr": 76,
+          "ovr_max": 98,
+          "ovr_min": 49,
+          "per_workflow": [
+            {
+              "ovr": 98,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 83,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 82,
+              "workflow": "risk-manager-control-day"
+            },
+            {
+              "ovr": 70,
+              "workflow": "ops-settlement-day"
+            },
+            {
+              "ovr": 49,
+              "workflow": "high-board-portfolio-review-day"
+            }
+          ],
+          "position": "Sniper",
+          "stats": {
+            "ADH": 82,
+            "EFF": 71,
+            "GRD": 82,
+            "PRC": 81,
+            "SYN": 79
+          },
+          "trials": null,
+          "workflows_total": 5
+        }
+      ],
+      "date": "2026-08-26",
+      "label": "Run #130 \u2014 the same field pinned to `low`",
+      "models": 7,
+      "note": "The paired arm of run #129: identical models, workflows, trials, output budget and commit, with every contestant pinned to `low` so effort is the only variable and each model is its own control. The ranking reorders \u2014 Gemini 3.7 Flash goes from third to first and leads on both axes \u2014 and four of seven models score HIGHER here than at their ceiling, because lower effort cuts tool calls and EFF is the axis with the widest spread. On the 25 of 35 paired cells where both arms have enough trial consistency to be readable, `low` costs a mean 2.4 objective points, and under one point for three of the four models with a clean sample. Four arms were swept to invalid by a network outage and re-run with `--resume 130`; all 35 are scored at the same effort and budget.",
+      "post": "2026-08-26-run129-flash-tier-board.md",
+      "run": 130
     }
   ],
   "version": 1,
@@ -1065,6 +1659,7 @@
           "date": "2026-08-02",
           "label": "Run #101",
           "models": 18,
+          "note": "RESCORED 2026-08-27. This workflow had never declared a par_tool_calls, so EFF was scored against the theoretical minimum of 11 tool calls \u2014 a target no trial in the arena's history has ever come close to (the leanest is 15). It now declares a calibrated par of 25, the median of the 31 fully-correct trials ever recorded on it, which moves EFF from a 19-56 band to 2-99 and changes the rank of 10 of these 18 rows. Cards are derived on read, so the figures below are the recalculated ones and no longer match any earlier published version of this board. Read the top with care: the leading four tie at OVR 98 on identical grounding, adherence and synthesis, so their order is settled by EFF and then PRC \u2014 which places Grok 4.5 third despite a perfect 100.0 objective score. 34 of this workflow's 36 checks now pass for every contestant; it no longer separates a strong field.",
           "post": null,
           "rows": [
             {
@@ -1072,14 +1667,33 @@
               "effort": null,
               "invalid": 0,
               "matches": 1,
-              "model": "kimi-2-7",
-              "objective": 94.9,
-              "ovr": 91,
-              "position": "Sniper",
+              "model": "gpt-5-6-terra",
+              "objective": 97.4,
+              "ovr": 98,
+              "position": "All-rounder",
               "rank": 1,
               "stats": {
                 "ADH": 99,
-                "EFF": 56,
+                "EFF": 99,
+                "GRD": 99,
+                "PRC": 93,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 99,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "kimi-2-7",
+              "objective": 94.9,
+              "ovr": 98,
+              "position": "Sniper",
+              "rank": 2,
+              "stats": {
+                "ADH": 99,
+                "EFF": 99,
                 "GRD": 99,
                 "PRC": 87,
                 "SYN": 99
@@ -1091,33 +1705,14 @@
               "effort": null,
               "invalid": 0,
               "matches": 1,
-              "model": "gpt-5-6-terra",
-              "objective": 97.4,
-              "ovr": 90,
-              "position": "Sniper",
-              "rank": 2,
-              "stats": {
-                "ADH": 99,
-                "EFF": 49,
-                "GRD": 99,
-                "PRC": 93,
-                "SYN": 99
-              },
-              "trials": 2
-            },
-            {
-              "con": 96,
-              "effort": null,
-              "invalid": 0,
-              "matches": 1,
               "model": "grok-4-5",
               "objective": 100.0,
-              "ovr": 90,
-              "position": "Sniper",
+              "ovr": 98,
+              "position": "All-rounder",
               "rank": 3,
               "stats": {
                 "ADH": 99,
-                "EFF": 44,
+                "EFF": 97,
                 "GRD": 99,
                 "PRC": 99,
                 "SYN": 99
@@ -1125,18 +1720,18 @@
               "trials": 2
             },
             {
-              "con": 96,
+              "con": 99,
               "effort": null,
               "invalid": 0,
               "matches": 1,
               "model": "mimo-2-5-pro",
               "objective": 96.2,
-              "ovr": 89,
+              "ovr": 98,
               "position": "Sniper",
               "rank": 4,
               "stats": {
                 "ADH": 99,
-                "EFF": 47,
+                "EFF": 97,
                 "GRD": 99,
                 "PRC": 90,
                 "SYN": 99
@@ -1150,12 +1745,12 @@
               "matches": 1,
               "model": "deepseek-v4-pro",
               "objective": 97.4,
-              "ovr": 89,
-              "position": "Sniper",
+              "ovr": 96,
+              "position": "All-rounder",
               "rank": 5,
               "stats": {
                 "ADH": 99,
-                "EFF": 44,
+                "EFF": 93,
                 "GRD": 99,
                 "PRC": 93,
                 "SYN": 99
@@ -1169,33 +1764,14 @@
               "matches": 1,
               "model": "gemini-3-6-flash",
               "objective": 96.2,
-              "ovr": 88,
+              "ovr": 96,
               "position": "Sniper",
               "rank": 6,
               "stats": {
                 "ADH": 99,
-                "EFF": 42,
+                "EFF": 93,
                 "GRD": 99,
                 "PRC": 90,
-                "SYN": 99
-              },
-              "trials": 2
-            },
-            {
-              "con": 96,
-              "effort": null,
-              "invalid": 0,
-              "matches": 1,
-              "model": "deepseek-v4-flash",
-              "objective": 98.7,
-              "ovr": 88,
-              "position": "Sniper",
-              "rank": 7,
-              "stats": {
-                "ADH": 99,
-                "EFF": 33,
-                "GRD": 99,
-                "PRC": 96,
                 "SYN": 99
               },
               "trials": 2
@@ -1207,12 +1783,12 @@
               "matches": 1,
               "model": "gemini-3-5-flash",
               "objective": 96.2,
-              "ovr": 86,
-              "position": "Sniper",
-              "rank": 8,
+              "ovr": 95,
+              "position": "All-rounder",
+              "rank": 7,
               "stats": {
                 "ADH": 94,
-                "EFF": 44,
+                "EFF": 96,
                 "GRD": 99,
                 "PRC": 93,
                 "SYN": 99
@@ -1226,12 +1802,12 @@
               "matches": 1,
               "model": "qwen-3-7-max",
               "objective": 94.8,
-              "ovr": 86,
+              "ovr": 94,
               "position": "Sniper",
-              "rank": 9,
+              "rank": 8,
               "stats": {
                 "ADH": 94,
-                "EFF": 41,
+                "EFF": 93,
                 "GRD": 99,
                 "PRC": 90,
                 "SYN": 99
@@ -1239,18 +1815,18 @@
               "trials": 2
             },
             {
-              "con": 92,
+              "con": 96,
               "effort": null,
               "invalid": 0,
               "matches": 1,
               "model": "gpt-5-6-luna",
               "objective": 96.2,
-              "ovr": 86,
+              "ovr": 93,
               "position": "Sniper",
-              "rank": 10,
+              "rank": 9,
               "stats": {
                 "ADH": 94,
-                "EFF": 35,
+                "EFF": 75,
                 "GRD": 99,
                 "PRC": 93,
                 "SYN": 99
@@ -1258,20 +1834,58 @@
               "trials": 2
             },
             {
-              "con": 86,
+              "con": 89,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "deepseek-v4-flash",
+              "objective": 98.7,
+              "ovr": 92,
+              "position": "Sniper",
+              "rank": 10,
+              "stats": {
+                "ADH": 99,
+                "EFF": 67,
+                "GRD": 99,
+                "PRC": 96,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 89,
               "effort": null,
               "invalid": 0,
               "matches": 1,
               "model": "minimax-m3",
               "objective": 93.6,
-              "ovr": 85,
+              "ovr": 92,
               "position": "Sniper",
               "rank": 11,
               "stats": {
                 "ADH": 86,
-                "EFF": 49,
+                "EFF": 92,
                 "GRD": 99,
                 "PRC": 93,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 63,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "longcat-2-0",
+              "objective": 91.0,
+              "ovr": 81,
+              "position": "Sniper",
+              "rank": 12,
+              "stats": {
+                "ADH": 99,
+                "EFF": 32,
+                "GRD": 99,
+                "PRC": 79,
                 "SYN": 99
               },
               "trials": 2
@@ -1283,12 +1897,12 @@
               "matches": 1,
               "model": "hunyuan-3",
               "objective": 94.9,
-              "ovr": 84,
+              "ovr": 81,
               "position": "Sniper",
-              "rank": 12,
+              "rank": 13,
               "stats": {
                 "ADH": 94,
-                "EFF": 19,
+                "EFF": 2,
                 "GRD": 99,
                 "PRC": 90,
                 "SYN": 99
@@ -1296,37 +1910,18 @@
               "trials": 2
             },
             {
-              "con": 86,
-              "effort": null,
-              "invalid": 0,
-              "matches": 1,
-              "model": "longcat-2-0",
-              "objective": 91.0,
-              "ovr": 83,
-              "position": "Sniper",
-              "rank": 13,
-              "stats": {
-                "ADH": 99,
-                "EFF": 24,
-                "GRD": 99,
-                "PRC": 79,
-                "SYN": 99
-              },
-              "trials": 2
-            },
-            {
-              "con": 43,
+              "con": 40,
               "effort": null,
               "invalid": 0,
               "matches": 1,
               "model": "mimo-2-5",
               "objective": 87.2,
-              "ovr": 72,
+              "ovr": 79,
               "position": "Sniper",
               "rank": 14,
               "stats": {
                 "ADH": 99,
-                "EFF": 44,
+                "EFF": 92,
                 "GRD": 99,
                 "PRC": 79,
                 "SYN": 50
@@ -1334,37 +1929,18 @@
               "trials": 2
             },
             {
-              "con": 82,
-              "effort": null,
-              "invalid": 0,
-              "matches": 1,
-              "model": "doubao-seed-2-1-pro",
-              "objective": 84.6,
-              "ovr": 72,
-              "position": "Playmaker",
-              "rank": 15,
-              "stats": {
-                "ADH": 86,
-                "EFF": 26,
-                "GRD": 74,
-                "PRC": 84,
-                "SYN": 99
-              },
-              "trials": 2
-            },
-            {
-              "con": 36,
+              "con": 33,
               "effort": null,
               "invalid": 0,
               "matches": 1,
               "model": "step-3-7-flash",
               "objective": 88.4,
-              "ovr": 71,
+              "ovr": 77,
               "position": "Sniper",
-              "rank": 16,
+              "rank": 15,
               "stats": {
                 "ADH": 99,
-                "EFF": 43,
+                "EFF": 86,
                 "GRD": 99,
                 "PRC": 82,
                 "SYN": 50
@@ -1372,18 +1948,37 @@
               "trials": 2
             },
             {
-              "con": 13,
+              "con": 50,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "doubao-seed-2-1-pro",
+              "objective": 84.6,
+              "ovr": 70,
+              "position": "Playmaker",
+              "rank": 16,
+              "stats": {
+                "ADH": 86,
+                "EFF": 40,
+                "GRD": 74,
+                "PRC": 84,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 0,
               "effort": null,
               "invalid": 0,
               "matches": 1,
               "model": "glm-5-2",
               "objective": 82.1,
-              "ovr": 66,
+              "ovr": 68,
               "position": "Playmaker",
               "rank": 17,
               "stats": {
                 "ADH": 86,
-                "EFF": 52,
+                "EFF": 84,
                 "GRD": 74,
                 "PRC": 78,
                 "SYN": 99
@@ -1391,18 +1986,18 @@
               "trials": 2
             },
             {
-              "con": 30,
+              "con": 3,
               "effort": null,
               "invalid": 0,
               "matches": 1,
               "model": "claude-sonnet-5",
               "objective": 83.3,
-              "ovr": 63,
+              "ovr": 62,
               "position": "Playmaker",
               "rank": 18,
               "stats": {
                 "ADH": 76,
-                "EFF": 26,
+                "EFF": 45,
                 "GRD": 74,
                 "PRC": 87,
                 "SYN": 99
@@ -1415,7 +2010,7 @@
         }
       ],
       "id": "risk-limit-breach-day",
-      "par": null,
+      "par": 25,
       "persona": "risk_manager",
       "steps": 7,
       "title": "Risk Limit Breach Day"
@@ -1429,6 +2024,7 @@
           "date": "2026-07-29",
           "label": "Run #94",
           "models": 18,
+          "note": null,
           "post": "2026-07-29-run94-otc-desk-agent-arena.md",
           "rows": [
             {
@@ -1793,6 +2389,7 @@
           "date": "2026-07-20",
           "label": "Run #33",
           "models": 18,
+          "note": null,
           "post": "2026-07-20-run33-otc-desk-agent-arena.md",
           "rows": [
             {
@@ -2157,6 +2754,7 @@
           "date": "2026-07-08",
           "label": "Run #20",
           "models": 17,
+          "note": null,
           "post": "2026-07-13-run20-otc-desk-agent-arena.md",
           "rows": [
             {
@@ -2496,7 +3094,7 @@
     {
       "boards": [],
       "id": "ops-settlement-day",
-      "par": null,
+      "par": 30,
       "persona": "trader",
       "steps": 8,
       "title": "Operations Settlement Day"

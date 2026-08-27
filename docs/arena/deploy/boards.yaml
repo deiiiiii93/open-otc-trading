@@ -37,6 +37,19 @@ boards:
   # No report: the field was run and scored, but never written up.
   - run: 101
     workflow: risk-limit-breach-day
+    note: >-
+      RESCORED 2026-08-27. This workflow had never declared a par_tool_calls, so
+      EFF was scored against the theoretical minimum of 11 tool calls — a target
+      no trial in the arena's history has ever come close to (the leanest is 15).
+      It now declares a calibrated par of 25, the median of the 31 fully-correct
+      trials ever recorded on it, which moves EFF from a 19-56 band to 2-99 and
+      changes the rank of 10 of these 18 rows. Cards are derived on read, so the
+      figures below are the recalculated ones and no longer match any earlier
+      published version of this board. Read the top with care: the leading four
+      tie at OVR 98 on identical grounding, adherence and synthesis, so their
+      order is settled by EFF and then PRC — which places Grok 4.5 third despite
+      a perfect 100.0 objective score. 34 of this workflow's 36 checks now pass
+      for every contestant; it no longer separates a strong field.
 
 provisional:
   - run: 104
@@ -48,12 +61,24 @@ provisional:
       behind that id on 2026-08-13, so the boards measure the earlier one.
       risk-limit-breach-day was also rescored 39 → 38 points after Run #101,
       so objective figures are not comparable across the two.
+      RESCORED 2026-08-27: risk-limit-breach-day and ops-settlement-day were
+      given calibrated pars (25 and 30) where they previously had none, so EFF
+      on those two workflows was being scored against a theoretical minimum no
+      real run achieves. Cards derive on read, so this card's figures are the
+      recalculated ones; the affected per-workflow OVRs rose by 1 to 9 points
+      and every other workflow is unchanged.
 
   - run: 113
     note: >-
       A single-model smoke across all five golden workflows, one trial each.
       Published for its ability card only: with no field there is no rank to
       report, and one trial cannot disperse, so CON is not measured.
+      RESCORED 2026-08-27: risk-limit-breach-day and ops-settlement-day were
+      given calibrated pars (25 and 30) where they previously had none, so EFF
+      on those two workflows was being scored against a theoretical minimum no
+      real run achieves. Cards derive on read, so this card's figures are the
+      recalculated ones; the affected per-workflow OVRs rose by 1 to 9 points
+      and every other workflow is unchanged.
 
   - run: 115
     note: >-
@@ -69,3 +94,42 @@ provisional:
       67 → 87 on the budget alone. Read EFF against the older boards with care:
       every Anthropic-protocol contestant on them ran under a cap this run did
       not.
+      RESCORED 2026-08-27: risk-limit-breach-day and ops-settlement-day were
+      given calibrated pars (25 and 30) where they previously had none, so EFF
+      on those two workflows was being scored against a theoretical minimum no
+      real run achieves. Cards derive on read, so this card's figures are the
+      recalculated ones; the affected per-workflow OVRs rose by 1 to 9 points
+      and every other workflow is unchanged.
+
+  - run: 129
+    label: "Run #129 — flash tier at each model's effort ceiling"
+    post: 2026-08-26-run129-flash-tier-board.md
+    note: >-
+      A real seven-model field, but across all five golden workflows at once, so
+      it is published as cards rather than a ranked board: a leaderboard section
+      covers one workflow, and folding five into a single row per contestant
+      would publish a cross-workflow average under one workflow's heading. Two
+      trials per cell. This is the first flash-tier field measured after four
+      harness defects were fixed — the Anthropic-protocol 4096-token output cap,
+      the unpinned ZenMux upstream lottery, the unmeasurable truncated turn and
+      malformed tool call, and the dead trap step — so it is NOT comparable to
+      runs #8-#126 for these models. Every model ran at its OWN measured effort
+      ceiling (max, xhigh or high depending on the route), which makes this a
+      capability measurement, not a shippable configuration; run #130 below is
+      the same field pinned to `low`.
+
+  - run: 130
+    label: "Run #130 — the same field pinned to `low`"
+    post: 2026-08-26-run129-flash-tier-board.md
+    note: >-
+      The paired arm of run #129: identical models, workflows, trials, output
+      budget and commit, with every contestant pinned to `low` so effort is the
+      only variable and each model is its own control. The ranking reorders —
+      Gemini 3.7 Flash goes from third to first and leads on both axes — and
+      four of seven models score HIGHER here than at their ceiling, because
+      lower effort cuts tool calls and EFF is the axis with the widest spread.
+      On the 25 of 35 paired cells where both arms have enough trial
+      consistency to be readable, `low` costs a mean 2.4 objective points, and
+      under one point for three of the four models with a clean sample. Four
+      arms were swept to invalid by a network outage and re-run with
+      `--resume 130`; all 35 are scored at the same effort and budget.
