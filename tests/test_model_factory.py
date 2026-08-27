@@ -27,8 +27,16 @@ def _registry(*, zenmux_healthy: bool = True, deepseek_healthy: bool = True) -> 
         anthropic_base_url="https://zenmux.test/api/anthropic",
         healthy=zenmux_healthy,
         models=(
-            ModelDescriptor(id="anthropic/claude-sonnet-4-6", provider="anthropic", label="Sonnet 4.6"),
-            ModelDescriptor(id="openai/gpt-5.4", provider="openai", label="GPT-5.4"),
+            ModelDescriptor(
+                id="anthropic/claude-sonnet-4-6", provider="anthropic",
+                protocol="anthropic", label="Sonnet 4.6",
+                dispatch_id="anthropic/claude-sonnet-4-6:anthropic",
+            ),
+            ModelDescriptor(
+                id="openai/gpt-5.4", provider="openai",
+                protocol="openai_chat", label="GPT-5.4",
+                dispatch_id="openai/gpt-5.4:openai",
+            ),
         ),
     )
     deepseek = ChannelDescriptor(
@@ -74,8 +82,9 @@ def test_build_agent_model_returns_chat_openai_for_zenmux_openai():
 
 
 def _registry_with_anthropic_protocol_model() -> ChannelRegistry:
-    """A zenmux model whose provider is 'openai' but wire protocol is 'anthropic'
-    (the minimax case): find_model still keys on provider, client routes on protocol."""
+    """The minimax case: a model whose UPSTREAM is minimax and whose wire protocol
+    is Anthropic Messages. The two axes are independent — the client routes on the
+    protocol, and the upstream only composes the dispatch id."""
     zenmux = ChannelDescriptor(
         name="zenmux",
         label="Zenmux",
@@ -87,23 +96,33 @@ def _registry_with_anthropic_protocol_model() -> ChannelRegistry:
         models=(
             ModelDescriptor(
                 id="minimax/minimax-m3",
-                provider="openai",
+                provider="minimax",
                 label="MiniMax M3",
                 protocol="anthropic",
+                dispatch_id="minimax/minimax-m3:minimax",
             ),
         ),
     )
     return ChannelRegistry(
         channels=(zenmux,),
-        default=("zenmux", "openai", "minimax/minimax-m3"),
+        default=("zenmux", "minimax", "minimax/minimax-m3"),
     )
 
 
-def test_wire_protocol_defaults_to_provider():
-    md = ModelDescriptor(id="openai/gpt-5.4", provider="openai", label="GPT-5.4")
-    assert md.wire_protocol == "openai"
-    md2 = ModelDescriptor(id="x", provider="openai", label="x", protocol="anthropic")
-    assert md2.wire_protocol == "anthropic"
+def test_wire_id_carries_the_upstream_pin_and_id_does_not():
+    """`id` is the model, `wire_id` is the route. Everything that talks to a
+    provider — or keys route-scoped data like the measured effort ladders — must
+    use the route, or a pinned model reads as its unpinned twin.
+    """
+    md = ModelDescriptor(
+        id="deepseek/deepseek-v4-flash", provider="deepseek", label="DS",
+        dispatch_id="deepseek/deepseek-v4-flash:deepseek",
+    )
+    assert md.id == "deepseek/deepseek-v4-flash"
+    assert md.wire_id == "deepseek/deepseek-v4-flash:deepseek"
+    # A hand-built descriptor with no dispatch_id falls back to the bare id
+    # rather than composing one, so a fixture cannot invent a pin by accident.
+    assert ModelDescriptor(id="x/y", provider="z", label="L").wire_id == "x/y"
 
 
 def test_build_agent_model_routes_anthropic_protocol_openai_provider_to_chat_anthropic():

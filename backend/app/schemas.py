@@ -212,12 +212,20 @@ class AgentModelConfigOut(BaseModel):
 
 
 class AgentRegistryModelOut(BaseModel):
+    # The three routing axes: id = the model, provider = the ZenMux upstream
+    # serving it (the SDK label off-gateway), protocol = the wire format.
     id: str
     provider: str
+    protocol: str | None = None
+    # Derived and READ-ONLY: `<id>:<provider>` on a zenmux channel, what actually
+    # goes on the wire. Declared here because this response is served with
+    # response_model=AgentRegistryOut, and pydantic silently drops any key the
+    # schema does not name — the serializer would emit it and the console would
+    # never see it, with every unit test still green.
+    dispatch_id: str | None = None
     label: str
     description: str | None = None
     tags: list[str] = Field(default_factory=list)
-    protocol: str | None = None
 
 
 class AgentRegistryChannelOut(BaseModel):

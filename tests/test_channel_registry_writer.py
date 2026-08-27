@@ -42,22 +42,36 @@ def test_add_model_roundtrip_and_preserves_comment(yaml_path):
     assert md.label == "GPT-6.0"
 
 
+def _real_id(yaml_path, base: str) -> str:
+    """The tracked template's id for *base*, whatever upstream pin it carries.
+
+    Zenmux ids are provider-pinned (`anthropic/claude-haiku-4.5:anthropic`) and
+    will be repinned again; restating the literal here makes every repin a test
+    failure for no behavioural reason.
+    """
+    reg = cr.load_from_path(yaml_path)
+    ch = next(c for c in reg.channels if c.name == "zenmux")
+    return next(m.id for m in ch.models if m.id.split(":")[0] == base)
+
+
 def test_update_model_with_slash_id(yaml_path):
+    mid = _real_id(yaml_path, "anthropic/claude-sonnet-4.6")
     w.update_model(
-        "zenmux", "anthropic/claude-sonnet-4.6",
-        {"id": "anthropic/claude-sonnet-4.6", "provider": "anthropic", "label": "Renamed Sonnet"},
+        "zenmux", mid,
+        {"id": mid, "provider": "anthropic", "label": "Renamed Sonnet"},
         path=yaml_path,
     )
     reg = cr.load_from_path(yaml_path)
-    _, md = reg.find_model("zenmux", "anthropic", "anthropic/claude-sonnet-4.6")
+    _, md = reg.find_model("zenmux", "anthropic", mid)
     assert md.label == "Renamed Sonnet"
 
 
 def test_delete_model(yaml_path):
-    w.delete_model("zenmux", "anthropic/claude-haiku-4.5", path=yaml_path)
+    mid = _real_id(yaml_path, "anthropic/claude-haiku-4.5")
+    w.delete_model("zenmux", mid, path=yaml_path)
     reg = cr.load_from_path(yaml_path)
     with pytest.raises(KeyError):
-        reg.find_model("zenmux", "anthropic", "anthropic/claude-haiku-4.5")
+        reg.find_model("zenmux", "anthropic", mid)
 
 
 def test_invalid_mutation_leaves_file_untouched(yaml_path):
@@ -72,7 +86,8 @@ def test_add_duplicate_model_id_conflicts(yaml_path):
     with pytest.raises(w.RegistryConflictError):
         w.add_model(
             "zenmux",
-            {"id": "anthropic/claude-haiku-4.5", "provider": "anthropic", "label": "dup"},
+            {"id": _real_id(yaml_path, "anthropic/claude-haiku-4.5"),
+             "provider": "anthropic", "label": "dup"},
             path=yaml_path,
         )
 

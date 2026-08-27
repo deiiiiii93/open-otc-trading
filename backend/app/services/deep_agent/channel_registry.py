@@ -7,7 +7,9 @@ docs/superpowers/specs/2026-05-09-multi-channel-model-selection-design.md.
 """
 from __future__ import annotations
 
+import logging
 import os
+import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,28 +20,65 @@ import yaml
 from app.config import dotenv_path
 
 
+logger = logging.getLogger(__name__)
+
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 @dataclass(frozen=True)
 class ModelDescriptor:
+    """One dispatchable model, described on three ORTHOGONAL axes.
+
+    ``id``        the model id as its owner names it, with NO ``:upstream``
+                  suffix — ``deepseek/deepseek-v4-flash``.
+    ``provider``  on a **zenmux** channel: the ZenMux UPSTREAM PROVIDER, i.e.
+                  whose infrastructure actually serves the request
+                  (``deepseek``, ``bigmodel``, ``google-vertex``). ZenMux serves
+                  one id from several upstreams and picks one per request unless
+                  it is pinned, so this is a required part of the route, not a
+                  label. On an ``openai_compatible`` channel there is only one
+                  upstream, so it names the SDK instead (``deepseek`` ->
+                  ChatDeepSeek).
+    ``protocol``  the wire format dispatched on: ``openai_chat`` | ``anthropic``
+                  | ``openai_responses``.
+
+    Until 2026-08-25 ``provider`` held the ZenMux *gateway routing label*
+    ("anthropic"/"openai") and the upstream lived in the id as a ``:suffix``, so
+    a single row could read ``qwen/qwen3.7-max:alibaba`` / ``openai`` /
+    ``anthropic`` — three vendor-shaped words meaning three different things.
+    That label was dispatch-dead (routing has always keyed on the protocol) and
+    redundant as a lookup key (``_build_channel`` already forbids duplicate ids
+    within a channel), so the field was freed to mean the upstream. YAML in the
+    old shape still loads — see ``_build_model``.
+
+    See ``config/agent_channels.example.yml`` for the annotated template.
+    """
+
     id: str
     provider: str
     label: str
     description: str | None = None
     tags: tuple[str, ...] = ()
-    # Wire protocol the model speaks, decoupled from ``provider`` (the ZenMux
-    # gateway routing label). Empty means "same as provider". Some third-party
-    # vendors routed through ZenMux (e.g. minimax) emit tool calls in the
-    # Anthropic tool-use format, which the OpenAI-compatible gateway does NOT
-    # translate — they must be dispatched via the Anthropic endpoint even though
-    # their ``provider`` stays "openai" so ``find_model`` keeps matching them.
-    protocol: str = ""
+    # Defaults to the documented default protocol rather than "", so every reader
+    # sees a valid value. ``_build_model`` always sets it explicitly; this default
+    # only covers descriptors built by hand in tests and fixtures.
+    protocol: str = "openai_chat"
+    # The id actually sent to the gateway: ``<id>:<provider>`` on a zenmux
+    # channel (the upstream pin), plain ``id`` elsewhere. Always populated by
+    # ``_build_model``; read it through ``wire_id`` so a descriptor built by hand
+    # in a test or fixture still resolves.
+    dispatch_id: str = ""
 
     @property
-    def wire_protocol(self) -> str:
-        """Effective dispatch protocol: explicit ``protocol`` else ``provider``."""
-        return self.protocol or self.provider
+    def wire_id(self) -> str:
+        """Model id as sent to the provider, and the key for route-scoped data.
+
+        Route-scoped means the measured effort ladders in
+        ``config/model_reasoning.json``: a ladder is a property of
+        (channel, upstream, model), not of the model alone, so it must be keyed
+        on the pinned id.
+        """
+        return self.dispatch_id or self.id
 
 
 @dataclass(frozen=True)
@@ -62,12 +101,49 @@ class ChannelRegistry:
     def find_model(
         self, channel: str, provider: str, model: str
     ) -> tuple[ChannelDescriptor, ModelDescriptor]:
+        """Resolve a ``{channel, provider, model}`` selection to its descriptor.
+
+        **Matches on the model id alone.** ``_build_channel`` already forbids
+        duplicate ids within a channel, so the id IS the unique key and
+        ``provider`` never added anything to it. That matters now because
+        ``provider`` changed meaning on 2026-08-25 (gateway routing label ->
+        upstream provider) and 13k+ persisted ``AgentMessage.meta`` selections —
+        replayed verbatim by async resume — still carry the old value. Ignoring
+        it is what keeps every one of those rows resolvable. The parameter stays
+        in the signature because those callers pass it.
+
+        Either spelling of the id resolves: bare (``deepseek/deepseek-v4-flash``)
+        or upstream-pinned (``deepseek/deepseek-v4-flash:deepseek``).
+
+        A selection pinned to an upstream the registry no longer declares
+        resolves to the configured one, loudly. Replaying an old thread on an
+        upstream we have since abandoned is the worse outcome — ``:alibaba`` is
+        why the pin exists at all.
+        """
         for ch in self.channels:
             if ch.name != channel:
                 continue
             for md in ch.models:
-                if md.id == model and md.provider == provider:
+                if model == md.wire_id:
                     return ch, md
+            base, sep, upstream = model.partition(":")
+            candidates = [md for md in ch.models if md.id == base]
+            if len(candidates) == 1:
+                md = candidates[0]
+                if sep and upstream != md.provider:
+                    logger.warning(
+                        "selection names upstream %r for %r, which is not "
+                        "configured; dispatching on %r instead",
+                        upstream, base, md.wire_id,
+                    )
+                return ch, md
+            if len(candidates) > 1:
+                raise KeyError(
+                    f"ambiguous selection: {base!r} is declared on channel "
+                    f"{channel!r} for upstreams "
+                    f"{sorted(md.provider for md in candidates)}; name one "
+                    f"explicitly as '<id>:<upstream>'"
+                )
         raise KeyError(f"unknown selection: channel={channel!r} provider={provider!r} model={model!r}")
 
     def default_selection(self) -> dict[str, str]:
@@ -92,6 +168,15 @@ class ChannelRegistry:
             for md in ch.models:
                 if tag in md.tags:
                     return {"channel": ch.name, "provider": md.provider, "model": md.id}
+        return None
+
+    def resolve_default_model(
+        self, channel_name: str, model_id: str
+    ) -> ModelDescriptor | None:
+        """Find `model_id` on `channel_name`, accepting either id spelling."""
+        for ch in self.channels:
+            if ch.name == channel_name:
+                return _match_model(ch.models, model_id)
         return None
 
 
@@ -183,9 +268,13 @@ def _build_channel(entry: dict) -> ChannelDescriptor:
         if not isinstance(m, dict):
             raise ValueError(f"channel {name!r}: model entries must be mappings")
         md = _build_model(name, type_, m)
-        if md.id in seen_ids:
-            raise ValueError(f"channel {name!r}: duplicate model id {md.id!r}")
-        seen_ids.add(md.id)
+        # Keyed on the DISPATCH id, not the bare id, so the same model may be
+        # declared on two upstreams as two distinct routes — the shape the
+        # `:deepseek` vs `:alibaba` investigation needed. ``find_model`` refuses
+        # a bare id that is ambiguous between them rather than picking one.
+        if md.wire_id in seen_ids:
+            raise ValueError(f"channel {name!r}: duplicate model id {md.wire_id!r}")
+        seen_ids.add(md.wire_id)
         models.append(md)
 
     return ChannelDescriptor(
@@ -200,39 +289,165 @@ def _build_channel(entry: dict) -> ChannelDescriptor:
     )
 
 
+# The wire formats a model may declare. Renamed 2026-08-25 from
+# ("openai", "anthropic", "responses"): a bare "openai" hid WHICH of OpenAI's two
+# APIs was meant, and that is exactly the distinction the deepseek
+# malformed-tool-call investigation turned on — the same model, same effort, was
+# unusable over chat completions and clean over the Responses API. The old
+# spellings still load, via _PROTOCOL_ALIASES.
+_ZENMUX_PROTOCOLS = ("openai_chat", "anthropic", "openai_responses")
+_PROTOCOL_ALIASES = {
+    "openai": "openai_chat",
+    "responses": "openai_responses",
+}
+
+# The only two values ``provider`` could hold before 2026-08-25, when it meant
+# the ZenMux gateway routing label rather than the upstream provider. Used ONLY
+# to interpret a legacy row; the discriminator for "is this row legacy" is the
+# ``:upstream`` suffix on the id, never this list — "anthropic" is also a
+# perfectly good NEW-style upstream (Anthropic's own metal).
+_LEGACY_GATEWAY_LABELS = ("anthropic", "openai")
+
+# Upstream slugs are vendor-chosen and there is NO enumeration endpoint on
+# ZenMux (302/404), so this cannot be an allowlist — only a shape check, to
+# catch a stray path or whitespace rather than an unknown-but-real provider.
+_UPSTREAM_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+
+
+def _one_of(values: tuple[str, ...]) -> str:
+    return " or ".join(repr(v) for v in values)
+
+
+def _match_model(
+    models: tuple[ModelDescriptor, ...], model_id: str
+) -> ModelDescriptor | None:
+    """Match `model_id` against a channel's models, accepting either spelling.
+
+    Exact dispatch id first (``deepseek/deepseek-v4-flash:deepseek``), then the
+    bare id (``deepseek/deepseek-v4-flash``) when exactly one model carries it.
+    Returns None when unknown or ambiguous — ambiguity is only possible when the
+    same model is declared on two upstreams, and silently picking one there would
+    be the routing lottery this whole scheme exists to prevent.
+    """
+    for md in models:
+        if model_id == md.wire_id:
+            return md
+    candidates = [md for md in models if md.id == model_id.partition(":")[0]]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def canonical_protocol(value: str | None) -> str:
+    """Normalise a declared protocol, mapping the pre-2026-08-25 spellings."""
+    text = (value or "").strip().lower()
+    return _PROTOCOL_ALIASES.get(text, text)
+
+
 def _build_model(channel_name: str, channel_type: str, m: dict) -> ModelDescriptor:
-    model_id = _required_str(m, "id")
+    """Parse one model entry into a descriptor, accepting both YAML schemas.
+
+    CURRENT schema — the three axes are independent::
+
+        - id: deepseek/deepseek-v4-flash     # bare model id
+          provider: deepseek                 # ZenMux upstream provider
+          protocol: openai_chat              # wire format
+
+    LEGACY schema (pre-2026-08-25) — the upstream rode in the id and ``provider``
+    held the gateway routing label::
+
+        - id: deepseek/deepseek-v4-flash:deepseek
+          provider: openai                   # gateway label, not the upstream
+
+    The discriminator is the ``:upstream`` suffix on the id, NOT the value of
+    ``provider``: "anthropic" is both a legacy gateway label and a real
+    upstream, so reading the row's shape is the only unambiguous test.
+
+    A legacy row is translated in place — the suffix becomes ``provider``, the
+    old ``provider`` becomes the protocol default — so an existing per-machine
+    ``config/agent_channels.yaml`` keeps working untouched.
+    """
+    declared_id = _required_str(m, "id")
     provider = _required_str(m, "provider")
     label = _required_str(m, "label")
-    if channel_type == "zenmux" and provider not in {"anthropic", "openai"}:
+
+    raw_protocol = m.get("protocol")
+    if raw_protocol is not None and not isinstance(raw_protocol, str):
         raise ValueError(
-            f"channel {channel_name!r}: model {model_id!r}: "
-            f"provider must be 'anthropic' or 'openai' on zenmux channels, got {provider!r}"
+            f"channel {channel_name!r}: model {declared_id!r}: protocol must be a string or null"
         )
-    protocol = m.get("protocol")
-    if protocol is not None:
-        if not isinstance(protocol, str):
-            raise ValueError(
-                f"channel {channel_name!r}: model {model_id!r}: protocol must be a string or null"
+    protocol = canonical_protocol(raw_protocol)
+
+    model_id = declared_id
+    dispatch_id = declared_id
+
+    if channel_type == "zenmux":
+        base, sep, upstream = declared_id.partition(":")
+        if sep:
+            # Legacy row: recover the upstream from the id, and fall back to the
+            # old gateway label for the protocol when none was declared.
+            model_id = base
+            if not upstream:
+                raise ValueError(
+                    f"channel {channel_name!r}: model {declared_id!r}: "
+                    "empty upstream after ':'"
+                )
+            protocol = protocol or canonical_protocol(provider)
+            provider = upstream
+            dispatch_id = declared_id
+        elif not protocol and provider in _LEGACY_GATEWAY_LABELS:
+            # Legacy row from before upstream pinning existed at all. Leave it
+            # UNPINNED rather than guessing: composing `<id>:openai` would mint a
+            # pin to an upstream nobody chose, which is worse than the lottery it
+            # would be pretending to fix. ``provider`` keeps the gateway label
+            # here — the one case where the field does not name an upstream.
+            logger.warning(
+                "channel %r: model %r declares no protocol and provider=%r "
+                "(the pre-2026-08-25 gateway label). Routing it UNPINNED across "
+                "ZenMux upstreams. Declare provider=<upstream> and "
+                "protocol=%s to pin it.",
+                channel_name, declared_id, provider, _one_of(_ZENMUX_PROTOCOLS),
             )
-        if channel_type == "zenmux" and protocol not in {"anthropic", "openai"}:
+            protocol = canonical_protocol(provider)
+            dispatch_id = declared_id
+        else:
+            if not protocol:
+                raise ValueError(
+                    f"channel {channel_name!r}: model {declared_id!r}: "
+                    f"protocol is required on zenmux channels; expected "
+                    f"{_one_of(_ZENMUX_PROTOCOLS)}"
+                )
+            if not _UPSTREAM_RE.match(provider):
+                raise ValueError(
+                    f"channel {channel_name!r}: model {declared_id!r}: provider "
+                    f"must be a ZenMux upstream slug (e.g. 'deepseek', "
+                    f"'google-vertex'), got {provider!r}"
+                )
+            dispatch_id = f"{model_id}:{provider}"
+
+        if protocol not in _ZENMUX_PROTOCOLS:
             raise ValueError(
-                f"channel {channel_name!r}: model {model_id!r}: "
-                f"protocol must be 'anthropic' or 'openai' on zenmux channels, got {protocol!r}"
+                f"channel {channel_name!r}: model {declared_id!r}: "
+                f"protocol must be {_one_of(_ZENMUX_PROTOCOLS)} on zenmux channels, "
+                f"got {raw_protocol!r}"
             )
+    else:
+        # A vendor's own API has exactly one upstream, so there is nothing to
+        # pin and nothing to compose; ``provider`` selects the SDK instead.
+        protocol = protocol or "openai_chat"
+
     description = m.get("description")
     if description is not None and not isinstance(description, str):
-        raise ValueError(f"channel {channel_name!r}: model {model_id!r}: description must be a string or null")
+        raise ValueError(f"channel {channel_name!r}: model {declared_id!r}: description must be a string or null")
     raw_tags = m.get("tags") or []
     if not isinstance(raw_tags, list) or not all(isinstance(t, str) for t in raw_tags):
-        raise ValueError(f"channel {channel_name!r}: model {model_id!r}: tags must be a list[str]")
+        raise ValueError(f"channel {channel_name!r}: model {declared_id!r}: tags must be a list[str]")
     return ModelDescriptor(
         id=model_id,
         provider=provider,
         label=label,
         description=description,
         tags=tuple(raw_tags),
-        protocol=protocol or "",
+        protocol=protocol,
+        dispatch_id=dispatch_id,
     )
 
 
@@ -267,9 +482,9 @@ def _resolve_default(
                 found_declared_channel = True
                 if not ch.healthy:
                     break
-                for md in ch.models:
-                    if md.id == model_id:
-                        return (ch.name, md.provider, md.id)
+                md = _match_model(ch.models, model_id)
+                if md is not None:
+                    return (ch.name, md.provider, md.id)
                 raise ValueError(
                     f"default model {model_id!r} is not declared on healthy "
                     f"channel {ch_name!r}"

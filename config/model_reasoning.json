@@ -1211,8 +1211,51 @@
         "toggle": false,
         "source": "measured",
         "measured_at": "2026-08-14"
+      },
+      "google/gemini-3.7-flash": {
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
+        "reasoning": true,
+        "toggle": false,
+        "source": "measured",
+        "measured_at": "2026-08-21"
+      },
+      "qwen/qwen3.8-27b": {
+        "efforts": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "reasoning": true,
+        "toggle": false,
+        "source": "measured",
+        "measured_at": "2026-08-25"
+      },
+      "deepseek/deepseek-v4-flash:deepseek": {
+        "efforts": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "reasoning": true,
+        "toggle": false,
+        "source": "measured",
+        "measured_at": "2026-08-25"
       }
     }
   },
-  "probed_at": "2026-08-14"
+  "probed_at": "2026-08-25"
 }

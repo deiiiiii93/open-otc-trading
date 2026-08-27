@@ -223,7 +223,7 @@ def main() -> int:
         # endpoint entirely and cannot carry reasoning_effort by construction.
         ids = [
             m.id for m in channel.models
-            if (m.wire_protocol == "anthropic") == (args.protocol == "anthropic")
+            if (m.protocol == "anthropic") == (args.protocol == "anthropic")
         ]
     levels: list[str | None] = [None] + list(args.levels or VALID_REASONING_EFFORTS)
 

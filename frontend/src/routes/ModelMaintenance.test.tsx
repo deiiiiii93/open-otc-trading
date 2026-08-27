@@ -18,11 +18,12 @@ const registry: AgentRegistry = {
       models: [
         {
           id: 'deepseek/deepseek-v4-flash',
-          provider: 'openai',
+          provider: 'deepseek',
+          protocol: 'openai_chat',
+          dispatch_id: 'deepseek/deepseek-v4-flash:deepseek',
           label: 'DeepSeek V4 Flash',
           description: null,
           tags: ['fast'],
-          protocol: null,
         },
       ],
     },
@@ -36,12 +37,15 @@ const registry: AgentRegistry = {
       healthy: false,
       models: [
         {
+          // Off-gateway: one upstream, so no pin is composed and `provider`
+          // selects the SDK instead.
           id: 'deepseek-v4-pro',
-          provider: 'openai',
+          provider: 'deepseek',
+          protocol: 'openai_chat',
+          dispatch_id: 'deepseek-v4-pro',
           label: 'DeepSeek V4 Pro',
           description: null,
           tags: [],
-          protocol: null,
         },
       ],
     },

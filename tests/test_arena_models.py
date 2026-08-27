@@ -17,8 +17,11 @@ def test_canonical_slug_by_slug():
 
 
 def test_canonical_slug_by_zenmux_name():
-    from app.services.arena.models import canonical_model_id
-    assert canonical_model_id("openai/gpt-5.5") == "gpt-5-5"
+    # Sourced from the registry, never hardcoded: zenmux ids now carry a
+    # `:provider` pin (2026-08-25) and will change again whenever a route is
+    # repinned. Hardcoding the id makes this a moving-target assertion.
+    from app.services.arena.models import canonical_model_id, get_model
+    assert canonical_model_id(get_model("gpt-5-5").zenmux_name) == "gpt-5-5"
 
 
 def test_canonical_unknown_raises_key_error():
@@ -31,12 +34,14 @@ def test_get_model_by_slug():
     from app.services.arena.models import get_model
     m = get_model("gpt-5-5")
     assert m.slug == "gpt-5-5"
-    assert m.zenmux_name == "openai/gpt-5.5"
+    # Base id plus an explicit upstream pin — unpinned ids are a routing lottery.
+    assert m.zenmux_name.split(":")[0] == "openai/gpt-5.5"
+    assert ":" in m.zenmux_name, "zenmux routes must pin their upstream provider"
 
 
 def test_get_model_by_zenmux_name():
     from app.services.arena.models import get_model
-    m = get_model("openai/gpt-5.5")
+    m = get_model(get_model("gpt-5-5").zenmux_name)
     assert m.slug == "gpt-5-5"
 
 
@@ -79,7 +84,8 @@ def test_validate_model_ids_unknown_raises():
 def test_validate_model_ids_canonicalizes():
     from app.services.arena.models import validate_model_ids
     # Both slug and zenmux_name for the same model → both map to the same slug
-    result = validate_model_ids(["gpt-5-5", "openai/gpt-5.5"])
+    from app.services.arena.models import get_model
+    result = validate_model_ids(["gpt-5-5", get_model("gpt-5-5").zenmux_name])
     assert result == ["gpt-5-5", "gpt-5-5"]
 
 

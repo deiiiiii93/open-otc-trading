@@ -181,10 +181,12 @@ def effort_rejection(
     "no effort" case — it rejects every level, because it does not reason.
     """
     try:
-        registry.find_model(channel, provider, model)
+        _channel, model_desc = registry.find_model(channel, provider, model)
     except KeyError:
         return None  # unknown selection; the caller's own validation reports it
-    return reasoning_capabilities.rejection_reason(channel, model, effort)
+    # Resolve to the PINNED id before asking: the ladder is measured per route,
+    # and a selection may name the bare id while the registry pins an upstream.
+    return reasoning_capabilities.rejection_reason(channel, model_desc.wire_id, effort)
 
 
 def resolve_agent_model_selection(
@@ -326,6 +328,62 @@ def _effort_for(
     return swept
 
 
+def _zenmux_responses_chat(**kwargs: Any) -> BaseChatModel:
+    """ChatOpenAI on the Responses API, with a ZenMux payload workaround.
+
+    ZenMux silently DROPS the entire ``tools`` array when an input item is exactly
+    ``{"type": "message", "content": "<string>"}`` — the shape langchain-openai
+    emits. The model then answers in prose with no error and no tool call, which is
+    indistinguishable from a model that chose not to use its tools. Measured
+    2026-08-21: 0/4 tool calls in that shape versus 4/4 once the string is promoted
+    to a content-parts list. Every other input shape already works, including
+    ``type: "message"`` WITH content parts, so the fix is narrow and additive.
+
+    This is a workaround for a third-party bug at the hottest seam in the system.
+    If ZenMux fixes it the normalizer becomes a no-op, not a breakage — promoting a
+    string to its equivalent parts list is semantically identical either way.
+    """
+    from langchain_openai import ChatOpenAI
+
+    class _ZenmuxResponsesChat(ChatOpenAI):  # type: ignore[misc]
+        def _get_request_payload(
+            self, input_: LanguageModelInput, **kw: Any
+        ) -> dict[str, Any]:
+            payload = super()._get_request_payload(input_, **kw)
+            items = payload.get("input")
+            if isinstance(items, list):
+                for item in items:
+                    if (
+                        isinstance(item, dict)
+                        and item.get("type") == "message"
+                        and isinstance(item.get("content"), str)
+                    ):
+                        kind = (
+                            "output_text"
+                            if item.get("role") == "assistant"
+                            else "input_text"
+                        )
+                        item["content"] = [{"type": kind, "text": item["content"]}]
+            return payload
+
+    return _ZenmuxResponsesChat(**kwargs)
+
+
+def _forced_zenmux_protocol() -> str:
+    """Process-wide protocol override for the protocol A/B study.
+
+    Env-only and deliberately un-persisted, exactly like the output budget was
+    before migration 0059 — WITH THE SAME CAVEAT: a resume that omits it finishes
+    the run on a DIFFERENT protocol than it started, and nothing in the stored data
+    would reveal that. If the study finds a real protocol effect, protocol must be
+    promoted to part of the contestant key (as effort and budget already were)
+    rather than left here.
+    """
+    from .channel_registry import canonical_protocol
+
+    return canonical_protocol(os.getenv("OPEN_OTC_ZENMUX_FORCE_PROTOCOL"))
+
+
 def build_agent_model(
     registry: ChannelRegistry,
     selection: Mapping[str, str] | None = None,
@@ -338,11 +396,37 @@ def build_agent_model(
     if not channel.healthy:
         return None  # caller renders "agent disabled"
 
-    # Route by WIRE PROTOCOL, not provider: a model whose provider is "openai"
-    # (its ZenMux gateway label) but which emits Anthropic-format tool calls
-    # (e.g. minimax) declares protocol="anthropic" and must be dispatched through
-    # the Anthropic endpoint, or its tool calls leak into text as unparsed markup.
-    if channel.type == "zenmux" and model_desc.wire_protocol == "anthropic":
+    # Route by PROTOCOL, never by provider. `provider` names the ZenMux UPSTREAM
+    # (whose metal serves the request); the wire format is an independent axis,
+    # and a model may need one that its vendor's own API would not imply — e.g.
+    # minimax emits Anthropic-format tool calls that the OpenAI-compatible
+    # endpoint leaves unparsed, so it declares protocol: anthropic.
+    protocol = model_desc.protocol
+    if channel.type == "zenmux":
+        forced = _forced_zenmux_protocol()
+        if forced and forced != protocol:
+            logger.warning(
+                "OPEN_OTC_ZENMUX_FORCE_PROTOCOL=%s overrides %s for %s",
+                forced, protocol, model_desc.id,
+            )
+            protocol = forced
+
+    if channel.type == "zenmux" and protocol == "openai_responses":
+        # Effort rides `reasoning_effort`, which langchain maps to the Responses
+        # API's `reasoning: {effort: ...}` — verified against the wire payload.
+        # No max_output_tokens: same reasoning as the chat-completions branch
+        # below, let the provider apply the model's own ceiling.
+        return _zenmux_responses_chat(
+            model=model_desc.wire_id,
+            api_key=SecretStr(channel.api_key or ""),
+            base_url=channel.base_url,
+            use_responses_api=True,
+            **({"reasoning_effort": _effort_for(
+                selection, channel.name, model_desc.id)}
+               if _effort_for(selection, channel.name, model_desc.id) else {}),
+        )
+
+    if channel.type == "zenmux" and protocol == "anthropic":
         # Effort on this protocol is `output_config.effort` — a NAMED level, not the
         # OpenAI `reasoning_effort` field and not the older `thinking.budget_tokens`
         # budget. Sent through `output_config` rather than ChatAnthropic's `effort=`
@@ -370,7 +454,7 @@ def build_agent_model(
             or int(get_settings().agent_max_output_tokens)
         )
         return ChatAnthropic(
-            model_name=model_desc.id,
+            model_name=model_desc.wire_id,
             api_key=SecretStr(channel.api_key or ""),
             base_url=channel.anthropic_base_url,
             default_headers={"anthropic-version": "2023-06-01"},
@@ -383,7 +467,14 @@ def build_agent_model(
     effort = _effort_for(selection, channel.name, model_desc.id)
     extra = {"reasoning_effort": effort} if effort else {}
 
-    if model_desc.provider == "deepseek":
+    # `channel.type` guard is load-bearing since provider was redefined to mean
+    # the UPSTREAM: the zenmux row `deepseek/deepseek-v4-flash` now also carries
+    # provider="deepseek", and without this it would be built with ChatDeepSeek
+    # against the ZenMux base_url — a client for the wrong API, silently.
+    # Here `provider` is the SDK label, which only an openai_compatible channel
+    # has: a vendor's own API has exactly one upstream, so there is nothing to
+    # pin and the field is free to select the client.
+    if channel.type == "openai_compatible" and model_desc.provider == "deepseek":
         if _ChatDeepSeek is None:
             raise RuntimeError(
                 "DeepSeek model selected but langchain-deepseek is not installed. "
@@ -391,7 +482,7 @@ def build_agent_model(
                 "backend through the project `.venv`."
             )
         return DeepSeekReasoningChat(
-            model=model_desc.id,
+            model=model_desc.wire_id,
             api_key=SecretStr(channel.api_key) if channel.api_key else SecretStr(""),
             base_url=channel.base_url,
             **extra,
@@ -423,7 +514,7 @@ def build_agent_model(
         extra["max_tokens"] = int(openai_max_out)
 
     return ChatOpenAI(
-        model=model_desc.id,
+        model=model_desc.wire_id,
         api_key=SecretStr(channel.api_key) if channel.api_key else SecretStr(""),
         base_url=channel.base_url,
         stream_usage=True,
@@ -447,7 +538,11 @@ def agent_model_config(registry: ChannelRegistry) -> dict[str, object]:
             #   unmeasured/unknown → the outer bound, matching the permissive
             #                        server fallback; narrowing to an unverified
             #                        models.dev ladder would hide working levels.
-            support = reasoning_capabilities.effort_support(ch.name, md.id)
+            # Keyed on the PINNED id: a ladder is a property of the route
+            # (channel + upstream + model), and a pinned route is a different
+            # key from its unpinned twin. `effort_support` falls back to the
+            # bare id when the pinned one has not been probed.
+            support = reasoning_capabilities.effort_support(ch.name, md.wire_id)
             efforts = (
                 list(support.efforts) if support is not None and support.measured
                 else list(VALID_REASONING_EFFORTS)
@@ -517,12 +612,17 @@ def agent_registry_config(registry: ChannelRegistry) -> dict[str, object]:
             "healthy": ch.healthy,
             "models": [
                 {
-                    "id": md.id,
-                    "provider": md.provider,
+                    # The three routing axes, as the YAML now declares them.
+                    "id": md.id,              # bare model id
+                    "provider": md.provider,  # ZenMux upstream (SDK label off-gateway)
+                    "protocol": md.protocol or None,
+                    # Derived, read-only: what actually goes on the wire. Shown so
+                    # the console can display the pin without the editor having to
+                    # recompose it — and so a legacy row reveals its real route.
+                    "dispatch_id": md.wire_id,
                     "label": md.label,
                     "description": md.description,
                     "tags": list(md.tags),
-                    "protocol": md.protocol or None,
                 }
                 for md in ch.models
             ],

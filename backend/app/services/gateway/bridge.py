@@ -41,7 +41,10 @@ def _parse_model_selection(raw: str | None) -> dict[str, str] | None:
     or return ``None`` to use the registry default.
 
     The model id itself may contain ``/`` (e.g. ``deepseek/deepseek-v4-flash``)
-    so only the first two ``:`` separators are significant.
+    AND ``:`` — ZenMux pins an upstream provider with a ``:provider`` suffix, e.g.
+    ``deepseek/deepseek-v4-flash:deepseek`` — so only the first two ``:``
+    separators are significant. ``split(":", 2)`` is load-bearing, not stylistic:
+    a plain ``split(":")`` would reject every provider-pinned id.
     """
     raw = (raw or "").strip()
     if not raw:

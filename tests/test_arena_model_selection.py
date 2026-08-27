@@ -25,10 +25,10 @@ def test_missing_slash_raises():
         arena_model_to_selection(_m("gpt-5.5"))
 
 
-def test_third_party_vendor_uses_explicit_openai_provider():
-    """Third-party vendors routed through Zenmux carry their real vendor in the
-    model id but dispatch as 'openai'. The selection must report provider=openai
-    (not the 'z-ai' prefix), else it won't match the channel-registry entry.
+def test_explicit_provider_is_a_fallback_for_an_unpinned_name():
+    """`ArenaModel.provider` survives only for an UNPINNED zenmux_name. Every real
+    candidate carries a `:upstream` pin, and the pin always wins — see the next
+    test for why declaring it twice is the failure mode, not the safeguard.
     """
     sel = arena_model_to_selection(
         ArenaModel(
@@ -36,10 +36,29 @@ def test_third_party_vendor_uses_explicit_openai_provider():
             zenmux_name="z-ai/glm-5.2",
             display_name="GLM",
             default_config={},
-            provider="openai",
+            provider="bigmodel",
         )
     )
-    assert sel == {"channel": "zenmux", "provider": "openai", "model": "z-ai/glm-5.2"}
+    assert sel == {"channel": "zenmux", "provider": "bigmodel", "model": "z-ai/glm-5.2"}
+
+
+def test_the_pin_wins_over_a_stale_declared_provider():
+    """One source of truth for the upstream: the pin inside zenmux_name.
+
+    Declaring it in two places is how qwen3.8-27b's protocol sat wrong in the live
+    YAML for five weeks while the row's own comment denied it. A derived value
+    cannot disagree with itself.
+    """
+    sel = arena_model_to_selection(
+        ArenaModel(
+            slug="ds",
+            zenmux_name="deepseek/deepseek-v4-flash:deepseek",
+            display_name="DS",
+            default_config={},
+            provider="alibaba",  # stale, and the upstream that broke this model
+        )
+    )
+    assert sel["provider"] == "deepseek"
 
 
 def test_selection_is_accepted_by_the_real_registry():
@@ -55,7 +74,11 @@ def test_selection_is_accepted_by_the_real_registry():
 
     sel = arena_model_to_selection(get_model("gpt-5-5"))
     resolved = resolve_agent_model_selection(get_registry(), sel)  # must not raise
-    assert resolved["model"] == "openai/gpt-5.5"
+    # Base id plus an explicit upstream pin. The pin itself is not asserted —
+    # it may be repinned — but its PRESENCE is, because an unpinned zenmux id is
+    # a routing lottery (2026-08-25).
+    assert resolved["model"].split(":")[0] == "openai/gpt-5.5"
+    assert ":" in resolved["model"]
 
 
 @pytest.mark.parametrize(
@@ -72,10 +95,16 @@ def test_new_vendor_selections_resolve_against_real_registry(slug):
     from app.services.deep_agent.channel_registry import get_registry
     from app.services.deep_agent.model_factory import resolve_agent_model_selection
 
-    sel = arena_model_to_selection(get_model(slug))
+    model = get_model(slug)
+    sel = arena_model_to_selection(model)
     resolved = resolve_agent_model_selection(get_registry(), sel)  # must not raise
     assert resolved["channel"] == "zenmux"
-    assert resolved["provider"] == "openai"
+    # `provider` is the ZenMux UPSTREAM as of 2026-08-25, DERIVED from the pin
+    # already inside zenmux_name so the two cannot drift. It used to be the
+    # constant gateway label "openai" for every third-party vendor, which is
+    # what made three vendor-shaped words on one row mean three different things.
+    assert resolved["provider"] == model.zenmux_name.partition(":")[2]
+    assert resolved["provider"] not in ("", "openai_chat")
 
 
 def test_effort_is_omitted_when_unpinned():

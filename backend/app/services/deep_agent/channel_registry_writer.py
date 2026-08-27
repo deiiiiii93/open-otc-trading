@@ -68,8 +68,18 @@ def _channel_index(doc: CommentedMap, name: str) -> int:
 
 
 def _model_index(channel: CommentedMap, model_id: str) -> int:
+    """Index of `model_id` in the raw YAML, accepting either id spelling.
+
+    The maintenance API addresses a model by the id the SERIALIZER reports, which
+    is the bare one; a YAML written before 2026-08-25 stores the
+    upstream-pinned spelling instead. Matching only the raw value would 404 every
+    edit on such a file.
+    """
     for i, m in enumerate(channel.get("models") or []):
-        if m.get("id") == model_id:
+        declared = m.get("id")
+        if declared == model_id:
+            return i
+        if isinstance(declared, str) and declared.partition(":")[0] == model_id:
             return i
     return -1
 
@@ -139,9 +149,15 @@ def _mutate(path: Path | None, apply_fn: Callable[[CommentedMap], None]) -> Chan
 
 
 def _model_map(spec: dict) -> CommentedMap:
+    # Key order mirrors the tracked template: the three routing axes first
+    # (id = the model, provider = the ZenMux upstream, protocol = the wire
+    # format), then the human-facing fields. A UI-written entry should be
+    # indistinguishable from a hand-written one.
     m = CommentedMap()
     m["id"] = spec["id"]
     m["provider"] = spec["provider"]
+    if spec.get("protocol"):
+        m["protocol"] = spec["protocol"]
     m["label"] = spec["label"]
     if spec.get("description"):
         m["description"] = spec["description"]
@@ -149,8 +165,6 @@ def _model_map(spec: dict) -> CommentedMap:
         seq = CommentedSeq()
         seq.extend(spec["tags"])
         m["tags"] = seq
-    if spec.get("protocol"):
-        m["protocol"] = spec["protocol"]
     return m
 
 
