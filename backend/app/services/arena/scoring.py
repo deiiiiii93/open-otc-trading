@@ -313,6 +313,7 @@ def fold_trial_breakdowns(trials: list[dict]) -> dict:
         # ``trials_affected`` keeps the spread readable — 1 of 3 trials clipped
         # is a different claim from 3 of 3.
         "truncation": _fold_truncation(trials),
+        "malformed": _fold_malformed(trials),
     }
 
 
@@ -336,6 +337,30 @@ def _fold_truncation(trials: list[dict]) -> dict | None:
         "severed_tool_calls": sum(
             int(b.get("severed_tool_calls") or 0) for b in measured
         ),
+        "trials_affected": sum(1 for b in measured if b.get("calls")),
+        "trials_measured": len(measured),
+        "trials_total": len(trials),
+    }
+
+
+def _fold_malformed(trials: list[dict]) -> dict | None:
+    """Sum the per-trial malformed-tool-call blocks, or None if never recorded.
+
+    ``None`` means NOT MEASURED and is emphatically not ``calls: 0``. Every
+    board before this instrument existed carries no block, and at least one of
+    them (run #122's arm A) really did malform 100% of a contestant's calls —
+    so folding absence into a confident zero would state the opposite of what
+    happened. Summed rather than averaged for the same reason as truncation: a
+    mean dilutes one destroyed trial into invisibility, and ``trials_affected``
+    keeps the spread readable.
+    """
+    measured = [t["malformed"] for t in trials
+                if isinstance(t.get("malformed"), dict)]
+    if not measured:
+        return None
+    return {
+        "calls": sum(int(b.get("calls") or 0) for b in measured),
+        "steps": sum(int(b.get("steps") or 0) for b in measured),
         "trials_affected": sum(1 for b in measured if b.get("calls")),
         "trials_measured": len(measured),
         "trials_total": len(trials),
@@ -626,6 +651,29 @@ def truncation_summary(transcript: MatchTranscript) -> dict:
     }
 
 
+def malformed_tool_call_summary(transcript: MatchTranscript) -> dict:
+    """Count tool calls the provider returned structurally unusable.
+
+    An empty ``id``/``name`` means the harness cannot dispatch the call: the
+    model chose a tool, the HTTP request succeeded, and nothing ran. Like
+    truncation this NEVER changes the score — but unlike truncation it is
+    usually fatal rather than merely wasteful, because the agent cannot recover
+    on the next turn: it re-issues the same call and loops to the recursion
+    limit. Run #122 measured a whole match at 7.7 (the prohibition floor) from
+    this alone, while the same model on another protocol scored 91.1.
+
+    Reported, not penalised, for the same reason truncation is: whether the lost
+    calls were scoring-critical is not something the harness can know, and
+    marking such matches ``invalid`` would silently shrink any board containing
+    one.
+    """
+    per_step = [len(s.malformed_tool_calls or []) for s in transcript.steps]
+    return {
+        "calls": sum(per_step),
+        "steps": sum(1 for n in per_step if n),
+    }
+
+
 def diagnose_heuristic(
     transcript: MatchTranscript,
     loaded,
@@ -649,6 +697,7 @@ def diagnose_heuristic(
     tool_calls = _workflow_call_count(transcript, loaded)
     errors = sum(len(s.errors) for s in transcript.steps)
     trunc = truncation_summary(transcript)
+    malformed = malformed_tool_call_summary(transcript)
 
     parts = [
         f"{skills_hit}/{skills_total} expected skills",
@@ -665,6 +714,14 @@ def diagnose_heuristic(
             f"{trunc['calls']} truncated"
             + (" (tool call severed)" if trunc["severed_tool_calls"] else "")
         )
+    # Ranked ahead of nothing and behind truncation only by convention; what
+    # matters is that it reaches the printed summary at all. A match can read
+    # "0 tool calls · 3/39 checks" with no error anywhere, and without this the
+    # reader has no way to tell a model that declined to act from one whose
+    # calls the provider mangled.
+    if malformed["calls"]:
+        parts.append(f"{malformed['calls']} malformed tool call"
+                     + ("" if malformed["calls"] == 1 else "s"))
     summary = " · ".join(parts)
 
     return {
@@ -678,6 +735,8 @@ def diagnose_heuristic(
         "truncated_calls": trunc["calls"],
         "truncated_steps": trunc["steps"],
         "severed_tool_calls": trunc["severed_tool_calls"],
+        "malformed_tool_calls": malformed["calls"],
+        "malformed_tool_call_steps": malformed["steps"],
     }
 
 

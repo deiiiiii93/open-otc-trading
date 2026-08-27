@@ -43,6 +43,31 @@ def _agg_truncation(blocks: list[dict | None]) -> dict | None:
     }
 
 
+def _match_malformed(bd: dict) -> dict | None:
+    """Malformed-tool-call block for one match, or None if unmeasured.
+
+    Same top-level read and same absence rule as ``_match_truncation``: None
+    means the match predates the instrument, never "measured and clean". Run
+    #122's arm A really did malform 100% of one contestant's tool calls, so a
+    confident zero on pre-instrument boards would assert the opposite.
+    """
+    block = bd.get("malformed") if isinstance(bd, dict) else None
+    return block if isinstance(block, dict) else None
+
+
+def _agg_malformed(blocks: list[dict | None]) -> dict | None:
+    """Aggregate per-match malformed blocks for one leaderboard contestant."""
+    measured = [b for b in blocks if isinstance(b, dict)]
+    if not measured:
+        return None
+    return {
+        "calls": sum(int(b.get("calls") or 0) for b in measured),
+        "matches_affected": sum(1 for b in measured if b.get("calls")),
+        "matches_measured": len(measured),
+        "matches_total": len(blocks),
+    }
+
+
 def _derive_card(bd: dict, workflow_id: str) -> tuple[dict | None, str | None]:
     """Derive an ability card from a stored score_breakdown, or (None, reason).
 
@@ -447,6 +472,8 @@ def leaderboard(
     # unmeasured matches into one confident number.
     model_truncations: dict[
         tuple[str, str | None, int | None], list[dict | None]] = defaultdict(list)
+    model_malformed: dict[
+        tuple[str, str | None, int | None], list[dict | None]] = defaultdict(list)
 
     for m in matches:
         # A contestant is (model, effort, budget) — the same model at two
@@ -462,6 +489,7 @@ def leaderboard(
             model_objectives[key].append(m.objective_score)
         bd = m.score_breakdown or {}
         model_truncations[key].append(_match_truncation(bd))
+        model_malformed[key].append(_match_malformed(bd))
         judge = bd.get("judge") or {}
         # Effective subjective score: prefer the breakdown's judge block, else fall
         # back to the top-level column (oldest rows persisted the score only there).
@@ -567,6 +595,7 @@ def leaderboard(
             # None = this contestant's matches predate the instrument, NOT
             # "measured and clean". Boards before run #115 really did truncate.
             "truncation": _agg_truncation(model_truncations.get(key, [])),
+            "malformed": _agg_malformed(model_malformed.get(key, [])),
             "_obj_tb": scoring.objective_tiebreak_key(dict(model_axes.get(key, {}))),
         })
 
@@ -746,6 +775,7 @@ def _match_to_dict(m: ArenaMatch) -> dict:
         # CELL renders this, and a cell that has to walk into score_breakdown
         # would show nothing for exactly the wrapped matches that carry it.
         "truncation": _match_truncation(m.score_breakdown or {}),
+        "malformed": _match_malformed(m.score_breakdown or {}),
         "transcript_path": m.transcript_path,
         "error": m.error,
         "created_at": m.created_at.isoformat() if m.created_at else None,

@@ -69,6 +69,10 @@ class MatchSummary(BaseModel):
     # any key the model does not name — the store would serve it and the wire
     # would not carry it.
     truncation: dict | None = None
+    # Tool calls the provider returned with an empty id/name, which the harness
+    # could not dispatch. null = never measured, and is NOT `calls: 0` — a
+    # pre-instrument match may well have malformed every call it made.
+    malformed: dict | None = None
     # Corroborating failure reason (e.g. "infra_blank" for invalid matches) —
     # exclusions must be auditable, not just visible as a count.
     error: str | None = None
@@ -380,6 +384,7 @@ def build_arena_router(
                 transcript_path=m.get("transcript_path"),
                 score_breakdown=m.get("score_breakdown"),
                 truncation=m.get("truncation"),
+                malformed=m.get("malformed"),
                 error=m.get("error"),
             )
             for m in (run_dict.get("matches") or [])
@@ -455,6 +460,11 @@ def build_arena_router(
                 "invalid": r["invalid_count"],
                 # Null = this contestant's matches predate the instrument.
                 "truncation": r.get("truncation"),
+                # This endpoint has NO response_model — it hand-builds the key
+                # projection — so a field the store gains is served only if it
+                # is named HERE. Same store-to-screen gap as the pydantic drop
+                # on /api/agent/models, different mechanism.
+                "malformed": r.get("malformed"),
             }
             for r in rows
         ]

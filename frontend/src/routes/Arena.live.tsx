@@ -25,6 +25,7 @@ import {
   type ArenaRunSummary,
   type ArenaScoreBreakdown,
   type ArenaTruncation,
+  type ArenaMalformed,
   type ArenaCheck,
   type ArenaObjectiveStep,
   type ArenaReasoningEffort,
@@ -630,6 +631,56 @@ function TruncationBadge({
   );
 }
 
+/**
+ * The visible malformed-tool-call flag (run #122, 2026-08-24).
+ *
+ * Same posture as TruncationBadge — flag, never invalidate, never adjust the
+ * score — but this defect is louder, so the badge is too. A provider can return
+ * HTTP 200 with tool calls whose `id` and `name` are empty strings; the harness
+ * cannot dispatch them, the agent re-issues and loops to the recursion limit,
+ * and the transcript ends up blank with NO error anywhere. The infra-blank gate
+ * needs step errors to corroborate blankness, finds none, and records a real
+ * score — the ~7.7 prohibition floor, which inaction earns by satisfying every
+ * `tool_not_called` check. Without this badge that reads as "the model refused
+ * to act" rather than "we mangled its calls".
+ *
+ * Renders nothing when `calls` is 0 (measured, clean) AND nothing when
+ * `malformed` is null (never measured) — absence is not a clean bill of health.
+ */
+function MalformedBadge({
+  malformed,
+  className = '',
+}: {
+  malformed?: ArenaMalformed | null;
+  className?: string;
+}) {
+  if (!malformed || !malformed.calls) return null;
+  const scope =
+    malformed.matches_affected != null
+      ? `${malformed.matches_affected} of ${malformed.matches_measured} matches`
+      : malformed.trials_affected != null
+        ? `${malformed.trials_affected} of ${malformed.trials_measured} trials`
+        : null;
+  const title = [
+    `${malformed.calls} tool call${malformed.calls === 1 ? '' : 's'} came back with an empty id or name and could not be dispatched.`,
+    scope ? `Affected ${scope}.` : null,
+    'The model chose a tool and the request succeeded, but nothing ran — the agent then re-issues the same call, so this usually costs the whole match rather than one turn.',
+    'The score is unadjusted: this is a caveat on the measurement, not a penalty. Suspect the route (protocol/effort) before the model.',
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return (
+    <span title={title} className={className}>
+      {/* `neg`, not `warn`: truncation is usually recoverable on the next
+          turn, this usually is not — the agent re-issues the same undispatchable
+          call until the recursion limit. The two flags should not read alike. */}
+      <Badge variant="neg">
+        malformed &times;{malformed.calls}
+      </Badge>
+    </span>
+  );
+}
+
 /** Compact output budget for a badge: 32768 -> "32k". Unpinned renders nothing
  *  at the call site — null is an absence, not a level, exactly like effort. */
 function formatBudget(tokens: number): string {
@@ -954,6 +1005,7 @@ export function ArenaLive() {
               <Badge variant="ink">{formatBudget(row.max_output_tokens)}</Badge>
             ) : null}
             <TruncationBadge truncation={row.truncation} />
+            <MalformedBadge malformed={row.malformed} />
           </span>
         ),
       },
@@ -1171,6 +1223,10 @@ export function ArenaLive() {
                           ) : null}
                           <TruncationBadge
                             truncation={match.truncation}
+                            className="wl-arena__match-effort"
+                          />
+                          <MalformedBadge
+                            malformed={match.malformed}
                             className="wl-arena__match-effort"
                           />
                         </span>

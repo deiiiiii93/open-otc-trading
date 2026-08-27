@@ -561,6 +561,15 @@ def _run_and_score_once(
         "steps": heuristic["truncated_steps"],
         "severed_tool_calls": heuristic["severed_tool_calls"],
     }
+    # Top-level for the same reason as truncation, and it matters more here:
+    # this defect's whole signature is a match that looks ordinary. It scores,
+    # raises nothing, truncates nothing, and lands at the prohibition floor. If
+    # the flag stayed inside ``diagnosis`` it would not survive
+    # fold_trial_breakdowns and would be unreachable on every wrapped match.
+    breakdown["malformed"] = {
+        "calls": heuristic["malformed_tool_calls"],
+        "steps": heuristic["malformed_tool_call_steps"],
+    }
     if judge_result is not None:
         breakdown["judge"] = {
             "rubric_scores": judge_result.rubric_scores,

@@ -870,3 +870,53 @@ def test_unmeasured_truncation_folds_to_none_not_to_zero():
     clean = fold_trial_breakdowns(
         [{"objective_score": 80.0, "truncation": {"calls": 0}}])["truncation"]
     assert clean is not None and clean["calls"] == 0
+
+
+# --- malformed tool calls: absence discipline (run #122) --------------------
+
+
+def test_fold_malformed_is_none_when_no_trial_measured():
+    """``None`` means NOT MEASURED and is not the claim ``calls: 0``.
+
+    Every board before this instrument existed carries no block — and run
+    #122's arm A really did malform 100% of a contestant's calls — so folding
+    absence into a confident zero would state the opposite of what happened.
+    """
+    from app.services.arena.scoring import fold_trial_breakdowns
+    agg = fold_trial_breakdowns([
+        {"objective": {}, "objective_score": 50.0, "total_score": 50.0},
+        {"objective": {}, "objective_score": 60.0, "total_score": 60.0},
+    ])
+    assert agg["malformed"] is None
+
+
+def test_fold_malformed_sums_and_reports_spread():
+    """Summed, not averaged: a mean dilutes one destroyed trial into
+    invisibility, and 1-of-2 affected is a different claim from 2-of-2."""
+    from app.services.arena.scoring import fold_trial_breakdowns
+    agg = fold_trial_breakdowns([
+        {"objective": {}, "objective_score": 7.7, "total_score": 7.7,
+         "malformed": {"calls": 95, "steps": 9}},
+        {"objective": {}, "objective_score": 91.1, "total_score": 91.1,
+         "malformed": {"calls": 0, "steps": 0}},
+    ])
+    assert agg["malformed"] == {
+        "calls": 95, "steps": 9,
+        "trials_affected": 1, "trials_measured": 2, "trials_total": 2,
+    }
+    # The score is NEVER adjusted by the flag — it is a caveat on the
+    # measurement, not a penalty.
+    assert agg["objective_score"] == round((7.7 + 91.1) / 2, 1)
+
+
+def test_fold_malformed_partial_measurement_keeps_coverage_visible():
+    """merge_runs can fold a pre-instrument run with a post-instrument one;
+    ``trials_measured`` < ``trials_total`` is how the reader sees that."""
+    from app.services.arena.scoring import fold_trial_breakdowns
+    agg = fold_trial_breakdowns([
+        {"objective": {}, "objective_score": 50.0, "total_score": 50.0},
+        {"objective": {}, "objective_score": 60.0, "total_score": 60.0,
+         "malformed": {"calls": 3, "steps": 1}},
+    ])
+    assert agg["malformed"]["trials_measured"] == 1
+    assert agg["malformed"]["trials_total"] == 2

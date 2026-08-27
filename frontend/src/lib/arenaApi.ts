@@ -121,6 +121,31 @@ export type ArenaTruncation = {
   matches_total?: number;
 };
 
+/**
+ * Tool calls the provider returned STRUCTURALLY UNUSABLE — empty `id` and/or
+ * empty `name` — which the harness cannot dispatch. `null` means NEVER
+ * MEASURED (the match predates the instrument), which is not the same claim as
+ * zero: run #122's arm A malformed 100% of one contestant's calls.
+ *
+ * Costlier than truncation, because the agent cannot recover on the next turn:
+ * it re-issues the same call and loops to the recursion limit, leaving a blank
+ * transcript with NO errors — so the infra-blank gate cannot see it and the
+ * match scores at the ~7.7 prohibition floor as if the model had simply
+ * declined to act.
+ */
+export type ArenaMalformed = {
+  calls: number;
+  // Per-match block (drilldown) carries steps/trials; the board row carries
+  // matches_*. Both optional so one type serves both shapes.
+  steps?: number;
+  trials_affected?: number;
+  trials_measured?: number;
+  trials_total?: number;
+  matches_affected?: number;
+  matches_measured?: number;
+  matches_total?: number;
+};
+
 export type ArenaMatchSummary = {
   id: number;
   workflow_id: string;
@@ -144,6 +169,7 @@ export type ArenaMatchSummary = {
   // Hoisted beside the score so the match cell can render it without walking
   // into score_breakdown — where the multi-trial fold buries the diagnosis.
   truncation?: ArenaTruncation | null;
+  malformed?: ArenaMalformed | null;
   // Corroborating failure reason (e.g. "infra_blank" for invalid matches).
   error?: string | null;
 };
@@ -180,6 +206,7 @@ export type ArenaLeaderboardRow = {
   matches: number;
   // Summed across this contestant's matches; null = never measured.
   truncation?: ArenaTruncation | null;
+  malformed?: ArenaMalformed | null;
   // Infra-invalid match count — excluded from the averages, surfaced so
   // degraded routes stay visible.
   invalid?: number;

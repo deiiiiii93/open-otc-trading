@@ -346,3 +346,70 @@ def test_truncation_reaches_the_match_step_but_never_the_error_list():
 def test_untruncated_turn_records_an_empty_list_not_a_missing_key():
     turn = _spans_to_turn_events(0, "u", [_llm_span(stop_reason="end_turn")])
     assert turn["truncations"] == []
+
+
+# --- malformed tool calls (run #122) ---------------------------------------
+#
+# A provider can return HTTP 200 with tool calls whose id and name are empty
+# strings. deepagents' task() guards on that, so nothing is dispatched; the
+# agent re-issues the same call and loops to the recursion limit, leaving a
+# blank transcript with NO error anywhere. The infra-blank gate corroborates
+# blankness with step ERRORS, finds none, and records a real score — the ~7.7
+# prohibition floor. Measured on run #122: deepseek-v4-flash at effort `max`
+# over chat-completions malformed 95 of 95 calls and scored 7.7, while the same
+# model on the Responses API malformed 0 of 132 and scored 91.1.
+
+
+def _llm_tool_call_output(calls: list[dict]) -> str:
+    return json.dumps({"generations": [[{
+        "text": "",
+        "message": {"kwargs": {"content": [], "tool_calls": calls}},
+    }]]})
+
+
+def test_malformed_detector_flags_empty_id_and_name():
+    from app.services.arena.trace_harvest import _llm_malformed_tool_calls
+    raw = _llm_tool_call_output([
+        {"id": "", "name": "", "args": {"description": "x", "subagent_type": "y"}},
+    ])
+    bad = _llm_malformed_tool_calls(raw)
+    assert len(bad) == 1
+    assert bad[0]["reason"] == "empty_id_and_name"
+    # arg_keys identify WHICH call shape the provider mangles without storing
+    # the bodies; run #122's were task() delegations.
+    assert bad[0]["arg_keys"] == ["description", "subagent_type"]
+
+
+def test_malformed_detector_distinguishes_missing_id_from_missing_name():
+    from app.services.arena.trace_harvest import _llm_malformed_tool_calls
+    raw = _llm_tool_call_output([
+        {"id": "", "name": "get_risk", "args": {}},
+        {"id": "call_1", "name": "", "args": {}},
+    ])
+    assert [b["reason"] for b in _llm_malformed_tool_calls(raw)] == [
+        "empty_id", "empty_name",
+    ]
+
+
+def test_malformed_detector_ignores_well_formed_and_absent():
+    from app.services.arena.trace_harvest import _llm_malformed_tool_calls
+    ok = _llm_tool_call_output([{"id": "call_1", "name": "get_risk", "args": {}}])
+    assert _llm_malformed_tool_calls(ok) == []
+    # No tool_calls key at all, and a non-LLM shape: both are "not observed".
+    assert _llm_malformed_tool_calls(_llm_output("hello")) == []
+    assert _llm_malformed_tool_calls("not json") == []
+
+
+def test_malformed_tool_calls_are_not_appended_to_step_errors():
+    """The flag must never reach ``errors`` — that list feeds the infra-blank
+    gate, so putting it there would sweep the match to ``invalid``, silently
+    shrinking any board containing one and asserting an infra failure the
+    provider never reported."""
+    spans = [{
+        "run_type": "llm", "name": "ChatOpenAI", "status": "success",
+        "outputs": _llm_tool_call_output(
+            [{"id": "", "name": "", "args": {"description": "x"}}]),
+    }]
+    turn = _spans_to_turn_events(0, "do the thing", spans)
+    assert len(turn["malformed_tool_calls"]) == 1
+    assert turn["errors"] == []

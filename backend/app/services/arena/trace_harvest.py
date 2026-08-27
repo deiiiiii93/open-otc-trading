@@ -141,10 +141,29 @@ def _llm_text(outputs_raw: Any) -> str:
 # recorded as a legitimate score. ``completion_tokens`` sitting exactly on the
 # cap corroborates it, but only if you already know the cap; the reason field
 # describes itself.
+# Dotted paths, because the three protocols report this in three shapes. A
+# detector that knows only one goes blind the moment a run uses another — and a
+# confident ZERO is worse than the honest ``null`` this module is careful to
+# preserve elsewhere, because it asserts the opposite of what was measured.
 _TRUNCATION_REASONS = {
-    "stop_reason": "max_tokens",   # Anthropic protocol
-    "finish_reason": "length",     # OpenAI protocol
+    "stop_reason": "max_tokens",                       # Anthropic protocol
+    "finish_reason": "length",                         # OpenAI chat-completions
+    # OpenAI Responses API: `finish_reason`/`stop_reason` are BOTH absent here.
+    # Keyed on the nested reason rather than `status == "incomplete"` because a
+    # response can be incomplete for reasons that are not the output budget; the
+    # reason field describes itself.
+    "incomplete_details.reason": "max_output_tokens",  # OpenAI Responses API
 }
+
+
+def _dig_md(md: dict, path: str) -> Any:
+    """Read a dotted path out of response_metadata, tolerating any missing hop."""
+    cur: Any = md
+    for part in path.split("."):
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(part)
+    return cur
 
 
 def _response_metadata(gen: dict) -> dict:
@@ -172,8 +191,9 @@ def _llm_truncation(outputs_raw: Any) -> dict | None:
         return None
     md = _response_metadata(gen)
     reason = next(
-        (f"{field}={md.get(field)}" for field, value in _TRUNCATION_REASONS.items()
-         if md.get(field) == value),
+        (f"{field}={_dig_md(md, field)}"
+         for field, value in _TRUNCATION_REASONS.items()
+         if _dig_md(md, field) == value),
         None,
     )
     if reason is None:
@@ -189,6 +209,57 @@ def _llm_truncation(outputs_raw: Any) -> dict | None:
     }
 
 
+def _llm_malformed_tool_calls(outputs_raw: Any) -> list[dict]:
+    """Tool calls this LLM span emitted that the harness CANNOT dispatch.
+
+    A provider can return HTTP 200 with a well-formed message whose tool calls
+    carry an empty ``id`` and empty ``name``. deepagents' ``task()`` guards on
+    exactly that, so the call never runs; the agent retries, loops to the
+    recursion limit, and the transcript ends up blank. Nothing raises, so the
+    step records no error, so ``_is_infra_blank`` cannot corroborate the
+    blankness and the match is recorded ``scored`` — at the ~7.7 prohibition
+    floor, which inaction earns by satisfying every ``tool_not_called`` check.
+
+    Measured on run #122: ``deepseek-v4-flash`` at effort ``max`` over the
+    OpenAI chat-completions protocol emitted 95 tool calls, **100% of them**
+    malformed, and the harness executed none. The same model on the Responses
+    API emitted 132 with zero malformed and scored 91.1 instead of 7.7. Five
+    other models on the same gateway in the same window emitted 1,283 tool
+    calls with zero malformed, so this is a per-route defect, not a gateway
+    outage.
+
+    ``arg_keys`` is retained because it identifies WHICH call shape is being
+    mangled without storing the argument bodies: the run #122 evidence was 84
+    of 95 carrying ``description``, i.e. the ``task()`` persona delegation.
+    """
+    parsed = _loads(outputs_raw) or {}
+    try:
+        gen = parsed["generations"][0][0]
+    except (KeyError, IndexError, TypeError):
+        return []
+    kwargs = (gen.get("message") or {}).get("kwargs")
+    calls = kwargs.get("tool_calls") if isinstance(kwargs, dict) else None
+    if not isinstance(calls, list):
+        return []
+    out: list[dict] = []
+    for call in calls:
+        if not isinstance(call, dict):
+            continue
+        no_id = not call.get("id")
+        no_name = not call.get("name")
+        if not (no_id or no_name):
+            continue
+        reason = ("empty_id_and_name" if no_id and no_name
+                  else "empty_id" if no_id else "empty_name")
+        args = call.get("args")
+        out.append({
+            "name": call.get("name") or "",
+            "reason": reason,
+            "arg_keys": sorted(args)[:8] if isinstance(args, dict) else [],
+        })
+    return out
+
+
 def _spans_to_turn_events(index: int, user: str, spans: list[dict]) -> dict:
     tool_calls: list[dict] = []
     tool_results: list[dict] = []
@@ -196,6 +267,7 @@ def _spans_to_turn_events(index: int, user: str, spans: list[dict]) -> dict:
     skill_spans: list[tuple[str, str]] = []
     errors: list[dict] = []
     truncations: list[dict] = []
+    malformed_tool_calls: list[dict] = []
     response_text = ""
 
     for sp in spans:
@@ -245,6 +317,17 @@ def _spans_to_turn_events(index: int, user: str, spans: list[dict]) -> dict:
                 # workflows that truncated), so its presence is a caveat on the
                 # measurement, not grounds to discard it.
                 truncations.append({**clipped, "name": name})
+            # Same absence discipline as truncation, and the same reason for
+            # keeping it OUT of ``errors``: that list feeds the infra-blank
+            # gate, and putting it there would sweep the match to ``invalid``
+            # — silently shrinking any board that contains one, and asserting
+            # an infra failure the provider never reported. It is a caveat on
+            # the measurement, never grounds to discard it, and it NEVER
+            # changes the score.
+            malformed_tool_calls.extend(
+                {**bad, "span": name}
+                for bad in _llm_malformed_tool_calls(sp.get("outputs"))
+            )
 
     skills_routed = [s for _, s in sorted(skill_spans, key=lambda x: x[0])]
     return {
@@ -258,6 +341,7 @@ def _spans_to_turn_events(index: int, user: str, spans: list[dict]) -> dict:
         "response_text": response_text,
         "errors": errors,
         "truncations": truncations,
+        "malformed_tool_calls": malformed_tool_calls,
     }
 
 
@@ -439,6 +523,7 @@ def transcript_from_trace(thread_id, workflow, model, *, store=None) -> MatchTra
                 "index": i, "user": wf_step.user, "messages": [],
                 "tool_calls": [], "tool_results": [], "skills_routed": [],
                 "artifacts": [], "response_text": "", "truncations": [],
+                "malformed_tool_calls": [],
                 "errors": [{"type": "missing_trace", "step": i}],
             }
         steps.append(extract_step_from_events(turn))

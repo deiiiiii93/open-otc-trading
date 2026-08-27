@@ -650,6 +650,46 @@ describe('ArenaLive', () => {
     expect(screen.queryByText(/clipped/)).not.toBeInTheDocument();
   });
 
+  it('flags malformed tool calls on the board row without changing the score', async () => {
+    // Run #122: deepseek-v4-flash emitted 95 tool calls with empty id+name over
+    // chat-completions, the harness dispatched none, and the match scored 7.7 —
+    // the prohibition floor, which inaction earns. Nothing raised, nothing
+    // truncated, so this badge is the ONLY on-screen signal that the score
+    // measures our routing rather than the model.
+    setupMocks();
+    vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({
+      rows: [
+        { model_id: 'claude-sonnet', rank: 1, avg_objective: 0.077, subjective_mean: null,
+          subjective_mode: 'disabled', matches: 2, invalid: 0,
+          malformed: { calls: 95, matches_affected: 2,
+            matches_measured: 2, matches_total: 2 } },
+      ],
+    });
+    render(<ArenaLive />);
+    expect(await screen.findByText('Claude Sonnet')).toBeInTheDocument();
+    expect(screen.getByText(/malformed/)).toBeInTheDocument();
+    expect(screen.getByText('#1')).toBeInTheDocument();
+  });
+
+  it('shows no malformed flag when unmeasured or measured-clean', async () => {
+    // Same absence discipline as truncation: null = never measured, and a
+    // pre-instrument match may well have malformed every call it made.
+    setupMocks();
+    vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({
+      rows: [
+        { model_id: 'claude-sonnet', rank: 1, avg_objective: 0.9, subjective_mean: null,
+          subjective_mode: 'disabled', matches: 2, invalid: 0, malformed: null },
+        { model_id: 'gpt-4o', rank: 2, avg_objective: 0.8, subjective_mean: null,
+          subjective_mode: 'disabled', matches: 2, invalid: 0,
+          malformed: { calls: 0, matches_affected: 0,
+            matches_measured: 2, matches_total: 2 } },
+      ],
+    });
+    render(<ArenaLive />);
+    expect(await screen.findByText('Claude Sonnet')).toBeInTheDocument();
+    expect(screen.queryByText(/malformed/)).not.toBeInTheDocument();
+  });
+
   it('hides the Subjective column when every leaderboard row is jury-disabled', async () => {
     setupMocks();
     vi.mocked(arenaApi.getArenaLeaderboard).mockResolvedValue({
