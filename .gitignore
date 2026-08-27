@@ -62,3 +62,7 @@ docs/arena/deploy/build/
 docs/arena/deploy/stats.json
 # NB boards.json is deliberately NOT ignored: the arena DB lives under the
 # gitignored data/, so a checkout without it could not rebuild the leaderboard.
+
+# arena run logs: raw stdout of scripts/launch_arena_run.py. Large, per-machine,
+# and every score they mention is already in the arena DB and the reports.
+logs/
