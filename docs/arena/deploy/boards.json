@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-27T03:00:44.262239+00:00",
+  "generated_at": "2026-08-27T03:05:08.842000+00:00",
   "models": [
     {
       "boards_total": 4,
@@ -1641,7 +1641,7 @@
         }
       ],
       "date": "2026-08-26",
-      "label": "Run #130 \u2014 the same field pinned to `low`",
+      "label": "Run #130 \u2014 the same field at low effort",
       "models": 7,
       "note": "The paired arm of run #129: identical models, workflows, trials, output budget and commit, with every contestant pinned to `low` so effort is the only variable and each model is its own control. The ranking reorders \u2014 Gemini 3.7 Flash goes from third to first and leads on both axes \u2014 and four of seven models score HIGHER here than at their ceiling, because lower effort cuts tool calls and EFF is the axis with the widest spread. On the 25 of 35 paired cells where both arms have enough trial consistency to be readable, `low` costs a mean 2.4 objective points, and under one point for three of the four models with a clean sample. Four arms were swept to invalid by a network outage and re-run with `--resume 130`; all 35 are scored at the same effort and budget.",
       "post": "2026-08-26-run129-flash-tier-board.md",

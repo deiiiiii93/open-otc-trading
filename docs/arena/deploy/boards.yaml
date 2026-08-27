@@ -119,7 +119,7 @@ provisional:
       the same field pinned to `low`.
 
   - run: 130
-    label: "Run #130 — the same field pinned to `low`"
+    label: "Run #130 — the same field at low effort"
     post: 2026-08-26-run129-flash-tier-board.md
     note: >-
       The paired arm of run #129: identical models, workflows, trials, output
