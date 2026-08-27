@@ -27,6 +27,13 @@ Example:
     python scripts/launch_arena_run.py \
         --workflows risk-limit-breach-day \
         --models grok-4-6 --trials 1
+    # Per-model efforts: the ladder is a property of the ROUTE, so "every model
+    # at its own ceiling" needs one token per model — a uniform pin at the
+    # highest of them fails launch naming the models that cannot take it.
+    python scripts/launch_arena_run.py \
+        --workflows risk-limit-breach-day \
+        --models mimo-2-5 minimax-m3 \
+        --reasoning-effort mimo-2-5=high minimax-m3=max
     python scripts/launch_arena_run.py --resume 104
 """
 from __future__ import annotations
@@ -187,6 +194,77 @@ def resume(run_id: int) -> int:
         session.close()
 
 
+def _effort_map(
+    tokens: "list[str] | None",
+    model_ids: list[str],
+) -> "dict[str, list[str]] | None":
+    """Expand ``--reasoning-effort`` tokens into the per-model arm map.
+
+    Two forms, mixable in one invocation:
+
+        uniform    ``high``            — applies to every selected model
+        per-model  ``mimo-2-5=high``   — applies to that model only
+
+    Per-model exists because the ladder is a property of the ROUTE, not of the
+    board: on this field the ceilings are ``max`` (deepseek-v4-flash, gpt-5-6-luna,
+    minimax-m3), ``xhigh`` (hunyuan-3, gemini-3-7-flash) and ``high`` (mimo-2-5).
+    A uniform pin at the highest of those fails launch naming the three models
+    that cannot take it — ``queue_arena_run`` validates each entry against its own
+    model — so "every model at its own ceiling" is unexpressible without this.
+
+    Returns ``None`` when *tokens* is empty, which is the unpinned vendor-default
+    run every board through #104 measured.
+
+    Raises:
+        ValueError: on an unknown level, or a model key not in *model_ids* (which
+            ``queue_arena_run`` also rejects — a key naming a model not in the run
+            would otherwise leave that arm silently unpinned).
+    """
+    if not tokens:
+        return None
+
+    # Sourced, never restated: a second copy of the level vocabulary is exactly
+    # the drift class this repo keeps paying for.
+    from app.services.deep_agent.model_factory import VALID_REASONING_EFFORTS
+
+    known = set(model_ids)
+    resolved: "dict[str, list[str]]" = {}
+
+    for token in tokens:
+        slug, sep, level = token.rpartition("=")
+        if sep:
+            if slug not in known:
+                raise ValueError(
+                    f"--reasoning-effort {token!r}: {slug!r} is not one of the "
+                    f"selected models ({', '.join(model_ids)}). A key naming a "
+                    "model not in the run would leave that arm silently unpinned."
+                )
+            targets = [slug]
+        else:
+            targets = list(model_ids)
+
+        if level not in VALID_REASONING_EFFORTS:
+            raise ValueError(
+                f"--reasoning-effort {token!r}: unknown level {level!r}; "
+                f"expected one of {list(VALID_REASONING_EFFORTS)}"
+            )
+
+        for model_id in targets:
+            arms = resolved.setdefault(model_id, [])
+            if level in arms:
+                raise ValueError(
+                    f"--reasoning-effort {token!r}: {model_id} is already pinned "
+                    f"to {level!r}. A duplicate level mints two contestants "
+                    "sharing one key."
+                )
+            arms.append(level)
+
+    # Models nobody named stay ABSENT — an absent model runs once at the vendor
+    # default, which is not the same as mapping it to None (the explicit
+    # unpinned ARM). Never materialise a key for a model the caller did not pin.
+    return resolved
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--workflows", nargs="+")
@@ -195,7 +273,7 @@ def main() -> int:
     ap.add_argument(
         "--reasoning-effort",
         nargs="+",
-        choices=["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+        metavar="LEVEL|SLUG=LEVEL",
         default=None,
         help="Pin EVERY selected model to these efforts (expanded to a per-model "
              "map, then validated against each model's own ladder — launch fails "
@@ -235,7 +313,16 @@ def main() -> int:
         ap.error("--workflows and --models are required unless --resume is given")
 
     from app.database import SessionLocal, init_db
-    from app.services.arena.task import queue_arena_run, execute_arena_run_task
+    from app.services.arena.task import (
+        arms_for, queue_arena_run, execute_arena_run_task,
+    )
+
+    try:
+        efforts = _effort_map(args.reasoning_effort, list(args.models))
+    except ValueError as exc:
+        ap.error(str(exc))
+    budgets = ({m: list(args.max_output_tokens) for m in args.models}
+               if args.max_output_tokens else None)
 
     init_db()
     session = SessionLocal()
@@ -246,20 +333,15 @@ def main() -> int:
             workflow_ids=list(args.workflows),
             model_ids=list(args.models),
             trials=args.trials,
-            # The flag is sugar for "these efforts for every model"; the stored
-            # shape is per-model, since ladders differ and a mixed board may need
-            # different levels. Several levels make each model several ARMS.
-            # queue_arena_run rejects any model that cannot take one of them.
-            reasoning_efforts=(
-                {m: list(args.reasoning_effort) for m in args.models}
-                if args.reasoning_effort else None
-            ),
+            # Already the stored per-model shape (see _effort_map): a bare
+            # level is sugar for "every model", a slug=level token pins one.
+            # Several levels for one model make it several ARMS.
+            # queue_arena_run rejects any model that cannot take one of them —
+            # that ladder check is effort_rejection's job, not the parser's.
+            reasoning_efforts=efforts,
             # Same sugar, same per-model stored shape. Several budgets make each
             # model several ARMS, so a single run can carry the whole A/B.
-            max_output_tokens=(
-                {m: list(args.max_output_tokens) for m in args.models}
-                if args.max_output_tokens else None
-            ),
+            max_output_tokens=budgets,
         )
         session.commit()
         task_id = task.id
@@ -267,13 +349,15 @@ def main() -> int:
         session.close()
 
     # Arms, not pairs: pinned levels and pinned budgets MULTIPLY — a model at two
-    # efforts and two budgets is four contestants.
-    arms = (len(args.workflows) * len(args.models)
-            * max(1, len(args.reasoning_effort or []))
-            * max(1, len(args.max_output_tokens or [])))
+    # efforts and two budgets is four contestants. Counted through arms_for, the
+    # single definition the execution loop and progress total also read: with a
+    # PER-MODEL effort map the old uniform arithmetic silently miscounts, and a
+    # short total reads as a stuck progress bar rather than as a bug.
+    arms = len(args.workflows) * sum(
+        len(arms_for(efforts, budgets, m)) for m in args.models)
     print(f"RUN_ID={run_id} TASK_ID={task_id} "
           f"arms={arms} trials={args.trials} "
-          f"effort={','.join(args.reasoning_effort) if args.reasoning_effort else 'unpinned'} "
+          f"effort={efforts or 'unpinned'} "
           f"budget={','.join(map(str, args.max_output_tokens)) if args.max_output_tokens else 'unpinned'} "
           f"model_trials={arms * args.trials}", flush=True)
 
