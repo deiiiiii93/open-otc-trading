@@ -33,6 +33,21 @@ class MatchStep(BaseModel):
     task_ids: list[str]
     response_text: str
     errors: list
+    # LLM calls in this turn that ran out of output budget, as
+    # ``{reason, severed_tool_call, name}``. Defaulted so replay fixtures and
+    # every transcript.json written before this field existed still load: a
+    # hand-written fixture carries no wire metadata, and absence there means
+    # "not observed", never "observed zero".
+    truncations: list[dict] = []
+    # Tool calls this turn that the provider returned STRUCTURALLY UNUSABLE —
+    # an empty ``id`` and/or empty ``name`` — as
+    # ``{name, reason, arg_keys}``. The harness cannot dispatch such a call, so
+    # the turn produces nothing while the HTTP request succeeded; no exception
+    # is raised, so the step records no error and the infra-blank gate cannot
+    # see it. Defaulted for the same reason as ``truncations``: absence in an
+    # older transcript or a replay fixture means "not observed", never
+    # "observed zero".
+    malformed_tool_calls: list[dict] = []
 
 
 class MatchTranscript(BaseModel):
@@ -117,6 +132,9 @@ def extract_step_from_events(turn_events: dict) -> MatchStep:
     - ``artifacts``: list[dict] — artefacts produced this turn
     - ``response_text``: str — final assistant text
     - ``errors``: list — error records produced this turn
+    - ``truncations``: list[dict] — LLM calls this turn that hit the output cap
+    - ``malformed_tool_calls``: list[dict] — tool calls the provider returned
+      with an empty id and/or name, which the harness cannot dispatch
 
     Normalisation rules applied here:
 
@@ -134,6 +152,10 @@ def extract_step_from_events(turn_events: dict) -> MatchStep:
     artifacts: list[dict] = list(turn_events.get("artifacts") or [])
     response_text: str = turn_events.get("response_text") or ""
     errors: list = list(turn_events.get("errors") or [])
+    truncations: list[dict] = list(turn_events.get("truncations") or [])
+    malformed_tool_calls: list[dict] = list(
+        turn_events.get("malformed_tool_calls") or []
+    )
 
     # Normalise tool_results
     normalised_results: list[dict] = []
@@ -167,6 +189,8 @@ def extract_step_from_events(turn_events: dict) -> MatchStep:
         task_ids=task_ids,
         response_text=response_text,
         errors=errors,
+        truncations=truncations,
+        malformed_tool_calls=malformed_tool_calls,
     )
 
 

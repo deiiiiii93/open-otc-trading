@@ -1,8 +1,11 @@
 # Open OTC Trading — agent guidance
 
-Orientation for anyone (human or agent) working in this repo. The frontend has its
-own guide at [`frontend/CLAUDE.md`](frontend/CLAUDE.md) — **read it before any UI
-work** (token-only styling is non-negotiable there).
+Orientation for anyone (human or agent) working in this repo. Subsystems with rules
+of their own keep a nested guide — **read it before working in that tree**:
+[`frontend/CLAUDE.md`](frontend/CLAUDE.md) for any UI work (token-only styling is
+non-negotiable there), and
+[`docs/arena/deploy/CLAUDE.md`](docs/arena/deploy/CLAUDE.md) for anything that builds
+or ships the artena.one arena blog.
 
 - **Backend** — FastAPI + Uvicorn, LangGraph agents, SQLAlchemy models, Alembic
   migrations. Pricing/risk math is delegated to **QuantArk** (deterministic quant
@@ -538,6 +541,29 @@ defects biased ranking, not just scale.
   Worse, grounding is the FIRST objective tie-breaker (annotated "hardest to fake"), so
   contaminating it corrupts ranking, not just score.
 
+### A DB-wide tally must exclude MERGED runs
+
+Any statistic computed by walking `arena_match` across **all** runs — a par
+calibration, a per-check pass-rate tally, a call-count distribution — counts a merged
+run's trials **a second time**, because `merge_runs` folds its sources' per-trial
+breakdowns into the new run's `aggregate` rather than referencing them. Eight of this
+DB's runs are merges, and they nest: **#58 contains #44, which is itself a merge of
+[34, 35, 43]**, so those trials land in the tally three times.
+
+- **Find them, never hardcode them:** `select distinct run_id from arena_match where
+  json_extract(config,'$.merged_from') is not null`. Excluding exactly that set leaves
+  every ORIGINAL run counted exactly once — including the sources of a merge, which is
+  what you actually want. (`arena_run` carries no merge provenance; it lives on the
+  MATCH `config`.)
+- **A median hides the bug; `n` reveals it.** The 2026-08-26 `risk-limit-breach-day`
+  par came out at exactly 26.0 both with and without the duplicates, because
+  duplication is symmetric and a median is robust to it. The tell was the count — 36
+  "fully-correct trials" from a workflow with only 12 real runs. **Sanity-check the
+  sample size against the number of runs that could have produced it**, not just the
+  statistic.
+- A tally scoped to ONE run is unaffected (there is nothing to double), which is why
+  the Run #58 per-check field audit was sound.
+
 ### Arena DB hygiene: three purge scopes, two ownership proofs
 
 Golden workflows resolve books **by name**, so leftover rows don't just accumulate —
@@ -700,6 +726,186 @@ never by subjective), and exposes `subjective_mean/stdev/mode`.
   exactly the one that got clobbered. Read the per-trial files, not
   `transcript.json`, when diagnosing trial-to-trial variance.
 
+### Long arena runs wedge silently — watch the trace clock, not the process
+
+Measured twice (runs #115 and #117, 2026-08-19/20, ~90 min and ~40 min lost). The
+run process stays alive at **0% CPU** holding one ESTABLISHED socket to the local
+proxy; the run status stays `running`; nothing raises and nothing exits.
+
+- **`timeout=None` is passed to `ChatAnthropic` deliberately**, and the OpenAI path
+  has a stream-chunk timeout that DOES fire (`langchain_openai.stream_chunk_timeout
+  fired` appears in the log) — and the process hung anyway. The hang is **below**
+  the layer that owns a timeout, so adding one on the other protocol would not
+  catch it either.
+- **The only reliable signal is the trace clock.** Poll
+  `max(start_time)` on `trace_runs`; quiet for >20 min with the process alive means
+  wedged. Score and status are useless here — silence looks exactly like work.
+- **Recovery is SIGKILL then `--resume <run>`**, which re-runs every non-`scored`
+  arm and deletes its stale rows first. Same recipe as the run #8 proxy wedge.
+- **Killing the process does NOT stop the run — set `cancel_requested` instead.**
+  The `task_runs` row outlives the process, so any worker can pick the run up and
+  resume it: run #121 was killed at the launcher, its row stayed `running`, and a
+  `uvicorn --reload` dev server's worker resumed it at `.env`'s recursion limit
+  (100) rather than the launcher's (300). `arena/task.py::_execute` now honours
+  `cancel_requested` at the **arm boundary** — the arm in flight finishes and is
+  recorded, then the loop stops and marks the run `failed` (`cancelled after N of
+  M units`), never `completed`. A match cannot be interrupted mid-flight, so
+  expect up to one arm of delay. **A run left non-terminal is what invites the
+  silent resume**, so always leave it terminal.
+- **A resume must RE-SUPPLY every process-level setting.** `reasoning_effort` is
+  persisted on the run, but an output budget
+  (`OPEN_OTC_AGENT_MAX_OUTPUT_TOKENS` / `..._OPENAI_...`) is env-only with no
+  `arena_run` column, so a resume that omits it silently finishes the run at a
+  DIFFERENT budget than it started with. Nothing in the stored data would reveal
+  that — for a budget study it silently contaminates the independent variable.
+
+### Output budget: the Anthropic protocol had a hidden 4096 cap
+
+`build_agent_model` now passes an explicit `max_tokens`
+(`Settings.agent_max_output_tokens`, `OPEN_OTC_AGENT_MAX_OUTPUT_TOKENS`, default
+**32768**) to `ChatAnthropic`. It previously passed none, so `langchain_anthropic`
+applied `_FALLBACK_MAX_OUTPUT_TOKENS` = **4096** — the value it uses whenever it has
+no profile for the model id, and it has none for **any** id routed through ZenMux,
+`anthropic/claude-opus-4.8` included (the vendor prefix defeats its lookup). Every
+Anthropic-protocol contestant in every board through #114 therefore ran capped,
+while every OpenAI-protocol contestant ran at its provider default.
+
+- **A truncated turn is invisible to every gate we have.** It emits a lone
+  `reasoning` block — no text, no tool call — so the step produces nothing, yet the
+  span is `status=success` because the HTTP call really did succeed.
+  `_is_infra_blank` corroborates blankness with step **errors** and a truncation
+  raises none, so the match is recorded `scored`. **`completion_tokens` exactly at
+  the cap is the only tell, and it lives only in the trace DB's LLM spans** — not in
+  the score, the diagnosis, or the transcript. This is one layer deeper than the 402
+  deaths of Run #10: not a failed call, a successful one that ran out of room.
+- **Truncation is not automatic invalidation, and a good score is not proof of its
+  absence.** On run #114 `glm-5.3` truncated on 6–14% of calls per workflow (the
+  OpenAI-protocol baseline: 0 of 349) yet still scored 100.0 and 90.9 on two of
+  five, because the agent loop usually recovers next turn. It costs points only when
+  the lost turn was scoring-critical — one severed `invalid_tool_call` on an
+  artifact step took a whole synthesis axis to zero.
+- **The `ChatOpenAI` branch deliberately sends no `max_tokens`.** Capping it would
+  recreate the asymmetry in the other direction. The two protocols are kept level by
+  giving one an explicit generous budget and the other none.
+- **Probe, don't assume.** All nine Anthropic-protocol routes accept 32768 *and*
+  65536; it is a setting rather than a constant so a future route with a smaller
+  ceiling can be lowered without a code change.
+- **`arena/channel.py` is DEAD CODE and a decoy.** Its `build_zenmux_chat` and the
+  `_DEFAULT_CONFIG = {"temperature": 0, "max_tokens": 4096}` it reads are referenced
+  only by `tests/test_arena_models.py`. Raising that constant changes nothing in
+  production — it looks exactly like the cap you are hunting.
+- **Comparability:** boards from run #115 on are not strictly like-for-like with
+  #8–#114 for Anthropic-protocol models, which previously ran handicapped.
+- **Truncation is now MEASURED and FLAGGED, never invalidated.** The instrument is
+  `response_metadata` — `stop_reason: "max_tokens"` (Anthropic) or
+  `finish_reason: "length"` (OpenAI); **both** are read, because a detector that
+  knows only one goes blind the moment the other protocol's budget is pinned.
+  `trace_harvest._llm_truncation` → `MatchStep.truncations` →
+  `diagnose_heuristic` → `score_breakdown.truncation` → the leaderboard row,
+  the match cell and the API.
+  - **The score is NEVER adjusted.** Truncation costs points only when the lost
+    turn was scoring-critical, which the harness cannot know — run #114 scored
+    100.0 and 90.9 on two workflows that truncated. The flag is a caveat on the
+    measurement, not a penalty, and marking such a match `invalid` would silently
+    shrink historical boards (Run #20 loses four contestants).
+  - **The flag is deliberately NOT appended to a step's `errors`.** That list is
+    what `_is_infra_blank` reads; putting it there would BE the invalidation this
+    design rejects.
+  - **`truncation: null` means never measured, and is not `calls: 0`.** Every
+    board through #114 ran capped and really did truncate; a confident zero for
+    them would assert the opposite. Same `empty` vs `unavailable` discipline the
+    report module enforces.
+  - It is carried at the breakdown's **top level** because `fold_trial_breakdowns`
+    does not lift `diagnosis` and every match is wrapped, single-trial included —
+    the same trap that blanked the drilldown for 222 of 297 stored matches.
+  - **`severed_tool_call` is the expensive case**: content blocks
+    `['text', 'invalid_tool_call']` with `completion_tokens` exactly on the cap.
+    The model HAD chosen its tool and the cap cut the JSON argument, so the call
+    never ran — that is how one lost turn takes a whole axis with it.
+
+### Malformed tool calls: a 200 that dispatches nothing
+
+A provider can return **HTTP 200** with a well-formed message whose tool calls carry
+an **empty `id` and empty `name`**. deepagents' `task()` guards on exactly that, so
+the call never runs; the agent re-issues it, loops to the recursion limit, and the
+transcript ends up blank. Measured on run #122 (2026-08-24): `deepseek-v4-flash` at
+effort `max` over chat-completions emitted **95 tool calls, 100% malformed**,
+executed **zero**, and scored **7.7**. The same model, same effort, same workflow on
+the **OpenAI Responses API** emitted 132 calls with **zero** malformed and scored
+**91.1**.
+
+- **It is invisible to every other gate.** Nothing raises, so no step records an
+  error, so `_is_infra_blank` (which corroborates blankness with step *errors*)
+  cannot see it and the match is recorded `scored`. Nothing truncates, so the
+  truncation flag reads a clean zero. And **7.7 is not zero** — it is the
+  prohibition floor, which inaction earns by satisfying every `tool_not_called`
+  check, so the score looks like a real if terrible result. **When a match is blank
+  with no errors, check the malformed count before concluding the model declined to
+  act.**
+- **Same three absence rules as truncation**, and for the same reasons: never
+  appended to a step's `errors` (that list feeds the infra-blank gate — putting it
+  there would BE the invalidation this design rejects); `truncation`-style
+  `null` = never measured, which is NOT `calls: 0`; and carried at the breakdown's
+  **top level**, because `fold_trial_breakdowns` does not lift `diagnosis`.
+- **The score is NEVER adjusted.** Whether the lost calls were scoring-critical is
+  not something the harness can know, and sweeping such matches to `invalid` would
+  silently shrink any board containing one.
+- **`arg_keys` is stored, argument bodies are not** — it identifies WHICH call shape
+  the route mangles. Run #122's were 84-of-95 `task()` persona delegations, i.e. the
+  biggest-payload call, echoing the output-budget rule that the largest emission dies
+  first.
+- **Suspect the ROUTE before the model.** Five other contestants on the same gateway
+  in the same window emitted 1,283 tool calls with zero malformed. This is the same
+  defect class that forced `protocol: anthropic` onto glm-5.2 and minimax-m3; the
+  difference is that it is now measured instead of discovered by accident.
+- **ROOT CAUSE (2026-08-25): a ZenMux UPSTREAM-PROVIDER lottery, not a protocol and
+  not an effort.** ZenMux serves one model id from several upstreams (five prices are
+  listed for `deepseek/deepseek-v4-flash`) and picks per request. Pin one with a
+  `:provider` suffix. Measured on the streaming wire, one `task` call each:
+  `deepseek/deepseek-v4-flash:deepseek` sends `id`/`name` as **`null`** in
+  continuation deltas (correct); **`:alibaba` sends them as empty strings**.
+  langchain merges a present-but-empty string over the real identifiers from the
+  first delta, while `arguments` fragments concatenate fine — intact args, hollow
+  ids. That is the whole defect.
+  - **The response body names NO provider**, so an unpinned id is a lottery you
+    cannot even attribute after the fact, and there is no provider-enumeration
+    endpoint (302/404). **Pin every contestant's provider or the contestant is not
+    reproducible.** This is not a hypothetical: run #112 scored 93.6 unpinned on
+    2026-08-17 and runs #121/#122/#125 scored 7.7 from 2026-08-21, with no code
+    change anywhere — the lottery simply started landing on `:alibaba`.
+  - **Effort is irrelevant** — the empty strings appear at `none` through `max`, and
+    run #125 reproduced the failure at the vendor default. An earlier reading of this
+    as an "effort × protocol interaction" was wrong.
+  - **A DISPATCH id contains `:`.** `_parse_model_selection`'s `split(":", 2)`
+    is load-bearing; a plain `split(":")` rejects every pinned id. The effort
+    snapshot keys on `(channel, model_id)`, so a pinned route is a DIFFERENT key
+    from its unpinned twin and needs its own probe — read it through
+    `ModelDescriptor.wire_id`, never `.id`.
+  - **A pin changes the regime under a stable slug.** Arena matches recorded before
+    the pin ran on either upstream; they are not comparable to pinned ones. The
+    pinned DeepSeek route therefore ranks as its OWN contestant
+    (`deepseek-v4-flash-ds`), because its old slug holds both 93.6 and 7.7.
+  - **EVERY zenmux model declares its upstream as of 2026-08-25** — in
+    `agent_channels.yaml`, the tracked `.example.yml`, and `CANDIDATE_MODELS`.
+    **Policy: pin the model owner's own infrastructure.** Discover the options by
+    scraping `zenmux.ai/<model>` for `<id>:<provider>`; there is no enumeration
+    endpoint, and `owned_by` is NOT the slug for google (`google-vertex`), z-ai
+    (`bigmodel`), bytedance (`volcengine`), tencent (`tencent-cloud`) or meituan
+    (`longcat`). Exposure was worst where nobody looked: `deepseek-v4-pro` and
+    `glm-5.2` had SIX upstreams each. The upstream is the YAML's `provider:`
+    field — see *The three axes of a model entry* below; the `:suffix` spelling
+    it replaced still loads.
+  - **Renaming an id can dangle the `default:`** — the tracked template pointed at
+    `anthropic/claude-sonnet-4.6` and had to be repointed with it.
+  - **The effort snapshot keys on `(channel, model_id)`, so every pin was a new
+    key** and would have silently gone permissive for the whole field.
+    `effort_support` now falls back to the unpinned entry when a pinned one has not
+    been probed — measured evidence about the same model beats "unknown" — while a
+    probed pinned entry still wins.
+- **A single-shot probe does NOT reproduce it** — deepseek is 4/4 clean at `max` with
+  one tool bound and a short prompt. It appears under real agentic load (~15k prompt
+  tokens, many tools). Only a real match convicts, the same lesson longcat-2.0 taught.
+
 ### Reasoning effort: an unset knob is omitted, never sent as null
 
 Effort is chosen in the composer (**Effort**, left of Mode) and per arena run
@@ -853,11 +1059,48 @@ resume, and built by `arena_model_to_selection`.
   `scripts/launch_arena_run.py` supply their own), so an unpinned run must issue
   the exact call it always did.
 
-### A contestant is `(model_id, reasoning_effort)`, not a model
+### A contestant is `(model_id, reasoning_effort, max_output_tokens)`
 
-One board can rank the same model at several efforts (migration **0058**). The old
-three-column `arena_match` unique key made the second arm collide with the first,
-so this is an identity change, not a UI one.
+One board can rank the same model at several efforts (migration **0058**) and at
+several output budgets (migration **0059**). Each widening made the previous
+unique key let the new arm collide with the first, so these are identity changes,
+not UI ones.
+
+**Budget earns its place by measurement, not analogy:** runs #118 (4096) and #119
+(32768) produced an artifact in **0/8** vs **7/8** trials and differ by **16.4
+mean objective** — on the budget alone. Everything the effort key does, the
+budget key does identically: `''`/`0` sentinels rather than NULL, per-model arm
+LISTS, omitted-when-unset on the selection dict, part of the `merge_runs` fold
+key, part of `--resume`'s todo set and stale-row cleanup, part of the transcript
+directory, and part of the React `rowKey`.
+
+- **Arms are the CROSS PRODUCT of the two axes.** `task.arms_for` is the single
+  definition, read by the execution loop, the progress total AND the launch-time
+  count — so a run cannot execute a different number of contestants than it
+  counted. A model at two efforts and two budgets is **four** contestants;
+  counting models leaves the progress bar permanently short, reading as stuck.
+- **A resume re-supplies the budget FROM THE RUN.** This is the hole 0059 closed:
+  the budget was env-only (`OPEN_OTC_AGENT_MAX_OUTPUT_TOKENS`) with no column, so
+  a resume that omitted the env var silently finished the run at a DIFFERENT
+  budget than it started with — and nothing in the stored data would reveal it.
+- **A pinned budget applies to BOTH wire protocols.** An anthropic-only budget arm
+  would leave every OpenAI-protocol contestant at its provider default under both
+  arms and report a null result as if the budget had been varied.
+- **Migration 0058 had to be taught about being superseded.** `0001_initial`
+  materialises today's ORM, so a fresh DB arrives at revision 1 already carrying
+  0059's 5-column key; 0058 looked for its own 4-column *name*, found it absent,
+  and added it alongside — and the 4-column key **forbids the second budget arm**.
+  It now no-ops when a constraint already extends its columns, matched on
+  **COLUMNS not names** (the pre-0058 table's constraint is unnamed, so a
+  name-based test reads it as "superseded" and skips the real conversion).
+  `test_migration_fresh_chain` cannot catch this class — adding a redundant
+  constraint succeeds — so the guards are 0058's and 0059's idempotency tests.
+- **SQLite reflection only recovers a constraint NAME from a single-line
+  `CONSTRAINT <name> UNIQUE (...)`.** A test fixture that splits it across two
+  lines reflects the constraint as unnamed, so `drop_constraint` by name matches
+  nothing and the rebuild silently leaves the old key behind — the fixture passes
+  while proving nothing. Both 0058's and 0059's fixtures declare it on one line,
+  matching what alembic emits and what the live DB contains.
 
 - **`ArenaMatch.reasoning_effort` is `''` for unpinned, never NULL.** SQL treats
   NULLs as DISTINCT in a UNIQUE constraint, so a nullable column would silently
@@ -1097,255 +1340,14 @@ can score against harvested truth. Package: `golden_workflows/determinism.py`
 
 ## Arena report publishing (the artena.one blog)
 
-`https://www.artena.one/arena/` is generated from a manifest and shipped by rsync.
-Package: `docs/arena/deploy/` — `posts.yaml` (the manifest), `manifest.py` (loader
-+ validation), `site_builder.py` (pure HTML), `build.py` (orchestration),
-`publish.py` (transport + live verification), `theme.css`, `static/` (tracked
-passthrough assets), `server/` (nginx block, `patch_osz.py`, `bootstrap.sh`).
-Entry point: `docs/arena/deploy/deploy.sh build | preview | publish | status |
-bootstrap`.
-
-### The manifest is authoritative
-
-A markdown file absent from `posts.yaml`, or carrying `publish: false`, is not
-published — reports are **not** discovered by globbing `docs/arena/`, which also
-holds plans and drafts. `title` and `blurb` are editorial and **required**: a
-missing `blurb` fails the build rather than deriving one from the first paragraph,
-which for a research memo is a provenance line, not a headline. Reading time, tag
-counts, prev/next and the standings rail are all derived, so the index cannot
-freeze the way the hand-typed Run #94 leaderboards did (that is why the site sat
-at Run #94 while Run #104 was rendered and never shipped).
-
-### The leaderboard is derived; only the curation is editorial
-
-`/arena/leaderboard.html` is one section per golden workflow, named by its slug,
-listing the boards run on it. Two inputs, deliberately separate:
-
-- **`boards.yaml`** says which runs *are* boards. A run is not a board — the arena
-  DB holds one-model smokes and A/B probes on the same workflows as the real
-  fields — and only a human can draw that line.
-- **`boards.json`** holds every number, exported by `deploy.sh boards`
-  (`collect_boards.py`) from the arena DB through **`store.leaderboard`**, the same
-  ranking kernel the desk UI uses. Nothing is hand-typed, so the page cannot
-  disagree with the app. `site_builder` stays pure stdlib and only renders it — the
-  backend import lives in the export step, exactly as the server round-trip lives
-  in `collect_stats.py`.
-
-- **The export refuses a run that spans more than its declared workflow.**
-  `store.leaderboard` aggregates a run's matches into one row per contestant with
-  **no workflow filter**, so runs #104 and #110 (4 and 5 workflows) would publish a
-  cross-workflow average under a single workflow's heading. `boards.yaml` declares
-  the workflow and `shape_board` asserts it against the DB.
-- **`matches` and `trials` are different numbers.** The runner folds a contestant's
-  trials into ONE aggregate match, so a 2-trial contestant has `match_count` 1.
-  Publishing match counts as trials reports every multi-trial board as
-  single-trial — and CON, which exists only because trials disperse, then looks
-  like it came from one sample. The per-contestant depth comes from
-  `score_breakdown.n_trials`; a board publishes a common depth only when every
-  contestant agrees (Run #94 does not — `gemini-3-5-flash` ran 1 trial, and its
-  row honestly shows CON `—`).
-- **The check count is read from each board's OWN stored breakdown**, never
-  re-derived from today's manifest. Run #101 exports as **39** checks even though
-  `risk-limit-breach-day` is a 38-check workflow now — the 39th was deleted
-  *because* that very board proved it unroutable. Re-deriving would relabel a
-  historical board with an instrument that did not exist when it ran, the same
-  comparability error the page's "boards are never merged across runs" rule exists
-  to prevent.
-- **Card-era boards only.** Runs #8/#9 are excluded on purpose: their reports
-  ranked models on the blended objective+judge score that the 2026-07-05 reform
-  retired, so re-deriving them on today's objective axis **reorders their own
-  published podium** (Run #8's report headlines an Opus 4.8 / GPT-5.5 tie; the
-  objective axis puts Sonnet 4.6 first). A leaderboard that contradicts the report
-  it links to is worse than one that omits it.
-- **`boards.json` is TRACKED; `stats.json` is not.** Both are derived, but the
-  arena DB lives under the gitignored `data/`, so a checkout without it could not
-  rebuild the leaderboard — and the absence rule would silently degrade it to no
-  page. Tracking also makes a change in published scores a reviewable diff.
-- **Absence reaches the chrome.** No `boards.json` ⇒ no page **and no nav link**:
-  a masthead entry for a page the build did not produce would 404 sitewide. A
-  workflow with no board keeps its section and says so, because omitting it would
-  read as "this workflow does not exist" rather than "nobody has run it".
-- **Averaging CARDS is sound; merging BOARDS is not** — the rule that lets
-  `/arena/models.html` exist beside a leaderboard that refuses to merge runs. A
-  card is an ABSOLUTE measurement (`passed/total` per axis, EFF against that
-  workflow's own par), so it does not depend on who else was in the field; a
-  leaderboard position does. The Run #110 report takes the same mean across five
-  workflows. What a mean still hides is the spread, so `consolidated_cards`
-  publishes `ovr_min`/`ovr_max`, the coverage (`3 of 4 boards`), and a per-board
-  entry for EVERY board — an uncontested one rendering an em dash, because a
-  short list reads as "ranked low" rather than "was not in that field"
-  (`gemini-3-6-flash` is absent from Run #20 because it did not exist yet).
-- **The archetype comes from `scoring._card_position`**, imported by the exporter
-  rather than reimplemented in the deploy package. It is private, but it is the
-  single definition of the Sniper/Anchor/Playmaker/All-rounder rule; a copy is how
-  a published label silently drifts from the desk's. A move breaks the export
-  loudly instead.
-- **Escape the parts, not the joined string.** `escape(" &middot; ".join(facts))`
-  yields `&amp;middot;`, which renders as literal `&middot;` text — and the
-  stylesheet uppercases it to `&MIDDOT;`. Only the live render caught it.
-- `verify_live` reads the workflow anchors out of the **built** page and requires
-  each to be served, for the same reason it compares titles — a 200 under the SPA
-  catch-all proves nothing.
-
-### A run may be published as CARDS ONLY (`provisional:`)
-
-`boards.yaml` has two sections. `boards:` are ranked and reach the leaderboard;
-`provisional:` are published as **cards only** and never appear there. The split
-exists because **a rank is relative and a card is absolute**: a one-model smoke
-has no field, so #1 of 1 measures nothing, but `passed/total` per axis with EFF
-against each workflow's own par stays meaningful with no opponent. That is the
-same asymmetry that lets `consolidated_cards` average across workflows while the
-leaderboard refuses to merge runs.
-
-- A provisional entry declares **no workflow**, unlike a board — its
-  measurements are published one per workflow instead of folded into one row, so
-  the multi-workflow guard that `shape_board` enforces does not apply.
-- **Nothing provisional carries a rank, by construction**, not by blanking one.
-  `_provisional_card` omits the place column entirely (`.mcard-boards.no-rank`).
-- **Publish the trial depth beside an em-dash CON.** CON needs trials to
-  disperse, so a 1-trial run has none; without the depth on the card a reader
-  cannot tell "not measured" from "perfectly consistent".
-- **A provisional entry may carry a `post`.** The caveat that makes an unranked
-  card readable usually lives in the report — Run #104's card exists only
-  because DeepSeek replaced the weights behind `deepseek-v4-pro` on 2026-08-13,
-  so its OVR 79 and the boards' OVR 87 are two different models under one id,
-  not a regression. `render_models` therefore takes `posts`; an unpublished
-  reference is dropped with a build warning, as on a board.
-- **Publish every arm of an A/B probe, not the interesting one.** Run #104
-  publishes Grok 4.6 beside DeepSeek V4 Pro: showing one side of a declared
-  pair reports a comparison as if it were a measurement.
-- A run declared as **both** a board and provisional is rejected — the two make
-  contradictory claims about whether it had a field.
-- Export goes through **`store.get_run`**, not `_derive_card` on the raw column:
-  `fold_trial_breakdowns` does not lift `diagnosis`, so deriving from a wrapped
-  breakdown's top level returns `missing_tool_count` for every match — including
-  `trials=1` ones, which are wrapped too.
-- The top level of `boards.yaml` may now be a mapping; **a bare list is still
-  valid** and means "all boards". When reading its sections, `value or []` is
-  wrong — `{}` and `""` are falsy, so a wrong-typed section would silently
-  become an empty one and the whole leaderboard would vanish without a word.
-  Absent (`None`) is the only legitimate empty.
-
-### theme.css owns the report body ON THE WEB; render_report.py owns print
-
-`render_markdown()` returns **bare HTML with no stylesheet**. Only
-`document_html()` — the standalone `docs/arena/*.html` artifact and the PDF —
-attaches `render_report.py`'s CSS. So a blog post page is styled *entirely* by
-`theme.css`, and for months it had no rules for anything inside `.post-body`:
-9 of ~13 pages rendered at browser defaults while the same report was a typeset
-serif document in print. The ASCII-chart figures were invisible outright — a
-`.bar` has no intrinsic size, so 117 rows across 10 charts collapsed to nothing.
-
-- The two stylesheets are **kept in sympathy, never copied**. `render_report.py`
-  stays authoritative for print, and nothing in `theme.css` can reach it —
-  which is what keeps `tests/test_arena_render_report.py`'s byte-identity gate
-  over the six committed report HTMLs green through a site redesign.
-- **Chart bar hues are semantic** (gold/silver/bronze = podium, good/warn/bad =
-  judgment) and are pinned by test to the exact values in `render_report.py`;
-  only the neutral track, rules and table fills are warmed to the blog palette.
-  Letting a hue drift makes one chart say different things in the two media.
-- Markdown tables get `display:block; overflow-x:auto` — the internal table
-  layout survives (rows still generate anonymous table boxes) and a wide board
-  scrolls in its own box. Markdown emits no wrapper element to use instead.
-
-### The editorial voice: serif argues, sans measures
-
-Serif carries the nameplate, headlines, blurbs and report prose; sans carries
-metadata, tables and card stats. `--serif` was declared in `:root` and
-referenced **nowhere** for months, so the warm-paper palette promised a journal
-while every glyph was system sans — `test_the_serif_token_is_used_and_not_merely_declared`
-is the dead-token guard. System fonts only: the stylesheet is inlined and no
-font files ship, so a webfont means adding `.woff2` to `static/` plus a
-`@font-face`.
-
-- **The nameplate is `full` on the index and `compact` everywhere else.** The
-  index has no separate intro band — the title *is* its `<h1>` and the tagline
-  rides with it. On an interior page the page's own heading owns the `<h1>`, so
-  the nameplate title degrades to a link; repeating the tagline there would
-  stack two muted paragraphs above the data and let the site title outweigh the
-  page being read.
-- The small `ARTENA` eyebrow **inherits the root-site link** (`/`) the old
-  `A`-in-a-square brand owned. Folding the title into the header would strand
-  it, because the title now points at the arena index.
-- **Blurbs render markdown code spans; titles never do.** `publish.verify_live`
-  asserts `escape(post.title)` appears verbatim on the served page, so inlining
-  a title breaks the deploy verifier rather than the build — a far worse failure
-  to diagnose. Escape first, then wrap, so the pattern only sees inert text.
-- Boxes were removed from the rail, the board tables and the chips **so that a
-  box still means something** where it is kept: the model cards, where the card
-  metaphor is the measurement's identity.
-- The masthead nav needs ~320px on its own, which leaves nothing for a full
-  title on a phone; it stacks below 720px.
-
-### Gotchas
-
-- **A 200 proves nothing under `/arena/`.** The open-slides-zero frontend
-  container answers `try_files $uri $uri/ /index.html`, so before the nginx alias
-  existed *every* path returned 200 — including nonsense ones. `verify_live`
-  therefore reads bodies, compares **HTML-escaped** titles (a raw compare
-  false-alarms on any title containing `&` or `<`), and requires a **404** on
-  `ABSENT_PROBE`. That 404 is the control that proves the alias is serving rather
-  than the SPA.
-- **`rsync --delete` is live.** Anything on the server no build produces is
-  removed. The two `model-ability-card-bg-*.webp` files existed ONLY on the server
-  (hand-uploaded so a GPT-Image-2 card run could fetch a background by public URL)
-  and are referenced from nowhere in either repo — they are now tracked in
-  `deploy/static/` and copied into every build. `bootstrap.sh` additionally refuses
-  to cut over if a dry run reports any deletion.
-- **The PDF renders from the UN-chromed document.** `render_report.py` owns
-  markdown→HTML; `site_builder` wraps the same body in blog chrome for the web.
-  Print output therefore cannot drift when the site design changes — that is
-  structural, not a discipline to remember.
-- **`render_report.py` must stay importable.** It used to read `sys.argv` and write
-  files at module scope, so importing it under pytest rendered the *test file* into
-  `tests/test_arena_render_report.{html,pdf}` via headless Chrome, and a bare import
-  rewrote `docs/arena/2026-06-27-run8-*.pdf`. `tests/test_arena_render_report.py`
-  pins both: byte-identity against all six committed report HTMLs (sha256) and
-  import purity by **content hash**, not filename set — an overwrite is invisible to
-  a name-set comparison.
-- **NEVER use `add_header` in the `/arena/` location.** nginx inherits
-  `add_header` from the server level "if and only if there are no add_header
-  directives defined on the current level", so ONE `Cache-Control` line there
-  discards CSP, HSTS, X-Frame-Options, nosniff, Referrer-Policy AND
-  Permissions-Policy for every `/arena/` response. That shipped, and the deploy
-  verifier called it healthy because it only checked status and body — it now
-  asserts the six headers. Use `expires`, a different directive family that does
-  not trigger the replacement rule.
-- **A single-file bind mount pins an INODE, not a path.** `compose.prod.yml`
-  mounts `deploy/nginx/default.conf` as one file, and `deploy_incremental.sh`
-  ships it with `tar -xzf`, which unlinks and recreates it. The running
-  container's mount still resolves to the OLD inode, so nginx serves a file that
-  no longer exists on disk — `up -d` prints "Running" (the service definition is
-  unchanged), `nginx -t` passes against the correct file, and `nginx -s reload`
-  faithfully re-reads the stale inode. Only `up -d --force-recreate nginx`
-  re-resolves it. **When a bind-mounted config edit does not take, compare
-  `stat -c %i` inside and outside the container before doubting the config.**
-- **open-slides-zero gitignores its own deployment files** (`compose.prod.yml`,
-  `deploy/`, `scripts/` — "local deployment packaging"). So there is nothing to
-  commit there, `git checkout` is not a revert path, and `patch_osz.py` must be
-  able to REPLACE an existing block rather than only insert one. The real
-  rollback is the server-side `default.conf.pre-arena` backup bootstrap makes.
-- **Readership counters are derived, snapshot-based, and fail to NOTHING.**
-  `stats.py` is pure and stdlib-only (GoAccess was considered and dropped so the
-  published numbers stay unit-testable). Missing / unparseable / older than
-  `STATS_MAX_AGE_DAYS` (14) ⇒ no counter markup, never zeros — the `empty` vs
-  `unavailable` rule applied to a public page. `as of <date>` is when `stats` last
-  ran, NOT `last_seen`, which a single crawler hit would make look fresh.
-  Aggregation is stateless: every run re-reads `arena.log*` including rotated
-  generations, so `stats.json` is pure derived data and losing it costs nothing.
-  Per-post counts are page views only — downloads are a separate rail total, so
-  one PDF fetch cannot read as a page view.
-- **Standings bars use a fixed 0–99 axis** (`RAIL_AXIS_MAX`), not the leader's
-  score. Scaling to the leader renders every bar near-full-width in a tight field
-  (Run #104 is 80 vs 79) so they stop reading as measurements.
-- **`docs/arena/cards/` is gitignored,** so a clean checkout publishes no card
-  images; the build warns and continues. That is expected, not a failure.
-- **Rollback is removing the `location /arena/` block** in open-slides-zero and
-  redeploying nginx. `frontend/public/arena/` is deliberately retained, so the
-  previous site is still there and no data restore is involved.
-- **`site_builder.py` is NOT named `site.py`** — `site` is a stdlib module, and the
-  file's directory reaches `sys.path`. There is no `templates/` dir either:
-  `jinja2` is not installed, so templates are f-string functions.
+`https://www.artena.one/arena/` is built from a manifest and shipped by rsync out of
+`docs/arena/deploy/` (`deploy.sh build | preview | publish | status | boards |
+stats | bootstrap`). That subsystem keeps its own guide at
+[`docs/arena/deploy/CLAUDE.md`](docs/arena/deploy/CLAUDE.md) — **read it before any
+publishing, leaderboard-export or nginx work.** It owns the manifest rules, the
+derived-leaderboard and provisional-cards contracts, the two stylesheets (web vs
+print), and the deploy traps (`rsync --delete`, the nginx `add_header` replacement
+rule, the single-file bind-mount inode).
 
 
 ## Model maintenance UI
@@ -1400,6 +1402,67 @@ swap `_REGISTRY` under the same lock, then the router calls
   `_yaml_path()` (another test in the suite repoints that env var).
 
 ---
+
+### The three axes of a model entry (schema, 2026-08-25)
+
+A model in `config/agent_channels.yaml` is described by three INDEPENDENT fields.
+Read them as WHAT / WHOSE METAL / HOW WE TALK TO IT:
+
+```yaml
+- id: qwen/qwen3.7-max      # WHAT  — bare model id, no `:upstream` suffix
+  provider: alibaba         # WHOSE — the ZenMux upstream serving it
+  protocol: anthropic       # HOW   — openai_chat | anthropic | openai_responses
+```
+
+The gateway is addressed as **`<id>:<provider>`**, composed by the loader and
+exposed as `ModelDescriptor.wire_id`. **Anything that talks to a provider, or keys
+route-scoped data, must use `wire_id`, never `.id`** — the measured effort ladders
+in `config/model_reasoning.json` are keyed per ROUTE, so a pinned model read by its
+bare id silently resolves to its unpinned twin's ladder.
+
+- **`provider` used to mean the gateway routing label** (`anthropic`/`openai`) with
+  the upstream riding in the id as a `:suffix`, so one row read
+  `qwen/qwen3.7-max:alibaba` / `openai` / `anthropic` — three vendor-shaped words
+  meaning three different things. That label was **dispatch-dead** (`build_agent_model`
+  has always routed on the protocol; `glm-5.2` with `provider: openai` took the exact
+  same `ChatAnthropic` branch as `claude-opus-4.8`) and **redundant as a lookup key**
+  (`_build_channel` already forbids duplicate ids per channel), so the field was freed
+  to name the upstream — which is a real part of the route.
+- **`find_model` matches on the id ALONE and ignores `provider`.** That is what lets
+  13k+ persisted `AgentMessage.meta` selections — replayed verbatim by async resume —
+  keep resolving after the meaning changed. Both id spellings resolve; a selection
+  naming an upstream the registry no longer declares resolves to the configured one
+  with a warning, because replaying an old thread on `:alibaba` is the worse outcome.
+- **Legacy YAML still loads,** translated in place. The discriminator is the id's
+  `:suffix`, **never the `provider` value** — `anthropic` is both a legacy gateway
+  label and a real upstream, so only the row's shape distinguishes the schemas.
+  A legacy row with no suffix AND no protocol is left **unpinned** rather than
+  composing `<id>:openai`: minting a pin nobody chose is worse than the lottery.
+- **`protocol` is REQUIRED on a zenmux row** and no longer defaults to `provider` —
+  that default only worked while `provider` was the gateway label; now it would ask
+  to speak a protocol called "deepseek". Values were renamed from
+  `openai`/`responses` because a bare `openai` hid WHICH of OpenAI's two APIs was
+  meant, and that is the distinction the malformed-tool-call investigation turned
+  on. Old spellings alias (`canonical_protocol`).
+- **The `channel.type` guard on the DeepSeek SDK branch is load-bearing.** The zenmux
+  row `deepseek/deepseek-v4-flash` now also carries `provider: deepseek`; without the
+  guard it would be built with `ChatDeepSeek` against the ZenMux base URL — a client
+  for the wrong API, silently. `provider` selects an SDK only on an
+  `openai_compatible` channel, where there is one upstream and nothing to pin.
+- **Upstreams are shape-checked, never allowlisted** (`_UPSTREAM_RE`). ZenMux has no
+  enumeration endpoint (302/404), so an allowlist could only reject real providers.
+- **Two upstream arms of one model are legal** — `_build_channel` dedupes on the
+  dispatch id — and `find_model` then **refuses a bare id** as ambiguous rather than
+  picking one. Silently choosing would BE the lottery the pin exists to prevent.
+- **Declare the upstream ONCE.** `arena_model_to_selection` derives it from the pin
+  inside `zenmux_name` instead of reading `ArenaModel.provider`, because two
+  declarations drift: `qwen3.8-27b` sat `protocol: anthropic` in the live YAML for
+  five weeks while its own comment — and the tracked template — said it had no pin.
+- **`dispatch_id` must be declared at all three layers or it vanishes**:
+  `AgentRegistryModelOut` (pydantic drops unnamed keys), the router projection, and
+  `AgentRegistryModel` in `types.ts`. Same trap as `/api/agent/models`'
+  `reasoning_efforts`.
+
 
 ## Term-structure curves for pricing parameters
 
@@ -1761,23 +1824,6 @@ Migrations `0053` (tables) + `0054` (seeds).
   magnitude.
 - Flags are **non-blocking**: a false positive should degrade the report's confidence
   signal, not destroy the report.
-- **A section with no blocks is a SYNTHESIS section and must be shown the report
-  above it.** `narrator_brief` passes only that section's own blocks, so a
-  `blocks: []` section — the board one-pager's `executive_summary` — was handed an
-  empty brief and honestly wrote "the evidence base is empty" while all five
-  sections above it had resolved fine. It now receives `report_so_far` (resolved
-  upstream sections) and is grounded against that same evidence, or every figure
-  it correctly carries forward would be flagged as invented. Ordinary sections are
-  deliberately NOT given it, so a brief stays focused on its own evidence.
-- **The grounding guard needed three live-found corrections**, all false positives
-  that would have trained readers to ignore it: ISO timestamps are strings, so
-  "23 June 2026" was ungrounded until date components are mined from them; a
-  sha256 quoted verbatim from the data was shredded into 17 fabricated "numbers"
-  until strings reproduced verbatim are blanked before tokenizing; and relative
-  tolerance alone rejects prose rounding at small magnitudes ("0.06" for 0.0634 is
-  5.4% off), so a token also grounds when it equals a data value rounded to any
-  precision. **Only a live model run surfaces these** — a hand-written fixture
-  narrative quotes numbers the way the test author would, not the way a model does.
 - **A section with no blocks is a SYNTHESIS section and must be shown the report
   above it.** `narrator_brief` passes only that section's own blocks, so a
   `blocks: []` section — the board one-pager's `executive_summary` — was handed an

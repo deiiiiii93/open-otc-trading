@@ -5,6 +5,37 @@
 # assets, publish.  A missing blurb FAILS THE BUILD by design — never let a
 # generated first paragraph ship as editorial copy.
 
+- file: 2026-08-26-run129-flash-tier-board.md
+  date: 2026-08-27
+  tags: [research]
+  title: "The flash tier, re-measured — and then re-run at `low`"
+  blurb: >
+    Seven models, five workflows, two efforts, 140 trials on a repaired harness.
+    At each model's ceiling the most correct agent finishes third; pinned to
+    `low` the board reorders and `low` costs most of the field under a point.
+  chips: ["7 models", "runs #129-#130", "140 trials"]
+  publish: true
+
+- file: 2026-08-21-glm-artifact-tool-study.md
+  date: 2026-08-21
+  tags: [research]
+  title: "Does GLM really perform badly at artifact-writing tools?"
+  blurb: >
+    It looked like the worst model in the field at writing a report. It was a
+    4096-token ceiling nobody set, and a truncated turn reports `success`. Budget
+    0/8 vs 7/8 on the same two models.
+  chips: ["2 models", "runs #118-#119", "16 trials"]
+  publish: true
+
+- file: 2026-08-20-glm-artifact-tool-study-design.md
+  date: 2026-08-20
+  tags: [method]
+  title: "Pre-registration: the GLM artifact-tool budget study"
+  blurb: >
+    Arms, scorer and the three pass criteria for Runs #118 and #119, published as
+    they were predeclared before either arm launched.
+  publish: true
+
 - file: 2026-08-18-run110-luna-reasoning-effort.md
   date: 2026-08-18
   tags: [research]

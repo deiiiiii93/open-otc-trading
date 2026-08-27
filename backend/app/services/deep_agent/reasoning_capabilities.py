@@ -107,7 +107,18 @@ def effort_support(channel: str, model_id: str) -> EffortSupport | None:
     None is the caller's cue to fall back to permissive validation. Do not treat
     it as "no support" — see the module docstring.
     """
-    entry = ((_load().get("routes") or {}).get(channel) or {}).get(model_id)
+    routes = (_load().get("routes") or {}).get(channel) or {}
+    entry = routes.get(model_id)
+    if not isinstance(entry, dict) and ":" in model_id:
+        # ZenMux pins an upstream with a `:provider` suffix
+        # (`deepseek/deepseek-v4-flash:deepseek`), which is a DIFFERENT route key
+        # from its unpinned twin. Fall back to the unpinned entry rather than to
+        # "unknown": the base id's ladder is measured evidence about the same
+        # model on the same gateway, and it is strictly better than the permissive
+        # default that an unknown route gets. A pinned entry, when one has been
+        # probed, still wins — so a provider whose ladder genuinely differs can be
+        # recorded and will override this fallback.
+        entry = routes.get(model_id.split(":", 1)[0])
     if not isinstance(entry, dict):
         return None
     return EffortSupport(

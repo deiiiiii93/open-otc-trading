@@ -81,7 +81,9 @@ const blankModel = (): ModelForm => ({
   label: '',
   description: '',
   tagsText: '',
-  protocol: '',
+  // Not blank: protocol is required on a zenmux row and no longer falls back to
+  // the provider, so an unset value would 422 rather than mean "the usual one".
+  protocol: 'openai_chat',
 });
 
 function channelFormFromChannel(ch: AgentRegistryChannel): ChannelForm {
@@ -102,7 +104,7 @@ function modelFormFromModel(m: AgentRegistryModel): ModelForm {
     label: m.label,
     description: m.description ?? '',
     tagsText: m.tags.join(', '),
-    protocol: m.protocol ?? '',
+    protocol: m.protocol ?? 'openai_chat',
   };
 }
 
@@ -346,17 +348,27 @@ export function ModelMaintenance({
     <div className="wl-mm__grid">
       <label className="wl-mm__field">
         <span className="wl-mm__label">Model ID</span>
+        {/* The model as its owner names it, with NO `:upstream` suffix. The
+            gateway is addressed as `<id>:<provider>`, composed server-side and
+            shown below as the route. */}
         <input
           value={modelForm.id}
           disabled={saving}
+          placeholder="deepseek/deepseek-v4-flash"
           onChange={(e) => updateModelForm({ id: e.currentTarget.value })}
         />
       </label>
       <label className="wl-mm__field">
-        <span className="wl-mm__label">Provider</span>
+        <span className="wl-mm__label">Provider (upstream)</span>
+        {/* WHOSE METAL serves the request, not who built the model and not the
+            wire format. ZenMux picks an upstream per request when this is
+            unset, and names none of them in the response — an unpinned id is a
+            lottery. Free text on purpose: ZenMux has no enumeration endpoint,
+            so the server shape-checks the slug rather than allowlisting it. */}
         <input
           value={modelForm.provider}
           disabled={saving}
+          placeholder="deepseek"
           onChange={(e) => updateModelForm({ provider: e.currentTarget.value })}
         />
       </label>
@@ -369,13 +381,23 @@ export function ModelMaintenance({
         />
       </label>
       <label className="wl-mm__field">
-        <span className="wl-mm__label">Protocol</span>
-        <input
+        <span className="wl-mm__label">Protocol (wire format)</span>
+        {/* HOW we talk to it — an axis of its own, because a model may need a
+            format its vendor would not imply (minimax, qwen3.7-max, glm-5.x and
+            longcat all emit tool calls the OpenAI endpoint leaves unparsed).
+            A closed list, because anything outside it is a server-side 422 with
+            nothing on screen to explain it. It no longer defaults to the
+            provider: since provider means the upstream, a blank would ask to
+            speak a protocol called "deepseek". */}
+        <select
           value={modelForm.protocol}
           disabled={saving}
-          placeholder="(optional)"
           onChange={(e) => updateModelForm({ protocol: e.currentTarget.value })}
-        />
+        >
+          <option value="openai_chat">openai_chat — OpenAI chat completions</option>
+          <option value="anthropic">anthropic — Anthropic Messages</option>
+          <option value="openai_responses">openai_responses — OpenAI Responses API</option>
+        </select>
       </label>
       <label className="wl-mm__field wl-mm__field--wide">
         <span className="wl-mm__label">Tags (comma-separated)</span>

@@ -29,13 +29,23 @@ export type Route =
   | 'confirmations'
   | 'settlement';
 
+/** Wire formats a model may be dispatched over. `openai_chat` names WHICH of
+ *  OpenAI's two APIs is meant — the distinction that decided whether
+ *  deepseek-v4-flash was usable at all (2026-08-25). */
+export type AgentWireProtocol = 'openai_chat' | 'anthropic' | 'openai_responses';
+
 export interface AgentRegistryModel {
+  /** Bare model id, no `:upstream` suffix. */
   id: string;
+  /** The ZenMux UPSTREAM PROVIDER serving this model (`deepseek`, `bigmodel`,
+   *  `google-vertex`); the SDK label on a non-zenmux channel. */
   provider: string;
+  protocol: AgentWireProtocol | string | null;
+  /** Derived, read-only: `<id>:<provider>` — what goes on the wire. */
+  dispatch_id: string | null;
   label: string;
   description: string | null;
   tags: string[];
-  protocol: string | null;
 }
 
 export interface AgentRegistryChannel {

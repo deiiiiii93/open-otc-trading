@@ -18,6 +18,9 @@ from typing import Any, Callable
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from sqlalchemy import select
+
+from app.models import ArenaRun, TaskRun
 from app.services.arena.models import CANDIDATE_MODELS
 from app.services.arena import store as arena_store
 
@@ -38,6 +41,10 @@ class RunSummary(BaseModel):
     # regime is visible without opening a match. Legacy rows stored a bare scalar;
     # store._run_to_dict normalises it to a list on read.
     reasoning_efforts: dict[str, list[str | None]] = Field(default_factory=dict)
+    # {model_slug: [budget | null, ...]} — the output-token arms this model ran
+    # at. Same shape and same reading as reasoning_efforts: null is the explicit
+    # unpinned (process-default) arm, absent means one arm at that default.
+    max_output_tokens: dict[str, list[int | None]] = Field(default_factory=dict)
 
 
 class MatchSummary(BaseModel):
@@ -47,6 +54,8 @@ class MatchSummary(BaseModel):
     # Which regime produced this row; null = unpinned. Part of the contestant key,
     # so (model_id, reasoning_effort) identifies the arm this match scored.
     reasoning_effort: str | None = None
+    # The other half of the arm; null = the run did not pin a budget.
+    max_output_tokens: int | None = None
     status: str
     objective_score: float | None
     judged_score: float | None
@@ -54,6 +63,16 @@ class MatchSummary(BaseModel):
     judge_missing: bool
     transcript_path: str | None
     score_breakdown: dict | None = None
+    # Output-budget truncation for this match; null = never measured (the match
+    # predates the instrument), which is NOT the same claim as zero. Declared
+    # here because this route HAS a response_model, and pydantic silently drops
+    # any key the model does not name — the store would serve it and the wire
+    # would not carry it.
+    truncation: dict | None = None
+    # Tool calls the provider returned with an empty id/name, which the harness
+    # could not dispatch. null = never measured, and is NOT `calls: 0` — a
+    # pre-instrument match may well have malformed every call it made.
+    malformed: dict | None = None
     # Corroborating failure reason (e.g. "infra_blank" for invalid matches) —
     # exclusions must be auditable, not just visible as a count.
     error: str | None = None
@@ -74,6 +93,7 @@ class CreateRunRequest(BaseModel):
     # Validated per arm in queue_arena_run so a bad level fails at launch rather
     # than per-match.
     reasoning_efforts: dict[str, list[str | None] | str] | None = None
+    max_output_tokens: dict[str, list[int | None] | int] | None = None
 
 
 class DeleteRunsRequest(BaseModel):
@@ -143,6 +163,7 @@ def build_arena_router(
                 weights=payload.weights,
                 trials=payload.trials,
                 reasoning_efforts=payload.reasoning_efforts,
+                max_output_tokens=payload.max_output_tokens,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -208,6 +229,63 @@ def build_arena_router(
         }
 
     # ------------------------------------------------------------------
+    # POST /api/arena/runs/{run_id}/cancel
+    # ------------------------------------------------------------------
+
+    @router.post("/runs/{run_id}/cancel")
+    def cancel_arena_run(run_id: int, session=Depends(_get_db)) -> dict[str, Any]:
+        """Ask a non-terminal arena run to stop at its next arm boundary.
+
+        Sets `cancel_requested` on the task driving the run; `_execute` checks it
+        between arms. A match in flight cannot be interrupted, so the arm that is
+        running finishes and is RECORDED before the loop stops — cancelling
+        discards no completed work, at the cost of up to one arm of delay.
+
+        Killing the process is NOT an alternative: the task row outlives it, so a
+        worker can pick the run up and silently resume it under a different
+        environment.
+        """
+        # Select the status COLUMN, not the run: `get_run` builds every match dict
+        # and derives an ability card per match, which loads a workflow — measured
+        # at seconds for a large run. Cancelling needs one string.
+        status = session.execute(
+            select(ArenaRun.status).where(ArenaRun.id == run_id)
+        ).scalar_one_or_none()
+        if status is None:
+            raise HTTPException(status_code=404, detail=f"ArenaRun not found: {run_id}")
+
+        if status in ("completed", "failed"):
+            # 409 rather than a silent 200: the UI would otherwise show
+            # "cancelling..." forever on a run that has already stopped.
+            raise HTTPException(
+                status_code=409,
+                detail=f"run {run_id} is already terminal ({status})",
+            )
+
+        task = session.execute(
+            select(TaskRun)
+            .where(TaskRun.arena_run_id == run_id)
+            .order_by(TaskRun.id.desc())
+        ).scalars().first()
+        if task is None:
+            # Runs queued before task_runs.arena_run_id existed carry no link.
+            # They are all terminal, so this is a historical row, not a live one.
+            raise HTTPException(
+                status_code=409,
+                detail=f"run {run_id} has no linked task to cancel",
+            )
+
+        task.cancel_requested = True
+        session.commit()
+
+        return {
+            "run_id": run_id,
+            "task_id": task.id,
+            "cancel_requested": True,
+            "status": status,
+        }
+
+    # ------------------------------------------------------------------
     # POST /api/arena/runs/merge
     # ------------------------------------------------------------------
 
@@ -265,6 +343,7 @@ def build_arena_router(
                 workflow_ids=r.get("workflow_ids") or [],
                 model_ids=r.get("model_ids") or [],
                 reasoning_efforts=r.get("reasoning_efforts") or {},
+                max_output_tokens=r.get("max_output_tokens") or {},
             )
             for r in rows
         ]
@@ -287,6 +366,7 @@ def build_arena_router(
             workflow_ids=run_dict.get("workflow_ids") or [],
             model_ids=run_dict.get("model_ids") or [],
             reasoning_efforts=run_dict.get("reasoning_efforts") or {},
+            max_output_tokens=run_dict.get("max_output_tokens") or {},
         )
 
         match_summaries = [
@@ -295,6 +375,7 @@ def build_arena_router(
                 workflow_id=m["workflow_id"],
                 model_id=m["model_id"],
                 reasoning_effort=m.get("reasoning_effort"),
+                max_output_tokens=m.get("max_output_tokens"),
                 status=m["status"],
                 objective_score=m.get("objective_score"),
                 judged_score=m.get("judged_score"),
@@ -302,6 +383,8 @@ def build_arena_router(
                 judge_missing=m.get("judge_missing", False),
                 transcript_path=m.get("transcript_path"),
                 score_breakdown=m.get("score_breakdown"),
+                truncation=m.get("truncation"),
+                malformed=m.get("malformed"),
                 error=m.get("error"),
             )
             for m in (run_dict.get("matches") or [])
@@ -358,6 +441,9 @@ def build_arena_router(
                 # the store gains is served only if it appears here (no
                 # response_model on this route to carry it automatically).
                 "reasoning_effort": r["reasoning_effort"],
+                # The other half of the contestant key. Same allowlist rule: a
+                # key the store gains is served only if it appears here.
+                "max_output_tokens": r["max_output_tokens"],
                 "rank": r["rank"],
                 # Ability card (spec B5): OVR is the headline ranking axis; the
                 # full card_mean stat block feeds the radar. Null for uncarded rows.
@@ -372,6 +458,13 @@ def build_arena_router(
                 "subjective_mode": r["subjective_mode"],
                 "matches": r["match_count"],
                 "invalid": r["invalid_count"],
+                # Null = this contestant's matches predate the instrument.
+                "truncation": r.get("truncation"),
+                # This endpoint has NO response_model — it hand-builds the key
+                # projection — so a field the store gains is served only if it
+                # is named HERE. Same store-to-screen gap as the pydantic drop
+                # on /api/agent/models, different mechanism.
+                "malformed": r.get("malformed"),
             }
             for r in rows
         ]

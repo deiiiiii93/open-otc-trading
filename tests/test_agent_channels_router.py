@@ -56,9 +56,15 @@ def test_add_model_then_rebuilds(client):
 
 def test_update_model_with_slash_id_route(client):
     c, _agent, _ = client
+    # Real id, sourced: zenmux ids carry a `:provider` pin and get repinned.
+    from app.services.deep_agent import channel_registry as _cr
+    _reg = _cr.get_registry()
+    _zen = next(ch for ch in _reg.channels if ch.name == "zenmux")
+    mid = next(m.id for m in _zen.models
+               if m.id.split(":")[0] == "anthropic/claude-sonnet-4.6")
     r = c.put(
-        "/api/agent/channels/zenmux/models/anthropic/claude-sonnet-4.6",
-        json={"id": "anthropic/claude-sonnet-4.6", "provider": "anthropic", "label": "Renamed"},
+        f"/api/agent/channels/zenmux/models/{mid}",
+        json={"id": mid, "provider": "anthropic", "label": "Renamed"},
     )
     assert r.status_code == 200, r.text
 

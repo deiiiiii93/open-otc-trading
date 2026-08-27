@@ -105,6 +105,14 @@ class _EnvironmentSettings(BaseSettings):
             "OPEN_OTC_AGENT_RECURSION_LIMIT", "LANGGRAPH_RECURSION_LIMIT"
         ),
     )
+    agent_max_output_tokens: int = Field(
+        32768,
+        validation_alias="OPEN_OTC_AGENT_MAX_OUTPUT_TOKENS",
+    )
+    agent_openai_max_output_tokens: int | None = Field(
+        None,
+        validation_alias="OPEN_OTC_AGENT_OPENAI_MAX_OUTPUT_TOKENS",
+    )
     agent_stream_version: str = Field(
         "v3",
         validation_alias="OPEN_OTC_AGENT_STREAM_VERSION",
@@ -268,6 +276,12 @@ class Settings:
     )
     agent_recursion_limit: int = field(
         default_factory=lambda: _env_value("agent_recursion_limit")
+    )
+    agent_max_output_tokens: int = field(
+        default_factory=lambda: _env_value("agent_max_output_tokens")
+    )
+    agent_openai_max_output_tokens: int | None = field(
+        default_factory=lambda: _env_value("agent_openai_max_output_tokens")
     )
     agent_stream_version: str = field(
         default_factory=lambda: _env_value("agent_stream_version")

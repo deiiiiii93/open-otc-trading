@@ -10,17 +10,21 @@ from ...models import (
     AsianAveragingDate,
     AsianTerm,
     DoubleBarrierTerm,
+    EquityFuturesProduct,
+    EquityOptionProduct,
     MarketSnapshot,
     OptionCoreTerm,
     Portfolio,
     Position,
     PositionBarrierState,
+    Product,
     SharkfinTerm,
     SingleBarrierTerm,
     SnowballKoSchedule,
     SnowballTerm,
     utcnow,
 )
+from .position_field_catalog import query_column_map
 from .products import compatibility_terms_for_position
 from ..portfolio_membership import resolve_positions
 
@@ -668,42 +672,21 @@ def _structured_query_base(session: Session):
         .outerjoin(AsianTerm, AsianTerm.position_id == Position.id)
         .outerjoin(SnowballTerm, SnowballTerm.position_id == Position.id)
         .outerjoin(PositionBarrierState, PositionBarrierState.position_id == Position.id)
+        # Product-level groups join through product_id: option.* / futures.*
+        # carry the booked exercise/settlement/maturity dates the per-position
+        # mirrors do not.
+        .outerjoin(Product, Product.id == Position.product_id)
+        .outerjoin(EquityOptionProduct, EquityOptionProduct.product_id == Product.id)
+        .outerjoin(
+            EquityFuturesProduct, EquityFuturesProduct.product_id == Product.id
+        )
     )
 
 
 def _query_column_map() -> dict[str, Any]:
-    mapping = {
-        "id": Position.id,
-        "position_id": Position.id,
-        "portfolio_id": Position.portfolio_id,
-        "underlying": Position.underlying,
-        "product_type": Position.product_type,
-        "quantity": Position.quantity,
-        "status": Position.status,
-        "source_trade_id": Position.source_trade_id,
-        "positions.id": Position.id,
-        "positions.portfolio_id": Position.portfolio_id,
-        "positions.underlying": Position.underlying,
-        "positions.product_type": Position.product_type,
-        "positions.quantity": Position.quantity,
-        "positions.status": Position.status,
-        "positions.source_trade_id": Position.source_trade_id,
-    }
-    mapping.update(_prefixed_columns("option_core", OptionCoreTerm))
-    mapping.update(_prefixed_columns("single_barrier", SingleBarrierTerm))
-    mapping.update(_prefixed_columns("double_barrier", DoubleBarrierTerm))
-    mapping.update(_prefixed_columns("sharkfin", SharkfinTerm))
-    mapping.update(_prefixed_columns("asian", AsianTerm))
-    mapping.update(_prefixed_columns("snowball", SnowballTerm))
-    mapping.update(_prefixed_columns("barrier_state", PositionBarrierState))
-    return mapping
-
-
-def _prefixed_columns(prefix: str, model: Any) -> dict[str, Any]:
-    return {
-        f"{prefix}.{column.name}": getattr(model, column.name)
-        for column in model.__table__.columns
-    }
+    # The catalog (position_field_catalog.py) is the single source of truth:
+    # curated fields plus legacy aliases, shared with describe_position_fields.
+    return query_column_map()
 
 
 def _column_for(column_map: dict[str, Any], name: str) -> Any:

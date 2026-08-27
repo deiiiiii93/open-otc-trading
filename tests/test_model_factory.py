@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from app.config import get_settings
 from app.services.deep_agent.channel_registry import (
     ChannelDescriptor,
     ChannelRegistry,
@@ -26,8 +27,16 @@ def _registry(*, zenmux_healthy: bool = True, deepseek_healthy: bool = True) -> 
         anthropic_base_url="https://zenmux.test/api/anthropic",
         healthy=zenmux_healthy,
         models=(
-            ModelDescriptor(id="anthropic/claude-sonnet-4-6", provider="anthropic", label="Sonnet 4.6"),
-            ModelDescriptor(id="openai/gpt-5.4", provider="openai", label="GPT-5.4"),
+            ModelDescriptor(
+                id="anthropic/claude-sonnet-4-6", provider="anthropic",
+                protocol="anthropic", label="Sonnet 4.6",
+                dispatch_id="anthropic/claude-sonnet-4-6:anthropic",
+            ),
+            ModelDescriptor(
+                id="openai/gpt-5.4", provider="openai",
+                protocol="openai_chat", label="GPT-5.4",
+                dispatch_id="openai/gpt-5.4:openai",
+            ),
         ),
     )
     deepseek = ChannelDescriptor(
@@ -73,8 +82,9 @@ def test_build_agent_model_returns_chat_openai_for_zenmux_openai():
 
 
 def _registry_with_anthropic_protocol_model() -> ChannelRegistry:
-    """A zenmux model whose provider is 'openai' but wire protocol is 'anthropic'
-    (the minimax case): find_model still keys on provider, client routes on protocol."""
+    """The minimax case: a model whose UPSTREAM is minimax and whose wire protocol
+    is Anthropic Messages. The two axes are independent — the client routes on the
+    protocol, and the upstream only composes the dispatch id."""
     zenmux = ChannelDescriptor(
         name="zenmux",
         label="Zenmux",
@@ -86,23 +96,33 @@ def _registry_with_anthropic_protocol_model() -> ChannelRegistry:
         models=(
             ModelDescriptor(
                 id="minimax/minimax-m3",
-                provider="openai",
+                provider="minimax",
                 label="MiniMax M3",
                 protocol="anthropic",
+                dispatch_id="minimax/minimax-m3:minimax",
             ),
         ),
     )
     return ChannelRegistry(
         channels=(zenmux,),
-        default=("zenmux", "openai", "minimax/minimax-m3"),
+        default=("zenmux", "minimax", "minimax/minimax-m3"),
     )
 
 
-def test_wire_protocol_defaults_to_provider():
-    md = ModelDescriptor(id="openai/gpt-5.4", provider="openai", label="GPT-5.4")
-    assert md.wire_protocol == "openai"
-    md2 = ModelDescriptor(id="x", provider="openai", label="x", protocol="anthropic")
-    assert md2.wire_protocol == "anthropic"
+def test_wire_id_carries_the_upstream_pin_and_id_does_not():
+    """`id` is the model, `wire_id` is the route. Everything that talks to a
+    provider — or keys route-scoped data like the measured effort ladders — must
+    use the route, or a pinned model reads as its unpinned twin.
+    """
+    md = ModelDescriptor(
+        id="deepseek/deepseek-v4-flash", provider="deepseek", label="DS",
+        dispatch_id="deepseek/deepseek-v4-flash:deepseek",
+    )
+    assert md.id == "deepseek/deepseek-v4-flash"
+    assert md.wire_id == "deepseek/deepseek-v4-flash:deepseek"
+    # A hand-built descriptor with no dispatch_id falls back to the bare id
+    # rather than composing one, so a fixture cannot invent a pin by accident.
+    assert ModelDescriptor(id="x/y", provider="z", label="L").wire_id == "x/y"
 
 
 def test_build_agent_model_routes_anthropic_protocol_openai_provider_to_chat_anthropic():
@@ -617,3 +637,86 @@ def test_effort_rejection_is_the_shared_seam():
     assert effort_rejection(
         _registry(), "zenmux", "openai", "no/such-model", "high"
     ) is None
+
+
+def test_anthropic_protocol_gets_an_explicit_max_tokens_not_langchains_fallback():
+    """The Anthropic branch must SEND max_tokens, never inherit langchain's default.
+
+    langchain-anthropic applies ``_FALLBACK_MAX_OUTPUT_TOKENS`` (4096) whenever it
+    has no profile for the model id, and it has none for any id routed through the
+    ZenMux gateway — ``anthropic/…`` ones included, because the vendor prefix
+    defeats its lookup. The resulting cap truncated reasoning models mid-thought:
+    the turn emits a lone ``reasoning`` block with no text and no tool call, so it
+    produces nothing while the span still reports ``success``. Arena run #114 lost
+    five turns that way and the infra-blank gate could not see it, because that
+    gate corroborates blankness with step ERRORS and a truncation raises none.
+    """
+    from langchain_anthropic.chat_models import _FALLBACK_MAX_OUTPUT_TOKENS
+
+    model = build_agent_model(_registry())
+    assert model.max_tokens == get_settings().agent_max_output_tokens
+    assert model.max_tokens > _FALLBACK_MAX_OUTPUT_TOKENS
+
+
+def test_openai_protocol_sends_no_max_tokens_so_the_provider_default_applies():
+    """The two protocols must not handicap each other.
+
+    ChatOpenAI deliberately sends no ``max_tokens``, so an OpenAI-protocol
+    contestant runs at its provider default. Capping it here would re-introduce
+    the asymmetry the Anthropic fix exists to remove — in the other direction.
+    """
+    model = build_agent_model(
+        _registry(),
+        selection={"channel": "zenmux", "provider": "openai", "model": "openai/gpt-5.4"},
+    )
+    assert getattr(model, "max_tokens", None) is None
+
+
+# ---------------------------------------------------------------------------
+# A pinned output budget rides the model-selection dict (M4)
+# ---------------------------------------------------------------------------
+
+def test_pinned_budget_overrides_the_settings_default_on_the_anthropic_branch():
+    model = build_agent_model(_registry(), selection={
+        "channel": "zenmux", "provider": "anthropic",
+        "model": "anthropic/claude-sonnet-4-6", "max_output_tokens": 4096,
+    })
+    assert model.max_tokens == 4096
+
+
+def test_pinned_budget_also_applies_on_the_openai_branch():
+    """A budget arm must not be silently anthropic-only.
+
+    Without this the OpenAI-protocol contestants would run at their provider
+    default under BOTH arms of a budget A/B and report a null result as if the
+    budget had actually been varied.
+    """
+    model = build_agent_model(_registry(), selection={
+        "channel": "zenmux", "provider": "openai", "model": "openai/gpt-5.4",
+        "max_output_tokens": 8192,
+    })
+    assert model.max_tokens == 8192
+
+
+def test_resolved_selection_omits_the_budget_when_unset():
+    """Omitted-when-unset keeps the prebuilt-orchestrator reuse check working:
+    the resolved dict is compared by EQUALITY against the default selection, so
+    a fifth key present on every turn would end that reuse for every turn."""
+    from app.services.deep_agent.model_factory import resolve_agent_model_selection
+    resolved = resolve_agent_model_selection(_registry(), {
+        "channel": "zenmux", "provider": "openai", "model": "openai/gpt-5.4",
+    })
+    assert "max_output_tokens" not in resolved
+
+
+def test_resolved_selection_refuses_a_nonsense_budget_rather_than_clamping():
+    """0 is the DB sentinel for "unpinned", so accepting it would make a pin
+    indistinguishable from none; a coerced value would report a regime that
+    never ran."""
+    from app.services.deep_agent.model_factory import resolve_agent_model_selection
+    for bad in (0, -1, "abc"):
+        with pytest.raises(ValueError):
+            resolve_agent_model_selection(_registry(), {
+                "channel": "zenmux", "provider": "openai",
+                "model": "openai/gpt-5.4", "max_output_tokens": bad,
+            })

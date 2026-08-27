@@ -287,7 +287,8 @@ def test_post_runs_empty_model_ids_returns_422(session, settings):
 
 def test_post_runs_unknown_model_returns_422(session, settings):
     # Patch queue_arena_run to raise ValueError for unknown model
-    def fake_queue(sess, *, workflow_ids, model_ids, weights=None, trials=1, reasoning_efforts=None):
+    def fake_queue(sess, *, workflow_ids, model_ids, weights=None, trials=1,
+                   reasoning_efforts=None, max_output_tokens=None):
         raise ValueError(f"Unknown model id(s): {model_ids}")
 
     client = _make_arena_app(session, settings, queue_fn=fake_queue)
@@ -299,7 +300,8 @@ def test_post_runs_unknown_model_returns_422(session, settings):
 
 
 def test_post_runs_unknown_workflow_returns_422(session, settings):
-    def fake_queue(sess, *, workflow_ids, model_ids, weights=None, trials=1, reasoning_efforts=None):
+    def fake_queue(sess, *, workflow_ids, model_ids, weights=None, trials=1,
+                   reasoning_efforts=None, max_output_tokens=None):
         raise ValueError(f"Unknown workflow_id '{workflow_ids[0]}'")
 
     client = _make_arena_app(session, settings, queue_fn=fake_queue)
@@ -325,7 +327,8 @@ def test_post_runs_valid_returns_202_and_task_run(session, settings):
     # Use the real queue_arena_run but patch the workflow registry
     from app.services.arena.task import queue_arena_run
 
-    def fake_queue(sess, *, workflow_ids, model_ids, weights=None, trials=1, reasoning_efforts=None):
+    def fake_queue(sess, *, workflow_ids, model_ids, weights=None, trials=1,
+                   reasoning_efforts=None, max_output_tokens=None):
         # Create run directly in store (skip registry validation)
         run_id = arena_store.create_run(
             sess,

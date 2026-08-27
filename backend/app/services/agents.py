@@ -455,6 +455,14 @@ DEEP_AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         "quote_rfq",
         "submit_rfq_for_approval",
         "get_positions",
+        # Progressive position-field query scheme: the catalog reader plus the
+        # select-only projection and the term-promoted summary rows. Registered
+        # in QUANT_AGENT_TOOLS AND allowlisted here — absent from this list a
+        # tool is silently dropped from every persona's toolset (these three
+        # were, even though the persona prompts reference them).
+        "describe_position_fields",
+        "query_positions",
+        "get_position_summaries",
         "query_snowball_ko_from_spot",
         "calculate_risk",
         "recommend_hedge",

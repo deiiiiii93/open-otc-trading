@@ -7,7 +7,476 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Model registry schema: `id` / `provider` / `protocol` are now three independent
+  axes.** A model entry in `config/agent_channels.yaml` reads WHAT / WHOSE METAL /
+  HOW WE TALK TO IT — `id: qwen/qwen3.7-max` (bare, no `:upstream` suffix),
+  `provider: alibaba` (the ZenMux **upstream provider** serving it), `protocol:
+  anthropic` (the wire format). The loader composes the gateway address as
+  `<id>:<provider>` and exposes it as `ModelDescriptor.wire_id`.
+  Previously `provider` held ZenMux's *gateway routing label* (`anthropic`/`openai`)
+  while the upstream rode inside the id, so a single row read
+  `qwen/qwen3.7-max:alibaba` / `openai` / `anthropic` — three vendor-shaped words
+  meaning three different things, none of them obvious. That label turned out to be
+  **dispatch-dead** (`build_agent_model` has always routed on the protocol: `glm-5.2`
+  with `provider: openai` took the identical `ChatAnthropic` branch as
+  `claude-opus-4.8`) and **redundant as a lookup key** (`_build_channel` already
+  forbids duplicate ids per channel), so the field was freed to name the upstream —
+  which is a real, required part of the route.
+- **`find_model` now matches on the model id alone and ignores `provider`.** That is
+  what keeps **13,383 persisted `AgentMessage.meta` selections** — replayed verbatim
+  by async resume — resolvable across the meaning change. Both id spellings resolve;
+  a selection naming an upstream the registry no longer declares resolves to the
+  configured one **with a warning**, because replaying an old thread on `:alibaba`
+  is the worse outcome. Two upstream arms of one model stay declarable (dedupe is on
+  the dispatch id) and a bare id that is ambiguous between them is **refused**, since
+  silently choosing would be the routing lottery the pin exists to prevent.
+- **Protocol values renamed** `openai` → `openai_chat` and `responses` →
+  `openai_responses`; `anthropic` unchanged. A bare `openai` hid *which* of OpenAI's
+  two APIs was meant, and that is precisely the distinction the malformed-tool-call
+  investigation turned on. Old spellings alias (`canonical_protocol`), so existing
+  YAML keeps loading. `protocol` is now **required** on a zenmux row: it used to
+  default to `provider`, which only worked while `provider` was the gateway label.
+- **Legacy YAML loads unchanged**, translated in place: the `:suffix` becomes
+  `provider` and the old gateway label becomes the protocol default. The
+  discriminator is the id's suffix, **never the `provider` value** — `anthropic` is
+  both a legacy gateway label and a real upstream. A legacy row with neither suffix
+  nor protocol is left **unpinned** rather than composing `<id>:openai`.
+- **The upstream is declared once.** `arena_model_to_selection` derives it from the
+  pin already inside `zenmux_name` rather than from `ArenaModel.provider` (whose 32
+  now-dead `provider="openai"` literals were removed), because two declarations
+  drift — `qwen3.8-27b`'s protocol sat wrong in the live YAML for five weeks while
+  the tracked template and the row's own comment denied it.
+- **`ChatDeepSeek` dispatch is now guarded on `channel.type`.** The zenmux row
+  `deepseek/deepseek-v4-flash` also carries `provider: deepseek` under the new
+  meaning; without the guard it would have been built with `ChatDeepSeek` against
+  the ZenMux base URL — a client for the wrong API, silently.
+- **Model Maintenance** labels the fields *Provider (upstream)* and *Protocol (wire
+  format)*, offers the three canonical protocol values (no more "(same as
+  provider)"), and shows the derived `dispatch_id`. That field is declared at all
+  three layers a value can vanish between store and screen — `AgentRegistryModelOut`,
+  the router projection, and `AgentRegistryModel` in `types.ts`.
+- `GATEWAY_AGENT_MODEL` is now `channel:upstream:model_id`
+  (`zenmux:deepseek:deepseek/deepseek-v4-flash`); the old spelling still resolves.
+- **EFF par calibrated for `risk-limit-breach-day` (25) and `ops-settlement-day`
+  (30).** Both shipped uncalibrated, so both scored EFF on the legacy hyperbolic
+  curve against `designed_par`'s fallback — the sum of each step's `expected_tools`,
+  i.e. the *theoretical minimum* (11 and 17), which no competent run has ever hit.
+  Each par is now the **median counted tool calls of the fully-correct trials** on
+  that workflow across every stored board, matching how
+  `high-board-portfolio-review-day`'s 24 was derived. The tally **excludes merged
+  runs**, whose matches are folds of their sources' trials and would otherwise be
+  counted twice (eight runs here are merges, and they nest): 31 fully-correct trials
+  from 13 models over 13 runs for limit-breach, but only **13 trials from 3 models
+  over 5 runs** for ops-settlement, whose par is provisional on BREADTH — a par set
+  by three models can encode their shared habits as the standard.
+  **par drifts with the effort mix of whoever ran the boards**: on limit-breach the
+  `low` trials sit at median 23 and the `max` trials at 27, so a low-heavy sample
+  tightens EFF for everyone. Adding run #130's `low` arm moved limit-breach 26 → 25
+  and moved ops-settlement not at all — one call across a doubled sample and a new
+  effort regime, which is the evidence these are anchored rather than lucky.
+  Declaring `par_tool_calls` opts a workflow into golf scoring, so this
+  **re-scores every stored board on read** (`store._derive_card`): 191 trials
+  across 103 matches in 19 runs move — that tally deliberately KEEPS merged runs,
+  which are themselves published boards whose numbers shift; only the par
+  DERIVATION excludes them. Measured blast radius, scoped exactly to the two calibrated workflows
+  (every other workflow is Δ+0): run **#101**'s published board moves all 18 rows,
+  **10 of them change rank and the podium reorders** (kimi-2-7 1→2, gpt-5-6-terra
+  2→1), and six per-workflow cards across the provisional runs **#104 / #113 /
+  #115** move +1 to +9 OVR. `boards.json` is tracked, so the change lands as a
+  reviewable diff — but reordering a published podium is an editorial call, so
+  nothing is exported until those boards carry a rescoring note.
+  **Read that board's new top with care.** Calibrated EFF saturates it: the top
+  four tie at OVR 98 on identical GRD/ADH/SYN of 99, so the order is settled by EFF
+  and then PRC — which ranks `grok-4-5` **third despite a perfect 100.0 objective
+  score**, for spending two more tool calls than the leaders. The #1 slot is also
+  not robust to the constant: par 26 puts grok-4-5 first, par 25 puts gpt-5-6-terra
+  first. That is not a scoring defect but a measurement one — `risk-limit-breach-day`
+  no longer separates the top of a field (34 of its 36 checks pass N/N), and once
+  correctness saturates, EFF becomes the whole ranking.
+- **`scripts/arena_board_tables.py` renders each contestant's reasoning effort**, in
+  both the hero and per-workflow tables. A contestant is
+  `(model_id, reasoning_effort, max_output_tokens)`, so a board can legitimately
+  carry the same model twice; without the column those rows are indistinguishable —
+  same model, same workflow, same status, same radar — which is what run #109's
+  report shipped (Grok 4.6 at OVR 75 and 74, no way to tell `low` from `high`).
+  Unpinned renders as an em dash, never as a word that looks like a level. Also adds
+  the fifth workflow to `WORKFLOW_SHORT`, which was rendering as a raw slug.
+- **`scripts/arena_board_tables.py --baseline-run` emits a paired A/B comparison** —
+  each model as its baseline arm, its treatment arm, and the delta, plus per-workflow
+  ΔOVR / Δobjective / Δtool-call matrices. Pairing is the point: two efforts are two
+  operating regimes, and each model's own baseline arm is the only fair control for
+  its treatment arm. The per-workflow matrices exist because the effect is
+  **task-shaped** — run #110 measured one model at −3.8 OVR on one workflow and
+  +18.6 on another for the same effort change, a sign flip a single mean hides.
+
 ### Added
+- **`OPEN_OTC_ARENA_FORCE_CHANNEL`** — routes arena contestants through a different
+  channel in `config/agent_channels.yaml`, matching a model by its full ZenMux id or
+  by the part after the vendor prefix (the direct DeepSeek channel calls it
+  `deepseek-v4-flash`, ZenMux calls it `deepseek/deepseek-v4-flash`). Exists because
+  `arena_model_to_selection` hardcodes `channel: "zenmux"`, which made "is this defect
+  the GATEWAY or the MODEL?" unanswerable — and that question only a real match can
+  settle, since the defect it was built to investigate does not reproduce in any
+  probe. It **fails loudly** on an unknown channel or a model the channel does not
+  carry: a silent fallback to zenmux would produce a study arm that measured the
+  control, the worst possible outcome for a comparison. Env-only and un-persisted, so
+  a `--resume` must re-supply it, exactly like `OPEN_OTC_ZENMUX_FORCE_PROTOCOL`.
+- **`qwen/qwen3.8-27b` registered as a channel model and arena contestant** — Qwen's
+  27B tier (published 2026-08-21): 1M context, reasoning, vision-capable, and cheaper
+  than its `qwen3.7-max` sibling ($0.50/$3.00 vs $1.25/$3.75 per MTok). Landed through
+  all four registration gates — `config/agent_channels.yaml` + the tracked
+  `.example.yml`, `arena/models.py::CANDIDATE_MODELS` (slug `qwen-3-8-27b`), and a
+  **measured** effort ladder in `config/model_reasoning.json` (all seven levels
+  live-probed accepted 2026-08-25; `none` returns zero reasoning tokens, so the knob
+  is real rather than accepted-and-ignored).
+  **Carries `protocol: anthropic`, and the pin is MEASURED rather than inherited from
+  `qwen3.7-max`.** Streaming the raw SSE deltas showed the `alibaba` upstream sending
+  `id=""`/`name=""` on **640 of 641** tool-call continuation deltas — the deepseek
+  defect exactly — so over `openai_chat` every match would have scored the 7.7 floor.
+  The defect belongs to the UPSTREAM, not the vendor: `qwen3.7-plus` on the same
+  `alibaba` upstream shows 430 of 431, while deepseek on its own metal shows 778 of
+  778 correct. A 3-trial single-shot NON-streaming probe sees none of it (clean on
+  this route *and* on `qwen3.7-max`, the known-bad control) — but a streaming delta
+  probe convicts for the price of one call, so the earlier "only a real match
+  convicts" reading was too pessimistic: it is non-streaming probes that are blind.
+  **Correction:** an earlier revision of this entry, and the tracked
+  `.example.yml`, both said it carried no pin while the live YAML already had one —
+  the drift that motivated deriving the upstream from a single declaration.
+  **`qwen/qwen3.7-plus` remains unpinned on `openai_chat` and is exposed** — known,
+  and a decision worth taking on its own evidence.
+  No board has run it yet, so it has **no ability card** — a card is derived from
+  `arena_match` rows and cannot be fabricated ahead of the measurement.
+- **Malformed-tool-call detector** — the arena now measures and flags tool calls a
+  provider returns structurally unusable (empty `id` and/or empty `name`), which the
+  harness cannot dispatch. Measured on run #122: `deepseek-v4-flash` at effort `max`
+  over chat-completions emitted **95 tool calls, 100% of them malformed**, executed
+  none, looped to the recursion limit, and scored **7.7** — the prohibition floor,
+  which inaction earns by satisfying every `tool_not_called` check. The same model on
+  the Responses API emitted 132 with **zero** malformed and scored **91.1**. Five
+  other models on the same gateway in the same window emitted 1,283 calls with zero
+  malformed, so this is a per-route defect, not a gateway outage.
+  **This was invisible to every existing gate**: the calls return HTTP 200, nothing
+  raises, so no step records an error, so `_is_infra_blank` cannot corroborate the
+  blankness and the match is recorded `scored`; nothing truncates, so the truncation
+  flag reads a clean zero. A published board would have reported that the most-used
+  model on OpenRouter cannot execute a workflow.
+  Plumbing mirrors the truncation flag end to end — `trace_harvest._llm_malformed_tool_calls`
+  → `MatchStep.malformed_tool_calls` → `scoring.malformed_tool_call_summary` →
+  `diagnose_heuristic` → `score_breakdown.malformed` → `store` → the leaderboard row,
+  the match cell and the API — and inherits its three absence rules:
+  **(1)** never appended to a step's `errors` (that list feeds the infra-blank gate,
+  so putting it there would *be* the invalidation this design rejects);
+  **(2)** `null` means never measured and is not `calls: 0` — run #122's arm A really
+  did malform every call, so a confident zero on pre-instrument boards would assert
+  the opposite; **(3)** carried at the breakdown's **top level**, because
+  `fold_trial_breakdowns` does not lift `diagnosis` and every match is wrapped.
+  **The score is never adjusted** — whether the lost calls were scoring-critical is
+  not something the harness can know, and marking such matches `invalid` would
+  silently shrink any board containing one. `arg_keys` is retained (not the argument
+  bodies) because it identifies *which* call shape is being mangled: run #122's were
+  84-of-95 `task()` persona delegations. The badge uses the `neg` variant rather than
+  truncation's `warn`, because truncation usually recovers on the next turn and this
+  usually does not — the agent re-issues the same undispatchable call until the
+  recursion limit.
+- **`responses` is now a legal per-model `protocol` in `config/agent_channels.yaml`,
+  selectable from the Model Maintenance page.** The Responses branch was previously
+  reachable only via the study env override, because the loader allowlisted
+  `protocol` to `{anthropic, openai}` on zenmux channels — so the config axis that
+  already existed end-to-end (`ModelWriteIn.protocol` → serializer → writer →
+  `types.ts` → form field) could not express it. The two allowlists are now
+  **separate named constants** rather than one repeated literal:
+  `_ZENMUX_PROVIDERS` stays two-valued because `provider` is the gateway routing
+  label `find_model` matches a channel entry on, while `_ZENMUX_PROTOCOLS` gains
+  `responses` because it names the wire format. Sharing a literal would have
+  silently made `responses` a legal *provider* and broken lookup for every model
+  that used it; `test_load_accepts_responses_protocol_but_not_as_provider` pins both
+  halves. Error messages are rendered from the constants so they cannot drift from
+  what is enforced. The page's **Protocol** control became a `<select>` — it was a
+  free-text input whose only possible outcome for an unlisted value was a 422 from
+  validate-then-commit, with nothing on screen explaining why.
+- **OpenAI Responses API as a third ZenMux wire protocol** (study infrastructure,
+  opt-in via `OPEN_OTC_ZENMUX_FORCE_PROTOCOL=responses`; **off by default and the
+  default dispatch is byte-identical to before**). Motivated by run #121, where
+  `deepseek-v4-flash` at effort `max` returned tool calls with an empty `id` *and*
+  empty `name` on chat-completions across 9 steps and both trials — 0 tool calls, 0
+  errors, blank transcript, objective 7.7 against a historical mean of ~87 for the
+  same model and workflow. Because no error is raised, `_is_infra_blank` cannot see
+  it and the match is recorded `scored`. The Responses API emits `reasoning` as a
+  separate `output` item instead of interleaving it with content, which is the
+  mechanism under test. `_zenmux_responses_chat` carries a narrow workaround: ZenMux
+  silently **drops the entire `tools` array** when an input item is exactly
+  `{"type":"message","content":"<string>"}` — the shape `langchain-openai` emits —
+  measured 0/4 tool calls versus 4/4 once the string is promoted to a content-parts
+  list. Every other input shape already works, so the normalizer is additive and
+  becomes a no-op if ZenMux fixes it. Verified 2/2 tool calls, 0 malformed, for all
+  six flash-tier contestants at their ceiling efforts, **including `minimax-m3`**,
+  which currently needs a `protocol: anthropic` pin for this same class of defect.
+  The override is env-only and un-persisted, with the same caveat the output budget
+  had before migration 0059 — a resume that omits it finishes on a different
+  protocol, and nothing in the stored data would reveal it. If the protocol study
+  finds a real effect, protocol must be promoted into the contestant key alongside
+  effort and budget rather than left here.
+- **Per-model `--reasoning-effort` on `scripts/launch_arena_run.py`** — accepts
+  `slug=level` tokens alongside the existing bare level, so one board can pin every
+  contestant to *its own* ceiling. The flag previously expanded a single level across
+  every selected model, and `queue_arena_run` validates each entry against that
+  model's own ladder, so a uniform pin at the highest level fails launch naming the
+  models that cannot take it. On the flash-tier field the ceilings are three different
+  values — `max` (deepseek-v4-flash, gpt-5-6-luna, minimax-m3), `xhigh` (hunyuan-3,
+  gemini-3-7-flash) and `high` (mimo-2-5) — so "every model at its best" was simply
+  unexpressible in one run, and a board is one run by definition. The stored shape is
+  unchanged: `queue_arena_run` already took the per-model map; only the CLI could not
+  reach it. Levels are validated against `VALID_REASONING_EFFORTS` (imported, never
+  restated) and slugs against the run's own model list — a key naming a model not in
+  the run would otherwise leave that arm silently unpinned. A model nobody names stays
+  **absent** from the map, which is the vendor default, and is deliberately not the
+  same as mapping it to `None` (the explicit unpinned arm). A level repeated for one
+  model is rejected at parse time, naming the token, because a duplicate mints two
+  contestants sharing one key.
+- **`config/model_reasoning.json`: `google/gemini-3.7-flash` measured** (2026-08-21)
+  — ladder `none, low, medium, high, xhigh`; `minimal` is refused
+  (`THINKING_LEVEL_MINIMAL` unsupported) and `max` is an invalid `thinking_level`.
+  It was previously absent, and absent means **permissive**, so `max` would have
+  passed launch validation and 422'd mid-board. models.dev claims `low, medium, high`
+  for this line — too narrow in the dangerous direction, since it would have blocked
+  the `xhigh` the model actually accepts. Note it does **not** match its own siblings:
+  `gemini-3.5-flash` and `3.6-flash` both accept `minimal`. Another instance of the
+  standing rule that the ladder is a property of the ROUTE and must be measured, never
+  inferred from a family or from models.dev.
+- **`POST /api/arena/runs/{id}/cancel`** — the trigger for the cancellation the
+  arena loop already honours. Before this, `cancel_requested` could only be set by
+  a manual `UPDATE` on the database, so the mechanism existed with nothing able to
+  reach it. Requires **`task_runs.arena_run_id`** (migration `0060`): an arena run
+  had **no link at all** to the task driving it — not a column, not even a hint in
+  `description` — so given a run id nothing could find the flag to flip, and a
+  stuck run could only be matched to its task by comparing timestamps by hand.
+  `task_runs` already carries this shape for seven other domains, so it follows the
+  established column pattern rather than inventing a second link. `ondelete="SET
+  NULL"`: deleting a run must not delete the record of the task that ran it.
+  Returns **409** on a terminal run rather than a silent 200 — the UI would
+  otherwise show "cancelling…" forever on a run that has already stopped — and 409
+  on a pre-`0060` run, which carries no link but is necessarily terminal anyway.
+  The status lookup selects the **column**, not the run: `get_run` builds every
+  match dict and derives an ability card per match, which loads a workflow, and
+  cancelling needs one string. **The Arena page has no Stop control yet**, so the
+  endpoint is currently callable only directly.
+- **Progressive position-field query scheme** — `describe_position_fields` (new
+  read tool) plus a catalog-backed, still select-only `query_positions`. A
+  settlement-alert thread showed the failure this fixes: asked which positions
+  need settlement or are nearest to maturity, the agent got only
+  `get_positions`' ~13 identity fields and answered "Not available" for every
+  date — `exercise_date`/`settlement_date`/`maturity_date` live on the
+  normalized product tables and were unreachable. The new
+  `position_field_catalog` module is the single source of truth: one spec per
+  selectable field (name, value type, meaning) feeds the `query_positions`
+  column allowlist, the `describe_position_fields` payload, and the `select`
+  argument description, so the three surfaces cannot drift. `query_positions`
+  gains the product-level groups (`product.*`, `option.*`, `futures.*`) through
+  a `product_id` outer join — `order_by=["option.exercise_date", "asc"]` now
+  answers "nearest to maturity" — and stays strictly select-only: rows carry
+  exactly the fields named, and anything outside the catalog (e.g.
+  `product_kwargs`) is rejected. Legacy column aliases keep resolving but stay
+  out of the agent-facing catalog. `describe_position_fields`,
+  `query_positions`, and `get_position_summaries` are now in
+  `DEEP_AGENT_TOOL_NAMES` too — the latter two were registered in
+  `QUANT_AGENT_TOOLS` but absent from the deep-agent allowlist, so every
+  persona silently dropped them even though the persona prompts reference them.
+- **Output budget is a run VARIANT and part of the contestant key.** A contestant
+  is now `(model_id, reasoning_effort, max_output_tokens)`. Migration **0059**
+  adds `arena_run.max_output_tokens` (the per-model arm map
+  `{slug: [budget | null, ...]}`, mirroring `reasoning_efforts`) and
+  `arena_match.max_output_tokens`, and widens the unique key to five columns.
+  `scripts/launch_arena_run.py` grows `--max-output-tokens` (repeatable), so the
+  A/B that runs #118/#119 had to do as two separate runs is now two arms of one.
+  - **Budget earns arm status by measurement, not analogy.** Runs #118 (4096) and
+    #119 (32768) produced an artifact in **0/8** and **7/8** trials and differ by
+    **16.4 mean objective** — on the budget alone. Folding two budgets into one
+    row is the same defect as folding two efforts, and `merge_runs` now groups on
+    all three keys so it is structurally impossible.
+  - **`0` is the stored "unpinned", never NULL** — SQL treats NULLs as DISTINCT in
+    a UNIQUE constraint, so a nullable column would silently stop protecting
+    unpinned pairs at the DB level while the Python upsert still dedups. `None` is
+    used at every dict/API boundary; `0` only in the column.
+  - **The budget rides the model-selection dict** and is **omitted when unset**,
+    exactly like `reasoning_effort`: the resolved selection is compared by
+    equality against `AgentService.default_model_selection` to decide whether the
+    prebuilt orchestrator can be reused, so a key present on every turn — even as
+    `None` — silently ends that reuse. It applies to **both** wire protocols; a
+    budget arm that were anthropic-only would report a null result for every
+    OpenAI-protocol contestant as if the budget had been varied.
+  - **A resume re-supplies it from the run.** The budget was previously env-only
+    with no column, so a resume that omitted `OPEN_OTC_AGENT_MAX_OUTPUT_TOKENS`
+    silently finished the run at a **different** budget than it started with, and
+    nothing in the stored data would reveal it. `--resume`'s todo set and its
+    stale-row cleanup are both keyed by the full arm.
+  - Arms are the **cross product** of the two axes (`task.arms_for` is the single
+    definition, read by the execution loop, the progress total and the launch
+    count) — a model at two efforts and two budgets is four contestants. Counting
+    models would leave the progress bar permanently short, reading as stuck.
+
+### Fixed
+- **Every ZenMux model id is now provider-pinned to its first-party upstream.**
+  ZenMux distributes requests across upstreams by default and **the response body
+  names none of them**, so an unpinned id is a routing lottery that cannot be
+  attributed even after the fact — measured, it swung one contestant between 93.6
+  and 7.7. All 33 zenmux entries in `config/agent_channels.yaml` and the tracked
+  `.example.yml`, plus every `CANDIDATE_MODELS` `zenmux_name`, now carry a
+  `:provider` suffix; all 33 pins were live-verified (32/32 contestants resolve and
+  build a client).
+  **Policy: pin the model owner's own infrastructure.** That is the reference
+  implementation and least likely to carry re-hosting quirks — `:alibaba` broke
+  DeepSeek's model precisely because it was re-hosting someone else's. Provider
+  lists were harvested by scraping `zenmux.ai/<model>`; there is **no** provider
+  enumeration endpoint (302/404), and `owned_by` is NOT the provider slug for
+  Google (`google-vertex`), z-ai (`bigmodel`), ByteDance (`volcengine`), Tencent
+  (`tencent-cloud`) or Meituan (`longcat`) — it resolved for only 17 of 32.
+  Exposure was uneven and invisible: `deepseek-v4-pro` and `z-ai/glm-5.2` had **six**
+  upstreams each, `deepseek-v4-flash` five, the gpt-5.6 family / gemini-pro /
+  mimo-v2.5 / grok-4.x two.
+  **The tracked template's `default:` had to be repointed** — it named
+  `anthropic/claude-sonnet-4.6`, which the pin renamed, and a dangling default is
+  exactly what `_assert_default_integrity` exists to prevent.
+  Six test files were de-hardcoded in the process: they asserted literal model ids
+  against the tracked template, which is the moving-target class `CLAUDE.md` already
+  warns about. They now source ids from the registry and assert the *presence* of a
+  pin rather than its value.
+- **`deepseek-v4-flash-ds` is a distinct arena contestant.** The pinned route ranks
+  under its own slug rather than inheriting the unpinned slug's history, because
+  that history is not one regime: the same key holds **93.6** (run #112, landed on
+  `:deepseek`) and **7.7** (runs #121/#122/#125, landed on `:alibaba`). Averaging
+  them would report a model that does not exist. Confirmed on the pinned route by
+  **run #126: 94.9 objective, 0 malformed calls, 37/39 checks on both trials** — the
+  best result this model has recorded. The old `deepseek-v4-flash` slug is retired
+  from `CANDIDATE_MODELS`; historical rows are string-keyed and still render.
+  Other contestants keep their slugs and are pinned in place — 2026-08-25 is the
+  boundary between lottery-routed and pinned boards for all of them.
+- **`deepseek-v4-flash` is now provider-pinned to `deepseek/deepseek-v4-flash:deepseek`.**
+  ZenMux serves one model id from several upstreams and picks per request — the
+  catalog lists five prices for this id — and **the response body names none of
+  them**, so an unpinned id is a routing lottery that cannot even be attributed after
+  the fact. Measured 2026-08-25 on the streaming wire, one `task` call each:
+  `:deepseek` returns `id`/`name` as `null` in tool-call continuation deltas (30 of
+  31, correct), while **`:alibaba` returns them as empty strings** (9 of 10).
+  langchain's accumulator treats a present-but-empty string as an update and
+  overwrites the real identifiers from the first delta, while `arguments` fragments
+  concatenate correctly — intact args, hollow ids. `task()` rejects every such call,
+  the agent re-issues, and it loops to the recursion limit.
+  This explains the whole sequence without any code changing anywhere: run **#112**
+  scored **93.6** unpinned on 2026-08-17, and runs **#121 / #122 / #125** scored
+  **7.7** (the prohibition floor, 0 tool calls executed) from 2026-08-21 — the
+  lottery simply started landing on `:alibaba`. The earlier reading that this was a
+  ZenMux *code* regression, or an effort interaction, is **retracted**: the empty
+  strings appear at every effort level, and run #125 reproduced the failure at the
+  vendor default.
+  Pinned in **both** `config/agent_channels.yaml` and the tracked `.example.yml`,
+  plus `CANDIDATE_MODELS` and `.env`'s `GATEWAY_AGENT_MODEL`. The slug is unchanged,
+  so arena matches recorded before 2026-08-25 rank under this key having run on
+  *either* upstream — treat them as a different regime. Effort ladder for the pinned
+  route re-probed and merged (all seven levels accepted); the route is a distinct
+  `(channel, model_id)` key, so the unpinned entry does not cover it.
+  `_parse_model_selection`'s `split(":", 2)` is now load-bearing rather than
+  stylistic: a plain `split(":")` would reject every provider-pinned id.
+- **The truncation detector no longer goes blind on the Responses API.**
+  `_TRUNCATION_REASONS` matched only `stop_reason == "max_tokens"` (Anthropic) and
+  `finish_reason == "length"` (OpenAI chat-completions). The Responses API sets
+  **neither** — it reports `status: "incomplete"` with
+  `incomplete_details.reason == "max_output_tokens"` — so every Responses match
+  would have reported a confident **zero** truncations, which by this module's own
+  absence discipline is strictly worse than the honest `null` it takes care to
+  preserve elsewhere: it asserts the opposite of what was measured. Reason keys are
+  now dotted paths resolved by `_dig_md`, tolerating any missing hop. Keyed on the
+  nested reason rather than `status == "incomplete"` because a response can be
+  incomplete for reasons that are not the output budget (content filtering), and the
+  reason field describes itself.
+- **The launcher's arm count is now `task.arms_for`, not local arithmetic.** It
+  computed `workflows × models × max(1, len(efforts)) × max(1, len(budgets))`, which
+  is only correct when every model carries the same number of arms. With a per-model
+  effort map that formula counts *tokens* rather than arms: the flash-tier board would
+  have reported **180** arms while executing **30**, freezing the progress bar near 17%
+  for the entire run — indistinguishable from the silent wedge the same file's
+  `--resume` exists to recover from. `arms_for` is the single definition the execution
+  loop and the progress total already read, so counting through it makes the printed
+  total and the executed total the same number by construction. The budget map is now
+  built once and shared by the count and the call for the same reason.
+- **An arena run can now be stopped without killing its process.**
+  `arena/task.py::_execute` honours `cancel_requested`, checked at the **arm
+  boundary** — a match in flight cannot be interrupted (the same constraint
+  `async_agents/runner.py` documents for the graph), so the contract is: finish
+  and RECORD the arm that is running, then stop before the next one. Cancelling
+  therefore discards no completed work. The run is marked `failed` with
+  `cancelled after N of M units` rather than `completed`, because reporting
+  success would let a partial board be read as a full one. Previously the flag
+  was honoured by `async_agents/runner.py` (three separate checks) and ignored
+  entirely here, so the only way to stop a board was to find and kill its
+  process — and **the task row outlives the process**: run #121 was killed at
+  the launcher, its `task_runs` row stayed `running`, and a `uvicorn --reload`
+  dev server's worker picked it up and resumed it at `.env`'s recursion limit
+  (100) instead of the launcher's (300), which is where the
+  `GraphRecursionError` reports came from. The check selects the **column**, not
+  the entity: an entity load can be served from the session identity map, and the
+  flag is set by a different process, so a cached row would never show it.
+- **Migration 0058 created a redundant, STRICTER unique constraint on every fresh
+  database.** `0001_initial` materialises today's ORM, so a fresh DB arrives at
+  revision 1 already carrying 0059's 5-column contestant key; 0058's guard looked
+  for its own 4-column *name*, found it absent, and added it alongside — and the
+  4-column key forbids the second output-budget arm. It now no-ops when a
+  constraint already extends its columns (matched on COLUMNS, not names, because
+  the pre-0058 table's constraint is unnamed). `test_migration_fresh_chain` cannot
+  see this class of bug — adding a redundant constraint succeeds — so the guard is
+  0058's and 0059's own idempotency tests.
+- **Output-budget truncation is now measured and flagged.** The harness reads
+  `response_metadata` for `stop_reason: "max_tokens"` (Anthropic protocol) or
+  `finish_reason: "length"` (OpenAI protocol) on every LLM span and carries the
+  count through `MatchStep.truncations` → `diagnose_heuristic` →
+  `score_breakdown.truncation` → the leaderboard row, the match cell and the
+  API. Both protocols are read because a detector that knows only one goes blind
+  the moment the other's budget is pinned. `severed_tool_call` records the
+  expensive case: when the cap lands mid-argument the tool call is downgraded to
+  `invalid_tool_call` and never runs, which is how one lost turn takes a whole
+  axis with it.
+  - **A truncated match stays `scored` and is flagged — never `invalid`.**
+    Sweeping it out would silently shrink historical boards (Run #20 loses four
+    contestants) and truncation does not reliably destroy a score: run #114
+    scored 100.0 and 90.9 on two workflows that truncated, because the agent loop
+    usually recovers on the next turn. **The score is never adjusted** — the flag
+    is a caveat on the measurement, not a penalty.
+  - **The flag is deliberately NOT appended to a step's `errors`,** which is what
+    `_is_infra_blank` reads; that would be the invalidation this design rejects.
+  - **`null` means never measured and is not the same claim as zero.** Every
+    board through #114 ran under langchain's 4096 fallback and really did
+    truncate; those rows carry no block, and folding their absence into a
+    confident `calls: 0` would state the opposite of what happened.
+  - Carried at the breakdown's **top level**, because `fold_trial_breakdowns`
+    does not lift `diagnosis` and every match is wrapped — single-trial ones
+    included — so a flag left in the diagnosis is unreachable for exactly the
+    rows that carry it.
+- **`OPEN_OTC_AGENT_MAX_OUTPUT_TOKENS`** (`Settings.agent_max_output_tokens`,
+  default **32768**) — an explicit output-token budget for the Anthropic wire
+  protocol, declared at both config sites and passed to `ChatAnthropic` by
+  `build_agent_model`. Previously nothing was passed, so `langchain_anthropic`
+  applied its own `_FALLBACK_MAX_OUTPUT_TOKENS` of **4096** — the default it uses
+  whenever it has no profile for a model id, and it has none for **any** id routed
+  through the ZenMux gateway, `anthropic/claude-opus-4.8` included, because the
+  vendor prefix defeats its lookup. So every Anthropic-protocol contestant in every
+  historical board ran capped at 4096 while every OpenAI-protocol contestant ran at
+  its provider default: a handicap on ~9 models that nobody declared. The
+  `ChatOpenAI` branch still sends no `max_tokens` **on purpose** — capping it would
+  recreate the same asymmetry in the other direction. All nine Anthropic-protocol
+  routes were probed and accept 32768 and 65536; the value is a setting rather than
+  a constant so a future route with a smaller ceiling can be lowered without a code
+  change. **Boards from run #115 on are not strictly comparable to #8–#114 for
+  Anthropic-protocol models.**
+- **`glm-5.3` registered as a desk model and arena contestant** — slug
+  `glm-5-3`, `z-ai/glm-5.3` on the zenmux channel, added to all three places a
+  model needs before it can be dispatched: `CANDIDATE_MODELS`,
+  `config/agent_channels.yaml`, and the tracked `.example.yml` (the live file is
+  gitignored, so registering in only one is invisible to every other checkout).
+  It arrives carrying glm-5.2's `protocol: anthropic` pin by **inheritance, not
+  by its own evidence**: the empty tool-call-id defect that pin exists for is a
+  gateway/vendor-family trait rather than a version one, and it surfaces only
+  under a real match — never on an isolated probe — so a new GLM starts pinned
+  and may be un-pinned only against a live match that proves it unnecessary.
 - **Provisional model cards** — a run published as cards only, never on the
   leaderboard. `boards.yaml` grows an optional `provisional:` section (the top
   level may now be a mapping; a bare list is still read as "all boards"), and
@@ -54,6 +523,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and uses one separator style instead of three competing treatments.
 
 ### Fixed
+- **Silent output truncation on the Anthropic protocol.** A model that exhausted
+  the 4096-token budget mid-thought emitted a lone `reasoning` block — no text, no
+  tool call — so the turn produced **nothing** while its span still reported
+  `status=success`. The arena's `_is_infra_blank` gate could not see it: that gate
+  corroborates blankness with step **errors**, and a truncation raises none, so the
+  match was recorded as a legitimate `scored` result. One layer deeper than the 402
+  deaths that fooled Run #10 — not a failed call, a successful one that ran out of
+  room. Measured on run #114 (`glm-5.3`): truncation on 6–14% of LLM calls per
+  workflow against **0 in 349** for the OpenAI-protocol baseline, killing five turns
+  outright — one of them an artifact step whose content was
+  `['reasoning', 'invalid_tool_call']`, a tool call severed mid-emission, which
+  alone cost that workflow its whole synthesis axis. Note truncation does **not**
+  uniformly destroy a score (two workflows on the same run scored 100.0 and 90.9,
+  because the agent loop often recovers on the next turn), so its presence is not
+  grounds to invalidate a match and a good score is not proof of its absence —
+  `completion_tokens` at exactly the cap is the only reliable tell, and it lives
+  only in the trace DB's LLM spans.
 - **Report bodies were unstyled on the web** — the site's largest surface, and
   9 of its ~13 pages. `render_report.render_markdown()` returns bare HTML with no
   stylesheet; only `document_html()` (the standalone `.html` artifact and the

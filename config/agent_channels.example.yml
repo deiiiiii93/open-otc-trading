@@ -1,8 +1,84 @@
+# =============================================================================
+# Agent channel + model registry — TRACKED TEMPLATE
+#
+# Copy to `config/agent_channels.yaml`, which is gitignored (per-environment)
+# and is also rewritten at runtime by the Model Maintenance UI. This template is
+# edited by humans only, and the test suite reads it as its registry fixture.
+#
+# -----------------------------------------------------------------------------
+# THE THREE AXES OF A MODEL ENTRY
+#
+# Every model is described by three INDEPENDENT things. Read them as WHAT / WHOSE
+# METAL / HOW WE TALK TO IT:
+#
+#     - id: qwen/qwen3.7-max          # WHAT   — the model
+#       provider: alibaba             # WHOSE  — the ZenMux upstream serving it
+#       protocol: anthropic           # HOW    — the wire format we dispatch on
+#
+#   The gateway is addressed as `<id>:<provider>`, composed by the loader. You
+#   never write that composed form here.
+#
+# id — the model id as its owner names it, with NO `:upstream` suffix.
+#      `deepseek/deepseek-v4-flash`, not `deepseek/deepseek-v4-flash:deepseek`.
+#
+# provider — the ZenMux UPSTREAM PROVIDER: whose infrastructure actually serves
+#      the request. REQUIRED, and it is part of the route, not a label.
+#      ZenMux serves one model id from several upstreams and picks one PER
+#      REQUEST; the response body names none of them, so an unpinned id is a
+#      lottery you cannot even attribute after the fact. Not hypothetical — see
+#      the deepseek-v4-flash note below for the board that scored 93.6 and 7.7 on
+#      the same id with no code change anywhere.
+#      POLICY: pin the model OWNER's own infrastructure.
+#      Discover the options by scraping `zenmux.ai/<owner>/<model>` for
+#      `<id>:<provider>`; there is no enumeration endpoint, and `owned_by` is NOT
+#      the slug for google (google-vertex), z-ai (bigmodel), bytedance
+#      (volcengine), tencent (tencent-cloud) or meituan (longcat).
+#      On a non-zenmux channel there is only one upstream, so the field selects
+#      the SDK instead — `deepseek` -> ChatDeepSeek. See that channel below.
+#
+# protocol — the wire format actually dispatched. REQUIRED on zenmux channels:
+#      openai_chat        OpenAI chat completions        (the usual choice)
+#      anthropic          Anthropic Messages
+#      openai_responses   OpenAI Responses API
+#      It is an axis of its own because a model may need a format its vendor
+#      would not imply: minimax, qwen3.7-max, glm-5.x and longcat all emit tool
+#      calls the OpenAI-compatible endpoint leaves unparsed, so they are routed
+#      over Anthropic Messages even though nothing about them is Anthropic.
+#      `grep -n 'protocol: anthropic'` lists the current workaround pins.
+#
+# WHY THESE THREE. Until 2026-08-25 `provider` held ZenMux's gateway routing
+# label ("openai"/"anthropic") and the upstream rode in the id as a `:suffix`, so
+# one row read `qwen/qwen3.7-max:alibaba` / `openai` / `anthropic` — three
+# vendor-shaped words meaning three different things, none of them obvious. That
+# label turned out to be dispatch-dead (routing has always keyed on the protocol)
+# and redundant as a lookup key (ids are already unique per channel), so the
+# field was freed to name the upstream. YAML in the old shape still loads.
+#
+# -----------------------------------------------------------------------------
+# tags — free-form, but four are load-bearing seams. grep before editing:
+#     fast                    the cheap-tier fallback for several resolvers
+#     extractor               memory diff-extraction model (pin EXACTLY one)
+#     confirmation_extractor  trade-confirmation parser (pin EXACTLY one, and it
+#                             MUST be vision-capable)
+#     reasoning               advisory only; NOT the effort-ladder source (that
+#                             is config/model_reasoning.json, keyed per ROUTE —
+#                             i.e. on `<id>:<provider>`, not on the id alone)
+#
+# ORDER IS LOAD-BEARING. `select_by_tag` returns the FIRST healthy channel's
+# FIRST model carrying a tag, so moving an entry can silently repoint the
+# extractor and `fast` fallbacks. Add at the end of a group; do not regroup.
+# =============================================================================
+
 default:
   channel: zenmux
   model: anthropic/claude-sonnet-4.6
 
 channels:
+  # ===========================================================================
+  # ZenMux — one gateway, many upstream vendors. `base_url` serves the two
+  # OpenAI protocols, `anthropic_base_url` serves Anthropic Messages; which one
+  # a model uses follows from its `protocol`, so there is nothing to declare.
+  # ===========================================================================
   - name: zenmux
     label: Zenmux
     type: zenmux
@@ -10,182 +86,304 @@ channels:
     base_url: https://zenmux.ai/api/v1
     anthropic_base_url: https://zenmux.ai/api/anthropic
     models:
+
+      # --- Anthropic ----------------------------------------------------------
+
       - id: anthropic/claude-opus-4.8
         provider: anthropic
+        protocol: anthropic
         label: Claude Opus 4.8
         description: Most capable, highest cost
         tags: [tool-use, reasoning, premium]
+
       - id: anthropic/claude-sonnet-4.6
         provider: anthropic
+        protocol: anthropic
         label: Claude Sonnet 4.6
         tags: [tool-use, reasoning]
+
       - id: anthropic/claude-sonnet-5
         provider: anthropic
+        protocol: anthropic
         label: Claude Sonnet 5
         tags: [tool-use, reasoning]
+
       - id: anthropic/claude-haiku-4.5
         provider: anthropic
+        protocol: anthropic
         label: Claude Haiku 4.5
         tags: [fast]
+
+      # --- OpenAI -------------------------------------------------------------
+
       - id: openai/gpt-5.5
         provider: openai
+        protocol: openai_chat
         label: GPT-5.5
         tags: [tool-use]
+
       - id: openai/gpt-5.6-terra
         provider: openai
+        protocol: openai_chat
         label: GPT-5.6 Terra
         tags: [tool-use, reasoning]
+
       - id: openai/gpt-5.6-luna
         provider: openai
+        protocol: openai_chat
         label: GPT-5.6 Luna
         tags: [tool-use, reasoning]
+
       - id: openai/gpt-5.6-sol
         provider: openai
+        protocol: openai_chat
         label: GPT-5.6 Sol
         tags: [tool-use, reasoning]
+
+      # --- Everyone else ------------------------------------------------------
+      # Keep in sync with CANDIDATE_MODELS in services/arena/models.py.
+
       - id: google/gemini-2.5-pro
-        provider: openai
+        provider: google-vertex
+        protocol: openai_chat
         label: Gemini 2.5 Pro
         tags: [tool-use, reasoning]
+
       - id: google/gemini-3.1-pro-preview
-        provider: openai
+        provider: google-vertex
+        protocol: openai_chat
         label: Gemini 3.1 Pro
         tags: [tool-use, reasoning]
-      # Third-party vendors routed through Zenmux's OpenAI-compatible gateway.
-      # provider must be 'openai' (the dispatch SDK label); the real vendor lives
-      # in the id. Keep in sync with CANDIDATE_MODELS in services/arena/models.py.
+
+      # PROTOCOL PIN (2026-07-29, board 92). Over openai_chat glm-5.2 emits tool
+      # calls whose "id" is an EMPTY STRING under full orchestrator load.
+      # deepagents' task() guards `if not runtime.tool_call_id: raise` -- so EVERY
+      # persona delegation raised before a subagent started, no persona ever ran,
+      # and the model scored GRD 0 / SYN 0 / PRC 0 (obj 14.3) despite reasoning
+      # correctly about the failure and honestly declining the trap step. Same
+      # class as minimax-m3 / qwen3.7-max / longcat-2.0 below.
+      # NOT reproducible on an isolated probe -- simple, streaming, parallel and
+      # direct task() calls all return valid ids. It needs the real match (full
+      # prompt + toolset + history), so verify any change to this line against a
+      # live match, never a probe.
       - id: z-ai/glm-5.2
-        provider: openai
-        # Fourth model needing this pin (2026-07-29, board 92). Through the
-        # OpenAI-compatible gateway glm-5.2 emits tool calls whose "id" is an
-        # EMPTY STRING under full orchestrator load. deepagents' task() guards
-        # `if not runtime.tool_call_id: raise` -- so EVERY persona delegation
-        # raised before a subagent started, no persona ever ran, and the model
-        # scored GRD 0 / SYN 0 / PRC 0 (obj 14.3) despite reasoning correctly
-        # about the failure and honestly declining the trap step. Same class as
-        # minimax / qwen3.7-max / longcat below.
-        # NOTE: not reproducible on an isolated probe -- simple, streaming,
-        # parallel and direct task() calls all return valid ids. It needs the
-        # real match (full prompt + toolset + history), so verify any change to
-        # this line against a live match, never a probe.
+        provider: bigmodel
         protocol: anthropic
         label: GLM 5.2
         tags: [tool-use, reasoning]
+
+      # PROTOCOL PIN by INHERITANCE from glm-5.2 above, not by its own evidence.
+      # The empty tool-call-id defect is a gateway/vendor-family trait rather than
+      # a version one, and it surfaces only under a real match -- so a new GLM
+      # arrives pinned and may be un-pinned only against a live match that proves
+      # it unnecessary.
+      - id: z-ai/glm-5.3
+        provider: bigmodel
+        protocol: anthropic
+        label: GLM 5.3
+        tags: [tool-use, reasoning]
+
       - id: moonshotai/kimi-k2.7-code
-        provider: openai
+        provider: moonshotai
+        protocol: openai_chat
         label: Kimi 2.7
         tags: [tool-use, reasoning]
+
+      # PROTOCOL PIN: minimax emits Anthropic-format tool calls; openai_chat
+      # leaves them unparsed (they leak into text as <invoke ...> markup), so
+      # dispatch it over Anthropic Messages instead.
       - id: minimax/minimax-m3
-        provider: openai
-        # minimax emits Anthropic-format tool calls; the OpenAI-compatible gateway
-        # leaves them unparsed (they leak into text as <invoke ...> markup), so
-        # dispatch it through the Anthropic endpoint. provider stays 'openai' (the
-        # gateway routing label); protocol overrides only the wire format.
+        provider: minimax
         protocol: anthropic
         label: MiniMax M3
         tags: [tool-use]
+
       - id: xiaomi/mimo-v2.5-pro
-        provider: openai
+        provider: xiaomi
+        protocol: openai_chat
         label: MiMo V2.5 Pro
         tags: [tool-use]
+
       - id: deepseek/deepseek-v4-pro
-        provider: openai
+        provider: deepseek
+        protocol: openai_chat
         label: DeepSeek V4 Pro
         tags: [tool-use, reasoning]
+
+      # PROTOCOL PIN: qwen's tool-call id arrives empty over openai_chat in the
+      # full agent flow, breaking subagent (task) dispatch with "Tool call ID is
+      # required for subagent invocation". Anthropic Messages assigns server-side
+      # toolu_ ids that cannot be empty.
       - id: qwen/qwen3.7-max
-        provider: openai
-        # qwen's tool-call id arrives empty through the OpenAI-compatible gateway in
-        # the full agent flow, breaking subagent (task) dispatch with "Tool call ID
-        # is required for subagent invocation". The Anthropic endpoint assigns
-        # server-side toolu_ ids that can't be empty. provider stays 'openai' (gateway
-        # label); protocol overrides only the wire format.
+        provider: alibaba
         protocol: anthropic
         label: Qwen 3.7 Max
         tags: [tool-use, reasoning]
-      # --- Run #9 flash-tier candidate field (Zenmux OpenAI-compatible) ---
+
+      # --- Run #9 flash-tier candidate field ----------------------------------
+
       - id: bytedance/doubao-seed-evolving
-        provider: openai
+        provider: volcengine
+        protocol: openai_chat
         label: Doubao Seed Evolving
         tags: [fast, tool-use]
+
       - id: bytedance/doubao-seed-2.1-turbo
-        provider: openai
+        provider: volcengine
+        protocol: openai_chat
         label: Doubao Seed 2.1 Turbo
         tags: [fast, tool-use]
+
+      # Frontier-tier Doubao sibling of the 2.1-turbo flash route. Live-probed on
+      # openai_chat: tool calls arrive parsed with non-empty ids, so it needs NO
+      # anthropic pin (unlike minimax-m3 / qwen3.7-max / longcat-2.0).
+      # Deliberately NOT tagged 'fast' — that tag is load-bearing for the memory
+      # extractor fallback.
       - id: bytedance/doubao-seed-2.1-pro
-        provider: openai
-        # Frontier-tier Doubao sibling of the 2.1-turbo flash route. Live-probed
-        # on the OpenAI-compatible gateway: tool calls arrive parsed with
-        # non-empty ids, so it needs NO protocol: anthropic pin (unlike
-        # minimax-m3 / qwen3.7-max / longcat-2.0 above). Deliberately NOT tagged
-        # 'fast' — that tag is load-bearing for the memory extractor fallback.
+        provider: volcengine
+        protocol: openai_chat
         label: Doubao Seed 2.1 Pro
         tags: [tool-use, reasoning]
+
       - id: qwen/qwen3.7-plus
-        provider: openai
+        provider: alibaba
+        protocol: openai_chat
         label: Qwen 3.7 Plus
         tags: [fast, tool-use]
+
       - id: stepfun/step-3.7-flash
-        provider: openai
+        provider: stepfun
+        protocol: openai_chat
         label: Step 3.7 Flash
         tags: [fast, tool-use]
+
       - id: google/gemini-3.5-flash
-        provider: openai
+        provider: google-vertex
+        protocol: openai_chat
         label: Gemini 3.5 Flash
         tags: [fast, tool-use]
-      # `confirmation_extractor` is the dedicated tag for the trade-confirmation
-      # parser (services/confirmations). Tag exactly ONE model with it, and that
-      # model MUST be vision-capable: scanned/image-only confirmations are sent as
-      # image content parts, and a text-only model fails the document outright
-      # rather than silently degrading. Resolution is two-tier —
-      # confirmation_extractor -> fast -> registry default — so a missing/typo'd
-      # tag costs the cheap tier, never the expensive agent default.
+
+      # TAG PIN `confirmation_extractor`: the dedicated tag for the
+      # trade-confirmation parser (services/confirmations). Tag exactly ONE model
+      # with it, and that model MUST be vision-capable: scanned/image-only
+      # confirmations are sent as image content parts, and a text-only model fails
+      # the document outright rather than silently degrading. Resolution is
+      # two-tier — confirmation_extractor -> fast -> registry default — so a
+      # missing or typo'd tag costs the cheap tier, never the expensive agent
+      # default.
       - id: google/gemini-3.6-flash
-        provider: openai
+        provider: google-vertex
+        protocol: openai_chat
         label: Gemini 3.6 Flash
         tags: [fast, tool-use, confirmation_extractor]
+
       - id: google/gemini-3.7-flash
-        provider: openai
+        provider: google-vertex
+        protocol: openai_chat
         label: Gemini 3.7 Flash
         tags: [fast, tool-use]
+
       - id: openai/chat-latest
         provider: openai
+        protocol: openai_chat
         label: GPT-5.5 Instant
         tags: [fast, tool-use]
+
+      # THIS ROW IS WHY `provider` IS PART OF THE ROUTE. Measured 2026-08-25 on
+      # the streaming wire, one `task` call each:
+      #   provider: deepseek -> continuation deltas carry id/name = null (30/31)
+      #   provider: alibaba  -> continuation deltas carry id/name = ""   (9/10)
+      # langchain's accumulator treats a present-but-empty string as an update and
+      # overwrites the real identifiers from the first delta, while `arguments`
+      # fragments concatenate correctly — intact args, hollow ids. `task()` then
+      # rejects every call, the agent re-issues, and it loops to the recursion
+      # limit: arena runs #121/#122/#125 all scored 7.7 (the prohibition floor)
+      # with 0 tool calls executed, while run #112 on the same UNPINNED id scored
+      # 93.6 four days earlier purely because the lottery landed on deepseek.
+      # Run #126, pinned: 94.9 with 0 malformed calls.
+      # Non-streaming probes CANNOT reproduce it — there are no continuation
+      # deltas — so pin the upstream rather than trusting a green probe.
+      #
+      # TAG PIN `extractor`: the memory diff-extraction model (cheap, JSON).
+      # Routed through ZenMux, so it shares ZENMUX_API_KEY and needs no
+      # langchain-deepseek — unlike the deepseek-channel entry below.
       - id: deepseek/deepseek-v4-flash
-        provider: openai
+        provider: deepseek
+        protocol: openai_chat
         label: DeepSeek V4 Flash
-        # 'extractor' pins this as the memory diff-extraction model (cheap, JSON).
-        # Routed via Zenmux's OpenAI-compatible gateway, so it shares ZENMUX_API_KEY
-        # and needs no langchain-deepseek — unlike the deepseek-channel entry below.
         tags: [fast, tool-use, reasoning, extractor]
+
       - id: xiaomi/mimo-v2.5
-        provider: openai
+        provider: xiaomi
+        protocol: openai_chat
         label: MiMo V2.5
         tags: [fast, tool-use]
+
       - id: tencent/hy3
-        provider: openai
+        provider: tencent-cloud
+        protocol: openai_chat
         label: Hunyuan 3
         tags: [fast, tool-use]
+
+      # PROTOCOL PIN: longcat emits tool calls as <longcat_tool_call> markup that
+      # openai_chat leaves unparsed (they leak into the response text -> zero tool
+      # calls -> arena prohibition floor). Anthropic Messages makes ZenMux
+      # translate its native tool calls into structured tool_use. See minimax-m3 /
+      # qwen3.7-max above.
       - id: meituan/longcat-2.0
-        provider: openai
-        # longcat emits tool calls as <longcat_tool_call> markup that the OpenAI-
-        # compatible gateway leaves unparsed (they leak into the response text →
-        # zero tool calls → arena prohibition floor). Route it through the Anthropic
-        # endpoint so ZenMux translates its native tool calls into structured
-        # tool_use. provider stays 'openai' (gateway routing label); protocol
-        # overrides only the wire format. See minimax-m3 / qwen3.7-max above.
+        provider: longcat
         protocol: anthropic
         label: LongCat 2.0
         tags: [tool-use, reasoning]
+
       - id: x-ai/grok-4.5
-        provider: openai
+        provider: x-ai
+        protocol: openai_chat
         label: Grok 4.5
         tags: [tool-use, reasoning]
+
       - id: x-ai/grok-4.6
-        provider: openai
+        provider: x-ai
+        protocol: openai_chat
         label: Grok 4.6
         tags: [tool-use, reasoning]
 
+      # Qwen's 27B tier (published 2026-08-21): 1M context, reasoning,
+      # vision-capable, and cheaper than qwen3.7-max ($0.50/$3.00 vs $1.25/$3.75
+      # per MTok). All seven effort levels live-probed accepted 2026-08-25.
+      #
+      # PROTOCOL PIN, and unlike glm-5.3's it is MEASURED, not inherited from the
+      # sibling. Streaming the raw SSE deltas on 2026-08-25 showed the `alibaba`
+      # upstream sending id="" and name="" on 640 of 641 tool-call CONTINUATION
+      # deltas — the deepseek defect exactly, and langchain merges those over the
+      # real identifiers, so task() would dispatch nothing and every match would
+      # score the 7.7 prohibition floor.
+      # The defect belongs to the UPSTREAM, not the model: qwen3.7-plus on the
+      # same `alibaba` upstream shows 430 of 431, while deepseek on its own metal
+      # shows 778 of 778 null. NOTE that leaves `qwen/qwen3.7-plus` below exposed
+      # on openai_chat — known, unpinned, and worth a decision.
+      # A single-shot NON-streaming probe sees none of it (3/3 clean here, 2/2 on
+      # qwen3.7-max, the known-bad control). A STREAMING delta probe does convict,
+      # for the price of one call — so "only a real match convicts" was too
+      # pessimistic; it is non-streaming probes that are blind.
+      - id: qwen/qwen3.8-27b
+        provider: alibaba
+        protocol: anthropic
+        label: Qwen 3.8 27B
+        tags: [tool-use, reasoning]
+
+  # ===========================================================================
+  # DeepSeek direct — a vendor's own API, not a gateway.
+  #
+  # `type: openai_compatible`, so two of the three axes collapse:
+  #   * there is one upstream, so ids carry no pin and none is composed;
+  #   * `provider: deepseek` therefore selects the SDK (ChatDeepSeek), which is
+  #     why this channel needs langchain-deepseek and its own DEEPSEEK_API_KEY.
+  # `protocol` defaults to openai_chat here and is not consulted.
+  #
+  # Kept as the escape hatch for a gateway-side defect: these two ids reach the
+  # same weights as the zenmux `deepseek/…` rows above with no ZenMux in the path.
+  # ===========================================================================
   - name: deepseek
     label: DeepSeek
     type: openai_compatible
@@ -197,6 +395,7 @@ channels:
         label: DeepSeek V4 Flash
         description: Fast, low-cost reasoning
         tags: [fast, reasoning]
+
       - id: deepseek-v4-pro
         provider: deepseek
         label: DeepSeek V4 Pro

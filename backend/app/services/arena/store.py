@@ -11,6 +11,63 @@ from sqlalchemy.orm import Session
 from app.models import AgentThread, ArenaRun, ArenaMatch
 
 
+def _match_truncation(bd: dict) -> dict | None:
+    """The output-budget truncation block for one match, or None if unmeasured.
+
+    Read from the breakdown's TOP level, which is where the multi-trial fold
+    lifts it to. Reading ``diagnosis`` instead would find nothing on any wrapped
+    match — the fold does not lift ``diagnosis``, and every match is wrapped,
+    including single-trial ones. That is the same trap that blanked the
+    drilldown for 222 of 297 stored matches.
+
+    None means the match predates the instrument, which is NOT the same claim as
+    ``calls: 0``. Every board through #114 ran capped and really did truncate;
+    reporting a confident zero for them would assert the opposite.
+    """
+    block = bd.get("truncation") if isinstance(bd, dict) else None
+    return block if isinstance(block, dict) else None
+
+
+def _agg_truncation(blocks: list[dict | None]) -> dict | None:
+    """Aggregate per-match truncation blocks for one leaderboard contestant."""
+    measured = [b for b in blocks if isinstance(b, dict)]
+    if not measured:
+        return None
+    return {
+        "calls": sum(int(b.get("calls") or 0) for b in measured),
+        "severed_tool_calls": sum(
+            int(b.get("severed_tool_calls") or 0) for b in measured),
+        "matches_affected": sum(1 for b in measured if b.get("calls")),
+        "matches_measured": len(measured),
+        "matches_total": len(blocks),
+    }
+
+
+def _match_malformed(bd: dict) -> dict | None:
+    """Malformed-tool-call block for one match, or None if unmeasured.
+
+    Same top-level read and same absence rule as ``_match_truncation``: None
+    means the match predates the instrument, never "measured and clean". Run
+    #122's arm A really did malform 100% of one contestant's tool calls, so a
+    confident zero on pre-instrument boards would assert the opposite.
+    """
+    block = bd.get("malformed") if isinstance(bd, dict) else None
+    return block if isinstance(block, dict) else None
+
+
+def _agg_malformed(blocks: list[dict | None]) -> dict | None:
+    """Aggregate per-match malformed blocks for one leaderboard contestant."""
+    measured = [b for b in blocks if isinstance(b, dict)]
+    if not measured:
+        return None
+    return {
+        "calls": sum(int(b.get("calls") or 0) for b in measured),
+        "matches_affected": sum(1 for b in measured if b.get("calls")),
+        "matches_measured": len(measured),
+        "matches_total": len(blocks),
+    }
+
+
 def _derive_card(bd: dict, workflow_id: str) -> tuple[dict | None, str | None]:
     """Derive an ability card from a stored score_breakdown, or (None, reason).
 
@@ -47,6 +104,7 @@ def create_run(
     weights: dict | None = None,
     trials: int = 1,
     reasoning_efforts: dict | None = None,
+    max_output_tokens: dict | None = None,
 ) -> int:
     """Insert a new ArenaRun in 'queued' status; return its id."""
     run = ArenaRun(
@@ -56,6 +114,7 @@ def create_run(
         weights=weights,
         trials=trials,
         reasoning_efforts=reasoning_efforts or None,
+        max_output_tokens=max_output_tokens or None,
     )
     session.add(run)
     session.flush()
@@ -78,21 +137,25 @@ def record_match(
     error: str | None = None,
     score_breakdown: dict | None = None,
     reasoning_effort: str | None = None,
+    max_output_tokens: int | None = None,
 ) -> int:
     """Upsert an ArenaMatch row; return its id.
 
-    ``reasoning_effort`` is part of the contestant key: the same model at two
-    efforts is two rows that rank against each other. ``None`` means the run did
-    not pin one, stored as ``''``.
+    ``reasoning_effort`` and ``max_output_tokens`` are part of the contestant
+    key: the same model at two efforts, or at two output budgets, is two rows
+    that rank against each other. ``None`` means the run did not pin that axis,
+    stored as ``''`` and ``0`` respectively.
     """
-    # '' is the stored form of "unpinned"; the column is part of the contestant
-    # key, so the lookup MUST filter on it or the second arm upserts over the
-    # first and the board reports a completed run with one arm silently missing.
+    # '' / 0 are the stored forms of "unpinned"; both columns are part of the
+    # contestant key, so the lookup MUST filter on them or the second arm upserts
+    # over the first and the board reports a completed run with an arm silently
+    # missing.
     effort_key = reasoning_effort or ""
+    budget_key = int(max_output_tokens or 0)
     existing = (
         session.query(ArenaMatch)
         .filter_by(run_id=run_id, workflow_id=workflow_id, model_id=model_id,
-                   reasoning_effort=effort_key)
+                   reasoning_effort=effort_key, max_output_tokens=budget_key)
         .one_or_none()
     )
     if existing is not None:
@@ -113,6 +176,7 @@ def record_match(
         workflow_id=workflow_id,
         model_id=model_id,
         reasoning_effort=effort_key,
+        max_output_tokens=budget_key,
         status=status,
         objective_score=objective_score,
         judged_score=judged_score,
@@ -175,11 +239,16 @@ def merge_runs(session: Session, source_run_ids: list[int]) -> int:
         raise ValueError(f"no scored matches found in runs {ordered}")
 
     pos = {rid: i for i, rid in enumerate(ordered)}
-    # Effort is part of the contestant key, so it is part of the fold key: two
-    # efforts of one model fold into two merged rows that rank against each other.
-    groups: dict[tuple[str, str, str | None], list[ArenaMatch]] = defaultdict(list)
+    # Effort AND output budget are part of the contestant key, so both are part
+    # of the fold key: two efforts — or two budgets — of one model fold into two
+    # merged rows that rank against each other. Leaving budget out would produce
+    # exactly the row this whole change exists to prevent: one average across
+    # regimes that runs #118/#119 measured 16.4 objective points apart.
+    groups: dict[
+        tuple[str, str, str | None, int | None], list[ArenaMatch]] = defaultdict(list)
     for m in matches:
-        groups[(m.workflow_id, m.model_id, m.reasoning_effort or None)].append(m)
+        groups[(m.workflow_id, m.model_id, m.reasoning_effort or None,
+                m.max_output_tokens or None)].append(m)
     for ms in groups.values():
         ms.sort(key=lambda m: (pos[m.run_id], m.id))
 
@@ -190,22 +259,29 @@ def merge_runs(session: Session, source_run_ids: list[int]) -> int:
     # protected against a fold that is now structurally impossible — and keeping
     # it would make merge arbitrarily stricter than launch, which happily puts
     # both arms in one run.
-    workflow_ids = sorted({wf for wf, _md, _ef in groups})
-    model_ids = sorted({md for _wf, md, _ef in groups})
+    workflow_ids = sorted({wf for wf, _md, _ef, _bd in groups})
+    model_ids = sorted({md for _wf, md, _ef, _bd in groups})
     # Per-model LIST of the arms present, so the merged run states every regime it
     # contains rather than one of them.
     merged_efforts: dict[str, list[str]] = {}
-    for (_wf, model_id, effort) in groups:
+    merged_budgets: dict[str, list[int]] = {}
+    for (_wf, model_id, effort, budget) in groups:
         if effort:
             arms = merged_efforts.setdefault(model_id, [])
             if effort not in arms:
                 arms.append(effort)
+        if budget:
+            budget_arms = merged_budgets.setdefault(model_id, [])
+            if budget not in budget_arms:
+                budget_arms.append(budget)
     merged_efforts = {k: sorted(v) for k, v in merged_efforts.items()}
+    merged_budgets = {k: sorted(v) for k, v in merged_budgets.items()}
     new_run_id = create_run(
         session, workflow_ids, model_ids, reasoning_efforts=merged_efforts or None,
+        max_output_tokens=merged_budgets or None,
     )
 
-    for (workflow_id, model_id, effort), ms in groups.items():
+    for (workflow_id, model_id, effort, budget), ms in groups.items():
         trials: list[dict] = []
         for m in ms:
             bd = m.score_breakdown
@@ -229,10 +305,12 @@ def merge_runs(session: Session, source_run_ids: list[int]) -> int:
             # Carry the arm's effort in BOTH the column and config, like
             # _record_pair does — a merged row that cannot state its regime
             # cannot defend its EFF or CON either.
-            config={"merged_from": ordered, "reasoning_effort": effort},
+            config={"merged_from": ordered, "reasoning_effort": effort,
+                    "max_output_tokens": budget},
             transcript_path=None,
             status="scored", score_breakdown=aggregate,
             reasoning_effort=effort,
+            max_output_tokens=budget,
         )
 
     set_run_status(session, new_run_id, "completed")
@@ -372,27 +450,37 @@ def leaderboard(
     # merge_runs refuses to do: effort measurably moves tool-call count (~22%
     # fewer at high than low, runs #107/#108) and therefore EFF.
     # (Every key below is an ARM: `(model_id, effort_or_None)`.)
-    model_objectives: dict[tuple[str, str | None], list[float]] = defaultdict(list)
-    model_subjectives: dict[tuple[str, str | None], list[float]] = defaultdict(list)
-    model_sub_stdevs: dict[tuple[str, str | None], list[float]] = defaultdict(list)
-    model_sub_modes: dict[tuple[str, str | None], list[str]] = defaultdict(list)
+    model_objectives: dict[tuple[str, str | None, int | None], list[float]] = defaultdict(list)
+    model_subjectives: dict[tuple[str, str | None, int | None], list[float]] = defaultdict(list)
+    model_sub_stdevs: dict[tuple[str, str | None, int | None], list[float]] = defaultdict(list)
+    model_sub_modes: dict[tuple[str, str | None, int | None], list[str]] = defaultdict(list)
     model_axes: dict[
-        tuple[str, str | None], dict[str, dict[str, int]]] = defaultdict(dict)
-    scored_counts: dict[tuple[str, str | None], int] = defaultdict(int)
-    invalid_counts: dict[tuple[str, str | None], int] = defaultdict(int)
+        tuple[str, str | None, int | None], dict[str, dict[str, int]]] = defaultdict(dict)
+    scored_counts: dict[tuple[str, str | None, int | None], int] = defaultdict(int)
+    invalid_counts: dict[tuple[str, str | None, int | None], int] = defaultdict(int)
     # Ability card (spec B): per-match FINAL OVR (CON already baked in for
     # multi-trial rows) + base OVR + con + stats, via the aggregate-aware guard.
-    model_final_ovrs: dict[tuple[str, str | None], list[int]] = defaultdict(list)
-    model_base_ovrs: dict[tuple[str, str | None], list[int]] = defaultdict(list)
-    model_cons: dict[tuple[str, str | None], list[int]] = defaultdict(list)
+    model_final_ovrs: dict[tuple[str, str | None, int | None], list[int]] = defaultdict(list)
+    model_base_ovrs: dict[tuple[str, str | None, int | None], list[int]] = defaultdict(list)
+    model_cons: dict[tuple[str, str | None, int | None], list[int]] = defaultdict(list)
     model_stat_lists: dict[
-        tuple[str, str | None], dict[str, list[int]]] = defaultdict(
+        tuple[str, str | None, int | None], dict[str, list[int]]] = defaultdict(
         lambda: defaultdict(list))
+    # Output-budget truncation per contestant. Kept as a list of per-match
+    # blocks (None for a match recorded before the instrument existed) so the
+    # row can report coverage rather than silently averaging measured and
+    # unmeasured matches into one confident number.
+    model_truncations: dict[
+        tuple[str, str | None, int | None], list[dict | None]] = defaultdict(list)
+    model_malformed: dict[
+        tuple[str, str | None, int | None], list[dict | None]] = defaultdict(list)
 
     for m in matches:
-        # A contestant is (model, effort) — the same model at two efforts ranks
-        # as two rows, never one averaged row.
-        key = (m.model_id, m.reasoning_effort or None)
+        # A contestant is (model, effort, budget) — the same model at two
+        # efforts, or at two output budgets, ranks as two rows rather than one
+        # averaged row. Budget earns its place by measurement: runs #118/#119
+        # differ by 16.4 mean objective on the budget alone.
+        key = (m.model_id, m.reasoning_effort or None, m.max_output_tokens or None)
         if m.status == "invalid":
             invalid_counts[key] += 1
             continue
@@ -400,6 +488,8 @@ def leaderboard(
         if m.objective_score is not None:
             model_objectives[key].append(m.objective_score)
         bd = m.score_breakdown or {}
+        model_truncations[key].append(_match_truncation(bd))
+        model_malformed[key].append(_match_malformed(bd))
         judge = bd.get("judge") or {}
         # Effective subjective score: prefer the breakdown's judge block, else fall
         # back to the top-level column (oldest rows persisted the score only there).
@@ -458,7 +548,7 @@ def leaderboard(
 
     rows = []
     for key in set(scored_counts) | set(invalid_counts):
-        model_id, effort = key
+        model_id, effort, budget = key
         objectives = model_objectives.get(key, [])
         subs = model_subjectives.get(key, [])
         stdevs = model_sub_stdevs.get(key, [])
@@ -488,8 +578,11 @@ def leaderboard(
             if fully_carded else None)
         rows.append({
             "model_id": model_id,
-            # The arm this row scores; None = the run did not pin one.
+            # The arm this row scores; None on either axis = the run did not pin
+            # that one. Both must be surfaced or two arms of a model are
+            # indistinguishable: same model, workflow, status and radar.
             "reasoning_effort": effort,
+            "max_output_tokens": budget,
             "mean_objective": (round(sum(objectives) / len(objectives), 1)
                                if objectives else None),
             "card_mean": card_mean,
@@ -499,6 +592,10 @@ def leaderboard(
             "subjective_mode": _agg_mode(model_sub_modes.get(key, [])),
             "match_count": scored_counts.get(key, 0),
             "invalid_count": invalid_counts.get(key, 0),
+            # None = this contestant's matches predate the instrument, NOT
+            # "measured and clean". Boards before run #115 really did truncate.
+            "truncation": _agg_truncation(model_truncations.get(key, [])),
+            "malformed": _agg_malformed(model_malformed.get(key, [])),
             "_obj_tb": scoring.objective_tiebreak_key(dict(model_axes.get(key, {}))),
         })
 
@@ -515,7 +612,8 @@ def leaderboard(
         return (1, -(r["mean_objective"] or 0.0), r["_obj_tb"])
 
     rows.sort(key=lambda r: (_order_key(r), r["model_id"],
-                             r["reasoning_effort"] or ""))
+                             r["reasoning_effort"] or "",
+                             r["max_output_tokens"] or 0))
     rank = 0
     prev_key: object = object()
     for i, r in enumerate(rows):
@@ -663,6 +761,9 @@ def _match_to_dict(m: ArenaMatch) -> dict:
         # None, not '', at the dict boundary: callers reason about "unpinned" as
         # an absence, and '' would read as a real level in JSON.
         "reasoning_effort": m.reasoning_effort or None,
+        # 0 is the stored "unpinned"; None at the dict boundary, because callers
+        # reason about unpinned as an ABSENCE and 0 would read as a real budget.
+        "max_output_tokens": m.max_output_tokens or None,
         "status": m.status,
         "objective_score": m.objective_score,
         "judged_score": m.judged_score,
@@ -670,6 +771,11 @@ def _match_to_dict(m: ArenaMatch) -> dict:
         "judge_missing": m.judge_missing,
         "config": m.config,
         "score_breakdown": _serialized_breakdown(m),
+        # Hoisted beside the score, not left inside the breakdown: the match
+        # CELL renders this, and a cell that has to walk into score_breakdown
+        # would show nothing for exactly the wrapped matches that carry it.
+        "truncation": _match_truncation(m.score_breakdown or {}),
+        "malformed": _match_malformed(m.score_breakdown or {}),
         "transcript_path": m.transcript_path,
         "error": m.error,
         "created_at": m.created_at.isoformat() if m.created_at else None,
@@ -682,7 +788,7 @@ def _run_to_dict(run: ArenaRun, *, include_matches: bool = True) -> dict:
     `include_matches` is off for the LIST: `matches` is a lazy relationship, so
     building it costs a query per run and then derives an ability card per match
     (each loading a workflow) — work the runs list discards, since it projects
-    only id/status/created_at/workflow_ids/model_ids/reasoning_efforts. The
+    only id/status/created_at/workflow_ids/model_ids and the arm maps. The
     drilldown (`get_run`) is the caller that genuinely needs them.
     """
     out = {
@@ -698,6 +804,12 @@ def _run_to_dict(run: ArenaRun, *, include_matches: bool = True) -> dict:
         "reasoning_efforts": {
             slug: ([levels] if isinstance(levels, str) else list(levels))
             for slug, levels in (run.reasoning_efforts or {}).items()
+        },
+        # Same normalise-on-read rule as reasoning_efforts: always the LIST form
+        # at the dict boundary so execute, --resume and RunSummary see one shape.
+        "max_output_tokens": {
+            slug: ([budgets] if not isinstance(budgets, list) else list(budgets))
+            for slug, budgets in (run.max_output_tokens or {}).items()
         },
         "error": run.error,
         "created_at": run.created_at.isoformat() if run.created_at else None,

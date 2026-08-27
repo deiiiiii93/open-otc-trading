@@ -46,29 +46,55 @@ def test_registry_find_model_raises_on_unknown():
         reg.find_model("zenmux", "anthropic", "m")
 
 
-def test_find_model_rejects_provider_mismatch_on_matching_channel():
-    md = ModelDescriptor(id="m", provider="anthropic", label="L")
+def test_find_model_ignores_a_stale_provider_value():
+    """`provider` is NOT part of the lookup key, and that is load-bearing.
+
+    It changed meaning on 2026-08-25 (ZenMux gateway routing label -> upstream
+    provider), and 13k+ persisted `AgentMessage.meta` selections carry the old
+    value. Async resume replays them verbatim, so a provider-sensitive lookup
+    would fail every one. Ids are already unique per channel, so nothing is lost.
+    """
+    md = ModelDescriptor(id="m", provider="deepseek", label="L", dispatch_id="m:deepseek")
     cd = ChannelDescriptor(
         name="zm", label="Z", type="zenmux",
         api_key="k", base_url="https://x", anthropic_base_url=None,
         models=(md,), healthy=True,
     )
-    reg = ChannelRegistry(channels=(cd,), default=("zm", "anthropic", "m"))
-    with pytest.raises(KeyError):
-        reg.find_model("zm", "openai", "m")
+    reg = ChannelRegistry(channels=(cd,), default=("zm", "deepseek", "m"))
+    _, found = reg.find_model("zm", "openai", "m")  # the legacy gateway label
+    assert found is md
 
 
-def test_find_model_disambiguates_same_id_different_provider():
-    md_a = ModelDescriptor(id="m", provider="anthropic", label="A")
-    md_o = ModelDescriptor(id="m", provider="openai", label="O")
+def test_find_model_accepts_either_id_spelling():
+    md = ModelDescriptor(id="m", provider="deepseek", label="L", dispatch_id="m:deepseek")
     cd = ChannelDescriptor(
         name="zm", label="Z", type="zenmux",
         api_key="k", base_url="https://x", anthropic_base_url=None,
-        models=(md_a, md_o), healthy=True,
+        models=(md,), healthy=True,
     )
-    reg = ChannelRegistry(channels=(cd,), default=("zm", "openai", "m"))
-    _, found = reg.find_model("zm", "openai", "m")
-    assert found is md_o
+    reg = ChannelRegistry(channels=(cd,), default=("zm", "deepseek", "m"))
+    assert reg.find_model("zm", "", "m")[1] is md            # bare
+    assert reg.find_model("zm", "", "m:deepseek")[1] is md    # upstream-pinned
+
+
+def test_find_model_refuses_an_ambiguous_bare_id_across_upstreams():
+    """Two upstream arms of one model are legal; picking one for a bare id is not.
+
+    Silently choosing would BE the routing lottery the upstream pin exists to
+    prevent — the `:deepseek` vs `:alibaba` split scored 94.9 and 7.7 on the same
+    model. The caller has to say which.
+    """
+    good = ModelDescriptor(id="m", provider="deepseek", label="A", dispatch_id="m:deepseek")
+    bad = ModelDescriptor(id="m", provider="alibaba", label="B", dispatch_id="m:alibaba")
+    cd = ChannelDescriptor(
+        name="zm", label="Z", type="zenmux",
+        api_key="k", base_url="https://x", anthropic_base_url=None,
+        models=(good, bad), healthy=True,
+    )
+    reg = ChannelRegistry(channels=(cd,), default=("zm", "deepseek", "m"))
+    with pytest.raises(KeyError, match="ambiguous"):
+        reg.find_model("zm", "", "m")
+    assert reg.find_model("zm", "", "m:alibaba")[1] is bad
 
 
 def test_find_model_searches_past_first_channel():
@@ -175,8 +201,14 @@ def test_example_config_pins_exactly_one_extractor_model():
               for ch in reg.channels for md in ch.models if "extractor" in md.tags]
     assert len(tagged) == 1, f"expected exactly one extractor-tagged model, got {tagged}"
     _channel, provider, model_id = tagged[0]
+    # The three axes, post-2026-08-25: bare id, upstream provider, and a
+    # composed dispatch id. ZenMux routes an UNPINNED id to an arbitrary
+    # upstream, and the `alibaba` one breaks streaming tool calls.
     assert model_id == "deepseek/deepseek-v4-flash"
-    assert provider == "openai"  # Zenmux OpenAI-compatible gateway, shares ZENMUX_API_KEY
+    assert provider == "deepseek"
+    md = reg.resolve_default_model("zenmux", model_id)
+    assert md is not None and md.wire_id == "deepseek/deepseek-v4-flash:deepseek"
+    assert md.protocol == "openai_chat"
 
 
 YAML_FIXTURE = """
@@ -351,17 +383,48 @@ channels:
     anthropic_base_url: https://y
     models:
       - id: m
-        provider: meta
+        provider: "not a slug"
+        protocol: openai_chat
         label: M
 """
     path = _write_yaml(tmp_path, body)
-    with pytest.raises(ValueError, match="provider must be 'anthropic' or 'openai'"):
+    with pytest.raises(ValueError, match="must be a ZenMux upstream slug"):
         channel_registry.load_from_path(path, force_reread_dotenv=False)
 
 
-def test_load_parses_protocol_override(tmp_path, monkeypatch):
-    """A model may declare protocol != provider (minimax: provider openai,
-    Anthropic wire format); wire_protocol reflects the override, provider does not."""
+def test_load_raises_when_a_zenmux_model_declares_no_protocol(tmp_path, monkeypatch):
+    """protocol is REQUIRED on a new-style zenmux row.
+
+    It used to default to `provider`, which worked only while provider held the
+    gateway routing label. Now that provider names the upstream, silently
+    defaulting would route `deepseek/deepseek-v4-flash` over a protocol called
+    "deepseek" — so the loader asks instead of guessing.
+    """
+    monkeypatch.setenv("K", "x")
+    body = """
+channels:
+  - name: zenmux
+    label: Zenmux
+    type: zenmux
+    api_key_env: K
+    base_url: https://x
+    anthropic_base_url: https://y
+    models:
+      - id: deepseek/deepseek-v4-flash
+        provider: deepseek
+        label: M
+"""
+    path = _write_yaml(tmp_path, body)
+    with pytest.raises(ValueError, match="protocol is required"):
+        channel_registry.load_from_path(path, force_reread_dotenv=False)
+
+
+def test_the_three_axes_are_independent(tmp_path, monkeypatch):
+    """id / provider / protocol describe three unrelated things, and a real row
+    disagrees on all three: MiniMax's model, on MiniMax's metal, spoken over
+    Anthropic Messages because the OpenAI endpoint leaves its tool calls
+    unparsed. The dispatch id is composed from the first two only.
+    """
     monkeypatch.setenv("K", "x")
     body = """
 channels:
@@ -373,26 +436,82 @@ channels:
     anthropic_base_url: https://y
     models:
       - id: minimax/minimax-m3
-        provider: openai
+        provider: minimax
         protocol: anthropic
         label: MiniMax M3
 """
     path = _write_yaml(tmp_path, body)
     reg = channel_registry.load_from_path(path, force_reread_dotenv=False)
     md = reg.channels[0].models[0]
-    assert md.provider == "openai"
+    assert md.id == "minimax/minimax-m3"
+    assert md.provider == "minimax"
     assert md.protocol == "anthropic"
-    assert md.wire_protocol == "anthropic"
+    assert md.wire_id == "minimax/minimax-m3:minimax"
 
 
-def test_load_defaults_protocol_to_provider(tmp_path, monkeypatch):
-    monkeypatch.setenv("TEST_ZENMUX_KEY", "zm_fake")
-    monkeypatch.setenv("TEST_DEEPSEEK_KEY", "ds_fake")
-    path = _write_yaml(tmp_path)
+def test_legacy_row_is_translated_in_place(tmp_path, monkeypatch):
+    """A pre-2026-08-25 row still loads: the upstream is recovered from the id's
+    `:suffix` and the old gateway routing label becomes the protocol.
+
+    The discriminator is the SUFFIX, never the provider value — "anthropic" is
+    both a legacy gateway label and a real upstream, so only the row's shape
+    tells the two schemas apart.
+    """
+    monkeypatch.setenv("K", "x")
+    body = """
+channels:
+  - name: zenmux
+    label: Zenmux
+    type: zenmux
+    api_key_env: K
+    base_url: https://x
+    anthropic_base_url: https://y
+    models:
+      - id: deepseek/deepseek-v4-flash:deepseek
+        provider: openai
+        label: Legacy DeepSeek
+      - id: z-ai/glm-5.2:bigmodel
+        provider: openai
+        protocol: anthropic
+        label: Legacy GLM
+"""
+    path = _write_yaml(tmp_path, body)
     reg = channel_registry.load_from_path(path, force_reread_dotenv=False)
-    gpt = next(m for m in reg.channels[0].models if m.id == "openai/gpt-5.4")
-    assert gpt.protocol == ""            # not declared
-    assert gpt.wire_protocol == "openai"  # falls back to provider
+    ds, glm = reg.channels[0].models
+    # provider was the gateway label; the upstream came out of the id.
+    assert (ds.id, ds.provider, ds.protocol) == (
+        "deepseek/deepseek-v4-flash", "deepseek", "openai_chat")
+    assert ds.wire_id == "deepseek/deepseek-v4-flash:deepseek"
+    # An explicitly declared protocol survives translation untouched.
+    assert (glm.id, glm.provider, glm.protocol) == ("z-ai/glm-5.2", "bigmodel", "anthropic")
+    assert glm.wire_id == "z-ai/glm-5.2:bigmodel"
+
+
+def test_legacy_unpinned_row_is_left_unpinned_not_guessed(tmp_path, monkeypatch):
+    """No suffix and no protocol: the pre-pinning shape.
+
+    It must NOT compose `<id>:openai` — the gateway label is not an upstream, and
+    minting a pin nobody chose is worse than the lottery it would pretend to fix.
+    """
+    monkeypatch.setenv("K", "x")
+    body = """
+channels:
+  - name: zenmux
+    label: Zenmux
+    type: zenmux
+    api_key_env: K
+    base_url: https://x
+    anthropic_base_url: https://y
+    models:
+      - id: google/gemini-3.5-flash
+        provider: openai
+        label: Old Gemini
+"""
+    path = _write_yaml(tmp_path, body)
+    reg = channel_registry.load_from_path(path, force_reread_dotenv=False)
+    md = reg.channels[0].models[0]
+    assert md.wire_id == "google/gemini-3.5-flash"   # unpinned, not ":openai"
+    assert md.protocol == "openai_chat"
 
 
 def test_load_raises_on_zenmux_invalid_protocol(tmp_path, monkeypatch):
@@ -412,8 +531,67 @@ channels:
         label: M
 """
     path = _write_yaml(tmp_path, body)
-    with pytest.raises(ValueError, match="protocol must be 'anthropic' or 'openai'"):
+    with pytest.raises(ValueError, match=r"protocol must be .* got 'hermes'"):
         channel_registry.load_from_path(path, force_reread_dotenv=False)
+
+
+@pytest.mark.parametrize("declared,canonical", [
+    ("openai_chat", "openai_chat"),
+    ("anthropic", "anthropic"),
+    ("openai_responses", "openai_responses"),
+    # Pre-2026-08-25 spellings. "openai" hid WHICH of OpenAI's two APIs was
+    # meant, which is exactly the distinction the deepseek investigation turned
+    # on — but old YAML must keep loading, so they alias rather than fail.
+    ("openai", "openai_chat"),
+    ("responses", "openai_responses"),
+])
+def test_protocol_values_and_their_legacy_aliases(tmp_path, monkeypatch, declared, canonical):
+    monkeypatch.setenv("K", "x")
+    body = f"""
+channels:
+  - name: zenmux
+    label: Zenmux
+    type: zenmux
+    api_key_env: K
+    base_url: https://x
+    anthropic_base_url: https://y
+    models:
+      - id: vendor/m
+        provider: vendor
+        protocol: {declared}
+        label: M
+"""
+    reg = channel_registry.load_from_path(_write_yaml(tmp_path, body), force_reread_dotenv=False)
+    assert reg.channels[0].models[0].protocol == canonical
+
+
+def test_protocol_and_provider_are_no_longer_the_same_allowlist(tmp_path, monkeypatch):
+    """`openai_responses` is a protocol, never an upstream — and an upstream may
+    be any vendor slug, which a protocol may not. The two axes stopped sharing a
+    value space when provider was redefined; this pins that they cannot converge
+    again by accident.
+    """
+    monkeypatch.setenv("K", "x")
+    body = """
+channels:
+  - name: zenmux
+    label: Zenmux
+    type: zenmux
+    api_key_env: K
+    base_url: https://x
+    anthropic_base_url: https://y
+    models:
+      - id: vendor/m
+        provider: openai_responses
+        protocol: openai_responses
+        label: M
+"""
+    reg = channel_registry.load_from_path(_write_yaml(tmp_path, body), force_reread_dotenv=False)
+    md = reg.channels[0].models[0]
+    # A protocol-shaped slug is a legal (if odd) upstream: there is no ZenMux
+    # enumeration endpoint, so upstreams are shape-checked, never allowlisted.
+    assert md.provider == "openai_responses"
+    assert md.wire_id == "vendor/m:openai_responses"
 
 
 def test_load_raises_when_no_channels_declared(tmp_path):

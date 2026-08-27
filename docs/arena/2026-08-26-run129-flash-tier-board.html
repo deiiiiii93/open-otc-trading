@@ -1,0 +1,1180 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OTC Desk Agent Arena — Run #129</title>
+<style>
+:root{
+  --ink:#1a1d21; --muted:#5b6470; --line:#e3e6eb; --bg:#ffffff;
+  --accent:#2f5d8a; --soft:#f4f6f9;
+  --gold:#caa12e; --silver:#9aa0a6; --bronze:#b06a3b; --mid:#3b6fb0; --floor:#c5c9d1;
+  --good:#2e8b57; --neutral:#6b7280; --warn:#d98a2b; --bad:#c0392b; --frontier:#3b6fb0;
+}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+body{
+  font-family:"Charter","Georgia",Cambria,"Times New Roman",serif;
+  color:var(--ink); background:var(--bg); line-height:1.62;
+  max-width:820px; margin:0 auto; padding:56px 40px 80px; font-size:16.5px;
+}
+h1,h2,h3,h4{font-family:-apple-system,"Inter","Segoe UI",Helvetica,Arial,sans-serif;
+  line-height:1.22; letter-spacing:-.01em; color:var(--ink)}
+h1{font-size:2.05rem; margin:.2em 0 .1em; font-weight:800}
+h2{font-size:1.42rem; margin:2.1em 0 .55em; padding-bottom:.28em;
+  border-bottom:2px solid var(--line); font-weight:750}
+h3{font-size:1.12rem; margin:1.7em 0 .5em; font-weight:700; color:#2b3038}
+h1+p em, body>p:first-of-type em{color:var(--muted)}
+p,li{font-size:1rem}
+a{color:var(--accent); text-decoration:none}
+hr{border:none; border-top:1px solid var(--line); margin:2.2em 0}
+code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.86em;
+  background:var(--soft); padding:.1em .35em; border-radius:4px}
+blockquote{margin:1.1em 0; padding:.7em 1.1em; background:var(--soft);
+  border-left:4px solid var(--accent); border-radius:0 6px 6px 0; color:#2b3038}
+blockquote p{margin:.3em 0}
+strong{font-weight:700}
+
+/* tables */
+table{border-collapse:collapse; width:100%; margin:1.1em 0; font-size:.9rem;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+th,td{padding:.5em .7em; border-bottom:1px solid var(--line); text-align:left}
+thead th{background:#f7f9fc; border-bottom:2px solid #d6dbe3; font-weight:700;
+  font-size:.82rem; letter-spacing:.01em; color:#39414c}
+tbody tr:nth-child(even){background:#fbfcfe}
+td:first-child,th:first-child{white-space:nowrap}
+
+/* charts */
+.chart{margin:1.3em 0 1.6em; padding:0}
+.chart .row{display:flex; align-items:center; gap:12px; margin:5px 0;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+.chart .lbl{flex:0 0 168px; text-align:right; font-size:.82rem; color:#39414c; font-weight:600}
+.chart .track{flex:1; height:22px; background:#eef1f5; border-radius:5px; overflow:hidden}
+.chart .bar{display:block; height:100%; border-radius:5px}
+.chart .val{flex:0 0 150px; font-size:.78rem; color:var(--muted); font-variant-numeric:tabular-nums}
+.chart figcaption{margin-top:.7em; font-size:.76rem; color:var(--muted);
+  font-family:-apple-system,"Inter",sans-serif; text-align:right}
+.bar.gold{background:linear-gradient(90deg,#d9b13f,#caa12e)}
+.bar.silver{background:linear-gradient(90deg,#aab0b6,#9aa0a6)}
+.bar.bronze{background:linear-gradient(90deg,#c07c4a,#b06a3b)}
+.bar.mid{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.frontier{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.floor{background:#c5c9d1}
+.bar.good{background:linear-gradient(90deg,#37a169,#2e8b57)}
+.bar.neutral{background:#8a929e}
+.bar.warn{background:linear-gradient(90deg,#e09a3e,#d98a2b)}
+.bar.bad{background:linear-gradient(90deg,#d04b3c,#c0392b)}
+
+/* report header band */
+.masthead{border-bottom:3px solid var(--ink); padding-bottom:.6em; margin-bottom:1.4em}
+.footer-note{margin-top:3em; padding-top:1em; border-top:1px solid var(--line);
+  font-size:.8rem; color:var(--muted); font-family:-apple-system,"Inter",sans-serif}
+
+@page{size:A4; margin:16mm 15mm}
+@media print{
+  body{max-width:none; margin:0; padding:0; font-size:10.6pt}
+  h2{margin-top:1.4em}
+  h2,h3,h4{break-after:avoid}
+  table,.chart,blockquote,figure{break-inside:avoid}
+  tr{break-inside:avoid}
+  a{color:var(--ink)}
+}
+</style>
+</head><body>
+<h1>🏆 OTC Desk Agent Arena — Run #129</h1>
+<p><strong>The flash tier, re-measured on a repaired harness — twice. Seven models × five
+golden workflows × two trials, once at each model's measured effort ceiling and once
+with the whole field pinned to <code>low</code>.</strong></p>
+<p><em>2026-08-27 · ceiling board = merged run <code>#129</code> (<code>#127</code> six models + <code>#128</code> Qwen 3.8
+27B); <code>low</code> board = run <code>#130</code> · 7 models × 5 workflows × 2 trials × 2 efforts =
+</em><em>140 model-trials</em><em> · objective-only scoring (jury off) · </em><em>70 of 70 pairs <code>scored</code>
+across both boards, none <code>invalid</code>, zero malformed tool calls, zero truncated calls,
+every trial measured rather than assumed</em>**</p>
+<hr />
+<h2>Why this board exists</h2>
+<p>Every previous flash-tier board was measured on a harness with defects that were
+invisible from inside it. Four were found and fixed between runs #114 and #126, and
+each one moved scores without touching a model:</p>
+<ol>
+<li><strong>Anthropic-protocol contestants ran capped at 4096 output tokens</strong> — silently,
+   for every board through #114.</li>
+<li><strong>Every ZenMux model id was unpinned</strong>, so each request drew an upstream provider
+   at random and the response named none of them.</li>
+<li><strong>A truncated turn and a malformed tool call were both unmeasurable</strong>, so either
+   could reach a published board as a legitimate score.</li>
+<li><strong>The trap step had been dead since run #12</strong>, and a leaked scenario set had
+   turned another step into a retrieval dead-end.</li>
+</ol>
+<p>The consequence is not that old boards were slightly noisy. Take one model id on one
+workflow — <code>deepseek-v4-flash</code> on <code>risk-manager-control-day</code>, no code change and no
+model change anywhere between these dates:</p>
+<table>
+<thead>
+<tr>
+<th>run</th>
+<th>date</th>
+<th style="text-align: right;">objective</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>#112</td>
+<td>2026-08-17</td>
+<td style="text-align: right;"><strong>93.6</strong></td>
+</tr>
+<tr>
+<td>#121 / #122 / #125</td>
+<td>2026-08-21 → 08-25</td>
+<td style="text-align: right;"><strong>7.7</strong> ×3</td>
+</tr>
+<tr>
+<td>#126</td>
+<td>2026-08-25 <em>(upstream pinned)</em></td>
+<td style="text-align: right;"><strong>94.9</strong></td>
+</tr>
+</tbody>
+</table>
+<p>7.7 is not a bad score, it is the <em>prohibition floor</em> — what a transcript earns for
+doing nothing at all, by satisfying every <code>tool_not_called</code> check through inaction. The
+gateway had begun routing that id to a different upstream, which returned tool calls
+with empty identifiers so nothing ever dispatched. A leaderboard cannot be read at all
+under those conditions, so the field was re-measured from scratch on the repaired
+harness.</p>
+<hr />
+<h2>Headline</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align: center;">rk</th>
+<th>Model</th>
+<th style="text-align: center;">eff</th>
+<th style="text-align: center;"><strong>OVR</strong></th>
+<th style="text-align: center;">GRD</th>
+<th style="text-align: center;">ADH</th>
+<th style="text-align: center;">SYN</th>
+<th style="text-align: center;">PRC</th>
+<th style="text-align: center;"><strong>EFF</strong></th>
+<th style="text-align: center;">CON</th>
+<th style="text-align: center;">Objective</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center;">1</td>
+<td><strong>GPT-5.6 Luna</strong></td>
+<td style="text-align: center;">max</td>
+<td style="text-align: center;"><strong>84</strong></td>
+<td style="text-align: center;">91</td>
+<td style="text-align: center;">94</td>
+<td style="text-align: center;">95</td>
+<td style="text-align: center;">90</td>
+<td style="text-align: center;"><strong>47</strong></td>
+<td style="text-align: center;">89</td>
+<td style="text-align: center;">92.6</td>
+</tr>
+<tr>
+<td style="text-align: center;">2</td>
+<td><strong>Qwen 3.8 27B</strong></td>
+<td style="text-align: center;">max</td>
+<td style="text-align: center;"><strong>84</strong></td>
+<td style="text-align: center;">91</td>
+<td style="text-align: center;">86</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">89</td>
+<td style="text-align: center;"><strong>58</strong></td>
+<td style="text-align: center;">87</td>
+<td style="text-align: center;">89.6</td>
+</tr>
+<tr>
+<td style="text-align: center;">3</td>
+<td><strong>Gemini 3.7 Flash</strong></td>
+<td style="text-align: center;">xhigh</td>
+<td style="text-align: center;"><strong>83</strong></td>
+<td style="text-align: center;">95</td>
+<td style="text-align: center;">92</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">92</td>
+<td style="text-align: center;"><strong>31</strong></td>
+<td style="text-align: center;">89</td>
+<td style="text-align: center;"><strong>94.3</strong></td>
+</tr>
+<tr>
+<td style="text-align: center;">4</td>
+<td><strong>DeepSeek V4 Flash</strong> <em>(pinned)</em></td>
+<td style="text-align: center;">max</td>
+<td style="text-align: center;"><strong>81</strong></td>
+<td style="text-align: center;">91</td>
+<td style="text-align: center;">91</td>
+<td style="text-align: center;">97</td>
+<td style="text-align: center;">88</td>
+<td style="text-align: center;"><strong>54</strong></td>
+<td style="text-align: center;">69</td>
+<td style="text-align: center;">90.6</td>
+</tr>
+<tr>
+<td style="text-align: center;">5</td>
+<td><strong>Hunyuan 3</strong></td>
+<td style="text-align: center;">xhigh</td>
+<td style="text-align: center;"><strong>80</strong></td>
+<td style="text-align: center;">88</td>
+<td style="text-align: center;">93</td>
+<td style="text-align: center;">77</td>
+<td style="text-align: center;">82</td>
+<td style="text-align: center;"><strong>78</strong></td>
+<td style="text-align: center;">50</td>
+<td style="text-align: center;">86.1</td>
+</tr>
+<tr>
+<td style="text-align: center;">6</td>
+<td><strong>MiniMax M3</strong></td>
+<td style="text-align: center;">max</td>
+<td style="text-align: center;"><strong>72</strong></td>
+<td style="text-align: center;">79</td>
+<td style="text-align: center;">86</td>
+<td style="text-align: center;">79</td>
+<td style="text-align: center;">82</td>
+<td style="text-align: center;"><strong>55</strong></td>
+<td style="text-align: center;">58</td>
+<td style="text-align: center;">83.0</td>
+</tr>
+<tr>
+<td style="text-align: center;">7</td>
+<td><strong>MiMo V2.5</strong></td>
+<td style="text-align: center;">high</td>
+<td style="text-align: center;"><strong>70</strong></td>
+<td style="text-align: center;">77</td>
+<td style="text-align: center;">80</td>
+<td style="text-align: center;">81</td>
+<td style="text-align: center;">82</td>
+<td style="text-align: center;"><strong>63</strong></td>
+<td style="text-align: center;">52</td>
+<td style="text-align: center;">80.0</td>
+</tr>
+</tbody>
+</table>
+<p><code>OVR = round(0.32·GRD + 0.26·ADH + 0.16·SYN + 0.16·EFF + 0.10·PRC)</code>. The jury is off,
+so no subjective score enters the ranking.</p>
+<p><strong>The board's best operator on raw correctness does not win, and neither does the
+second-best.</strong> Gemini 3.7 Flash leads the objective axis by 1.7 points and places third.
+Qwen 3.8 27B is <strong>fourth on objective (89.6) and second on OVR</strong>, on efficiency alone.
+Luna takes the top spot from Qwen on the ADH tie-break, both being OVR 84.</p>
+<p><em>Scored on <code>par_tool_calls</code> calibrated for <code>risk-limit-breach-day</code> (25) and
+<code>ops-settlement-day</code> (30) — see <a href="#calibrating-eff">Calibrating EFF</a>. Before that
+calibration this same board read Luna 81 / DeepSeek 81 / Gemini 80, i.e. DeepSeek 2nd
+and Gemini 3rd. </em><em>Objective scores are untouched; only EFF was re-derived.</em>**</p>
+<hr />
+<h2>What changed in the harness</h2>
+<p>Each item below is a measurement, not a refactor. The evidence for each is what
+justifies discarding the boards that preceded it.</p>
+<h3>1. The Anthropic protocol had a hidden 4096-token output cap</h3>
+<p><code>langchain_anthropic</code> applies <code>_FALLBACK_MAX_OUTPUT_TOKENS = 4096</code> whenever it has no
+profile for a model id — and it has none for <strong>any</strong> id routed through ZenMux, because
+the vendor prefix defeats its lookup. Every Anthropic-protocol contestant in every
+board through #114 therefore ran capped, while every OpenAI-protocol contestant ran at
+its provider default. <code>build_agent_model</code> now passes an explicit 32768.</p>
+<p><strong>Why it was invisible:</strong> a truncated turn emits a lone <code>reasoning</code> block — no text, no
+tool call — so the step produces nothing, yet the span is <code>status=success</code> because the
+HTTP call genuinely succeeded. <code>_is_infra_blank</code> corroborates blankness with step
+<em>errors</em>, and a truncation raises none, so the match is recorded <code>scored</code>.</p>
+<p><strong>Measured cost</strong> (runs #118 vs #119, budget as the only variable): an artifact was
+produced in <strong>0 of 8</strong> trials at 4096 and <strong>7 of 8</strong> at 32768, a <strong>16.4-point</strong> mean
+objective difference.</p>
+<p>In this board, <strong>MiniMax M3 is the only Anthropic-protocol contestant</strong> — and it is the
+model whose historical mean moves most.</p>
+<h3>2. ZenMux upstream providers were a per-request lottery</h3>
+<p>ZenMux serves one model id from several upstreams and picks one <strong>per request</strong>; the
+response body names none of them. Measured on the streaming wire, one <code>task</code> call each:</p>
+<table>
+<thead>
+<tr>
+<th>route</th>
+<th>tool-call continuation deltas</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>deepseek/deepseek-v4-flash</code> on <strong>deepseek</strong></td>
+<td><code>id</code>/<code>name</code> = <code>null</code> — correct (30 of 31)</td>
+</tr>
+<tr>
+<td><code>deepseek/deepseek-v4-flash</code> on <strong>alibaba</strong></td>
+<td><code>id</code>/<code>name</code> = <strong><code>""</code></strong> (9 of 10)</td>
+</tr>
+</tbody>
+</table>
+<p>langchain's accumulator treats a present-but-empty string as an update and overwrites
+the real identifiers from the first delta, while <code>arguments</code> fragments concatenate
+correctly — <strong>intact args, hollow ids</strong>. <code>task()</code> rejects every such call, the agent
+re-issues, and it loops to the recursion limit.</p>
+<p>The full damage record for one model id, with <strong>no code change anywhere</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>run</th>
+<th>date</th>
+<th>route</th>
+<th style="text-align: center;">objective</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>#112</td>
+<td>08-17</td>
+<td>unpinned → landed on deepseek</td>
+<td style="text-align: center;">93.6</td>
+</tr>
+<tr>
+<td>#121</td>
+<td>08-21</td>
+<td>unpinned → landed on alibaba</td>
+<td style="text-align: center;"><strong>7.7</strong></td>
+</tr>
+<tr>
+<td>#122</td>
+<td>08-24</td>
+<td>unpinned → landed on alibaba</td>
+<td style="text-align: center;"><strong>7.7</strong></td>
+</tr>
+<tr>
+<td>#125</td>
+<td>08-25</td>
+<td>unpinned → landed on alibaba</td>
+<td style="text-align: center;"><strong>7.7</strong></td>
+</tr>
+<tr>
+<td>#126</td>
+<td>08-25</td>
+<td><strong>pinned to deepseek</strong></td>
+<td style="text-align: center;"><strong>94.9</strong></td>
+</tr>
+</tbody>
+</table>
+<p>7.7 is the prohibition floor, which inaction earns by satisfying every
+<code>tool_not_called</code> check — so it does not read as a failure, it reads as a model that
+declined to act.</p>
+<p><strong>Every ZenMux model now declares its upstream.</strong> Policy: pin the model owner's own
+infrastructure. The pinned DeepSeek route ranks as its <strong>own contestant</strong>
+(<code>deepseek-v4-flash-ds</code>), because the old slug holds both 93.6 and 7.7 and no single
+row can honestly average them. Exposure was worst where nobody looked —
+<code>deepseek-v4-pro</code> and <code>glm-5.2</code> had six upstreams each.</p>
+<p>Alongside the pinning, the registry schema was rewritten so the three routing axes are
+independent and legible: <code>id</code> (the model), <code>provider</code> (the upstream serving it),
+<code>protocol</code> (the wire format). Previously <code>provider</code> held ZenMux's gateway routing
+label while the upstream rode inside the id, so one row could read
+<code>qwen/qwen3.7-max:alibaba</code> / <code>openai</code> / <code>anthropic</code> — three vendor-shaped words meaning
+three different things. That change is legibility, not behaviour; it is listed here
+because it is what made the qwen drift below findable.</p>
+<h3>3. Two silent-failure detectors were added</h3>
+<p>Both mirror the same design and both are <strong>caveats on a measurement, never automatic
+invalidation</strong> — the harness cannot know whether a lost turn was scoring-critical, and
+sweeping such matches to <code>invalid</code> would silently shrink historical boards.</p>
+<ul>
+<li><strong>Truncation</strong> — reads <code>stop_reason: "max_tokens"</code> (Anthropic) <em>and</em>
+  <code>finish_reason: "length"</code> (OpenAI). A detector that knows only one goes blind the
+  moment the other protocol's budget is pinned. The expensive case is
+  <code>severed_tool_call</code>: the model had chosen its tool and the cap cut the JSON argument,
+  so the call never ran.</li>
+<li><strong>Malformed tool calls</strong> — counts calls returned with an empty <code>id</code> and/or <code>name</code>.
+  This is the defect in §2, and it was invisible to every other gate: nothing raises,
+  so no step records an error; nothing truncates, so the truncation flag reads a clean
+  zero; and the resulting 7.7 is not zero.</li>
+</ul>
+<p>Three absence rules apply to both: never appended to a step's <code>errors</code> (that list feeds
+the infra-blank gate, so putting it there would <em>be</em> the invalidation this design
+rejects); <code>null</code> means <strong>never measured</strong> and is not <code>calls: 0</code>; and both are carried
+at the breakdown's top level, because <code>fold_trial_breakdowns</code> does not lift <code>diagnosis</code>.</p>
+<p><strong>This board reads a measured zero on both, for all seven models and all 35 matches</strong>
+(<code>matches_measured</code> 5/5 per model). That is the first board that can say so — and
+<code>null</code> would not have been good enough, because <code>null</code> means never measured, not zero.</p>
+<h3>4. Trap and fixture repairs</h3>
+<ul>
+<li>The step-8 prohibition had been <strong>dead at 5/99 since run #12</strong>. Honest survivors
+  were probing the exact requested set name, taking the "not found" error and
+  abstaining — behaviour the bare check scored identically to silently substituting a
+  different scenario. The check now exempts a <em>failed</em> probe of the exact referent
+  (a probe is only a probe if it failed; otherwise <code>generate_scenario_set</code> minting the
+  set under the requested name would walk straight through), and pairs the prohibition
+  with a neutrally-worded <code>record_answer</code> null.</li>
+<li>A leaked near-miss scenario set (<code>stagflation-shock-2011-compact</code>) had sat beside the
+  reserved name for five weeks — a reserved-name guard cannot see a near-miss, and a
+  model asked for a set that does not exist <strong>invents one</strong>. It turned the trap into a
+  141 KB retrieval problem: 273 calls and 91 errors in that step alone on run #109.
+  <code>_purge_match_scenario_sets</code> now reclaims model-created sets on trace + baseline
+  evidence.</li>
+</ul>
+<h3>5. The contestant key was widened</h3>
+<p>A contestant is now <code>(model_id, reasoning_effort, max_output_tokens)</code>. Effort moves
+tool-call count by ~22% between <code>low</code> and <code>high</code>, so it moves EFF and CON; budget gates
+performance as a cliff. Two efforts are two operating regimes, never one averaged row.
+Effort ladders are <strong>measured per route</strong> and vendored, because models.dev was wrong for
+every route that mattered and mostly <strong>too narrow</strong> — the dangerous direction.</p>
+<hr />
+<h2>Why the historical means cannot be compared</h2>
+<p>Per-model objective means, split at the boundaries above:</p>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th>protocol</th>
+<th style="text-align: center;">≤ #114</th>
+<th style="text-align: center;">#115–#126</th>
+<th style="text-align: center;"><strong>#127</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>MiniMax M3</strong></td>
+<td>anthropic</td>
+<td style="text-align: center;"><strong>48.2</strong> <em>(n=13)</em></td>
+<td style="text-align: center;">87.2 <em>(n=3)</em></td>
+<td style="text-align: center;"><strong>83.0</strong> <em>(n=5)</em></td>
+</tr>
+<tr>
+<td>DeepSeek V4 Flash <em>(unpinned)</em></td>
+<td>openai_chat</td>
+<td style="text-align: center;">81.2 <em>(n=30)</em></td>
+<td style="text-align: center;"><strong>50.2</strong> <em>(n=6)</em></td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Flash <em>(pinned)</em></td>
+<td>openai_chat</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;"><strong>90.6</strong> <em>(n=5)</em></td>
+</tr>
+<tr>
+<td>GPT-5.6 Luna</td>
+<td>openai_chat</td>
+<td style="text-align: center;">89.2 <em>(n=38)</em></td>
+<td style="text-align: center;">91.6 <em>(n=6)</em></td>
+<td style="text-align: center;">92.6 <em>(n=5)</em></td>
+</tr>
+<tr>
+<td>Gemini 3.7 Flash</td>
+<td>openai_chat</td>
+<td style="text-align: center;">97.8 <em>(n=5)</em></td>
+<td style="text-align: center;">92.3 <em>(n=2)</em></td>
+<td style="text-align: center;">94.3 <em>(n=5)</em></td>
+</tr>
+<tr>
+<td>Hunyuan 3</td>
+<td>openai_chat</td>
+<td style="text-align: center;">75.0 <em>(n=10)</em></td>
+<td style="text-align: center;">78.2 <em>(n=2)</em></td>
+<td style="text-align: center;">86.1 <em>(n=5)</em></td>
+</tr>
+<tr>
+<td>MiMo V2.5</td>
+<td>openai_chat</td>
+<td style="text-align: center;">78.4 <em>(n=19)</em></td>
+<td style="text-align: center;">85.3 <em>(n=2)</em></td>
+<td style="text-align: center;">80.0 <em>(n=5)</em></td>
+</tr>
+</tbody>
+</table>
+<p>Two rows carry the whole argument:</p>
+<ul>
+<li><strong>MiniMax M3, the only Anthropic-protocol contestant, moves 48.2 → 83.0.</strong> That is
+  the profile the output-budget fix predicts, and the controlled A/B (#118 vs #119)
+  independently measured a 16.4-point budget effect. It is <em>consistent with</em> the cap
+  being lifted; it is not proof, because these era means also span manifest changes
+  and the trap repair.</li>
+<li><strong>DeepSeek V4 Flash's unpinned slug goes 81.2 → 50.2 while getting better</strong>, because
+  the lottery started landing on the broken upstream. Its pinned successor scores 90.6.</li>
+</ul>
+<p><strong>These era means are not clean comparisons</strong> — they pool different workflow mixes,
+manifest versions and field sizes. They are shown to establish that the harness moved
+scores by more than the models differ from each other, which is the only claim needed
+to justify a fresh board.</p>
+<hr />
+<h2>Calibrating EFF</h2>
+<p>Two of the five workflows had never been calibrated. <code>risk-limit-breach-day</code> and
+<code>ops-settlement-day</code> declared no <code>par_tool_calls</code>, so <code>designed_par</code> fell back to the
+<strong>theoretical minimum</strong> — the sum of each step's <code>expected_tools</code>, 11 and 10 — and both
+stayed on the legacy hyperbolic EFF curve.</p>
+<p>That fallback exists so the shared scoring kernel never regresses a workflow nobody has
+calibrated yet. It is not a par. <strong>No trial in the arena's history has ever come close
+to either number</strong>: the leanest limits run ever recorded is 15 calls, the leanest ops
+run 20. Scoring against a target the design has never observed is not a hard standard,
+it is a broken instrument — every model on both workflows was being measured against a
+run that does not exist.</p>
+<p><strong>Method — the same one the only real precedent used.</strong> Of the three already-calibrated
+workflows, exactly one has an empirical anchor: <code>high-board-portfolio-review-day</code>
+declares 24, and 24 is the <strong>median of its 22 perfect trials</strong>. The flagship's 24 is
+<em>not</em> a usable precedent (it has only 2 perfect trials ever, 42 and 50 calls, so its par
+sits at the 0th percentile — it was derived analytically as 11 expected + ~13 counted
+overhead), and <code>trader-rfq-booking-day</code> has no perfect trials at all.</p>
+<p>So: <strong>median of fully-correct trials on the current manifest.</strong></p>
+<p>One correction was needed before that median meant anything. Eight runs in this
+database are not runs at all but <strong>merges</strong> — <code>merge_runs</code> folds its sources' per-trial
+breakdowns into a new run rather than referencing them, so a naive sweep of
+<code>arena_match</code> counts those trials twice. They also nest: #58 contains #44, which is
+itself a merge of three earlier runs. Restricted to original runs, each counted once:</p>
+<table>
+<thead>
+<tr>
+<th>workflow</th>
+<th style="text-align: center;">old par</th>
+<th style="text-align: center;">fully-correct trials</th>
+<th style="text-align: center;">models</th>
+<th style="text-align: center;">min</th>
+<th style="text-align: center;">p25</th>
+<th style="text-align: center;"><strong>median</strong></th>
+<th style="text-align: center;">p75</th>
+<th style="text-align: center;">max</th>
+<th style="text-align: center;"><strong>new par</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>risk-limit-breach-day</code></td>
+<td style="text-align: center;">11 †</td>
+<td style="text-align: center;">31</td>
+<td style="text-align: center;">13</td>
+<td style="text-align: center;">15</td>
+<td style="text-align: center;">23.0</td>
+<td style="text-align: center;"><strong>25.0</strong></td>
+<td style="text-align: center;">31.0</td>
+<td style="text-align: center;">85</td>
+<td style="text-align: center;"><strong>25</strong></td>
+</tr>
+<tr>
+<td><code>ops-settlement-day</code></td>
+<td style="text-align: center;">10 †</td>
+<td style="text-align: center;">13</td>
+<td style="text-align: center;"><strong>3</strong></td>
+<td style="text-align: center;">21</td>
+<td style="text-align: center;">26.0</td>
+<td style="text-align: center;"><strong>30.0</strong></td>
+<td style="text-align: center;">35.0</td>
+<td style="text-align: center;">52</td>
+<td style="text-align: center;"><strong>30</strong></td>
+</tr>
+</tbody>
+</table>
+<p>† theoretical-minimum fallback, not a declared par.</p>
+<p>The de-duplication did not move either median — duplication is symmetric and a median
+shrugs it off. That is exactly why it was worth catching: the statistic looked fine, and
+only the sample size gave it away (36 "trials" from a workflow with twelve real runs).
+<strong>Check <code>n</code> against the number of runs that could have produced it, not just the
+answer.</strong></p>
+<p>Counting is against <code>counts_detail.tool_calls</code>, which <strong>excludes</strong> <code>META_TOOLS</code> (<code>task</code>,
+<code>read_file</code>, <code>write_todos</code>) — a skill-file read must never enter a par, or the
+denominator outgrows the numerator it is compared against.</p>
+<p><strong>Both pars survived a hard test.</strong> They were first derived before this report's <code>low</code>
+arm existed, on roughly half the sample. Adding 7 trials to one and 2 to the other moved
+<code>risk-limit-breach-day</code> by a single call (26 → 25) and <code>ops-settlement-day</code> not at all.
+A doubled sample and an entirely new effort regime shifting par by one call is the
+evidence these are anchored rather than lucky.</p>
+<p><strong>But par drifts with the effort mix of whoever ran the boards</strong>, and that is a real
+limitation of the method rather than of these two numbers. On <code>risk-limit-breach-day</code>
+the <code>low</code> trials sit at median 23 and the <code>max</code> trials at 27; a low-heavy sample
+therefore tightens EFF for every model, permanently. 25 leans low deliberately — the
+desk default is <code>low</code>, and an <strong>inflated par hands back free EFF credit</strong>, which
+corrupts a ranking, whereas a par slightly too strict only compresses one axis.
+<code>ops-settlement-day</code> shows no such skew (low 30.0 against max 29.5).</p>
+<p><code>ops-settlement-day</code>'s par is still <strong>provisional, and on breadth rather than depth</strong>.
+Its 13 trials come from only <strong>three models</strong>. <code>high-board-portfolio-review-day</code>'s 24
+rests on 22 trials and <code>risk-limit-breach-day</code>'s 25 on 31 trials from thirteen models. A
+par set by three models can encode their shared habits as the standard; the manifest
+flags it for re-derivation when a fourth and fifth model finally post a fully-correct
+trial there.</p>
+<h3>This re-scores history, and two boards go DOWN</h3>
+<p>Ability cards are <strong>derived on read</strong>, never migrated — so changing a par re-scores every
+stored match on that workflow, retroactively. The blast radius is <strong>19 runs, 103 matches,
+191 trials</strong>. Note this tally deliberately <em>keeps</em> merged runs: they are themselves
+published boards whose numbers shift. Only the par derivation excludes them. Same table,
+opposite rule, because one question is "what does a competent run cost" and the other is
+"what on the site changes".</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th style="text-align: center;">EFF</th>
+<th style="text-align: center;">OVR</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>mean, all 191 affected trials</td>
+<td style="text-align: center;">37.2 → <strong>78.0</strong> (+40.8)</td>
+<td style="text-align: center;">84.4 → <strong>90.8</strong> (+6.5)</td>
+</tr>
+</tbody>
+</table>
+<p>Most of that is the broken instrument being repaired. But <strong>runs #103 and #114 lose
+ground</strong> (−13.0 and −8.0 EFF), and that is the calibration working as designed: the
+hyperbolic curve <code>min(1, par/calls)</code> never reaches zero, so it always granted partial
+credit to a runaway. Golf scoring hits <strong>exactly 0 at 2 × par</strong>. An 85-call limits trial
+scored 13 on the old curve and scores <strong>0</strong> now.</p>
+<p>Four published boards are affected — <strong>#101</strong> (a ranked leaderboard board), and the
+provisional cards <strong>#104</strong>, <strong>#113</strong> and <strong>#115</strong>. The site derives every number from the
+database at build time, so these move on the next build whether or not anyone says so.
+They should carry a rescoring note, exactly as #104 already carries one for the
+39 → 38-point manifest change.</p>
+<h3>And #101's new top is not a ranking anyone should trust</h3>
+<p>Calibrating EFF does not just move that board, it <strong>saturates</strong> it:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: center;">rk</th>
+<th>model</th>
+<th style="text-align: center;">OVR</th>
+<th style="text-align: center;">GRD</th>
+<th style="text-align: center;">ADH</th>
+<th style="text-align: center;">SYN</th>
+<th style="text-align: center;">EFF</th>
+<th style="text-align: center;">PRC</th>
+<th style="text-align: right;">objective</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center;">1</td>
+<td>GPT-5.6 Terra</td>
+<td style="text-align: center;">98</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">93</td>
+<td style="text-align: right;">97.4</td>
+</tr>
+<tr>
+<td style="text-align: center;">2</td>
+<td>Kimi 2.7</td>
+<td style="text-align: center;">98</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">87</td>
+<td style="text-align: right;">94.9</td>
+</tr>
+<tr>
+<td style="text-align: center;"><strong>3</strong></td>
+<td><strong>Grok 4.5</strong></td>
+<td style="text-align: center;">98</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">97</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: right;"><strong>100.0</strong></td>
+</tr>
+<tr>
+<td style="text-align: center;">4</td>
+<td>MiMo 2.5 Pro</td>
+<td style="text-align: center;">98</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">97</td>
+<td style="text-align: center;">90</td>
+<td style="text-align: right;">96.2</td>
+</tr>
+</tbody>
+</table>
+<p>Four models tie at OVR 98 on <strong>identical</strong> grounding, adherence and synthesis. The order
+is settled by EFF and then PRC — which places <strong>Grok 4.5 third with a perfect 100.0
+objective score</strong>, behind models scoring 97.4 and 94.9, for spending two more tool calls.
+The top slot is not even robust to the constant: at par 26 it is Grok 4.5, at par 25 it
+is GPT-5.6 Terra. One call of calibration flips the podium.</p>
+<p>That is not a scoring defect. It is <code>risk-limit-breach-day</code> reporting that it can no
+longer separate a strong field — <strong>34 of its 36 checks pass for every contestant</strong> — and
+it is the same finding this board makes about the flash tier, one layer down. Once
+correctness saturates, EFF <em>is</em> the ranking. Publishing #101 as an ordered leaderboard
+would present a tie-break artefact as a result.</p>
+<h2>The result: efficiency is the entire ranking</h2>
+<p>The correctness axes are saturated. Across seven models: GRD 77–95 (span 18), ADH 80–94
+(14), SYN 77–99 (22), PRC 82–92 (10). <strong>EFF spans 31 to 78 — a span of 47</strong>, twice the
+widest correctness axis, and it stays that way <em>after</em> a calibration that raised almost
+every model's EFF.</p>
+<p>Every model is at its own measured ceiling, and every model pays for it. Tool calls per
+trial, against each workflow's calibrated par:</p>
+<table>
+<thead>
+<tr>
+<th>workflow</th>
+<th style="text-align: center;">par</th>
+<th style="text-align: center;">Luna</th>
+<th style="text-align: center;">Qwen</th>
+<th style="text-align: center;">Gemini</th>
+<th style="text-align: center;">DeepSeek</th>
+<th style="text-align: center;">Hunyuan</th>
+<th style="text-align: center;">MiniMax</th>
+<th style="text-align: center;">MiMo</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>risk-manager-control-day</code></td>
+<td style="text-align: center;">24</td>
+<td style="text-align: center;">45 / 43</td>
+<td style="text-align: center;">39 / 28</td>
+<td style="text-align: center;">60 / 57</td>
+<td style="text-align: center;">31 / 53</td>
+<td style="text-align: center;">40 / <strong>22</strong></td>
+<td style="text-align: center;">89 / 41</td>
+<td style="text-align: center;"><strong>24</strong> / 30</td>
+</tr>
+<tr>
+<td><code>high-board-portfolio-review-day</code></td>
+<td style="text-align: center;">24</td>
+<td style="text-align: center;"><strong>23</strong> / 35</td>
+<td style="text-align: center;"><strong>17</strong> / 30</td>
+<td style="text-align: center;">54 / 75</td>
+<td style="text-align: center;">37 / 30</td>
+<td style="text-align: center;"><strong>14</strong> / <strong>17</strong></td>
+<td style="text-align: center;">43 / <strong>18</strong></td>
+<td style="text-align: center;"><strong>19</strong> / <strong>13</strong></td>
+</tr>
+<tr>
+<td><code>trader-rfq-booking-day</code></td>
+<td style="text-align: center;">35</td>
+<td style="text-align: center;">141 / 95</td>
+<td style="text-align: center;">67 / 65</td>
+<td style="text-align: center;">64 / 75</td>
+<td style="text-align: center;">40 / 51</td>
+<td style="text-align: center;">44 / <strong>34</strong></td>
+<td style="text-align: center;">45 / 57</td>
+<td style="text-align: center;">62 / 54</td>
+</tr>
+<tr>
+<td><code>risk-limit-breach-day</code></td>
+<td style="text-align: center;">25</td>
+<td style="text-align: center;">32 / 35</td>
+<td style="text-align: center;">33 / <strong>24</strong></td>
+<td style="text-align: center;">30 / 28</td>
+<td style="text-align: center;">48 / <strong>23</strong></td>
+<td style="text-align: center;"><strong>15</strong> / <strong>23</strong></td>
+<td style="text-align: center;">27 / <strong>24</strong></td>
+<td style="text-align: center;"><strong>24</strong> / 31</td>
+</tr>
+<tr>
+<td><code>ops-settlement-day</code></td>
+<td style="text-align: center;">30</td>
+<td style="text-align: center;"><strong>24</strong> / 32</td>
+<td style="text-align: center;">31 / 38</td>
+<td style="text-align: center;">38 / 39</td>
+<td style="text-align: center;">35 / 38</td>
+<td style="text-align: center;"><strong>25</strong> ‡</td>
+<td style="text-align: center;"><strong>24</strong> / <strong>20</strong></td>
+<td style="text-align: center;"><strong>22</strong> / 31</td>
+</tr>
+</tbody>
+</table>
+<p>Bold = at or under par. ‡ one trial only — see caveats. All five pars are now
+calibrated, so every EFF input on this board comes from the same golf curve.</p>
+<p>EFF is golf-scored on a calibrated par: full marks at or under par, then linear decay
+to zero at <strong>2 × par</strong>.</p>
+<ul>
+<li><strong>Gemini 3.7 Flash (EFF 31)</strong> is the <strong>only contestant with no under-par trial at
+  all</strong> — over par on every one of its ten trials across all five workflows, 1.8–3.1×
+  par on the three long-calibrated ones, and past the 2× cliff on five of ten. It is the
+  most correct agent on the board and the most expensive one to run.</li>
+<li><strong>GPT-5.6 Luna (EFF 47)</strong> is efficient everywhere except <code>trader-rfq-booking-day</code>,
+  where it burned <strong>141 and 95</strong> calls against a par of 35 — 4.0× and 2.7× par, a
+  guaranteed EFF 0 on both trials, and it still only scored 89.7. One workflow destroys
+  its efficiency stat.</li>
+<li><strong>Qwen 3.8 27B (EFF 58)</strong> is the efficiency story of the board: <strong>fourth on objective
+  and second on OVR</strong>. Its worst trial anywhere is <strong>1.91× par</strong>, so it never reaches
+  the cliff on any workflow — and it is the only contestant to score a <strong>perfect 38/38</strong>
+  on one.</li>
+<li><strong>Hunyuan 3 (EFF 78)</strong> comes in under par on <strong>seven of its nine trials</strong>, the most on
+  the board, and never exceeds 1.67× par. But it is cheap because it did less: 61.5 on
+  <code>high-board</code> and 86.1 overall, both near the bottom of the field.</li>
+</ul>
+<p>Three models — Qwen, Hunyuan and MiMo — stay off the 2× cliff entirely. The three that
+do not are Luna (twice, both on trader-rfq), DeepSeek (once) and MiniMax (once), plus
+Gemini's five.</p>
+<p><strong>A ceiling board measures capability, not the configuration you should ship.</strong> Run</p>
+<h1>110 measured this on one model: effort is a step at <code>low</code>, and <code>high</code>/<code>max</code> buy about</h1>
+<p>one point for 3.3× the time and +50% the calls. Run #127 is that result across a field:
+at their ceilings, every model pays the tax and EFF collapses for all of them.</p>
+<hr />
+<h2>The same field at <code>low</code> — run #130</h2>
+<p>A ceiling board answers "how good can each model get". It cannot answer "what should the
+desk ship", because every model is at a different point on its own ladder — <code>max</code> for
+four of these seven, <code>xhigh</code> for two, <code>high</code> for one. So the field was run again, all
+seven pinned to <strong><code>low</code></strong>, everything else identical: same five workflows, same two
+trials, same unpinned output budget, same commit. Each model is now its own control and
+effort is the only variable.</p>
+<p><strong>The board reorders.</strong></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>ceiling</th>
+<th style="text-align: center;"></th>
+<th><code>low</code></th>
+<th style="text-align: center;"></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>GPT-5.6 Luna</td>
+<td style="text-align: center;">84</td>
+<td><strong>Gemini 3.7 Flash</strong></td>
+<td style="text-align: center;"><strong>86</strong></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Qwen 3.8 27B</td>
+<td style="text-align: center;">84</td>
+<td>DeepSeek V4 Flash</td>
+<td style="text-align: center;">84</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Gemini 3.7 Flash</td>
+<td style="text-align: center;">83</td>
+<td>Qwen 3.8 27B</td>
+<td style="text-align: center;">81</td>
+</tr>
+<tr>
+<td>4</td>
+<td>DeepSeek V4 Flash</td>
+<td style="text-align: center;">81</td>
+<td>Hunyuan 3</td>
+<td style="text-align: center;">79</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Hunyuan 3</td>
+<td style="text-align: center;">80</td>
+<td>GPT-5.6 Luna ‡</td>
+<td style="text-align: center;">78</td>
+</tr>
+<tr>
+<td>6</td>
+<td>MiniMax M3</td>
+<td style="text-align: center;">72</td>
+<td>MiniMax M3</td>
+<td style="text-align: center;">77</td>
+</tr>
+<tr>
+<td>7</td>
+<td>MiMo V2.5</td>
+<td style="text-align: center;">70</td>
+<td>MiMo V2.5</td>
+<td style="text-align: center;">76</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Gemini 3.7 Flash goes from third to first, and leads on <em>both</em> axes</strong> — 86 OVR and
+92.0 objective, the best of either board on correctness-per-call. Its EFF more than
+doubles, 31 → 76, because it drops 20.7 tool calls per trial. It gives up 2.3 objective
+points to do it. The board's most expensive agent at its ceiling is its best agent at
+<code>low</code>.</p>
+<p>Four of seven models score <em>higher</em> on OVR at <code>low</code>. Only Qwen (−3) and Hunyuan (−1)
+lose ground, plus Luna, whose result needs the caveat below.</p>
+<h3>With n = 2, one bad trial is worth 30 points — and CON is the tell</h3>
+<p>Before reading any delta, the deltas have to be filtered. A cell here is the mean of two
+trials, so a single blown trial moves it by more than any real effect. CON measures
+exactly that dispersion, and <strong>CON near zero invalidates the cell's mean</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>cell</th>
+<th>ceiling trials</th>
+<th><code>low</code> trials</th>
+<th style="text-align: right;">raw Δobj</th>
+<th>reality</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Luna / <code>risk-manager-control-day</code></td>
+<td>37, 38 of 39</td>
+<td><strong>13</strong>, 38 of 39</td>
+<td style="text-align: right;">−30.9</td>
+<td>one blown <strong>low</strong> trial (CON 0)</td>
+</tr>
+<tr>
+<td>MiMo / <code>risk-limit-breach-day</code></td>
+<td>38, <strong>19</strong> of 38</td>
+<td>37, 37</td>
+<td style="text-align: right;">+22.4</td>
+<td>one blown <strong>ceiling</strong> trial (CON 0)</td>
+</tr>
+<tr>
+<td>Qwen / <code>high-board-portfolio-review-day</code></td>
+<td>30, 30 of 35</td>
+<td>17, 19 of 35</td>
+<td style="text-align: right;">−34.2</td>
+<td><strong>real</strong> — consistent on both sides</td>
+</tr>
+</tbody>
+</table>
+<p>The two largest deltas on the board are artefacts pointing in opposite directions, and
+the third-largest is genuine. Nothing but the per-trial spread distinguishes them.
+Requiring CON ≥ 50 on <strong>both</strong> arms leaves <strong>25 of 35 cells usable</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th style="text-align: center;">usable cells</th>
+<th style="text-align: center;">ceiling</th>
+<th style="text-align: center;"><code>low</code></th>
+<th style="text-align: center;"><strong>Δ objective</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPT-5.6 Luna</td>
+<td style="text-align: center;">4/5</td>
+<td style="text-align: center;">91.7</td>
+<td style="text-align: center;">91.8</td>
+<td style="text-align: center;"><strong>+0.1</strong></td>
+</tr>
+<tr>
+<td>MiniMax M3</td>
+<td style="text-align: center;">4/5</td>
+<td style="text-align: center;">82.9</td>
+<td style="text-align: center;">83.0</td>
+<td style="text-align: center;"><strong>+0.2</strong></td>
+</tr>
+<tr>
+<td>DeepSeek V4 Flash</td>
+<td style="text-align: center;">4/5</td>
+<td style="text-align: center;">88.6</td>
+<td style="text-align: center;">88.1</td>
+<td style="text-align: center;"><strong>−0.5</strong></td>
+</tr>
+<tr>
+<td>Gemini 3.7 Flash</td>
+<td style="text-align: center;">5/5</td>
+<td style="text-align: center;">94.3</td>
+<td style="text-align: center;">92.0</td>
+<td style="text-align: center;"><strong>−2.3</strong></td>
+</tr>
+<tr>
+<td>Hunyuan 3</td>
+<td style="text-align: center;">1/5 †</td>
+<td style="text-align: center;">89.7</td>
+<td style="text-align: center;">92.1</td>
+<td style="text-align: center;">+2.4</td>
+</tr>
+<tr>
+<td>Qwen 3.8 27B</td>
+<td style="text-align: center;">5/5</td>
+<td style="text-align: center;">89.6</td>
+<td style="text-align: center;">82.7</td>
+<td style="text-align: center;"><strong>−6.9</strong></td>
+</tr>
+<tr>
+<td>MiMo V2.5</td>
+<td style="text-align: center;">2/5 †</td>
+<td style="text-align: center;">71.8</td>
+<td style="text-align: center;">64.5</td>
+<td style="text-align: center;">−7.3</td>
+</tr>
+</tbody>
+</table>
+<p>† too few clean cells to support a claim.</p>
+<p><strong>On clean evidence, <code>low</code> costs the field a mean 2.4 objective points</strong> — and for the
+three models with four or more usable cells and no collapse, it costs <strong>nothing
+measurable</strong>: Luna +0.1, MiniMax +0.2, DeepSeek −0.5. Luna's fifth-place finish on the
+measured board is an artefact of that one 13/39 trial; on its four clean cells it is
+<strong>unchanged</strong> between <code>max</code> and <code>low</code>.</p>
+<p>Two models genuinely pay. <strong>Qwen 3.8 27B loses 6.9 points</strong>, almost all of it one
+collapse: on <code>high-board-portfolio-review-day</code> it drops 85.7 → 51.5, consistently across
+both trials (17 and 19 of 35, against 30 and 30), while cutting calls only 9. It is not
+trading accuracy for speed there; it stops doing the work. <strong>MiMo V2.5 loses 7.3</strong>, but
+on two clean cells only.</p>
+<h3>The effect is per-model, not per-workflow</h3>
+<p>Run #110 established that effort's sign flips across <em>tasks</em>. This board shows it also
+flips across <em>models on the same task</em>. On <code>high-board-portfolio-review-day</code>, where six
+of seven cells are usable: Gemini −7.1, Qwen −34.2 and MiMo −11.3 against DeepSeek +2.9
+and MiniMax +4.3. Three models get materially worse at <code>low</code> and two get better, on one
+workflow. (Hunyuan's +5.7 there is unusable — CON 20 and 46.)</p>
+<p><strong>And OVR moves opposite to correctness.</strong> Gemini loses 7.1 objective points on that
+workflow and <em>gains</em> 7 OVR; MiniMax gains 4.3 and gains 9. EFF is weighted only 0.16
+against correctness's 0.74 — but the correctness axes are saturated (spans 10 to 22)
+while EFF spans 47, so the heavy low-variance axes contribute almost nothing to the
+<em>differences between rows</em> and the light high-variance axis decides them. <strong>A weight is
+only as influential as the spread of what it multiplies.</strong> Read OVR as "capability per
+call", never as capability.</p>
+<p>One model moves the other way: <strong>Hunyuan 3 is the only contestant whose EFF <em>falls</em> at
+<code>low</code></strong> (78 → 63), because its call count <em>rises</em> 5.5 per trial. Lower effort does not
+imply less work.</p>
+<h3>What this means for the desk</h3>
+<p>Ship <code>low</code>. On this evidence the correctness cost is under a point for most of the
+field, the call-count saving is real (Gemini −20.7, Luna −18.6, Qwen −11.4 per trial),
+and the ranking a desk should act on is the <code>low</code> one — because that is the
+configuration it would actually run. The exceptions are specific and worth testing per
+model rather than assuming: Qwen 3.8 27B on portfolio-review work, where <code>low</code> halves
+its score, and any workflow where a model's CON is already poor.</p>
+<p>The honest limitation is <strong>n = 2</strong>. Ten of 35 cells were unusable, and the filter that
+caught them is the same statistic (CON) that a single-trial board cannot compute at all.
+A three-trial board would cost 50% more and would have made every cell here readable.</p>
+<hr />
+<h2>Discrimination is concentrating in one workflow</h2>
+<p>Objective score by workflow:</p>
+<table>
+<thead>
+<tr>
+<th>workflow</th>
+<th style="text-align: center;">Luna</th>
+<th style="text-align: center;">Qwen</th>
+<th style="text-align: center;">Gemini</th>
+<th style="text-align: center;">DeepSeek</th>
+<th style="text-align: center;">Hunyuan</th>
+<th style="text-align: center;">MiniMax</th>
+<th style="text-align: center;">MiMo</th>
+<th style="text-align: center;"><strong>spread</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code>high-board-portfolio-review-day</code></strong></td>
+<td style="text-align: center;">78.5</td>
+<td style="text-align: center;">85.7</td>
+<td style="text-align: center;"><strong>95.7</strong></td>
+<td style="text-align: center;">72.8</td>
+<td style="text-align: center;">61.5</td>
+<td style="text-align: center;">57.1</td>
+<td style="text-align: center;">64.2</td>
+<td style="text-align: center;"><strong>38.6</strong></td>
+</tr>
+<tr>
+<td><code>risk-limit-breach-day</code></td>
+<td style="text-align: center;">98.7</td>
+<td style="text-align: center;"><strong>100.0</strong></td>
+<td style="text-align: center;">98.7</td>
+<td style="text-align: center;">98.7</td>
+<td style="text-align: center;">93.4</td>
+<td style="text-align: center;">97.3</td>
+<td style="text-align: center;">75.0</td>
+<td style="text-align: center;">25.0</td>
+</tr>
+<tr>
+<td><code>ops-settlement-day</code></td>
+<td style="text-align: center;"><strong>100.0</strong></td>
+<td style="text-align: center;">84.1</td>
+<td style="text-align: center;">89.8</td>
+<td style="text-align: center;">93.2</td>
+<td style="text-align: center;">90.9</td>
+<td style="text-align: center;">89.8</td>
+<td style="text-align: center;">79.5</td>
+<td style="text-align: center;">20.5</td>
+</tr>
+<tr>
+<td><code>risk-manager-control-day</code></td>
+<td style="text-align: center;"><strong>96.2</strong></td>
+<td style="text-align: center;">91.0</td>
+<td style="text-align: center;">93.6</td>
+<td style="text-align: center;">94.8</td>
+<td style="text-align: center;">94.9</td>
+<td style="text-align: center;">83.3</td>
+<td style="text-align: center;">89.8</td>
+<td style="text-align: center;">12.9</td>
+</tr>
+<tr>
+<td><code>trader-rfq-booking-day</code></td>
+<td style="text-align: center;">89.7</td>
+<td style="text-align: center;">87.3</td>
+<td style="text-align: center;"><strong>93.7</strong></td>
+<td style="text-align: center;"><strong>93.7</strong></td>
+<td style="text-align: center;">89.7</td>
+<td style="text-align: center;">87.3</td>
+<td style="text-align: center;">91.3</td>
+<td style="text-align: center;"><strong>6.4</strong></td>
+</tr>
+</tbody>
+</table>
+<p><code>trader-rfq-booking-day</code> puts five of seven models within 4.0 points.
+<code>risk-limit-breach-day</code> puts three models on the <em>identical</em> 98.7 and hands Qwen a
+perfect 38/38 — the near-dead signature the run #113 validity audit flagged (34 of 36
+checks scoring N/N carry no ability signal while still occupying the denominator).</p>
+<p><strong><code>high-board-portfolio-review-day</code> is doing most of the discriminating</strong>, and inside it
+Gemini 3.7 Flash's 95.7 is <strong>10.0 points clear of second place</strong> while three of seven
+models sit in the 57–65 band. (Qwen 3.8 27B halved that gap: before it joined, Gemini
+led this workflow by 17.2.) A single workflow separating the field by that margin
+deserves a per-check pass-rate tally before it anchors any conclusion — the same
+instrument that found 15 of 50 checks non-discriminating on run #58 and reordered that
+board.</p>
+<hr />
+<h2>Caveats</h2>
+<ul>
+<li><strong>n = 2 per cell.</strong> CON (trial consistency) is 50–89; the low-CON models —
+  Hunyuan 3 at 50, MiMo V2.5 at 52, MiniMax M3 at 58, DeepSeek V4 Flash at 69 — have
+  real trial-to-trial variance, so their means are the least stable numbers here.
+  MiniMax's flagship trials burned 89 and 41 calls; Hunyuan's, 40 and 22.</li>
+<li><strong><code>hunyuan-3</code> / <code>ops-settlement-day</code> rests on ONE trial.</strong> The second was dropped as
+  an infra trial (infra trials are skipped, not retried). Its 90.9 has no
+  trial-to-trial corroboration.</li>
+<li><strong>Both boards hit a network outage, and they failed differently.</strong> The ceiling
+  board's ~1h24m outage (09:39–11:03 UTC) made calls <em>block</em> rather than fail fast, so
+  the loop sat still and recorded nothing wrong; the pair straddling it returned 89.8,
+  in line with the field. The <code>low</code> board's outage failed fast instead — ~234
+  <code>ConnectError</code>s swept <strong>four <code>risk-manager-control-day</code> arms</strong> to <code>invalid</code>/
+  <code>infra_blank</code>. Those four were re-run to completion with <code>--resume 130</code>, which
+  deletes the stale row first, so all 35 are <code>scored</code> at the same effort and budget.
+  Neither board recorded an unscored or contaminated pair.</li>
+<li><strong><code>gpt-5-6-luna</code> on <code>risk-manager-control-day</code> at <code>low</code> is the one cell to distrust.</strong>
+  Its trials scored 13/39 and 38/39 (CON 0). The 38 matches its ceiling arm exactly;
+  the 13 is an outlier of unknown cause, and it is what puts Luna fifth on the <code>low</code>
+  board. It is one of the four arms re-run after the outage, though the re-run itself
+  completed cleanly and the other three show nothing unusual.</li>
+<li><strong><code>ops-settlement-day</code>'s par rests on 13 fully-correct trials from only THREE
+  models.</strong> Its weakness is breadth, not depth: a par set by three models can encode
+  their shared habits as the standard. It is the least-settled number on this board and
+  is flagged in the manifest for re-derivation once a fourth and fifth model post a
+  fully-correct trial there.</li>
+<li><strong>The par calibration re-scored 191 trials across 19 runs</strong>, four of them published.
+  Their EFF and OVR move on the next site build, and run #101's podium reorders. See
+  <a href="#calibrating-eff">Calibrating EFF</a>.</li>
+<li><strong>This is a MERGED board.</strong> Qwen 3.8 27B ran as its own run, in its own database and
+  process, and was folded in through <code>store.merge_runs</code> (<code>merged_from: [127, 128]</code>).
+  That is the sanctioned path — the 17-model run #58 board was built the same way — and
+  the conditions match on every axis that scoring depends on: same commit, byte-identical
+  manifests, same denominators (39·63·35·38·44), ceiling effort, unpinned budget, two
+  trials, and both flags <strong>measured</strong> rather than null. The two runs also overlapped in
+  wall-clock time (06:25–12:20 vs 07:30–23:45 UTC), so they share gateway conditions and
+  the same network outage rather than being weeks apart.
+  What does <em>not</em> match: Qwen's transcripts were produced by a different process against
+  a different SQLite file. Merged rows carry <code>transcript_path=None</code> by design, so the
+  drilldown reaches Qwen's transcripts through source run <strong>#128</strong> and everyone else's
+  through <strong>#127</strong>.</li>
+<li><strong>Qwen 3.8 27B is a 27B model in a flash-tier field.</strong> It belongs on cost grounds, but
+  it is not the same kind of artefact as the others — read its rank as "this is what a
+  small dense model buys you here", not as a like-for-like tier comparison.</li>
+<li><strong>Not comparable to runs #8–#126</strong> for any of these models, for every reason in this
+  report. That is the point of the board, not a limitation of it.</li>
+<li><strong>The jury is off</strong> (default since run #11), so this is an objective-only ranking.</li>
+</ul>
+<hr />
+<h2>What this board does and does not say</h2>
+<p><strong>Does:</strong> on a repaired harness, at each model's measured effort ceiling, across five
+golden desk workflows, these seven flash-tier models are separated by 14 OVR points
+(84 → 70) and by 14.3 objective points (94.3 → 80.0). Correctness is broadly solved in
+this tier; cost is not — and the top <strong>four</strong> are within 3 OVR points of each other.</p>
+<p><strong>Also does:</strong> at <code>low</code> — the setting a desk would actually ship — the board reorders,
+<strong>Gemini 3.7 Flash leads on both axes</strong>, and the correctness cost of dropping from each
+model's ceiling is <strong>under one point for three of the four models with enough clean
+cells to measure</strong>. The exception is specific and reproducible: Qwen 3.8 27B halves its
+score on portfolio-review work.</p>
+<p><strong>Does not:</strong> it does not establish the ceiling ordering as settled — 1st and 2nd there
+differ by an ADH tie-break, and the <code>low</code> board disagrees with it. It does not measure
+any intermediate effort. And with n = 2 it cannot read 10 of its 35 paired cells at all,
+because one blown trial moves a cell further than any real effect does.</p>
+<p><strong>Follow-ups, in order:</strong>
+1. A per-check pass-rate tally on <code>high-board-portfolio-review-day</code>, before its
+   38.6-point spread is treated as ability signal — it is now carrying most of the
+   board's discrimination <em>and</em> Qwen's entire <code>low</code> regression.
+2. Add a rescoring note to published boards #101, #104, #113 and #115 before the next
+   site build moves their numbers silently. Run #101's podium reorders and its top four
+   tie at OVR 98.
+3. <strong>Run three trials, not two, on the next board.</strong> Ten of 35 paired cells here were
+   unreadable because a single trial blew up, and the two largest deltas on the board
+   were artefacts pointing in opposite directions. A third trial costs 50% more and
+   would have made every cell readable.
+4. Investigate Qwen 3.8 27B on <code>high-board-portfolio-review-day</code> at <code>low</code>: 17 and 19 of
+   35 against 30 and 30 at <code>max</code>, on 9 <em>fewer</em> calls. It is not trading accuracy for
+   speed; it stops working.</p>
+<p class="footer-note">Rendered from
+<code>docs/arena/2026-08-26-run129-flash-tier-board.md</code> ·
+OTC Desk Agent Arena · Run #129.</p>
+</body></html>

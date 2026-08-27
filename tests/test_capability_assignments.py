@@ -33,7 +33,8 @@ def test_quant_agent_tools_count_is_intentional():
     # +9 limits tools (4 reads + 5 HITL monitoring/incident writes).
     # +3 trade-confirmation tools (parse + read batch + HITL book).
     # +13 settlement tools (3 reads + 10 HITL cashflow/notice writes).
-    assert len(QUANT_AGENT_TOOLS) == 135
+    # +1 position field-catalog reader (describe_position_fields).
+    assert len(QUANT_AGENT_TOOLS) == 136
 
 
 def test_record_answer_is_domain_read():
@@ -80,6 +81,8 @@ def test_capability_group_is_a_valid_tool_group():
         ("price_product", ToolGroup.DOMAIN_READ),
         ("list_pricing_parameter_profiles", ToolGroup.DOMAIN_READ),
         ("query_snowball_ko_from_spot", ToolGroup.DOMAIN_READ),
+        ("describe_position_fields", ToolGroup.DOMAIN_READ),
+        ("query_positions", ToolGroup.DOMAIN_READ),
         ("create_report", ToolGroup.DOMAIN_WRITE),
         ("write_report_artifact", ToolGroup.DOMAIN_WRITE),
         ("list_reports", ToolGroup.DOMAIN_READ),

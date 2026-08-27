@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OTC Desk Agent Arena — Run</title>
+<style>
+:root{
+  --ink:#1a1d21; --muted:#5b6470; --line:#e3e6eb; --bg:#ffffff;
+  --accent:#2f5d8a; --soft:#f4f6f9;
+  --gold:#caa12e; --silver:#9aa0a6; --bronze:#b06a3b; --mid:#3b6fb0; --floor:#c5c9d1;
+  --good:#2e8b57; --neutral:#6b7280; --warn:#d98a2b; --bad:#c0392b; --frontier:#3b6fb0;
+}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+body{
+  font-family:"Charter","Georgia",Cambria,"Times New Roman",serif;
+  color:var(--ink); background:var(--bg); line-height:1.62;
+  max-width:820px; margin:0 auto; padding:56px 40px 80px; font-size:16.5px;
+}
+h1,h2,h3,h4{font-family:-apple-system,"Inter","Segoe UI",Helvetica,Arial,sans-serif;
+  line-height:1.22; letter-spacing:-.01em; color:var(--ink)}
+h1{font-size:2.05rem; margin:.2em 0 .1em; font-weight:800}
+h2{font-size:1.42rem; margin:2.1em 0 .55em; padding-bottom:.28em;
+  border-bottom:2px solid var(--line); font-weight:750}
+h3{font-size:1.12rem; margin:1.7em 0 .5em; font-weight:700; color:#2b3038}
+h1+p em, body>p:first-of-type em{color:var(--muted)}
+p,li{font-size:1rem}
+a{color:var(--accent); text-decoration:none}
+hr{border:none; border-top:1px solid var(--line); margin:2.2em 0}
+code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.86em;
+  background:var(--soft); padding:.1em .35em; border-radius:4px}
+blockquote{margin:1.1em 0; padding:.7em 1.1em; background:var(--soft);
+  border-left:4px solid var(--accent); border-radius:0 6px 6px 0; color:#2b3038}
+blockquote p{margin:.3em 0}
+strong{font-weight:700}
+
+/* tables */
+table{border-collapse:collapse; width:100%; margin:1.1em 0; font-size:.9rem;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+th,td{padding:.5em .7em; border-bottom:1px solid var(--line); text-align:left}
+thead th{background:#f7f9fc; border-bottom:2px solid #d6dbe3; font-weight:700;
+  font-size:.82rem; letter-spacing:.01em; color:#39414c}
+tbody tr:nth-child(even){background:#fbfcfe}
+td:first-child,th:first-child{white-space:nowrap}
+
+/* charts */
+.chart{margin:1.3em 0 1.6em; padding:0}
+.chart .row{display:flex; align-items:center; gap:12px; margin:5px 0;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+.chart .lbl{flex:0 0 168px; text-align:right; font-size:.82rem; color:#39414c; font-weight:600}
+.chart .track{flex:1; height:22px; background:#eef1f5; border-radius:5px; overflow:hidden}
+.chart .bar{display:block; height:100%; border-radius:5px}
+.chart .val{flex:0 0 150px; font-size:.78rem; color:var(--muted); font-variant-numeric:tabular-nums}
+.chart figcaption{margin-top:.7em; font-size:.76rem; color:var(--muted);
+  font-family:-apple-system,"Inter",sans-serif; text-align:right}
+.bar.gold{background:linear-gradient(90deg,#d9b13f,#caa12e)}
+.bar.silver{background:linear-gradient(90deg,#aab0b6,#9aa0a6)}
+.bar.bronze{background:linear-gradient(90deg,#c07c4a,#b06a3b)}
+.bar.mid{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.frontier{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.floor{background:#c5c9d1}
+.bar.good{background:linear-gradient(90deg,#37a169,#2e8b57)}
+.bar.neutral{background:#8a929e}
+.bar.warn{background:linear-gradient(90deg,#e09a3e,#d98a2b)}
+.bar.bad{background:linear-gradient(90deg,#d04b3c,#c0392b)}
+
+/* report header band */
+.masthead{border-bottom:3px solid var(--ink); padding-bottom:.6em; margin-bottom:1.4em}
+.footer-note{margin-top:3em; padding-top:1em; border-top:1px solid var(--line);
+  font-size:.8rem; color:var(--muted); font-family:-apple-system,"Inter",sans-serif}
+
+@page{size:A4; margin:16mm 15mm}
+@media print{
+  body{max-width:none; margin:0; padding:0; font-size:10.6pt}
+  h2{margin-top:1.4em}
+  h2,h3,h4{break-after:avoid}
+  table,.chart,blockquote,figure{break-inside:avoid}
+  tr{break-inside:avoid}
+  a{color:var(--ink)}
+}
+</style>
+</head><body>
+<h1>Does GLM really perform badly at calling artifact-writing tools?</h1>
+<p><strong>Short answer: no.</strong> Across two months of arena boards, GLM-5.2 and GLM-5.3
+look like the worst models in the field at producing a report artifact — SYN 0
+on the two workflows whose deliverable is a long document. Neither failure is a
+tool-calling deficit. Both are harness defects, and they stack.</p>
+<h2>What SYN actually measures</h2>
+<p>The Model Ability Card's SYN stat is fed by exactly two assertion types,
+<code>artifact_exists</code> and <code>artifact_contains</code>. Nothing else maps to the synthesis
+axis. So "low SYN" is never a soft judgement about writing quality — it means
+either <em>no artifact was produced</em> or <em>the artifact's body lacked a required
+string</em>.</p>
+<p>Across 349 distinct scored trials the two modes split unevenly: 41 trials
+produced no artifact at all, against 262 individual content-check failures. The
+first mode is the one that looks like a capability story, and it is the one GLM
+dominates.</p>
+<h2>The first look, which is wrong</h2>
+<p>Ranked by SYN pass rate over every scored trial, GLM sits at the bottom:</p>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th>SYN</th>
+<th>pass</th>
+<th>no artifact</th>
+<th>thin body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>glm-5-3</td>
+<td>0.0%</td>
+<td>0</td>
+<td>2</td>
+<td>7</td>
+</tr>
+<tr>
+<td>glm-5-2</td>
+<td>44.4%</td>
+<td>24</td>
+<td>6</td>
+<td>24</td>
+</tr>
+<tr>
+<td>…</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>grok-4-6, gemini-3-7-flash, gpt-5-6-sol</td>
+<td>100%</td>
+<td>—</td>
+<td>0</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<p>Read naively, that is a capability finding. It is not, and the reason it is not
+is that <strong>a budget artifact must be excluded before any capability claim</strong> —
+the desk learned this the hard way on 2026-08-19.</p>
+<h2>Defect 1 — a 4096-token ceiling nobody set</h2>
+<p><code>langchain_anthropic.ChatAnthropic</code> fills in <code>max_tokens</code> when the caller leaves
+it unset, by looking up a per-model profile keyed on the exact model id:</p>
+<pre><code class="language-python">if values.get(&quot;max_tokens&quot;) is None:
+    profile = _get_default_model_profile(model) if model else {}
+    values[&quot;max_tokens&quot;] = profile.get(&quot;max_output_tokens&quot;, _FALLBACK_MAX_OUTPUT_TOKENS)  # 4096
+</code></pre>
+<p>Every id routed through this desk's Anthropic path carries a ZenMux vendor
+prefix, and the prefix defeats the lookup:</p>
+<table>
+<thead>
+<tr>
+<th>model id</th>
+<th>resolved ceiling</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>z-ai/glm-5.3</code>, <code>z-ai/glm-5.2</code></td>
+<td>none → <strong>4096</strong></td>
+</tr>
+<tr>
+<td><code>minimax/minimax-m3</code>, <code>meituan/longcat-2.0</code></td>
+<td>none → <strong>4096</strong></td>
+</tr>
+<tr>
+<td><code>anthropic/claude-sonnet-5</code></td>
+<td>none → <strong>4096</strong></td>
+</tr>
+<tr>
+<td><code>claude-sonnet-4-5-20250929</code> (unprefixed)</td>
+<td>64000</td>
+</tr>
+</tbody>
+</table>
+<p>So every model on that path ran at 4096 output tokens, including the Claude ids
+whose real ceiling is 64000 — a 15.6× under-allocation.</p>
+<h3>It is invisible by construction</h3>
+<p>A truncated turn is not an error. It returns:</p>
+<pre><code>content:           [{&quot;type&quot;:&quot;text&quot;,&quot;text&quot;:&quot;&quot;}, {&quot;type&quot;:&quot;reasoning&quot;, …}]
+response_metadata: {&quot;model_name&quot;:&quot;z-ai/glm-5.3&quot;, &quot;stop_reason&quot;:&quot;max_tokens&quot;}
+tool_calls:        []
+status:            success
+</code></pre>
+<p>Empty text, no tool call, and a <strong>successful</strong> span. The arena's infra-blank
+gate corroborates a blank transcript with step <em>errors</em> before excluding a
+match — and there are none. So the harness scores a dead turn as a model
+failure. <code>stop_reason</code> is the only tell, and nothing read it.</p>
+<h3>It is exclusive to that path</h3>
+<p>Counting <code>stop_reason == "max_tokens"</code> across every arena LLM call:</p>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th>calls</th>
+<th>truncated</th>
+<th>rate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>glm-5-3</strong></td>
+<td>796</td>
+<td>32</td>
+<td><strong>4.0%</strong></td>
+</tr>
+<tr>
+<td>claude-sonnet-4-6</td>
+<td>1,028</td>
+<td>25</td>
+<td>2.4%</td>
+</tr>
+<tr>
+<td>longcat-2-0</td>
+<td>1,450</td>
+<td>14</td>
+<td>1.0%</td>
+</tr>
+<tr>
+<td>claude-sonnet-5</td>
+<td>1,746</td>
+<td>15</td>
+<td>0.9%</td>
+</tr>
+<tr>
+<td>minimax-m3</td>
+<td>1,799</td>
+<td>12</td>
+<td>0.7%</td>
+</tr>
+<tr>
+<td>qwen-3-7-max / glm-5-2</td>
+<td>1,744 / 2,114</td>
+<td>5 / 6</td>
+<td>0.3%</td>
+</tr>
+<tr>
+<td><strong>all 25 other models</strong></td>
+<td>~30,000</td>
+<td><strong>0</strong></td>
+<td><strong>0.0%</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Seven models truncate; they are exactly the seven that have been routed over the
+Anthropic protocol. GLM-5.3 has the highest rate in the field.</p>
+<h2>Why the artifact call dies first</h2>
+<p>A cap does not degrade an agent uniformly. It ablates whichever call needs the
+most output, and in a golden workflow that is unambiguously the report call —
+its argument <em>is</em> the deliverable. Measured over 354 successful
+<code>write_report_artifact</code> calls:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>tokens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>median body</td>
+<td>~1,595</td>
+</tr>
+<tr>
+<td>p75</td>
+<td>~2,526</td>
+</tr>
+<tr>
+<td>p95</td>
+<td>~3,851</td>
+</tr>
+</tbody>
+</table>
+<p>The body <strong>alone</strong> exceeds 3,000 tokens in 16% of calls, leaving under 1,096 for
+the reasoning block a reasoning model emits first. Every other tool call in the
+workflow takes a handful of ids and numbers. So a global ceiling reads, on the
+scoreboard, as a specific inability to write reports.</p>
+<p>The prediction that follows is size-dependence, and it holds. On the <em>same
+capped configuration</em>, GLM-5.2 passes SYN 3/3 on <code>risk-limit-breach-day</code>, whose
+report is smaller, while scoring 0/5 on <code>high-board-portfolio-review-day</code>.</p>
+<h2>The natural experiment: Run #114 → #115</h2>
+<p>GLM-5.3 ran all five workflows on 2026-08-19 before the fix, and again after it.
+Same model, same workflows, one trial each; the budget is the only change.
+<code>completion_tokens</code> maxed at exactly 4096 on all five #114 threads and reached
+12,314 in #115.</p>
+<table>
+<thead>
+<tr>
+<th>workflow</th>
+<th>#114 (4096)</th>
+<th>#115 (uncapped)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>risk-manager-control-day</td>
+<td>OVR 67, SYN 0, obj 82.1</td>
+<td>OVR 87, SYN 99, obj 100.0</td>
+</tr>
+<tr>
+<td>high-board-portfolio-review-day</td>
+<td>OVR 66, SYN 0, obj 68.6</td>
+<td>OVR 69, SYN 79, obj 77.1</td>
+</tr>
+<tr>
+<td>trader-rfq-booking-day</td>
+<td>OVR 62, SYN 99, obj 65.1</td>
+<td>OVR 91, SYN 99, obj 96.8</td>
+</tr>
+<tr>
+<td>risk-limit-breach-day</td>
+<td>OVR 87, SYN 99, obj 100.0</td>
+<td>OVR 91, SYN 99, obj 100.0</td>
+</tr>
+<tr>
+<td>ops-settlement-day</td>
+<td>OVR 79, SYN 99, obj 90.9</td>
+<td>OVR 81, SYN 99, obj 90.9</td>
+</tr>
+<tr>
+<td><strong>mean</strong></td>
+<td><strong>OVR 72.2 / obj 81.3</strong></td>
+<td><strong>OVR 83.8 / obj 93.0</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>+11.6 OVR and +11.6 objective points from one configuration line.</strong> In #114 the
+model made <em>zero</em> artifact-tool calls on the two failing workflows; in #115 it
+called the tool on all five.</p>
+<h2>Defect 2 — GLM-5.2's other cause</h2>
+<p>GLM-5.2's history splits into three regimes, and only the middle one looks like
+incompetence:</p>
+<table>
+<thead>
+<tr>
+<th>era</th>
+<th>runs</th>
+<th>condition</th>
+<th>SYN</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>uncapped, OpenAI protocol</td>
+<td>20, 33</td>
+<td>healthy</td>
+<td><strong>4/4, 4/4, 5/5, 5/5</strong></td>
+</tr>
+<tr>
+<td>OpenAI protocol</td>
+<td>51, 91</td>
+<td><code>Tool call ID is required for subagent invocation</code> ×9–15 per thread</td>
+<td><strong>0/6, 0/6, 0/5, 0/5</strong> (obj 12.0)</td>
+</tr>
+<tr>
+<td>Anthropic protocol</td>
+<td>93, 100</td>
+<td>4096 cap</td>
+<td>0/5 on the big report, <strong>3/3</strong> on the small one</td>
+</tr>
+</tbody>
+</table>
+<p>In runs 51 and 91 the OpenAI-compatible gateway returned tool calls with an
+<strong>empty string</strong> as the id. deepagents' <code>task()</code> guards on it, so every persona
+delegation raised before a subagent started — no persona ever ran, and the
+objective score collapsed to 12.0 while the model reasoned perfectly well about
+its own failure. Pinning GLM-5.2 to the Anthropic protocol fixed that defect and
+delivered it straight into the 4096 ceiling.</p>
+<p><strong>On the flagship, uncapped and on a working protocol, GLM-5.2 scored SYN 4/4
+twice, at objective 89.7 and 92.3.</strong> That is the control the whole question
+turns on.</p>
+<h2>Controlled A/B</h2>
+<p>Both GLM ids, both failing workflows, two trials, two budgets — the budget being
+the only difference. Arm A is Run #118 at 4096; arm B is Run #119 at 32768.</p>
+<p><strong>Arm A — budget 4096, complete (8/8 trials):</strong></p>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th>workflow</th>
+<th>trial</th>
+<th>artifact?</th>
+<th>SYN</th>
+<th>obj</th>
+<th>truncated turns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>glm-5-2</td>
+<td>high-board</td>
+<td>0 / 1</td>
+<td><strong>no / no</strong></td>
+<td>0/5, 0/5</td>
+<td>60.0, 71.4</td>
+<td>3, 1</td>
+</tr>
+<tr>
+<td>glm-5-2</td>
+<td>risk-manager-control-day</td>
+<td>0 / 1</td>
+<td><strong>no / no</strong></td>
+<td>0/4, 0/4</td>
+<td>69.2, 64.1</td>
+<td>6, 4</td>
+</tr>
+<tr>
+<td>glm-5-3</td>
+<td>high-board</td>
+<td>0 / 1</td>
+<td><strong>no / no</strong></td>
+<td>0/5, 0/5</td>
+<td>65.7, 65.7</td>
+<td>6, 4</td>
+</tr>
+<tr>
+<td>glm-5-3</td>
+<td>risk-manager-control-day</td>
+<td>0 / 1</td>
+<td><strong>no / no</strong></td>
+<td>0/4, 0/4</td>
+<td>82.1, 82.1</td>
+<td>12, 7</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td></td>
+<td><strong>0/8 = 0%</strong></td>
+<td><strong>0/36 = 0%</strong></td>
+<td>mean 70.0</td>
+<td><strong>43 total</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Every thread clipped at exactly 4096. Not one of the sixteen artifact checks
+passed, across two models, two workflows and two trials.</p>
+<p><strong>Arm B — budget 32768, complete (8/8 trials):</strong></p>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th>workflow</th>
+<th>trial</th>
+<th>artifact?</th>
+<th>SYN</th>
+<th>obj</th>
+<th>truncated turns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>glm-5-2</td>
+<td>high-board</td>
+<td>0 / 1</td>
+<td><strong>YES / YES</strong></td>
+<td>4/5, 5/5</td>
+<td>77.1, 80.0</td>
+<td>0, 0</td>
+</tr>
+<tr>
+<td>glm-5-2</td>
+<td>risk-manager-control-day</td>
+<td>0 / 1</td>
+<td><strong>YES / YES</strong></td>
+<td>4/4, 4/4</td>
+<td>94.9, 89.7</td>
+<td>0, 0</td>
+</tr>
+<tr>
+<td>glm-5-3</td>
+<td>high-board</td>
+<td>0 / 1</td>
+<td><strong>YES</strong> / no</td>
+<td>5/5, 0/5</td>
+<td>88.6, 68.6</td>
+<td>0, 0</td>
+</tr>
+<tr>
+<td>glm-5-3</td>
+<td>risk-manager-control-day</td>
+<td>0 / 1</td>
+<td><strong>YES / YES</strong></td>
+<td>4/4, 4/4</td>
+<td>94.9, 97.4</td>
+<td>0, 0</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td></td>
+<td><strong>7/8 = 88%</strong></td>
+<td><strong>30/36 = 83%</strong></td>
+<td>mean <strong>86.4</strong></td>
+<td><strong>0 total</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Arm B was cut short mid-run by a ZenMux <code>402 quota_exceeded</code>; three matches were
+swept to <code>invalid</code> and re-run with <code>--resume</code> at the same budget once the rolling
+window reopened. Not one turn in the completed arm truncated, and the peaks —
+5,391 / 7,112 / 7,157 / 7,420 / 8,058 / 10,852 / 12,616 / 15,883 / <strong>24,163</strong> —
+sit far above the old ceiling. GLM-5.2 emitted nearly <strong>six times</strong> 4096 in a
+single turn once it was allowed to.</p>
+<h3>Against the predeclared criteria</h3>
+<table>
+<thead>
+<tr>
+<th>criterion</th>
+<th>threshold</th>
+<th>result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>arm B produces the artifact</td>
+<td>≥ 75%</td>
+<td><strong>88%</strong> (7/8)</td>
+</tr>
+<tr>
+<td>arm A produces the artifact</td>
+<td>≤ 25%</td>
+<td><strong>0%</strong> (0/8)</td>
+</tr>
+<tr>
+<td>arm A truncates, arm B does not</td>
+<td>—</td>
+<td><strong>43 vs 0</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>H1 is supported on all three.</strong> Mean objective moves 70.0 → 86.4 on the budget
+alone, across both models and both workflows.</p>
+<h3>The one uncapped failure is real, and it is not GLM's</h3>
+<p>One arm-B trial still produced no artifact: glm-5-3 on high-board, trial 1. It
+carries <strong>zero</strong> truncated turns, so it is a genuine miss rather than a budget
+artifact — and it is worth reporting precisely because it is the honest half of
+the answer. The model routed <code>generate-report</code>, gathered evidence over fourteen
+tool calls, and then wrote the whole report into the chat reply, announcing:</p>
+<blockquote>
+<p>"…drafted as Markdown by the high_board persona — <strong>read-only: no report job,
+artifact, approval, or release was created</strong>."</p>
+</blockquote>
+<p>That is a deliberate conservative reading of its remit, not an inability to call
+the tool. It is also <strong>not a GLM trait</strong>: DeepSeek V4 Pro did exactly the same
+thing in Run #104, down to the parenthetical that the report was not persisted.
+Prose-instead-of-persist is a real failure mode on this benchmark, it costs the
+whole synthesis axis, and it is orthogonal to everything else in this study.</p>
+<h3>The cap also cost efficiency</h3>
+<p>Truncated turns are re-tried, so the cap made the agent slower as well as worse.
+On the flagship, capped GLM-5.3 spent 111 and 93 LLM calls to score 82.1;
+uncapped in Run #115 it spent 72 to score 100.0. A budget too small to finish
+the work is not a saving — it buys back nothing and costs EFF on the card.</p>
+<h2>What it cost the published boards</h2>
+<p>Every board on the public leaderboard contains at least one contestant whose
+turns were silently truncated:</p>
+<table>
+<thead>
+<tr>
+<th>board</th>
+<th>workflow</th>
+<th>damaged contestants</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Run #20</td>
+<td>risk-manager-control-day</td>
+<td>qwen-3-7-max (5 truncated + 12 tool-id errors), minimax-m3 (12), longcat-2-0 (5), claude-sonnet-5 (3)</td>
+</tr>
+<tr>
+<td>Run #33</td>
+<td>trader-rfq-booking-day</td>
+<td>longcat-2-0 (5), claude-sonnet-5 (1)</td>
+</tr>
+<tr>
+<td>Run #94</td>
+<td>high-board-portfolio-review-day</td>
+<td>glm-5-2 (4), longcat-2-0 (2)</td>
+</tr>
+<tr>
+<td>Run #101</td>
+<td>risk-limit-breach-day</td>
+<td>glm-5-2 (2), longcat-2-0 (2)</td>
+</tr>
+</tbody>
+</table>
+<p>These boards understate those models. They are not being silently rewritten —
+a board is a measurement taken under stated conditions — but the condition is
+now stated.</p>
+<h2>The honest residual</h2>
+<p>Lifting the cap does not make GLM perfect. Uncapped on <code>high-board</code>, GLM-5.3
+writes the artifact, names the governance framing, the Snowball composition and
+the governed valuation 238 — and still omits the second required figure, 17.5.
+That is a genuine content gap worth one check, not a tool-calling defect: one
+point rather than five. Together with the prose-instead-of-persist trial above,
+that is the real, unglamorous size of GLM's remaining weakness on this axis.</p>
+<h2>Mitigation</h2>
+<ol>
+<li><strong>Never let a library choose a budget.</strong> Set <code>max_tokens</code> explicitly on every
+   protocol path. A default keyed on a model-id profile lookup fails silently
+   for any id the library has never heard of — which is every id behind a
+   gateway.</li>
+<li><strong>Make truncation loud.</strong> <code>stop_reason == "max_tokens"</code> is explicit in
+   <code>response_metadata</code> and nothing in the harness read it. Blank-detection that
+   corroborates with <em>errors</em> structurally cannot see a truncated turn, because
+   truncation is a success.</li>
+<li><strong>Score a truncated match, but flag it visibly.</strong> The desk's call, and the
+   opposite of what the existing transport-error gate does: an <code>invalid</code> match
+   is excluded from board means, which would silently shrink Run #20 by four
+   contestants and leave a reader wondering where they went. A visible flag
+   keeps the field whole and puts the caveat where the number is. The cost is
+   that a flagged number still sits on a public page, so the flag has to reach
+   the card and the board row, not just the drilldown.</li>
+<li><strong>Make the output budget a run variant, like reasoning effort.</strong> Budget is
+   currently a process-level env var with no column on <code>arena_run</code>, which is why
+   this study had to run it as two separate runs that must never be merged.
+   Promoting it mirrors what migration 0057/0058 did for effort — and it must
+   join the <strong>contestant key</strong>, because <code>merge_runs</code> folds by
+   <code>(workflow_id, model_id, reasoning_effort)</code> and a budget outside that key
+   would average two operating regimes into one row. Two budgets are two
+   regimes: this study measures an 11.6-point OVR gap between them.</li>
+<li><strong>Size the budget to the per-model appetite, and lift it for everyone.</strong>
+   Appetite varies widely across the field; special-casing one model would
+   simply relocate the bias.</li>
+<li><strong>Diagnostic rule of thumb:</strong> when a model appears unable to call one
+   specific tool, check the output budget before capability. The tool with the
+   biggest payload dies first, and on this desk that is always the one that
+   writes the deliverable.</li>
+</ol>
+<h2>Method</h2>
+<p>Arena database, 349 distinct scored trials over runs #10–#116 for the field-wide
+figures, merged runs excluded (they re-contain their sources). The controlled A/B
+is Run <strong>#118</strong> (budget 4096) and Run <strong>#119</strong> (budget 32768), 2 models × 2
+workflows × 2 trials each, run strictly sequentially and never merged — budget is
+not in the contestant key, so a merge would average the two regimes. Run #119 lost
+three matches mid-run to a ZenMux <code>402</code> and was completed with <code>--resume</code> at the
+same budget.</p>
+<p>Truncation is counted from the trace database as LLM spans whose
+<code>response_metadata.stop_reason</code> is <code>max_tokens</code> — an explicit provider signal, not
+a token-count threshold, because a capped turn and a turn that merely happens to
+be long are otherwise indistinguishable. Per-trial breakdowns are walked through
+<code>aggregate[]</code> rather than the folded top-level <code>objective</code>, which carries trial 0
+only, and per-trial transcripts (<code>transcript.trial&lt;N&gt;.json</code>) rather than
+<code>transcript.json</code>, which is the last clean trial. Appetite percentiles exclude
+truncated observations, which are censored at the cap by construction.</p>
+<p>The design — arms, scorer and all three pass criteria — was predeclared before any
+run in the A/B executed. No agent code was modified for this study; both arms use
+the existing <code>OPEN_OTC_AGENT_MAX_OUTPUT_TOKENS</code> seam.</p>
+<p class="footer-note">Rendered from
+<code>docs/arena/2026-08-21-glm-artifact-tool-study.md</code> ·
+OTC Desk Agent Arena · Run.</p>
+</body></html>

@@ -273,3 +273,143 @@ def test_record_answer_survives_trace_harvest_into_answer_fields():
     assert evaluate_assertion(q, actx)[0] is True
     e = _AnswerFieldEquals(type="answer_field_equals", field="hotspot", equals="AAPL")
     assert evaluate_assertion(e, actx)[0] is True
+
+
+# ---------------------------------------------------------------------------
+# Output-budget truncation (the instrument M2 added)
+#
+# Shapes below are copied from REAL spans in the live trace DB, not invented:
+# a truncated Anthropic call carries stop_reason "max_tokens" with
+# completion_tokens sitting exactly on the cap, and its content blocks are
+# ['text', 'invalid_tool_call'] — the tool call severed mid-emission.
+# ---------------------------------------------------------------------------
+
+def _llm_span(*, stop_reason=None, finish_reason=None, blocks=None, text="ok"):
+    md = {}
+    if stop_reason is not None:
+        md["stop_reason"] = stop_reason
+    if finish_reason is not None:
+        md["finish_reason"] = finish_reason
+    message = {"kwargs": {"response_metadata": md}}
+    if blocks is not None:
+        message["kwargs"]["content"] = [{"type": b} for b in blocks]
+    return {
+        "run_type": "llm", "name": "ChatAnthropic", "start_time": "1",
+        "inputs": None,
+        "outputs": json.dumps({"generations": [[{"text": text, "message": message}]]}),
+    }
+
+
+def test_anthropic_max_tokens_is_detected_as_truncation():
+    from app.services.arena.trace_harvest import _llm_truncation
+    span = _llm_span(stop_reason="max_tokens", blocks=["text", "invalid_tool_call"])
+    got = _llm_truncation(span["outputs"])
+    assert got == {"reason": "stop_reason=max_tokens", "severed_tool_call": True}
+
+
+def test_openai_length_is_detected_as_truncation():
+    """The OpenAI protocol names it differently, and a detector that reads only
+    the Anthropic field goes blind the moment an OpenAI budget is pinned."""
+    from app.services.arena.trace_harvest import _llm_truncation
+    got = _llm_truncation(_llm_span(finish_reason="length", blocks=["text"])["outputs"])
+    assert got == {"reason": "finish_reason=length", "severed_tool_call": False}
+
+
+def test_completed_turns_are_not_truncation():
+    from app.services.arena.trace_harvest import _llm_truncation
+    for md in ({"stop_reason": "end_turn"}, {"stop_reason": "tool_use"},
+               {"finish_reason": "stop"}, {"finish_reason": "tool_calls"}, {}):
+        span = _llm_span(**{k: v for k, v in md.items()})
+        assert _llm_truncation(span["outputs"]) is None, md
+    assert _llm_truncation(None) is None
+    assert _llm_truncation("not json") is None
+
+
+def test_truncation_reaches_the_match_step_but_never_the_error_list():
+    """A truncated turn must stay SCORED and flagged, never swept to invalid.
+
+    ``errors`` feeds _is_infra_blank. Appending truncation there would sweep the
+    match out of the board — silently shrinking Run #20 by four contestants —
+    and truncation does not reliably destroy a score anyway.
+    """
+    from app.golden_workflows.transcript import extract_step_from_events
+    turn = _spans_to_turn_events(0, "u", [
+        _llm_span(stop_reason="max_tokens", blocks=["text", "invalid_tool_call"]),
+    ])
+    assert turn["errors"] == []
+    step = extract_step_from_events(turn)
+    assert len(step.truncations) == 1
+    assert step.truncations[0]["severed_tool_call"] is True
+    assert step.truncations[0]["name"] == "ChatAnthropic"
+
+
+def test_untruncated_turn_records_an_empty_list_not_a_missing_key():
+    turn = _spans_to_turn_events(0, "u", [_llm_span(stop_reason="end_turn")])
+    assert turn["truncations"] == []
+
+
+# --- malformed tool calls (run #122) ---------------------------------------
+#
+# A provider can return HTTP 200 with tool calls whose id and name are empty
+# strings. deepagents' task() guards on that, so nothing is dispatched; the
+# agent re-issues the same call and loops to the recursion limit, leaving a
+# blank transcript with NO error anywhere. The infra-blank gate corroborates
+# blankness with step ERRORS, finds none, and records a real score — the ~7.7
+# prohibition floor. Measured on run #122: deepseek-v4-flash at effort `max`
+# over chat-completions malformed 95 of 95 calls and scored 7.7, while the same
+# model on the Responses API malformed 0 of 132 and scored 91.1.
+
+
+def _llm_tool_call_output(calls: list[dict]) -> str:
+    return json.dumps({"generations": [[{
+        "text": "",
+        "message": {"kwargs": {"content": [], "tool_calls": calls}},
+    }]]})
+
+
+def test_malformed_detector_flags_empty_id_and_name():
+    from app.services.arena.trace_harvest import _llm_malformed_tool_calls
+    raw = _llm_tool_call_output([
+        {"id": "", "name": "", "args": {"description": "x", "subagent_type": "y"}},
+    ])
+    bad = _llm_malformed_tool_calls(raw)
+    assert len(bad) == 1
+    assert bad[0]["reason"] == "empty_id_and_name"
+    # arg_keys identify WHICH call shape the provider mangles without storing
+    # the bodies; run #122's were task() delegations.
+    assert bad[0]["arg_keys"] == ["description", "subagent_type"]
+
+
+def test_malformed_detector_distinguishes_missing_id_from_missing_name():
+    from app.services.arena.trace_harvest import _llm_malformed_tool_calls
+    raw = _llm_tool_call_output([
+        {"id": "", "name": "get_risk", "args": {}},
+        {"id": "call_1", "name": "", "args": {}},
+    ])
+    assert [b["reason"] for b in _llm_malformed_tool_calls(raw)] == [
+        "empty_id", "empty_name",
+    ]
+
+
+def test_malformed_detector_ignores_well_formed_and_absent():
+    from app.services.arena.trace_harvest import _llm_malformed_tool_calls
+    ok = _llm_tool_call_output([{"id": "call_1", "name": "get_risk", "args": {}}])
+    assert _llm_malformed_tool_calls(ok) == []
+    # No tool_calls key at all, and a non-LLM shape: both are "not observed".
+    assert _llm_malformed_tool_calls(_llm_output("hello")) == []
+    assert _llm_malformed_tool_calls("not json") == []
+
+
+def test_malformed_tool_calls_are_not_appended_to_step_errors():
+    """The flag must never reach ``errors`` — that list feeds the infra-blank
+    gate, so putting it there would sweep the match to ``invalid``, silently
+    shrinking any board containing one and asserting an infra failure the
+    provider never reported."""
+    spans = [{
+        "run_type": "llm", "name": "ChatOpenAI", "status": "success",
+        "outputs": _llm_tool_call_output(
+            [{"id": "", "name": "", "args": {"description": "x"}}]),
+    }]
+    turn = _spans_to_turn_events(0, "do the thing", spans)
+    assert len(turn["malformed_tool_calls"]) == 1
+    assert turn["errors"] == []

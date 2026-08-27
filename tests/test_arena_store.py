@@ -1230,3 +1230,140 @@ def test_merged_run_records_effort_lists(session):
     assert store.get_run(session, merged_id)["reasoning_efforts"] == {
         "model-x": ["high"]
     }
+
+
+# ---------------------------------------------------------------------------
+# Output-budget truncation reaches the board row, and absence stays honest
+# ---------------------------------------------------------------------------
+
+def _trunc_match(session, run_id, model_id, truncation, *, workflow_id="wf-a"):
+    return store.record_match(
+        session, run_id, workflow_id, model_id,
+        objective_score=70.0, judged_score=None, total_score=70.0,
+        judge_missing=False, config={}, transcript_path=None, status="scored",
+        score_breakdown={"objective_score": 70.0, "passed": 1, "total": 1,
+                         **({"truncation": truncation} if truncation else {})},
+    )
+
+
+def test_leaderboard_reports_truncation_per_contestant(session):
+    rid = _make_run(session, ["wf-a", "wf-b"], ["m-clip"])
+    store.set_run_status(session, rid, "completed")
+    _trunc_match(session, rid, "m-clip",
+                 {"calls": 4, "steps": 2, "severed_tool_calls": 1})
+    _trunc_match(session, rid, "m-clip",
+                 {"calls": 0, "steps": 0, "severed_tool_calls": 0},
+                 workflow_id="wf-b")
+    session.expire_all()
+
+    row = next(r for r in store.leaderboard(session, run_id=rid)
+               if r["model_id"] == "m-clip")
+    assert row["truncation"] == {
+        "calls": 4, "severed_tool_calls": 1,
+        "matches_affected": 1, "matches_measured": 2, "matches_total": 2,
+    }
+
+
+def test_leaderboard_truncation_is_none_for_pre_instrument_matches(session):
+    """Never report an unmeasured board as clean.
+
+    Every board through #114 ran under langchain's 4096 fallback and really did
+    truncate; those rows carry no block at all. Folding that absence into
+    ``calls: 0`` would state the opposite of what happened, which is the same
+    `empty` vs `unavailable` error the report module exists to avoid.
+    """
+    rid = _make_run(session, ["wf-a"], ["m-legacy"])
+    store.set_run_status(session, rid, "completed")
+    _trunc_match(session, rid, "m-legacy", None)
+    session.expire_all()
+
+    row = next(r for r in store.leaderboard(session, run_id=rid)
+               if r["model_id"] == "m-legacy")
+    assert row["truncation"] is None
+
+
+def test_match_dict_hoists_truncation_beside_the_score(session):
+    """The match CELL renders it, so it cannot live only inside the breakdown."""
+    rid = _make_run(session, ["wf-a"], ["m-clip"])
+    _trunc_match(session, rid, "m-clip",
+                 {"calls": 2, "steps": 1, "severed_tool_calls": 2})
+    session.expire_all()
+    got = store.get_run(session, rid)
+    match = got["matches"][0]
+    assert match["truncation"]["calls"] == 2
+    assert match["truncation"]["severed_tool_calls"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Output budget is part of the contestant key (M4)
+# ---------------------------------------------------------------------------
+
+def _budget_match(session, run_id, model_id, budget, *, objective=70.0,
+                  workflow_id="wf-a"):
+    return store.record_match(
+        session, run_id, workflow_id, model_id,
+        objective_score=objective, judged_score=None, total_score=objective,
+        judge_missing=False, config={"max_output_tokens": budget},
+        transcript_path=None, status="scored",
+        score_breakdown={"objective_score": objective, "passed": 1, "total": 1},
+        max_output_tokens=budget,
+    )
+
+
+def test_two_budgets_of_one_model_are_two_rows_not_one_upsert(session):
+    """The upsert MUST filter on the budget or the second arm clobbers the first.
+
+    Before budget joined the key, recording the 32768 arm would find the 4096
+    row by (run, workflow, model, effort) and overwrite it — the run would report
+    completed with an arm silently missing.
+    """
+    rid = _make_run(session, ["wf-a"], ["m-x"])
+    a = _budget_match(session, rid, "m-x", 4096, objective=70.0)
+    b = _budget_match(session, rid, "m-x", 32768, objective=86.4)
+    assert a != b
+
+    store.set_run_status(session, rid, "completed")
+    session.expire_all()
+    rows = [r for r in store.leaderboard(session, run_id=rid)
+            if r["model_id"] == "m-x"]
+    assert len(rows) == 2
+    assert {r["max_output_tokens"] for r in rows} == {4096, 32768}
+    # Two regimes, two scores — never one average.
+    assert sorted(r["mean_objective"] for r in rows) == [70.0, 86.4]
+
+
+def test_unpinned_budget_still_collides_with_itself(session):
+    """0, not NULL: SQL treats NULLs as DISTINCT in a UNIQUE constraint, so a
+    nullable column would silently stop protecting unpinned pairs at the DB
+    level while the Python upsert still dedups — a backstop that looks present
+    and is not."""
+    rid = _make_run(session, ["wf-a"], ["m-x"])
+    first = _budget_match(session, rid, "m-x", None, objective=70.0)
+    second = _budget_match(session, rid, "m-x", None, objective=71.0)
+    assert first == second  # same contestant → upsert, not a new row
+
+
+def test_merge_runs_folds_by_budget_so_two_regimes_never_average(session):
+    """merge_runs groups on the contestant key; budget is part of it.
+
+    Leaving it out would produce exactly the row this change exists to prevent:
+    one average across regimes that runs #118/#119 measured 16.4 points apart.
+    """
+    r1 = _make_run(session, ["wf-a"], ["m-x"])
+    _budget_match(session, r1, "m-x", 4096, objective=70.0)
+    store.set_run_status(session, r1, "completed")
+    r2 = _make_run(session, ["wf-a"], ["m-x"])
+    _budget_match(session, r2, "m-x", 32768, objective=86.4)
+    store.set_run_status(session, r2, "completed")
+    session.expire_all()
+
+    merged_id = store.merge_runs(session, [r1, r2])
+    store.set_run_status(session, merged_id, "completed")
+    session.expire_all()
+
+    rows = store.leaderboard(session, run_id=merged_id)
+    assert len(rows) == 2, "one merged row per ARM, never one averaging both"
+    assert {r["max_output_tokens"] for r in rows} == {4096, 32768}
+    # The merged run states every regime it contains.
+    merged = store.get_run(session, merged_id)
+    assert merged["max_output_tokens"] == {"m-x": [4096, 32768]}

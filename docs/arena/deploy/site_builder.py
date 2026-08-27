@@ -430,12 +430,19 @@ def _board(board: dict, by_file: dict[str, Post]) -> str:
     if post is not None:
         facts.append(f'<a href="./{post.html_name}">report</a>')
 
-    note = ""
+    notes = []
     if not carded:
-        note = (
+        notes.append(
             '<p class="board-note">Ranked on the objective axis: this board '
             "predates the Model Ability Card, so it carries no OVR.</p>"
         )
+    # An editorial caveat from boards.yaml. Escaped, because unlike a blurb this
+    # is prose about scoring and must not be able to inject markup.
+    if board.get("note"):
+        notes.append(
+            f'<p class="board-note">{escape(str(board["note"]))}</p>'
+        )
+    note = "".join(notes)
 
     head = "".join(f"<th>{h}</th>" for h in headers)
     return (

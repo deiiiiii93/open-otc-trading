@@ -24,7 +24,7 @@ from pathlib import Path
 import yaml
 
 BOARD_REQUIRED = {"run", "workflow"}
-BOARD_OPTIONAL = {"label", "post"}
+BOARD_OPTIONAL = {"label", "note", "post"}
 BOARD_ALLOWED = BOARD_REQUIRED | BOARD_OPTIONAL
 
 PROVISIONAL_REQUIRED = {"run"}
@@ -52,6 +52,12 @@ class BoardRef:
     workflow: str
     label: str
     post: str | None = None
+    # An editorial caveat rendered above the table. A board's scores are DERIVED
+    # from the arena DB at build time, so a later scoring change (a par
+    # calibration, a manifest rescore) silently moves a published board's
+    # numbers -- and can reorder its podium. The note is where that is disclosed;
+    # provisional entries have had one for the same reason.
+    note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -129,8 +135,10 @@ def _ref(raw: object, index: int) -> BoardRef:
         raise BoardsError(f"{where}: workflow is empty")
 
     post = raw.get("post")
+    note = raw.get("note")
     return BoardRef(
         run=run,
+        note=str(note).strip() if note else None,
         workflow=workflow,
         label=str(raw.get("label") or f"Run #{run}").strip(),
         post=str(post) if post else None,
@@ -322,6 +330,7 @@ def shape_board(
         "label": ref.label,
         "date": date,
         "post": ref.post,
+        "note": ref.note,
         "checks": checks,
         # A single carded contestant is enough to warrant the OVR column; the
         # uncarded rows render an em dash there, which is the honest reading.

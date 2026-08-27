@@ -10,6 +10,12 @@ export type ArenaRunSummary = {
   model_ids: string[];
   /** null = unpinned (vendor default) — true of every run before this existed. */
   reasoning_effort?: string | null;
+  /**
+   * Per-model arm maps, {model_slug: [value | null, ...]}. Present on the runs
+   * LIST so a board's regime is visible without opening a match.
+   */
+  reasoning_efforts?: Record<string, (string | null)[]>;
+  max_output_tokens?: Record<string, (number | null)[]>;
 };
 
 export type ArenaCheck = {
@@ -92,6 +98,54 @@ export type ArenaScoreBreakdown = {
   aggregate?: ArenaScoreBreakdown[];
 };
 
+/**
+ * Output-budget truncation: LLM calls that hit the max-output-token ceiling and
+ * were cut mid-emission. `null` means NEVER MEASURED — the match predates the
+ * instrument — which is not the same claim as zero. Boards before run #115 ran
+ * under langchain's 4096 fallback and really did truncate.
+ *
+ * `severed_tool_calls` is what makes it expensive: the cap landed mid-argument,
+ * so the tool call was downgraded to `invalid_tool_call` and never ran.
+ */
+export type ArenaTruncation = {
+  calls: number;
+  severed_tool_calls: number;
+  // Per-match block (drilldown) carries steps/trials; the board row carries
+  // matches_*. Both are optional so one type serves both shapes.
+  steps?: number;
+  trials_affected?: number;
+  trials_measured?: number;
+  trials_total?: number;
+  matches_affected?: number;
+  matches_measured?: number;
+  matches_total?: number;
+};
+
+/**
+ * Tool calls the provider returned STRUCTURALLY UNUSABLE — empty `id` and/or
+ * empty `name` — which the harness cannot dispatch. `null` means NEVER
+ * MEASURED (the match predates the instrument), which is not the same claim as
+ * zero: run #122's arm A malformed 100% of one contestant's calls.
+ *
+ * Costlier than truncation, because the agent cannot recover on the next turn:
+ * it re-issues the same call and loops to the recursion limit, leaving a blank
+ * transcript with NO errors — so the infra-blank gate cannot see it and the
+ * match scores at the ~7.7 prohibition floor as if the model had simply
+ * declined to act.
+ */
+export type ArenaMalformed = {
+  calls: number;
+  // Per-match block (drilldown) carries steps/trials; the board row carries
+  // matches_*. Both optional so one type serves both shapes.
+  steps?: number;
+  trials_affected?: number;
+  trials_measured?: number;
+  trials_total?: number;
+  matches_affected?: number;
+  matches_measured?: number;
+  matches_total?: number;
+};
+
 export type ArenaMatchSummary = {
   id: number;
   workflow_id: string;
@@ -101,6 +155,10 @@ export type ArenaMatchSummary = {
   // cells unable to tell two arms of a model apart. Null = unpinned (the arm ran
   // at the vendor default).
   reasoning_effort?: string | null;
+  // The other half of the arm; null = the run did not pin a budget. Declared
+  // here for the same reason as reasoning_effort was: the API can send a field
+  // the UI cannot consume until the TypeScript type names it.
+  max_output_tokens?: number | null;
   status: string;
   objective_score: number | null;
   judged_score: number | null;
@@ -108,6 +166,10 @@ export type ArenaMatchSummary = {
   judge_missing: boolean;
   transcript_path: string | null;
   score_breakdown: ArenaScoreBreakdown | null;
+  // Hoisted beside the score so the match cell can render it without walking
+  // into score_breakdown — where the multi-trial fold buries the diagnosis.
+  truncation?: ArenaTruncation | null;
+  malformed?: ArenaMalformed | null;
   // Corroborating failure reason (e.g. "infra_blank" for invalid matches).
   error?: string | null;
 };
@@ -123,6 +185,9 @@ export type ArenaLeaderboardRow = {
   // efforts is TWO rows that rank against each other. Null = the run did not pin
   // one, so this arm ran at the vendor default.
   reasoning_effort?: string | null;
+  // ...and its output-token budget. Two budgets are two regimes: runs #118/#119
+  // measured 16.4 mean objective apart on this alone.
+  max_output_tokens?: number | null;
   // Ranking is by the numbers-first ability card OVR (spec B5); `rank` is SHARED
   // across models tied on OVR. Uncarded rows fall back to objective ranking.
   rank: number;
@@ -139,6 +204,9 @@ export type ArenaLeaderboardRow = {
   subjective_stdev?: number | null;
   subjective_mode?: string;
   matches: number;
+  // Summed across this contestant's matches; null = never measured.
+  truncation?: ArenaTruncation | null;
+  malformed?: ArenaMalformed | null;
   // Infra-invalid match count — excluded from the averages, surfaced so
   // degraded routes stay visible.
   invalid?: number;
@@ -205,6 +273,13 @@ export type ArenaCreateRunRequest = {
    * once at its own vendor default.
    */
   reasoning_efforts?: Record<string, (ArenaReasoningEffort | null)[]>;
+  /**
+   * Per-model output-budget ARMS {model_slug: [tokens | null, ...]}, same shape
+   * and same reading as `reasoning_efforts`. Budget earns arm status by
+   * measurement, not analogy: runs #118 (4096) and #119 (32768) produced an
+   * artifact in 0/8 and 7/8 trials respectively, 16.4 mean objective apart.
+   */
+  max_output_tokens?: Record<string, (number | null)[]>;
 };
 
 export type ArenaWorkflowSummary = { id: string; title: string; tags: string[]; step_count: number };

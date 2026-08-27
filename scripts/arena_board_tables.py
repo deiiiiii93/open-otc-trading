@@ -25,11 +25,26 @@ WORKFLOW_SHORT = {
     "trader-rfq-booking-day": "Trader RFQ",
     "high-board-portfolio-review-day": "Portfolio Review",
     "risk-limit-breach-day": "Limit Breach",
+    "ops-settlement-day": "Ops Settlement",
 }
 
 
 def _cell(value) -> str:
     return "—" if value is None else str(value)
+
+
+def _effort(value) -> str:
+    """Render a contestant's pinned effort, or an em dash when unpinned.
+
+    `None` is an ABSENCE, not a level, so it must not render as a word that
+    looks like one. Every surface showing a contestant has to show this: a
+    board can carry the same model at two efforts (they are separate
+    contestants), and without the column they are indistinguishable rows --
+    same model, same workflow, same status, same radar. Run #109 shipped
+    exactly that, Grok 4.6 twice at OVR 75 and 74 with no way to tell which
+    arm was which.
+    """
+    return "—" if value in (None, "") else str(value)
 
 
 def _mean_tool_calls(bd: dict) -> float | None:
@@ -66,14 +81,16 @@ def build(run_id: int) -> tuple[str, list]:
         lines.append("")
         lines.append("### Hero cards — mean across all scored workflows")
         lines.append("")
-        lines.append("| Model | OVR | " + " | ".join(STAT_ORDER)
+        lines.append("| Model | Eff | OVR | " + " | ".join(STAT_ORDER)
                      + " | Obj | Workflows |")
-        lines.append("|---|:---:|" + ":---:|" * len(STAT_ORDER) + ":---:|:---:|")
+        lines.append("|---|:---:|:---:|" + ":---:|" * len(STAT_ORDER) + ":---:|:---:|")
         for row in board:
             mean = row.get("card_mean")
             name = get_model(row["model_id"]).display_name
+            eff = _effort(row.get("reasoning_effort"))
             if not mean:
-                lines.append(f"| {name} | — | " + " | ".join("—" for _ in STAT_ORDER)
+                lines.append(f"| {name} | {eff} | — | "
+                             + " | ".join("—" for _ in STAT_ORDER)
                              + f" | {row.get('mean_objective')} | "
                              f"{row.get('carded_count')}/{row.get('match_count')} uncarded |")
                 continue
@@ -81,22 +98,28 @@ def build(run_id: int) -> tuple[str, list]:
             # measure), so a .get() default never fires — coalesce explicitly.
             stats = [_cell(mean.get("con" if s == "CON" else s)) for s in STAT_ORDER]
             obj = row.get("mean_objective")
-            lines.append(f"| **{name}** | **{mean['ovr']}** | " + " | ".join(stats)
+            lines.append(f"| **{name}** | {eff} | **{mean['ovr']}** | "
+                         + " | ".join(stats)
                          + f" | {obj:.1f} | {row.get('match_count')} |")
         lines.append("")
 
         lines.append("### Per-workflow cards")
         lines.append("")
-        lines.append("| Model | Workflow | OVR | " + " | ".join(STAT_ORDER)
+        lines.append("| Model | Eff | Workflow | OVR | " + " | ".join(STAT_ORDER)
                      + " | Obj | Trials | Calls |")
-        lines.append("|---|---|:---:|" + ":---:|" * len(STAT_ORDER) + ":---:|:---:|:---:|")
-        for m in sorted(run["matches"], key=lambda x: (x["model_id"], x["workflow_id"])):
+        lines.append("|---|:---:|---|:---:|" + ":---:|" * len(STAT_ORDER)
+                     + ":---:|:---:|:---:|")
+        for m in sorted(run["matches"],
+                        key=lambda x: (x["model_id"], x.get("reasoning_effort") or "",
+                                       x["workflow_id"])):
             bd = m.get("score_breakdown") or {}
             card = bd.get("card")
             name = get_model(m["model_id"]).display_name
+            eff = _effort(m.get("reasoning_effort"))
             wf = WORKFLOW_SHORT.get(m["workflow_id"], m["workflow_id"])
             if m["status"] != "scored":
-                lines.append(f"| {name} | {wf} | — | " + " | ".join("—" for _ in STAT_ORDER)
+                lines.append(f"| {name} | {eff} | {wf} | — | "
+                             + " | ".join("—" for _ in STAT_ORDER)
                              + f" | — | — | {m['status']}: {m.get('error') or ''} |")
                 continue
             calls = _mean_tool_calls(bd)
@@ -107,7 +130,7 @@ def build(run_id: int) -> tuple[str, list]:
             else:
                 vals = ["—"] * len(STAT_ORDER)
                 ovr = f"uncarded ({bd.get('card_reason')})"
-            lines.append(f"| {name} | {wf} | {ovr} | " + " | ".join(vals)
+            lines.append(f"| {name} | {eff} | {wf} | {ovr} | " + " | ".join(vals)
                          + f" | {m['objective_score']:.1f} | {bd.get('n_trials','—')} "
                          f"| {f'{calls:.0f}' if calls is not None else '—'} |")
         lines.append("")
@@ -143,11 +166,154 @@ def build(run_id: int) -> tuple[str, list]:
         session.close()
 
 
+def _model_means(session, run_id: int) -> dict:
+    """Per-model aggregates for one run: card stats, objective, mean calls, effort."""
+    from app.services.arena import store
+
+    run = store.get_run(session, run_id)
+    if run is None:
+        raise SystemExit(f"run {run_id} not found")
+    board = {r["model_id"]: r for r in store.leaderboard(session, run_id=run_id)}
+
+    calls: dict[str, list[float]] = {}
+    per_wf: dict[tuple[str, str], dict] = {}
+    for m in run["matches"]:
+        if m["status"] != "scored":
+            continue
+        bd = m.get("score_breakdown") or {}
+        c = _mean_tool_calls(bd)
+        if c is not None:
+            calls.setdefault(m["model_id"], []).append(c)
+        per_wf[(m["model_id"], m["workflow_id"])] = {
+            "ovr": (bd.get("card") or {}).get("ovr"),
+            "obj": m["objective_score"],
+            "calls": c,
+        }
+
+    out = {}
+    for model_id, row in board.items():
+        cs = calls.get(model_id) or []
+        out[model_id] = {
+            "row": row,
+            "effort": row.get("reasoning_effort"),
+            "calls": (sum(cs) / len(cs)) if cs else None,
+        }
+    return {"models": out, "per_wf": per_wf, "workflows": run["workflow_ids"]}
+
+
+def _delta(a, b) -> str:
+    """Signed delta cell, blank when either side is missing."""
+    if a is None or b is None:
+        return "—"
+    d = a - b
+    return f"{d:+.1f}" if isinstance(d, float) and abs(d) % 1 else f"{d:+.0f}"
+
+
+def build_compare(run_id: int, baseline_run_id: int) -> str:
+    """Paired within-model comparison of two runs (delta = run_id - baseline).
+
+    The point of pairing: two boards at two efforts are two operating REGIMES,
+    never one averaged row, and each model's own baseline arm is the only fair
+    control for its treatment arm. A cross-board ranking comparison would
+    confound the effort change with every difference between the fields.
+    """
+    from app.database import SessionLocal
+    from app.services.arena.models import get_model
+
+    session = SessionLocal()
+    try:
+        cur = _model_means(session, run_id)
+        base = _model_means(session, baseline_run_id)
+
+        lines: list[str] = []
+        lines.append(f"<!-- generated by scripts/arena_board_tables.py "
+                     f"--run-id {run_id} --baseline-run {baseline_run_id} -->")
+        lines.append("")
+        lines.append(f"### Paired effort comparison — run {run_id} vs run "
+                     f"{baseline_run_id} (delta = run {run_id} minus baseline)")
+        lines.append("")
+        lines.append("| Model | Eff | OVR | " + " | ".join(STAT_ORDER)
+                     + " | Obj | Calls |")
+        lines.append("|---|:---:|:---:|" + ":---:|" * len(STAT_ORDER) + ":---:|:---:|")
+
+        shared = [m for m in base["models"] if m in cur["models"]]
+        shared.sort(key=lambda m: -((cur["models"][m]["row"].get("card_mean")
+                                     or {}).get("ovr") or 0))
+
+        for model_id in shared:
+            name = get_model(model_id).display_name
+            for tag, side in (("base", base), ("cur", cur)):
+                e = side["models"][model_id]
+                mean = e["row"].get("card_mean") or {}
+                stats = [_cell(mean.get("con" if s == "CON" else s))
+                         for s in STAT_ORDER]
+                label = f"**{name}**" if tag == "base" else ""
+                obj = e["row"].get("mean_objective")
+                ncalls = "—" if e["calls"] is None else format(e["calls"], ".0f")
+                lines.append(
+                    f"| {label} | {_effort(e['effort'])} | "
+                    f"{_cell(mean.get('ovr'))} | " + " | ".join(stats)
+                    + f" | {obj:.1f} | {ncalls} |")
+            bm = base["models"][model_id]["row"].get("card_mean") or {}
+            cm = cur["models"][model_id]["row"].get("card_mean") or {}
+            dstats = [_delta(cm.get("con" if s == "CON" else s),
+                             bm.get("con" if s == "CON" else s))
+                      for s in STAT_ORDER]
+            lines.append(
+                f"| | **Δ** | **{_delta(cm.get('ovr'), bm.get('ovr'))}** | "
+                + " | ".join(dstats)
+                + f" | {_delta(cur['models'][model_id]['row'].get('mean_objective'), base['models'][model_id]['row'].get('mean_objective'))} | "
+                f"{_delta(cur['models'][model_id]['calls'], base['models'][model_id]['calls'])} |")
+        lines.append("")
+
+        # Per-workflow delta matrix. The effect is TASK-SHAPED: run #110 measured
+        # luna at -3.8 OVR on the flagship and +18.6 on high-board for the same
+        # effort change, so a single mean hides a sign flip.
+        wfs = [w for w in base["workflows"] if w in cur["workflows"]]
+        for metric, label in (("ovr", "ΔOVR"), ("obj", "Δobjective"),
+                              ("calls", "Δtool calls")):
+            lines.append(f"### {label} by workflow")
+            lines.append("")
+            lines.append("| Model | " + " | ".join(
+                WORKFLOW_SHORT.get(w, w) for w in wfs) + " |")
+            lines.append("|---|" + ":---:|" * len(wfs))
+            for model_id in shared:
+                name = get_model(model_id).display_name
+                cells = []
+                for w in wfs:
+                    c = cur["per_wf"].get((model_id, w)) or {}
+                    b = base["per_wf"].get((model_id, w)) or {}
+                    cells.append(_delta(c.get(metric), b.get(metric)))
+                lines.append(f"| {name} | " + " | ".join(cells) + " |")
+            lines.append("")
+
+        return "\n".join(lines)
+    finally:
+        session.close()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--run-id", type=int, required=True)
     ap.add_argument("--out", required=True, help="Path stem, no extension")
+    ap.add_argument(
+        "--baseline-run", type=int, default=None, metavar="RUN_ID",
+        help="Emit a PAIRED comparison instead of a single board: every model "
+             "appears as its baseline arm, its --run-id arm, and the delta "
+             "between them. Use for an A/B on one variable (effort, output "
+             "budget) where each model is its own control. Writes "
+             "<out>.compare.md alongside the usual tables.",
+    )
     args = ap.parse_args()
+
+    if args.baseline_run is not None:
+        text = build_compare(args.run_id, args.baseline_run)
+        out = Path(args.out).with_suffix(".compare.md")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text + "\n")
+        print(text)
+        print(f"\nwrote {out}")
+        return 0
 
     tables, charts = build(args.run_id)
     stem = Path(args.out)

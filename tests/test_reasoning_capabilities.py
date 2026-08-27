@@ -143,3 +143,37 @@ def test_provenance_is_surfaced():
     prov = rc.snapshot_provenance()
     assert prov["source"].startswith("https://")
     assert len(prov["source_sha256"]) == 64
+
+
+def test_provider_pinned_route_falls_back_to_unpinned_ladder():
+    """A `:provider` pin is a new route key; it must not silently go permissive.
+
+    ZenMux pins an upstream with a `model:provider` suffix (2026-08-25), which is a
+    DIFFERENT `(channel, model_id)` key from the unpinned twin. Falling through to
+    "unknown" would drop every measured ladder we own and make the gate permissive
+    for the whole field at once — a gate that looks present and is not.
+    """
+    from app.services.deep_agent import reasoning_capabilities as rc
+    rc.reload_snapshot({"routes": {"zenmux": {
+        "vendor/model": {"reasoning": True, "efforts": ["low", "high"],
+                         "source": "measured"},
+        "vendor/pinned:special": {"reasoning": True, "efforts": ["max"],
+                                  "source": "measured"},
+    }}})
+    try:
+        # unpinned entry is inherited by the pinned id
+        got = rc.effort_support("zenmux", "vendor/model:someprovider")
+        assert got is not None and list(got.efforts) == ["low", "high"]
+        # a probed pinned entry still wins over its base
+        rc.reload_snapshot({"routes": {"zenmux": {
+            "vendor/pinned": {"reasoning": True, "efforts": ["low"],
+                              "source": "measured"},
+            "vendor/pinned:special": {"reasoning": True, "efforts": ["max"],
+                                      "source": "measured"},
+        }}})
+        got = rc.effort_support("zenmux", "vendor/pinned:special")
+        assert got is not None and list(got.efforts) == ["max"]
+        # a genuinely unknown model stays unknown (permissive), suffix or not
+        assert rc.effort_support("zenmux", "vendor/nothing:special") is None
+    finally:
+        rc.reload_snapshot(None)

@@ -393,6 +393,17 @@ def test_snowball_ko_query_tool_is_wired_into_deep_agent():
     assert "query_snowball_ko_from_spot" in tool_names
 
 
+def test_position_field_query_tools_are_wired_into_deep_agent():
+    """The progressive field-query scheme (catalog + select-only projection +
+    term-promoted summaries) must reach every persona, not just QUANT_AGENT_TOOLS."""
+    from app.services.agents import DEEP_AGENT_TOOL_NAMES, select_deep_agent_tools
+
+    tool_names = {t.name for t in select_deep_agent_tools()}
+    for name in ("describe_position_fields", "query_positions", "get_position_summaries"):
+        assert name in DEEP_AGENT_TOOL_NAMES
+        assert name in tool_names
+
+
 def test_escalation_policy_states_attempt_not_refuse():
     """The escalation-policy fragment must tell the model HOW escalation is
     triggered: by attempting the tool, not by refusing.

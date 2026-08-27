@@ -36,6 +36,10 @@ from ._shaping import (
     shape_valuation_results,
 )
 from ._product_inputs import ToolPositionSnapshotSpec
+from ..services.domains.position_field_catalog import (
+    field_catalog_payload,
+    select_hint,
+)
 
 TRADE_SHEET = positions_svc.TRADE_SHEET
 
@@ -152,8 +156,22 @@ class QuerySnowballKoFromSpotInput(BaseModel):
 
 class QueryPositionsInput(BaseModel):
     portfolio_id: int
-    filter: list[dict[str, Any]] = Field(default_factory=list)
-    select: list[str]
+    filter: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "Optional filters as {col, op, value}; col is any catalog field "
+            "name, op one of =, !=, <, <=, >, >=, in (list value)."
+        ),
+    )
+    select: list[str] = Field(
+        description=(
+            "Field names to return — the result rows carry ONLY these fields, "
+            "keyed by the names given here, so select just what the question "
+            "needs. Call describe_position_fields for the same catalog with "
+            "per-field types and meanings. Groups: "
+            + select_hint()
+        )
+    )
     order_by: tuple[str, str] | None = None
     limit: int = Field(default=200, ge=1, le=1000)
 
@@ -590,6 +608,21 @@ def query_positions_near_barrier_tool(
 
 
 @capability_gated(group=ToolGroup.DOMAIN_READ)
+@tool("describe_position_fields")
+def describe_position_fields_tool() -> dict[str, Any]:
+    """List every field selectable through query_positions, grouped by source
+    with value types and meanings (position base columns, product-level option
+    and futures dates, per-position term mirrors, cached barrier state).
+
+    query_positions returns ONLY the fields named in its select argument, so
+    call this first when unsure which field names exist, then select exactly
+    the fields the question needs — e.g. option.exercise_date or
+    futures.maturity_date for "nearest to maturity", which get_positions does
+    not return."""
+    return field_catalog_payload()
+
+
+@capability_gated(group=ToolGroup.DOMAIN_READ)
 @tool("query_positions", args_schema=QueryPositionsInput)
 def query_positions_tool(
     portfolio_id: int,
@@ -598,7 +631,11 @@ def query_positions_tool(
     order_by: tuple[str, str] | None = None,
     limit: int = 200,
 ) -> dict[str, Any]:
-    """Structured filter/query escape hatch over allowlisted position term columns."""
+    """Select-only projection over the position field catalog: rows carry
+    exactly the fields named in select, never the full position record. Use
+    describe_position_fields to discover field names; use filters to narrow
+    rows (e.g. status=open) and order_by on any catalog field (e.g.
+    option.exercise_date asc) to rank them."""
     database.init_db()
     with database.SessionLocal() as session:
         rows = terms_svc.query_positions(

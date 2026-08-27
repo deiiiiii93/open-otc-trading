@@ -24,6 +24,8 @@ import {
   type ArenaRunDetail,
   type ArenaRunSummary,
   type ArenaScoreBreakdown,
+  type ArenaTruncation,
+  type ArenaMalformed,
   type ArenaCheck,
   type ArenaObjectiveStep,
   type ArenaReasoningEffort,
@@ -578,6 +580,113 @@ function ScoreBreakdownView({ breakdown }: { breakdown: ArenaScoreBreakdown }) {
   );
 }
 
+/**
+ * The visible truncation flag (desk decision, 2026-08-20: "score it with a
+ * visible flag").
+ *
+ * Deliberately NOT a status change. Sweeping truncated matches to `invalid`
+ * would silently shrink historical boards — Run #20 would lose four
+ * contestants — and truncation does not reliably destroy a score: run #114
+ * scored 100.0 and 90.9 on two workflows that truncated, because the agent loop
+ * usually recovers on the next turn. It costs points only when the lost turn
+ * was scoring-critical, which the harness cannot know. So the match keeps its
+ * score and the reader gets told what the score is exposed to.
+ *
+ * Renders nothing when `calls` is 0 (measured, clean) AND nothing when
+ * `truncation` is null (never measured) — an absent flag must not be read as a
+ * clean bill of health for a board that predates the instrument.
+ */
+function TruncationBadge({
+  truncation,
+  className = '',
+}: {
+  truncation?: ArenaTruncation | null;
+  className?: string;
+}) {
+  if (!truncation || !truncation.calls) return null;
+  const severed = truncation.severed_tool_calls;
+  const scope =
+    truncation.matches_affected != null
+      ? `${truncation.matches_affected} of ${truncation.matches_measured} matches`
+      : truncation.trials_affected != null
+        ? `${truncation.trials_affected} of ${truncation.trials_measured} trials`
+        : null;
+  const title = [
+    `${truncation.calls} LLM call${truncation.calls === 1 ? '' : 's'} hit the output-token ceiling and were cut mid-emission.`,
+    scope ? `Affected ${scope}.` : null,
+    severed
+      ? `${severed} severed a tool call mid-argument, so the call never ran — that is where a truncation costs points.`
+      : 'No tool call was severed; the agent loop most likely recovered on the next turn.',
+    'The score is unadjusted: this is a caveat on the measurement, not a penalty.',
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return (
+    <span title={title} className={className}>
+      <Badge variant="warn">
+        clipped &times;{truncation.calls}
+        {severed ? ' \u2020' : ''}
+      </Badge>
+    </span>
+  );
+}
+
+/**
+ * The visible malformed-tool-call flag (run #122, 2026-08-24).
+ *
+ * Same posture as TruncationBadge — flag, never invalidate, never adjust the
+ * score — but this defect is louder, so the badge is too. A provider can return
+ * HTTP 200 with tool calls whose `id` and `name` are empty strings; the harness
+ * cannot dispatch them, the agent re-issues and loops to the recursion limit,
+ * and the transcript ends up blank with NO error anywhere. The infra-blank gate
+ * needs step errors to corroborate blankness, finds none, and records a real
+ * score — the ~7.7 prohibition floor, which inaction earns by satisfying every
+ * `tool_not_called` check. Without this badge that reads as "the model refused
+ * to act" rather than "we mangled its calls".
+ *
+ * Renders nothing when `calls` is 0 (measured, clean) AND nothing when
+ * `malformed` is null (never measured) — absence is not a clean bill of health.
+ */
+function MalformedBadge({
+  malformed,
+  className = '',
+}: {
+  malformed?: ArenaMalformed | null;
+  className?: string;
+}) {
+  if (!malformed || !malformed.calls) return null;
+  const scope =
+    malformed.matches_affected != null
+      ? `${malformed.matches_affected} of ${malformed.matches_measured} matches`
+      : malformed.trials_affected != null
+        ? `${malformed.trials_affected} of ${malformed.trials_measured} trials`
+        : null;
+  const title = [
+    `${malformed.calls} tool call${malformed.calls === 1 ? '' : 's'} came back with an empty id or name and could not be dispatched.`,
+    scope ? `Affected ${scope}.` : null,
+    'The model chose a tool and the request succeeded, but nothing ran — the agent then re-issues the same call, so this usually costs the whole match rather than one turn.',
+    'The score is unadjusted: this is a caveat on the measurement, not a penalty. Suspect the route (protocol/effort) before the model.',
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return (
+    <span title={title} className={className}>
+      {/* `neg`, not `warn`: truncation is usually recoverable on the next
+          turn, this usually is not — the agent re-issues the same undispatchable
+          call until the recursion limit. The two flags should not read alike. */}
+      <Badge variant="neg">
+        malformed &times;{malformed.calls}
+      </Badge>
+    </span>
+  );
+}
+
+/** Compact output budget for a badge: 32768 -> "32k". Unpinned renders nothing
+ *  at the call site — null is an absence, not a level, exactly like effort. */
+function formatBudget(tokens: number): string {
+  return tokens % 1024 === 0 ? `${tokens / 1024}k` : String(tokens);
+}
+
 function statusClass(status: string): string {
   if (status === 'completed') return 'wl-arena__status--completed';
   if (status === 'failed') return 'wl-arena__status--failed';
@@ -889,6 +998,14 @@ export function ArenaLive() {
             {row.reasoning_effort ? (
               <Badge variant="info">{row.reasoning_effort}</Badge>
             ) : null}
+            {/* The other half of the contestant key. Without it two budget arms
+                of one model are indistinguishable: same name, workflow, status
+                and radar — the same gap that showed Grok 4.6 twice on run #109. */}
+            {row.max_output_tokens ? (
+              <Badge variant="ink">{formatBudget(row.max_output_tokens)}</Badge>
+            ) : null}
+            <TruncationBadge truncation={row.truncation} />
+            <MalformedBadge malformed={row.malformed} />
           </span>
         ),
       },
@@ -995,7 +1112,8 @@ export function ArenaLive() {
               rows={leaderboard}
               // A contestant is (model, effort): keyed on model_id alone, two arms
               // of one model are duplicate React keys.
-              rowKey={(r) => `${r.model_id}::${r.reasoning_effort ?? ''}`}
+              rowKey={(r) =>
+                `${r.model_id}::${r.reasoning_effort ?? ''}::${r.max_output_tokens ?? ''}`}
             />
           )}
         </div>
@@ -1098,6 +1216,19 @@ export function ArenaLive() {
                               {match.reasoning_effort}
                             </Badge>
                           ) : null}
+                          {match.max_output_tokens ? (
+                            <Badge variant="ink" className="wl-arena__match-effort">
+                              {formatBudget(match.max_output_tokens)}
+                            </Badge>
+                          ) : null}
+                          <TruncationBadge
+                            truncation={match.truncation}
+                            className="wl-arena__match-effort"
+                          />
+                          <MalformedBadge
+                            malformed={match.malformed}
+                            className="wl-arena__match-effort"
+                          />
                         </span>
                         <span className="wl-arena__match-title" style={{ fontWeight: 'normal', color: 'var(--ink-2)' }}>
                           {match.workflow_id}

@@ -914,6 +914,7 @@ def run_match(
     harvest: Callable[..., Any] | None = None,
     settle: Callable[[], None] | None = None,
     reasoning_effort: str | None = None,
+    max_output_tokens: int | None = None,
 ) -> Any:
     """Run a single arena match and return a MatchTranscript.
 
@@ -924,6 +925,9 @@ def run_match(
         run_id: ArenaRun id used to tag the created thread (None in unit tests).
         reasoning_effort: Effort level pinned onto every turn's model selection,
             or None to leave the vendor default (the historical behaviour).
+        max_output_tokens: Output-token budget pinned onto every turn's model
+            selection, or None to leave the process default. Part of the
+            contestant key: two budgets are two regimes, not one averaged row.
         drive: Injectable turn driver ``(thread_id, content, selection) -> None``.
             Defaults to the stream_and_persist-based ``_default_drive``.
         harvest: Injectable transcript harvester ``(thread_id, workflow, model)``.
@@ -943,7 +947,8 @@ def run_match(
     _purge_seeded_trap_sets(loaded, _settings)
     _assert_trap_sets_absent(loaded, _settings)
     artifact_root = Path(artifact_root)
-    selection = arena_model_to_selection(model, reasoning_effort)
+    selection = arena_model_to_selection(
+        model, reasoning_effort, max_output_tokens)
 
     # Reset any prior same-named seed, then seed fresh (autoincrement IDs) and
     # create the arena-tagged thread.

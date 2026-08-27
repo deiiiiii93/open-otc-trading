@@ -306,6 +306,64 @@ def fold_trial_breakdowns(trials: list[dict]) -> dict:
         "objective_stdev": obj_stdev,
         "total_score": obj_mean,
         "subjective_mode": trials[0].get("subjective_mode", "disabled"),
+        # SUMMED across trials, unlike ``objective`` (trial 0 only) and
+        # ``objective_score`` (the mean). Neither of those is right for a
+        # caveat: a mean would dilute one badly-clipped trial into invisibility,
+        # and trial 0 alone would hide truncation that only happened in trial 1.
+        # ``trials_affected`` keeps the spread readable — 1 of 3 trials clipped
+        # is a different claim from 3 of 3.
+        "truncation": _fold_truncation(trials),
+        "malformed": _fold_malformed(trials),
+    }
+
+
+def _fold_truncation(trials: list[dict]) -> dict | None:
+    """Sum the per-trial truncation blocks, or None if none was ever recorded.
+
+    ``None`` means NOT MEASURED and is not the same claim as ``calls: 0``, which
+    means measured and clean. Every board before this instrument existed carries
+    no block at all — and those boards really did truncate — so folding their
+    absence into a confident zero would state the opposite of what happened.
+    ``trials_measured`` exposes the coverage for the one case that can mix them:
+    merge_runs folding a pre-instrument run with a post-instrument one.
+    """
+    measured = [t["truncation"] for t in trials
+                if isinstance(t.get("truncation"), dict)]
+    if not measured:
+        return None
+    return {
+        "calls": sum(int(b.get("calls") or 0) for b in measured),
+        "steps": sum(int(b.get("steps") or 0) for b in measured),
+        "severed_tool_calls": sum(
+            int(b.get("severed_tool_calls") or 0) for b in measured
+        ),
+        "trials_affected": sum(1 for b in measured if b.get("calls")),
+        "trials_measured": len(measured),
+        "trials_total": len(trials),
+    }
+
+
+def _fold_malformed(trials: list[dict]) -> dict | None:
+    """Sum the per-trial malformed-tool-call blocks, or None if never recorded.
+
+    ``None`` means NOT MEASURED and is emphatically not ``calls: 0``. Every
+    board before this instrument existed carries no block, and at least one of
+    them (run #122's arm A) really did malform 100% of a contestant's calls —
+    so folding absence into a confident zero would state the opposite of what
+    happened. Summed rather than averaged for the same reason as truncation: a
+    mean dilutes one destroyed trial into invisibility, and ``trials_affected``
+    keeps the spread readable.
+    """
+    measured = [t["malformed"] for t in trials
+                if isinstance(t.get("malformed"), dict)]
+    if not measured:
+        return None
+    return {
+        "calls": sum(int(b.get("calls") or 0) for b in measured),
+        "steps": sum(int(b.get("steps") or 0) for b in measured),
+        "trials_affected": sum(1 for b in measured if b.get("calls")),
+        "trials_measured": len(measured),
+        "trials_total": len(trials),
     }
 
 
@@ -569,6 +627,53 @@ def _workflow_call_count(transcript: MatchTranscript, loaded) -> int:
     return total
 
 
+def truncation_summary(transcript: MatchTranscript) -> dict:
+    """Count the LLM calls in *transcript* that ran out of output budget.
+
+    Truncation NEVER changes the score. A capped turn is a caveat on the
+    measurement, not a reason to discard it: sweeping such matches to
+    ``invalid`` would silently shrink historical boards (Run #20 would lose four
+    contestants), and truncation does not reliably destroy a score anyway — run
+    #114 scored 100.0 and 90.9 on two workflows that truncated, because the
+    agent loop usually recovers on the next turn. It costs points only when the
+    lost turn was scoring-critical. So the harness scores the match and flags
+    it, and the reader decides what the flag is worth.
+    """
+    per_step = [len(s.truncations or []) for s in transcript.steps]
+    severed = sum(
+        1 for s in transcript.steps for t in (s.truncations or [])
+        if t.get("severed_tool_call")
+    )
+    return {
+        "calls": sum(per_step),
+        "steps": sum(1 for n in per_step if n),
+        "severed_tool_calls": severed,
+    }
+
+
+def malformed_tool_call_summary(transcript: MatchTranscript) -> dict:
+    """Count tool calls the provider returned structurally unusable.
+
+    An empty ``id``/``name`` means the harness cannot dispatch the call: the
+    model chose a tool, the HTTP request succeeded, and nothing ran. Like
+    truncation this NEVER changes the score — but unlike truncation it is
+    usually fatal rather than merely wasteful, because the agent cannot recover
+    on the next turn: it re-issues the same call and loops to the recursion
+    limit. Run #122 measured a whole match at 7.7 (the prohibition floor) from
+    this alone, while the same model on another protocol scored 91.1.
+
+    Reported, not penalised, for the same reason truncation is: whether the lost
+    calls were scoring-critical is not something the harness can know, and
+    marking such matches ``invalid`` would silently shrink any board containing
+    one.
+    """
+    per_step = [len(s.malformed_tool_calls or []) for s in transcript.steps]
+    return {
+        "calls": sum(per_step),
+        "steps": sum(1 for n in per_step if n),
+    }
+
+
 def diagnose_heuristic(
     transcript: MatchTranscript,
     loaded,
@@ -591,6 +696,8 @@ def diagnose_heuristic(
 
     tool_calls = _workflow_call_count(transcript, loaded)
     errors = sum(len(s.errors) for s in transcript.steps)
+    trunc = truncation_summary(transcript)
+    malformed = malformed_tool_call_summary(transcript)
 
     parts = [
         f"{skills_hit}/{skills_total} expected skills",
@@ -599,6 +706,22 @@ def diagnose_heuristic(
     ]
     if errors:
         parts.append(f"{errors} error" + ("" if errors == 1 else "s"))
+    # The truncation flag rides in the human-readable summary too, not just the
+    # structured counts: the summary is what the match cell and the drilldown
+    # print, and a caveat nobody reads is not a caveat.
+    if trunc["calls"]:
+        parts.append(
+            f"{trunc['calls']} truncated"
+            + (" (tool call severed)" if trunc["severed_tool_calls"] else "")
+        )
+    # Ranked ahead of nothing and behind truncation only by convention; what
+    # matters is that it reaches the printed summary at all. A match can read
+    # "0 tool calls · 3/39 checks" with no error anywhere, and without this the
+    # reader has no way to tell a model that declined to act from one whose
+    # calls the provider mangled.
+    if malformed["calls"]:
+        parts.append(f"{malformed['calls']} malformed tool call"
+                     + ("" if malformed["calls"] == 1 else "s"))
     summary = " · ".join(parts)
 
     return {
@@ -609,6 +732,11 @@ def diagnose_heuristic(
         "checks_passed": passed,
         "checks_total": total,
         "errors": errors,
+        "truncated_calls": trunc["calls"],
+        "truncated_steps": trunc["steps"],
+        "severed_tool_calls": trunc["severed_tool_calls"],
+        "malformed_tool_calls": malformed["calls"],
+        "malformed_tool_call_steps": malformed["steps"],
     }
 
 

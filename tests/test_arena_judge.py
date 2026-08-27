@@ -370,6 +370,12 @@ def _post_for_fixed(scores_by_model):
     return factory
 
 
+def _zid(slug: str) -> str:
+    """The registry's zenmux id for an arena slug — pinned, and repinnable."""
+    from app.services.arena.models import get_model
+    return get_model(slug).zenmux_name
+
+
 class TestJuryPanel:
     def test_panel_averages_and_stdev(self):
         from app.services.arena.judge import judge_panel
@@ -401,12 +407,12 @@ class TestJuryPanel:
         from app.services.arena.judge import judge_panel
         loaded, transcript, _ = _flagship_setup()
         r = judge_panel(transcript, loaded,
-                        judge_models=["deepseek-v4-pro", "anthropic/claude-opus-4.8", "qwen/qwen3.7-max"],
+                        judge_models=["deepseek-v4-pro", _zid("claude-opus-4-8"), _zid("qwen-3-7-max")],
                         exclude_model="claude-opus-4-8",  # arena slug, not the pool id
                         post_for=_post_for_fixed(
-                            {"deepseek-v4-pro": 60, "qwen/qwen3.7-max": 40}),
+                            {"deepseek-v4-pro": 60, _zid("qwen-3-7-max"): 40}),
                         retries=0)
-        assert {j["model"] for j in r.per_judge} == {"deepseek-v4-pro", "qwen/qwen3.7-max"}
+        assert {j["model"] for j in r.per_judge} == {"deepseek-v4-pro", _zid("qwen-3-7-max")}
 
     def test_panel_substitutes_backfill_when_exclusion_drops_below_min(self):
         """If excluding the contestant drops the pool below min_judges, a
@@ -414,7 +420,7 @@ class TestJuryPanel:
         from app.services.arena.judge import judge_panel
         loaded, transcript, _ = _flagship_setup()
         r = judge_panel(transcript, loaded,
-                        judge_models=["deepseek-v4-pro", "anthropic/claude-opus-4.8"],
+                        judge_models=["deepseek-v4-pro", _zid("claude-opus-4-8")],
                         exclude_model="claude-opus-4-8", min_judges=2,
                         substitutes=["gemini-3.1-pro-preview"],
                         post_for=_post_for_fixed(
