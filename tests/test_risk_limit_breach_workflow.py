@@ -42,7 +42,9 @@ def test_bundle_loads(loaded):
         "run-risk",
         None,
     ]
-    assert wf.par_tool_calls is None
+    # Calibrated 2026-08-27: the MEDIAN of the 31 fully-correct trials on this
+    # manifest. Was None -- theoretical-minimum par of 11.
+    assert wf.par_tool_calls == 25
     for step in wf.steps:
         assert step.replay in loaded.fixtures.replay
 
@@ -70,8 +72,25 @@ def test_step2_skill_is_null_because_read_risk_result_is_unroutable(loaded):
     assert [t.name for t in step.expected_tools] == ["get_latest_risk_run"]
 
 
-def test_not_par_calibrated(loaded):
-    assert scoring.par_calibrated(loaded.workflow) is False
+def test_par_is_calibrated(loaded):
+    """Calibrated 2026-08-27 from every live run of this workflow; was uncalibrated.
+
+    `par_calibrated` True is what opts this workflow OUT of the legacy
+    hyperbolic EFF curve and INTO golf scoring. It is a distinct assertion from
+    the par VALUE because the shared `card_from_axes` kernel takes the flag
+    separately — a par set without the flag reaching the scorer would leave the
+    old curve running against a new denominator.
+
+    The value is the MEDIAN of the 31 fully-correct trials on THIS manifest,
+    matching how high-board-portfolio-review-day's 24 was derived. The tally
+    excludes MERGED runs, whose matches restate their sources' trials. Never
+    raise par to fit an over-executing board: an inflated par hands back free EFF
+    credit, which is the direction of error that actually corrupts a ranking.
+    """
+    assert scoring.par_calibrated(loaded.workflow) is True
+    assert scoring.designed_par(loaded.workflow) == 25
+    # The theoretical minimum is NOT par, and the gap is the whole point.
+    assert 25 > sum(len(s.expected_tools) for s in loaded.workflow.steps)
 
 
 def test_success_bans_waive_session_wide(loaded):

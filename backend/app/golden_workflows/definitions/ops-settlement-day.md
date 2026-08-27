@@ -14,8 +14,32 @@ objective: >
 fixtures: ops-settlement-day.fixtures.json
 tags: [settlement, lifecycle, operations, desk-workflow]
 accounting_date: "2026-08-12"
-# NO par_tool_calls: ships uncalibrated (legacy hyperbolic EFF) until a live
-# board shows what a realistic counted run costs (golf par is opt-in).
+# CALIBRATED 2026-08-26, CONFIRMED 2026-08-27 on THIS manifest (44 checks).
+# par is a realistic COUNTED competent run, not the theoretical minimum -- the
+# sum of expected_tools is 10, and no trial has ever come within twice that
+# (leanest ever: 21).
+# Same method as risk-limit-breach-day and high-board-portfolio-review-day: the
+# MEDIAN of perfect trials. Here that is 30.0 across 13 perfect trials
+# (min 21, p25 26.0, median 30.0, p75 35.0, max 52), excluding merged runs.
+#
+# CONFIRMED: run #130's `low` arm added two more fully-correct trials and the
+# median did not move at all (30.0 before and after). No effort skew here either
+# -- the low trials sit at median 30.0 against max at 29.5 -- unlike
+# risk-limit-breach-day, where low runs about 4 calls leaner than max and so
+# pulled that par down by one.
+#
+# CAVEAT -- still PROVISIONAL on BREADTH, which is the weakness that matters
+# here. Those 13 trials come from only THREE models across FIVE runs (#106,
+# #110, #113, #127, #130); high-board's 24 rests on 22 trials and
+# limit-breach's 25 on 31 trials from 13 models. A par set by three models can
+# encode their shared habits as the standard. Re-derive when a fourth and fifth
+# model finally post a fully-correct trial here.
+# Counted against counts_detail.tool_calls, which EXCLUDES META_TOOLS
+# {task, read_file, write_todos}.
+# Setting this opts the workflow OUT of the legacy hyperbolic curve and INTO
+# golf scoring, and because cards are derived on read it re-scores every stored
+# board.
+par_tool_calls: 30
 
 steps:
   - user: "Overnight the snowball on 000905.SH (position 9311, Arena Ops Desk) knocked out. The desk computed the client settlement at 512,500.00 CNY, settlement date 2026-08-14. Record the knock-out, then read back the settlement blotter for that position and record your answer by calling record_answer(answer={\"payoff_amount\": <number>, \"cashflow_status\": <status>})."

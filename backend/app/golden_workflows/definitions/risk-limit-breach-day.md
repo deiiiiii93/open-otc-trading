@@ -13,8 +13,36 @@ objective: >
 fixtures: risk-limit-breach-day.fixtures.json
 tags: [limits, risk, incident, desk-workflow]
 accounting_date: "2026-06-24"
-# NO par_tool_calls: ships uncalibrated (legacy hyperbolic EFF) until a live
-# board shows what a realistic counted run costs (golf par is opt-in).
+# CALIBRATED 2026-08-27 from every live run of this workflow -- 31 fully-correct
+# trials, 13 models, 13 runs (#99, #100, #103, #104, #107, #108, #110, #113,
+# #114, #115, #127, #128, #130). par is a realistic COUNTED competent run, not
+# the theoretical minimum -- the sum of expected_tools is 11, which no real trial
+# has ever approached (leanest ever: 15).
+# Method matches the only workflow with a real empirical anchor:
+# high-board-portfolio-review-day declares 24, and 24 is the MEDIAN of its 22
+# perfect trials. The median here is 25.
+# Distribution: min 15, p25 23.0, median 25.0, p75 31.0, max 85.
+#
+# STABILITY: an earlier pass over 24 trials (before run #130's `low` arm) gave
+# 26.0. Doubling the sample AND adding a whole new effort regime moved par by ONE
+# call -- that is the evidence this estimate is anchored rather than lucky.
+#
+# CAVEAT -- par drifts with the EFFORT MIX of whoever ran the boards: the `low`
+# trials here have median 23, the `max` trials median 27, so a low-heavy sample
+# tightens EFF for every model forever. 25 leans slightly low on purpose: the
+# desk default is `low` (run #110), and inflating par hands back free EFF credit,
+# which is the error that matters.
+#
+# The tally EXCLUDES merged runs (#101 is a fold of #99+#100, #129 of #127+#128):
+# a merge stores its sources' trials again, so counting both double-weights half
+# the sample. A median survives that -- n does not, which is the tell.
+# Counted against the same metric as counts_detail.tool_calls, which EXCLUDES
+# META_TOOLS {task, read_file, write_todos} -- never count skill-file reads into
+# a par or the denominator outgrows the numerator.
+# Setting this opts the workflow OUT of the legacy hyperbolic curve and INTO
+# golf scoring (full marks at or under par, linear decay to zero at 2x par),
+# and because cards are derived on read it re-scores every stored board.
+par_tool_calls: 25
 
 steps:
   - user: "Overnight limit monitoring flagged the Arena Limit Control Book. What is the current limit state? Record your answer by calling record_answer(answer={\"breached_limit\": <limit key or name>, \"observed_net_delta\": <number>})."
