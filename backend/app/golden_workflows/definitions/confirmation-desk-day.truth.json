@@ -1,0 +1,71 @@
+{
+  "documents": {
+    "conf-04-scanned-call-googl.pdf": {
+      "decoys": [],
+      "extract_mode": "vision",
+      "image_only": {
+        "reference": "ARD-EQO-2026-04688",
+        "strike": 205.0
+      },
+      "note": "Measured saturated 2026-08-28: all four contestants read it perfectly. Kept as the floor -- a contestant failing HERE makes nothing downstream interpretable.",
+      "role": "floor"
+    },
+    "conf-07-missing-initial-price-meta.pdf": {
+      "decoys": [
+        780.0
+      ],
+      "extract_mode": "text",
+      "image_only": {},
+      "note": "States NO Initial Price. The graded answer is that the field is absent; substituting the strike (780.00) is the measured failure -- 2 of 6 sampled runs of the incumbent extractor.",
+      "role": "trap-absence"
+    },
+    "conf-08-mixed-text-and-scan-amd.pdf": {
+      "decoys": [],
+      "extract_mode": "mixed",
+      "image_only": {
+        "initial_price": 178.9,
+        "strike": 185.0
+      },
+      "note": "The priced terms live only on the SCANNED page. Stage 1's page list is a hard filter on what stage 2 sees, so a model that drops page 2 returns empty terms. Baseline: 1 in 6 runs.",
+      "role": "page-selection"
+    },
+    "conf-09-amended-strike-nvda.pdf": {
+      "decoys": [
+        780.0,
+        902.1
+      ],
+      "extract_mode": "vision",
+      "image_only": {
+        "reference": "ARD-EQO-2026-04901",
+        "strike": 1045.0
+      },
+      "note": "The PRINTED strike (780.00) is struck through and 917.50 inked beside it. Reading the field without noticing the correction returns the decoy.",
+      "role": "trap-correction"
+    },
+    "conf-10-ticked-barrier-amzn.pdf": {
+      "decoys": [
+        214.0,
+        221.75
+      ],
+      "extract_mode": "vision",
+      "image_only": {
+        "barrier": 171.2,
+        "barrier_type": "DOWN_OUT"
+      },
+      "note": "Direction is carried ONLY by which box is ticked. Both labels are printed, so there is no textual fallback and no lexical hint -- the ink is the entire signal.",
+      "role": "trap-categorical"
+    },
+    "conf-11-faint-notional-orcl.pdf": {
+      "decoys": [
+        418750.0
+      ],
+      "extract_mode": "vision",
+      "image_only": {
+        "notional": 636000.0,
+        "reference": "ARD-EQO-2026-04903"
+      },
+      "note": "The notional sits in a low-contrast column beside an ordinary-contrast decoy of similar magnitude. The wrong number is the easier read.",
+      "role": "trap-degraded"
+    }
+  }
+}

@@ -129,6 +129,92 @@ def test_the_scanned_document_really_is_image_only():
     assert all(page.image_png is not None for page in content.pages)
 
 
+# ---------------------------------------------------------------------------
+# the vision traps (conf-09..conf-11) and the emitted truth file
+# ---------------------------------------------------------------------------
+
+TRUTH = Path(
+    "backend/app/golden_workflows/definitions/confirmation-desk-day.truth.json"
+)
+TRAPS = (
+    "conf-09-amended-strike-nvda.pdf",
+    "conf-10-ticked-barrier-amzn.pdf",
+    "conf-11-faint-notional-orcl.pdf",
+)
+
+
+def _truth() -> dict:
+    import json
+
+    return json.loads(TRUTH.read_text())
+
+
+def test_truth_is_emitted_from_the_same_dicts_the_documents_render_from(tmp_path):
+    """Hand-editing truth.json is how fixtures and documents silently disagree,
+    after which every grounding check mis-scores with no error anywhere."""
+    import json
+
+    from app.golden_workflows.documents.make_confirmations import write_truth
+
+    emitted = write_truth(tmp_path / "t.json")
+    assert emitted == _truth()
+    assert json.loads((tmp_path / "t.json").read_text()) == _truth()
+
+
+def test_every_trap_document_is_image_only():
+    """A graded value that survives in the TEXT layer is not a vision check --
+    a text-only model would pass it by reading, and the check would measure
+    nothing about sight."""
+    from app.services.confirmations.extract import extract_document
+
+    for name in TRAPS:
+        content = extract_document(DOCS / name)
+        assert content.extract_mode == "vision", f"{name} is not image-only"
+
+
+def test_no_graded_value_leaks_into_the_text_layer():
+    from app.services.confirmations.extract import extract_document
+
+    for name, doc in _truth()["documents"].items():
+        content = extract_document(DOCS / name)
+        text = " ".join(p.text or "" for p in content.pages)
+        for field, value in doc.get("image_only", {}).items():
+            assert str(value) not in text, (
+                f"{name}: graded field {field}={value} is readable without vision"
+            )
+
+
+def test_each_graded_number_is_far_from_every_decoy_in_its_document():
+    """A graded value within rel_tol of a decoy passes on the WRONG number, so
+    the check would credit a model that misread the page."""
+    for name, doc in _truth()["documents"].items():
+        graded = [
+            v for v in doc.get("image_only", {}).values() if isinstance(v, (int, float))
+        ]
+        decoys = [float(d) for d in doc.get("decoys", [])]
+        for value in graded:
+            for decoy in decoys:
+                rel = abs(value - decoy) / max(abs(value), 1.0)
+                assert rel > 0.05, (
+                    f"{name}: graded {value} is within 5% of decoy {decoy}"
+                )
+
+
+def test_the_amended_strike_document_keeps_the_superseded_value_as_a_decoy():
+    """The whole point of conf-09: the PRINTED strike is still on the page, struck
+    through. A model that reads the field without noticing the correction returns
+    the decoy, and must fail."""
+    doc = _truth()["documents"]["conf-09-amended-strike-nvda.pdf"]
+    assert doc["image_only"]["strike"] not in doc["decoys"]
+    assert len(doc["decoys"]) >= 1
+
+
+def test_the_barrier_trap_grades_a_categorical_with_no_textual_fallback():
+    """conf-10 carries barrier direction ONLY in which box is ticked."""
+    doc = _truth()["documents"]["conf-10-ticked-barrier-amzn.pdf"]
+    assert doc["image_only"]["barrier_type"] in {"UP_OUT", "DOWN_OUT"}
+
+
 def test_the_mixed_document_keeps_one_text_page_and_one_scan():
     """conf-08 grades stage-1 PAGE SELECTION: the priced terms live only on the
     scanned page, so a model that drops it returns empty terms."""

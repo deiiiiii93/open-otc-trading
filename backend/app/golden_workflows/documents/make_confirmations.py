@@ -436,20 +436,34 @@ def _scan_font(size: int):
 
 
 def render_scan(lines: list[tuple[str, bool]], *, width: int = 1275,
-                height: int = 1650):
-    """Render text as a slightly-degraded grayscale page image (a 'scan')."""
+                height: int = 1650, annotate=None):
+    """Render text as a slightly-degraded grayscale page image (a 'scan').
+
+    ``annotate`` is called with ``(draw, fonts, ypos)`` AFTER the text is laid out
+    but BEFORE the degradation pass, so anything it draws is skewed, blurred and
+    grained exactly like the printed text -- an annotation added afterwards would
+    sit crisply on a degraded page and be trivially separable.
+
+    ``ypos`` maps the leading substring of each rendered line to its baseline y,
+    so an annotation can be anchored to a real line ("Strike Price:") instead of
+    a magic constant that silently drifts when a line is added above it.
+    """
     from PIL import Image, ImageDraw, ImageFilter
 
     img = Image.new("L", (width, height), 255)
     draw = ImageDraw.Draw(img)
     regular, bold = _scan_font(26), _scan_font(27)
     y = 150
+    ypos: dict[str, int] = {}
     for text, is_bold in lines:
         if text == "":
             y += 22
             continue
         draw.text((150, y), text, font=(bold if is_bold else regular), fill=25)
+        ypos.setdefault(text.split(":")[0].strip(), y)
         y += 40
+    if annotate is not None:
+        annotate(draw, {"regular": regular, "bold": bold}, ypos)
     # Degrade like an office scan: slight skew, soft optics, paper grain and a
     # faintly grey (not pure-white) background. Still readable, but the model
     # genuinely has to OCR it rather than read a crisp render.
@@ -612,8 +626,217 @@ C8 = {**LARKSPUR,
 
 
 # --------------------------------------------------------------------------
+# Arena VISION TRAPS (conf-09..conf-11), added 2026-08-28
+# --------------------------------------------------------------------------
+# Each renders IMAGE-ONLY and hides its graded value where only sight reaches it.
+# Every graded value sits far from every DECOY in its own document, so a misread
+# fails rather than coincidentally passing within rel_tol.
+#
+# MEASURED OUTCOME, 2026-08-28 -- READ THIS BEFORE CALLING THEM DISCRIMINATORS.
+# All four board contestants (gpt-5.6-luna, glm-5.3-flash, gemini-3.7-flash,
+# deepseek-v4-flash-vision-exp) read EVERY trap correctly, twice over:
+#
+#   pointed single-shot question   FLOOR 4/4  amended 4/4  ticked 4/4  faint 4/4
+#   real two-stage pipeline        amended 4/4  ticked 3/4*  faint 4/4
+#   (* the one miss was a 529 provider overload, not a misread)
+#
+# On the amended-strike document every model returned 1,045.00 and none returned
+# the struck-through 780.00. So OCR-level vision is SATURATED across this tier:
+# these documents do not separate the field on sight, and any check graded purely
+# on reading them will land N/N and carry no ability signal.
+#
+# That is a finding about the field, not a defect in the fixtures -- but it means
+# the board's discrimination has to come from the AGENTIC steps (repair, booking
+# restraint, the conf-07 absence trap, and EFF), not from the pixels. Publish the
+# per-check tally alongside any board built on these, or a saturated axis will
+# read as a difficulty claim it cannot support.
+
+BRIGHTWATER = dict(cp="Brightwater Capital Partners LLC",
+                   cp_lei="TESTLEI00BRIGHTWTR01", cp_attn="Confirmations Desk",
+                   cp_email="confirms@brightwater-cap.example")
+KESTREL_SP = dict(cp="Kestrel Structured Products S.A.",
+                  cp_lei="TESTLEI00KESTRELSP01", cp_attn="Trade Documentation",
+                  cp_email="docs@kestrel-sp.example")
+HALDEN = dict(cp="Halden Renshaw Securities Ltd", cp_lei="TESTLEI00HALDENRW001",
+              cp_attn="Operations", cp_email="ops@halden-renshaw.example")
+
+# conf-09 -- a PRINTED strike struck through, the amended value inked in the
+# margin with initials. Grades reading a CORRECTION, not just locating a field.
+# The superseded 780.00 stays on the page as the decoy: a model that reads the
+# field without noticing the strike-through returns it and must fail.
+C9 = {**BRIGHTWATER,
+      "ref": "ARD-EQO-2026-04901", "date_long": "August 24, 2026",
+      "trade_date_long": "August 24, 2026", "style": "European",
+      "option_type": "Call",
+      "issuer": "NVIDIA Corporation", "ticker": "NVDA", "num_options": "2,000",
+      "entitlement": "1 Share per Option", "strike": "780.00",
+      "initial_price": "902.10", "premium": "61.40",
+      "expiration_long": "March 19, 2027", "exchange": NASDAQ,
+      # Ink-only, never printed into the text lines.
+      #
+      # 1,045.00 rather than the first draft's 917.50, which sat 1.7% from the
+      # initial_price decoy (902.10) on the same page -- inside rel_tol, so a
+      # model returning the INITIAL PRICE instead of the strike would have
+      # passed on the wrong number. Now 13.7% from the initial price and 25%
+      # from the superseded strike. Caught by the decoy-separation guard, not by
+      # eye: the page reads correctly to a human either way.
+      "amended_strike": "1,045.00", "amend_initials": "R.McK."}
+
+# conf-10 -- barrier direction carried ONLY by which checkbox is ticked. Both
+# labels are printed, so there is no textual fallback and no lexical hint; the
+# ink is the entire signal.
+C10 = {**KESTREL_SP,
+       "ref": "ARD-EQO-2026-04902", "date_long": "August 25, 2026",
+       "trade_date_long": "August 25, 2026", "style": "European",
+       "option_type": "Put",
+       "issuer": "Amazon.com, Inc.", "ticker": "AMZN", "num_options": "1,500",
+       "entitlement": "1 Share per Option", "strike": "214.00",
+       "initial_price": "221.75", "premium": "8.35",
+       "expiration_long": "January 15, 2027", "exchange": NASDAQ,
+       "barrier": "171.20", "barrier_type": "DOWN_OUT"}
+
+# conf-11 -- the notional in a LOW-CONTRAST column beside a decoy of similar
+# magnitude. Grades precision under degradation: both numbers are legible, only
+# one is the notional, and the wrong one is the easier read.
+C11 = {**HALDEN,
+       "ref": "ARD-EQO-2026-04903", "date_long": "August 26, 2026",
+       "trade_date_long": "August 26, 2026", "style": "European",
+       "option_type": "Call",
+       "issuer": "Oracle Corporation", "ticker": "ORCL", "num_options": "4,000",
+       "entitlement": "1 Share per Option", "strike": "163.50",
+       "initial_price": "158.90", "premium": "12.05",
+       "expiration_long": "December 18, 2026", "exchange": NYSE,
+       "notional": "636,000.00", "decoy_collateral": "418,750.00"}
+
+
+# --------------------------------------------------------------------------
 # DOCX
 # --------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------
+# Vision-trap annotations (drawn pre-degradation, so they scan like the text)
+# --------------------------------------------------------------------------
+# Fill levels are chosen against render_scan's final transfer function,
+# `v -> 18 + v*0.90`: printed text at 25 lands near 40, paper at 255 lands near
+# 248. A "faint" fill of 150 lands near 153 -- clearly lighter than the body
+# text, still well separated from the paper. Legible-but-degraded is the target;
+# an illegible trap is UNWINNABLE (0/N) and carries no more signal than one
+# everybody passes.
+_INK = 40          # a pen, slightly lighter than the 25 of printed toner
+_FAINT = 150       # a tired toner cartridge / a lighter column
+_NORMAL = 25
+
+
+def _amend_strike(t: dict):
+    """Strike through the printed strike and ink the amended value beside it."""
+    label = "Strike Price:         "
+    line = f"{label}USD {t['strike']}"
+
+    def _draw(draw, fonts, ypos):
+        y = ypos.get("Strike Price")
+        if y is None:                      # layout changed -> fail loudly
+            raise RuntimeError("no 'Strike Price' line to annotate")
+        # MEASURE the printed value rather than guessing at pixel columns: a
+        # hardcoded span drifts silently the moment a label or font changes, and
+        # a stroke that misses the number is not a correction at all.
+        font = fonts["regular"]
+        x0 = 150 + font.getlength(label)
+        x1 = 150 + font.getlength(line)
+        draw.line((x0 - 6, y + 20, x1 + 6, y + 20), fill=_INK, width=4)
+        draw.text((x1 + 70, y - 4), f"USD {t['amended_strike']}",
+                  font=font, fill=_INK)
+        draw.text((x1 + 70, y + 34), f"amended {t['amend_initials']}",
+                  font=_scan_font(20), fill=_INK)
+    return _draw
+
+
+def _tick_barrier(t: dict):
+    """Two LABELLED options, one ticked. The ink is the ENTIRE signal.
+
+    Both labels are drawn, because a box without a label is not a hard trap --
+    it is an UNWINNABLE one, and an unwinnable check carries no more ability
+    signal than a saturated one while still occupying the denominator.
+    """
+    up_first = t["barrier_type"] == "UP_OUT"
+
+    def _draw(draw, fonts, ypos):
+        y = ypos.get("Barrier Direction")
+        if y is None:
+            raise RuntimeError("no 'Barrier Direction' line to annotate")
+        for idx, label in enumerate(("Up-and-Out", "Down-and-Out")):
+            by = y + 48 + idx * 52
+            draw.rectangle((470, by, 500, by + 30), outline=_NORMAL, width=3)
+            draw.text((530, by - 2), label, font=fonts["regular"], fill=_NORMAL)
+            ticked = (idx == 0) if up_first else (idx == 1)
+            if ticked:
+                # A hand tick, not a filled box: a filled rectangle is a
+                # trivially detectable blob, a stroke has to be SEEN.
+                draw.line((474, by + 16, 483, by + 26), fill=_INK, width=5)
+                draw.line((483, by + 26, 497, by + 4), fill=_INK, width=5)
+    return _draw
+
+
+def _faint_amounts(t: dict):
+    """A low-contrast notional beside an ordinary-contrast decoy."""
+    def _draw(draw, fonts, ypos):
+        # Anchors are keyed on the text BEFORE the first colon, so a numbered
+        # heading keeps its number.
+        y = ypos.get("3. Schedule of Amounts")
+        if y is None:
+            raise RuntimeError("no '3. Schedule of Amounts' line to annotate")
+        rows = (
+            ("Collateral Posted", t["decoy_collateral"], _NORMAL),
+            ("Notional Amount", t["notional"], _FAINT),
+        )
+        for idx, (label, value, fill) in enumerate(rows):
+            ry = y + 46 + idx * 44
+            draw.text((190, ry), label, font=fonts["regular"], fill=fill)
+            draw.text((640, ry), f"USD {value}", font=fonts["regular"], fill=fill)
+    return _draw
+
+
+def _trap_lines(t: dict, extra: list[tuple[str, bool]]) -> list[tuple[str, bool]]:
+    """scan_lines plus the anchor lines an annotation attaches to.
+
+    The anchors are printed; the VALUES are not. That split is the whole design:
+    a text-only reader sees that a field exists and cannot read what it says.
+    """
+    return scan_lines(t) + [("", False), *extra]
+
+
+def build_amended_strike(t: dict, path: Path) -> None:
+    lines = _trap_lines(t, [
+        ("2. Amendments:", True), ("", False),
+        ("The Strike Price above is amended as marked. The amended", False),
+        ("figure is controlling for all purposes of this Transaction.", False),
+    ])
+    save_scan_pdf([render_scan(lines, annotate=_amend_strike(t))], path)
+
+
+def build_ticked_barrier(t: dict, path: Path) -> None:
+    # SIX blank lines reserve the vertical space the two checkbox rows occupy.
+    # A blank advances 22px and the rows span ~130px below the anchor, so three
+    # blanks (the first draft) let the second box land ON TOP of the next
+    # printed line -- which no automated check here would have caught.
+    lines = _trap_lines(t, [
+        ("2. Barrier Terms:", True), ("", False),
+        (f"Barrier Price:        USD {t['barrier']}", False),
+        ("Barrier Direction:    (tick one)", False),
+        ("", False), ("", False), ("", False),
+        ("", False), ("", False), ("", False),
+        ("Observation:          Continuous", False),
+    ])
+    save_scan_pdf([render_scan(lines, annotate=_tick_barrier(t))], path)
+
+
+def build_faint_notional(t: dict, path: Path) -> None:
+    lines = _trap_lines(t, [
+        ("3. Schedule of Amounts:", True), ("", False),
+        ("", False), ("", False), ("", False), ("", False),
+        ("Amounts stated in the Settlement Currency.", False),
+    ])
+    save_scan_pdf([render_scan(lines, annotate=_faint_amounts(t))], path)
+
 
 def build_docx(t: dict, path: Path) -> None:
     from docx import Document
@@ -819,13 +1042,112 @@ def build_all(out_dir: Path | None = None) -> list[Path]:
     build_confirmation(C7).save(
         _emit(out_dir / "conf-07-missing-initial-price-meta.pdf"))
     build_mixed(C8, _emit(out_dir / "conf-08-mixed-text-and-scan-amd.pdf"))
+    build_amended_strike(C9, _emit(out_dir / "conf-09-amended-strike-nvda.pdf"))
+    build_ticked_barrier(C10, _emit(out_dir / "conf-10-ticked-barrier-amzn.pdf"))
+    build_faint_notional(C11, _emit(out_dir / "conf-11-faint-notional-orcl.pdf"))
 
     return written
+
+
+# --------------------------------------------------------------------------
+# Graded truth, emitted FROM the same dicts the documents render from
+# --------------------------------------------------------------------------
+# Hand-editing the truth file is exactly how fixtures and documents silently
+# disagree, after which every grounding check mis-scores with no error anywhere.
+#
+# `image_only` = values a model can obtain ONLY by looking. `decoys` = numbers
+# on the same page that a misread could plausibly return; a guard test asserts
+# every graded number sits >5% away from all of them, so a wrong read fails
+# rather than passing inside rel_tol.
+
+
+def _num(text: str) -> float:
+    return float(str(text).replace(",", ""))
+
+
+TRUTH_DOCUMENTS = {
+    "conf-04-scanned-call-googl.pdf": {
+        "role": "floor",
+        "extract_mode": "vision",
+        "image_only": {"strike": 205.00, "reference": "ARD-EQO-2026-04688"},
+        "decoys": [],
+        "note": "Measured saturated 2026-08-28: all four contestants read it "
+                "perfectly. Kept as the floor -- a contestant failing HERE makes "
+                "nothing downstream interpretable.",
+    },
+    "conf-08-mixed-text-and-scan-amd.pdf": {
+        "role": "page-selection",
+        "extract_mode": "mixed",
+        "image_only": {"strike": _num(C8["strike"]),
+                       "initial_price": _num(C8["initial_price"])},
+        "decoys": [],
+        "note": "The priced terms live only on the SCANNED page. Stage 1's page "
+                "list is a hard filter on what stage 2 sees, so a model that "
+                "drops page 2 returns empty terms. Baseline: 1 in 6 runs.",
+    },
+    "conf-09-amended-strike-nvda.pdf": {
+        "role": "trap-correction",
+        "extract_mode": "vision",
+        "image_only": {"strike": _num(C9["amended_strike"]),
+                       "reference": C9["ref"]},
+        "decoys": [_num(C9["strike"]), _num(C9["initial_price"])],
+        "note": "The PRINTED strike (780.00) is struck through and 917.50 inked "
+                "beside it. Reading the field without noticing the correction "
+                "returns the decoy.",
+    },
+    "conf-10-ticked-barrier-amzn.pdf": {
+        "role": "trap-categorical",
+        "extract_mode": "vision",
+        "image_only": {"barrier_type": C10["barrier_type"],
+                       "barrier": _num(C10["barrier"])},
+        "decoys": [_num(C10["strike"]), _num(C10["initial_price"])],
+        "note": "Direction is carried ONLY by which box is ticked. Both labels "
+                "are printed, so there is no textual fallback and no lexical "
+                "hint -- the ink is the entire signal.",
+    },
+    "conf-11-faint-notional-orcl.pdf": {
+        "role": "trap-degraded",
+        "extract_mode": "vision",
+        "image_only": {"notional": _num(C11["notional"]),
+                       "reference": C11["ref"]},
+        "decoys": [_num(C11["decoy_collateral"])],
+        "note": "The notional sits in a low-contrast column beside an "
+                "ordinary-contrast decoy of similar magnitude. The wrong number "
+                "is the easier read.",
+    },
+    "conf-07-missing-initial-price-meta.pdf": {
+        "role": "trap-absence",
+        "extract_mode": "text",
+        "image_only": {},
+        "decoys": [_num(C7["strike"])],
+        "note": "States NO Initial Price. The graded answer is that the field is "
+                "absent; substituting the strike (780.00) is the measured "
+                "failure -- 2 of 6 sampled runs of the incumbent extractor.",
+    },
+}
+
+
+def write_truth(path: Path) -> dict:
+    """Emit the graded constants FROM the dicts the documents render from."""
+    import json
+
+    truth = {"documents": TRUTH_DOCUMENTS}
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text(json.dumps(truth, indent=2, sort_keys=True) + "\n")
+    return truth
+
+
+_TRUTH_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "definitions" / "confirmation-desk-day.truth.json"
+)
 
 
 def main() -> int:
     for path in build_all():
         print(f"  {path.name:44} {path.stat().st_size / 1024:7.1f} KB")
+    write_truth(_TRUTH_PATH)
+    print(f"  {'-> ' + _TRUTH_PATH.name:44}")
     return 0
 
 
