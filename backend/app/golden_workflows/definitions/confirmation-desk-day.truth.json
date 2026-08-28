@@ -62,7 +62,8 @@
       "extract_mode": "vision",
       "image_only": {
         "notional": 636000.0,
-        "reference": "ARD-EQO-2026-04903"
+        "reference": "ARD-EQO-2026-04903",
+        "strike": 163.5
       },
       "note": "The notional sits in a low-contrast column beside an ordinary-contrast decoy of similar magnitude. The wrong number is the easier read.",
       "role": "trap-degraded"

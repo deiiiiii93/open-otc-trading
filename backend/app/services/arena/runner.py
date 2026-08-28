@@ -19,12 +19,13 @@ from pathlib import Path
 from typing import Any, Callable
 
 from app import database
-from app.golden_workflows.fixtures import apply_seed
+from app.golden_workflows.fixtures import apply_seed, stage_documents
 from app.models import AgentThread
 from app.services.arena.models import arena_model_to_selection
 from app.services.arena.trace_harvest import (
     collect_portfolio_ids_created,
     collect_rfq_ids_touched,
+    collect_confirmation_batch_ids_created,
     collect_scenario_set_names_saved,
     transcript_from_trace,
 )
@@ -309,6 +310,64 @@ def _purge_match_rfqs(thread_id: int, rfq_id_baseline: int) -> None:
             _purge_arena_rfqs(session, owned)
     except Exception:  # noqa: BLE001 — best-effort; never mask the match outcome
         logger.warning("arena RFQ cleanup failed for thread %s", thread_id, exc_info=True)
+
+
+def _purge_match_confirmations(thread_id: int, batch_id_baseline: int) -> None:
+    """Best-effort cleanup of confirmation batches CREATED BY THIS MATCH.
+
+    Needed because ``_delete_portfolios_with_dependents`` CANNOT reach them.
+    That sweep finds dependents by scanning for columns literally named
+    ``portfolio_id`` / ``position_id`` and then recursing over foreign keys -- but
+    the recursion explicitly skips the portfolios table itself
+    (``if child is parent_table or child is portfolio_table: continue``).
+    ``ConfirmationBatch.default_portfolio_id`` is an FK to ``portfolios`` under a
+    DIFFERENT column name, so a batch parsed into the arena book is never swept
+    and the final portfolio delete dies on a foreign-key constraint.
+    (``ExtractedTrade.booked_position_id`` IS reachable, via the recursion from
+    ``positions``, so the leak is exactly one table wide -- and fatal.)
+
+    Runs in a ``finally`` for the same reason as ``_purge_match_rfqs``: the next
+    baseline is taken above a leaked row, so its own guard could never re-catch
+    it. Never raises -- cleanup is hygiene and must not mask a match failure.
+    """
+    from sqlalchemy import delete
+
+    from app import models
+
+    try:
+        created = collect_confirmation_batch_ids_created(thread_id)
+        doomed = {bid for bid in created if bid > batch_id_baseline}
+        if not doomed:
+            return
+        with database.SessionLocal() as session:
+            doc_ids = [
+                d.id
+                for d in session.query(models.ConfirmationDocument).filter(
+                    models.ConfirmationDocument.batch_id.in_(doomed)
+                )
+            ]
+            if doc_ids:
+                session.execute(
+                    delete(models.ExtractedTrade).where(
+                        models.ExtractedTrade.document_id.in_(doc_ids)
+                    )
+                )
+                session.execute(
+                    delete(models.ConfirmationDocument).where(
+                        models.ConfirmationDocument.id.in_(doc_ids)
+                    )
+                )
+            session.execute(
+                delete(models.ConfirmationBatch).where(
+                    models.ConfirmationBatch.id.in_(doomed)
+                )
+            )
+            session.commit()
+    except Exception:  # noqa: BLE001 — best-effort; never mask the match outcome
+        logger.warning(
+            "arena confirmation cleanup failed for thread %s", thread_id,
+            exc_info=True,
+        )
 
 
 def _delete_portfolios_with_dependents(session, pids, fk_ordered_tables=None) -> None:
@@ -970,6 +1029,11 @@ def run_match(
     # assert absence as a hard backstop (a survivor means the purge failed).
     _purge_seeded_trap_sets(loaded, _settings)
     _assert_trap_sets_absent(loaded, _settings)
+    # Stage the tracked confirmation corpus BEFORE the first turn:
+    # parse_trade_confirmation refuses any path outside artifact_dir/uploads, and
+    # a declared-but-unwritten document is a dangling pointer the model burns
+    # calls chasing. No-op for every workflow that declares none.
+    stage_documents(loaded.fixtures, Path(_settings.artifact_dir) / "uploads")
     artifact_root = Path(artifact_root)
     selection = arena_model_to_selection(
         model, reasoning_effort, max_output_tokens)
@@ -1031,6 +1095,12 @@ def run_match(
         portfolio_id_baseline = (
             session.query(func.max(models.Portfolio.id)).scalar() or 0
         )
+        # Same discipline for confirmation batches, which the portfolio
+        # dependents sweep structurally cannot reach (see
+        # _purge_match_confirmations).
+        confirmation_batch_baseline = (
+            session.query(func.max(models.ConfirmationBatch.id)).scalar() or 0
+        )
 
     # Same discipline for the scenario-set library, which is a DIRECTORY rather than
     # a table, so the high-water mark is the set of names present now. A model asked
@@ -1049,6 +1119,9 @@ def run_match(
 
         transcript = harvest(thread_id, workflow, model)
     finally:
+        # BEFORE the portfolio purge: a batch referencing a doomed portfolio
+        # would otherwise make that portfolio's delete fail on an FK constraint.
+        _purge_match_confirmations(thread_id, confirmation_batch_baseline)
         _purge_match_rfqs(thread_id, rfq_id_baseline)
         _purge_match_portfolios(thread_id, portfolio_id_baseline)
         _purge_match_scenario_sets(thread_id, set_name_baseline, _settings)

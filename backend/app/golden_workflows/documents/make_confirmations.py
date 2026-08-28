@@ -1108,7 +1108,10 @@ TRUTH_DOCUMENTS = {
     "conf-11-faint-notional-orcl.pdf": {
         "role": "trap-degraded",
         "extract_mode": "vision",
+        # The whole page is image-only, so the strike is obtainable only by
+        # sight too -- it is graded alongside the faint notional.
         "image_only": {"notional": _num(C11["notional"]),
+                       "strike": _num(C11["strike"]),
                        "reference": C11["ref"]},
         "decoys": [_num(C11["decoy_collateral"])],
         "note": "The notional sits in a low-contrast column beside an "

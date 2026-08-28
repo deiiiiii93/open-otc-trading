@@ -456,3 +456,89 @@ def test_lifecycle_and_settlement_namespaces_seed(tmp_path, session):
     ev = session.get(models.PositionLifecycleEvent, cf.lifecycle_event_id)
     assert ev.event_type == "close"
     assert ev.event_data == {"settlement_amount": 111.0}
+
+
+# ---------------------------------------------------------------------------
+# stage_documents -- the BINARY analogue of artifact_bodies
+# ---------------------------------------------------------------------------
+
+
+def _bundle_with(documents):
+    from app.golden_workflows.fixtures import FixtureBundle
+
+    return FixtureBundle(seed={}, replay={}, seed_map={}, documents=documents)
+
+
+def test_stage_documents_copies_declared_files_into_the_uploads_root(tmp_path):
+    """A fixture that DECLARES a document must CREATE it. artifact_bodies writes
+    str only, so a PDF needs its own staging path -- otherwise the agent resolves
+    a dangling pointer, gets an error, and burns calls hunting a file that was
+    never written."""
+    from app.golden_workflows.fixtures import stage_documents
+
+    staged = stage_documents(
+        _bundle_with(["conf-04-scanned-call-googl.pdf"]), tmp_path
+    )
+    assert len(staged) == 1
+    assert staged[0].parent == tmp_path / "confirmations"
+    assert staged[0].name == "conf-04-scanned-call-googl.pdf"
+    assert staged[0].read_bytes()[:4] == b"%PDF"
+
+
+def test_stage_documents_lands_inside_the_tool_containment_root(tmp_path):
+    """parse_trade_confirmation refuses anything outside artifact_dir/uploads, so
+    the staged path must be under the root it is given."""
+    from app.golden_workflows.fixtures import stage_documents
+
+    staged = stage_documents(
+        _bundle_with(["conf-09-amended-strike-nvda.pdf"]), tmp_path
+    )
+    assert staged[0].resolve().is_relative_to(tmp_path.resolve())
+
+
+def test_stage_documents_is_idempotent_across_trials(tmp_path):
+    from app.golden_workflows.fixtures import stage_documents
+
+    bundle = _bundle_with(["conf-04-scanned-call-googl.pdf"])
+    first = stage_documents(bundle, tmp_path)
+    second = stage_documents(bundle, tmp_path)
+    assert first == second
+    assert first[0].read_bytes() == second[0].read_bytes()
+
+
+def test_stage_documents_is_a_noop_for_a_workflow_declaring_none(tmp_path):
+    """Every existing workflow declares no documents and must be unaffected."""
+    from app.golden_workflows.fixtures import stage_documents
+
+    assert stage_documents(_bundle_with([]), tmp_path) == []
+    assert not (tmp_path / "confirmations").exists()
+
+
+def test_stage_documents_rejects_a_path_escaping_the_corpus(tmp_path):
+    """The declared name is a BARE FILENAME in the tracked corpus, never a path:
+    anything else lets a fixture reach outside the reviewed document set."""
+    import pytest
+
+    from app.golden_workflows.fixtures import stage_documents
+
+    for escape in ("../../../etc/passwd", "sub/conf-04-scanned-call-googl.pdf"):
+        with pytest.raises(ValueError):
+            stage_documents(_bundle_with([escape]), tmp_path)
+
+
+def test_stage_documents_raises_for_an_undeclared_document(tmp_path):
+    import pytest
+
+    from app.golden_workflows.fixtures import stage_documents
+
+    with pytest.raises(FileNotFoundError):
+        stage_documents(_bundle_with(["conf-99-does-not-exist.pdf"]), tmp_path)
+
+
+def test_every_existing_workflow_declares_no_documents():
+    from app.golden_workflows.registry import list_workflow_bundles
+
+    for bundle in list_workflow_bundles():
+        if bundle.workflow.id == "confirmation-desk-day":
+            continue
+        assert bundle.fixtures.documents == [], bundle.workflow.id
