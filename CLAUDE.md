@@ -1250,6 +1250,86 @@ live and harvested paths are identical), skills `limits/monitor-limits` +
   producer); boundaries warning 500 / hard 600 sit strictly between clean and
   breach by construction (guard test).
 
+### confirmation-desk-day (the vision board)
+
+The sixth golden workflow (9 steps / **33 points**, persona `trader`,
+**uncalibrated par** — hyperbolic EFF until a live board calibrates it) and the
+first that exercises **vision**: parse six counterparty confirmations (five
+image-only or mixed), read back terms that exist only inside the images, decline
+to invent a term the document never states, book what validated, write the desk
+summary.
+
+- **The extraction sub-call MUST route to the contestant, or the board measures
+  nothing.** `resolve_confirmation_extractor_selection` picks by **registry tag**
+  (`confirmation_extractor` → `fast` → default), so without an override every
+  contestant reads every document with gemini-3.6-flash's eyes and every vision
+  check lands N/N — a check occupying the denominator with zero ability signal,
+  the Run #58 defect exactly. The manifest declares `extractor_model: contestant`;
+  the runner stamps the match's own selection onto `configurable`
+  (`CONFIRMATION_EXTRACTOR_SELECTION_KEY`), never from model or tool input.
+  Declared in the MANIFEST so the arm is predeclared and no other workflow is
+  silently rerouted.
+- **BOTH `configurable_extra` builds in `stream_and_persist` must stamp it.**
+  There are two — the workflow-routed path and the direct path — and which runs
+  depends on `settings.feature_workflow_routing`. An unstamped path silently
+  falls back to tag routing with no error anywhere (same trap as the `done` SSE
+  event). An AST test pins that every build carries the key.
+- **LangChain injects `config` by TYPE HINT, not by parameter name.**
+  `_get_runnable_config_param` walks `get_type_hints()` for `type_ is
+  RunnableConfig`. Dropping the annotation to a bare `config=None` stops
+  injection **silently**, and every unit test still passes because they call
+  `.func(...)` and pass config by hand. Guarded by a test that goes through
+  `.invoke()`.
+- **`requires: [vision]` is enforced at LAUNCH.** `queue_arena_run` rejects a
+  model whose registry row lacks the tag, via the shared `capability_rejection`
+  seam. **Unknown is PERMISSIVE** — an unresolvable route is not rejected, same
+  rule as the effort ladder. Only tag a model you have **actually sent an image
+  to**; ZenMux's `input_modalities` is a useful cross-check, never the authority.
+  Watch the near-identical names: `deepseek-v4-flash` is text-only,
+  `deepseek-v4-flash-vision-exp` is not.
+- **MEASURED 2026-08-28: OCR-level vision is SATURATED at this tier.** All four
+  contestants read every trap correctly, on a pointed question *and* through the
+  real two-stage pipeline. The grounding checks are expected near N/N — a finding
+  about the field, not difficulty. **Publish the per-check tally with any board
+  built on this workflow.** Discrimination lives in step 7 (reporting an absent
+  term rather than substituting the strike — the incumbent substituted in 2 of 6
+  runs), step 8 (booking restraint), and EFF.
+- **The corpus is TRACKED** at `backend/app/golden_workflows/documents/` with its
+  generator, and truth is **emitted from the same dicts the documents render
+  from**. Reproducibility is asserted on **content, not bytes**: PIL stamps
+  `/CreationDate` and python-docx writes zip mtimes, so byte equality is
+  unachievable and a byte guard would be permanently red. And `build_all` is only
+  deterministic **from a fresh interpreter** — a second call in one process
+  yields different scan pixels because the rendering stack consumes the RNG
+  lazily on first use, so the guard shells out.
+- **A trap can ship UNWINNABLE and every automated check still passes.** conf-10
+  first rendered with no checkbox labels and the second box overlapping the next
+  line: image-only ✓, value absent from the text layer ✓, decoys far ✓ — and no
+  way to know which box meant what. **Look at a new document before trusting it.**
+  Conversely the decoy-separation guard caught what looking could not: the first
+  amended strike sat 1.7% from the `initial_price` decoy, inside `rel_tol`, so a
+  model returning the wrong field would have passed.
+- **`stage_documents`** (`fixtures.py`) copies declared documents into
+  `artifact_dir/uploads/confirmations/` at match setup — the binary analogue of
+  `artifact_bodies`, which writes `str` only. A declared-but-unwritten document
+  is a dangling pointer the model burns calls chasing.
+- **`_purge_match_confirmations`** closes a real FK gap:
+  `ConfirmationBatch.default_portfolio_id` references `portfolios` under a column
+  name `_delete_portfolios_with_dependents` does not scan, and that sweep's FK
+  recursion **skips the portfolios table**, so a portfolio booked from a
+  confirmation could not be deleted at all. Runs BEFORE the portfolio purge.
+- **Fixture underlyings need `status: active`.** The booking gate requires active
+  AND tagged; `ensure_underlying` defaults to `draft`. This was latent for
+  `trader-rfq-booking-day`, which books MSFT and only works because MSFT is
+  already active here — on a clean DB its booking step fails.
+- **No agent tool repairs an extracted trade** (parse / get / book only), so a
+  "fix the invalid trade" step is unreachable. Step 7 grades reporting the
+  absence; step 8 grades not booking it.
+- **Synthesis needs an artifact step.** Only `artifact_exists` /
+  `artifact_contains` map to that axis and `_stat_from_tally` returns 0 for an
+  empty tally — so a workflow without one gives every contestant a CONSTANT SYN
+  of 0, dragging OVR down ~16 points uniformly while carrying no signal.
+
 ### ops-settlement-day
 
 The fifth golden workflow (8 steps / **44 points**, persona `trader`,

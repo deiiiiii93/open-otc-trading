@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`confirmation-desk-day` — a sixth golden workflow, and the first that
+  exercises vision.** Nine steps over the trade-confirmation pipeline: parse a
+  batch of six counterparty documents (five of them image-only scans or mixed),
+  read back terms that exist only inside those images, decline to invent a term
+  the document never states, book what validated, and write the desk summary.
+  Persona `trader`; the golden replay earns 33/33 across all four objective axes.
+- **The extraction sub-call can be routed to the arena contestant.** New manifest
+  field `extractor_model: contestant`. Without it,
+  `resolve_confirmation_extractor_selection` picks the extraction model by
+  **registry tag**, so every contestant on a vision board would read every
+  document with whichever model holds `confirmation_extractor` — and every vision
+  check would land N/N across the field, carrying zero ability signal while still
+  occupying the denominator. The override rides a server-stamped `configurable`
+  key (never model or tool input) and is unset on all five existing workflows, so
+  their behaviour is byte-identical.
+- **A `vision` capability tag, enforced at launch.** A workflow may declare
+  `requires: [vision]`; `queue_arena_run` rejects a model whose registry row does
+  not carry the tag, before the run starts. A blind contestant would otherwise
+  post a real-*looking* score indistinguishable from poor ability. Only
+  probe-verified models are tagged: `gpt-5.6-luna`, `glm-5.3-flash`,
+  `gemini-3.7-flash`, `gemini-3.6-flash`, `deepseek-v4-flash-vision-exp`.
+- **`deepseek/deepseek-v4-flash-vision-exp` as an arena contestant**
+  (`deepseek-v4-flash-vision`), pinned to the `deepseek` upstream. Note it is a
+  **different model** from `deepseek/deepseek-v4-flash`, which the gateway
+  declares text-only.
+- **The synthetic confirmation corpus is now tracked**, at
+  `backend/app/golden_workflows/documents/`, with its generator. Three new
+  vision-trap documents: a struck-through-and-amended strike, a barrier direction
+  carried only by a ticked box, and a low-contrast notional beside a decoy.
+- **`stage_documents`** copies a fixture's declared documents into the agent's
+  uploads root — the binary analogue of `artifact_bodies`, which writes `str`
+  only and so cannot carry a PDF.
+
+### Fixed
+- **The confirmation extractor now accepts block-list content.** An
+  Anthropic-protocol *reasoning* model returns `.content` as
+  `[thinking, text]`, and `RegistryExtractorClient.complete()` raised on anything
+  non-`str`, so every parse died. Reachable today by tagging such a model
+  `confirmation_extractor`.
+- **Confirmation batches created by an arena match are now purged.**
+  `ConfirmationBatch.default_portfolio_id` is a foreign key to `portfolios` under
+  a column name the dependents sweep does not scan, and that sweep's FK recursion
+  explicitly skips the portfolios table — so a portfolio booked from a
+  confirmation could not be deleted at all.
+- **Fixture-seeded underlyings can now be made bookable.** The booking gate needs
+  **active AND tagged**, but the seeder called `ensure_underlying` without
+  `activate=True`, leaving fixture instruments `draft`. This was latent for
+  `trader-rfq-booking-day` too, which books MSFT and only worked because MSFT was
+  already active on this desk; on a clean database its booking step would fail.
+  A fixture row may now declare `status`, and the seeder only ever raises
+  `draft` → declared, so a retired desk symbol is never silently revived.
+
 ### Changed
 - **Model registry schema: `id` / `provider` / `protocol` are now three independent
   axes.** A model entry in `config/agent_channels.yaml` reads WHAT / WHOSE METAL /
