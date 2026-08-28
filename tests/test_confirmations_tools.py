@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 
+from langchain_core.runnables import RunnableConfig
+
 from app import database
 from app.config import Settings, configure_settings
 
@@ -134,7 +136,7 @@ def test_parse_trade_confirmation_creates_batch_with_trades(tmp_path, monkeypatc
         fake_client = FakeExtractorClient(_seg_json(), _trade_json("TC-TOOL-1"))
         monkeypatch.setattr(
             tools_confirmations.confirmations_llm,
-            "build_extractor_client", lambda: fake_client,
+            "build_extractor_client", lambda selection=None: fake_client,
         )
 
         uploads_dir = settings.artifact_dir / "uploads" / "chat"
@@ -195,7 +197,7 @@ def test_get_confirmation_batch_round_trips(tmp_path, monkeypatch):
         fake_client = FakeExtractorClient(_seg_json(), _trade_json("TC-TOOL-2"))
         monkeypatch.setattr(
             tools_confirmations.confirmations_llm,
-            "build_extractor_client", lambda: fake_client,
+            "build_extractor_client", lambda selection=None: fake_client,
         )
         uploads_dir = settings.artifact_dir / "uploads" / "chat"
         uploads_dir.mkdir(parents=True, exist_ok=True)
@@ -430,3 +432,181 @@ def test_service_import_before_app_tools_has_no_import_cycle():
         cwd=str(repo_root), env=env, capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+# ---------------------------------------------------------------------------
+# (e) the server-stamped extractor override (arena vision boards)
+# ---------------------------------------------------------------------------
+
+
+def test_extractor_override_is_read_from_configurable():
+    from app.services.confirmations.llm import CONFIRMATION_EXTRACTOR_SELECTION_KEY
+    from app.tools.confirmations import _extractor_override_from_config
+
+    override = {"channel": "zenmux", "provider": "bigmodel",
+                "model": "z-ai/glm-5.3-flash"}
+    assert _extractor_override_from_config(
+        {"configurable": {CONFIRMATION_EXTRACTOR_SELECTION_KEY: override}}
+    ) == override
+
+
+def test_extractor_override_absent_degrades_to_the_production_tag_ladder():
+    """A missing or malformed stamp must fall back, never crash a desk turn."""
+    from app.services.confirmations.llm import CONFIRMATION_EXTRACTOR_SELECTION_KEY
+    from app.tools.confirmations import _extractor_override_from_config
+
+    assert _extractor_override_from_config(None) is None
+    assert _extractor_override_from_config({}) is None
+    assert _extractor_override_from_config({"configurable": {}}) is None
+    assert _extractor_override_from_config({"configurable": None}) is None
+    # A non-dict value is IGNORED rather than trusted -- a malformed stamp must
+    # not become a half-built selection that fails deep inside model_factory.
+    for bad in ("glm", 7, [], {}):
+        assert _extractor_override_from_config(
+            {"configurable": {CONFIRMATION_EXTRACTOR_SELECTION_KEY: bad}}
+        ) is None
+
+
+def test_parse_threads_the_override_into_the_extractor_client(tmp_path, monkeypatch):
+    """End-to-end through the real parse path: the stamped selection is what
+    build_extractor_client is asked for."""
+    import app.tools.confirmations as tools_confirmations
+    from app.services.confirmations import service as confirmations_service
+    from app.services.confirmations.extract import DocumentContent, PageContent
+    from app.services.confirmations.llm import CONFIRMATION_EXTRACTOR_SELECTION_KEY
+
+    settings = _configure_test_env(tmp_path)
+    asked: list = []
+    try:
+        monkeypatch.setattr(
+            confirmations_service, "extract_document",
+            lambda path: DocumentContent(
+                pages=[PageContent(index=1, text="BUY 100 AAPL call")],
+                page_count=1, extract_mode="text"),
+        )
+        fake_client = FakeExtractorClient(_seg_json(), _trade_json("TC-OVERRIDE-1"))
+
+        def _build(selection=None):
+            asked.append(selection)
+            return fake_client
+
+        monkeypatch.setattr(
+            tools_confirmations.confirmations_llm, "build_extractor_client", _build)
+
+        uploads_dir = settings.artifact_dir / "uploads" / "chat"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        stored = uploads_dir / "override.pdf"
+        stored.write_bytes(b"%PDF-1.4 fake confirmation")
+
+        override = {"channel": "zenmux", "provider": "bigmodel",
+                    "model": "z-ai/glm-5.3-flash"}
+        result = tools_confirmations.parse_trade_confirmation.func(
+            paths=[str(stored)],
+            config={"configurable": {CONFIRMATION_EXTRACTOR_SELECTION_KEY: override}},
+        )
+    finally:
+        _reset_settings()
+
+    assert result["ok"] is True
+    assert asked == [override]
+
+
+def test_parse_without_a_stamp_asks_for_no_override(tmp_path, monkeypatch):
+    """The production desk path is unchanged: no override, so the tag ladder runs."""
+    import app.tools.confirmations as tools_confirmations
+    from app.services.confirmations import service as confirmations_service
+    from app.services.confirmations.extract import DocumentContent, PageContent
+
+    settings = _configure_test_env(tmp_path)
+    asked: list = []
+    try:
+        monkeypatch.setattr(
+            confirmations_service, "extract_document",
+            lambda path: DocumentContent(
+                pages=[PageContent(index=1, text="BUY 100 AAPL call")],
+                page_count=1, extract_mode="text"),
+        )
+        fake_client = FakeExtractorClient(_seg_json(), _trade_json("TC-OVERRIDE-2"))
+
+        def _build(selection=None):
+            asked.append(selection)
+            return fake_client
+
+        monkeypatch.setattr(
+            tools_confirmations.confirmations_llm, "build_extractor_client", _build)
+
+        uploads_dir = settings.artifact_dir / "uploads" / "chat"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        stored = uploads_dir / "no-override.pdf"
+        stored.write_bytes(b"%PDF-1.4 fake confirmation")
+
+        result = tools_confirmations.parse_trade_confirmation.func(paths=[str(stored)])
+    finally:
+        _reset_settings()
+
+    assert result["ok"] is True
+    assert asked == [None]
+
+
+def test_config_is_not_exposed_to_the_model():
+    """The override is SERVER-STAMPED. If `config` were in args_schema, a model
+    could choose which model reads its own documents -- the same reason fan-out
+    attribution is never taken from tool input."""
+    from app.tools.confirmations import parse_trade_confirmation
+
+    assert sorted(parse_trade_confirmation.args_schema.model_fields) == [
+        "paths", "portfolio_id"
+    ]
+
+
+def test_config_is_injected_through_the_real_invoke_path(tmp_path):
+    """Guards a silent revert to tag routing.
+
+    LangChain finds the config parameter by TYPE HINT IDENTITY --
+    `_get_runnable_config_param` walks get_type_hints() for `type_ is
+    RunnableConfig` -- not by the parameter's NAME. So dropping the annotation to
+    a bare `config=None` stops injection entirely and silently.
+
+    Every other test in this file calls `.func(...)` and passes config by hand, so
+    none of them would notice: the suite would stay green while the arena reverted
+    to reading every contestant's documents with the tag-resolved model, and the
+    vision board would measure one model three times.
+    """
+    from langchain_core.tools.base import _get_runnable_config_param
+
+    from app.services.confirmations.llm import CONFIRMATION_EXTRACTOR_SELECTION_KEY
+    from app.tools.confirmations import parse_trade_confirmation
+
+    assert _get_runnable_config_param(parse_trade_confirmation.func) == "config"
+
+    seen: dict = {}
+    original = parse_trade_confirmation.func
+
+    # The RunnableConfig ANNOTATION is what makes injection happen -- and because
+    # this module uses `from __future__ import annotations`, it is a STRING that
+    # get_type_hints resolves against THIS module's globals, which is why
+    # RunnableConfig is imported at the top of the file rather than in-function.
+    def _spy(paths, portfolio_id=None, config: RunnableConfig = None):  # type: ignore[assignment]
+        seen["config"] = config
+        return {"ok": False, "error": "spy"}
+
+    override = {"channel": "zenmux", "provider": "bigmodel",
+                "model": "z-ai/glm-5.3-flash"}
+    _configure_test_env(tmp_path, register_underlying=False)
+    object.__setattr__(parse_trade_confirmation, "func", _spy)
+    try:
+        parse_trade_confirmation.invoke(
+            {"paths": []},
+            config={"configurable": {
+                # capability_gate reads `envelope` off configurable; without it
+                # the call is denied before the body ever runs.
+                "envelope": "desk_workflow",
+                CONFIRMATION_EXTRACTOR_SELECTION_KEY: override,
+            }},
+        )
+    finally:
+        object.__setattr__(parse_trade_confirmation, "func", original)
+        _reset_settings()
+
+    delivered = (seen.get("config") or {}).get("configurable", {})
+    assert delivered.get(CONFIRMATION_EXTRACTOR_SELECTION_KEY) == override

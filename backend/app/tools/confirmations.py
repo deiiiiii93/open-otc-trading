@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from pydantic import BaseModel
 
@@ -66,9 +67,32 @@ class ParseTradeConfirmationInput(BaseModel):
     portfolio_id: int | None = None
 
 
+def _extractor_override_from_config(config: RunnableConfig | None) -> dict | None:
+    """Read the SERVER-STAMPED extractor override off ``configurable``.
+
+    Deliberately absent from ``ParseTradeConfirmationInput``: the override decides
+    WHICH model reads the desk's documents, so letting a model supply it would be
+    self-authorization -- the same reason fan-out attribution is stamped rather
+    than accepted from tool input.
+
+    Anything that is not a non-empty dict returns None, so a malformed stamp
+    degrades to the production tag ladder rather than failing deep inside
+    model_factory on a half-built selection.
+    """
+    from ..services.confirmations.llm import CONFIRMATION_EXTRACTOR_SELECTION_KEY
+
+    configurable = (config or {}).get("configurable") or {}
+    override = configurable.get(CONFIRMATION_EXTRACTOR_SELECTION_KEY)
+    return override if isinstance(override, dict) and override else None
+
+
 @capability_gated(group=ToolGroup.DOMAIN_WRITE)
 @tool("parse_trade_confirmation", args_schema=ParseTradeConfirmationInput)
-def parse_trade_confirmation(paths: list[str], portfolio_id: int | None = None) -> dict:
+def parse_trade_confirmation(
+    paths: list[str],
+    portfolio_id: int | None = None,
+    config: RunnableConfig = None,  # type: ignore[assignment]
+) -> dict:
     """Parse uploaded trade confirmation files (PDF/DOCX, scans supported) into
     reviewable extracted trades. `paths` are the stored paths returned when the
     user attached files to this chat. Returns per-document status plus each
@@ -87,7 +111,9 @@ def parse_trade_confirmation(paths: list[str], portfolio_id: int | None = None) 
     if not resolved:
         return {"ok": False, "error": "no files given"}
     try:
-        client = confirmations_llm.build_extractor_client()
+        client = confirmations_llm.build_extractor_client(
+            _extractor_override_from_config(config)
+        )
     except RuntimeError as exc:
         return {"ok": False, "error": str(exc)}
     database.init_db()

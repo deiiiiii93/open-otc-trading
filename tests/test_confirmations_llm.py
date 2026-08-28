@@ -154,3 +154,50 @@ def test_content_to_text_raises_on_an_unusable_type():
 
     with pytest.raises(ExtractionError):
         _content_to_text(None)
+
+
+class _TagRegistry:
+    """A registry whose dedicated tag resolves, so the ladder is exercised."""
+
+    def select_by_tag(self, tag):
+        if tag == "confirmation_extractor":
+            return {"channel": "zenmux", "provider": "google-vertex",
+                    "model": "google/gemini-3.6-flash"}
+        return None
+
+    def default_selection(self):
+        return {"channel": "zenmux", "provider": "openai", "model": "default-y"}
+
+
+def test_resolver_override_wins_over_the_dedicated_tag():
+    """The arena routes extraction to the CONTESTANT.
+
+    Without this, every contestant on a vision board reads every document with
+    whichever model happens to hold the confirmation_extractor tag, so every
+    vision check lands N/N across the field and carries zero ability signal --
+    the defect the Run #58 audit found in 15 of 50 checks.
+    """
+    from app.services.confirmations.llm import resolve_confirmation_extractor_selection
+
+    override = {"channel": "zenmux", "provider": "bigmodel",
+                "model": "z-ai/glm-5.3-flash"}
+    assert resolve_confirmation_extractor_selection(_TagRegistry(), override) == override
+
+
+def test_resolver_returns_a_copy_so_a_caller_cannot_mutate_the_selection():
+    from app.services.confirmations.llm import resolve_confirmation_extractor_selection
+
+    override = {"channel": "zenmux", "provider": "bigmodel",
+                "model": "z-ai/glm-5.3-flash"}
+    resolved = resolve_confirmation_extractor_selection(_TagRegistry(), override)
+    resolved["model"] = "mutated"
+    assert override["model"] == "z-ai/glm-5.3-flash"
+
+
+def test_resolver_ignores_an_absent_or_empty_override():
+    """Unset must be byte-identical to today: the production desk keeps its tag."""
+    from app.services.confirmations.llm import resolve_confirmation_extractor_selection
+
+    for override in (None, {}):
+        resolved = resolve_confirmation_extractor_selection(_TagRegistry(), override)
+        assert resolved["model"] == "google/gemini-3.6-flash"
