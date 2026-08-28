@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-28T01:27:02.300508+00:00",
+  "generated_at": "2026-08-28T05:34:51.536052+00:00",
   "models": [
     {
       "boards_total": 4,
@@ -1052,6 +1052,57 @@
       "note": "A single-model smoke across all five golden workflows, one trial each \u2014 cards only, for the same reasons as Run #113 above: no field means no rank, and one trial cannot disperse, so CON is not measured. This is also the FIRST run after the Anthropic-protocol output budget was raised from langchain's 4096-token fallback to 32768. GLM 5.3 routes over that protocol, and the capped attempt (Run #114, unpublished) truncated on 5-13% of its calls per workflow \u2014 a truncated turn emits reasoning and nothing else, so it produced no text and no tool call at all. That attempt averaged OVR 72 against 84 here, with risk-manager-control-day moving 67 \u2192 87 on the budget alone. Read EFF against the older boards with care: every Anthropic-protocol contestant on them ran under a cap this run did not. RESCORED 2026-08-27: risk-limit-breach-day and ops-settlement-day were given calibrated pars (25 and 30) where they previously had none, so EFF on those two workflows was being scored against a theoretical minimum no real run achieves. Cards derive on read, so this card's figures are the recalculated ones; the affected per-workflow OVRs rose by 1 to 9 points and every other workflow is unchanged.",
       "post": null,
       "run": 115
+    },
+    {
+      "cards": [
+        {
+          "con": null,
+          "coverage": 5,
+          "effort": "max",
+          "model": "glm-5-3",
+          "ovr": 87,
+          "ovr_max": 99,
+          "ovr_min": 72,
+          "per_workflow": [
+            {
+              "ovr": 99,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 93,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 88,
+              "workflow": "ops-settlement-day"
+            },
+            {
+              "ovr": 83,
+              "workflow": "risk-manager-control-day"
+            },
+            {
+              "ovr": 72,
+              "workflow": "high-board-portfolio-review-day"
+            }
+          ],
+          "position": "Playmaker",
+          "stats": {
+            "ADH": 91,
+            "EFF": 64,
+            "GRD": 90,
+            "PRC": 90,
+            "SYN": 95
+          },
+          "trials": 1,
+          "workflows_total": 5
+        }
+      ],
+      "date": "2026-08-28",
+      "label": "Run #132 \u2014 GLM 5.3 at max, the sibling control for run #131",
+      "models": 1,
+      "note": "GLM 5.3 across all five golden workflows at `max`, one trial per cell \u2014 run deliberately as the like-for-like control for GLM 5.3 Flash in run #131, and published as cards for the same reason: five workflows in one run cannot be folded into a ranked board row. It exists because GLM 5.3's only other full board is run #115, at UNPINNED vendor-default effort and from before the upstream pinning and the trap fix, so differencing that against #131 would have charged the flash model for a harness repair and an effort change at once. The re-run justified itself: at `max` on today's harness GLM 5.3 completes high-board-portfolio-review-day in 17 tool calls where run #115 took 41. Against its flash sibling it is 2.2 objective points ahead for a 7.8-point OVR gap, all of it EFF, on 57% fewer tool calls \u2014 except on the flagship, where both models score EFF 0 and the pro model is no leaner (54 calls against 58). The flagship arm died twice on transport errors (APIConnectionError, recorded `invalid`/`infra_error`, never scored as a model failure) and is taken from the third, clean attempt via `--resume 132`.",
+      "post": "2026-08-28-run131-flash-newcomers.md",
+      "run": 132
     },
     {
       "cards": [

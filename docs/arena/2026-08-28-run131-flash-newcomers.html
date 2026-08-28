@@ -531,6 +531,197 @@ the same 37 of 39 checks. Hunyuan does it in 31 tool calls and takes the workflo
 needs 58, Qwen needs 79, and both drop five OVR points for the difference. Qwen 3.8 Flash
 spends <strong>2.5× Hunyuan's calls to produce a byte-identical result.</strong></p>
 <hr />
+<h2>Against their own larger siblings</h2>
+<p>The board comparison asks how these models rank. The more practical question is
+whether the flash variant is worth taking over the bigger model it is named after —
+and both pairs answer it the same way.</p>
+<p>Neither comparison could be read off the existing data. Qwen 3.8 27B had a clean
+counterpart in run #129 (<code>max</code>, repaired harness, one day earlier). GLM 5.3 did not:
+its only full board is run #115 from 2026-08-19, at <strong>unpinned vendor-default effort</strong>
+and from before the upstream pinning and the trap fix. Differencing that against run</p>
+<h1>131 would have charged the model for a harness repair and an effort change at once.</h1>
+<p>GLM 5.3 was therefore re-run — <strong>run #132</strong>, <code>max</code>, same five workflows, same single
+trial, same unpinned budget — so the pair is like-for-like.</p>
+<p>That re-run was worth doing for its own sake. At <code>max</code> on today's harness GLM 5.3
+completes <code>high-board-portfolio-review-day</code> in <strong>17</strong> tool calls; the same model at
+vendor-default effort in run #115 took <strong>41</strong>. Published as a sibling delta, that
+artifact would have been attributed to the flash model.</p>
+<h3>Qwen 3.8 Flash vs Qwen 3.8 27B</h3>
+<p>Both at <code>max</code>. 27B is run #129 at two trials per cell, Flash is run #131 at one.</p>
+<table>
+<thead>
+<tr>
+<th>Workflow</th>
+<th style="text-align: right;">27B OVR</th>
+<th style="text-align: right;">Flash OVR</th>
+<th style="text-align: right;">27B obj</th>
+<th style="text-align: right;">Flash obj</th>
+<th style="text-align: right;">27B calls</th>
+<th style="text-align: right;">Flash calls</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>high-board-portfolio-review</td>
+<td style="text-align: right;">84</td>
+<td style="text-align: right;">63</td>
+<td style="text-align: right;">85.7</td>
+<td style="text-align: right;">71.4</td>
+<td style="text-align: right;">24</td>
+<td style="text-align: right;">44</td>
+</tr>
+<tr>
+<td>ops-settlement</td>
+<td style="text-align: right;">82</td>
+<td style="text-align: right;">75</td>
+<td style="text-align: right;">84.1</td>
+<td style="text-align: right;">79.5</td>
+<td style="text-align: right;">34</td>
+<td style="text-align: right;">42</td>
+</tr>
+<tr>
+<td>risk-limit-breach</td>
+<td style="text-align: right;">94</td>
+<td style="text-align: right;">90</td>
+<td style="text-align: right;">100.0</td>
+<td style="text-align: right;">100.0</td>
+<td style="text-align: right;">28</td>
+<td style="text-align: right;">39</td>
+</tr>
+<tr>
+<td>risk-manager-control</td>
+<td style="text-align: right;">84</td>
+<td style="text-align: right;">82</td>
+<td style="text-align: right;">91.0</td>
+<td style="text-align: right;"><strong>94.9</strong></td>
+<td style="text-align: right;">34</td>
+<td style="text-align: right;">79</td>
+</tr>
+<tr>
+<td>trader-rfq-booking</td>
+<td style="text-align: right;">75</td>
+<td style="text-align: right;"><strong>81</strong></td>
+<td style="text-align: right;">87.3</td>
+<td style="text-align: right;"><strong>95.2</strong></td>
+<td style="text-align: right;">66</td>
+<td style="text-align: right;">108</td>
+</tr>
+<tr>
+<td><strong>mean</strong></td>
+<td style="text-align: right;"><strong>83.8</strong></td>
+<td style="text-align: right;"><strong>78.2</strong></td>
+<td style="text-align: right;"><strong>89.6</strong></td>
+<td style="text-align: right;"><strong>88.2</strong></td>
+<td style="text-align: right;"><strong>37.2</strong></td>
+<td style="text-align: right;"><strong>62.4</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>1.4 objective points separate them.</strong> Qwen 3.8 Flash costs roughly a sixth of the
+27B on completion (<code>$0.47</code> against <code>$3.00</code> per MTok) and is, on average, very nearly
+as correct — and on two of the five workflows it is <em>more</em> correct than its larger
+sibling, beating it by 3.9 points on the flagship and 7.9 on trader-rfq.</p>
+<p>The 5.6-point OVR gap is <strong>EFF: 58.4 against 20.2</strong>, on 68% more tool calls. The one
+real capability gap is <code>high-board-portfolio-review-day</code>, where the flash model loses
+14.3 objective points and nearly doubles the calls.</p>
+<h3>GLM 5.3 Flash vs GLM 5.3</h3>
+<p>Both at <code>max</code>, both one trial per cell, run #132 against run #131. Run #132's
+flagship arm died twice on transport errors and was recovered with <code>--resume</code>; it
+is scored from the third, clean attempt.</p>
+<table>
+<thead>
+<tr>
+<th>Workflow</th>
+<th style="text-align: right;">5.3 OVR</th>
+<th style="text-align: right;">Flash OVR</th>
+<th style="text-align: right;">5.3 obj</th>
+<th style="text-align: right;">Flash obj</th>
+<th style="text-align: right;">5.3 calls</th>
+<th style="text-align: right;">Flash calls</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>high-board-portfolio-review</td>
+<td style="text-align: right;">72</td>
+<td style="text-align: right;">71</td>
+<td style="text-align: right;">71.4</td>
+<td style="text-align: right;">71.4</td>
+<td style="text-align: right;">17</td>
+<td style="text-align: right;">26</td>
+</tr>
+<tr>
+<td>ops-settlement</td>
+<td style="text-align: right;">88</td>
+<td style="text-align: right;">69</td>
+<td style="text-align: right;">88.6</td>
+<td style="text-align: right;">81.8</td>
+<td style="text-align: right;">32</td>
+<td style="text-align: right;">72</td>
+</tr>
+<tr>
+<td>risk-limit-breach</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">93</td>
+<td style="text-align: right;">100.0</td>
+<td style="text-align: right;">100.0</td>
+<td style="text-align: right;">24</td>
+<td style="text-align: right;">34</td>
+</tr>
+<tr>
+<td>risk-manager-control</td>
+<td style="text-align: right;">83</td>
+<td style="text-align: right;">82</td>
+<td style="text-align: right;">97.4</td>
+<td style="text-align: right;">94.9</td>
+<td style="text-align: right;">54</td>
+<td style="text-align: right;">58</td>
+</tr>
+<tr>
+<td>trader-rfq-booking</td>
+<td style="text-align: right;">93</td>
+<td style="text-align: right;">81</td>
+<td style="text-align: right;">96.8</td>
+<td style="text-align: right;">95.2</td>
+<td style="text-align: right;">44</td>
+<td style="text-align: right;">78</td>
+</tr>
+<tr>
+<td><strong>mean</strong></td>
+<td style="text-align: right;"><strong>87.0</strong></td>
+<td style="text-align: right;"><strong>79.2</strong></td>
+<td style="text-align: right;"><strong>90.8</strong></td>
+<td style="text-align: right;"><strong>88.7</strong></td>
+<td style="text-align: right;"><strong>34.2</strong></td>
+<td style="text-align: right;"><strong>53.6</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>2.2 objective points separate them</strong>, against a 7.8-point OVR gap — and again the
+gap is EFF, 64.4 against 25.4, on 57% more tool calls. The two models post <em>identical</em>
+objective scores on two of the five workflows (71.4 and 100.0). GLM 5.3 Flash is
+priced at about a fifth of GLM 5.3 (<code>$0.075 / $0.25</code> against <code>$1.40 / $4.40</code> per
+MTok).</p>
+<p><strong>The flagship is the exception, and it is informative.</strong> There GLM 5.3 spends <strong>54</strong>
+tool calls against its flash sibling's 58, and <em>both</em> score EFF <strong>0</strong> — the pro model
+is just as profligate as the cheap one. So <code>risk-manager-control-day</code>'s par of 24
+punishes the whole GLM 5.3 generation rather than the flash variant in particular, and
+the flash model's efficiency problem, real as it is elsewhere, is not a uniform trait
+of its own lineage.</p>
+<p>One incidental finding: <strong>GLM 5.3 and GLM 5.3 Flash share the same unusual effort
+ladder</strong> — <code>low</code>, <code>high</code>, <code>max</code>, with <code>medium</code> and <code>xhigh</code> both rejected. That is a
+property of the 5.3 generation, not something the flash variant introduced, and the
+upstream states it only in the untranslated tail of its error message.</p>
+<h3>The same shape, twice</h3>
+<p>Two independent model families, one conclusion: <strong>the flash variant gives up around
+two objective points — 1.4 for Qwen, 2.2 for GLM — and spends 57 to 68% more tool
+calls to do it.</strong> Whether that is a
+good trade is not a question the arena can answer, because it depends on what you pay
+for. Priced per token, both flash models are the better buy by a wide margin. Priced
+per tool call, per second of wall-clock, or per unit of rate limit, both are worse
+than the model they are a cheaper version of — and the OVR ranking, which weights EFF
+at 0.16, is measuring the second thing.</p>
+<hr />
 <h2>What this is not</h2>
 <p><strong>It is not a correctness problem.</strong> On <code>risk-limit-breach-day</code> both models score a clean
 <strong>100.0</strong>, and on the flagship and trader-rfq they equal or beat everyone. Their GRD and

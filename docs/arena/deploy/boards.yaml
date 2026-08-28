@@ -101,6 +101,26 @@ provisional:
       recalculated ones; the affected per-workflow OVRs rose by 1 to 9 points
       and every other workflow is unchanged.
 
+  - run: 132
+    label: "Run #132 — GLM 5.3 at max, the sibling control for run #131"
+    post: 2026-08-28-run131-flash-newcomers.md
+    note: >-
+      GLM 5.3 across all five golden workflows at `max`, one trial per cell — run
+      deliberately as the like-for-like control for GLM 5.3 Flash in run #131, and
+      published as cards for the same reason: five workflows in one run cannot be
+      folded into a ranked board row. It exists because GLM 5.3's only other full
+      board is run #115, at UNPINNED vendor-default effort and from before the
+      upstream pinning and the trap fix, so differencing that against #131 would
+      have charged the flash model for a harness repair and an effort change at
+      once. The re-run justified itself: at `max` on today's harness GLM 5.3
+      completes high-board-portfolio-review-day in 17 tool calls where run #115
+      took 41. Against its flash sibling it is 2.2 objective points ahead for a
+      7.8-point OVR gap, all of it EFF, on 57% fewer tool calls — except on the
+      flagship, where both models score EFF 0 and the pro model is no leaner (54
+      calls against 58). The flagship arm died twice on transport errors
+      (APIConnectionError, recorded `invalid`/`infra_error`, never scored as a
+      model failure) and is taken from the third, clean attempt via `--resume 132`.
+
   - run: 131
     label: "Run #131 — two flash-tier newcomers at max effort"
     post: 2026-08-28-run131-flash-newcomers.md

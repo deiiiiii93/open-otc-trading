@@ -111,6 +111,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   +18.6 on another for the same effort change, a sign flip a single mean hides.
 
 ### Added
+- **Sibling comparison section on the run #131 report, and run #132 as its control.**
+  Compares each newcomer against the larger model it is named after: Qwen 3.8 Flash vs
+  Qwen 3.8 27B, and GLM 5.3 Flash vs GLM 5.3. Both pairs land on the same shape — the
+  flash variant gives up around two objective points (1.4 for Qwen, 2.2 for GLM) and
+  spends 57 to 68% more tool calls doing it, so the whole OVR gap is EFF.
+  Qwen had a like-for-like counterpart already (run #129, `max`, repaired harness). GLM
+  did not: its only other full board is run #115, at UNPINNED vendor-default effort and
+  from before the upstream pinning and the trap fix, so differencing it against #131
+  would have charged the flash model for a harness repair and an effort change at once.
+  **Run #132** was therefore launched as the control — GLM 5.3 at `max`, same five
+  workflows, same single trial, same unpinned budget — and published as a provisional
+  card beside it. It justified itself immediately: at `max` on today's harness GLM 5.3
+  completes `high-board-portfolio-review-day` in 17 tool calls where run #115 took 41.
+  The flagship arm died twice on `APIConnectionError` (recorded `invalid`/`infra_error`,
+  never scored as a model failure) and is taken from the third clean attempt via
+  `--resume 132`. Recovering it mattered: on that workflow GLM 5.3 spends 54 calls to
+  its sibling's 58 and **both** score EFF 0, so the flagship's par punishes the whole
+  GLM 5.3 generation rather than the flash variant — a nuance the four-workflow mean
+  would have hidden.
+- **`z-ai/glm-5.3`'s effort ladder measured** into `config/model_reasoning.json`:
+  `low`/`high`/`max`, with `none`/`minimal`/`medium`/`xhigh` rejected — the SAME sparse
+  ladder as `glm-5.3-flash`, so it is a property of the 5.3 generation rather than
+  something the flash variant introduced. The route was previously unknown and therefore
+  permissive, so the gate would have passed a `medium` request through to a 400.
 - **Arena run #131 published to artena.one** — `docs/arena/2026-08-28-run131-flash-newcomers.md`
   plus a `provisional:` cards-only entry for run #131 in `boards.yaml`. GLM 5.3 Flash
   (OVR 79) and Qwen 3.8 Flash (OVR 78) across all five golden workflows at `max`,

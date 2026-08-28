@@ -133,6 +133,94 @@ spends **2.5× Hunyuan's calls to produce a byte-identical result.**
 
 ---
 
+## Against their own larger siblings
+
+The board comparison asks how these models rank. The more practical question is
+whether the flash variant is worth taking over the bigger model it is named after —
+and both pairs answer it the same way.
+
+Neither comparison could be read off the existing data. Qwen 3.8 27B had a clean
+counterpart in run #129 (`max`, repaired harness, one day earlier). GLM 5.3 did not:
+its only full board is run #115 from 2026-08-19, at **unpinned vendor-default effort**
+and from before the upstream pinning and the trap fix. Differencing that against run
+#131 would have charged the model for a harness repair and an effort change at once.
+GLM 5.3 was therefore re-run — **run #132**, `max`, same five workflows, same single
+trial, same unpinned budget — so the pair is like-for-like.
+
+That re-run was worth doing for its own sake. At `max` on today's harness GLM 5.3
+completes `high-board-portfolio-review-day` in **17** tool calls; the same model at
+vendor-default effort in run #115 took **41**. Published as a sibling delta, that
+artifact would have been attributed to the flash model.
+
+### Qwen 3.8 Flash vs Qwen 3.8 27B
+
+Both at `max`. 27B is run #129 at two trials per cell, Flash is run #131 at one.
+
+| Workflow | 27B OVR | Flash OVR | 27B obj | Flash obj | 27B calls | Flash calls |
+|---|--:|--:|--:|--:|--:|--:|
+| high-board-portfolio-review | 84 | 63 | 85.7 | 71.4 | 24 | 44 |
+| ops-settlement | 82 | 75 | 84.1 | 79.5 | 34 | 42 |
+| risk-limit-breach | 94 | 90 | 100.0 | 100.0 | 28 | 39 |
+| risk-manager-control | 84 | 82 | 91.0 | **94.9** | 34 | 79 |
+| trader-rfq-booking | 75 | **81** | 87.3 | **95.2** | 66 | 108 |
+| **mean** | **83.8** | **78.2** | **89.6** | **88.2** | **37.2** | **62.4** |
+
+**1.4 objective points separate them.** Qwen 3.8 Flash costs roughly a sixth of the
+27B on completion (`$0.47` against `$3.00` per MTok) and is, on average, very nearly
+as correct — and on two of the five workflows it is *more* correct than its larger
+sibling, beating it by 3.9 points on the flagship and 7.9 on trader-rfq.
+
+The 5.6-point OVR gap is **EFF: 58.4 against 20.2**, on 68% more tool calls. The one
+real capability gap is `high-board-portfolio-review-day`, where the flash model loses
+14.3 objective points and nearly doubles the calls.
+
+### GLM 5.3 Flash vs GLM 5.3
+
+Both at `max`, both one trial per cell, run #132 against run #131. Run #132's
+flagship arm died twice on transport errors and was recovered with `--resume`; it
+is scored from the third, clean attempt.
+
+| Workflow | 5.3 OVR | Flash OVR | 5.3 obj | Flash obj | 5.3 calls | Flash calls |
+|---|--:|--:|--:|--:|--:|--:|
+| high-board-portfolio-review | 72 | 71 | 71.4 | 71.4 | 17 | 26 |
+| ops-settlement | 88 | 69 | 88.6 | 81.8 | 32 | 72 |
+| risk-limit-breach | 99 | 93 | 100.0 | 100.0 | 24 | 34 |
+| risk-manager-control | 83 | 82 | 97.4 | 94.9 | 54 | 58 |
+| trader-rfq-booking | 93 | 81 | 96.8 | 95.2 | 44 | 78 |
+| **mean** | **87.0** | **79.2** | **90.8** | **88.7** | **34.2** | **53.6** |
+
+**2.2 objective points separate them**, against a 7.8-point OVR gap — and again the
+gap is EFF, 64.4 against 25.4, on 57% more tool calls. The two models post *identical*
+objective scores on two of the five workflows (71.4 and 100.0). GLM 5.3 Flash is
+priced at about a fifth of GLM 5.3 (`$0.075 / $0.25` against `$1.40 / $4.40` per
+MTok).
+
+**The flagship is the exception, and it is informative.** There GLM 5.3 spends **54**
+tool calls against its flash sibling's 58, and *both* score EFF **0** — the pro model
+is just as profligate as the cheap one. So `risk-manager-control-day`'s par of 24
+punishes the whole GLM 5.3 generation rather than the flash variant in particular, and
+the flash model's efficiency problem, real as it is elsewhere, is not a uniform trait
+of its own lineage.
+
+One incidental finding: **GLM 5.3 and GLM 5.3 Flash share the same unusual effort
+ladder** — `low`, `high`, `max`, with `medium` and `xhigh` both rejected. That is a
+property of the 5.3 generation, not something the flash variant introduced, and the
+upstream states it only in the untranslated tail of its error message.
+
+### The same shape, twice
+
+Two independent model families, one conclusion: **the flash variant gives up around
+two objective points — 1.4 for Qwen, 2.2 for GLM — and spends 57 to 68% more tool
+calls to do it.** Whether that is a
+good trade is not a question the arena can answer, because it depends on what you pay
+for. Priced per token, both flash models are the better buy by a wide margin. Priced
+per tool call, per second of wall-clock, or per unit of rate limit, both are worse
+than the model they are a cheaper version of — and the OVR ranking, which weights EFF
+at 0.16, is measuring the second thing.
+
+
+---
+
 ## What this is not
 
 **It is not a correctness problem.** On `risk-limit-breach-day` both models score a clean

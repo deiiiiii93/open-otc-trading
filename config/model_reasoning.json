@@ -1278,8 +1278,19 @@
         "toggle": false,
         "source": "measured",
         "measured_at": "2026-08-27"
+      },
+      "z-ai/glm-5.3:bigmodel": {
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "reasoning": true,
+        "toggle": false,
+        "source": "measured",
+        "measured_at": "2026-08-28"
       }
     }
   },
-  "probed_at": "2026-08-27"
+  "probed_at": "2026-08-28"
 }
