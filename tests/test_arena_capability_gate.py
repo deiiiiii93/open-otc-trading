@@ -139,7 +139,7 @@ def test_every_vision_tagged_model_pins_an_upstream():
             assert md.provider, f"{ch.name}/{md.id} declares vision with no upstream"
 
 
-def test_the_three_board_contestants_declare_vision():
+def test_the_board_contestants_declare_vision():
     """Probe-verified 2026-08-28: each read conf-04's image-only scan correctly
     (GOOGL / 205.00 / 615,000 / ARD-EQO-2026-04688)."""
     tagged = {
@@ -152,8 +152,24 @@ def test_the_three_board_contestants_declare_vision():
         "openai/gpt-5.6-luna",
         "z-ai/glm-5.3-flash",
         "google/gemini-3.7-flash",
+        "deepseek/deepseek-v4-flash-vision-exp",
     ):
         assert model_id in tagged, f"{model_id} is a board contestant but untagged"
+
+
+def test_the_text_only_deepseek_sibling_is_not_tagged_vision():
+    """deepseek-v4-flash and deepseek-v4-flash-vision-exp are DIFFERENT MODELS
+    with adjacent names -- the gateway declares input_modalities ["text"] for the
+    former and ["image","text"] for the latter. Tagging the sibling by
+    autocomplete would put a blind model on a vision board, where it would post a
+    real-looking score indistinguishable from poor ability."""
+    tagged = {
+        md.id
+        for ch in _tracked_registry().channels
+        for md in ch.models
+        if "vision" in md.tags
+    }
+    assert "deepseek/deepseek-v4-flash" not in tagged
 
 
 def test_the_production_extractor_declares_vision():

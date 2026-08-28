@@ -277,6 +277,27 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         default_config=_DEFAULT_CONFIG,
     ),
     ArenaModel(
+        # DeepSeek's experimental multimodal flash, onboarded 2026-08-28 as a
+        # contestant on the confirmation-desk-day VISION board.
+        #
+        # A SEPARATE MODEL from deepseek-v4-flash-ds above, not an arm of it: the
+        # gateway declares input_modalities ["image","text"] here and ["text"]
+        # there. Its scores are therefore not comparable to that slug's history,
+        # and the sibling must never be entered on a vision workflow -- the
+        # `requires: [vision]` launch gate rejects it, by design.
+        slug="deepseek-v4-flash-vision",
+        # PROVIDER-PINNED, same reasoning as the sibling above: two upstreams
+        # serve this id (`deepseek`, `tencent-cloud`) and an unpinned contestant
+        # is a routing lottery the response body cannot even attribute after the
+        # fact. Both upstreams probed clean on the streaming wire 2026-08-28
+        # (113 / 131 tool-call continuation deltas, null identifiers, zero empty
+        # strings) against a control that fragmented 104 -- so the instrument was
+        # demonstrably not blind. Pinned to the model owner's own metal.
+        zenmux_name="deepseek/deepseek-v4-flash-vision-exp:deepseek",
+        display_name="DeepSeek V4 Flash Vision (exp)",
+        default_config=_DEFAULT_CONFIG,
+    ),
+    ArenaModel(
         slug="mimo-2-5",
         zenmux_name="xiaomi/mimo-v2.5:xiaomi",
         display_name="MiMo V2.5",

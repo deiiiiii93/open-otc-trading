@@ -345,6 +345,30 @@ channels:
         label: DeepSeek V4 Flash
         tags: [fast, tool-use, reasoning, extractor]
 
+      # DeepSeek's experimental multimodal flash (onboarded 2026-08-28 for the
+      # confirmation-desk-day vision board). A SEPARATE MODEL from the row above,
+      # not a variant of it: the gateway declares input_modalities ["image","text"]
+      # here versus ["text"] for plain v4-flash, so the sibling genuinely cannot
+      # see and must never carry the `vision` tag.
+      #
+      # `vision` probe-verified 2026-08-28: read conf-04's image-only scan 4/4
+      # (GOOGL / 205.00 / 615,000 / ARD-EQO-2026-04688) at 489 prompt tokens --
+      # a third of gemini-3.7-flash's 1169 and a fifth of gpt-5.6-luna's 2414 for
+      # the identical page. Very cheap image tokenisation; whether that costs
+      # accuracy on the DEGRADED documents is exactly what the board measures.
+      #
+      # PROVIDER PIN: two upstreams serve it (`deepseek` and `tencent-cloud`).
+      # Policy is the model owner's own metal. Both were probed on the STREAMING
+      # wire 2026-08-28 and both are clean -- 113 and 131 tool-call continuation
+      # deltas with null identifiers, zero empty strings -- against a control
+      # (deepseek-v4-flash:deepseek, 104 fragmented deltas) that proves the probe
+      # was not blind. 0 of 0 would NOT have been a pass.
+      - id: deepseek/deepseek-v4-flash-vision-exp
+        provider: deepseek
+        protocol: openai_chat
+        label: DeepSeek V4 Flash Vision (exp)
+        tags: [fast, tool-use, reasoning, vision]
+
       - id: xiaomi/mimo-v2.5
         provider: xiaomi
         protocol: openai_chat
