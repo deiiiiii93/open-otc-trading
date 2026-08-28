@@ -1254,8 +1254,32 @@
         "toggle": false,
         "source": "measured",
         "measured_at": "2026-08-25"
+      },
+      "qwen/qwen3.8-flash:alibaba": {
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "reasoning": true,
+        "toggle": false,
+        "source": "measured",
+        "measured_at": "2026-08-27"
+      },
+      "z-ai/glm-5.3-flash:bigmodel": {
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "reasoning": true,
+        "toggle": false,
+        "source": "measured",
+        "measured_at": "2026-08-27"
       }
     }
   },
-  "probed_at": "2026-08-25"
+  "probed_at": "2026-08-27"
 }

@@ -183,6 +183,27 @@ channels:
         label: GLM 5.3
         tags: [tool-use, reasoning]
 
+      # Z.AI's flash tier for the 5.3 generation (published 2026-08-26): 1M
+      # context, reasoning, text+image+video in, and ~18x cheaper than glm-5.3
+      # itself ($0.075/$0.25 vs $1.40/$4.40 per MTok).
+      #
+      # PROTOCOL PIN by INHERITANCE from the GLM family, like glm-5.3 above —
+      # and the streaming delta probe CANNOT lift it, which is a finding rather
+      # than an omission. Probed 2026-08-27: the `bigmodel` upstream never
+      # fragments a tool call, emitting the whole thing in ONE delta (0
+      # continuation deltas over an 8192-token budget, and glm-5.3 behaves
+      # identically) — so there are no continuation deltas to blank and the
+      # instrument that convicted qwen/deepseek is blind here. 0 of 0 is NOT
+      # MEASURED, never a pass. That is also consistent with the family's actual
+      # signature: glm-5.2 blanks the id on the FIRST delta under full
+      # orchestrator load, which no isolated probe reproduces.
+      # Un-pin only against a live match that proves the pin unnecessary.
+      - id: z-ai/glm-5.3-flash
+        provider: bigmodel
+        protocol: anthropic
+        label: GLM 5.3 Flash
+        tags: [fast, tool-use, reasoning]
+
       - id: moonshotai/kimi-k2.7-code
         provider: moonshotai
         protocol: openai_chat
@@ -371,6 +392,28 @@ channels:
         protocol: anthropic
         label: Qwen 3.8 27B
         tags: [tool-use, reasoning]
+
+      # Qwen's flash tier for the 3.8 generation (published 2026-08-27): 1M
+      # context, reasoning, text+image+video in, and ~6x cheaper on completion
+      # than qwen3.8-27b ($0.16/$0.47 vs $0.50/$3.00 per MTok).
+      #
+      # PROTOCOL PIN, MEASURED on this exact route (2026-08-27), not inherited.
+      # Streaming the raw SSE deltas over openai_chat: 263 of 263 tool-call
+      # CONTINUATION deltas sent id="" — langchain merges those over the real id
+      # from the first delta, so task() dispatches nothing and every match scores
+      # the 7.7 prohibition floor. The known-bad control reproduced in the same
+      # sweep (qwen3.8-27b: 240 of 240), which is what makes this a measurement
+      # rather than a number.
+      # As with qwen3.8-27b the defect is the UPSTREAM's, not the model's — every
+      # probed `alibaba` route blanks the id, while `deepseek` sends null.
+      # NOTE: `tool_choice: required` is rejected by this upstream in thinking
+      # mode ("does not support being set to required or object in thinking
+      # mode"), so a probe must steer the tool call with the prompt instead.
+      - id: qwen/qwen3.8-flash
+        provider: alibaba
+        protocol: anthropic
+        label: Qwen 3.8 Flash
+        tags: [fast, tool-use, reasoning]
 
   # ===========================================================================
   # DeepSeek direct — a vendor's own API, not a gateway.

@@ -334,6 +334,52 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         display_name="Qwen 3.8 27B",
         default_config=_DEFAULT_CONFIG,
     ),
+    ArenaModel(
+        # Z.AI's flash tier for the 5.3 generation, published 2026-08-26. Roughly
+        # 18x cheaper than glm-5.3 itself ($0.075/$0.25 vs $1.40/$4.40 per MTok),
+        # 1M context, and vision-capable — a flash-tier contestant, not a cheap
+        # stand-in for the pro model.
+        # Dispatched over the ANTHROPIC wire format (pinned in
+        # agent_channels.yaml) by INHERITANCE from the GLM family, because the
+        # streaming delta probe cannot settle it either way here: on 2026-08-27
+        # the :bigmodel upstream emitted the whole tool call in ONE delta (0
+        # continuation deltas at an 8192-token budget; glm-5.3 identical), so
+        # there is nothing to blank and the instrument is blind. 0 of 0 is NOT
+        # MEASURED — never read it as a pass. Consistent with the family's real
+        # signature, which is a blanked id on the FIRST delta under full
+        # orchestrator load and reproduces on no isolated probe.
+        # Effort ladder MEASURED 2026-08-27 and deliberately SPARSE: the upstream
+        # accepts low/high/max and rejects none/minimal/medium/xhigh, declaring so
+        # itself ("请使用 low、high 或 max"). glm-5.2 accepts all seven, so this
+        # could not have been inherited — and the hole in the MIDDLE of the ladder
+        # is why a board must pin per model, never per run.
+        slug="glm-5-3-flash",
+        zenmux_name="z-ai/glm-5.3-flash:bigmodel",
+        display_name="GLM 5.3 Flash",
+        default_config=_DEFAULT_CONFIG,
+    ),
+    ArenaModel(
+        # Qwen's flash tier for the 3.8 generation, published 2026-08-27. About 6x
+        # cheaper on completion than qwen3.8-27b ($0.16/$0.47 vs $0.50/$3.00 per
+        # MTok), 1M context, vision-capable.
+        # Dispatched over the ANTHROPIC wire format (pinned in
+        # agent_channels.yaml), MEASURED on this exact route rather than inherited:
+        # streaming the raw SSE deltas over openai_chat on 2026-08-27 showed the
+        # :alibaba upstream sending id="" on 263 of 263 tool-call CONTINUATION
+        # deltas. langchain merges those over the real id from the first delta, so
+        # task() would dispatch nothing and every match would score the 7.7
+        # prohibition floor — exactly deepseek-v4-flash on runs #121/#122/#125.
+        # The known-bad control reproduced in the same sweep (qwen3.8-27b: 240 of
+        # 240), which is what makes this a measurement and not just a number.
+        # Effort ladder MEASURED 2026-08-27: low/medium/high/xhigh/max; none and
+        # minimal are rejected.
+        # Probing note: this upstream refuses `tool_choice: "required"` in thinking
+        # mode, so a probe has to steer the tool call from the prompt instead.
+        slug="qwen-3-8-flash",
+        zenmux_name="qwen/qwen3.8-flash:alibaba",
+        display_name="Qwen 3.8 Flash",
+        default_config=_DEFAULT_CONFIG,
+    ),
 ]
 
 # Build module-level maps (validates uniqueness at import time)

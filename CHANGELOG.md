@@ -111,6 +111,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   +18.6 on another for the same effort change, a sign flip a single mean hides.
 
 ### Added
+- **Two flash-tier contestants: `z-ai/glm-5.3-flash` and `qwen/qwen3.8-flash`.**
+  Registered in `config/agent_channels.yaml` + the tracked `.example.yml`, added to
+  `CANDIDATE_MODELS`, and both effort ladders **measured** into
+  `config/model_reasoning.json` (2026-08-27). Both are 1M-context, reasoning,
+  vision-capable, and materially cheaper than their pro siblings —
+  glm-5.3-flash at `$0.075/$0.25` per MTok against glm-5.3's `$1.40/$4.40` (~18x),
+  qwen3.8-flash at `$0.16/$0.47` against qwen3.8-27b's `$0.50/$3.00` (~6x on
+  completion).
+  - **`qwen/qwen3.8-flash` is protocol-pinned to `anthropic` on MEASURED evidence
+    for this exact route**, not inherited. Streaming the raw SSE deltas over
+    `openai_chat` showed the `:alibaba` upstream sending `id=""` on **263 of 263**
+    tool-call CONTINUATION deltas; langchain merges those over the real id from the
+    first delta, so `task()` would dispatch nothing and every match would score the
+    7.7 prohibition floor — exactly `deepseek-v4-flash` on runs #121/#122/#125. The
+    known-bad control reproduced in the same sweep (`qwen3.8-27b`: 240 of 240),
+    which is what makes this a measurement rather than a number.
+  - **`z-ai/glm-5.3-flash` is pinned to `anthropic` by INHERITANCE**, because the
+    delta probe cannot settle it either way: the `:bigmodel` upstream emits the whole
+    tool call in **one** delta (0 continuation deltas at an 8192-token budget, and
+    `glm-5.3` behaves identically), so there is nothing to blank and the instrument
+    is blind. **0 of 0 is NOT MEASURED and must never be read as a pass** — the same
+    absence discipline as `truncation: null` vs `calls: 0`. It is also consistent
+    with the family's real signature, a blanked id on the FIRST delta under full
+    orchestrator load, which reproduces on no isolated probe. Un-pin only against a
+    live match.
+  - **GLM 5.3 Flash has a genuinely SPARSE effort ladder — `low` / `high` / `max`,
+    with a hole in the middle.** `none`, `minimal`, `medium` and `xhigh` are all
+    rejected (3/3 stable each), and the upstream declares the ladder itself in the
+    error tail: *"该模型始终思考,不支持关闭思考;请使用 low、high 或 max。"* `glm-5.2`
+    accepts all seven, so this could not have been inherited from the family — and
+    only the **untruncated** error body reveals it, since the visible prefix says
+    merely "does not support disabling thinking", which reads as a bug report about
+    `medium`. qwen3.8-flash's ladder is the ordinary `low`..`max` (no `none` /
+    `minimal`).
+  - Probing note: the `:alibaba` upstream **rejects `tool_choice: "required"` in
+    thinking mode**, so a tool-call probe against it has to steer the call from the
+    prompt instead.
 - **`OPEN_OTC_ARENA_FORCE_CHANNEL`** — routes arena contestants through a different
   channel in `config/agent_channels.yaml`, matching a model by its full ZenMux id or
   by the part after the vendor prefix (the direct DeepSeek channel calls it
