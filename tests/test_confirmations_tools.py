@@ -100,7 +100,7 @@ def test_parse_rejects_path_outside_uploads_dir(tmp_path):
         _reset_settings()
 
     assert result["ok"] is False
-    assert "outside uploads dir" in result["error"]
+    assert "no such upload" in result["error"]
 
 
 def test_parse_rejects_missing_no_paths(tmp_path):
@@ -172,7 +172,7 @@ def test_parse_trade_confirmation_missing_file_errors(tmp_path):
         _reset_settings()
 
     assert result["ok"] is False
-    assert "file not found" in result["error"]
+    assert "no such upload" in result["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -437,6 +437,86 @@ def test_service_import_before_app_tools_has_no_import_cycle():
 # ---------------------------------------------------------------------------
 # (e) the server-stamped extractor override (arena vision boards)
 # ---------------------------------------------------------------------------
+
+
+def test_upload_path_accepts_the_spellings_a_model_actually_produces(tmp_path):
+    """Measured on arena run #1: told the files were at
+    /artifacts/uploads/confirmations/, gpt-5.6-luna tried that, then
+    /uploads/..., then the bare filenames -- four reasonable attempts, all
+    rejected, and the whole match cascaded from it. /artifacts/ is how the deep
+    agent's own filesystem backend mounts artifact_dir, so it is not even a wrong
+    guess."""
+    from app.tools.confirmations import _resolve_upload_path
+
+    uploads = (tmp_path / "uploads").resolve()
+    (uploads / "confirmations").mkdir(parents=True)
+    target = uploads / "confirmations" / "conf-04.pdf"
+    target.write_bytes(b"%PDF-1.4")
+
+    for spelling in (
+        str(target),                                   # absolute (the chat path)
+        "/artifacts/uploads/confirmations/conf-04.pdf",  # the virtual mount
+        "/uploads/confirmations/conf-04.pdf",
+        "uploads/confirmations/conf-04.pdf",
+        "confirmations/conf-04.pdf",
+        "conf-04.pdf",                                 # bare, unique
+    ):
+        assert _resolve_upload_path(spelling, uploads) == target, spelling
+
+
+def test_upload_path_still_refuses_anything_outside_the_uploads_root(tmp_path):
+    """Containment is unchanged and absolute -- the leniency is about SPELLING,
+    never about scope."""
+    from app.tools.confirmations import _resolve_upload_path
+
+    uploads = (tmp_path / "uploads").resolve()
+    uploads.mkdir(parents=True)
+    outside = tmp_path / "secret.pdf"
+    outside.write_bytes(b"%PDF-1.4")
+
+    for escape in (
+        str(outside),
+        "/etc/passwd",
+        "../secret.pdf",
+        "confirmations/../../secret.pdf",
+    ):
+        assert _resolve_upload_path(escape, uploads) is None, escape
+
+
+def test_upload_path_refuses_an_ambiguous_bare_filename(tmp_path):
+    """Two files with one name must be REFUSED, not guessed."""
+    from app.tools.confirmations import _resolve_upload_path
+
+    uploads = (tmp_path / "uploads").resolve()
+    for sub in ("a", "b"):
+        (uploads / sub).mkdir(parents=True)
+        (uploads / sub / "dup.pdf").write_bytes(b"%PDF-1.4")
+
+    assert _resolve_upload_path("dup.pdf", uploads) is None
+
+
+def test_upload_path_returns_none_for_a_missing_file(tmp_path):
+    from app.tools.confirmations import _resolve_upload_path
+
+    uploads = (tmp_path / "uploads").resolve()
+    uploads.mkdir(parents=True)
+    assert _resolve_upload_path("confirmations/nope.pdf", uploads) is None
+
+
+def test_parse_error_names_the_accepted_form(tmp_path):
+    """The old message stated only what was wrong, so a model could retry four
+    times without ever learning what would work."""
+    from app.tools.confirmations import parse_trade_confirmation
+
+    _configure_test_env(tmp_path, register_underlying=False)
+    try:
+        result = parse_trade_confirmation.func(paths=["/etc/passwd"])
+    finally:
+        _reset_settings()
+
+    assert result["ok"] is False
+    assert "confirmations/" in result["error"]
+    assert "/artifacts/uploads/" in result["error"]
 
 
 def test_extractor_override_is_read_from_configurable():

@@ -67,6 +67,58 @@ class ParseTradeConfirmationInput(BaseModel):
     portfolio_id: int | None = None
 
 
+def _resolve_upload_path(raw: str, uploads_root: Path) -> Path | None:
+    """Resolve *raw* to a real file INSIDE ``uploads_root``, or None.
+
+    Containment is unchanged and absolute: whatever we return has been
+    ``resolve()``d and re-checked against ``uploads_root``. What this adds is
+    tolerance of the spellings a model actually produces.
+
+    Measured on arena run #1 (2026-08-28): told the documents were at
+    ``/artifacts/uploads/confirmations/``, gpt-5.6-luna tried
+    ``/artifacts/uploads/...``, then ``/uploads/...``, then the bare filenames --
+    four reasonable attempts, every one rejected with "path outside uploads dir",
+    which names the problem without ever revealing the accepted form. The files
+    were staged correctly; only the ADDRESSING was unusable, and the whole match
+    cascaded from it.
+
+    ``/artifacts/...`` is not a wrong guess either: it is exactly how the deep
+    agent's own filesystem backend mounts ``settings.artifact_dir``. A benchmark
+    that punishes a model for using the addressing its own runtime taught it is
+    measuring the harness.
+    """
+    candidates: list[Path] = []
+
+    direct = Path(raw)
+    if direct.is_absolute():
+        candidates.append(direct)
+
+    # Strip the virtual mount prefixes a model reasonably prepends, then anchor
+    # the remainder to the real uploads root.
+    rel = raw.lstrip("/")
+    for prefix in ("artifacts/uploads/", "artifacts/", "uploads/"):
+        if rel.startswith(prefix):
+            rel = rel[len(prefix):]
+            break
+    if rel:
+        candidates.append(uploads_root / rel)
+
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved.is_relative_to(uploads_root) and resolved.is_file():
+            return resolved
+
+    # Last resort: a BARE filename, matched uniquely anywhere under the uploads
+    # root. Unique-only, so an ambiguous name is refused rather than guessed.
+    if "/" not in raw:
+        matches = [p for p in uploads_root.rglob(raw) if p.is_file()]
+        if len(matches) == 1:
+            resolved = matches[0].resolve()
+            if resolved.is_relative_to(uploads_root):
+                return resolved
+    return None
+
+
 def _extractor_override_from_config(config: RunnableConfig | None) -> dict | None:
     """Read the SERVER-STAMPED extractor override off ``configurable``.
 
@@ -102,11 +154,20 @@ def parse_trade_confirmation(
     uploads_root = (settings.artifact_dir / "uploads").resolve()
     resolved: list[Path] = []
     for raw in paths:
-        p = Path(raw).resolve()
-        if not p.is_relative_to(uploads_root):
-            return {"ok": False, "error": f"path outside uploads dir: {raw}"}
-        if not p.exists():
-            return {"ok": False, "error": f"file not found: {raw}"}
+        p = _resolve_upload_path(str(raw), uploads_root)
+        if p is None:
+            # Name the ACCEPTED form. The previous message stated only what was
+            # wrong, so a model could retry four times without ever learning
+            # what would work (arena run #1).
+            return {
+                "ok": False,
+                "error": (
+                    f"no such upload: {raw!r}. Give a path under the uploads "
+                    f"directory — e.g. 'confirmations/<file>.pdf', "
+                    f"'/artifacts/uploads/confirmations/<file>.pdf', or the bare "
+                    f"filename if it is unique."
+                ),
+            }
         resolved.append(p)
     if not resolved:
         return {"ok": False, "error": "no files given"}
