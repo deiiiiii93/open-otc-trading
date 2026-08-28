@@ -159,6 +159,7 @@ def _drive_step(
     selection: dict,
     *,
     accounting_date: str | None,
+    extractor_selection: dict | None = None,
 ) -> None:
     """Drive one desk turn to completion via stream_and_persist in YOLO mode.
 
@@ -166,6 +167,11 @@ def _drive_step(
     events are consumed and discarded here. ``accounting_date`` pins the agent's
     Accounting anchor (a workflow-seeded concluded trading day); None leaves the
     service default (real current date).
+
+    ``extractor_selection`` pins the model that reads confirmation documents. It
+    is stamped onto ``configurable`` server-side and is the whole mechanism by
+    which a vision workflow grades the CONTESTANT rather than whichever model
+    holds the ``confirmation_extractor`` tag.
     """
     _persist_user_turn(thread_id, content, selection)
     svc = _get_arena_service()
@@ -178,6 +184,7 @@ def _drive_step(
             mode=ARENA_MODE,
             confirmed_cost_preview=True,
             accounting_date=accounting_date,
+            extractor_selection=extractor_selection,
         ):
             pass
 
@@ -189,16 +196,28 @@ def _default_drive(thread_id: int, content: str, selection: dict) -> None:
     _drive_step(thread_id, content, selection, accounting_date=None)
 
 
-def _make_default_drive(accounting_date: str | None):
+def _make_default_drive(
+    accounting_date: str | None, route_extractor_to_contestant: bool = False
+):
     """Build the default step driver pinning the workflow's accounting date.
 
     A workflow may seed ``accounting_date`` (a concluded past trading day) so
     live market-data fetches on the anchor date always return rows — anchoring
     on the real run date lets a model query a not-yet-concluded session and
     stall on an empty window (Run #26).
+
+    ``route_extractor_to_contestant`` (from the manifest's
+    ``extractor_model: contestant``) makes THIS MATCH's own selection the
+    document-extraction model. The selection is already the one being driven, so
+    there is nothing extra to thread through ``run_match`` — the driver simply
+    re-uses what it is handed.
     """
     def _drive(thread_id: int, content: str, selection: dict) -> None:
-        _drive_step(thread_id, content, selection, accounting_date=accounting_date)
+        _drive_step(
+            thread_id, content, selection,
+            accounting_date=accounting_date,
+            extractor_selection=selection if route_extractor_to_contestant else None,
+        )
 
     return _drive
 
@@ -937,7 +956,12 @@ def run_match(
             Defaults to a DB-polling waiter; tests inject a no-op.
     """
     workflow = loaded.workflow
-    drive = drive or _make_default_drive(getattr(workflow, "accounting_date", None))
+    drive = drive or _make_default_drive(
+        getattr(workflow, "accounting_date", None),
+        route_extractor_to_contestant=(
+            getattr(workflow, "extractor_model", None) == "contestant"
+        ),
+    )
     harvest = harvest or transcript_from_trace
 
     from app.config import get_settings

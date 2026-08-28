@@ -339,6 +339,27 @@ class GoldenWorkflow(BaseModel):
     # models query a not-yet-concluded US session and stall on empty windows).
     # Optional; unset workflows keep the real current date as the anchor.
     accounting_date: str | None = None
+    # Routing policy for the document-extraction sub-call inside
+    # parse_trade_confirmation. Unset (default) = the production tag ladder
+    # (confirmation_extractor -> fast -> registry default), unchanged — which is
+    # what every board through #132 ran on.
+    #
+    # "contestant" = the arena routes extraction to the MATCH's own model. That is
+    # what makes a vision check measure the CONTESTANT rather than whichever model
+    # happens to hold the confirmation_extractor tag; without it every model on the
+    # board reads every document with one shared model's eyes, so the check lands
+    # N/N across the field and carries zero ability signal while still occupying
+    # the denominator (the Run #58 audit's defect, in 15 of 50 checks).
+    #
+    # Declared in the MANIFEST rather than inferred by the harness so the
+    # experimental arm is predeclared and no other workflow is silently rerouted.
+    # A routing POLICY, never a model id: pinning a specific model here would
+    # un-level the very board it scores.
+    extractor_model: Literal["contestant"] | None = None
+    # Model capabilities this workflow REQUIRES, matched against the registry
+    # model's declared tags at LAUNCH. A list rather than a boolean so a second
+    # capability costs nothing later. Empty (default) = runnable by any model.
+    requires: list[str] = Field(default_factory=list)
 
     @field_validator("id")
     @classmethod

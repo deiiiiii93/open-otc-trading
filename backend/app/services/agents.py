@@ -42,6 +42,7 @@ from .audit_trail import (
     record_hitl_decision,
     record_hitl_proposals,
 )
+from .confirmations.llm import CONFIRMATION_EXTRACTOR_SELECTION_KEY
 from .deep_agent.artifact_access import effective_tools_scope
 from .deep_agent.channel_registry import ChannelRegistry, get_registry
 from .deep_agent.checkpointer import build_async_checkpointer, build_checkpointer
@@ -2246,6 +2247,7 @@ class AgentService:
         desk_workflow_launch_args: dict | None = None,
         actor: str = "desk_user",
         mode: str | None = None,
+        extractor_selection: dict[str, str] | None = None,
     ) -> _WorkflowStreamTurn:
         with _database.SessionLocal() as session:
             thread = session.get(AgentThread, thread_id)
@@ -2326,6 +2328,14 @@ class AgentService:
                     "session_id": route.session_id,
                     "desk_workflow_slug": desk_workflow_slug,
                 },
+                # Arena-only: route the confirmation extractor to THIS match's
+                # model, so a vision workflow grades the contestant's own eyes.
+                # Server-stamped; never model- or tool-supplied. Stamped in BOTH
+                # configurable builds -- which one runs depends on
+                # settings.feature_workflow_routing, and an unstamped path would
+                # silently fall back to tag routing with no error anywhere.
+                **({CONFIRMATION_EXTRACTOR_SELECTION_KEY: extractor_selection}
+                   if extractor_selection else {}),
             }
             if confirmed_cost_preview:
                 configurable_extra["confirmed_cost_preview"] = True
@@ -2641,6 +2651,7 @@ class AgentService:
         desk_workflow_slug: str | None = None,
         desk_workflow_source: str | None = None,
         desk_workflow_launch_args: dict | None = None,
+        extractor_selection: dict[str, str] | None = None,
     ):
         """Stream live LangGraph events for one agent turn, then persist.
 
@@ -2712,6 +2723,7 @@ class AgentService:
                         desk_workflow_launch_args=desk_workflow_launch_args,
                         actor=actor,
                         mode=mode,
+                        extractor_selection=extractor_selection,
                     )
                     if prepared.router_message_id is not None:
                         if prepared.router_response_text:
@@ -2869,6 +2881,10 @@ class AgentService:
                 "model": resolved.get("model") if isinstance(resolved, dict) else None,
                 "thread_id": thread_id,
             },
+            # Arena-only: route the confirmation extractor to THIS match's model
+            # (see the routed path's build above -- both must stamp it).
+            **({CONFIRMATION_EXTRACTOR_SELECTION_KEY: extractor_selection}
+               if extractor_selection else {}),
         }
         if confirmed_cost_preview:
             configurable_extra["confirmed_cost_preview"] = True
