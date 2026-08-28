@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OTC Desk Agent Arena — Run #131</title>
+<style>
+:root{
+  --ink:#1a1d21; --muted:#5b6470; --line:#e3e6eb; --bg:#ffffff;
+  --accent:#2f5d8a; --soft:#f4f6f9;
+  --gold:#caa12e; --silver:#9aa0a6; --bronze:#b06a3b; --mid:#3b6fb0; --floor:#c5c9d1;
+  --good:#2e8b57; --neutral:#6b7280; --warn:#d98a2b; --bad:#c0392b; --frontier:#3b6fb0;
+}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+body{
+  font-family:"Charter","Georgia",Cambria,"Times New Roman",serif;
+  color:var(--ink); background:var(--bg); line-height:1.62;
+  max-width:820px; margin:0 auto; padding:56px 40px 80px; font-size:16.5px;
+}
+h1,h2,h3,h4{font-family:-apple-system,"Inter","Segoe UI",Helvetica,Arial,sans-serif;
+  line-height:1.22; letter-spacing:-.01em; color:var(--ink)}
+h1{font-size:2.05rem; margin:.2em 0 .1em; font-weight:800}
+h2{font-size:1.42rem; margin:2.1em 0 .55em; padding-bottom:.28em;
+  border-bottom:2px solid var(--line); font-weight:750}
+h3{font-size:1.12rem; margin:1.7em 0 .5em; font-weight:700; color:#2b3038}
+h1+p em, body>p:first-of-type em{color:var(--muted)}
+p,li{font-size:1rem}
+a{color:var(--accent); text-decoration:none}
+hr{border:none; border-top:1px solid var(--line); margin:2.2em 0}
+code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.86em;
+  background:var(--soft); padding:.1em .35em; border-radius:4px}
+blockquote{margin:1.1em 0; padding:.7em 1.1em; background:var(--soft);
+  border-left:4px solid var(--accent); border-radius:0 6px 6px 0; color:#2b3038}
+blockquote p{margin:.3em 0}
+strong{font-weight:700}
+
+/* tables */
+table{border-collapse:collapse; width:100%; margin:1.1em 0; font-size:.9rem;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+th,td{padding:.5em .7em; border-bottom:1px solid var(--line); text-align:left}
+thead th{background:#f7f9fc; border-bottom:2px solid #d6dbe3; font-weight:700;
+  font-size:.82rem; letter-spacing:.01em; color:#39414c}
+tbody tr:nth-child(even){background:#fbfcfe}
+td:first-child,th:first-child{white-space:nowrap}
+
+/* charts */
+.chart{margin:1.3em 0 1.6em; padding:0}
+.chart .row{display:flex; align-items:center; gap:12px; margin:5px 0;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+.chart .lbl{flex:0 0 168px; text-align:right; font-size:.82rem; color:#39414c; font-weight:600}
+.chart .track{flex:1; height:22px; background:#eef1f5; border-radius:5px; overflow:hidden}
+.chart .bar{display:block; height:100%; border-radius:5px}
+.chart .val{flex:0 0 150px; font-size:.78rem; color:var(--muted); font-variant-numeric:tabular-nums}
+.chart figcaption{margin-top:.7em; font-size:.76rem; color:var(--muted);
+  font-family:-apple-system,"Inter",sans-serif; text-align:right}
+.bar.gold{background:linear-gradient(90deg,#d9b13f,#caa12e)}
+.bar.silver{background:linear-gradient(90deg,#aab0b6,#9aa0a6)}
+.bar.bronze{background:linear-gradient(90deg,#c07c4a,#b06a3b)}
+.bar.mid{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.frontier{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.floor{background:#c5c9d1}
+.bar.good{background:linear-gradient(90deg,#37a169,#2e8b57)}
+.bar.neutral{background:#8a929e}
+.bar.warn{background:linear-gradient(90deg,#e09a3e,#d98a2b)}
+.bar.bad{background:linear-gradient(90deg,#d04b3c,#c0392b)}
+
+/* report header band */
+.masthead{border-bottom:3px solid var(--ink); padding-bottom:.6em; margin-bottom:1.4em}
+.footer-note{margin-top:3em; padding-top:1em; border-top:1px solid var(--line);
+  font-size:.8rem; color:var(--muted); font-family:-apple-system,"Inter",sans-serif}
+
+@page{size:A4; margin:16mm 15mm}
+@media print{
+  body{max-width:none; margin:0; padding:0; font-size:10.6pt}
+  h2{margin-top:1.4em}
+  h2,h3,h4{break-after:avoid}
+  table,.chart,blockquote,figure{break-inside:avoid}
+  tr{break-inside:avoid}
+  a{color:var(--ink)}
+}
+</style>
+</head><body>
+<h1>🏆 OTC Desk Agent Arena — Run #131</h1>
+<p><strong>Two new flash-tier models arrive, post the best correctness on the board twice, and
+still lose. GLM 5.3 Flash and Qwen 3.8 Flash across five golden workflows at each
+model's effort ceiling.</strong></p>
+<p><em>2026-08-28 · run <code>#131</code> · 2 models × 5 workflows × </em><em>1 trial</em><em> = </em><em>10 model-trials</em><em> ·
+both pinned to <code>max</code> · objective-only scoring (jury off) · </em><em>10 of 10 pairs <code>scored</code>,
+none <code>invalid</code>, zero malformed tool calls, zero truncated calls</em><em> · compared against the
+cards of run <code>#129</code>, which was measured at </em><em>2 trials per cell</em>**</p>
+<hr />
+<h2>Why this run exists</h2>
+<p>Both models were published in the two days before it ran — GLM 5.3 Flash on 2026-08-26,
+Qwen 3.8 Flash on 2026-08-27 — and both are aggressively cheap for the tier: <code>$0.075 /
+$0.25</code> and <code>$0.16 / $0.47</code> per MTok, against <code>$1.40 / $4.40</code> for GLM 5.3 and <code>$0.50 /
+$3.00</code> for Qwen 3.8 27B. Both carry 1M context and accept image and video input.</p>
+<p>The question was whether the flash tier had just gained two contestants at a fraction of
+the price. On correctness, very nearly. On the ranking, no — and the reason is a single
+axis.</p>
+<hr />
+<h2>Headline</h2>
+<p>Consolidated cards, averaged across all five workflows. Rows 1–7 are run #129 at each
+model's own effort ceiling; the two newcomers are run #131 at <code>max</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align: center;">eff</th>
+<th style="text-align: center;"><strong>OVR</strong></th>
+<th style="text-align: center;">GRD</th>
+<th style="text-align: center;">ADH</th>
+<th style="text-align: center;">SYN</th>
+<th style="text-align: center;">PRC</th>
+<th style="text-align: center;"><strong>EFF</strong></th>
+<th style="text-align: center;">CON</th>
+<th style="text-align: center;">Objective</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPT-5.6 Luna</td>
+<td style="text-align: center;">max</td>
+<td style="text-align: center;"><strong>84</strong></td>
+<td style="text-align: center;">91</td>
+<td style="text-align: center;">94</td>
+<td style="text-align: center;">95</td>
+<td style="text-align: center;">90</td>
+<td style="text-align: center;">47</td>
+<td style="text-align: center;">89</td>
+<td style="text-align: center;">92.6</td>
+</tr>
+<tr>
+<td>Qwen 3.8 27B</td>
+<td style="text-align: center;">max</td>
+<td style="text-align: center;"><strong>84</strong></td>
+<td style="text-align: center;">91</td>
+<td style="text-align: center;">86</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">89</td>
+<td style="text-align: center;">58</td>
+<td style="text-align: center;">87</td>
+<td style="text-align: center;">89.6</td>
+</tr>
+<tr>
+<td>Gemini 3.7 Flash</td>
+<td style="text-align: center;">xhigh</td>
+<td style="text-align: center;"><strong>83</strong></td>
+<td style="text-align: center;">95</td>
+<td style="text-align: center;">92</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">92</td>
+<td style="text-align: center;">31</td>
+<td style="text-align: center;">89</td>
+<td style="text-align: center;"><strong>94.3</strong></td>
+</tr>
+<tr>
+<td>DeepSeek V4 Flash <em>(pinned)</em></td>
+<td style="text-align: center;">max</td>
+<td style="text-align: center;"><strong>81</strong></td>
+<td style="text-align: center;">91</td>
+<td style="text-align: center;">91</td>
+<td style="text-align: center;">97</td>
+<td style="text-align: center;">88</td>
+<td style="text-align: center;">54</td>
+<td style="text-align: center;">69</td>
+<td style="text-align: center;">90.6</td>
+</tr>
+<tr>
+<td>Hunyuan 3</td>
+<td style="text-align: center;">xhigh</td>
+<td style="text-align: center;"><strong>80</strong></td>
+<td style="text-align: center;">88</td>
+<td style="text-align: center;">93</td>
+<td style="text-align: center;">77</td>
+<td style="text-align: center;">82</td>
+<td style="text-align: center;">78</td>
+<td style="text-align: center;">50</td>
+<td style="text-align: center;">86.1</td>
+</tr>
+<tr>
+<td><strong>GLM 5.3 Flash</strong></td>
+<td style="text-align: center;">max</td>
+<td style="text-align: center;"><strong>79</strong></td>
+<td style="text-align: center;">85</td>
+<td style="text-align: center;">92</td>
+<td style="text-align: center;">95</td>
+<td style="text-align: center;">88</td>
+<td style="text-align: center;"><strong>25</strong></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">88.7</td>
+</tr>
+<tr>
+<td><strong>Qwen 3.8 Flash</strong></td>
+<td style="text-align: center;">max</td>
+<td style="text-align: center;"><strong>78</strong></td>
+<td style="text-align: center;">88</td>
+<td style="text-align: center;">85</td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">88</td>
+<td style="text-align: center;"><strong>20</strong></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">88.2</td>
+</tr>
+<tr>
+<td>MiniMax M3</td>
+<td style="text-align: center;">max</td>
+<td style="text-align: center;"><strong>72</strong></td>
+<td style="text-align: center;">79</td>
+<td style="text-align: center;">86</td>
+<td style="text-align: center;">79</td>
+<td style="text-align: center;">82</td>
+<td style="text-align: center;">55</td>
+<td style="text-align: center;">58</td>
+<td style="text-align: center;">83.0</td>
+</tr>
+<tr>
+<td>MiMo V2.5</td>
+<td style="text-align: center;">high</td>
+<td style="text-align: center;"><strong>70</strong></td>
+<td style="text-align: center;">77</td>
+<td style="text-align: center;">80</td>
+<td style="text-align: center;">81</td>
+<td style="text-align: center;">82</td>
+<td style="text-align: center;">63</td>
+<td style="text-align: center;">52</td>
+<td style="text-align: center;">80.0</td>
+</tr>
+</tbody>
+</table>
+<p><code>OVR = round(0.32·GRD + 0.26·ADH + 0.16·SYN + 0.16·EFF + 0.10·PRC)</code>. The jury is off, so
+no subjective score enters the ranking. CON reads <code>—</code> for the newcomers because run #131
+ran one trial per cell and consistency needs trials to disperse — that is <em>not measured</em>,
+not <em>perfect</em>.</p>
+<p><strong>Read the two halves of those rows separately.</strong> On objective score the newcomers land
+sixth and seventh of nine — but only 1.9 and 2.4 points behind Hunyuan 3, which outranks
+them, and comfortably ahead of MiniMax M3 and MiMo V2.5, which they lose to on nothing.
+On EFF they are <strong>first and second worst on the board</strong>, below Gemini 3.7 Flash's 31,
+which was the previous floor.</p>
+<p>Every other axis is competitive. GLM 5.3 Flash's ADH of 92 is third best in the field.
+Qwen 3.8 Flash's SYN of 99 ties the best score anyone has posted. Neither model has a
+correctness weakness that explains its position.</p>
+<hr />
+<h2>The finding: correct, and expensive for it</h2>
+<p>EFF is golf-scored. A run at or under a workflow's calibrated <code>par_tool_calls</code> earns full
+marks; above par it decays linearly to <strong>zero at 2× par</strong>. So the axis does not ask
+whether a model got the right answer — the other four axes do that — it asks what the
+answer cost.</p>
+<p>Here is every cell of run #131 against par:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Workflow</th>
+<th style="text-align: right;">par</th>
+<th style="text-align: right;">calls</th>
+<th style="text-align: right;">× par</th>
+<th style="text-align: center;"><strong>EFF</strong></th>
+<th style="text-align: center;">OVR</th>
+<th style="text-align: right;">Objective</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GLM 5.3 Flash</td>
+<td>high-board-portfolio-review</td>
+<td style="text-align: right;">24</td>
+<td style="text-align: right;">26</td>
+<td style="text-align: right;">1.08</td>
+<td style="text-align: center;">64</td>
+<td style="text-align: center;">71</td>
+<td style="text-align: right;">71.4</td>
+</tr>
+<tr>
+<td>GLM 5.3 Flash</td>
+<td>risk-limit-breach</td>
+<td style="text-align: right;">25</td>
+<td style="text-align: right;">34</td>
+<td style="text-align: right;">1.36</td>
+<td style="text-align: center;">63</td>
+<td style="text-align: center;">93</td>
+<td style="text-align: right;"><strong>100.0</strong></td>
+</tr>
+<tr>
+<td>GLM 5.3 Flash</td>
+<td>trader-rfq-booking</td>
+<td style="text-align: right;">35</td>
+<td style="text-align: right;">78</td>
+<td style="text-align: right;">2.23</td>
+<td style="text-align: center;"><strong>0</strong></td>
+<td style="text-align: center;">81</td>
+<td style="text-align: right;"><strong>95.2</strong></td>
+</tr>
+<tr>
+<td>GLM 5.3 Flash</td>
+<td>ops-settlement</td>
+<td style="text-align: right;">30</td>
+<td style="text-align: right;">72</td>
+<td style="text-align: right;">2.40</td>
+<td style="text-align: center;"><strong>0</strong></td>
+<td style="text-align: center;">69</td>
+<td style="text-align: right;">81.8</td>
+</tr>
+<tr>
+<td>GLM 5.3 Flash</td>
+<td>risk-manager-control</td>
+<td style="text-align: right;">24</td>
+<td style="text-align: right;">58</td>
+<td style="text-align: right;">2.42</td>
+<td style="text-align: center;"><strong>0</strong></td>
+<td style="text-align: center;">82</td>
+<td style="text-align: right;">94.9</td>
+</tr>
+<tr>
+<td>Qwen 3.8 Flash</td>
+<td>ops-settlement</td>
+<td style="text-align: right;">30</td>
+<td style="text-align: right;">42</td>
+<td style="text-align: right;">1.40</td>
+<td style="text-align: center;">45</td>
+<td style="text-align: center;">75</td>
+<td style="text-align: right;">79.5</td>
+</tr>
+<tr>
+<td>Qwen 3.8 Flash</td>
+<td>risk-limit-breach</td>
+<td style="text-align: right;">25</td>
+<td style="text-align: right;">39</td>
+<td style="text-align: right;">1.56</td>
+<td style="text-align: center;">44</td>
+<td style="text-align: center;">90</td>
+<td style="text-align: right;"><strong>100.0</strong></td>
+</tr>
+<tr>
+<td>Qwen 3.8 Flash</td>
+<td>high-board-portfolio-review</td>
+<td style="text-align: right;">24</td>
+<td style="text-align: right;">44</td>
+<td style="text-align: right;">1.83</td>
+<td style="text-align: center;">12</td>
+<td style="text-align: center;">63</td>
+<td style="text-align: right;">71.4</td>
+</tr>
+<tr>
+<td>Qwen 3.8 Flash</td>
+<td>trader-rfq-booking</td>
+<td style="text-align: right;">35</td>
+<td style="text-align: right;">108</td>
+<td style="text-align: right;">3.09</td>
+<td style="text-align: center;"><strong>0</strong></td>
+<td style="text-align: center;">81</td>
+<td style="text-align: right;"><strong>95.2</strong></td>
+</tr>
+<tr>
+<td>Qwen 3.8 Flash</td>
+<td>risk-manager-control</td>
+<td style="text-align: right;">24</td>
+<td style="text-align: right;">79</td>
+<td style="text-align: right;">3.29</td>
+<td style="text-align: center;"><strong>0</strong></td>
+<td style="text-align: center;">82</td>
+<td style="text-align: right;">94.9</td>
+</tr>
+</tbody>
+</table>
+<p>Five of ten cells score EFF <strong>0</strong>. And the pattern inside that is the uncomfortable part:
+<strong>the cells where these models are most correct are the cells where they are most
+wasteful.</strong> GLM 5.3 Flash's three zero-EFF workflows carry objective scores of 95.2, 81.8
+and 94.9 — its two best results among them. Qwen 3.8 Flash's two zeroes are its 95.2 and
+94.9. Neither model is thrashing because it is lost. It is arriving at the right answer
+by a long road.</p>
+<p><strong>Neither model reached par on any workflow.</strong> GLM's leanest run was 1.08× par, Qwen's
+1.40×. Five of the seven established contestants come in <em>under</em> par on at least one
+workflow — Hunyuan 3 does it three times, at 0.65×, 0.76× and 0.83×.</p>
+<hr />
+<h2>Where they actually lost</h2>
+<p>Two workflows decide it, and neither is a story about getting things wrong.</p>
+<h3><code>trader-rfq-booking-day</code> — the best correctness on the board, fourth place</h3>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align: center;">OVR</th>
+<th style="text-align: center;">EFF</th>
+<th style="text-align: right;">calls</th>
+<th style="text-align: right;">× par</th>
+<th style="text-align: right;">Objective</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DeepSeek V4 Flash</td>
+<td style="text-align: center;"><strong>89</strong></td>
+<td style="text-align: center;">66</td>
+<td style="text-align: right;">46</td>
+<td style="text-align: right;">1.30</td>
+<td style="text-align: right;">93.7</td>
+</tr>
+<tr>
+<td>Hunyuan 3</td>
+<td style="text-align: center;"><strong>88</strong></td>
+<td style="text-align: center;">82</td>
+<td style="text-align: right;">39</td>
+<td style="text-align: right;">1.11</td>
+<td style="text-align: right;">89.7</td>
+</tr>
+<tr>
+<td>MiniMax M3</td>
+<td style="text-align: center;"><strong>81</strong></td>
+<td style="text-align: center;">50</td>
+<td style="text-align: right;">51</td>
+<td style="text-align: right;">1.46</td>
+<td style="text-align: right;">87.3</td>
+</tr>
+<tr>
+<td><strong>GLM 5.3 Flash</strong></td>
+<td style="text-align: center;"><strong>81</strong></td>
+<td style="text-align: center;"><strong>0</strong></td>
+<td style="text-align: right;">78</td>
+<td style="text-align: right;">2.23</td>
+<td style="text-align: right;"><strong>95.2</strong></td>
+</tr>
+<tr>
+<td><strong>Qwen 3.8 Flash</strong></td>
+<td style="text-align: center;"><strong>81</strong></td>
+<td style="text-align: center;"><strong>0</strong></td>
+<td style="text-align: right;">108</td>
+<td style="text-align: right;">3.09</td>
+<td style="text-align: right;"><strong>95.2</strong></td>
+</tr>
+<tr>
+<td>MiMo V2.5</td>
+<td style="text-align: center;">79</td>
+<td style="text-align: center;">32</td>
+<td style="text-align: right;">58</td>
+<td style="text-align: right;">1.66</td>
+<td style="text-align: right;">91.3</td>
+</tr>
+<tr>
+<td>Gemini 3.7 Flash</td>
+<td style="text-align: center;">78</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: right;">70</td>
+<td style="text-align: right;">1.99</td>
+<td style="text-align: right;">93.7</td>
+</tr>
+<tr>
+<td>Qwen 3.8 27B</td>
+<td style="text-align: center;">75</td>
+<td style="text-align: center;">10</td>
+<td style="text-align: right;">66</td>
+<td style="text-align: right;">1.89</td>
+<td style="text-align: right;">87.3</td>
+</tr>
+<tr>
+<td>GPT-5.6 Luna</td>
+<td style="text-align: center;">73</td>
+<td style="text-align: center;"><strong>0</strong></td>
+<td style="text-align: right;">118</td>
+<td style="text-align: right;">3.37</td>
+<td style="text-align: right;">89.7</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Both newcomers post 95.2 — the highest objective score any model has recorded on this
+workflow — and finish fourth equal.</strong> DeepSeek V4 Flash wins it with 93.7, a point and a
+half <em>less</em> correct, on 46 calls instead of 78 and 108.</p>
+<h3><code>risk-manager-control-day</code> — identical correctness, 5 OVR apart</h3>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align: center;">OVR</th>
+<th style="text-align: center;">EFF</th>
+<th style="text-align: right;">calls</th>
+<th style="text-align: right;">× par</th>
+<th style="text-align: right;">Objective</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Hunyuan 3</td>
+<td style="text-align: center;"><strong>87</strong></td>
+<td style="text-align: center;">66</td>
+<td style="text-align: right;">31</td>
+<td style="text-align: right;">1.29</td>
+<td style="text-align: right;"><strong>94.9</strong></td>
+</tr>
+<tr>
+<td>Qwen 3.8 27B</td>
+<td style="text-align: center;"><strong>84</strong></td>
+<td style="text-align: center;">56</td>
+<td style="text-align: right;">34</td>
+<td style="text-align: right;">1.40</td>
+<td style="text-align: right;">91.0</td>
+</tr>
+<tr>
+<td>DeepSeek V4 Flash</td>
+<td style="text-align: center;"><strong>82</strong></td>
+<td style="text-align: center;">35</td>
+<td style="text-align: right;">42</td>
+<td style="text-align: right;">1.75</td>
+<td style="text-align: right;">94.8</td>
+</tr>
+<tr>
+<td><strong>GLM 5.3 Flash</strong></td>
+<td style="text-align: center;"><strong>82</strong></td>
+<td style="text-align: center;"><strong>0</strong></td>
+<td style="text-align: right;">58</td>
+<td style="text-align: right;">2.42</td>
+<td style="text-align: right;"><strong>94.9</strong></td>
+</tr>
+<tr>
+<td><strong>Qwen 3.8 Flash</strong></td>
+<td style="text-align: center;"><strong>82</strong></td>
+<td style="text-align: center;"><strong>0</strong></td>
+<td style="text-align: right;">79</td>
+<td style="text-align: right;">3.29</td>
+<td style="text-align: right;"><strong>94.9</strong></td>
+</tr>
+<tr>
+<td>GPT-5.6 Luna</td>
+<td style="text-align: center;">81</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: right;">44</td>
+<td style="text-align: right;">1.83</td>
+<td style="text-align: right;">96.2</td>
+</tr>
+</tbody>
+</table>
+<p>Hunyuan 3, GLM 5.3 Flash and Qwen 3.8 Flash <strong>all score exactly 94.9</strong> on the flagship —
+the same 37 of 39 checks. Hunyuan does it in 31 tool calls and takes the workflow. GLM
+needs 58, Qwen needs 79, and both drop five OVR points for the difference. Qwen 3.8 Flash
+spends <strong>2.5× Hunyuan's calls to produce a byte-identical result.</strong></p>
+<hr />
+<h2>What this is not</h2>
+<p><strong>It is not a correctness problem.</strong> On <code>risk-limit-breach-day</code> both models score a clean
+<strong>100.0</strong>, and on the flagship and trader-rfq they equal or beat everyone. Their GRD and
+SYN are top-half. If the ranking weighted only the four correctness axes, GLM 5.3 Flash
+would sit fourth and Qwen 3.8 Flash fifth rather than sixth and seventh.</p>
+<p><strong>It is not a routing or protocol defect.</strong> Both models emitted <strong>zero malformed tool
+calls</strong> and <strong>zero truncated calls</strong> across all ten matches, and those are measured zeros
+(<code>5/5 matches measured</code>), not unmeasured nulls. This mattered more than it sounds: Qwen
+3.8 Flash's <code>alibaba</code> upstream returns tool-call continuation deltas with an <strong>empty
+<code>id</code></strong> — 263 of 263 in a direct SSE probe — which LangChain merges over the real
+identifier, so nothing dispatches and the match lands on the 7.7 prohibition floor. Both
+models are pinned to the Anthropic wire protocol for exactly that reason. Unpinned, this
+article would have been about two models that appear unable to use tools at all.</p>
+<p><strong>It is not uniform.</strong> GLM 5.3 Flash ran <code>high-board-portfolio-review-day</code> at 1.08× par
+for EFF 64 — lean by any standard. Qwen 3.8 Flash's best is 1.40×. Both models <em>can</em> be
+economical; they are not on the workflows that matter most.</p>
+<p><strong>It is not unique to them.</strong> GPT-5.6 Luna — the top of the whole board — posts EFF 0 on
+trader-rfq at 3.37× par, worse than either newcomer. The difference is that Luna is
+frugal elsewhere (0.93× par on ops-settlement, EFF 96), so one expensive workflow does
+not define its card. Neither newcomer has that offsetting cell.</p>
+<hr />
+<h2>Caveats</h2>
+<p><strong>Run #131 ran one trial per cell; run #129 ran two.</strong> This is the largest limitation
+here. The newcomers' cards therefore have no CON, and every figure is a single sample
+where the comparison field is a two-trial mean. A second trial could move an individual
+cell meaningfully. It is unlikely to erase the finding — the EFF gap is 20–25 against a
+31–78 field, and five of ten cells are at <em>zero</em>, which needs 2× par to reach — but a
+depth-matched re-run is the honest way to settle it, and it has not been done.</p>
+<p><strong>These are two runs, not one board.</strong> #129 and #131 executed on different days under
+different network conditions. This page compares <strong>cards</strong>, which are absolute
+measurements — <code>passed/total</code> per axis, EFF against each workflow's own par — and stay
+meaningful without a shared field. It does not publish a merged ranking, and the
+newcomers do not appear on the leaderboard.</p>
+<p><strong>EFF depends on par, and par is young.</strong> <code>risk-limit-breach-day</code> (25) and
+<code>ops-settlement-day</code> (30) were only calibrated on 2026-08-27, one day before this run.
+Since EFF is the entire story here, a future par revision moves these two cards more than
+anyone else's.</p>
+<p><strong>One lost point is the harness's fault, not the models'.</strong> Both failed
+<code>s1:skill: read-risk-result</code> on the flagship. That skill declares no <code>routing:</code>
+frontmatter, so it never enters the orchestrator's known-skills table and cannot be
+routed to — <code>risk-limit-breach-day</code> already handles this by declining to grade it. The
+flagship still does, so every contestant on that workflow loses the same point to a check
+that measures catalogue spelunking rather than ability.</p>
+<hr />
+<h2>What would change the verdict</h2>
+<p>A depth-matched re-run at two trials, and an arm at <code>low</code>. Run #130 showed that four of
+seven models scored <strong>higher</strong> at <code>low</code> than at their ceiling, precisely because lower
+effort cuts tool calls and EFF has the widest spread of any axis. Two models whose only
+weakness is call volume are the most likely candidates in the field to gain from being
+turned down — and at <code>$0.075</code> per MTok in, the experiment is close to free.</p>
+<p><em>Cards for run #131 are published on the <a href="models.html">model cards</a> page. It is not a
+ranked board: a two-model run across five workflows has no field to rank within, and
+folding five workflows into one row would publish a cross-workflow average under a single
+workflow's heading.</em></p>
+<p class="footer-note">Rendered from
+<code>docs/arena/2026-08-28-run131-flash-newcomers.md</code> ·
+OTC Desk Agent Arena · Run #131.</p>
+</body></html>

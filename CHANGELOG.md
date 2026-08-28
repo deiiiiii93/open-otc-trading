@@ -111,6 +111,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   +18.6 on another for the same effort change, a sign flip a single mean hides.
 
 ### Added
+- **Arena run #131 published to artena.one** — `docs/arena/2026-08-28-run131-flash-newcomers.md`
+  plus a `provisional:` cards-only entry for run #131 in `boards.yaml`. GLM 5.3 Flash
+  (OVR 79) and Qwen 3.8 Flash (OVR 78) across all five golden workflows at `max`,
+  1 trial per cell. Cards only rather than a ranked board: a two-model run spanning five
+  workflows has no field to rank within, and folding five workflows into one row per
+  contestant would publish a cross-workflow average under a single workflow's heading.
+  The report's finding is that both models are competitive on correctness — they post the
+  highest objective score any contestant has recorded on `trader-rfq-booking-day` (95.2)
+  and tie the best on the flagship (94.9) — and place sixth and seventh of nine against
+  the run #129 field **on EFF alone**, which is zero in five of their ten cells. Neither
+  reached par on any workflow. Disclosed in both the note and the report: run #131 ran one
+  trial per cell against run #129's two, so CON is *not measured* rather than perfect and
+  every figure is a single sample.
 - **Two flash-tier contestants: `z-ai/glm-5.3-flash` and `qwen/qwen3.8-flash`.**
   Registered in `config/agent_channels.yaml` + the tracked `.example.yml`, added to
   `CANDIDATE_MODELS`, and both effort ladders **measured** into

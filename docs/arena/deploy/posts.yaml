@@ -5,6 +5,17 @@
 # assets, publish.  A missing blurb FAILS THE BUILD by design — never let a
 # generated first paragraph ship as editorial copy.
 
+- file: 2026-08-28-run131-flash-newcomers.md
+  date: 2026-08-28
+  tags: [research]
+  title: "Two new flash models post the best correctness on the board, and lose"
+  blurb: >
+    GLM 5.3 Flash and Qwen 3.8 Flash tie or beat the field on correctness across five
+    workflows and place sixth and seventh of nine. Five of their ten cells score EFF
+    zero: the right answer, by a road two to three times too long.
+  chips: ["2 models", "run #131", "10 trials"]
+  publish: true
+
 - file: 2026-08-26-run129-flash-tier-board.md
   date: 2026-08-27
   tags: [research]
