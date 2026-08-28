@@ -12,7 +12,7 @@ import base64
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 # NOTE: app.tools.product_term_schema is imported lazily inside the two
 # functions below (segment_document / extract_trade), not at module scope.
@@ -67,6 +67,39 @@ def resolve_confirmation_extractor_selection(registry) -> dict:
     return registry.default_selection()
 
 
+def _content_to_text(content: Any) -> str:
+    """Reduce a chat response's ``.content`` to the text the extractor parses.
+
+    An OpenAI-protocol model returns a plain string. An ANTHROPIC-protocol
+    REASONING model returns a block LIST instead -- glm-5.3-flash sends
+    ``[{"type": "thinking", ...}, {"type": "text", "text": "..."}]`` (measured
+    live on ``z-ai/glm-5.3-flash:bigmodel``, 2026-08-28) -- and only the text
+    block is the answer.
+
+    Rejecting the list outright (the previous behaviour) throws away a perfectly
+    good response. That matters beyond tidiness: when the arena routes extraction
+    to the contestant, the discarded answer reads on the board as "this model
+    cannot see" rather than "the harness dropped what it said" -- the same
+    misattribution the 4096-token output cap and the malformed-tool-call lottery
+    each produced before they were measured.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [
+            block["text"]
+            for block in content
+            if isinstance(block, dict)
+            and block.get("type") == "text"
+            and isinstance(block.get("text"), str)
+        ]
+        if parts:
+            return "".join(parts)
+    raise ExtractionError(
+        f"extractor returned no text content ({type(content).__name__})"
+    )
+
+
 class RegistryExtractorClient:
     """Multimodal chat call through the channel registry (LangChain content parts)."""
 
@@ -82,12 +115,7 @@ class RegistryExtractorClient:
 
     def complete(self, content_parts: list[dict]) -> str:
         message = {"role": "user", "content": content_parts}
-        content = self._model.invoke([message]).content
-        if not isinstance(content, str):
-            raise ExtractionError(
-                f"extractor returned non-text content ({type(content).__name__})"
-            )
-        return content
+        return _content_to_text(self._model.invoke([message]).content)
 
 
 def build_extractor_client() -> ExtractorClient:

@@ -108,3 +108,49 @@ def test_resolver_prefers_dedicated_tag():
             return {"channel": "zenmux", "provider": "openai", "model": "default-y"}
 
     assert resolve_confirmation_extractor_selection(Reg())["model"] == "vision-x"
+
+
+def test_content_to_text_passes_a_plain_string_through():
+    from app.services.confirmations.llm import _content_to_text
+
+    assert _content_to_text('{"strike": 205.0}') == '{"strike": 205.0}'
+
+
+def test_content_to_text_flattens_anthropic_reasoning_blocks():
+    """glm-5.3-flash returns [thinking, text]; only the text block is the answer.
+
+    Measured live 2026-08-28 on z-ai/glm-5.3-flash:bigmodel. Before this the
+    extractor raised ExtractionError on every such response, which on an arena
+    board would read as "the model cannot see" rather than "the harness dropped
+    the answer".
+    """
+    from app.services.confirmations.llm import _content_to_text
+
+    content = [
+        {"type": "thinking", "thinking": "The strike appears to be 205.",
+         "signature": "abc"},
+        {"type": "text", "text": '{"strike": 205.0}'},
+    ]
+    assert _content_to_text(content) == '{"strike": 205.0}'
+
+
+def test_content_to_text_joins_multiple_text_blocks():
+    from app.services.confirmations.llm import _content_to_text
+
+    content = [{"type": "text", "text": '{"a": 1,'},
+               {"type": "text", "text": ' "b": 2}'}]
+    assert _content_to_text(content) == '{"a": 1, "b": 2}'
+
+
+def test_content_to_text_raises_when_no_text_block_survives():
+    from app.services.confirmations.llm import _content_to_text
+
+    with pytest.raises(ExtractionError):
+        _content_to_text([{"type": "thinking", "thinking": "hmm", "signature": "s"}])
+
+
+def test_content_to_text_raises_on_an_unusable_type():
+    from app.services.confirmations.llm import _content_to_text
+
+    with pytest.raises(ExtractionError):
+        _content_to_text(None)
