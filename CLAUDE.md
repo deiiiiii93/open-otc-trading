@@ -1259,6 +1259,16 @@ image-only or mixed), read back terms that exist only inside the images, decline
 to invent a term the document never states, book what validated, write the desk
 summary.
 
+- **LAUNCH REQUIREMENT: `LANGCHAIN_OPENAI_STREAM_CHUNK_TIMEOUT_S=900`.** Step 1
+  parses SIX documents in one `parse_trade_confirmation` call and each costs TWO
+  multimodal LLM calls, so 12+ vision calls run **synchronously inside one tool
+  body** — the outer agent stream emits no chunk for minutes and
+  langchain_openai's 120s default fires (`StreamChunkTimeoutError ...
+  chunks_received=17`, measured on run #1's first arm). The harness classifies it
+  correctly as `invalid`/`infra_error` rather than a scored 0, but **every
+  openai_chat contestant hits the same wall**, so the board is unrunnable
+  without it. The connection is legitimately IDLE, not dead — the case that
+  timeout is not meant to catch. Raise it for the WHOLE board, never per model.
 - **The extraction sub-call MUST route to the contestant, or the board measures
   nothing.** `resolve_confirmation_extractor_selection` picks by **registry tag**
   (`confirmation_extractor` → `fast` → default), so without an override every

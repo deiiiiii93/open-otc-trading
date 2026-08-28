@@ -23,6 +23,29 @@ extractor_model: contestant
 # ability, which is worse than an error.
 requires: [vision]
 
+# LAUNCH REQUIREMENT — raise the streaming chunk timeout for this board:
+#
+#   LANGCHAIN_OPENAI_STREAM_CHUNK_TIMEOUT_S=900
+#
+# Step 1 parses SIX documents in one `parse_trade_confirmation` call, and each
+# document costs TWO multimodal LLM calls (segment + fill-schema). Those 12+
+# vision calls run SYNCHRONOUSLY inside a single tool body, so the OUTER agent
+# stream emits no chunk for minutes and langchain_openai's 120s default fires:
+#
+#   StreamChunkTimeoutError: No streaming chunk received for 120.0s
+#   (model=openai/gpt-5.6-luna:openai, chunks_received=17)
+#
+# Measured on run #1's first arm, 2026-08-28. The harness classified it
+# correctly — `invalid` / `infra_error`, never a scored 0 — but every
+# openai_chat contestant hits the same wall, so the board is unrunnable without
+# the override. The connection is legitimately IDLE (the agent is doing real
+# work in a tool), not dead, which is exactly the case that timeout is not
+# meant to catch.
+#
+# Raise it for the WHOLE board, never per model: a per-contestant timeout would
+# make the arms non-comparable on wall-clock and could silently invalidate one
+# route while sparing another.
+
 # par_tool_calls is deliberately ABSENT. An uncalibrated workflow stays on the
 # LEGACY HYPERBOLIC EFF curve; a guessed par would opt this board into golf
 # scoring against a denominator no live run has justified, and because cards are
