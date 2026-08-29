@@ -302,6 +302,15 @@ def stage_documents(bundle, uploads_root: Path) -> list[Path]:
 
     Idempotent: overwrites on every call, so re-staging across the trials of one
     match is safe and a half-written file from a crashed trial is replaced.
+
+    NOT cleaned up after a match, deliberately-but-narrowly. Overwrite-on-stage
+    makes a stale copy harmless for THIS workflow (every run rewrites the same
+    names from the tracked corpus, so the bytes can never go stale). The residual
+    risk is cross-workflow: a later match whose model passes a BARE filename
+    could have it resolved against a document this workflow left behind. That
+    needs a real fix -- trace+baseline evidence, like ``_purge_match_rfqs`` --
+    the moment a second workflow stages documents, because a purge here must
+    never delete a desk user's chat upload sharing the root.
     """
     import shutil
 

@@ -74,7 +74,12 @@ Three findings, all load-bearing:
 
 **In scope**
 
-- A sixth golden workflow, `confirmation-desk-day` (8 steps, persona `trader`).
+- A sixth golden workflow, `confirmation-desk-day` (9 steps, persona
+  `trader`). **Amended after implementation:** designed as 8; a 9th step
+  (write the desk summary) was added because only `artifact_exists` /
+  `artifact_contains` map to the synthesis axis, so without an artifact
+  step every contestant scores a CONSTANT SYN of 0 — dragging OVR down
+  ~16 points uniformly while carrying no signal.
 - An arena-only, server-stamped **extractor override** so the contestant reads
   the documents (§4).
 - Making the synthetic corpus + generator **tracked**, and extending it with
@@ -235,7 +240,7 @@ garbage that pollutes the board while looking like a real result.
 
 ## 8. The workflow manifest
 
-`confirmation-desk-day.md`, persona `trader`, 8 steps.
+`confirmation-desk-day.md`, persona `trader`, 9 steps as shipped (8 designed + the synthesis step; see above).
 
 | # | Step | Skill | Axis focus |
 |---|---|---|---|

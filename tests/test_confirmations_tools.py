@@ -690,3 +690,37 @@ def test_config_is_injected_through_the_real_invoke_path(tmp_path):
 
     delivered = (seen.get("config") or {}).get("configurable", {})
     assert delivered.get(CONFIRMATION_EXTRACTOR_SELECTION_KEY) == override
+
+
+def test_upload_path_bare_filename_is_a_name_not_a_glob(tmp_path):
+    """`rglob` takes a PATTERN, so the bare-filename fallback must escape it.
+
+    Unescaped, `conf-0*.pdf` resolves a document the caller never named -- the
+    resolver would quietly become a search tool, and on an arena board a model
+    could reach a graded document without addressing it.
+    """
+    from app.tools.confirmations import _resolve_upload_path
+
+    uploads = (tmp_path / "uploads").resolve()
+    (uploads / "confirmations").mkdir(parents=True)
+    target = uploads / "confirmations" / "conf-08-mixed.pdf"
+    target.write_bytes(b"%PDF-1.4")
+
+    # The exact name still resolves.
+    assert _resolve_upload_path("conf-08-mixed.pdf", uploads) == target
+
+    # Patterns that WOULD have matched it must not resolve.
+    for pattern in ("conf-08*.pdf", "conf-0?-mixed.pdf", "*.pdf", "conf-0[0-9]-mixed.pdf"):
+        assert _resolve_upload_path(pattern, uploads) is None, pattern
+
+
+def test_upload_path_handles_a_literal_bracket_in_a_filename(tmp_path):
+    """A `[` in a real filename is a character, not a character class."""
+    from app.tools.confirmations import _resolve_upload_path
+
+    uploads = (tmp_path / "uploads").resolve()
+    (uploads / "confirmations").mkdir(parents=True)
+    target = uploads / "confirmations" / "conf[1]-amd.pdf"
+    target.write_bytes(b"%PDF-1.4")
+
+    assert _resolve_upload_path("conf[1]-amd.pdf", uploads) == target

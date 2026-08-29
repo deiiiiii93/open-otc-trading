@@ -51,11 +51,11 @@ Per-check tally across the field. **25 of 33 checks are DEAD** (4/4 or 0/4):
 
 | Check | Rate | Reading |
 |---|---|---|
-| **`s5` faint notional 636,000** | **1/4** | **The strongest discriminator on the board** |
-| `s1` `get_confirmation_batch` | 2/4 | Procedure, not sight |
-| `s7` `skipped_count` | 2/4 | Booking restraint / counting |
-| `s2` conf-08 strike + initial_price | 3/4 each | The mixed text-and-scan document |
-| `s2`,`s4`,`s6` `get_confirmation_batch` | 3/4 each | Procedure, not sight |
+| **Step 6 — faint notional 636,000** | **1/4** | **The strongest discriminator on the board** |
+| **Step 2** `get_confirmation_batch` | 2/4 | Procedure, not sight |
+| **Step 8** `skipped_count` | 2/4 | Booking restraint / counting |
+| **Step 3** conf-08 strike + initial_price | 3/4 each | The mixed text-and-scan document |
+| **Steps 3, 5, 7** `get_confirmation_batch` | 3/4 each | Procedure, not sight |
 | conf-01/04/09/10 terms, the absent-term trap, booking, the artifact, both prohibitions | 4/4 | Saturated |
 
 This confirms the pre-board measurement, and more strongly than the first pass
@@ -88,10 +88,14 @@ task.**
   `designed_par` of 9 — the theoretical minimum, which no realistic run
   approaches. Every EFF here is therefore crushed (14–39 on a 0–99 scale), and
   EFF is 0.16 of OVR. Do not compare these EFF/OVR values with calibrated boards.
-- **One trial per contestant.** No CON, and no claim about run-to-run stability.
-  `gemini-3.7-flash` scored 84.8 then 81.8 on two clean runs of the same arm, so
-  ±3 points of single-trial noise is the observed floor — treat rank 3 vs 4 as a
-  tie.
+- **One trial per contestant.** No CON, and no claim about run-to-run
+  stability. `gemini-3.7-flash` scored 84.8 then 81.8 on two clean runs of the
+  same arm — a **one-check** difference (28/33 then 27/33), not a three-point
+  one: with 33 checks the score grid is 3.03 points wide, so no score between
+  them exists. Treat ranks 3 and 4 as a tie.
+- **Two arms really did both score 84.8**, which reads like a transcription slip
+  and is not one: 28/33 = 84.848…, and luna's final run and gemini's discarded
+  first run both passed 28 checks. On a coarse grid, collisions are ordinary.
 - **Par is now calibratable, but not yet calibrated.** deepseek's perfect trial
   took 23 counted calls (the metric excludes `task`/`read_file`/`write_todos`).
   That is one data point; the flagship's par came from a distribution. Run more
@@ -131,14 +135,17 @@ non-negotiable. Each cost a real contestant real points.
    | deepseek-v4-flash-vision | 400 | 400 `file must have a file_id or file_data` |
 
    Three of four routes reject the only shape `read_file` can produce, each in
-   its own dialect. Fixed by `BinaryReadGuardMiddleware`, registered in all three
-   agent stacks.
+   its own dialect. Fixed by `BinaryReadGuardMiddleware`, registered in the three
+   hand-built agent stacks **and** in the `general-purpose` subagent, which
+   `create_deep_agent` otherwise auto-adds with middleware we cannot reach — a
+   fourth stack that held the parent's full toolset, ran unaudited, and on this
+   very board issued three `read_file` calls, one of them a PDF.
 
 ### Why the third one is the worst of the three
 
 **It is unrecoverable.** The rejected message stays in the history, so every
 later turn re-sends it and draws the same 400. `deepseek-v4-flash-vision` read
-one PDF at step 3 and then made **zero tool calls for steps 4–8**.
+one PDF during step 4 and then made **zero tool calls for steps 5–9**.
 
 **It is invisible to every gate we have.** Nothing truncates, so the truncation
 flag reads a clean zero. The `read_file` call itself is `status=success`, so

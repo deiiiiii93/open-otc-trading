@@ -7,6 +7,7 @@ service gate as the REST surface.
 """
 from __future__ import annotations
 
+import glob
 from pathlib import Path
 from typing import Any
 
@@ -110,8 +111,14 @@ def _resolve_upload_path(raw: str, uploads_root: Path) -> Path | None:
 
     # Last resort: a BARE filename, matched uniquely anywhere under the uploads
     # root. Unique-only, so an ambiguous name is refused rather than guessed.
+    #
+    # `glob.escape` because rglob takes a PATTERN: unescaped, `conf-08*.pdf`
+    # would resolve a document the caller never named, and a stray `[` would
+    # make the lookup behave in ways no caller intended. This is a
+    # filename-recovery path, not a search tool -- the model gets the file it
+    # asked for by name, or nothing.
     if "/" not in raw:
-        matches = [p for p in uploads_root.rglob(raw) if p.is_file()]
+        matches = [p for p in uploads_root.rglob(glob.escape(raw)) if p.is_file()]
         if len(matches) == 1:
             resolved = matches[0].resolve()
             if resolved.is_relative_to(uploads_root):

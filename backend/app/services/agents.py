@@ -3443,6 +3443,14 @@ class AgentService:
             resume_envelope = (
                 "desk_async" if prior_envelope == "desk_async" else "desk_workflow"
             )
+            # NOTE: this does NOT re-stamp CONFIRMATION_EXTRACTOR_SELECTION_KEY,
+            # so a turn resumed from a HITL approval falls back to the tag
+            # ladder for `parse_trade_confirmation`'s extraction sub-call. That
+            # is unreachable today -- arena matches run YOLO, which raises no
+            # interrupts, and no non-arena caller sets the override -- but it is
+            # the same silent-fallback shape the AST test guards on the two
+            # streaming builds. Re-stamp here from `action_source_meta` before
+            # any interactive caller is allowed to pin an extractor.
             resume_extras = {
                 "envelope": resume_envelope,
                 "confirmed_cost_preview": True,
@@ -3612,6 +3620,10 @@ class AgentService:
         # doesn't ask again with a structured cost_preview_required event
         # the /confirm endpoint can't surface. Without this, large
         # run_batch_pricing approvals would 502.
+        # Same gap as the other resume path: no
+        # CONFIRMATION_EXTRACTOR_SELECTION_KEY re-stamp, so a resumed turn falls
+        # back to the tag ladder. Unreachable today (arena is YOLO; no other
+        # caller pins an extractor) -- close it before that changes.
         resume_extras = {
             "envelope": resume_envelope,
             "confirmed_cost_preview": True,

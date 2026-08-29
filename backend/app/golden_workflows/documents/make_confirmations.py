@@ -1091,9 +1091,14 @@ TRUTH_DOCUMENTS = {
         "image_only": {"strike": _num(C9["amended_strike"]),
                        "reference": C9["ref"]},
         "decoys": [_num(C9["strike"]), _num(C9["initial_price"])],
-        "note": "The PRINTED strike (780.00) is struck through and 917.50 inked "
-                "beside it. Reading the field without noticing the correction "
-                "returns the decoy.",
+        # Derived from C9, never restated: the hand-written version of this note
+        # said 917.50 for five commits after the amended strike moved to
+        # 1,045.00 for decoy separation. Generator-emitted truth is pointless if
+        # the prose beside it is a copy, and the reproduction guard compares the
+        # note verbatim, so nothing caught the drift.
+        "note": (f"The PRINTED strike ({C9['strike']}) is struck through and "
+                 f"{C9['amended_strike']} inked beside it. Reading the field "
+                 f"without noticing the correction returns the decoy."),
     },
     "conf-10-ticked-barrier-amzn.pdf": {
         "role": "trap-categorical",
@@ -1123,9 +1128,11 @@ TRUTH_DOCUMENTS = {
         "extract_mode": "text",
         "image_only": {},
         "decoys": [_num(C7["strike"])],
-        "note": "States NO Initial Price. The graded answer is that the field is "
-                "absent; substituting the strike (780.00) is the measured "
-                "failure -- 2 of 6 sampled runs of the incumbent extractor.",
+        # Derived, for the same reason as conf-09's note above.
+        "note": (f"States NO Initial Price. The graded answer is that the field "
+                 f"is absent; substituting the strike ({C7['strike']}) is the "
+                 f"measured failure -- 2 of 6 sampled runs of the incumbent "
+                 f"extractor."),
     },
 }
 

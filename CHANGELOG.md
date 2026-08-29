@@ -59,6 +59,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-persona, `build_async_agent`) because the poisoned reads on that board
   occurred in two different checkpoint namespaces. Uniform rather than per-route,
   so the one tolerant gateway cannot confer an advantage its model did not earn.
+- **The `general-purpose` subagent is no longer unguarded and unaudited.**
+  `create_deep_agent` auto-adds it with middleware it builds internally, so
+  nothing passed as `middleware=` ever reached it — a fourth agent stack, holding
+  the parent's full toolset, that the "all three stacks" registration tests never
+  covered. It was running with no audit trail (contradicting that middleware's
+  always-on contract) and no binary-read guard; on the first
+  `confirmation-desk-day` board it issued three `read_file` calls, one of them a
+  PDF. We now supply our own spec, which is deepagents' documented override.
+  Behaviour-preserving: deepagents prepends the identical base middleware stack,
+  and omitting `tools`/`interrupt_on` inherits exactly what the auto-added agent
+  received, including the filesystem-permission interrupt merge.
+- **The confirmation upload resolver's bare-filename fallback no longer accepts a
+  glob.** `Path.rglob` takes a pattern, so `conf-08*.pdf` resolved a document the
+  caller never named. Escaped with `glob.escape`; containment was never affected.
+- **The conf-09 truth note is derived, not restated.** It still said the amended
+  strike was `917.50` after that value moved to `1,045.00` for decoy separation.
+  Generator-emitted truth is pointless if the prose beside it is a copy, and the
+  reproduction guard compares the note verbatim, so nothing caught the drift. No
+  graded value changed.
 - **The confirmation extractor now accepts block-list content.** An
   Anthropic-protocol *reasoning* model returns `.content` as
   `[thinking, text]`, and `RegistryExtractorClient.complete()` raised on anything

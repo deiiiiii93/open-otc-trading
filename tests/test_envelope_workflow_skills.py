@@ -88,7 +88,14 @@ def test_build_orchestrator_installs_envelope_skill_middleware(monkeypatch) -> N
         interrupt_on={},
     )
 
-    for spec in captured["subagents"]:
+    # Scoped to the PERSONAS. `general-purpose` is also in this list -- we supply
+    # it ourselves so our guards reach it (see orchestrator._general_purpose_
+    # subagent) -- but it carries no skill sources, so envelope-scoped skill
+    # exposure has nothing to expose there. Named explicitly rather than filtered
+    # loosely, so giving it skills later re-arms this assertion.
+    personas = [s for s in captured["subagents"] if s["name"] != "general-purpose"]
+    assert personas, "expected the persona subagents"
+    for spec in personas:
         assert spec.get("skills") == []
         assert any(
             isinstance(item, EnvelopeSkillsMiddleware)

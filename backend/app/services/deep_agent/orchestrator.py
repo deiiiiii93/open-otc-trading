@@ -125,6 +125,73 @@ def _filesystem_permissions() -> list[Any]:
     ]
 
 
+def _general_purpose_subagent(
+    tools: Sequence[BaseTool], *, yolo_mode: bool = False
+) -> dict[str, Any]:
+    """Claim the `general-purpose` name so our guards reach that stack too.
+
+    `create_deep_agent` auto-adds a general-purpose subagent whose middleware it
+    builds itself — `[TodoList, Filesystem, summarization, PatchToolCalls]` plus
+    harness-profile extras. **Nothing we pass as `middleware=` reaches it**, so
+    it is a fourth agent stack that the "all three stacks" registration tests
+    never covered, and it holds the parent's full toolset.
+
+    That is not theoretical. On the first `confirmation-desk-day` board,
+    `gemini-3.7-flash` delegated to this subagent and it issued three
+    `read_file` calls, one of them `conf-08-mixed-text-and-scan-amd.pdf` — the
+    unrecoverable-400 shape `BinaryReadGuardMiddleware` exists to prevent. It
+    was also running **unaudited**, which contradicts the audit trail's
+    always-on contract.
+
+    Supplying our own spec is the documented override ("an explicit spec is how
+    callers override the default"), and it is behaviour-preserving by
+    construction: for a caller-supplied spec deepagents PREPENDS the same base
+    middleware stack, and `spec.get("interrupt_on", interrupt_on)` /
+    `spec.get("tools") if "tools" in spec else tools` mean that **omitting**
+    those two keys inherits exactly what the auto-added agent would have got —
+    including the filesystem-permission interrupt merge. So we deliberately do
+    not set them; setting `interrupt_on` here would silently narrow write
+    gating on a subagent that can book.
+
+    `yolo_mode` adds the cost-preview gate for the same reason every persona
+    gets it: this subagent inherits the parent's toolset, so it can start a
+    long-running priced run, and the auto-added version never carried that gate
+    either. Two existing suite assertions walk *every* subagent and require it —
+    they passed before only because the auto-added agent was invisible to them,
+    which is the same "not covered, not compliant" gap this function closes.
+
+    `skills: []` matches what `all_personas` sets. Behaviourally it is identical
+    to omitting the key (deepagents reads `spec.get("skills")` and treats `None`
+    and `[]` alike), but the explicit empty list states that skills reach this
+    stack through our own middleware, not deepagents'.
+
+    Scope note: this carries the persona stack's *head* only. Ground-truth
+    capture, booking-card capture and the Case-3 fan-out read-only gate are
+    NOT added — each has semantics that deserve their own review rather than a
+    drive-by here.
+    """
+    from deepagents.middleware.subagents import GENERAL_PURPOSE_SUBAGENT
+
+    from .audit_trail_middleware import AuditTrailMiddleware
+    from .binary_read_guard import BinaryReadGuardMiddleware
+    from .cost_preview_hitl import LongRunningCostHITLMiddleware
+    from .tool_error_boundary import ToolErrorBoundaryMiddleware
+
+    middleware: list[Any] = [
+        ToolErrorBoundaryMiddleware(),
+        AuditTrailMiddleware(tools=tools),
+        BinaryReadGuardMiddleware(),
+    ]
+    if yolo_mode:
+        middleware.append(LongRunningCostHITLMiddleware(tools=tools))
+
+    return {
+        **GENERAL_PURPOSE_SUBAGENT,
+        "skills": [],
+        "middleware": middleware,
+    }
+
+
 def _agent_middleware(
     enable_code_interpreter: bool,
     *,
@@ -297,13 +364,18 @@ def build_orchestrator(
             yolo_mode=yolo_mode,
             goal_grader=goal_grader,
         ),
-        subagents=all_personas(
-            model,
-            persona_tools,
-            skills_backend=backend,
-            yolo_mode=yolo_mode,
-            allow_reply_options=allow_reply_options,
-        ),
+        subagents=[
+            *all_personas(
+                model,
+                persona_tools,
+                skills_backend=backend,
+                yolo_mode=yolo_mode,
+                allow_reply_options=allow_reply_options,
+            ),
+            # Claim `general-purpose` so deepagents does not auto-add an
+            # unguarded, unaudited one. See _general_purpose_subagent.
+            _general_purpose_subagent(persona_tools, yolo_mode=yolo_mode),
+        ],
         interrupt_on=interrupt_on if interrupt_on is not None else interrupt_on_config(),
         checkpointer=checkpointer,
         backend=backend,

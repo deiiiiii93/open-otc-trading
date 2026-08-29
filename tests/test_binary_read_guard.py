@@ -126,3 +126,99 @@ def test_guard_registered_in_async_agent_stack(monkeypatch):
         model=MagicMock(), tools=[], checkpointer=None, task_id=1
     )
     assert "BinaryReadGuardMiddleware" in _names(captured["middleware"])
+
+
+def test_general_purpose_subagent_is_ours_and_carries_the_guards():
+    """deepagents' auto-added general-purpose subagent gets NONE of our middleware.
+
+    Its stack is built inside `create_deep_agent` from a fixed list, so it is a
+    fourth agent stack the "all three stacks" tests never covered — and it holds
+    the parent's full toolset. On the first confirmation-desk-day board it
+    issued three `read_file` calls, one of them a PDF, and was running
+    unaudited. We claim the name so our guards apply.
+    """
+    from app.services.deep_agent.orchestrator import _general_purpose_subagent
+
+    spec = _general_purpose_subagent(tools=[])
+    assert spec["name"] == "general-purpose", "must claim the exact name to override"
+
+    names = _names(spec["middleware"])
+    assert "BinaryReadGuardMiddleware" in names
+    assert "AuditTrailMiddleware" in names
+    assert "ToolErrorBoundaryMiddleware" in names
+
+
+def test_general_purpose_override_inherits_tools_and_interrupts():
+    """Omitting `tools`/`interrupt_on` is what makes the override safe.
+
+    deepagents resolves a caller spec with
+    `spec.get("interrupt_on", interrupt_on)` and
+    `spec.get("tools") if "tools" in spec else tools`, so omitting both inherits
+    exactly what the auto-added agent would have received -- including the
+    filesystem-permission interrupt merge. Declaring either here would silently
+    narrow write gating on a subagent that can book.
+    """
+    from app.services.deep_agent.orchestrator import _general_purpose_subagent
+
+    spec = _general_purpose_subagent(tools=[])
+    assert "interrupt_on" not in spec, "declaring interrupt_on would narrow HITL"
+    assert "tools" not in spec, "declaring tools would diverge from the parent set"
+
+
+def test_orchestrator_supplies_general_purpose_so_deepagents_does_not(monkeypatch):
+    """The override only works if OUR spec reaches create_deep_agent."""
+    import deepagents
+    from langchain_core.language_models.fake_chat_models import (
+        FakeMessagesListChatModel,
+    )
+    from langchain_core.messages import AIMessage
+
+    from app.services.deep_agent.hitl import interrupt_on_config
+    from app.services.deep_agent.orchestrator import build_orchestrator
+
+    class _FakeModel(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+    captured: dict = {}
+
+    def _fake_create(**kwargs):
+        captured.update(kwargs)
+
+        class _Dummy:
+            name = kwargs.get("name", "")
+
+        return _Dummy()
+
+    monkeypatch.setattr("deepagents.create_deep_agent", _fake_create)
+    assert deepagents.create_deep_agent is _fake_create
+
+    build_orchestrator(
+        model=_FakeModel(responses=[AIMessage(content="ok")]),
+        tools=[],
+        checkpointer=None,
+        interrupt_on=interrupt_on_config(),
+    )
+
+    subagent_names = [s["name"] for s in captured["subagents"]]
+    assert "general-purpose" in subagent_names, (
+        "without this, create_deep_agent auto-adds an unguarded one"
+    )
+    gp = next(s for s in captured["subagents"] if s["name"] == "general-purpose")
+    assert "BinaryReadGuardMiddleware" in _names(gp["middleware"])
+
+
+def test_general_purpose_gets_the_yolo_cost_gate_like_every_persona():
+    """It inherits the parent's toolset, so it can start a long-running priced run.
+
+    The auto-added version never carried this gate. Two existing suite
+    assertions walk EVERY subagent and require it; they passed before only
+    because the auto-added agent was invisible to them.
+    """
+    from app.services.deep_agent.orchestrator import _general_purpose_subagent
+
+    off = _names(_general_purpose_subagent(tools=[])["middleware"])
+    assert "LongRunningCostHITLMiddleware" not in off
+
+    on = _names(_general_purpose_subagent(tools=[], yolo_mode=True)["middleware"])
+    assert "LongRunningCostHITLMiddleware" in on

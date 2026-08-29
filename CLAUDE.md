@@ -841,8 +841,8 @@ the only shape `read_file` can produce.
 - **It is unrecoverable, which is what makes it different from a flaky call.** The
   rejected message stays in the history, so every later turn re-sends it and draws
   the same 400. On the first `confirmation-desk-day` board,
-  `deepseek-v4-flash-vision` read one PDF during step 3 and then made **zero tool
-  calls for steps 4–8**. It reads exactly like a model that gave up; it is a model
+  `deepseek-v4-flash-vision` read one PDF during step 4 and then made **zero tool
+  calls for steps 5–9**. It reads exactly like a model that gave up; it is a model
   that was never asked again.
 - **Blast radius is set by WHICH history got poisoned.** `gemini-3.7-flash` hit the
   identical defect and survived, because its reads happened inside `task()`
@@ -856,9 +856,27 @@ the only shape `read_file` can produce.
   healthy step and the match is recorded `scored`. Only the provider span carries
   the 400. **When a model stops calling tools, check whether it was still being
   asked** before concluding it declined to act.
+- **There is a FOURTH agent stack, and "all three stacks" never covered it.**
+  `create_deep_agent` auto-adds a `general-purpose` subagent whose middleware it
+  builds internally — `[TodoList, Filesystem, summarization, PatchToolCalls]` —
+  so **nothing passed as `middleware=` reaches it**, while it inherits the
+  parent's full toolset. It was therefore running unguarded *and* **unaudited**,
+  contradicting the audit trail's always-on contract; on this board it issued
+  three `read_file` calls, one of them a PDF. Fixed by claiming the name
+  (`orchestrator._general_purpose_subagent`), which is deepagents' documented
+  override. **Behaviour-preserving by construction, and only if you OMIT `tools`
+  and `interrupt_on`**: deepagents resolves a caller spec with
+  `spec.get("interrupt_on", interrupt_on)` and
+  `spec.get("tools") if "tools" in spec else tools`, and PREPENDS the same base
+  middleware stack — so omitting both inherits exactly what the auto-added agent
+  got, including the filesystem-permission interrupt merge. Declaring
+  `interrupt_on` there would silently narrow write gating on a subagent that can
+  book. **When you add a middleware "to every stack", check the subagents the
+  framework adds for you, not just the ones you construct.**
 - **The guard is `BinaryReadGuardMiddleware`** (`deep_agent/binary_read_guard.py`),
   at the `wrap_tool_call` seam beside audit and booking capture — the only seam
-  that sees a subagent's tool calls — and registered in **all three** stacks
+  that sees a subagent's tool calls — and registered in all three hand-built
+  stacks plus the general-purpose override
   (`tests/test_binary_read_guard.py` pins that, mirroring `test_audit_registration.py`).
   It replaces a media block with text naming the tool to use instead
   (`parse_trade_confirmation` for confirmations, the artifact tools otherwise).
