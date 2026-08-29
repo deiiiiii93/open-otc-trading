@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OTC Desk Agent Arena — Run #133</title>
+<style>
+:root{
+  --ink:#1a1d21; --muted:#5b6470; --line:#e3e6eb; --bg:#ffffff;
+  --accent:#2f5d8a; --soft:#f4f6f9;
+  --gold:#caa12e; --silver:#9aa0a6; --bronze:#b06a3b; --mid:#3b6fb0; --floor:#c5c9d1;
+  --good:#2e8b57; --neutral:#6b7280; --warn:#d98a2b; --bad:#c0392b; --frontier:#3b6fb0;
+}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+body{
+  font-family:"Charter","Georgia",Cambria,"Times New Roman",serif;
+  color:var(--ink); background:var(--bg); line-height:1.62;
+  max-width:820px; margin:0 auto; padding:56px 40px 80px; font-size:16.5px;
+}
+h1,h2,h3,h4{font-family:-apple-system,"Inter","Segoe UI",Helvetica,Arial,sans-serif;
+  line-height:1.22; letter-spacing:-.01em; color:var(--ink)}
+h1{font-size:2.05rem; margin:.2em 0 .1em; font-weight:800}
+h2{font-size:1.42rem; margin:2.1em 0 .55em; padding-bottom:.28em;
+  border-bottom:2px solid var(--line); font-weight:750}
+h3{font-size:1.12rem; margin:1.7em 0 .5em; font-weight:700; color:#2b3038}
+h1+p em, body>p:first-of-type em{color:var(--muted)}
+p,li{font-size:1rem}
+a{color:var(--accent); text-decoration:none}
+hr{border:none; border-top:1px solid var(--line); margin:2.2em 0}
+code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.86em;
+  background:var(--soft); padding:.1em .35em; border-radius:4px}
+blockquote{margin:1.1em 0; padding:.7em 1.1em; background:var(--soft);
+  border-left:4px solid var(--accent); border-radius:0 6px 6px 0; color:#2b3038}
+blockquote p{margin:.3em 0}
+strong{font-weight:700}
+
+/* tables */
+table{border-collapse:collapse; width:100%; margin:1.1em 0; font-size:.9rem;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+th,td{padding:.5em .7em; border-bottom:1px solid var(--line); text-align:left}
+thead th{background:#f7f9fc; border-bottom:2px solid #d6dbe3; font-weight:700;
+  font-size:.82rem; letter-spacing:.01em; color:#39414c}
+tbody tr:nth-child(even){background:#fbfcfe}
+td:first-child,th:first-child{white-space:nowrap}
+
+/* charts */
+.chart{margin:1.3em 0 1.6em; padding:0}
+.chart .row{display:flex; align-items:center; gap:12px; margin:5px 0;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+.chart .lbl{flex:0 0 168px; text-align:right; font-size:.82rem; color:#39414c; font-weight:600}
+.chart .track{flex:1; height:22px; background:#eef1f5; border-radius:5px; overflow:hidden}
+.chart .bar{display:block; height:100%; border-radius:5px}
+.chart .val{flex:0 0 150px; font-size:.78rem; color:var(--muted); font-variant-numeric:tabular-nums}
+.chart figcaption{margin-top:.7em; font-size:.76rem; color:var(--muted);
+  font-family:-apple-system,"Inter",sans-serif; text-align:right}
+.bar.gold{background:linear-gradient(90deg,#d9b13f,#caa12e)}
+.bar.silver{background:linear-gradient(90deg,#aab0b6,#9aa0a6)}
+.bar.bronze{background:linear-gradient(90deg,#c07c4a,#b06a3b)}
+.bar.mid{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.frontier{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.floor{background:#c5c9d1}
+.bar.good{background:linear-gradient(90deg,#37a169,#2e8b57)}
+.bar.neutral{background:#8a929e}
+.bar.warn{background:linear-gradient(90deg,#e09a3e,#d98a2b)}
+.bar.bad{background:linear-gradient(90deg,#d04b3c,#c0392b)}
+
+/* report header band */
+.masthead{border-bottom:3px solid var(--ink); padding-bottom:.6em; margin-bottom:1.4em}
+.footer-note{margin-top:3em; padding-top:1em; border-top:1px solid var(--line);
+  font-size:.8rem; color:var(--muted); font-family:-apple-system,"Inter",sans-serif}
+
+@page{size:A4; margin:16mm 15mm}
+@media print{
+  body{max-width:none; margin:0; padding:0; font-size:10.6pt}
+  h2{margin-top:1.4em}
+  h2,h3,h4{break-after:avoid}
+  table,.chart,blockquote,figure{break-inside:avoid}
+  tr{break-inside:avoid}
+  a{color:var(--ink)}
+}
+</style>
+</head><body>
+<h1>Run #133 — confirmation desk day: the first vision board</h1>
+<p><strong>Dates:</strong> started 2026-08-29, completed 2026-08-30 — the leaderboard dates a
+board by when its run was created, so it files this one under the 29th
+<strong>Workflow:</strong> <code>confirmation-desk-day</code>, 9 steps / 33 checks, <strong>uncalibrated par</strong>
+<strong>Contestants:</strong> the four <code>vision</code>-tagged models, <strong>2 trials each</strong>, effort and
+output budget unpinned (32768 tokens, both wire protocols)
+<strong>Run:</strong> #133 on the live desk database · 8 clean trials · 0 invalid · 0 errors</p>
+<hr />
+<h2>Board</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Contestant</th>
+<th>Objective</th>
+<th>OVR</th>
+<th>GRD</th>
+<th>ADH</th>
+<th>SYN</th>
+<th>PRC</th>
+<th>EFF</th>
+<th>CON</th>
+<th>calls</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>deepseek-v4-flash-vision</strong></td>
+<td>86.3</td>
+<td><strong>81</strong></td>
+<td><strong>94</strong></td>
+<td>99</td>
+<td>99</td>
+<td>60</td>
+<td><strong>24</strong></td>
+<td><strong>96</strong></td>
+<td>46, 30</td>
+</tr>
+<tr>
+<td>2</td>
+<td>glm-5-3-flash</td>
+<td><strong>87.9</strong></td>
+<td>78</td>
+<td>89</td>
+<td>99</td>
+<td>99</td>
+<td>70</td>
+<td>18</td>
+<td>86</td>
+<td>63, 37</td>
+</tr>
+<tr>
+<td>3</td>
+<td>gemini-3-7-flash</td>
+<td>81.8</td>
+<td>75</td>
+<td>84</td>
+<td>99</td>
+<td>99</td>
+<td>54</td>
+<td>16</td>
+<td>89</td>
+<td>47, 59</td>
+</tr>
+<tr>
+<td>4</td>
+<td>gpt-5-6-luna</td>
+<td>84.8</td>
+<td>68</td>
+<td>59</td>
+<td>99</td>
+<td>86</td>
+<td><strong>94</strong></td>
+<td>10</td>
+<td>89</td>
+<td>59, 74</td>
+</tr>
+</tbody>
+</table>
+<p>Zero truncation, zero malformed tool calls, zero step errors across all eight
+trials.</p>
+<blockquote>
+<p><strong>The highest objective score does not win the board.</strong> <code>glm-5-3-flash</code> posts
+87.9 to deepseek's 86.3 and still places second: grounding carries 0.32 of OVR
+and deepseek reads better (94 vs 89), consistently (CON 96 vs 86), in fewer
+calls. <code>gpt-5-6-luna</code> shows the same effect at the bottom — 84.8 objective,
+third-highest in the field, but last on OVR because its GRD is 59.</p>
+</blockquote>
+<h2>What this board was built to answer</h2>
+<p><strong>Can GLM 5.3 Flash — z.ai's first multimodal model — work a confirmations desk
+against Gemini, GPT and DeepSeek?</strong> Yes, on correctness: it records the highest
+objective score in the field and ties the leaders on every designed vision trap
+it was given. It places second because it is neither the most consistent nor the
+leanest.</p>
+<p>The more useful answer is that <strong>the question is nearly obsolete at this tier.</strong></p>
+<h2>The designed vision traps are solved</h2>
+<p>Three of the four traps this workflow was built around are <strong>saturated at 8/8</strong> —
+every contestant, every trial:</p>
+<table>
+<thead>
+<tr>
+<th>Trap</th>
+<th>Document</th>
+<th>Truth</th>
+<th>Rate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Image-only scan, no text layer</td>
+<td>conf-04 GOOGL</td>
+<td>strike 205.0</td>
+<td><strong>8/8</strong></td>
+</tr>
+<tr>
+<td>Struck-through and amended strike</td>
+<td>conf-09 NVDA</td>
+<td>1045.0, not the struck value</td>
+<td><strong>8/8</strong></td>
+</tr>
+<tr>
+<td>Barrier direction carried only by a ticked box</td>
+<td>conf-10 AMZN</td>
+<td><code>DOWN_OUT</code>, 171.2</td>
+<td><strong>8/8</strong></td>
+</tr>
+<tr>
+<td>A term the document never states</td>
+<td>conf-07 META</td>
+<td><code>initial_price</code> null, status <code>invalid</code></td>
+<td><strong>8/8</strong></td>
+</tr>
+</tbody>
+</table>
+<p>That last row is the one worth pausing on. Step 7 asks for a value that is not in
+the document, with the strike sitting nearby as an obvious substitute. <strong>No model
+substituted, in any trial.</strong> The pilot board saw the incumbent substitute in 2 of
+6 runs; on this field the behaviour is gone.</p>
+<h2>What still discriminates — 6 of 28 checks</h2>
+<p>Per-check pass-rate tally across the whole field. Keyed by label, so a check
+appearing in several steps is counted once per occurrence.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Rate</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Step 6 — ORCL notional 636,000</strong></td>
+<td><strong>2/8</strong></td>
+<td><strong>A low-contrast number beside a decoy. The hardest thing on the board.</strong></td>
+</tr>
+<tr>
+<td><code>get_confirmation_batch</code> called</td>
+<td>24/48</td>
+<td>Procedure, not sight</td>
+</tr>
+<tr>
+<td>Step 8 — <code>skipped_count</code> = 1</td>
+<td>4/8</td>
+<td>Booking restraint and counting</td>
+</tr>
+<tr>
+<td>Step 3 — AMD strike 185.0</td>
+<td>6/8</td>
+<td>Priced terms on <strong>page 2</strong> of a mixed text-and-scan document</td>
+</tr>
+<tr>
+<td>Step 3 — AMD initial_price 178.9</td>
+<td>6/8</td>
+<td>Same document, same page</td>
+</tr>
+<tr>
+<td>Step 9 — artifact names ARD-EQO-2026-04901</td>
+<td>7/8</td>
+<td>Carrying a reference into the summary</td>
+</tr>
+</tbody>
+</table>
+<p><strong>22 of 28 checks are dead</strong> (0/N or N/N). This tally is only valid because every
+arm on this board is healthy — a contaminated arm fails checks the healthy field
+passes and manufactures apparent discrimination. On the pilot board, with one arm
+poisoned by an infra defect, the same instrument read 8 checks dead where the
+repaired board read 25.</p>
+<h3>The two things that are genuinely hard are not OCR</h3>
+<p><strong>A faint number is harder than a degraded page.</strong> The ORCL notional is rendered
+at low contrast next to a decoy value. It is not a scan, not handwriting, not a
+checkbox — it is ordinary printed text that is merely <em>faint</em>, and it is the only
+check on the board that most of the field misses. Two of eight trials read it:
+one gemini trial and one deepseek trial. <strong>No model read it in both of its
+trials.</strong> GLM and luna missed it 0/2 each.</p>
+<p><strong>A second page is harder than a second modality.</strong> conf-08 is the mixed
+text-and-scan document, and its priced terms are on page 2. The step's prompt says
+so explicitly. Both of its checks come in at 6/8 — and both misses are the same
+contestant, <code>gpt-5-6-luna</code>, in both trials.</p>
+<h2>The board's variance is procedural, not visual</h2>
+<p><code>glm-5-3-flash</code> scored <strong>97.0 and then 78.8</strong> — an 18-point spread on identical
+inputs, and the reason it dropped from first to second when its second trial
+landed.</p>
+<p><strong>Every point of that spread is one check.</strong> Its two trials read the documents
+<em>identically</em>: same strikes, same barrier, same absent term, same faint-notional
+miss. What differed is that trial 1 called <code>get_confirmation_batch</code> at all six
+graded steps and trial 2 called it at none.</p>
+<p><code>deepseek-v4-flash-vision</code> shows the same thing inverted. Its lower-scoring trial
+(81.8, 30 calls) is the one where it read <strong>every trap correctly including the
+faint notional</strong> — the only trial on the board to do so — and it scores lower than
+its 90.9 trial because it skipped the batch re-reads.</p>
+<p>So the single widest-swinging check on this board rewards re-fetching a payload
+the model already holds. That is the concern the pilot report raised about these
+checks, now with a number on it: <strong><code>get_confirmation_batch</code> accounts for more
+objective variance than every vision check combined.</strong> It measures procedure, and
+a model answering correctly from context it already has is arguably being
+efficient rather than wrong. This is the same class as the "step-scoped check
+penalises reading the evidence one step early" defect already recorded in
+<code>CLAUDE.md</code>.</p>
+<h2>Par is still not calibrated, and now there is evidence for why</h2>
+<p><code>confirmation-desk-day</code> declares no <code>par_tool_calls</code>, so EFF runs on the legacy
+hyperbolic curve against a <code>designed_par</code> of <strong>9</strong> — the theoretical minimum. That
+crushes every EFF on this board into 10–24 on a 0–99 scale, and EFF is 0.16 of OVR.</p>
+<p>The established way to calibrate is the median of the <strong>fully-correct</strong> trials.
+<strong>This board produced none: not one of the eight trials passed every check.</strong> The
+pilot's single 33/33 run is one data point, not a distribution. So par stays
+unset rather than being invented from a sample that does not exist, and <strong>EFF and
+OVR here are not comparable with calibrated boards.</strong></p>
+<p>For the record, the counted call distribution over 8 clean trials: median <strong>53</strong>,
+range <strong>30–74</strong>.</p>
+<h2>Why this board can be trusted</h2>
+<p>The pilot board found three harness defects, each of which cost a real contestant
+real points, and each invisible to the golden replay. All three are fixed here,
+and this run is the evidence:</p>
+<ol>
+<li><strong><code>StreamChunkTimeoutError</code> after 120s.</strong> Step 1 parses six documents in one
+   tool body — 12+ vision calls synchronously — so the outer stream emits nothing
+   for minutes and langchain's default fires on a connection that is idle rather
+   than dead. Launched with <code>LANGCHAIN_OPENAI_STREAM_CHUNK_TIMEOUT_S=900</code>; zero
+   contestants died to it.</li>
+<li><strong>Unaddressable upload paths.</strong> A model told the files are at
+   <code>/artifacts/uploads/confirmations/</code> and then rejected for using that spelling
+   scored 30.3 with grounding 0/10 on the pilot. Fixed; zero path errors here.</li>
+<li><strong>A binary <code>read_file</code> poisons the conversation permanently.</strong> deepagents
+   returns a binary read as a media content block; three of four gateways reject
+   that shape from a <em>tool</em> message, each in its own dialect, and the rejected
+   message stays in the history so every later turn redraws the same 400. On the
+   pilot this took <code>deepseek-v4-flash-vision</code> from a real 100.0 to a recorded
+   36.4 and last place. <code>BinaryReadGuardMiddleware</code> now intercepts it in all
+   three hand-built agent stacks <strong>and</strong> in the <code>general-purpose</code> subagent that
+   deepagents adds for itself — a fourth stack that inherited the parent's full
+   toolset while running unguarded and unaudited.</li>
+</ol>
+<p><strong>Zero errors across eight trials is the result of those three fixes</strong>, not of an
+easy workflow.</p>
+<h2>Caveats a reader must carry</h2>
+<ul>
+<li><strong>Do not read this ordering as a vision ranking.</strong> Three of four contestants
+  score GRD 84–94 and 22 of 28 checks are saturated. Separation comes from
+  consistency, procedure and volume.</li>
+<li><strong>EFF is uncalibrated</strong> (see above). Do not compare it across boards.</li>
+<li><strong>One arm was re-run.</strong> <code>glm-5-3-flash</code> lost a trial to a transport-level
+  <code>RemoteProtocolError</code> — the peer closed the connection mid-body — and infra
+  trials are skipped rather than retried, which would have left the headline
+  contestant at half the field's depth with no CON. Its <code>scored</code> row was deleted
+  and the arm re-run to two fresh trials via <code>--resume 133</code>, at the same effort
+  and the same re-supplied output budget. <strong>The repair changed the podium:</strong> on
+  the single surviving trial GLM stood at OVR 85 and first place; at full depth
+  it is 78 and second. Its objective mean is 87.9 either way — the coincidence is
+  real and is why OVR, not the objective percentage, ranks the board.</li>
+<li><strong>Two trials, not five.</strong> CON is measured but from a small sample.</li>
+<li><strong>The extraction sub-call routes to the contestant.</strong> Without that, every model
+  would read every document with one shared extractor and every vision check
+  would land N/N carrying no signal.</li>
+</ul>
+<h2>Next</h2>
+<ul>
+<li><strong>Reconsider the <code>get_confirmation_batch</code> checks.</strong> They are 1 of the 6
+  surviving discriminators and the largest single source of objective variance,
+  and what they reward is re-fetching held context.</li>
+<li><strong>The workflow needs harder traps.</strong> Its designed vision difficulty is solved
+  by the whole field. The two things that still separate contestants — low
+  contrast and a second page — were incidental properties of the corpus, not
+  designed ones. That is where the next iteration should aim.</li>
+<li><strong>Do not calibrate par until a trial passes every check.</strong> The instrument is
+  the median of fully-correct trials, and that set is currently empty.</li>
+</ul>
+<p class="footer-note">Rendered from
+<code>docs/arena/2026-08-30-run133-confirmation-desk-day.md</code> ·
+OTC Desk Agent Arena · Run #133.</p>
+</body></html>

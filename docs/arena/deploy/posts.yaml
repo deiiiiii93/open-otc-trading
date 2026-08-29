@@ -5,6 +5,19 @@
 # assets, publish.  A missing blurb FAILS THE BUILD by design — never let a
 # generated first paragraph ship as editorial copy.
 
+- file: 2026-08-30-run133-confirmation-desk-day.md
+  date: 2026-08-30
+  tags: [board]
+  run: "Run #133"
+  chips: ["4 models", "8 trials", "vision"]
+  title: "The first vision board: the traps are solved, the desk is not"
+  blurb: >
+    Four multimodal models work a morning's counterparty confirmations. Three of the
+    four designed vision traps are read perfectly by every contestant in every trial;
+    what still separates the field is a faint number, a second page, and whether a
+    model re-reads a payload it already holds.
+  publish: true
+
 - file: 2026-08-28-run131-flash-newcomers.md
   date: 2026-08-28
   tags: [research]

@@ -22,6 +22,23 @@
 # republished under a ranking their text does not support.
 
 boards:
+  - run: 133
+    workflow: confirmation-desk-day
+    post: 2026-08-30-run133-confirmation-desk-day.md
+    note: >-
+      The first board on a vision workflow: four `vision`-tagged models, two
+      trials each, on a harness repaired after a pilot run found three defects
+      that each cost a real contestant real points. EFF is UNCALIBRATED here --
+      the workflow declares no par_tool_calls, so efficiency is scored against a
+      theoretical minimum of 9 tool calls and every EFF lands in 10-24; par was
+      deliberately not set because the calibration instrument is the median of
+      FULLY-CORRECT trials and this board produced none. Read the ranking as
+      consistency, procedure and volume rather than as a vision ranking: three of
+      the four designed vision traps are saturated at 8/8 across the whole field,
+      and 22 of 28 checks carry no ability signal. The glm-5-3-flash arm was
+      re-run after a transport-level RemoteProtocolError cost it one of two
+      trials; at full depth it places second rather than first.
+
   - run: 20
     workflow: risk-manager-control-day
     post: 2026-07-13-run20-otc-desk-agent-arena.md

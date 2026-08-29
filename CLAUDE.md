@@ -1424,6 +1424,23 @@ summary.
 - **No agent tool repairs an extracted trade** (parse / get / book only), so a
   "fix the invalid trade" step is unreachable. Step 7 grades reporting the
   absence; step 8 grades not booking it.
+- **The ">20 min quiet trace clock = wedged" rule FALSE-POSITIVES here.** Step 1
+  runs 12+ vision calls synchronously inside ONE tool body and they emit no
+  agent-level spans, so a perfectly healthy run goes silent for ~20 minutes --
+  the same signature (0% CPU, one ESTABLISHED socket to the local proxy, status
+  `running`) that the run #115/#117 wedge is diagnosed by. Measured on run #133,
+  2026-08-30, where the documented recovery would have SIGKILLed a healthy board
+  and -- with a `--reload` dev server present -- invited the silent resume under
+  the wrong settings. **Discriminate with the CPU-TIME DELTA** (`ps -o time=`
+  sampled twice): a wedged process burns none, an I/O-waiting one still ticks.
+- **A transport error can cost a trial without costing the match.** Run #133's
+  glm arm lost one of two trials to `httpx.RemoteProtocolError` (peer closed the
+  connection mid-body). Infra trials are SKIPPED, not retried, so the match was
+  recorded `scored` on a single clean trial -- leaving the headline contestant at
+  half the field's depth with no CON, and ranking FIRST on the thinner sample.
+  `--resume` cannot fix this (the arm is `scored`); the row must be deleted
+  first. At full depth that contestant placed second, so **check `n_trials` per
+  arm before reading any multi-trial board**, not just the match status.
 - **Synthesis needs an artifact step.** Only `artifact_exists` /
   `artifact_contains` map to that axis and `_stat_from_tally` returns 0 for an
   empty tally — so a workflow without one gives every contestant a CONSTANT SYN

@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-08-28T05:34:51.536052+00:00",
+  "generated_at": "2026-08-29T19:17:33.121692+00:00",
   "models": [
     {
-      "boards_total": 4,
+      "boards_total": 5,
       "con": 86,
       "coverage": 3,
       "effort": null,
@@ -11,6 +11,13 @@
       "ovr_max": 99,
       "ovr_min": 84,
       "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": null,
+          "rank": null,
+          "workflow": "confirmation-desk-day"
+        },
         {
           "field": 18,
           "label": "Run #101",
@@ -50,7 +57,7 @@
       }
     },
     {
-      "boards_total": 4,
+      "boards_total": 5,
       "con": 92,
       "coverage": 4,
       "effort": null,
@@ -59,6 +66,13 @@
       "ovr_max": 98,
       "ovr_min": 83,
       "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": null,
+          "rank": null,
+          "workflow": "confirmation-desk-day"
+        },
         {
           "field": 18,
           "label": "Run #101",
@@ -98,7 +112,7 @@
       }
     },
     {
-      "boards_total": 4,
+      "boards_total": 5,
       "con": 89,
       "coverage": 4,
       "effort": null,
@@ -107,6 +121,13 @@
       "ovr_max": 96,
       "ovr_min": 84,
       "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": null,
+          "rank": null,
+          "workflow": "confirmation-desk-day"
+        },
         {
           "field": 18,
           "label": "Run #101",
@@ -146,7 +167,7 @@
       }
     },
     {
-      "boards_total": 4,
+      "boards_total": 5,
       "con": 94,
       "coverage": 4,
       "effort": null,
@@ -155,6 +176,13 @@
       "ovr_max": 98,
       "ovr_min": 73,
       "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": null,
+          "rank": null,
+          "workflow": "confirmation-desk-day"
+        },
         {
           "field": 18,
           "label": "Run #101",
@@ -194,7 +222,7 @@
       }
     },
     {
-      "boards_total": 4,
+      "boards_total": 5,
       "con": 87,
       "coverage": 4,
       "effort": null,
@@ -203,6 +231,13 @@
       "ovr_max": 92,
       "ovr_min": 75,
       "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": null,
+          "rank": null,
+          "workflow": "confirmation-desk-day"
+        },
         {
           "field": 18,
           "label": "Run #101",
@@ -242,55 +277,7 @@
       }
     },
     {
-      "boards_total": 4,
-      "con": 78,
-      "coverage": 4,
-      "effort": null,
-      "model": "gpt-5-6-luna",
-      "ovr": 85,
-      "ovr_max": 93,
-      "ovr_min": 74,
-      "per_board": [
-        {
-          "field": 18,
-          "label": "Run #101",
-          "ovr": 93,
-          "rank": 9,
-          "workflow": "risk-limit-breach-day"
-        },
-        {
-          "field": 18,
-          "label": "Run #94",
-          "ovr": 74,
-          "rank": 10,
-          "workflow": "high-board-portfolio-review-day"
-        },
-        {
-          "field": 18,
-          "label": "Run #33",
-          "ovr": 89,
-          "rank": 2,
-          "workflow": "trader-rfq-booking-day"
-        },
-        {
-          "field": 17,
-          "label": "Run #20",
-          "ovr": 84,
-          "rank": 3,
-          "workflow": "risk-manager-control-day"
-        }
-      ],
-      "position": "Sniper",
-      "stats": {
-        "ADH": 90,
-        "EFF": 68,
-        "GRD": 94,
-        "PRC": 92,
-        "SYN": 92
-      }
-    },
-    {
-      "boards_total": 4,
+      "boards_total": 5,
       "con": 78,
       "coverage": 4,
       "effort": null,
@@ -299,6 +286,13 @@
       "ovr_max": 94,
       "ovr_min": 75,
       "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": null,
+          "rank": null,
+          "workflow": "confirmation-desk-day"
+        },
         {
           "field": 18,
           "label": "Run #101",
@@ -338,7 +332,62 @@
       }
     },
     {
-      "boards_total": 4,
+      "boards_total": 5,
+      "con": 80,
+      "coverage": 5,
+      "effort": null,
+      "model": "gpt-5-6-luna",
+      "ovr": 82,
+      "ovr_max": 93,
+      "ovr_min": 68,
+      "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": 68,
+          "rank": 4,
+          "workflow": "confirmation-desk-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #101",
+          "ovr": 93,
+          "rank": 9,
+          "workflow": "risk-limit-breach-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #94",
+          "ovr": 74,
+          "rank": 10,
+          "workflow": "high-board-portfolio-review-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #33",
+          "ovr": 89,
+          "rank": 2,
+          "workflow": "trader-rfq-booking-day"
+        },
+        {
+          "field": 17,
+          "label": "Run #20",
+          "ovr": 84,
+          "rank": 3,
+          "workflow": "risk-manager-control-day"
+        }
+      ],
+      "position": "Anchor",
+      "stats": {
+        "ADH": 92,
+        "EFF": 56,
+        "GRD": 87,
+        "PRC": 93,
+        "SYN": 90
+      }
+    },
+    {
+      "boards_total": 5,
       "con": 74,
       "coverage": 4,
       "effort": null,
@@ -347,6 +396,13 @@
       "ovr_max": 98,
       "ovr_min": 65,
       "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": null,
+          "rank": null,
+          "workflow": "confirmation-desk-day"
+        },
         {
           "field": 18,
           "label": "Run #101",
@@ -386,7 +442,62 @@
       }
     },
     {
-      "boards_total": 4,
+      "boards_total": 5,
+      "con": 96,
+      "coverage": 1,
+      "effort": null,
+      "model": "deepseek-v4-flash-vision",
+      "ovr": 81,
+      "ovr_max": 81,
+      "ovr_min": 81,
+      "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": 81,
+          "rank": 1,
+          "workflow": "confirmation-desk-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #101",
+          "ovr": null,
+          "rank": null,
+          "workflow": "risk-limit-breach-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #94",
+          "ovr": null,
+          "rank": null,
+          "workflow": "high-board-portfolio-review-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #33",
+          "ovr": null,
+          "rank": null,
+          "workflow": "trader-rfq-booking-day"
+        },
+        {
+          "field": 17,
+          "label": "Run #20",
+          "ovr": null,
+          "rank": null,
+          "workflow": "risk-manager-control-day"
+        }
+      ],
+      "position": "Anchor",
+      "stats": {
+        "ADH": 99,
+        "EFF": 24,
+        "GRD": 94,
+        "PRC": 60,
+        "SYN": 99
+      }
+    },
+    {
+      "boards_total": 5,
       "con": 83,
       "coverage": 4,
       "effort": null,
@@ -395,6 +506,13 @@
       "ovr_max": 95,
       "ovr_min": 61,
       "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": null,
+          "rank": null,
+          "workflow": "confirmation-desk-day"
+        },
         {
           "field": 18,
           "label": "Run #101",
@@ -434,7 +552,7 @@
       }
     },
     {
-      "boards_total": 4,
+      "boards_total": 5,
       "con": 66,
       "coverage": 4,
       "effort": null,
@@ -443,6 +561,13 @@
       "ovr_max": 98,
       "ovr_min": 68,
       "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": null,
+          "rank": null,
+          "workflow": "confirmation-desk-day"
+        },
         {
           "field": 18,
           "label": "Run #101",
@@ -482,7 +607,62 @@
       }
     },
     {
-      "boards_total": 4,
+      "boards_total": 5,
+      "con": 86,
+      "coverage": 1,
+      "effort": null,
+      "model": "glm-5-3-flash",
+      "ovr": 78,
+      "ovr_max": 78,
+      "ovr_min": 78,
+      "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": 78,
+          "rank": 2,
+          "workflow": "confirmation-desk-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #101",
+          "ovr": null,
+          "rank": null,
+          "workflow": "risk-limit-breach-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #94",
+          "ovr": null,
+          "rank": null,
+          "workflow": "high-board-portfolio-review-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #33",
+          "ovr": null,
+          "rank": null,
+          "workflow": "trader-rfq-booking-day"
+        },
+        {
+          "field": 17,
+          "label": "Run #20",
+          "ovr": null,
+          "rank": null,
+          "workflow": "risk-manager-control-day"
+        }
+      ],
+      "position": "Anchor",
+      "stats": {
+        "ADH": 99,
+        "EFF": 18,
+        "GRD": 89,
+        "PRC": 70,
+        "SYN": 99
+      }
+    },
+    {
+      "boards_total": 5,
       "con": 78,
       "coverage": 4,
       "effort": null,
@@ -491,6 +671,13 @@
       "ovr_max": 82,
       "ovr_min": 69,
       "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": null,
+          "rank": null,
+          "workflow": "confirmation-desk-day"
+        },
         {
           "field": 18,
           "label": "Run #101",
@@ -530,7 +717,7 @@
       }
     },
     {
-      "boards_total": 4,
+      "boards_total": 5,
       "con": 47,
       "coverage": 4,
       "effort": null,
@@ -539,6 +726,13 @@
       "ovr_max": 81,
       "ovr_min": 62,
       "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": null,
+          "rank": null,
+          "workflow": "confirmation-desk-day"
+        },
         {
           "field": 18,
           "label": "Run #101",
@@ -578,7 +772,7 @@
       }
     },
     {
-      "boards_total": 4,
+      "boards_total": 5,
       "con": 71,
       "coverage": 4,
       "effort": null,
@@ -587,6 +781,13 @@
       "ovr_max": 85,
       "ovr_min": 64,
       "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": null,
+          "rank": null,
+          "workflow": "confirmation-desk-day"
+        },
         {
           "field": 18,
           "label": "Run #101",
@@ -626,7 +827,62 @@
       }
     },
     {
-      "boards_total": 4,
+      "boards_total": 5,
+      "con": 89,
+      "coverage": 1,
+      "effort": null,
+      "model": "gemini-3-7-flash",
+      "ovr": 75,
+      "ovr_max": 75,
+      "ovr_min": 75,
+      "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": 75,
+          "rank": 3,
+          "workflow": "confirmation-desk-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #101",
+          "ovr": null,
+          "rank": null,
+          "workflow": "risk-limit-breach-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #94",
+          "ovr": null,
+          "rank": null,
+          "workflow": "high-board-portfolio-review-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #33",
+          "ovr": null,
+          "rank": null,
+          "workflow": "trader-rfq-booking-day"
+        },
+        {
+          "field": 17,
+          "label": "Run #20",
+          "ovr": null,
+          "rank": null,
+          "workflow": "risk-manager-control-day"
+        }
+      ],
+      "position": "Anchor",
+      "stats": {
+        "ADH": 99,
+        "EFF": 16,
+        "GRD": 84,
+        "PRC": 54,
+        "SYN": 99
+      }
+    },
+    {
+      "boards_total": 5,
       "con": 66,
       "coverage": 4,
       "effort": null,
@@ -635,6 +891,13 @@
       "ovr_max": 81,
       "ovr_min": 68,
       "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": null,
+          "rank": null,
+          "workflow": "confirmation-desk-day"
+        },
         {
           "field": 18,
           "label": "Run #101",
@@ -674,7 +937,7 @@
       }
     },
     {
-      "boards_total": 4,
+      "boards_total": 5,
       "con": 60,
       "coverage": 4,
       "effort": null,
@@ -683,6 +946,13 @@
       "ovr_max": 80,
       "ovr_min": 66,
       "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": null,
+          "rank": null,
+          "workflow": "confirmation-desk-day"
+        },
         {
           "field": 18,
           "label": "Run #101",
@@ -722,7 +992,7 @@
       }
     },
     {
-      "boards_total": 4,
+      "boards_total": 5,
       "con": 68,
       "coverage": 4,
       "effort": null,
@@ -731,6 +1001,13 @@
       "ovr_max": 83,
       "ovr_min": 46,
       "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": null,
+          "rank": null,
+          "workflow": "confirmation-desk-day"
+        },
         {
           "field": 18,
           "label": "Run #101",
@@ -770,7 +1047,7 @@
       }
     },
     {
-      "boards_total": 4,
+      "boards_total": 5,
       "con": 32,
       "coverage": 4,
       "effort": null,
@@ -779,6 +1056,13 @@
       "ovr_max": 79,
       "ovr_min": 62,
       "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": null,
+          "rank": null,
+          "workflow": "confirmation-desk-day"
+        },
         {
           "field": 18,
           "label": "Run #101",
@@ -818,7 +1102,7 @@
       }
     },
     {
-      "boards_total": 4,
+      "boards_total": 5,
       "con": 50,
       "coverage": 4,
       "effort": null,
@@ -827,6 +1111,13 @@
       "ovr_max": 92,
       "ovr_min": 42,
       "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": null,
+          "rank": null,
+          "workflow": "confirmation-desk-day"
+        },
         {
           "field": 18,
           "label": "Run #101",
@@ -1793,6 +2084,105 @@
   ],
   "version": 1,
   "workflows": [
+    {
+      "boards": [
+        {
+          "carded": true,
+          "carded_rows": 4,
+          "checks": 33,
+          "date": "2026-08-29",
+          "label": "Run #133",
+          "models": 4,
+          "note": "The first board on a vision workflow: four `vision`-tagged models, two trials each, on a harness repaired after a pilot run found three defects that each cost a real contestant real points. EFF is UNCALIBRATED here -- the workflow declares no par_tool_calls, so efficiency is scored against a theoretical minimum of 9 tool calls and every EFF lands in 10-24; par was deliberately not set because the calibration instrument is the median of FULLY-CORRECT trials and this board produced none. Read the ranking as consistency, procedure and volume rather than as a vision ranking: three of the four designed vision traps are saturated at 8/8 across the whole field, and 22 of 28 checks carry no ability signal. The glm-5-3-flash arm was re-run after a transport-level RemoteProtocolError cost it one of two trials; at full depth it places second rather than first.",
+          "post": "2026-08-30-run133-confirmation-desk-day.md",
+          "rows": [
+            {
+              "con": 96,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "deepseek-v4-flash-vision",
+              "objective": 86.3,
+              "ovr": 81,
+              "position": "Anchor",
+              "rank": 1,
+              "stats": {
+                "ADH": 99,
+                "EFF": 24,
+                "GRD": 94,
+                "PRC": 60,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 86,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "glm-5-3-flash",
+              "objective": 87.9,
+              "ovr": 78,
+              "position": "Anchor",
+              "rank": 2,
+              "stats": {
+                "ADH": 99,
+                "EFF": 18,
+                "GRD": 89,
+                "PRC": 70,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 89,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "gemini-3-7-flash",
+              "objective": 81.8,
+              "ovr": 75,
+              "position": "Anchor",
+              "rank": 3,
+              "stats": {
+                "ADH": 99,
+                "EFF": 16,
+                "GRD": 84,
+                "PRC": 54,
+                "SYN": 99
+              },
+              "trials": 2
+            },
+            {
+              "con": 89,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "gpt-5-6-luna",
+              "objective": 84.8,
+              "ovr": 68,
+              "position": "Anchor",
+              "rank": 4,
+              "stats": {
+                "ADH": 99,
+                "EFF": 10,
+                "GRD": 59,
+                "PRC": 94,
+                "SYN": 86
+              },
+              "trials": 2
+            }
+          ],
+          "run": 133,
+          "trials": 2
+        }
+      ],
+      "id": "confirmation-desk-day",
+      "par": null,
+      "persona": "trader",
+      "steps": 9,
+      "title": "Confirmation Desk Day"
+    },
     {
       "boards": [
         {

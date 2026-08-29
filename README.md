@@ -70,7 +70,7 @@ The product walkthrough tells it as one continuous flow:
 The desk is the substrate; these are the notes from building it.
 
 - **[Agent guidance file](CLAUDE.md)** — the working `CLAUDE.md` this codebase is actually developed against: the invariants, the failure modes, and the gotchas that cost real debugging time. Most such files are private; this one is not. A sample of what is in there — a human-in-the-loop level of `"write"` turns out to mean *interactive only*, so in unattended mode it books a real position with no approval card at all; a tool that is registered but not allowlisted is silently dropped from every persona's toolset, so when a model *never* calls a tool, suspect availability before capability.
-- **[The OTC Desk Agent Arena](docs/arena/)** — repeated-trial evaluation of ~18 LLMs driving this desk end to end with no human in the loop, scored from the system's own trace log. Six published boards and three method/research memos — including an audit that found **15 of 50 of our own checks carried no ability signal**, and that correcting them reordered the board. A hand-written perfect replay proves an assertion is *satisfiable*, never that it is *reachable*.
+- **[The OTC Desk Agent Arena](docs/arena/)** — repeated-trial evaluation of ~18 LLMs driving this desk end to end with no human in the loop, scored from the system's own trace log. Seven published boards and seven method/research memos — including an audit that found **15 of 50 of our own checks carried no ability signal**, and that correcting them reordered the board. A hand-written perfect replay proves an assertion is *satisfiable*, never that it is *reachable*.
 - **[Per-model scorecards](docs/arena/scorecards/)** — one card per lab from the latest board: the ability card, the specific checks that did not pass, the exact serving configuration, and the interoperability findings behind four models needing a wire-protocol pin.
 
 ---
@@ -96,7 +96,7 @@ The boards, reports, and model cards are published at
 
 | Page | What it is |
 |---|---|
-| **[Blog](https://www.artena.one/arena/)** | Every run report and research memo, newest first — currently six boards and three method/research pieces. |
+| **[Blog](https://www.artena.one/arena/)** | Every run report and research memo, newest first — currently seven boards and seven method/research pieces. |
 | **[Leaderboard](https://www.artena.one/arena/leaderboard.html)** | One section per golden workflow, listing the boards run on it. Boards are **never merged across runs**: a different field, instrument, or manifest revision makes two boards incomparable, so each is published exactly as it was measured. |
 | **[Model Cards](https://www.artena.one/arena/models.html)** | An ability card per contestant — GRD / ADH / SYN / PRC / EFF composing to OVR, with CON alongside — consolidated across every workflow a model contested, plus the per-workflow cards that average is made of. |
 
@@ -111,7 +111,7 @@ rank: **a rank is relative, a card is absolute** (`passed/total` per axis, EFF
 against each workflow's own par), so a card stays meaningful with no opponent
 while a first place out of one measures nothing.
 
-**Run #20 (latest)** evaluated **16 frontier and near-frontier models over two trials
+**Run #20** — the board that introduced the card — evaluated **16 frontier and near-frontier models over two trials
 each** using the new **Model Ability Card** — separating objective capability,
 efficiency (EFF), and consistency (CON) rather than collapsing everything into one
 score:

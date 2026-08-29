@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Run #133 — the first vision board, published.** Four `vision`-tagged models
+  over `confirmation-desk-day`, two trials each, on the live desk database; the
+  report, the ranked leaderboard section and the ability cards are live at
+  artena.one/arena. Three of the four designed vision traps are saturated at 8/8
+  across the whole field; 22 of 28 checks carry no ability signal. Par is
+  deliberately left uncalibrated, because the calibration instrument is the
+  median of FULLY-CORRECT trials and this board produced none.
 - **`confirmation-desk-day` — a sixth golden workflow, and the first that
   exercises vision.** Nine steps over the trade-confirmation pipeline: parse a
   batch of six counterparty documents (five of them image-only scans or mixed),
