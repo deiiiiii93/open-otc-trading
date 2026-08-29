@@ -117,6 +117,7 @@ def build_async_agent(
     from deepagents import create_deep_agent
 
     from ..deep_agent.audit_trail_middleware import AuditTrailMiddleware
+    from ..deep_agent.binary_read_guard import BinaryReadGuardMiddleware
     from ..deep_agent.booking_capture import BookingResultMiddleware
     from ..deep_agent.ground_truth import GroundTruthArtifactMiddleware
 
@@ -126,6 +127,9 @@ def build_async_agent(
     middleware: list[Any] = [
         AuditTrailMiddleware(tools=tools),
         BookingResultMiddleware(),
+        # Keep raw bytes out of the history here too — an async agent has no
+        # human watching, so an unrecoverable 400 loop is worse, not better.
+        BinaryReadGuardMiddleware(),
         GroundTruthArtifactMiddleware(tools=tools),
     ]
     if yolo_mode:

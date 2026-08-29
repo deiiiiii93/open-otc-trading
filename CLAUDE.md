@@ -823,6 +823,58 @@ while every OpenAI-protocol contestant ran at its provider default.
     The model HAD chosen its tool and the cap cut the JSON argument, so the call
     never ran — that is how one lost turn takes a whole axis with it.
 
+### A binary `read_file` is a 400 the history can never recover from
+
+deepagents' `read_file` returns any file it deems binary as a langchain v1 media
+content block — `{"type": "file", "base64": …, "mime_type": …}`. `langchain_openai`
+translates that **correctly** into the documented OpenAI wire shape
+(`file.file_data`); verified against the exact `ToolMessage` recorded in the trace,
+so the client is not at fault. The **gateways** are. Measured 2026-08-29 on ZenMux
+with a real confirmation PDF, sending the identical part inside a **tool** message:
+`glm-5.3-flash` accepts it; `gemini-3.7-flash`, `gpt-5.6-luna` and
+`deepseek-v4-flash-vision` all 400, each in its own dialect (`required oneof field
+'data'` / `Missing required parameter: 'input[N].output[0].text'` / `file must have
+a file_id or file_data`). The same PDF in a **user** message is fine on all but
+deepseek — so the defect is specifically *a binary returned from a tool*, which is
+the only shape `read_file` can produce.
+
+- **It is unrecoverable, which is what makes it different from a flaky call.** The
+  rejected message stays in the history, so every later turn re-sends it and draws
+  the same 400. On the first `confirmation-desk-day` board,
+  `deepseek-v4-flash-vision` read one PDF during step 3 and then made **zero tool
+  calls for steps 4–8**. It reads exactly like a model that gave up; it is a model
+  that was never asked again.
+- **Blast radius is set by WHICH history got poisoned.** `gemini-3.7-flash` hit the
+  identical defect and survived, because its reads happened inside `task()`
+  subagents whose checkpoint namespaces are discarded — its errors were all in
+  `trader`/`general-purpose` chains, with **zero** in `otc_desk_orchestrator`.
+  deepseek's were 6-of-15 in the orchestrator itself, which is terminal. **The span
+  name tells you whether a run is wounded or dead.**
+- **Invisible to every gate we have.** Nothing truncates, so the truncation flag
+  reads a clean zero. The `read_file` call itself is `status=success`, so
+  `_is_infra_blank` — which corroborates blankness with step *errors* — sees a
+  healthy step and the match is recorded `scored`. Only the provider span carries
+  the 400. **When a model stops calling tools, check whether it was still being
+  asked** before concluding it declined to act.
+- **The guard is `BinaryReadGuardMiddleware`** (`deep_agent/binary_read_guard.py`),
+  at the `wrap_tool_call` seam beside audit and booking capture — the only seam
+  that sees a subagent's tool calls — and registered in **all three** stacks
+  (`tests/test_binary_read_guard.py` pins that, mirroring `test_audit_registration.py`).
+  It replaces a media block with text naming the tool to use instead
+  (`parse_trade_confirmation` for confirmations, the artifact tools otherwise).
+- **Uniform, deliberately not per-route.** Letting the one tolerant gateway through
+  would hand that contestant an advantage conferred by its gateway rather than its
+  ability — the confound the arena exists to remove. It also costs nothing: this
+  desk never reads documents by pushing bytes into the prompt, and image parts
+  (what `parse_trade_confirmation` actually sends) are accepted on every route
+  measured, deepseek included.
+- **The harness created the hazard.** The workflow names
+  `/artifacts/uploads/confirmations/`, and `read_file` is available and reads it.
+  Two of four contestants took that reasonable path and were punished; two never
+  tried. **A behavioural spread caused by a harness hazard is not a capability
+  signal** — same rule as the dangling-artifact fixture and the unaddressable
+  upload paths.
+
 ### Malformed tool calls: a 200 that dispatches nothing
 
 A provider can return **HTTP 200** with a well-formed message whose tool calls carry

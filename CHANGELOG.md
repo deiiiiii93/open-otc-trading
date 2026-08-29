@@ -42,6 +42,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only and so cannot carry a PDF.
 
 ### Fixed
+- **A binary `read_file` no longer poisons the conversation beyond recovery.**
+  deepagents returns any binary file as a media content block
+  (`{"type": "file", "base64": …}`). `langchain_openai` translates that correctly
+  into the documented OpenAI wire shape, so the client is sound — but measured
+  2026-08-29 against ZenMux with a real confirmation PDF, three of four routes
+  reject that part inside a **tool** message: `gemini-3.7-flash`, `gpt-5.6-luna`
+  and `deepseek-v4-flash-vision` all 400 (each in its own dialect), while
+  `glm-5.3-flash` accepts it. The rejected message stays in the history, so every
+  later turn draws the same 400: on the first `confirmation-desk-day` board,
+  `deepseek-v4-flash-vision` read one PDF at step 3 and then made zero tool calls
+  for steps 4–8. It is invisible to every existing gate — nothing truncates, and
+  the `read_file` call is `status=success`, so `_is_infra_blank` sees a healthy
+  step. New `BinaryReadGuardMiddleware` replaces such a result with text naming
+  the tool to use instead, registered in all three agent stacks (orchestrator,
+  per-persona, `build_async_agent`) because the poisoned reads on that board
+  occurred in two different checkpoint namespaces. Uniform rather than per-route,
+  so the one tolerant gateway cannot confer an advantage its model did not earn.
 - **The confirmation extractor now accepts block-list content.** An
   Anthropic-protocol *reasoning* model returns `.content` as
   `[thinking, text]`, and `RegistryExtractorClient.complete()` raised on anything

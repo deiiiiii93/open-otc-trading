@@ -135,6 +135,7 @@ def _agent_middleware(
     goal_grader: Any = None,
 ) -> list[Any]:
     from .audit_trail_middleware import AuditTrailMiddleware
+    from .binary_read_guard import BinaryReadGuardMiddleware
     from .booking_capture import BookingResultMiddleware
     from .compaction import LedgerScopedCompactionMiddleware
     from .cost_preview_hitl import LongRunningCostHITLMiddleware
@@ -156,6 +157,11 @@ def _agent_middleware(
         # Same seam, same reason: a booking made inside a persona subagent is
         # invisible to result-message scanning (separate checkpoint namespace).
         BookingResultMiddleware(),
+        # Same seam, third reason: deepagents' read_file returns raw bytes as a
+        # media content block, which three of four measured routes reject with a
+        # 400 that the history can never recover from. Replace it with text that
+        # names the tool to use instead. See binary_read_guard.
+        BinaryReadGuardMiddleware(),
         GroundTruthArtifactMiddleware(tools=tools),
         # Snoop resolved scope (portfolio_id, profile_id, dates) from the
         # orchestrator's direct domain-tool calls into desk_context state, which
