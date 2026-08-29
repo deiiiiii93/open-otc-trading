@@ -419,6 +419,40 @@ def collect_portfolio_ids_created(thread_id, store=None) -> set[int]:
     return out
 
 
+_CONFIRMATION_PARSE_TOOLS = {"parse_trade_confirmation"}
+
+
+def collect_confirmation_batch_ids_created(thread_id, store=None) -> set[int]:
+    """Return the confirmation batch ids this thread's parse calls MINTED.
+
+    Mirrors ``collect_portfolio_ids_created``: the caller intersects these with an
+    "id > pre-match baseline" guard so only batches created BY THIS MATCH are ever
+    deleted.
+
+    Needed because ``_delete_portfolios_with_dependents`` cannot reach them --
+    ``ConfirmationBatch.default_portfolio_id`` is an FK to ``portfolios`` under a
+    column name that sweep does not scan, and its FK recursion explicitly SKIPS
+    the portfolios table.
+    """
+    if store is None:
+        from app.config import get_settings
+        from app.services.tracing.store import get_trace_store
+        store = get_trace_store(get_settings())
+    if hasattr(store, "flush"):
+        store.flush()
+
+    out: set[int] = set()
+    for root in store.list_thread_traces(thread_id, limit=1000):
+        for sp in store.get_trace(root["trace_id"]):
+            if (sp.get("run_type") != "tool"
+                    or sp.get("name") not in _CONFIRMATION_PARSE_TOOLS):
+                continue
+            content, _name, _tcid = _parse_tool_output(sp.get("outputs"))
+            if isinstance(content, dict) and isinstance(content.get("batch_id"), int):
+                out.add(content["batch_id"])
+    return out
+
+
 def collect_scenario_set_names_saved(thread_id, store=None) -> set[str]:
     """Return the scenario-set names this thread's set-WRITING tools saved.
 

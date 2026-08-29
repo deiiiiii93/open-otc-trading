@@ -84,6 +84,35 @@ def arms_for(
     ]
 
 
+def capability_rejection(registry, selection: dict, capability: str) -> str | None:
+    """Return why ``selection``'s route cannot satisfy ``capability``, else None.
+
+    Mirrors ``effort_rejection``: one shared seam, so launch validation and any
+    later per-match check cannot disagree.
+
+    UNKNOWN IS PERMISSIVE. An unresolvable route returns None rather than a
+    rejection -- the same rule the reasoning-effort ladder follows, because stale
+    or missing registry data must never block a model that actually works. The
+    cost of a false accept is one bad match; the cost of a false reject is a
+    contestant silently excluded from a board.
+    """
+    try:
+        _channel, model_desc = registry.find_model(
+            str(selection["channel"]),
+            str(selection["provider"]),
+            str(selection["model"]),
+        )
+    except Exception:  # noqa: BLE001 -- unknown route is permissive, never fatal
+        return None
+    tags = tuple(getattr(model_desc, "tags", None) or ())
+    if capability in tags:
+        return None
+    return (
+        f"{selection['model']} does not declare the {capability!r} capability "
+        f"(declared: {', '.join(tags) or 'none'})"
+    )
+
+
 def queue_arena_run(
     session: Session,
     *,
@@ -137,6 +166,33 @@ def queue_arena_run(
 
     # Validate + canonicalize model IDs (raises ValueError if unknown)
     canonical_model_ids = validate_model_ids(model_ids)
+
+    # Capability preflight, at LAUNCH rather than per match. A workflow that
+    # REQUIRES a capability must reject an undeclared model here: running it
+    # anyway produces a real-LOOKING score that pollutes the board and is
+    # indistinguishable from genuinely poor ability -- and by the time the arm
+    # fails, the other pairs have already cost money (the failure shape that made
+    # effort_rejection a single shared seam).
+    required: set[str] = set()
+    for wid in workflow_ids:
+        required |= set(get_workflow_bundle(wid).workflow.requires or [])
+    if required:
+        from app.services.arena.models import arena_model_to_selection, get_model
+        from app.services.deep_agent.channel_registry import get_registry
+
+        registry = get_registry()
+        undeclared = []
+        for slug in canonical_model_ids:
+            selection = arena_model_to_selection(get_model(slug))
+            for capability in sorted(required):
+                reason = capability_rejection(registry, selection, capability)
+                if reason is not None:
+                    undeclared.append(f"{slug}: {reason}")
+        if undeclared:
+            raise ValueError(
+                "a selected workflow requires a capability the model does not "
+                "declare — " + "; ".join(undeclared)
+            )
 
     # Per-model LIST of arms. Each level is validated against ITS OWN model here
     # rather than per-match: `resolve_agent_model_selection` would otherwise

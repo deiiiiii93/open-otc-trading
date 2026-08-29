@@ -823,6 +823,95 @@ while every OpenAI-protocol contestant ran at its provider default.
     The model HAD chosen its tool and the cap cut the JSON argument, so the call
     never ran — that is how one lost turn takes a whole axis with it.
 
+### A binary `read_file` is a 400 the history can never recover from
+
+deepagents' `read_file` returns any file it deems binary as a langchain v1 media
+content block — `{"type": "file", "base64": …, "mime_type": …}`. `langchain_openai`
+translates that **correctly** into the documented OpenAI wire shape
+(`file.file_data`); verified against the exact `ToolMessage` recorded in the trace,
+so the client is not at fault. The **gateways** are. Measured 2026-08-29 on ZenMux
+with a real confirmation PDF, sending the identical part inside a **tool** message:
+`glm-5.3-flash` accepts it; `gemini-3.7-flash`, `gpt-5.6-luna` and
+`deepseek-v4-flash-vision` all 400, each in its own dialect (`required oneof field
+'data'` / `Missing required parameter: 'input[N].output[0].text'` / `file must have
+a file_id or file_data`). The same PDF in a **user** message is fine on all but
+deepseek — so the defect is specifically *a binary returned from a tool*, which is
+the only shape `read_file` can produce.
+
+- **It is unrecoverable, which is what makes it different from a flaky call.** The
+  rejected message stays in the history, so every later turn re-sends it and draws
+  the same 400. On the first `confirmation-desk-day` board,
+  `deepseek-v4-flash-vision` read one PDF during step 4 and then made **zero tool
+  calls for steps 5–9**. It reads exactly like a model that gave up; it is a model
+  that was never asked again.
+- **Blast radius is set by WHICH history got poisoned.** `gemini-3.7-flash` hit the
+  identical defect and survived, because its reads happened inside `task()`
+  subagents whose checkpoint namespaces are discarded. Counting error spans by
+  chain name: gemini had `trader` 3, `general-purpose` 1, **zero**
+  `otc_desk_orchestrator`; deepseek had **six** `otc_desk_orchestrator`, which is
+  terminal. **The span name tells you whether a run is wounded or dead.**
+- **Invisible to every gate we have.** Nothing truncates, so the truncation flag
+  reads a clean zero. The `read_file` call itself is `status=success`, so
+  `_is_infra_blank` — which corroborates blankness with step *errors* — sees a
+  healthy step and the match is recorded `scored`. Only the provider span carries
+  the 400. **When a model stops calling tools, check whether it was still being
+  asked** before concluding it declined to act.
+- **There is a FOURTH agent stack, and "all three stacks" never covered it.**
+  `create_deep_agent` auto-adds a `general-purpose` subagent whose middleware it
+  builds internally — `[TodoList, Filesystem, summarization, PatchToolCalls]` —
+  so **nothing passed as `middleware=` reaches it**, while it inherits the
+  parent's full toolset. It was therefore running unguarded *and* **unaudited**,
+  contradicting the audit trail's always-on contract; on this board it issued
+  three `read_file` calls, one of them a PDF. Fixed by claiming the name
+  (`orchestrator._general_purpose_subagent`), which is deepagents' documented
+  override. **Behaviour-preserving by construction, and only if you OMIT `tools`
+  and `interrupt_on`**: deepagents resolves a caller spec with
+  `spec.get("interrupt_on", interrupt_on)` and
+  `spec.get("tools") if "tools" in spec else tools`, and PREPENDS the same base
+  middleware stack — so omitting both inherits exactly what the auto-added agent
+  got, including the filesystem-permission interrupt merge. Declaring
+  `interrupt_on` there would silently narrow write gating on a subagent that can
+  book. **When you add a middleware "to every stack", check the subagents the
+  framework adds for you, not just the ones you construct.**
+- **The guard is `BinaryReadGuardMiddleware`** (`deep_agent/binary_read_guard.py`),
+  at the `wrap_tool_call` seam beside audit and booking capture — the only seam
+  that sees a subagent's tool calls — and registered in all three hand-built
+  stacks plus the general-purpose override
+  (`tests/test_binary_read_guard.py` pins that, mirroring `test_audit_registration.py`).
+  It replaces a media block with text naming the tool to use instead
+  (`parse_trade_confirmation` for confirmations, the artifact tools otherwise).
+- **Uniform, deliberately not per-route.** Letting the one tolerant gateway through
+  would hand that contestant an advantage conferred by its gateway rather than its
+  ability — the confound the arena exists to remove. It also costs nothing: this
+  desk never reads documents by pushing bytes into the prompt, and image parts
+  (what `parse_trade_confirmation` actually sends) are accepted on every route
+  measured, deepseek included.
+- **The harness created the hazard.** The workflow names
+  `/artifacts/uploads/confirmations/`, and `read_file` is available and reads it.
+  Two of four contestants took that reasonable path and were punished; two never
+  tried. **A behavioural spread caused by a harness hazard is not a capability
+  signal** — same rule as the dangling-artifact fixture and the unaddressable
+  upload paths.
+- **It inverted a board.** Pre-fix `deepseek-v4-flash-vision` scored 36.4 and
+  placed last; post-fix, same model, same workflow, same effort, it scored
+  **100.0** in 23 calls and placed first. **The `LC_AUTOGENERATED` filename
+  warning from langchain's block translator is the tell**, and it appears in the
+  run log at the moment the binary enters the history.
+
+### A per-check tally is only valid on a board where every arm is HEALTHY
+
+The scoring-validity instrument (walk `objective.steps[].checks[]` +
+`objective.success[]`, key by `label`, look for a spread) assumes every
+contestant was actually asked every question. **A contaminated arm manufactures
+false discrimination**: it fails checks the whole healthy field passes, turning
+saturated checks into apparent 3/4 discriminators. On the first
+`confirmation-desk-day` board the tally read **8 of 33 checks dead**; repairing
+the one infra-killed arm moved it to **25 of 33** — the workflow was three times
+more saturated than the tally claimed. This compounds the merged-run rule
+(exclude merges, because they double-count) with a second precondition: **check
+arm health before computing the tally**, and recompute it after any arm is
+re-run.
+
 ### Malformed tool calls: a 200 that dispatches nothing
 
 A provider can return **HTTP 200** with a well-formed message whose tool calls carry
@@ -1249,6 +1338,96 @@ live and harvested paths are identical), skills `limits/monitor-limits` +
   −400-delta AAPL futures hedge) and `clean_net_delta` 402.685… (live monitoring
   producer); boundaries warning 500 / hard 600 sit strictly between clean and
   breach by construction (guard test).
+
+### confirmation-desk-day (the vision board)
+
+The sixth golden workflow (9 steps / **33 points**, persona `trader`,
+**uncalibrated par** — hyperbolic EFF until a live board calibrates it) and the
+first that exercises **vision**: parse six counterparty confirmations (five
+image-only or mixed), read back terms that exist only inside the images, decline
+to invent a term the document never states, book what validated, write the desk
+summary.
+
+- **LAUNCH REQUIREMENT: `LANGCHAIN_OPENAI_STREAM_CHUNK_TIMEOUT_S=900`.** Step 1
+  parses SIX documents in one `parse_trade_confirmation` call and each costs TWO
+  multimodal LLM calls, so 12+ vision calls run **synchronously inside one tool
+  body** — the outer agent stream emits no chunk for minutes and
+  langchain_openai's 120s default fires (`StreamChunkTimeoutError ...
+  chunks_received=17`, measured on run #1's first arm). The harness classifies it
+  correctly as `invalid`/`infra_error` rather than a scored 0, but **every
+  openai_chat contestant hits the same wall**, so the board is unrunnable
+  without it. The connection is legitimately IDLE, not dead — the case that
+  timeout is not meant to catch. Raise it for the WHOLE board, never per model.
+- **The extraction sub-call MUST route to the contestant, or the board measures
+  nothing.** `resolve_confirmation_extractor_selection` picks by **registry tag**
+  (`confirmation_extractor` → `fast` → default), so without an override every
+  contestant reads every document with gemini-3.6-flash's eyes and every vision
+  check lands N/N — a check occupying the denominator with zero ability signal,
+  the Run #58 defect exactly. The manifest declares `extractor_model: contestant`;
+  the runner stamps the match's own selection onto `configurable`
+  (`CONFIRMATION_EXTRACTOR_SELECTION_KEY`), never from model or tool input.
+  Declared in the MANIFEST so the arm is predeclared and no other workflow is
+  silently rerouted.
+- **BOTH `configurable_extra` builds in `stream_and_persist` must stamp it.**
+  There are two — the workflow-routed path and the direct path — and which runs
+  depends on `settings.feature_workflow_routing`. An unstamped path silently
+  falls back to tag routing with no error anywhere (same trap as the `done` SSE
+  event). An AST test pins that every build carries the key.
+- **LangChain injects `config` by TYPE HINT, not by parameter name.**
+  `_get_runnable_config_param` walks `get_type_hints()` for `type_ is
+  RunnableConfig`. Dropping the annotation to a bare `config=None` stops
+  injection **silently**, and every unit test still passes because they call
+  `.func(...)` and pass config by hand. Guarded by a test that goes through
+  `.invoke()`.
+- **`requires: [vision]` is enforced at LAUNCH.** `queue_arena_run` rejects a
+  model whose registry row lacks the tag, via the shared `capability_rejection`
+  seam. **Unknown is PERMISSIVE** — an unresolvable route is not rejected, same
+  rule as the effort ladder. Only tag a model you have **actually sent an image
+  to**; ZenMux's `input_modalities` is a useful cross-check, never the authority.
+  Watch the near-identical names: `deepseek-v4-flash` is text-only,
+  `deepseek-v4-flash-vision-exp` is not.
+- **MEASURED 2026-08-28: OCR-level vision is SATURATED at this tier.** All four
+  contestants read every trap correctly, on a pointed question *and* through the
+  real two-stage pipeline. The grounding checks are expected near N/N — a finding
+  about the field, not difficulty. **Publish the per-check tally with any board
+  built on this workflow.** Discrimination lives in step 7 (reporting an absent
+  term rather than substituting the strike — the incumbent substituted in 2 of 6
+  runs), step 8 (booking restraint), and EFF.
+- **The corpus is TRACKED** at `backend/app/golden_workflows/documents/` with its
+  generator, and truth is **emitted from the same dicts the documents render
+  from**. Reproducibility is asserted on **content, not bytes**: PIL stamps
+  `/CreationDate` and python-docx writes zip mtimes, so byte equality is
+  unachievable and a byte guard would be permanently red. And `build_all` is only
+  deterministic **from a fresh interpreter** — a second call in one process
+  yields different scan pixels because the rendering stack consumes the RNG
+  lazily on first use, so the guard shells out.
+- **A trap can ship UNWINNABLE and every automated check still passes.** conf-10
+  first rendered with no checkbox labels and the second box overlapping the next
+  line: image-only ✓, value absent from the text layer ✓, decoys far ✓ — and no
+  way to know which box meant what. **Look at a new document before trusting it.**
+  Conversely the decoy-separation guard caught what looking could not: the first
+  amended strike sat 1.7% from the `initial_price` decoy, inside `rel_tol`, so a
+  model returning the wrong field would have passed.
+- **`stage_documents`** (`fixtures.py`) copies declared documents into
+  `artifact_dir/uploads/confirmations/` at match setup — the binary analogue of
+  `artifact_bodies`, which writes `str` only. A declared-but-unwritten document
+  is a dangling pointer the model burns calls chasing.
+- **`_purge_match_confirmations`** closes a real FK gap:
+  `ConfirmationBatch.default_portfolio_id` references `portfolios` under a column
+  name `_delete_portfolios_with_dependents` does not scan, and that sweep's FK
+  recursion **skips the portfolios table**, so a portfolio booked from a
+  confirmation could not be deleted at all. Runs BEFORE the portfolio purge.
+- **Fixture underlyings need `status: active`.** The booking gate requires active
+  AND tagged; `ensure_underlying` defaults to `draft`. This was latent for
+  `trader-rfq-booking-day`, which books MSFT and only works because MSFT is
+  already active here — on a clean DB its booking step fails.
+- **No agent tool repairs an extracted trade** (parse / get / book only), so a
+  "fix the invalid trade" step is unreachable. Step 7 grades reporting the
+  absence; step 8 grades not booking it.
+- **Synthesis needs an artifact step.** Only `artifact_exists` /
+  `artifact_contains` map to that axis and `_stat_from_tally` returns 0 for an
+  empty tally — so a workflow without one gives every contestant a CONSTANT SYN
+  of 0, dragging OVR down ~16 points uniformly while carrying no signal.
 
 ### ops-settlement-day
 

@@ -198,6 +198,10 @@ class FixtureBundle:
     seed: dict
     replay: dict[str, ReplayEntry]
     seed_map: dict[str, Any] = field(default_factory=dict)
+    # Bare filenames from the TRACKED corpus in ``documents/`` that this workflow
+    # needs staged into the agent's uploads root before its first turn. See
+    # stage_documents: a fixture that DECLARES a document must CREATE it.
+    documents: list[str] = field(default_factory=list)
 
 
 def load_fixtures(path: Path) -> FixtureBundle:
@@ -268,7 +272,68 @@ def load_fixtures(path: Path) -> FixtureBundle:
             response_text=entry.get("response_text", ""),
         )
 
-    return FixtureBundle(seed=seed, replay=replay, seed_map=seed_map)
+    documents = data.get("documents") or []
+    if not isinstance(documents, list) or not all(
+        isinstance(d, str) for d in documents
+    ):
+        raise WorkflowError("documents must be a list of bare filenames")
+
+    return FixtureBundle(
+        seed=seed, replay=replay, seed_map=seed_map, documents=list(documents)
+    )
+
+
+_DOCUMENTS_DIR = Path(__file__).parent / "documents"
+
+
+def stage_documents(bundle, uploads_root: Path) -> list[Path]:
+    """Copy a bundle's declared documents into ``uploads_root/confirmations/``.
+
+    ``parse_trade_confirmation`` refuses any path outside ``artifact_dir/uploads``,
+    so a workflow that grades document reading has to put real bytes there. This
+    is the BINARY analogue of ``artifact_bodies``, which writes ``str`` only and
+    therefore cannot carry a PDF.
+
+    Same rule as that mechanism: a fixture that DECLARES a document must CREATE
+    it. A declared-but-unwritten path is a dangling pointer -- the agent resolves
+    it, gets an error, and burns calls hunting a file that was never there, which
+    the arena has already paid for once (the high-board step-7 "glob-thrash" that
+    was mistaken for a capability signal).
+
+    Idempotent: overwrites on every call, so re-staging across the trials of one
+    match is safe and a half-written file from a crashed trial is replaced.
+
+    NOT cleaned up after a match, deliberately-but-narrowly. Overwrite-on-stage
+    makes a stale copy harmless for THIS workflow (every run rewrites the same
+    names from the tracked corpus, so the bytes can never go stale). The residual
+    risk is cross-workflow: a later match whose model passes a BARE filename
+    could have it resolved against a document this workflow left behind. That
+    needs a real fix -- trace+baseline evidence, like ``_purge_match_rfqs`` --
+    the moment a second workflow stages documents, because a purge here must
+    never delete a desk user's chat upload sharing the root.
+    """
+    import shutil
+
+    declared = list(getattr(bundle, "documents", None) or [])
+    if not declared:
+        return []
+    target_dir = Path(uploads_root) / "confirmations"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    staged: list[Path] = []
+    for name in declared:
+        # A BARE FILENAME in the tracked corpus, never a path: anything else
+        # would let a fixture reach outside the reviewed document set.
+        if Path(name).name != name:
+            raise ValueError(
+                f"document {name!r} must be a bare filename in the tracked corpus"
+            )
+        source = _DOCUMENTS_DIR / name
+        if not source.is_file():
+            raise FileNotFoundError(f"document {name!r} is not in {_DOCUMENTS_DIR}")
+        target = target_dir / name
+        shutil.copyfile(source, target)
+        staged.append(target)
+    return staged
 
 
 def _write_seeded_artifact_bodies(row: dict[str, Any]) -> None:
@@ -422,6 +487,21 @@ def apply_seed(bundle: FixtureBundle, session) -> dict[str, dict[str, int]]:
                 want_tags = sorted({*(obj.tags or []), *(row.get("tags") or [])})
                 if want_tags != sorted(obj.tags or []):
                     obj.tags = want_tags
+                    session.flush()
+                # BOOKABILITY needs BOTH halves: active status AND the
+                # "underlying" tag (services/underlyings.is_bookable_underlying_row).
+                # ensure_underlying defaults to status="draft", so tag-merging alone
+                # leaves a fixture underlying UNBOOKABLE and every booking reports
+                # `invalid`. That was latent rather than theoretical: workflows that
+                # book only worked where the symbol happened to be active on the
+                # live desk already, and would fail on a clean DB.
+                #
+                # Only ever RAISES draft -> declared status; a symbol the desk
+                # already retired is left alone rather than silently revived by a
+                # benchmark fixture.
+                declared_status = row.get("status")
+                if declared_status and obj.status == "draft":
+                    obj.status = declared_status
                     session.flush()
 
             elif ns == "market_quotes":

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 
+from langchain_core.runnables import RunnableConfig
+
 from app import database
 from app.config import Settings, configure_settings
 
@@ -98,7 +100,7 @@ def test_parse_rejects_path_outside_uploads_dir(tmp_path):
         _reset_settings()
 
     assert result["ok"] is False
-    assert "outside uploads dir" in result["error"]
+    assert "no such upload" in result["error"]
 
 
 def test_parse_rejects_missing_no_paths(tmp_path):
@@ -134,7 +136,7 @@ def test_parse_trade_confirmation_creates_batch_with_trades(tmp_path, monkeypatc
         fake_client = FakeExtractorClient(_seg_json(), _trade_json("TC-TOOL-1"))
         monkeypatch.setattr(
             tools_confirmations.confirmations_llm,
-            "build_extractor_client", lambda: fake_client,
+            "build_extractor_client", lambda selection=None: fake_client,
         )
 
         uploads_dir = settings.artifact_dir / "uploads" / "chat"
@@ -170,7 +172,7 @@ def test_parse_trade_confirmation_missing_file_errors(tmp_path):
         _reset_settings()
 
     assert result["ok"] is False
-    assert "file not found" in result["error"]
+    assert "no such upload" in result["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +197,7 @@ def test_get_confirmation_batch_round_trips(tmp_path, monkeypatch):
         fake_client = FakeExtractorClient(_seg_json(), _trade_json("TC-TOOL-2"))
         monkeypatch.setattr(
             tools_confirmations.confirmations_llm,
-            "build_extractor_client", lambda: fake_client,
+            "build_extractor_client", lambda selection=None: fake_client,
         )
         uploads_dir = settings.artifact_dir / "uploads" / "chat"
         uploads_dir.mkdir(parents=True, exist_ok=True)
@@ -430,3 +432,295 @@ def test_service_import_before_app_tools_has_no_import_cycle():
         cwd=str(repo_root), env=env, capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+# ---------------------------------------------------------------------------
+# (e) the server-stamped extractor override (arena vision boards)
+# ---------------------------------------------------------------------------
+
+
+def test_upload_path_accepts_the_spellings_a_model_actually_produces(tmp_path):
+    """Measured on arena run #1: told the files were at
+    /artifacts/uploads/confirmations/, gpt-5.6-luna tried that, then
+    /uploads/..., then the bare filenames -- four reasonable attempts, all
+    rejected, and the whole match cascaded from it. /artifacts/ is how the deep
+    agent's own filesystem backend mounts artifact_dir, so it is not even a wrong
+    guess."""
+    from app.tools.confirmations import _resolve_upload_path
+
+    uploads = (tmp_path / "uploads").resolve()
+    (uploads / "confirmations").mkdir(parents=True)
+    target = uploads / "confirmations" / "conf-04.pdf"
+    target.write_bytes(b"%PDF-1.4")
+
+    for spelling in (
+        str(target),                                   # absolute (the chat path)
+        "/artifacts/uploads/confirmations/conf-04.pdf",  # the virtual mount
+        "/uploads/confirmations/conf-04.pdf",
+        "uploads/confirmations/conf-04.pdf",
+        "confirmations/conf-04.pdf",
+        "conf-04.pdf",                                 # bare, unique
+    ):
+        assert _resolve_upload_path(spelling, uploads) == target, spelling
+
+
+def test_upload_path_still_refuses_anything_outside_the_uploads_root(tmp_path):
+    """Containment is unchanged and absolute -- the leniency is about SPELLING,
+    never about scope."""
+    from app.tools.confirmations import _resolve_upload_path
+
+    uploads = (tmp_path / "uploads").resolve()
+    uploads.mkdir(parents=True)
+    outside = tmp_path / "secret.pdf"
+    outside.write_bytes(b"%PDF-1.4")
+
+    for escape in (
+        str(outside),
+        "/etc/passwd",
+        "../secret.pdf",
+        "confirmations/../../secret.pdf",
+    ):
+        assert _resolve_upload_path(escape, uploads) is None, escape
+
+
+def test_upload_path_refuses_an_ambiguous_bare_filename(tmp_path):
+    """Two files with one name must be REFUSED, not guessed."""
+    from app.tools.confirmations import _resolve_upload_path
+
+    uploads = (tmp_path / "uploads").resolve()
+    for sub in ("a", "b"):
+        (uploads / sub).mkdir(parents=True)
+        (uploads / sub / "dup.pdf").write_bytes(b"%PDF-1.4")
+
+    assert _resolve_upload_path("dup.pdf", uploads) is None
+
+
+def test_upload_path_returns_none_for_a_missing_file(tmp_path):
+    from app.tools.confirmations import _resolve_upload_path
+
+    uploads = (tmp_path / "uploads").resolve()
+    uploads.mkdir(parents=True)
+    assert _resolve_upload_path("confirmations/nope.pdf", uploads) is None
+
+
+def test_parse_error_names_the_accepted_form(tmp_path):
+    """The old message stated only what was wrong, so a model could retry four
+    times without ever learning what would work."""
+    from app.tools.confirmations import parse_trade_confirmation
+
+    _configure_test_env(tmp_path, register_underlying=False)
+    try:
+        result = parse_trade_confirmation.func(paths=["/etc/passwd"])
+    finally:
+        _reset_settings()
+
+    assert result["ok"] is False
+    assert "confirmations/" in result["error"]
+    assert "/artifacts/uploads/" in result["error"]
+
+
+def test_extractor_override_is_read_from_configurable():
+    from app.services.confirmations.llm import CONFIRMATION_EXTRACTOR_SELECTION_KEY
+    from app.tools.confirmations import _extractor_override_from_config
+
+    override = {"channel": "zenmux", "provider": "bigmodel",
+                "model": "z-ai/glm-5.3-flash"}
+    assert _extractor_override_from_config(
+        {"configurable": {CONFIRMATION_EXTRACTOR_SELECTION_KEY: override}}
+    ) == override
+
+
+def test_extractor_override_absent_degrades_to_the_production_tag_ladder():
+    """A missing or malformed stamp must fall back, never crash a desk turn."""
+    from app.services.confirmations.llm import CONFIRMATION_EXTRACTOR_SELECTION_KEY
+    from app.tools.confirmations import _extractor_override_from_config
+
+    assert _extractor_override_from_config(None) is None
+    assert _extractor_override_from_config({}) is None
+    assert _extractor_override_from_config({"configurable": {}}) is None
+    assert _extractor_override_from_config({"configurable": None}) is None
+    # A non-dict value is IGNORED rather than trusted -- a malformed stamp must
+    # not become a half-built selection that fails deep inside model_factory.
+    for bad in ("glm", 7, [], {}):
+        assert _extractor_override_from_config(
+            {"configurable": {CONFIRMATION_EXTRACTOR_SELECTION_KEY: bad}}
+        ) is None
+
+
+def test_parse_threads_the_override_into_the_extractor_client(tmp_path, monkeypatch):
+    """End-to-end through the real parse path: the stamped selection is what
+    build_extractor_client is asked for."""
+    import app.tools.confirmations as tools_confirmations
+    from app.services.confirmations import service as confirmations_service
+    from app.services.confirmations.extract import DocumentContent, PageContent
+    from app.services.confirmations.llm import CONFIRMATION_EXTRACTOR_SELECTION_KEY
+
+    settings = _configure_test_env(tmp_path)
+    asked: list = []
+    try:
+        monkeypatch.setattr(
+            confirmations_service, "extract_document",
+            lambda path: DocumentContent(
+                pages=[PageContent(index=1, text="BUY 100 AAPL call")],
+                page_count=1, extract_mode="text"),
+        )
+        fake_client = FakeExtractorClient(_seg_json(), _trade_json("TC-OVERRIDE-1"))
+
+        def _build(selection=None):
+            asked.append(selection)
+            return fake_client
+
+        monkeypatch.setattr(
+            tools_confirmations.confirmations_llm, "build_extractor_client", _build)
+
+        uploads_dir = settings.artifact_dir / "uploads" / "chat"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        stored = uploads_dir / "override.pdf"
+        stored.write_bytes(b"%PDF-1.4 fake confirmation")
+
+        override = {"channel": "zenmux", "provider": "bigmodel",
+                    "model": "z-ai/glm-5.3-flash"}
+        result = tools_confirmations.parse_trade_confirmation.func(
+            paths=[str(stored)],
+            config={"configurable": {CONFIRMATION_EXTRACTOR_SELECTION_KEY: override}},
+        )
+    finally:
+        _reset_settings()
+
+    assert result["ok"] is True
+    assert asked == [override]
+
+
+def test_parse_without_a_stamp_asks_for_no_override(tmp_path, monkeypatch):
+    """The production desk path is unchanged: no override, so the tag ladder runs."""
+    import app.tools.confirmations as tools_confirmations
+    from app.services.confirmations import service as confirmations_service
+    from app.services.confirmations.extract import DocumentContent, PageContent
+
+    settings = _configure_test_env(tmp_path)
+    asked: list = []
+    try:
+        monkeypatch.setattr(
+            confirmations_service, "extract_document",
+            lambda path: DocumentContent(
+                pages=[PageContent(index=1, text="BUY 100 AAPL call")],
+                page_count=1, extract_mode="text"),
+        )
+        fake_client = FakeExtractorClient(_seg_json(), _trade_json("TC-OVERRIDE-2"))
+
+        def _build(selection=None):
+            asked.append(selection)
+            return fake_client
+
+        monkeypatch.setattr(
+            tools_confirmations.confirmations_llm, "build_extractor_client", _build)
+
+        uploads_dir = settings.artifact_dir / "uploads" / "chat"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        stored = uploads_dir / "no-override.pdf"
+        stored.write_bytes(b"%PDF-1.4 fake confirmation")
+
+        result = tools_confirmations.parse_trade_confirmation.func(paths=[str(stored)])
+    finally:
+        _reset_settings()
+
+    assert result["ok"] is True
+    assert asked == [None]
+
+
+def test_config_is_not_exposed_to_the_model():
+    """The override is SERVER-STAMPED. If `config` were in args_schema, a model
+    could choose which model reads its own documents -- the same reason fan-out
+    attribution is never taken from tool input."""
+    from app.tools.confirmations import parse_trade_confirmation
+
+    assert sorted(parse_trade_confirmation.args_schema.model_fields) == [
+        "paths", "portfolio_id"
+    ]
+
+
+def test_config_is_injected_through_the_real_invoke_path(tmp_path):
+    """Guards a silent revert to tag routing.
+
+    LangChain finds the config parameter by TYPE HINT IDENTITY --
+    `_get_runnable_config_param` walks get_type_hints() for `type_ is
+    RunnableConfig` -- not by the parameter's NAME. So dropping the annotation to
+    a bare `config=None` stops injection entirely and silently.
+
+    Every other test in this file calls `.func(...)` and passes config by hand, so
+    none of them would notice: the suite would stay green while the arena reverted
+    to reading every contestant's documents with the tag-resolved model, and the
+    vision board would measure one model three times.
+    """
+    from langchain_core.tools.base import _get_runnable_config_param
+
+    from app.services.confirmations.llm import CONFIRMATION_EXTRACTOR_SELECTION_KEY
+    from app.tools.confirmations import parse_trade_confirmation
+
+    assert _get_runnable_config_param(parse_trade_confirmation.func) == "config"
+
+    seen: dict = {}
+    original = parse_trade_confirmation.func
+
+    # The RunnableConfig ANNOTATION is what makes injection happen -- and because
+    # this module uses `from __future__ import annotations`, it is a STRING that
+    # get_type_hints resolves against THIS module's globals, which is why
+    # RunnableConfig is imported at the top of the file rather than in-function.
+    def _spy(paths, portfolio_id=None, config: RunnableConfig = None):  # type: ignore[assignment]
+        seen["config"] = config
+        return {"ok": False, "error": "spy"}
+
+    override = {"channel": "zenmux", "provider": "bigmodel",
+                "model": "z-ai/glm-5.3-flash"}
+    _configure_test_env(tmp_path, register_underlying=False)
+    object.__setattr__(parse_trade_confirmation, "func", _spy)
+    try:
+        parse_trade_confirmation.invoke(
+            {"paths": []},
+            config={"configurable": {
+                # capability_gate reads `envelope` off configurable; without it
+                # the call is denied before the body ever runs.
+                "envelope": "desk_workflow",
+                CONFIRMATION_EXTRACTOR_SELECTION_KEY: override,
+            }},
+        )
+    finally:
+        object.__setattr__(parse_trade_confirmation, "func", original)
+        _reset_settings()
+
+    delivered = (seen.get("config") or {}).get("configurable", {})
+    assert delivered.get(CONFIRMATION_EXTRACTOR_SELECTION_KEY) == override
+
+
+def test_upload_path_bare_filename_is_a_name_not_a_glob(tmp_path):
+    """`rglob` takes a PATTERN, so the bare-filename fallback must escape it.
+
+    Unescaped, `conf-0*.pdf` resolves a document the caller never named -- the
+    resolver would quietly become a search tool, and on an arena board a model
+    could reach a graded document without addressing it.
+    """
+    from app.tools.confirmations import _resolve_upload_path
+
+    uploads = (tmp_path / "uploads").resolve()
+    (uploads / "confirmations").mkdir(parents=True)
+    target = uploads / "confirmations" / "conf-08-mixed.pdf"
+    target.write_bytes(b"%PDF-1.4")
+
+    # The exact name still resolves.
+    assert _resolve_upload_path("conf-08-mixed.pdf", uploads) == target
+
+    # Patterns that WOULD have matched it must not resolve.
+    for pattern in ("conf-08*.pdf", "conf-0?-mixed.pdf", "*.pdf", "conf-0[0-9]-mixed.pdf"):
+        assert _resolve_upload_path(pattern, uploads) is None, pattern
+
+
+def test_upload_path_handles_a_literal_bracket_in_a_filename(tmp_path):
+    """A `[` in a real filename is a character, not a character class."""
+    from app.tools.confirmations import _resolve_upload_path
+
+    uploads = (tmp_path / "uploads").resolve()
+    (uploads / "confirmations").mkdir(parents=True)
+    target = uploads / "confirmations" / "conf[1]-amd.pdf"
+    target.write_bytes(b"%PDF-1.4")
+
+    assert _resolve_upload_path("conf[1]-amd.pdf", uploads) == target

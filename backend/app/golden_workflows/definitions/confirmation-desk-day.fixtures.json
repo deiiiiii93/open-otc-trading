@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "documents": [
+    "conf-04-scanned-call-googl.pdf",
+    "conf-07-missing-initial-price-meta.pdf",
+    "conf-08-mixed-text-and-scan-amd.pdf",
+    "conf-09-amended-strike-nvda.pdf",
+    "conf-10-ticked-barrier-amzn.pdf",
+    "conf-11-faint-notional-orcl.pdf"
+  ],
+  "seed": {
+    "portfolios": [
+      {
+        "alias": "desk",
+        "name": "Arena Confirmation Desk",
+        "tags": ["arena"]
+      }
+    ],
+    "instruments": [
+      {"alias": "googl", "symbol": "GOOGL", "status": "active", "tags": ["underlying"]},
+      {"alias": "meta", "symbol": "META", "status": "active", "tags": ["underlying"]},
+      {"alias": "amd", "symbol": "AMD", "status": "active", "tags": ["underlying"]},
+      {"alias": "nvda", "symbol": "NVDA", "status": "active", "tags": ["underlying"]},
+      {"alias": "amzn", "symbol": "AMZN", "status": "active", "tags": ["underlying"]},
+      {"alias": "orcl", "symbol": "ORCL", "status": "active", "tags": ["underlying"]}
+    ]
+  },
+  "replay": {
+    "step-1-parse": {
+      "ai": {
+        "content": "Parsed six confirmation documents into the review queue.",
+        "tool_calls": [
+          {
+            "id": "call-parse-1",
+            "name": "parse_trade_confirmation",
+            "args": {"paths": ["/artifacts/uploads/confirmations/conf-04-scanned-call-googl.pdf"]}
+          },
+          {
+            "id": "call-answer-1",
+            "name": "record_answer",
+            "args": {"answer": {"document_count": 6, "scanned_count": 5}}
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "call-parse-1",
+          "name": "parse_trade_confirmation",
+          "content": {"ok": true, "batch_id": 1, "documents": []}
+        },
+        {"tool_call_id": "call-answer-1", "name": "record_answer", "content": {"ok": true}}
+      ],
+      "skills_routed": ["book-trade-confirmation"],
+      "response_text": "Six documents parsed; four required the vision path."
+    },
+    "step-2-floor": {
+      "ai": {
+        "content": "GOOGL strike read from the scan.",
+        "tool_calls": [
+          {"id": "call-get-2", "name": "get_confirmation_batch", "args": {"batch_id": 1}},
+          {
+            "id": "call-answer-2",
+            "name": "record_answer",
+            "args": {"answer": {"strike": 205.0, "reference": "ARD-EQO-2026-04688"}}
+          }
+        ]
+      },
+      "tool_results": [
+        {"tool_call_id": "call-get-2", "name": "get_confirmation_batch", "content": {"ok": true}},
+        {"tool_call_id": "call-answer-2", "name": "record_answer", "content": {"ok": true}}
+      ],
+      "skills_routed": [],
+      "response_text": "GOOGL strike USD 205.00, reference ARD-EQO-2026-04688."
+    },
+    "step-3-mixed": {
+      "ai": {
+        "content": "AMD terms read from the scanned second page.",
+        "tool_calls": [
+          {"id": "call-get-3", "name": "get_confirmation_batch", "args": {"batch_id": 1}},
+          {
+            "id": "call-answer-3",
+            "name": "record_answer",
+            "args": {"answer": {"strike": 185.0, "initial_price": 178.9}}
+          }
+        ]
+      },
+      "tool_results": [
+        {"tool_call_id": "call-get-3", "name": "get_confirmation_batch", "content": {"ok": true}},
+        {"tool_call_id": "call-answer-3", "name": "record_answer", "content": {"ok": true}}
+      ],
+      "skills_routed": [],
+      "response_text": "AMD strike USD 185.00 with an initial price of USD 178.90."
+    },
+    "step-4-amended": {
+      "ai": {
+        "content": "The NVDA strike was amended on the face of the confirmation.",
+        "tool_calls": [
+          {"id": "call-get-4", "name": "get_confirmation_batch", "args": {"batch_id": 1}},
+          {
+            "id": "call-answer-4",
+            "name": "record_answer",
+            "args": {"answer": {"strike": 1045.0, "reference": "ARD-EQO-2026-04901"}}
+          }
+        ]
+      },
+      "tool_results": [
+        {"tool_call_id": "call-get-4", "name": "get_confirmation_batch", "content": {"ok": true}},
+        {"tool_call_id": "call-answer-4", "name": "record_answer", "content": {"ok": true}}
+      ],
+      "skills_routed": [],
+      "response_text": "The controlling NVDA strike is the amended USD 1,045.00."
+    },
+    "step-5-ticked": {
+      "ai": {
+        "content": "The AMZN barrier direction is marked by tick.",
+        "tool_calls": [
+          {"id": "call-get-5", "name": "get_confirmation_batch", "args": {"batch_id": 1}},
+          {
+            "id": "call-answer-5",
+            "name": "record_answer",
+            "args": {"answer": {"barrier_type": "DOWN_OUT", "barrier": 171.2}}
+          }
+        ]
+      },
+      "tool_results": [
+        {"tool_call_id": "call-get-5", "name": "get_confirmation_batch", "content": {"ok": true}},
+        {"tool_call_id": "call-answer-5", "name": "record_answer", "content": {"ok": true}}
+      ],
+      "skills_routed": [],
+      "response_text": "AMZN is down-and-out with a barrier of USD 171.20."
+    },
+    "step-6-faint": {
+      "ai": {
+        "content": "The ORCL notional is in the low-contrast column.",
+        "tool_calls": [
+          {"id": "call-get-6", "name": "get_confirmation_batch", "args": {"batch_id": 1}},
+          {
+            "id": "call-answer-6",
+            "name": "record_answer",
+            "args": {"answer": {"notional": 636000.0, "strike": 163.5}}
+          }
+        ]
+      },
+      "tool_results": [
+        {"tool_call_id": "call-get-6", "name": "get_confirmation_batch", "content": {"ok": true}},
+        {"tool_call_id": "call-answer-6", "name": "record_answer", "content": {"ok": true}}
+      ],
+      "skills_routed": [],
+      "response_text": "ORCL notional USD 636,000.00 against a strike of USD 163.50."
+    },
+    "step-7-absence": {
+      "ai": {
+        "content": "The META confirmation states no Initial Price.",
+        "tool_calls": [
+          {"id": "call-get-7", "name": "get_confirmation_batch", "args": {"batch_id": 1}},
+          {
+            "id": "call-answer-7",
+            "name": "record_answer",
+            "args": {"answer": {"initial_price": null, "validation_status": "invalid"}}
+          }
+        ]
+      },
+      "tool_results": [
+        {"tool_call_id": "call-get-7", "name": "get_confirmation_batch", "content": {"ok": true}},
+        {"tool_call_id": "call-answer-7", "name": "record_answer", "content": {"ok": true}}
+      ],
+      "skills_routed": [],
+      "response_text": "The META document states no Initial Price, so the trade cannot validate."
+    },
+    "step-8-book": {
+      "ai": {
+        "content": "Booking the validated trades.",
+        "tool_calls": [
+          {
+            "id": "call-book-8",
+            "name": "book_extracted_trade",
+            "args": {"trade_id": 1, "portfolio_id": 9400}
+          },
+          {
+            "id": "call-answer-8",
+            "name": "record_answer",
+            "args": {"answer": {"booked_count": 5, "skipped_count": 1}}
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "call-book-8",
+          "name": "book_extracted_trade",
+          "content": {"ok": true, "position_id": 1}
+        },
+        {"tool_call_id": "call-answer-8", "name": "record_answer", "content": {"ok": true}}
+      ],
+      "skills_routed": [],
+      "response_text": "Booked five validated trades; the META confirmation was left unbooked."
+    },
+    "step-9-summary": {
+      "ai": {
+        "content": "Writing the morning's confirmation summary.",
+        "tool_calls": [
+          {
+            "id": "call-report-9",
+            "name": "write_report_artifact",
+            "args": {"title": "Confirmation Desk Summary", "format": "markdown"}
+          }
+        ]
+      },
+      "tool_results": [
+        {
+          "tool_call_id": "call-report-9",
+          "name": "write_report_artifact",
+          "content": {"ok": true}
+        }
+      ],
+      "skills_routed": [],
+      "artifacts": [
+        {
+          "kind": "text",
+          "content": "# Confirmation Desk Summary\n\nProcessed six counterparty confirmations.\n\n- ARD-EQO-2026-04688 (GOOGL): strike USD 205.00, booked.\n- ARD-EQO-2026-04781 (AMD): strike USD 185.00, initial price USD 178.90, booked.\n- ARD-EQO-2026-04901 (NVDA): the printed strike of USD 780.00 was struck through and amended to USD 1,045.00, which is controlling. Booked at 1045.\n- ARD-EQO-2026-04902 (AMZN): barrier direction DOWN_OUT (down-and-out) by tick, barrier USD 171.20, booked.\n- ARD-EQO-2026-04903 (ORCL): notional USD 636,000.00, strike USD 163.50, booked.\n- ARD-EQO-2026-04750 (META): NOT BOOKED. The confirmation states no Initial Price, which every builder family requires and which must never be invented, so the trade validated as invalid.\n"
+        }
+      ],
+      "response_text": "Summary written: five booked, META held back for a missing Initial Price."
+    }
+  }
+}

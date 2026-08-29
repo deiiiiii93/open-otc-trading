@@ -7,6 +7,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`confirmation-desk-day` — a sixth golden workflow, and the first that
+  exercises vision.** Nine steps over the trade-confirmation pipeline: parse a
+  batch of six counterparty documents (five of them image-only scans or mixed),
+  read back terms that exist only inside those images, decline to invent a term
+  the document never states, book what validated, and write the desk summary.
+  Persona `trader`; the golden replay earns 33/33 across all four objective axes.
+- **The extraction sub-call can be routed to the arena contestant.** New manifest
+  field `extractor_model: contestant`. Without it,
+  `resolve_confirmation_extractor_selection` picks the extraction model by
+  **registry tag**, so every contestant on a vision board would read every
+  document with whichever model holds `confirmation_extractor` — and every vision
+  check would land N/N across the field, carrying zero ability signal while still
+  occupying the denominator. The override rides a server-stamped `configurable`
+  key (never model or tool input) and is unset on all five existing workflows, so
+  their behaviour is byte-identical.
+- **A `vision` capability tag, enforced at launch.** A workflow may declare
+  `requires: [vision]`; `queue_arena_run` rejects a model whose registry row does
+  not carry the tag, before the run starts. A blind contestant would otherwise
+  post a real-*looking* score indistinguishable from poor ability. Only
+  probe-verified models are tagged: `gpt-5.6-luna`, `glm-5.3-flash`,
+  `gemini-3.7-flash`, `gemini-3.6-flash`, `deepseek-v4-flash-vision-exp`.
+- **`deepseek/deepseek-v4-flash-vision-exp` as an arena contestant**
+  (`deepseek-v4-flash-vision`), pinned to the `deepseek` upstream. Note it is a
+  **different model** from `deepseek/deepseek-v4-flash`, which the gateway
+  declares text-only.
+- **The synthetic confirmation corpus is now tracked**, at
+  `backend/app/golden_workflows/documents/`, with its generator. Three new
+  vision-trap documents: a struck-through-and-amended strike, a barrier direction
+  carried only by a ticked box, and a low-contrast notional beside a decoy.
+- **`stage_documents`** copies a fixture's declared documents into the agent's
+  uploads root — the binary analogue of `artifact_bodies`, which writes `str`
+  only and so cannot carry a PDF.
+
+### Fixed
+- **A binary `read_file` no longer poisons the conversation beyond recovery.**
+  deepagents returns any binary file as a media content block
+  (`{"type": "file", "base64": …}`). `langchain_openai` translates that correctly
+  into the documented OpenAI wire shape, so the client is sound — but measured
+  2026-08-29 against ZenMux with a real confirmation PDF, three of four routes
+  reject that part inside a **tool** message: `gemini-3.7-flash`, `gpt-5.6-luna`
+  and `deepseek-v4-flash-vision` all 400 (each in its own dialect), while
+  `glm-5.3-flash` accepts it. The rejected message stays in the history, so every
+  later turn draws the same 400: on the first `confirmation-desk-day` board,
+  `deepseek-v4-flash-vision` read one PDF at step 3 and then made zero tool calls
+  for steps 4–8. It is invisible to every existing gate — nothing truncates, and
+  the `read_file` call is `status=success`, so `_is_infra_blank` sees a healthy
+  step. New `BinaryReadGuardMiddleware` replaces such a result with text naming
+  the tool to use instead, registered in all three agent stacks (orchestrator,
+  per-persona, `build_async_agent`) because the poisoned reads on that board
+  occurred in two different checkpoint namespaces. Uniform rather than per-route,
+  so the one tolerant gateway cannot confer an advantage its model did not earn.
+- **The `general-purpose` subagent is no longer unguarded and unaudited.**
+  `create_deep_agent` auto-adds it with middleware it builds internally, so
+  nothing passed as `middleware=` ever reached it — a fourth agent stack, holding
+  the parent's full toolset, that the "all three stacks" registration tests never
+  covered. It was running with no audit trail (contradicting that middleware's
+  always-on contract) and no binary-read guard; on the first
+  `confirmation-desk-day` board it issued three `read_file` calls, one of them a
+  PDF. We now supply our own spec, which is deepagents' documented override.
+  Behaviour-preserving: deepagents prepends the identical base middleware stack,
+  and omitting `tools`/`interrupt_on` inherits exactly what the auto-added agent
+  received, including the filesystem-permission interrupt merge.
+- **The confirmation upload resolver's bare-filename fallback no longer accepts a
+  glob.** `Path.rglob` takes a pattern, so `conf-08*.pdf` resolved a document the
+  caller never named. Escaped with `glob.escape`; containment was never affected.
+- **The conf-09 truth note is derived, not restated.** It still said the amended
+  strike was `917.50` after that value moved to `1,045.00` for decoy separation.
+  Generator-emitted truth is pointless if the prose beside it is a copy, and the
+  reproduction guard compares the note verbatim, so nothing caught the drift. No
+  graded value changed.
+- **The confirmation extractor now accepts block-list content.** An
+  Anthropic-protocol *reasoning* model returns `.content` as
+  `[thinking, text]`, and `RegistryExtractorClient.complete()` raised on anything
+  non-`str`, so every parse died. Reachable today by tagging such a model
+  `confirmation_extractor`.
+- **Confirmation batches created by an arena match are now purged.**
+  `ConfirmationBatch.default_portfolio_id` is a foreign key to `portfolios` under
+  a column name the dependents sweep does not scan, and that sweep's FK recursion
+  explicitly skips the portfolios table — so a portfolio booked from a
+  confirmation could not be deleted at all.
+- **Fixture-seeded underlyings can now be made bookable.** The booking gate needs
+  **active AND tagged**, but the seeder called `ensure_underlying` without
+  `activate=True`, leaving fixture instruments `draft`. This was latent for
+  `trader-rfq-booking-day` too, which books MSFT and only worked because MSFT was
+  already active on this desk; on a clean database its booking step would fail.
+  A fixture row may now declare `status`, and the seeder only ever raises
+  `draft` → declared, so a retired desk symbol is never silently revived.
+
 ### Changed
 - **Model registry schema: `id` / `provider` / `protocol` are now three independent
   axes.** A model entry in `config/agent_channels.yaml` reads WHAT / WHOSE METAL /

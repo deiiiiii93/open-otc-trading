@@ -108,3 +108,96 @@ def test_resolver_prefers_dedicated_tag():
             return {"channel": "zenmux", "provider": "openai", "model": "default-y"}
 
     assert resolve_confirmation_extractor_selection(Reg())["model"] == "vision-x"
+
+
+def test_content_to_text_passes_a_plain_string_through():
+    from app.services.confirmations.llm import _content_to_text
+
+    assert _content_to_text('{"strike": 205.0}') == '{"strike": 205.0}'
+
+
+def test_content_to_text_flattens_anthropic_reasoning_blocks():
+    """glm-5.3-flash returns [thinking, text]; only the text block is the answer.
+
+    Measured live 2026-08-28 on z-ai/glm-5.3-flash:bigmodel. Before this the
+    extractor raised ExtractionError on every such response, which on an arena
+    board would read as "the model cannot see" rather than "the harness dropped
+    the answer".
+    """
+    from app.services.confirmations.llm import _content_to_text
+
+    content = [
+        {"type": "thinking", "thinking": "The strike appears to be 205.",
+         "signature": "abc"},
+        {"type": "text", "text": '{"strike": 205.0}'},
+    ]
+    assert _content_to_text(content) == '{"strike": 205.0}'
+
+
+def test_content_to_text_joins_multiple_text_blocks():
+    from app.services.confirmations.llm import _content_to_text
+
+    content = [{"type": "text", "text": '{"a": 1,'},
+               {"type": "text", "text": ' "b": 2}'}]
+    assert _content_to_text(content) == '{"a": 1, "b": 2}'
+
+
+def test_content_to_text_raises_when_no_text_block_survives():
+    from app.services.confirmations.llm import _content_to_text
+
+    with pytest.raises(ExtractionError):
+        _content_to_text([{"type": "thinking", "thinking": "hmm", "signature": "s"}])
+
+
+def test_content_to_text_raises_on_an_unusable_type():
+    from app.services.confirmations.llm import _content_to_text
+
+    with pytest.raises(ExtractionError):
+        _content_to_text(None)
+
+
+class _TagRegistry:
+    """A registry whose dedicated tag resolves, so the ladder is exercised."""
+
+    def select_by_tag(self, tag):
+        if tag == "confirmation_extractor":
+            return {"channel": "zenmux", "provider": "google-vertex",
+                    "model": "google/gemini-3.6-flash"}
+        return None
+
+    def default_selection(self):
+        return {"channel": "zenmux", "provider": "openai", "model": "default-y"}
+
+
+def test_resolver_override_wins_over_the_dedicated_tag():
+    """The arena routes extraction to the CONTESTANT.
+
+    Without this, every contestant on a vision board reads every document with
+    whichever model happens to hold the confirmation_extractor tag, so every
+    vision check lands N/N across the field and carries zero ability signal --
+    the defect the Run #58 audit found in 15 of 50 checks.
+    """
+    from app.services.confirmations.llm import resolve_confirmation_extractor_selection
+
+    override = {"channel": "zenmux", "provider": "bigmodel",
+                "model": "z-ai/glm-5.3-flash"}
+    assert resolve_confirmation_extractor_selection(_TagRegistry(), override) == override
+
+
+def test_resolver_returns_a_copy_so_a_caller_cannot_mutate_the_selection():
+    from app.services.confirmations.llm import resolve_confirmation_extractor_selection
+
+    override = {"channel": "zenmux", "provider": "bigmodel",
+                "model": "z-ai/glm-5.3-flash"}
+    resolved = resolve_confirmation_extractor_selection(_TagRegistry(), override)
+    resolved["model"] = "mutated"
+    assert override["model"] == "z-ai/glm-5.3-flash"
+
+
+def test_resolver_ignores_an_absent_or_empty_override():
+    """Unset must be byte-identical to today: the production desk keeps its tag."""
+    from app.services.confirmations.llm import resolve_confirmation_extractor_selection
+
+    for override in (None, {}):
+        resolved = resolve_confirmation_extractor_selection(_TagRegistry(), override)
+        assert resolved["model"] == "google/gemini-3.6-flash"

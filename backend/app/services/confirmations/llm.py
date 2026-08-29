@@ -12,7 +12,7 @@ import base64
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 # NOTE: app.tools.product_term_schema is imported lazily inside the two
 # functions below (segment_document / extract_trade), not at module scope.
@@ -25,6 +25,18 @@ from typing import Protocol
 
 CONFIRMATION_EXTRACTOR_TAG = "confirmation_extractor"
 _FALLBACK_TAG = "fast"
+
+# RunnableConfig.configurable key carrying an explicit extractor selection that
+# OVERRIDES the tag ladder below. Server-stamped only -- the arena stamps the
+# match's own model so a vision workflow grades the CONTESTANT's eyes rather than
+# whichever model happens to hold the confirmation_extractor tag.
+#
+# `configurable` rather than a ContextVar because LangGraph may execute nodes on
+# worker threads (see deep_agent/booking_capture.py, which documents the same
+# reasoning), and because configurable is forwarded into persona subagents and
+# survives async resume. NEVER read from model or tool INPUT: a model must not be
+# able to choose which model reads its own documents.
+CONFIRMATION_EXTRACTOR_SELECTION_KEY = "__confirmation_extractor_selection__"
 
 
 class ExtractionError(Exception):
@@ -59,7 +71,17 @@ class ExtractorClient(Protocol):
     def complete(self, content_parts: list[dict]) -> str: ...
 
 
-def resolve_confirmation_extractor_selection(registry) -> dict:
+def resolve_confirmation_extractor_selection(
+    registry, override: dict | None = None
+) -> dict:
+    """Pick the model that reads confirmation documents.
+
+    ``override`` (server-stamped, arena only) wins outright and is copied so a
+    caller cannot mutate the stamped selection. Otherwise the production ladder
+    is unchanged: dedicated tag -> "fast" -> registry default.
+    """
+    if override:
+        return dict(override)
     for tag in (CONFIRMATION_EXTRACTOR_TAG, _FALLBACK_TAG):
         selection = registry.select_by_tag(tag)
         if selection is not None:
@@ -67,31 +89,64 @@ def resolve_confirmation_extractor_selection(registry) -> dict:
     return registry.default_selection()
 
 
+def _content_to_text(content: Any) -> str:
+    """Reduce a chat response's ``.content`` to the text the extractor parses.
+
+    An OpenAI-protocol model returns a plain string. An ANTHROPIC-protocol
+    REASONING model returns a block LIST instead -- glm-5.3-flash sends
+    ``[{"type": "thinking", ...}, {"type": "text", "text": "..."}]`` (measured
+    live on ``z-ai/glm-5.3-flash:bigmodel``, 2026-08-28) -- and only the text
+    block is the answer.
+
+    Rejecting the list outright (the previous behaviour) throws away a perfectly
+    good response. That matters beyond tidiness: when the arena routes extraction
+    to the contestant, the discarded answer reads on the board as "this model
+    cannot see" rather than "the harness dropped what it said" -- the same
+    misattribution the 4096-token output cap and the malformed-tool-call lottery
+    each produced before they were measured.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [
+            block["text"]
+            for block in content
+            if isinstance(block, dict)
+            and block.get("type") == "text"
+            and isinstance(block.get("text"), str)
+        ]
+        if parts:
+            return "".join(parts)
+    raise ExtractionError(
+        f"extractor returned no text content ({type(content).__name__})"
+    )
+
+
 class RegistryExtractorClient:
     """Multimodal chat call through the channel registry (LangChain content parts)."""
 
-    def __init__(self):
+    def __init__(self, selection: dict | None = None):
         from app.services.deep_agent.channel_registry import get_registry
         from app.services.deep_agent.model_factory import build_agent_model
 
         registry = get_registry()
-        self.selection = resolve_confirmation_extractor_selection(registry)
+        self.selection = resolve_confirmation_extractor_selection(registry, selection)
         self._model = build_agent_model(registry, self.selection)
         if self._model is None:
             raise RuntimeError("confirmation extractor model unavailable")
 
     def complete(self, content_parts: list[dict]) -> str:
         message = {"role": "user", "content": content_parts}
-        content = self._model.invoke([message]).content
-        if not isinstance(content, str):
-            raise ExtractionError(
-                f"extractor returned non-text content ({type(content).__name__})"
-            )
-        return content
+        return _content_to_text(self._model.invoke([message]).content)
 
 
-def build_extractor_client() -> ExtractorClient:
-    return RegistryExtractorClient()
+def build_extractor_client(selection: dict | None = None) -> ExtractorClient:
+    """Build the extraction client, optionally pinned to an explicit selection.
+
+    ``selection`` is the server-stamped arena override; ``None`` keeps the
+    production tag ladder.
+    """
+    return RegistryExtractorClient(selection)
 
 
 def _content_parts(content, pages: list[int] | None = None) -> list[dict]:

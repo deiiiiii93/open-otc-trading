@@ -47,6 +47,13 @@ open_otc.sqlite
 
 # generated rednote artifacts
 docs/rednotes/
+
+# Local scratch + the THIRD-PARTY ISDA reference template. The synthetic corpus
+# that used to live here is now TRACKED at backend/app/golden_workflows/documents/,
+# because it grades the confirmation-desk-day arena board and a benchmark cannot
+# rest on per-environment files (the trap CLAUDE.md records for
+# config/agent_channels.yaml). Anything left under docs/confirmations/ is a local
+# copy or third-party material — never the graded corpus.
 docs/confirmations/
 
 # zhihu article drafts (rewritten from docs/arena reports)
