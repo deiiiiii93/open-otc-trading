@@ -1438,8 +1438,26 @@ summary.
   extraction of that document succeeded **0 of 6** times. 15 further such reads
   appear across runs #129-#132. **A later contestant reading an earlier one's
   answers biases a board BY POSITION IN THE FIELD**, the same class as leftover
-  fixture rows and equally silent. Fix the read path before trusting any grounding
-  check on a shared-store workflow.
+  fixture rows and equally silent. **FIXED (2026-08-31), in two rounds** — the
+  CAS read path is now workflow-scoped and fails closed, and the re-run that
+  verified it exposed the SECOND door: `/artifacts/` was a blanket-read mount
+  over the whole artifacts root, which *contains* `artifact_blobs/` (the raw CAS
+  — the first fix was bypassable at `/artifacts/artifact_blobs/<xx>/<sha>`),
+  `arena/**` (every contestant's transcripts) and every thread's
+  `agent/thread-N/` workspace. `deep_agent/fs_policy.py` is the shared seam:
+  static denies for `arena`/`artifact_blobs`/`sandbox_sessions` (before the
+  `/artifacts/**` allow — `_check_fs_permission` is first-match-wins) plus
+  `ScopedArtifactsBackend`, which resolves the calling thread PER OPERATION
+  (`AUDIT_CONTEXT_KEY['thread_id']`, checkpointer int-prefix fallback) and
+  refuses/filters foreign thread dirs across read/ls/glob/grep. Per-operation is
+  load-bearing: the default-selection orchestrator graph is built once and
+  reused across threads, so a build-time permission cannot express "own
+  thread". **Both** backend builders (orchestrator AND `async_agents/agent.py`,
+  which keeps parallel copies of the mount + permission list) must consume both
+  layers — `tests/test_fs_policy.py` pins registration in both, mirroring
+  `test_audit_registration.py`. Residual, accepted: root-level desk reports and
+  `uploads/chat/` stay visible to contestants (different-workflow contamination;
+  hermetic per-match workspaces are the eventual fix).
 - **The arena transcript is BLIND to `task()` subagent tool calls, so "no tool
   result contains X" is NOT evidence that the model lacked X.** It records only
   the parent agent's calls (the documented deepagents limitation — a subagent runs

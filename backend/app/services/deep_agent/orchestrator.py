@@ -22,22 +22,6 @@ _PROMPTS_DIR = Path(__file__).parent / "prompts"
 _SKILLS_FS_ROOT = SKILLS_ROOT
 
 
-def _artifacts_root() -> Path:
-    """Resolve the artifacts directory at agent build time.
-
-    Sourced from `database.settings.artifact_dir` so the mount tracks
-    whatever Settings the app is running under (test fixtures swap settings
-    via `database.configure_database`; deployments set OPEN_OTC_ARTIFACT_DIR).
-    Falls back to repo-root `artifacts/` if no setting is available.
-    """
-    try:
-        from ... import database
-
-        return Path(database.settings.artifact_dir)
-    except Exception:  # pragma: no cover — defensive default
-        return Path(__file__).parent.parent.parent.parent.parent / "artifacts"
-
-
 def _orchestrator_prompt(allow_reply_options: bool = True) -> str:
     from .routing_table import inject_known_skills_table
 
@@ -66,11 +50,13 @@ def _build_backend() -> Any:
     from deepagents.backends.filesystem import FilesystemBackend
 
     from .cas_backend import ContentAddressedFilesystemBackend
+    from .fs_policy import build_scoped_artifacts_backend
 
     skills_fs = FilesystemBackend(root_dir=str(_SKILLS_FS_ROOT), virtual_mode=True)
-    artifacts_fs = FilesystemBackend(
-        root_dir=str(_artifacts_root()), virtual_mode=True
-    )
+    # Scoped, not plain: restricted subtrees refused, agent/thread-<N>/
+    # visible only to its own thread (see fs_policy.py for the run #133
+    # measurement that forced this).
+    artifacts_fs = build_scoped_artifacts_backend()
     large_tool_results = ContentAddressedFilesystemBackend()
     return CompositeBackend(
         default=StateBackend(),
@@ -85,7 +71,12 @@ def _build_backend() -> Any:
 def _filesystem_permissions() -> list[Any]:
     from deepagents.middleware.permissions import FilesystemPermission
 
+    from .fs_policy import restricted_artifact_permissions
+
     return [
+        # Restricted stores first — _check_fs_permission is first-match-wins,
+        # so these must precede the /artifacts/** read allow below.
+        *restricted_artifact_permissions(),
         FilesystemPermission(
             operations=["read"],
             paths=["/"],

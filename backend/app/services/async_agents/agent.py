@@ -29,15 +29,6 @@ _PROMPTS_DIR = Path(__file__).parent / "prompts"
 _SKILLS_FS_ROOT = SKILLS_ROOT
 
 
-def _artifacts_root() -> Path:
-    try:
-        from ... import database
-
-        return Path(database.settings.artifact_dir)
-    except Exception:  # pragma: no cover
-        return Path(__file__).parent.parent.parent.parent.parent / "artifacts"
-
-
 def _identity_prompt() -> str:
     return (_PROMPTS_DIR / "async_agent.md").read_text(encoding="utf-8")
 
@@ -50,11 +41,12 @@ def _build_backend() -> Any:
     from deepagents.backends.filesystem import FilesystemBackend
 
     from ..deep_agent.cas_backend import ContentAddressedFilesystemBackend
+    from ..deep_agent.fs_policy import build_scoped_artifacts_backend
 
     skills_fs = FilesystemBackend(root_dir=str(_SKILLS_FS_ROOT), virtual_mode=True)
-    artifacts_fs = FilesystemBackend(
-        root_dir=str(_artifacts_root()), virtual_mode=True
-    )
+    # Scoped, not plain: restricted subtrees refused, agent/thread-<N>/
+    # visible only to its own thread (see deep_agent/fs_policy.py).
+    artifacts_fs = build_scoped_artifacts_backend()
     large_tool_results = ContentAddressedFilesystemBackend()
     return CompositeBackend(
         default=StateBackend(),
@@ -70,8 +62,13 @@ def _filesystem_permissions(*, task_id: int | str) -> list[Any]:
     """Read-everywhere, write-only-to-per-task-scratch."""
     from deepagents.middleware.permissions import FilesystemPermission
 
+    from ..deep_agent.fs_policy import restricted_artifact_permissions
+
     scratch = scratch_dir_for_task(task_id).rstrip("/")
     return [
+        # Restricted stores first — first-match-wins, so these must precede
+        # the /artifacts/** read allow below.
+        *restricted_artifact_permissions(),
         FilesystemPermission(operations=["read"], paths=["/"], mode="allow"),
         FilesystemPermission(
             operations=["read", "write"],

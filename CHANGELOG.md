@@ -22,6 +22,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is available — falling back to an unscoped query would restore the leak. A read
   of a path owned by another session returns an explicit "belongs to another
   session" error rather than a bare not-found.
+- **The `/artifacts/` mount was a blanket-read superset of every other store.**
+  The CAS fix above was bypassable: the blob store lives at
+  `artifacts/artifact_blobs/` *inside* the `/artifacts/` mount, and the same
+  mount exposed `artifacts/arena/**` (every contestant's match transcripts — the
+  grade book) and every other thread's `artifacts/agent/thread-N/` workspace.
+  Measured on the run #133 re-run: one contestant read another's arena
+  transcript and a foreign thread's desk report (21 transcript-tree touches, 9
+  foreign-report touches across four threads); desk threads 1 and 3 exhibited
+  the blob bypass organically. Fixed desk-wide at the shared seam
+  (`deep_agent/fs_policy.py`), in two layers: static permission **denies** for
+  `arena/`, `artifact_blobs/` and `sandbox_sessions/` (placed before the
+  `/artifacts/**` allow — first-match-wins), and a `ScopedArtifactsBackend`
+  that resolves the calling thread per operation and refuses/filters foreign
+  `agent/thread-N/` paths across `read`/`ls`/`glob`/`grep`, failing closed when
+  identity is unresolvable. Both layers are registered in **both** backend
+  builders (orchestrator and async agent — the async stack keeps parallel
+  copies of the mount and permission list), pinned by `tests/test_fs_policy.py`.
+  A trace-DB audit of every desk thread found zero organic desk usage of the
+  removed channels (only dev smoke tests and the blob bypass itself), so no
+  desk capability is lost.
 
 ### Added
 - **Run #133 — the first vision board, published.** Four `vision`-tagged models
