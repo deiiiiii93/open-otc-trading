@@ -266,8 +266,22 @@ class ContentAddressedFilesystemBackend(BackendProtocol):
         limit: int = 2000,
     ) -> ReadResult:
         virtual_path = self._virtual_path(file_path)
-        artifact = self._latest_artifact(virtual_path)
+        workflow_id = self._scope_workflow_id()
+        if workflow_id is None:
+            return ReadResult(
+                error=(
+                    f"'{virtual_path}' is not readable without a workflow context"
+                )
+            )
+        artifact = self._latest_artifact(virtual_path, workflow_id)
         if artifact is None:
+            if self._exists_in_another_workflow(virtual_path, workflow_id):
+                return ReadResult(
+                    error=(
+                        f"'{virtual_path}' belongs to another session and is not "
+                        "readable from this one"
+                    )
+                )
             return self._legacy_state_read(virtual_path, offset=offset, limit=limit)
         blob_hash = str((artifact.payload or {}).get("blob_hash") or "")
         if not re.fullmatch(r"[0-9a-f]{64}", blob_hash):
@@ -290,11 +304,15 @@ class ContentAddressedFilesystemBackend(BackendProtocol):
         prefix = self._virtual_dir(path)
         entries: list[FileInfo] = []
         seen: set[str] = set()
+        workflow_id = self._scope_workflow_id()
+        if workflow_id is None:
+            return LsResult(entries=[])
         with database.SessionLocal() as session:
             rows = (
                 session.query(SessionArtifact)
                 .filter(
                     SessionArtifact.kind == "tool_result",
+                    SessionArtifact.workflow_id == workflow_id,
                     SessionArtifact.rendered_path.like(f"{prefix}%"),
                 )
                 .order_by(SessionArtifact.rendered_path)
@@ -374,12 +392,15 @@ class ContentAddressedFilesystemBackend(BackendProtocol):
             return self.root_dir / "__missing__"
         return self.root_dir / blob_hash[:2] / f"{blob_hash}.json"
 
-    def _latest_artifact(self, virtual_path: str) -> SessionArtifact | None:
+    def _latest_artifact(
+        self, virtual_path: str, workflow_id: int
+    ) -> SessionArtifact | None:
         with database.SessionLocal() as session:
             row = (
                 session.query(SessionArtifact)
                 .filter(
                     SessionArtifact.kind == "tool_result",
+                    SessionArtifact.workflow_id == workflow_id,
                     SessionArtifact.rendered_path == virtual_path,
                 )
                 .order_by(SessionArtifact.id.desc())
@@ -400,7 +421,10 @@ class ContentAddressedFilesystemBackend(BackendProtocol):
             if path in {"", "/"}
             else self._virtual_path(path)
         )
-        exact = self._latest_artifact(virtual_path)
+        workflow_id = self._scope_workflow_id()
+        if workflow_id is None:
+            return
+        exact = self._latest_artifact(virtual_path, workflow_id)
         if exact is not None:
             artifacts = [exact]
         else:
@@ -409,7 +433,7 @@ class ContentAddressedFilesystemBackend(BackendProtocol):
                 if path not in {"", "/"}
                 else f"{self.virtual_prefix}/"
             )
-            artifacts = self._latest_artifacts_under(prefix)
+            artifacts = self._latest_artifacts_under(prefix, workflow_id)
         for artifact in artifacts:
             rendered = artifact.rendered_path or ""
             backend_path = self._backend_path(rendered).lstrip("/")
@@ -421,12 +445,15 @@ class ContentAddressedFilesystemBackend(BackendProtocol):
                 continue
             yield rendered, blob_path.read_text(encoding="utf-8")
 
-    def _latest_artifacts_under(self, virtual_prefix: str) -> list[SessionArtifact]:
+    def _latest_artifacts_under(
+        self, virtual_prefix: str, workflow_id: int
+    ) -> list[SessionArtifact]:
         with database.SessionLocal() as session:
             rows = (
                 session.query(SessionArtifact)
                 .filter(
                     SessionArtifact.kind == "tool_result",
+                    SessionArtifact.workflow_id == workflow_id,
                     SessionArtifact.rendered_path.like(f"{virtual_prefix}%"),
                 )
                 .order_by(SessionArtifact.id.desc())
@@ -447,6 +474,46 @@ class ContentAddressedFilesystemBackend(BackendProtocol):
         if virtual_path.startswith(f"{self.virtual_prefix}/"):
             return "/" + virtual_path[len(self.virtual_prefix) :].lstrip("/")
         return virtual_path
+
+    def _scope_workflow_id(self) -> int | None:
+        """The workflow whose blobs this caller may read, or None.
+
+        Reads take no ``config`` (BackendProtocol.read/ls/grep have no such
+        parameter), so scope is recovered the same way a write recovers it: the
+        active graph config, then the desk execution ContextVar, then the
+        thread's workflow state. Inside a graph node ``thread_id`` is always
+        present, so this resolves for every real read.
+
+        Returning None DENIES the read. Falling back to an unscoped query is
+        what made ``/large_tool_results/`` a cross-session channel: it is
+        written per session (``capture_tool_result`` stamps workflow_id and
+        session_id) but was read globally, so one arena contestant could read
+        another's tool results and answer from them.
+        """
+        try:
+            return self._resolve_context(None).workflow_id
+        except Exception:
+            return None
+
+    def _exists_in_another_workflow(
+        self, virtual_path: str, workflow_id: int
+    ) -> bool:
+        """Whether this path exists but belongs to someone else.
+
+        Only used to make the refusal honest: an explicit "belongs to another
+        session" beats a bare not-found, which reads as a missing blob and
+        invites a retry loop.
+        """
+        with database.SessionLocal() as session:
+            return session.query(
+                session.query(SessionArtifact)
+                .filter(
+                    SessionArtifact.kind == "tool_result",
+                    SessionArtifact.rendered_path == virtual_path,
+                    SessionArtifact.workflow_id != workflow_id,
+                )
+                .exists()
+            ).scalar() is True
 
     def _resolve_context(
         self,

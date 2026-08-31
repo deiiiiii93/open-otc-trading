@@ -67,7 +67,17 @@ def test_cas_backend_writes_large_tool_result_to_blob_and_ledger(session, settin
     assert artifact.payload["size"] == len(content.encode("utf-8"))
     assert artifact.payload["tool_call_id"] == "tool-call-1"
 
-    read = backend.read("/tool-call-1.json")
+    # Reads are workflow-scoped, so the caller must be inside its own context --
+    # in production that is the graph config; here the ContextVar seam.
+    from app.services.deep_agent.cas_backend import desk_execution_context
+
+    with desk_execution_context(
+        {
+            "workflow_id": state.domain_workflow_id,
+            "session_id": state.orchestrator_session_id,
+        }
+    ):
+        read = backend.read("/tool-call-1.json")
     assert read.error is None
     assert read.file_data["content"] == content
 
@@ -97,7 +107,15 @@ def test_cas_backend_grep_searches_large_tool_result_blobs(session, settings):
     )
     assert write.error is None
 
-    result = backend.grep("Snowballs", path="/toolu_abc.json")
+    from app.services.deep_agent.cas_backend import desk_execution_context
+
+    with desk_execution_context(
+        {
+            "workflow_id": state.domain_workflow_id,
+            "session_id": state.orchestrator_session_id,
+        }
+    ):
+        result = backend.grep("Snowballs", path="/toolu_abc.json")
 
     assert result.error is None
     assert result.matches == [
@@ -282,3 +300,100 @@ def test_async_agent_backend_routes_large_tool_results_to_cas(settings):
 
     assert isinstance(routed, ContentAddressedFilesystemBackend)
     assert stripped == "/tool-call-1.json"
+
+
+def _cas_write(backend, thread_id, state, path, content):
+    return backend.write(
+        path,
+        content,
+        config={
+            "configurable": {
+                "thread_id": f"{thread_id}:task:1",
+                "workflow_id": state.domain_workflow_id,
+                "session_id": state.orchestrator_session_id,
+                "context_pack_id": state.context_pack_id,
+            }
+        },
+    )
+
+
+def test_cas_read_is_scoped_to_the_writing_workflow(session, settings):
+    """One session must not read another session's large tool result.
+
+    `/large_tool_results/` used to be written per session and read GLOBALLY:
+    `_latest_artifact`/`ls`/`_latest_artifacts_under` filtered only on `kind`
+    and `rendered_path`. On arena run #133 that let `gemini-3-7-flash` read
+    `glm-5-3-flash`'s parse result and record its answer, which biases a board by
+    POSITION IN THE FIELD. The workflow-scoped `list_artifacts`/`read_artifact`
+    tools were always scoped; this filesystem backend was an unscoped second door
+    to the same store.
+    """
+    from app.services.deep_agent.cas_backend import (
+        ContentAddressedFilesystemBackend,
+        desk_execution_context,
+    )
+
+    owner = AgentThread(title="cas-owner", character="trader")
+    intruder = AgentThread(title="cas-intruder", character="trader")
+    session.add_all([owner, intruder])
+    session.flush()
+    owner_state = ensure_thread_workflow_state(session, owner.id)
+    intruder_state = ensure_thread_workflow_state(session, intruder.id)
+    session.commit()
+
+    backend = ContentAddressedFilesystemBackend(root_dir=settings.artifact_dir / "blobs")
+    secret = '{"terms":{"strike":185.0,"initial_price":178.9}}'
+    assert _cas_write(backend, owner.id, owner_state, "/call_secret.json", secret).error is None
+
+    owner_ctx = {
+        "workflow_id": owner_state.domain_workflow_id,
+        "session_id": owner_state.orchestrator_session_id,
+    }
+    intruder_ctx = {
+        "workflow_id": intruder_state.domain_workflow_id,
+        "session_id": intruder_state.orchestrator_session_id,
+    }
+
+    # The owner still reads its own blob.
+    with desk_execution_context(owner_ctx):
+        read = backend.read("/call_secret.json")
+        assert read.error is None
+        assert read.file_data["content"] == secret
+        assert any(e["path"] == "/call_secret.json" for e in backend.ls("/").entries or [])
+        assert backend.grep("178.9", path="/").matches
+
+    # A different workflow sees nothing -- not by read, ls, glob or grep.
+    with desk_execution_context(intruder_ctx):
+        read = backend.read("/call_secret.json")
+        assert read.error is not None, "cross-session read must not return content"
+        assert read.file_data is None
+        assert not [e for e in (backend.ls("/").entries or [])
+                    if e["path"] == "/call_secret.json"]
+        assert not [m for m in (backend.glob("*secret*").matches or [])
+                    if m["path"] == "/call_secret.json"]
+        assert not backend.grep("178.9", path="/").matches
+
+
+def test_cas_read_without_resolvable_context_is_denied(session, settings):
+    """Fail CLOSED: no context means no scope, and no scope means no read.
+
+    Falling back to unscoped would restore exactly the leak this closes.
+    """
+    from app.services.deep_agent.cas_backend import (
+        ContentAddressedFilesystemBackend,
+    )
+
+    thread = AgentThread(title="cas-nocontext", character="trader")
+    session.add(thread)
+    session.flush()
+    state = ensure_thread_workflow_state(session, thread.id)
+    session.commit()
+
+    backend = ContentAddressedFilesystemBackend(root_dir=settings.artifact_dir / "blobs")
+    assert _cas_write(backend, thread.id, state, "/call_nc.json", '{"a":1}').error is None
+
+    read = backend.read("/call_nc.json")
+    assert read.error is not None
+    assert read.file_data is None
+    assert not (backend.ls("/").entries or [])
+    assert not (backend.grep("a", path="/").matches or [])

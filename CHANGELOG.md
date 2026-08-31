@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`/large_tool_results/` was written per session and read globally.**
+  `ContentAddressedFilesystemBackend`'s `read` / `ls` / `glob` / `grep` filtered
+  only on `kind` and `rendered_path` — no `workflow_id` predicate — while
+  `capture_tool_result` stamps both `workflow_id` and `session_id` on write. Any
+  agent could therefore read any other session's tool results, and `glob` listed
+  every session's tool-call ids. Measured on arena run #133, where both
+  `gemini-3-7-flash` trials read a `glm-5-3-flash` parse result and recorded its
+  extracted terms as their own answer; 15 further cross-store reads appear across
+  runs #129–#132. On a board this biases results **by position in the field**,
+  because a later contestant can read an earlier one's answers. All four read
+  surfaces now resolve the caller's workflow and **fail closed** when no context
+  is available — falling back to an unscoped query would restore the leak. A read
+  of a path owned by another session returns an explicit "belongs to another
+  session" error rather than a bare not-found.
+
 ### Added
 - **Run #133 — the first vision board, published.** Four `vision`-tagged models
   over `confirmation-desk-day`, two trials each, on the live desk database; the
