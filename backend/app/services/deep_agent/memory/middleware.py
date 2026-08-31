@@ -117,6 +117,8 @@ class MemoryMiddleware(AgentMiddleware):
         """
         if not self.config.enabled:
             return None
+        if self._configurable(config).get("memory_opt_out"):
+            return None  # arena turn: no desk memories in a contestant's prompt
         try:
             scopes = active_read_scopes(self._resolve_book(config))
             with memory_read_session(self._session_factory, self.config.read_timeout_ms) as s:
@@ -178,6 +180,8 @@ class MemoryMiddleware(AgentMiddleware):
         """
         if not self.config.enabled or self.queue is None:
             return None
+        if self._configurable(config).get("memory_opt_out"):
+            return None  # arena turn: no extraction from a contestant's session
         try:
             from langchain_core.messages import HumanMessage
             from .queue import QueueJob

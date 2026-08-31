@@ -42,6 +42,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A trace-DB audit of every desk thread found zero organic desk usage of the
   removed channels (only dev smoke tests and the blob bypass itself), so no
   desk capability is lost.
+- **Arena threads are excluded from the long-term memory layer, both ways.**
+  `MemoryMiddleware` injected desk memories into every arena contestant's
+  prompt, and arena sessions were eligible for extraction into desk memory —
+  the same cross-contamination class as the filesystem leaks, latent today
+  (all 5 stored facts are hand-seeded desk facts) but one saved memory quoting
+  a fixture truth value away from handing every future board the answer.
+  `memory_configurable(..., opt_out=True)` (stamped by both configurable
+  builds for `source='arena'` threads, pinned by an AST test) disables
+  injection and the correction fast-path; `MemoryWriteQueue.run_job` — the one
+  chokepoint all extraction paths funnel through — skips arena-thread runs and
+  marks them succeeded so re-sweeps never churn.
 
 ### Added
 - **Run #133 — the first vision board, published.** Four `vision`-tagged models

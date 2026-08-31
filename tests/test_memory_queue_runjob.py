@@ -117,3 +117,24 @@ def test_process_one_commits_and_uses_writer_busy_timeout(session):
     assert q.process_one() is True
     with database.SessionLocal() as s:
         assert s.get(MemoryExtractionRun, "session:11").status == "succeeded"
+
+
+def test_run_job_skips_arena_thread_and_marks_succeeded(session):
+    """The one chokepoint for extraction: sweep, session-close hook and the
+    correction fast-path all funnel through run_job, so the arena guard lives
+    here. Marked succeeded (not failed) so re-sweeps never churn on it."""
+    from app.models import AgentThread
+
+    with database.SessionLocal() as s:
+        s.add(AgentThread(id=901, title="[arena] match", source="arena"))
+        s.commit()
+    q = _queue()
+    spec = RunSpec(run_key=session_run_key(11), kind="session", session_id=11,
+                   thread_id=901, persona="trader", book_scope_id=None,
+                   trigger_message_id=None)
+    with database.SessionLocal() as s:
+        q.run_job(s, spec); s.commit()
+    with database.SessionLocal() as s:
+        assert s.query(MemoryEntry).count() == 0
+        assert s.get(MemoryExtractionRun, "session:11").status == "succeeded"
+    assert q.counters["skipped_arena"] == 1

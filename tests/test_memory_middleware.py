@@ -163,3 +163,38 @@ def test_enabled_false_no_enqueue(session):
     state = {"messages": [HumanMessage(content="No, actually that's wrong")]}
     mw.after_model(state, None, {"configurable": {"memory_session_id": 1, "memory_message_id": 7}})
     assert q.jobs == []
+
+
+def test_before_agent_opt_out_injects_nothing(session):
+    """Arena turns must not receive desk memories: a saved fact quoting a
+    fixture truth value would hand every future board the answer in the
+    prompt, invisibly to every gate (run #133 leak class)."""
+    cfg = MemoryConfig()
+    store = MemoryStore(cfg)
+    store.create(session, scope_type="user", scope_id="desk", content="books all trades in USD")
+    session.commit()
+    mw = MemoryMiddleware(config=cfg, store=store, queue=None,
+                          session_factory=lambda: database.SessionLocal())
+    cfg_call = {"configurable": {"memory_opt_out": True}}
+    assert mw.before_agent({}, None, cfg_call) is None
+
+
+def test_after_model_opt_out_enqueues_nothing(session):
+    cfg = MemoryConfig()
+
+    class _Queue:
+        def __init__(self):
+            self.jobs = []
+
+        def enqueue(self, job):
+            self.jobs.append(job)
+            return True
+
+    q = _Queue()
+    mw = MemoryMiddleware(config=cfg, store=MemoryStore(cfg), queue=q,
+                          session_factory=lambda: database.SessionLocal())
+    state = {"messages": [HumanMessage(content="No, actually we book in USD")]}
+    cfg_call = {"configurable": {"memory_opt_out": True, "memory_session_id": 3,
+                                 "memory_thread_id": 4, "memory_message_id": 5}}
+    mw.after_model(state, None, cfg_call)
+    assert q.jobs == []

@@ -106,11 +106,17 @@ class TaskExecutor:
         from .memory.config import get_memory_config
         from .memory.runtime import latest_user_message_id, memory_configurable
         if get_memory_config().enabled:
+            from app.models import AgentThread
+
+            thread_row = session.get(AgentThread, workflow.thread_id)
             configurable_extra.update(memory_configurable(
                 session_id=agent_session.id,
                 thread_id=workflow.thread_id,
                 persona=agent_session.persona,
                 message_id=latest_user_message_id(session, workflow.thread_id),
+                # Same arena opt-out as the direct path — BOTH configurable
+                # builds must stamp it (the extractor-selection lesson).
+                opt_out=(getattr(thread_row, "source", None) == "arena"),
             ))
         config = graph_run_config(
             self.settings,

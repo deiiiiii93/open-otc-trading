@@ -314,3 +314,41 @@ def test_meta_extractor_model_reflects_real_model(session):
         assert entry is not None
         assert entry.meta["extractor_model"] == actual_model_id
         assert entry.meta["extractor_model"] != cfg.extractor_model  # not "flash"
+
+
+def test_memory_configurable_opt_out_key_is_omitted_when_unset():
+    """Omitted-when-unset, same discipline as reasoning_effort: a fourth key
+    present on every turn would end prebuilt-orchestrator reuse."""
+    from app.services.deep_agent.memory.runtime import memory_configurable
+
+    cfg = memory_configurable(session_id=7, thread_id=3, persona="trader")
+    assert "memory_opt_out" not in cfg
+    cfg_out = memory_configurable(session_id=7, thread_id=3, persona="trader",
+                                  opt_out=True)
+    assert cfg_out["memory_opt_out"] is True
+
+
+def test_both_memory_configurable_call_sites_stamp_opt_out():
+    """Both configurable builds (direct path in agents.py, workflow-routed
+    path in executor.py) must pass opt_out — an unstamped path silently
+    injects desk memories into arena contestants with no error anywhere,
+    the same trap as the confirmation-extractor selection key."""
+    import ast
+    from pathlib import Path
+
+    sites = {
+        "backend/app/services/agents.py": 0,
+        "backend/app/services/deep_agent/executor.py": 0,
+    }
+    repo = Path(__file__).resolve().parents[1]
+    for rel in sites:
+        tree = ast.parse((repo / rel).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call)
+                    and getattr(node.func, "id", getattr(node.func, "attr", None))
+                    == "memory_configurable"):
+                assert any(kw.arg == "opt_out" for kw in node.keywords), (
+                    f"{rel}: memory_configurable call without opt_out"
+                )
+                sites[rel] += 1
+    assert all(count >= 1 for count in sites.values()), sites

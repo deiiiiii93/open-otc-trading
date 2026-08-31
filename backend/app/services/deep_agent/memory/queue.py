@@ -184,6 +184,18 @@ class MemoryWriteQueue:
         with self._lock:
             return len(self._high)
 
+    @staticmethod
+    def _is_arena_thread(session, thread_id) -> bool:
+        if thread_id is None:
+            return False
+        try:
+            from app.models import AgentThread
+
+            thread = session.get(AgentThread, thread_id)
+            return thread is not None and thread.source == "arena"
+        except Exception:  # noqa: BLE001 — fail-open: extraction proceeds
+            return False
+
     def run_job(self, session, spec: RunSpec) -> None:
         # enqueue_run returns False for a TERMINAL run (succeeded, or failed at
         # max_extract_attempts). Honor it: do not load a window, call the LLM,
@@ -194,6 +206,14 @@ class MemoryWriteQueue:
         if run is None or run.status == "succeeded":
             return
         cursor = run.last_extracted_message_id
+        if self._is_arena_thread(session, spec.thread_id):
+            # Arena sessions are contestants, not the desk: distilling their
+            # transcripts into desk memory would launder fixture values into
+            # every later board's prompt. Succeeded (not failed) so re-sweeps
+            # never churn on the run.
+            self.counters["skipped_arena"] += 1
+            self.runs.mark_succeeded(session, spec.run_key, cursor)
+            return
         try:
             window = self._window_loader(spec.session_id, cursor, self.config)
         except Exception as exc:  # noqa: BLE001 — any window-loader failure

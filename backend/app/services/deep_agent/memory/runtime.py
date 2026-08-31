@@ -153,12 +153,21 @@ def latest_user_message_id(session, thread_id) -> int | None:
     return int(row[0]) if row else None
 
 
-def memory_configurable(*, session_id, thread_id, persona, message_id=None) -> dict:
+def memory_configurable(*, session_id, thread_id, persona, message_id=None,
+                        opt_out: bool = False) -> dict:
     """The configurable keys MemoryMiddleware reads (book read-scope + correction
     fast-path). Merge into the graph invocation's configurable_extra. All ids are
-    DURABLE integers (AgentSession.id / AgentThread.id / AgentMessage.id)."""
+    DURABLE integers (AgentSession.id / AgentThread.id / AgentMessage.id).
+
+    ``opt_out=True`` (arena threads) disables injection and the correction
+    fast-path for the turn — a desk memory quoting a fixture value would hand
+    every contestant the answer in the prompt. Omitted-when-unset, same
+    discipline as ``reasoning_effort``: a fourth key present on every desk
+    turn would end prebuilt-orchestrator reuse."""
     cfg = {"memory_session_id": session_id, "memory_thread_id": thread_id,
            "memory_persona": persona}
     if isinstance(message_id, int):
         cfg["memory_message_id"] = message_id
+    if opt_out:
+        cfg["memory_opt_out"] = True
     return cfg

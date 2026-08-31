@@ -2036,6 +2036,10 @@ class AgentService:
                 thread_id=thread.id,
                 persona=getattr(agent_session, "persona", None),
                 message_id=latest_user_message_id(session, thread.id),
+                # Arena turns get no desk memories and no extraction: a saved
+                # fact quoting a fixture value would hand every contestant the
+                # answer in the prompt.
+                opt_out=(getattr(thread, "source", None) == "arena"),
             )
         config = graph_run_config(
             self.settings,
