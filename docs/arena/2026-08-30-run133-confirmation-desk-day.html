@@ -320,28 +320,76 @@ and perfectly split by model, identical on every one of their attempts:</p>
 <p>Stage 1 succeeds for all four (family, counterparty and reference
 <code>ARD-EQO-2026-04781</code> at confidence 0.99). <strong>Stage 2 — filling the term schema
 from the rendered page — returns an empty dict for two of them.</strong></p>
-<h3>The grounding check rewards assertion over honest abstention</h3>
-<p>Luna and gemini suffer the <em>identical</em> extraction failure, and score GRD 59 and
-84. The difference is not what they saw. It is what they did about seeing nothing.</p>
-<p><strong>Luna re-parsed the document, searched 26 tool calls deep, and then recorded
-<code>null</code></strong> with a status naming the reason: <em>"page 2 still cannot be read via the
-vision extraction path; no numeric values extracted"</em>, and in its second trial
-<em>"could not be recovered ... without guessing."</em></p>
-<p><strong>Gemini recorded 185 / 178.9.</strong> Those values appear in <strong>no tool result anywhere
-in either of its transcripts</strong> — only in its own <code>record_answer</code>. conf-08's page 2
-has a zero-character text layer and page 1 contains neither number; all three of
-its <code>run_python</code> attempts failed on missing modules; it made <strong>zero <code>read_file</code>
-calls</strong>; its greps of the arena directory return file paths, not matching lines;
-and the desk's five long-term-memory entries are unrelated June-dated facts. It
-asserted the correct values without accessible evidence, in both trials.</p>
-<p>So on this workflow the grounding axis <strong>penalises the contestant that honestly
-reported an unobtainable term and rewards the one that asserted an unverifiable
-number.</strong> That directly contradicts step 7, which is <em>designed</em> to reward exactly
-the behaviour luna showed — and luna scores 8/8 there. Remove this one cascade and
-luna is 9/10 on grounding, <strong>GRD 89</strong>, level with the leaders.</p>
-<p>It is also worth stating plainly which behaviour a trade-support desk wants. An
-operator who invents a strike price is the failure this entire module exists to
-prevent.</p>
+<h3>CORRECTION (2026-08-31): a cross-contestant leak, not a fabrication</h3>
+<p>An earlier revision of this report said <code>gemini-3-7-flash</code> "asserted the correct
+values without accessible evidence". <strong>That was wrong, and the error is
+instructive.</strong> The arena transcript records only the PARENT agent's tool calls;
+work done inside a <code>task()</code> subagent never appears in it. "No tool result
+contains the value" was therefore never valid evidence, and the trace database —
+which does record subagent spans — tells a different story.</p>
+<p>What actually happened, in both gemini trials:</p>
+<pre><code>tool  task        -&gt;  chain  general-purpose        (subagent, invisible to the transcript)
+tool  read_file       /large_tool_results/call_3c5fd773d1f2455993d7552e
+tool  record_answer   {&quot;strike&quot;: 185, &quot;initial_price&quot;: 178.9}
+</code></pre>
+<p><strong>That file is not gemini's. It belongs to <code>glm-5-3-flash</code></strong> — written by glm's
+own <code>parse_trade_confirmation</code> at 16:03, and read by gemini at 17:27 and again in
+its second trial. It contains conf-08's <code>strike: 185.0, initial_price: 178.9</code>.</p>
+<p><code>/large_tool_results/</code> is a <strong>content-addressed store that is written per session
+but read globally.</strong> <code>ContentAddressedFilesystemBackend._latest_artifact()</code> and
+<code>ls()</code> filter only on <code>kind == "tool_result"</code> and the rendered path — there is no
+<code>workflow_id</code>, <code>session_id</code> or thread predicate — while <code>capture_tool_result()</code>
+writes both ids. The workflow-scoped <code>list_artifacts</code> / <code>read_artifact</code> tools are
+the documented recovery route; the filesystem backend is an unscoped second door
+to the same store, and <code>glob</code> over it lists every other session's ids.</p>
+<p><strong>So a later contestant can read an earlier contestant's answers.</strong> That biases a
+board by POSITION IN THE FIELD — the same failure class as leftover fixture rows
+making each successive match's name resolution harder, and just as silent.</p>
+<p>Measured on this board:</p>
+<table>
+<thead>
+<tr>
+<th>Contestant</th>
+<th>own conf-08 extraction</th>
+<th>foreign <code>/large_tool_results/</code> reads</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>gpt-5-6-luna</code></td>
+<td><strong>0 of 5</strong> attempts</td>
+<td>none</td>
+</tr>
+<tr>
+<td><code>gemini-3-7-flash</code></td>
+<td><strong>0 of 6</strong> attempts</td>
+<td><strong>glm's, in both trials</strong></td>
+</tr>
+<tr>
+<td><code>glm-5-3-flash</code></td>
+<td>4 of 4</td>
+<td>one of luna's (carried no useful value)</td>
+</tr>
+<tr>
+<td><code>deepseek-v4-flash-vision</code></td>
+<td>2 of 2</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>gemini-3-7-flash</code>'s step-3 grounding passes are contaminated.</strong> Its own
+extraction of conf-08 never once succeeded; the values it recorded came from
+glm's data. Its GRD of 84 is therefore inflated, and on its own evidence it would
+have scored on those checks roughly where luna did. <code>glm-5-3-flash</code> and
+<code>deepseek-v4-flash-vision</code> are unaffected — their extractions succeeded on their
+own, every time. Fifteen further reads of this kind appear across runs #129-#132,
+so this is not unique to this board.</p>
+<p><strong>What this does NOT change:</strong> luna's GRD 59 is real and is not a sight deficit.
+The value <code>178.9</code> appears in <strong>zero spans</strong> of either luna thread — its extraction
+genuinely never produced it — and luna neither fabricated a number nor took one
+from a neighbour. It reported null and said why. Of the four contestants it is
+the only one that both failed the extraction and declined to obtain the answer by
+any other route.</p>
 <h3>One extraction failure, three of luna's four grounding misses</h3>
 <p>The cascade is why luna's GRD is an outlier rather than a gradient:</p>
 <ul>
@@ -417,10 +465,16 @@ easy workflow.</p>
   the agent, because this workflow routes that sub-call to the contestant.</li>
 <li><strong><code>gpt-5-6-luna</code>'s GRD 59 is not a sight deficit.</strong> It is one deterministic
   conf-08 extraction failure cascading into three checks, plus the field-wide
-  notional. <code>gemini-3-7-flash</code> hits the identical extraction failure and scores
-  84 by asserting values that appear in none of its tool results. Corrected
-  2026-08-31 after a post-publication root-cause pass; the scores are unchanged,
-  the interpretation is not.</li>
+  notional. <code>gemini-3-7-flash</code> fails the same extraction 0 of 6 times and scores
+  84 anyway, because it read the values out of <code>glm-5-3-flash</code>'s tool result
+  through an unscoped shared store.</li>
+<li><strong><code>gemini-3-7-flash</code>'s GRD is CONTAMINATED and its rank should not be trusted.</strong>
+  See the correction above. The leak is a harness defect, not misconduct by the
+  model — the store was reachable and the model used it — but the two step-3
+  grounding checks it passed are not evidence of its own reading. The other three
+  contestants are unaffected on this check. Scores here are left exactly as
+  measured rather than silently adjusted, in keeping with this arena's rule that
+  a flag is a caveat on a measurement and never a retroactive penalty.</li>
 <li><strong>EFF is uncalibrated</strong> (see above). Do not compare it across boards.</li>
 <li><strong>One arm was re-run.</strong> <code>glm-5-3-flash</code> lost a trial to a transport-level
   <code>RemoteProtocolError</code> — the peer closed the connection mid-body — and infra
@@ -441,6 +495,11 @@ easy workflow.</p>
 <li><strong>Reconsider the <code>get_confirmation_batch</code> checks.</strong> They are 1 of the 6
   surviving discriminators and the largest single source of objective variance,
   and what they reward is re-fetching held context.</li>
+<li><strong>Scope the CAS read path.</strong> <code>_latest_artifact()</code> and <code>ls()</code> must filter by
+  <code>workflow_id</code> / <code>session_id</code> the way <code>capture_tool_result()</code> already does when
+  it writes. Until they do, <code>/large_tool_results/</code> is a cross-session read
+  channel and every arena board is exposed to it — 15 such reads appear across
+  runs #129-#132 alone. Then re-run the contaminated arm.</li>
 <li><strong>Fix the step-3 grounding check, which currently inverts the desk's own
   standard.</strong> As written it scores a model for producing a number it cannot
   evidence and scores zero for reporting, correctly, that the term could not be

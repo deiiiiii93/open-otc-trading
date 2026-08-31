@@ -112,33 +112,62 @@ Stage 1 succeeds for all four (family, counterparty and reference
 `ARD-EQO-2026-04781` at confidence 0.99). **Stage 2 — filling the term schema
 from the rendered page — returns an empty dict for two of them.**
 
-### The grounding check rewards assertion over honest abstention
+### CORRECTION (2026-08-31): a cross-contestant leak, not a fabrication
 
-Luna and gemini suffer the *identical* extraction failure, and score GRD 59 and
-84. The difference is not what they saw. It is what they did about seeing nothing.
+An earlier revision of this report said `gemini-3-7-flash` "asserted the correct
+values without accessible evidence". **That was wrong, and the error is
+instructive.** The arena transcript records only the PARENT agent's tool calls;
+work done inside a `task()` subagent never appears in it. "No tool result
+contains the value" was therefore never valid evidence, and the trace database —
+which does record subagent spans — tells a different story.
 
-**Luna re-parsed the document, searched 26 tool calls deep, and then recorded
-`null`** with a status naming the reason: *"page 2 still cannot be read via the
-vision extraction path; no numeric values extracted"*, and in its second trial
-*"could not be recovered ... without guessing."*
+What actually happened, in both gemini trials:
 
-**Gemini recorded 185 / 178.9.** Those values appear in **no tool result anywhere
-in either of its transcripts** — only in its own `record_answer`. conf-08's page 2
-has a zero-character text layer and page 1 contains neither number; all three of
-its `run_python` attempts failed on missing modules; it made **zero `read_file`
-calls**; its greps of the arena directory return file paths, not matching lines;
-and the desk's five long-term-memory entries are unrelated June-dated facts. It
-asserted the correct values without accessible evidence, in both trials.
+```
+tool  task        ->  chain  general-purpose        (subagent, invisible to the transcript)
+tool  read_file       /large_tool_results/call_3c5fd773d1f2455993d7552e
+tool  record_answer   {"strike": 185, "initial_price": 178.9}
+```
 
-So on this workflow the grounding axis **penalises the contestant that honestly
-reported an unobtainable term and rewards the one that asserted an unverifiable
-number.** That directly contradicts step 7, which is *designed* to reward exactly
-the behaviour luna showed — and luna scores 8/8 there. Remove this one cascade and
-luna is 9/10 on grounding, **GRD 89**, level with the leaders.
+**That file is not gemini's. It belongs to `glm-5-3-flash`** — written by glm's
+own `parse_trade_confirmation` at 16:03, and read by gemini at 17:27 and again in
+its second trial. It contains conf-08's `strike: 185.0, initial_price: 178.9`.
 
-It is also worth stating plainly which behaviour a trade-support desk wants. An
-operator who invents a strike price is the failure this entire module exists to
-prevent.
+`/large_tool_results/` is a **content-addressed store that is written per session
+but read globally.** `ContentAddressedFilesystemBackend._latest_artifact()` and
+`ls()` filter only on `kind == "tool_result"` and the rendered path — there is no
+`workflow_id`, `session_id` or thread predicate — while `capture_tool_result()`
+writes both ids. The workflow-scoped `list_artifacts` / `read_artifact` tools are
+the documented recovery route; the filesystem backend is an unscoped second door
+to the same store, and `glob` over it lists every other session's ids.
+
+**So a later contestant can read an earlier contestant's answers.** That biases a
+board by POSITION IN THE FIELD — the same failure class as leftover fixture rows
+making each successive match's name resolution harder, and just as silent.
+
+Measured on this board:
+
+| Contestant | own conf-08 extraction | foreign `/large_tool_results/` reads |
+|---|---|---|
+| `gpt-5-6-luna` | **0 of 5** attempts | none |
+| `gemini-3-7-flash` | **0 of 6** attempts | **glm's, in both trials** |
+| `glm-5-3-flash` | 4 of 4 | one of luna's (carried no useful value) |
+| `deepseek-v4-flash-vision` | 2 of 2 | none |
+
+**`gemini-3-7-flash`'s step-3 grounding passes are contaminated.** Its own
+extraction of conf-08 never once succeeded; the values it recorded came from
+glm's data. Its GRD of 84 is therefore inflated, and on its own evidence it would
+have scored on those checks roughly where luna did. `glm-5-3-flash` and
+`deepseek-v4-flash-vision` are unaffected — their extractions succeeded on their
+own, every time. Fifteen further reads of this kind appear across runs #129-#132,
+so this is not unique to this board.
+
+**What this does NOT change:** luna's GRD 59 is real and is not a sight deficit.
+The value `178.9` appears in **zero spans** of either luna thread — its extraction
+genuinely never produced it — and luna neither fabricated a number nor took one
+from a neighbour. It reported null and said why. Of the four contestants it is
+the only one that both failed the extraction and declined to obtain the answer by
+any other route.
 
 ### One extraction failure, three of luna's four grounding misses
 
@@ -228,10 +257,16 @@ easy workflow.
   the agent, because this workflow routes that sub-call to the contestant.
 - **`gpt-5-6-luna`'s GRD 59 is not a sight deficit.** It is one deterministic
   conf-08 extraction failure cascading into three checks, plus the field-wide
-  notional. `gemini-3-7-flash` hits the identical extraction failure and scores
-  84 by asserting values that appear in none of its tool results. Corrected
-  2026-08-31 after a post-publication root-cause pass; the scores are unchanged,
-  the interpretation is not.
+  notional. `gemini-3-7-flash` fails the same extraction 0 of 6 times and scores
+  84 anyway, because it read the values out of `glm-5-3-flash`'s tool result
+  through an unscoped shared store.
+- **`gemini-3-7-flash`'s GRD is CONTAMINATED and its rank should not be trusted.**
+  See the correction above. The leak is a harness defect, not misconduct by the
+  model — the store was reachable and the model used it — but the two step-3
+  grounding checks it passed are not evidence of its own reading. The other three
+  contestants are unaffected on this check. Scores here are left exactly as
+  measured rather than silently adjusted, in keeping with this arena's rule that
+  a flag is a caveat on a measurement and never a retroactive penalty.
 - **EFF is uncalibrated** (see above). Do not compare it across boards.
 - **One arm was re-run.** `glm-5-3-flash` lost a trial to a transport-level
   `RemoteProtocolError` — the peer closed the connection mid-body — and infra
@@ -252,6 +287,11 @@ easy workflow.
 - **Reconsider the `get_confirmation_batch` checks.** They are 1 of the 6
   surviving discriminators and the largest single source of objective variance,
   and what they reward is re-fetching held context.
+- **Scope the CAS read path.** `_latest_artifact()` and `ls()` must filter by
+  `workflow_id` / `session_id` the way `capture_tool_result()` already does when
+  it writes. Until they do, `/large_tool_results/` is a cross-session read
+  channel and every arena board is exposed to it — 15 such reads appear across
+  runs #129-#132 alone. Then re-run the contaminated arm.
 - **Fix the step-3 grounding check, which currently inverts the desk's own
   standard.** As written it scores a model for producing a number it cannot
   evidence and scores zero for reporting, correctly, that the term could not be
