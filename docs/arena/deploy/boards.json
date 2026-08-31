@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-29T19:17:33.121692+00:00",
+  "generated_at": "2026-08-31T08:06:52.057714+00:00",
   "models": [
     {
       "boards_total": 5,
@@ -345,7 +345,7 @@
           "field": 4,
           "label": "Run #133",
           "ovr": 68,
-          "rank": 4,
+          "rank": 3,
           "workflow": "confirmation-desk-day"
         },
         {
@@ -828,61 +828,6 @@
     },
     {
       "boards_total": 5,
-      "con": 89,
-      "coverage": 1,
-      "effort": null,
-      "model": "gemini-3-7-flash",
-      "ovr": 75,
-      "ovr_max": 75,
-      "ovr_min": 75,
-      "per_board": [
-        {
-          "field": 4,
-          "label": "Run #133",
-          "ovr": 75,
-          "rank": 3,
-          "workflow": "confirmation-desk-day"
-        },
-        {
-          "field": 18,
-          "label": "Run #101",
-          "ovr": null,
-          "rank": null,
-          "workflow": "risk-limit-breach-day"
-        },
-        {
-          "field": 18,
-          "label": "Run #94",
-          "ovr": null,
-          "rank": null,
-          "workflow": "high-board-portfolio-review-day"
-        },
-        {
-          "field": 18,
-          "label": "Run #33",
-          "ovr": null,
-          "rank": null,
-          "workflow": "trader-rfq-booking-day"
-        },
-        {
-          "field": 17,
-          "label": "Run #20",
-          "ovr": null,
-          "rank": null,
-          "workflow": "risk-manager-control-day"
-        }
-      ],
-      "position": "Anchor",
-      "stats": {
-        "ADH": 99,
-        "EFF": 16,
-        "GRD": 84,
-        "PRC": 54,
-        "SYN": 99
-      }
-    },
-    {
-      "boards_total": 5,
       "con": 66,
       "coverage": 4,
       "effort": null,
@@ -1099,6 +1044,61 @@
         "GRD": 80,
         "PRC": 84,
         "SYN": 74
+      }
+    },
+    {
+      "boards_total": 5,
+      "con": 92,
+      "coverage": 1,
+      "effort": null,
+      "model": "gemini-3-7-flash",
+      "ovr": 67,
+      "ovr_max": 67,
+      "ovr_min": 67,
+      "per_board": [
+        {
+          "field": 4,
+          "label": "Run #133",
+          "ovr": 67,
+          "rank": 4,
+          "workflow": "confirmation-desk-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #101",
+          "ovr": null,
+          "rank": null,
+          "workflow": "risk-limit-breach-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #94",
+          "ovr": null,
+          "rank": null,
+          "workflow": "high-board-portfolio-review-day"
+        },
+        {
+          "field": 18,
+          "label": "Run #33",
+          "ovr": null,
+          "rank": null,
+          "workflow": "trader-rfq-booking-day"
+        },
+        {
+          "field": 17,
+          "label": "Run #20",
+          "ovr": null,
+          "rank": null,
+          "workflow": "risk-manager-control-day"
+        }
+      ],
+      "position": "Anchor",
+      "stats": {
+        "ADH": 99,
+        "EFF": 8,
+        "GRD": 59,
+        "PRC": 64,
+        "SYN": 99
       }
     },
     {
@@ -2093,7 +2093,7 @@
           "date": "2026-08-29",
           "label": "Run #133",
           "models": 4,
-          "note": "The first board on a vision workflow: four `vision`-tagged models, two trials each, on a harness repaired after a pilot run found three defects that each cost a real contestant real points. EFF is UNCALIBRATED here -- the workflow declares no par_tool_calls, so efficiency is scored against a theoretical minimum of 9 tool calls and every EFF lands in 10-24; par was deliberately not set because the calibration instrument is the median of FULLY-CORRECT trials and this board produced none. Read the ranking as consistency, procedure and volume rather than as a vision ranking: three of the four designed vision traps are saturated at 8/8 across the whole field, and 22 of 28 checks carry no ability signal. The glm-5-3-flash arm was re-run after a transport-level RemoteProtocolError cost it one of two trials; at full depth it places second rather than first.",
+          "note": "The first board on a vision workflow: four `vision`-tagged models, two trials each, on a harness repaired after a pilot run found three defects that each cost a real contestant real points. EFF is UNCALIBRATED here -- the workflow declares no par_tool_calls, so efficiency is scored against a theoretical minimum of 9 tool calls and every EFF lands in 10-24; par was deliberately not set because the calibration instrument is the median of FULLY-CORRECT trials and this board produced none. Read the ranking as consistency, procedure and volume rather than as a vision ranking: three of the four designed vision traps are saturated at 8/8 across the whole field, and 22 of 28 checks carry no ability signal. Two arms were re-run: glm-5-3-flash after a transport-level RemoteProtocolError cost it one of two trials (at full depth it places second rather than first), and gemini-3-7-flash RE-SCORED 2026-08-31 after two cross-contestant read channels in the harness were found and closed -- its first two measurements (objective 81.8, then 86.3) included values read from other contestants' stored results, and its clean run lands at 77.3 with GRD 59, identical to gpt-5-6-luna's, because both fail the same deterministic conf-08 extraction-pipeline wall. Neither GRD 59 is a sight deficit; this workflow's grounding axis partly measures the contestant-routed extraction sub-call. Full history in the report's correction and resolution sections.",
           "post": "2026-08-30-run133-confirmation-desk-day.md",
           "rows": [
             {
@@ -2139,36 +2139,36 @@
               "effort": null,
               "invalid": 0,
               "matches": 1,
-              "model": "gemini-3-7-flash",
-              "objective": 81.8,
-              "ovr": 75,
-              "position": "Anchor",
-              "rank": 3,
-              "stats": {
-                "ADH": 99,
-                "EFF": 16,
-                "GRD": 84,
-                "PRC": 54,
-                "SYN": 99
-              },
-              "trials": 2
-            },
-            {
-              "con": 89,
-              "effort": null,
-              "invalid": 0,
-              "matches": 1,
               "model": "gpt-5-6-luna",
               "objective": 84.8,
               "ovr": 68,
               "position": "Anchor",
-              "rank": 4,
+              "rank": 3,
               "stats": {
                 "ADH": 99,
                 "EFF": 10,
                 "GRD": 59,
                 "PRC": 94,
                 "SYN": 86
+              },
+              "trials": 2
+            },
+            {
+              "con": 92,
+              "effort": null,
+              "invalid": 0,
+              "matches": 1,
+              "model": "gemini-3-7-flash",
+              "objective": 77.3,
+              "ovr": 67,
+              "position": "Anchor",
+              "rank": 4,
+              "stats": {
+                "ADH": 99,
+                "EFF": 8,
+                "GRD": 59,
+                "PRC": 64,
+                "SYN": 99
               },
               "trials": 2
             }

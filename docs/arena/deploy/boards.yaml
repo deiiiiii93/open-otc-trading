@@ -35,15 +35,18 @@ boards:
       FULLY-CORRECT trials and this board produced none. Read the ranking as
       consistency, procedure and volume rather than as a vision ranking: three of
       the four designed vision traps are saturated at 8/8 across the whole field,
-      and 22 of 28 checks carry no ability signal. The glm-5-3-flash arm was
-      re-run after a transport-level RemoteProtocolError cost it one of two
-      trials; at full depth it places second rather than first. INTERPRETATION
-      CORRECTED 2026-08-31 (scores unchanged): gpt-5-6-luna's GRD 59 is not a
-      sight deficit but one deterministic conf-08 extraction failure cascading
-      into three checks -- gemini-3-7-flash hits the identical failure and scores
-      84 by asserting values that appear in none of its tool results, so this
-      workflow's grounding axis partly measures the contestant-routed extraction
-      sub-call, and rewards assertion over honest abstention.
+      and 22 of 28 checks carry no ability signal. Two arms were re-run:
+      glm-5-3-flash after a transport-level RemoteProtocolError cost it one of
+      two trials (at full depth it places second rather than first), and
+      gemini-3-7-flash RE-SCORED 2026-08-31 after two cross-contestant read
+      channels in the harness were found and closed -- its first two
+      measurements (objective 81.8, then 86.3) included values read from other
+      contestants' stored results, and its clean run lands at 77.3 with GRD 59,
+      identical to gpt-5-6-luna's, because both fail the same deterministic
+      conf-08 extraction-pipeline wall. Neither GRD 59 is a sight deficit; this
+      workflow's grounding axis partly measures the contestant-routed
+      extraction sub-call. Full history in the report's correction and
+      resolution sections.
 
   - run: 20
     workflow: risk-manager-control-day

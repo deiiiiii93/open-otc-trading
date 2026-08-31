@@ -6,6 +6,9 @@ board by when its run was created, so it files this one under the 29th
 **Contestants:** the four `vision`-tagged models, **2 trials each**, effort and
 output budget unpinned (32768 tokens, both wire protocols)
 **Run:** #133 on the live desk database · 8 clean trials · 0 invalid · 0 errors
+**Re-scored 2026-08-31:** the `gemini-3-7-flash` arm was re-run clean after two
+cross-contestant read channels were found and closed — see the correction and
+its resolution below. All other arms are as first measured.
 
 ---
 
@@ -15,8 +18,8 @@ output budget unpinned (32768 tokens, both wire protocols)
 |---|---|---|---|---|---|---|---|---|---|---|
 | 1 | **deepseek-v4-flash-vision** | 86.3 | **81** | **94** | 99 | 99 | 60 | **24** | **96** | 46, 30 |
 | 2 | glm-5-3-flash | **87.9** | 78 | 89 | 99 | 99 | 70 | 18 | 86 | 63, 37 |
-| 3 | gemini-3-7-flash | 81.8 | 75 | 84 | 99 | 99 | 54 | 16 | 89 | 47, 59 |
-| 4 | gpt-5-6-luna | 84.8 | 68 | 59 | 99 | 86 | **94** | 10 | 89 | 59, 74 |
+| 3 | gpt-5-6-luna | 84.8 | 68 | 59 | 99 | 86 | **94** | 10 | 89 | 59, 74 |
+| 4 | gemini-3-7-flash | 77.3 | 67 | 59 | 99 | 99 | 64 | 8 | 92 | 67, 115 |
 
 Zero truncation, zero malformed tool calls, zero step errors across all eight
 trials.
@@ -24,12 +27,12 @@ trials.
 > **The highest objective score does not win the board.** `glm-5-3-flash` posts
 > 87.9 to deepseek's 86.3 and still places second: grounding carries 0.32 of OVR
 > and deepseek reads better (94 vs 89), consistently (CON 96 vs 86), in fewer
-> calls. `gpt-5-6-luna` shows the same effect at the bottom — 84.8 objective,
-> third-highest in the field, but last on OVR because its GRD is 59. **Read that
-> 59 with the analysis below before reading it as weak sight:** three of its four
-> grounding misses are one extraction-pipeline failure that hits `gemini-3-7-flash`
-> identically, and the check that separates them rewards asserting an unverifiable
-> number over honestly reporting an unobtainable one.
+> calls. And at the bottom, **two contestants share a GRD of 59 for the same
+> deterministic reason**: `gpt-5-6-luna` and the re-run `gemini-3-7-flash` both
+> fail the same conf-08 extraction-pipeline wall, miss the same four checks, and
+> land on the identical grounding stat. Read that 59 with the analysis below
+> before reading it as weak sight — and note that gemini's earlier published 84
+> was measured while it could still read other contestants' answers.
 
 ## What this board was built to answer
 
@@ -65,11 +68,11 @@ appearing in several steps is counted once per occurrence.
 
 | Check | Rate | What it is |
 |---|---|---|
-| **Step 6 — ORCL notional 636,000** | **2/8** | **The hardest check. A substitution failure, not a reading one — see below.** |
-| `get_confirmation_batch` called | 24/48 | Procedure, not sight |
+| **Step 6 — ORCL notional 636,000** | **1/8** | **The hardest check. A substitution failure, not a reading one — see below.** |
+| `get_confirmation_batch` called | 26/48 | Procedure, not sight |
 | Step 8 — `skipped_count` = 1 | 4/8 | Booking restraint and counting |
-| Step 3 — AMD strike 185.0 | 6/8 | conf-08 page 2 — an **extraction-pipeline** failure, see below |
-| Step 3 — AMD initial_price 178.9 | 6/8 | Same document, same page, same cause |
+| Step 3 — AMD strike 185.0 | 4/8 | conf-08 page 2 — an **extraction-pipeline** failure, see below |
+| Step 3 — AMD initial_price 178.9 | 4/8 | Same document, same page, same cause |
 | Step 9 — artifact names ARD-EQO-2026-04901 | 7/8 | Carrying a reference into the summary |
 
 **22 of 28 checks are dead** (0/N or N/N). This tally is only valid because every
@@ -90,9 +93,12 @@ misread digits:
 
 | Answer | Who | What it actually is |
 |---|---|---|
-| **4,000** | luna x2, gemini t1, glm x2 | the **contract count**, reported as the notional |
+| **4,000** | luna x2, glm x2, gemini x2 | the **contract count**, reported as the notional |
 | **654,000** | deepseek t1 | **computed** 4,000 x 163.50 |
-| 636,000 | gemini t2, deepseek t2 | correct — the stated value |
+| 636,000 | deepseek t2 | correct — the stated value |
+
+(An earlier revision credited a contaminated gemini trial with the correct
+636,000; its clean re-run answers 4,000 in both trials, like most of the field.)
 
 Every contestant read the neighbouring strike 163.50 correctly, **8/8**. So the
 field can see that region of the page. What a faint value produces is not a wrong
@@ -145,22 +151,65 @@ to the same store, and `glob` over it lists every other session's ids.
 board by POSITION IN THE FIELD — the same failure class as leftover fixture rows
 making each successive match's name resolution harder, and just as silent.
 
-Measured on this board:
+Measured on this board (all six gemini trials — the original pair and both
+remediation re-runs — plus the rest of the field):
 
-| Contestant | own conf-08 extraction | foreign `/large_tool_results/` reads |
+| Contestant | own conf-08 extraction | foreign reads |
 |---|---|---|
 | `gpt-5-6-luna` | **0 of 5** attempts | none |
-| `gemini-3-7-flash` | **0 of 6** attempts | **glm's, in both trials** |
+| `gemini-3-7-flash` | **0 of 17** attempts, ever | **two channels — see resolution** |
 | `glm-5-3-flash` | 4 of 4 | one of luna's (carried no useful value) |
 | `deepseek-v4-flash-vision` | 2 of 2 | none |
 
-**`gemini-3-7-flash`'s step-3 grounding passes are contaminated.** Its own
+**`gemini-3-7-flash`'s step-3 grounding passes were contaminated.** Its own
 extraction of conf-08 never once succeeded; the values it recorded came from
-glm's data. Its GRD of 84 is therefore inflated, and on its own evidence it would
-have scored on those checks roughly where luna did. `glm-5-3-flash` and
-`deepseek-v4-flash-vision` are unaffected — their extractions succeeded on their
-own, every time. Fifteen further reads of this kind appear across runs #129-#132,
-so this is not unique to this board.
+glm's data. `glm-5-3-flash` and `deepseek-v4-flash-vision` are unaffected —
+their extractions succeeded on their own, every time. Fifteen further reads of
+this kind appear across runs #129-#132, so this is not unique to this board.
+
+### RESOLUTION (2026-08-31): two doors closed, the arm re-run clean
+
+Fixing this took two rounds, because the first fix's verification re-run
+found a second channel.
+
+**Round 1 — the CAS store.** All four read surfaces of
+`/large_tool_results/` (`read`/`ls`/`glob`/`grep`) now resolve the calling
+workflow and **fail closed** when they cannot; a path owned by another session
+returns an explicit "belongs to another session" error. Gemini's arm was
+deleted and re-run — and the re-run scored higher (86.3), not lower. The
+trace showed why: it had stopped using the CAS route and was now reading
+**`/artifacts/` directly**, where the same content was still reachable.
+
+**Round 2 — the `/artifacts/` mount.** The whole artifacts root was mounted
+with a blanket read allow, and that root *contains* the CAS blob store
+(`artifact_blobs/` — the round-1 fix was bypassable at the raw path), every
+contestant's arena transcripts (`arena/**` — the grade book), and every other
+thread's report workspace (`agent/thread-N/`). In the round-1 re-run gemini
+read another thread's desk summary and another contestant's arena transcript —
+21 transcript-tree touches and 9 foreign-report touches across its four
+contaminated threads; the other three contestants: zero, in every trial. The
+mount is now scoped desk-wide: the restricted subtrees are denied outright and
+`agent/thread-N/` is visible only to its own thread, enforced per operation in
+both agent stacks. (A third potential channel — the long-term memory layer
+injecting desk facts into contestants — was closed in the same pass; it was
+uniform across this field and carried no fixture values, so it does not caveat
+this board.)
+
+**Round 3 — the clean run, verified.** With both doors closed, gemini's arm
+ran two clean trials: **zero** attempts on foreign thread dirs, arena paths or
+blob paths (the enumeration filtering removes the breadcrumbs, so there was
+nothing foreign left to find); every `/large_tool_results/` read was of its
+own workflow's artifacts; its one creative move — `os.listdir` inside
+`run_python` — died on the sandbox's WebAssembly virtual filesystem, which has
+no host access. Its own conf-08 extraction still failed every attempt (0/17
+lifetime). The clean result: **objective 77.3, OVR 67, GRD 59** — against the
+81.8/75/84 first published and 86.3/76/79 in the half-fixed interim.
+
+**Nine objective points of gemini's published position were leaked
+information.** And the clean row is the strongest confirmation of this
+report's luna analysis: denied everyone else's answers, gemini lands on the
+IDENTICAL GRD 59, missing the identical four checks, for the identical
+upstream cause.
 
 **What this does NOT change:** luna's GRD 59 is real and is not a sight deficit.
 The value `178.9` appears in **zero spans** of either luna thread — its extraction
@@ -180,7 +229,10 @@ The cascade is why luna's GRD is an outlier rather than a gradient:
 - the fourth miss is the ORCL notional, which most of the field also misses
 
 Luna's identical GRD of 59 on the pilot board is consistent with the same
-deterministic cause.
+deterministic cause. And the strongest evidence arrived with the re-scored
+board: `gemini-3-7-flash`, run clean, lands on the **same GRD 59 with the same
+four misses** — the wall is the extraction pipeline, and luna was simply the
+only contestant honest enough to hit it in public the first time.
 
 ## The board's variance is procedural, not visual
 
@@ -219,8 +271,11 @@ pilot's single 33/33 run is one data point, not a distribution. So par stays
 unset rather than being invented from a sample that does not exist, and **EFF and
 OVR here are not comparable with calibrated boards.**
 
-For the record, the counted call distribution over 8 clean trials: median **53**,
-range **30–74**.
+For the record, the counted call distribution over 8 clean trials: median **61**,
+range **30–115**. The 115 is gemini's second clean trial — with the shared
+stores closed, its hunt for the conf-08 values it could not extract ran long
+before it settled on null, which is also why its clean EFF is the field's
+lowest.
 
 ## Why this board can be trusted
 
@@ -255,21 +310,24 @@ easy workflow.
   saturated, separation comes from consistency, procedure and volume — and the
   grounding axis itself is partly measuring the extraction sub-call rather than
   the agent, because this workflow routes that sub-call to the contestant.
-- **`gpt-5-6-luna`'s GRD 59 is not a sight deficit.** It is one deterministic
-  conf-08 extraction failure cascading into three checks, plus the field-wide
-  notional. `gemini-3-7-flash` fails the same extraction 0 of 6 times and scores
-  84 anyway, because it read the values out of `glm-5-3-flash`'s tool result
-  through an unscoped shared store.
-- **`gemini-3-7-flash`'s GRD is CONTAMINATED and its rank should not be trusted.**
-  See the correction above. The leak is a harness defect, not misconduct by the
-  model — the store was reachable and the model used it — but the two step-3
-  grounding checks it passed are not evidence of its own reading. The other three
-  contestants are unaffected on this check. Scores here are left exactly as
-  measured rather than silently adjusted, in keeping with this arena's rule that
-  a flag is a caveat on a measurement and never a retroactive penalty.
+- **The two GRD 59s are not a sight deficit.** For both `gpt-5-6-luna` and the
+  clean `gemini-3-7-flash`, it is one deterministic conf-08 extraction failure
+  cascading into three checks, plus the field-wide notional substitution.
+- **`gemini-3-7-flash`'s row is the RE-SCORED clean measurement.** Its first
+  two published rows (81.8, then 86.3) were contaminated through two
+  cross-contestant read channels, both now closed; the correction and
+  resolution above carry the full history. The clean re-run is verified at the
+  trace level: zero foreign reads, all recovery reads own-workflow, one failed
+  sandbox probe. The other three contestants were never exposed on this check.
 - **EFF is uncalibrated** (see above). Do not compare it across boards.
-- **One arm was re-run.** `glm-5-3-flash` lost a trial to a transport-level
-  `RemoteProtocolError` — the peer closed the connection mid-body — and infra
+- **Memory injection was uniform.** All eight trials ran with the desk's
+  long-term memory layer injecting the same five hand-seeded desk facts (none
+  containing fixture values) into every contestant. Arena threads are excluded
+  from memory injection and extraction going forward, so later boards run
+  without this constant.
+- **Two arms were re-run.** `gemini-3-7-flash` for the contamination above, and
+  `glm-5-3-flash`, which lost a trial to a transport-level
+  `RemoteProtocolError` — the peer closed the connection mid-body — where infra
   trials are skipped rather than retried, which would have left the headline
   contestant at half the field's depth with no CON. Its `scored` row was deleted
   and the arm re-run to two fresh trials via `--resume 133`, at the same effort
@@ -287,11 +345,14 @@ easy workflow.
 - **Reconsider the `get_confirmation_batch` checks.** They are 1 of the 6
   surviving discriminators and the largest single source of objective variance,
   and what they reward is re-fetching held context.
-- **Scope the CAS read path.** `_latest_artifact()` and `ls()` must filter by
-  `workflow_id` / `session_id` the way `capture_tool_result()` already does when
-  it writes. Until they do, `/large_tool_results/` is a cross-session read
-  channel and every arena board is exposed to it — 15 such reads appear across
-  runs #129-#132 alone. Then re-run the contaminated arm.
+- ~~Scope the CAS read path~~ **Done, twice over.** The CAS reads are
+  workflow-scoped and fail closed, and the `/artifacts/` mount that turned out
+  to be a second door to the same bytes is scoped desk-wide (restricted
+  subtrees denied, thread workspaces visible only to their own thread, in both
+  agent stacks). The contaminated arm was re-run clean and this board carries
+  the result. Boards #129-#132 retain their measured scores with the leak
+  documented; whether any of their 15 cross-store reads moved a score has not
+  been audited, and a reader of those boards should carry that caveat.
 - **Fix the step-3 grounding check, which currently inverts the desk's own
   standard.** As written it scores a model for producing a number it cannot
   evidence and scores zero for reporting, correctly, that the term could not be

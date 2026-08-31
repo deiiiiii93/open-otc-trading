@@ -1471,11 +1471,14 @@ summary.
 - **A grounding check on a contestant-routed sub-call measures the PIPELINE, not
   the agent.** Run #133's step 3 grades `answer_field_quotes` on values that come
   from the contestant's own extraction sub-call, so a contestant fails it without
-  ever misreading anything itself: conf-08 extraction succeeded 0/5 for luna, 0/6
-  for gemini, 4/4 for glm and 2/2 for deepseek. Ask whether a JUSTIFIED NULL is a
-  legal answer to a grounding check; luna recorded null with a reason and scored
-  zero, while step 7 three steps earlier is designed to reward exactly that
-  abstention (luna: 8/8). The manifest contradicts itself.
+  ever misreading anything itself: conf-08 extraction succeeded 0/5 for luna,
+  **0/17 lifetime** for gemini (six trials, contaminated and clean), 4/4 for glm
+  and 2/2 for deepseek. The re-scored board is the proof: run clean, gemini
+  lands on the IDENTICAL GRD 59 as luna, from the identical four misses. Ask
+  whether a JUSTIFIED NULL is a legal answer to a grounding check; luna recorded
+  null with a reason and scored zero, while step 7 three steps earlier is
+  designed to reward exactly that abstention (luna: 8/8). The manifest
+  contradicts itself.
 - **One failure can cascade across steps and read as a gradient.** Three of luna's
   four grounding misses are the SAME conf-08 extraction failure: two directly at
   step 3, then `skipped_count=2` at step 8 because the unextractable trade
@@ -1484,7 +1487,7 @@ summary.
   axis outlier, look for a single upstream cause before concluding it is weaker.**
 - **A "faint value" trap grades SUBSTITUTION, not OCR.** conf-11 states
   `notional 636,000.00` faintly beside `num_options: "4,000"` and strike 163.50.
-  The wrong answers are 4,000 (the contract count, 5 of 8 trials) and 654,000
+  The wrong answers are 4,000 (the contract count, 6 of 8 clean trials) and 654,000
   (computed 4,000 x 163.50) — never a misread digit — while the neighbouring
   strike scores 8/8. A degraded value makes models substitute a legible field, so
   such a check measures field discipline; write it knowing that.

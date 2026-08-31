@@ -55,13 +55,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   marks them succeeded so re-sweeps never churn.
 
 ### Added
-- **Run #133 — the first vision board, published.** Four `vision`-tagged models
-  over `confirmation-desk-day`, two trials each, on the live desk database; the
-  report, the ranked leaderboard section and the ability cards are live at
-  artena.one/arena. Three of the four designed vision traps are saturated at 8/8
-  across the whole field; 22 of 28 checks carry no ability signal. Par is
-  deliberately left uncalibrated, because the calibration instrument is the
-  median of FULLY-CORRECT trials and this board produced none.
+- **Run #133 — the first vision board, published (re-scored 2026-08-31).** Four
+  `vision`-tagged models over `confirmation-desk-day`, two trials each, on the
+  live desk database; the report, the ranked leaderboard section and the
+  ability cards are live at artena.one/arena. Three of the four designed vision
+  traps are saturated at 8/8 across the whole field; 22 of 28 checks carry no
+  ability signal. Par is deliberately left uncalibrated, because the
+  calibration instrument is the median of FULLY-CORRECT trials and this board
+  produced none. The `gemini-3-7-flash` arm was re-run clean after the two
+  cross-contestant read channels above were closed: its contaminated
+  measurements (81.8 published, 86.3 interim) fall to a clean **77.3 / OVR 67
+  / GRD 59** — identical GRD, from identical misses, to `gpt-5-6-luna`'s,
+  because both fail the same conf-08 extraction-pipeline wall (gemini's own
+  extraction of that document is 0-for-17 lifetime). Nine objective points of
+  its published position were leaked information; the clean run is verified at
+  the trace level (zero foreign reads; one `run_python` escape probe died on
+  the Pyodide sandbox's virtual filesystem).
 - **`confirmation-desk-day` — a sixth golden workflow, and the first that
   exercises vision.** Nine steps over the trade-confirmation pipeline: parse a
   batch of six counterparty documents (five of them image-only scans or mixed),
