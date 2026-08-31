@@ -1424,21 +1424,40 @@ summary.
 - **No agent tool repairs an extracted trade** (parse / get / book only), so a
   "fix the invalid trade" step is unreachable. Step 7 grades reporting the
   absence; step 8 grades not booking it.
+- **`/large_tool_results/` is written per SESSION and read GLOBALLY — one arena
+  contestant can read another's tool results.** `cas_backend.py`'s
+  `ContentAddressedFilesystemBackend._latest_artifact()` and `ls()` filter only on
+  `kind == "tool_result"` and `rendered_path`; there is **no `workflow_id` /
+  `session_id` predicate**, though `capture_tool_result()` writes both. The
+  workflow-scoped `list_artifacts` / `read_artifact` tools are the documented
+  recovery route — the filesystem backend is an unscoped SECOND DOOR to the same
+  store, and `glob` lists every other session's tool-call ids. Measured on run
+  #133: both `gemini-3-7-flash` trials read
+  `/large_tool_results/call_3c5fd773d1f2455993d7552e`, written by
+  `glm-5-3-flash` 84 minutes earlier, and recorded its conf-08 terms — its own
+  extraction of that document succeeded **0 of 6** times. 15 further such reads
+  appear across runs #129-#132. **A later contestant reading an earlier one's
+  answers biases a board BY POSITION IN THE FIELD**, the same class as leftover
+  fixture rows and equally silent. Fix the read path before trusting any grounding
+  check on a shared-store workflow.
+- **The arena transcript is BLIND to `task()` subagent tool calls, so "no tool
+  result contains X" is NOT evidence that the model lacked X.** It records only
+  the parent agent's calls (the documented deepagents limitation — a subagent runs
+  in its own checkpoint namespace). That blindness produced a WRONG published
+  conclusion on run #133: gemini looked like it had fabricated two exact values
+  when it had in fact `read_file`d them inside a `general-purpose` subagent. **The
+  trace DB is the authority** — query `trace_runs` by `thread_id` (indexed) and
+  restrict to `run_type in ('tool','llm')`, because chain spans wrap their
+  children and ordering chains by `start_time` makes the parent look like the
+  origin.
 - **A grounding check on a contestant-routed sub-call measures the PIPELINE, not
-  the agent — and this one rewards assertion over honest abstention.** Measured on
-  run #133. conf-08's stage-2 extraction returns `terms: {}` for `gpt-5-6-luna` and
-  `gemini-3-7-flash` on EVERY attempt, and the full terms for the other two: a
-  bimodal, deterministic split. Luna re-parsed, searched 26 calls deep, then
-  recorded `null` naming the reason; gemini recorded the correct `185 / 178.9`,
-  which appear in **no tool result anywhere in either of its transcripts** (page 2
-  has a zero-char text layer, its `run_python` attempts all failed, zero
-  `read_file` calls, greps return paths not lines, no memory entry holds them).
-  Same failure, GRD 59 vs 84. **The axis scored the model that fabricated and
-  zeroed the model that abstained** — while step 7, three steps earlier, is
-  designed to reward exactly the abstention it punishes here (luna: 8/8). Before
-  trusting a grounding check, ask whether a JUSTIFIED NULL is a legal answer to it;
-  if not, it grades willingness to guess. Same family as the Run #58 audit's
-  unwinnable checks, one layer in: the check is winnable, but only by guessing.
+  the agent.** Run #133's step 3 grades `answer_field_quotes` on values that come
+  from the contestant's own extraction sub-call, so a contestant fails it without
+  ever misreading anything itself: conf-08 extraction succeeded 0/5 for luna, 0/6
+  for gemini, 4/4 for glm and 2/2 for deepseek. Ask whether a JUSTIFIED NULL is a
+  legal answer to a grounding check; luna recorded null with a reason and scored
+  zero, while step 7 three steps earlier is designed to reward exactly that
+  abstention (luna: 8/8). The manifest contradicts itself.
 - **One failure can cascade across steps and read as a gradient.** Three of luna's
   four grounding misses are the SAME conf-08 extraction failure: two directly at
   step 3, then `skipped_count=2` at step 8 because the unextractable trade
