@@ -1424,6 +1424,33 @@ summary.
 - **No agent tool repairs an extracted trade** (parse / get / book only), so a
   "fix the invalid trade" step is unreachable. Step 7 grades reporting the
   absence; step 8 grades not booking it.
+- **A grounding check on a contestant-routed sub-call measures the PIPELINE, not
+  the agent — and this one rewards assertion over honest abstention.** Measured on
+  run #133. conf-08's stage-2 extraction returns `terms: {}` for `gpt-5-6-luna` and
+  `gemini-3-7-flash` on EVERY attempt, and the full terms for the other two: a
+  bimodal, deterministic split. Luna re-parsed, searched 26 calls deep, then
+  recorded `null` naming the reason; gemini recorded the correct `185 / 178.9`,
+  which appear in **no tool result anywhere in either of its transcripts** (page 2
+  has a zero-char text layer, its `run_python` attempts all failed, zero
+  `read_file` calls, greps return paths not lines, no memory entry holds them).
+  Same failure, GRD 59 vs 84. **The axis scored the model that fabricated and
+  zeroed the model that abstained** — while step 7, three steps earlier, is
+  designed to reward exactly the abstention it punishes here (luna: 8/8). Before
+  trusting a grounding check, ask whether a JUSTIFIED NULL is a legal answer to it;
+  if not, it grades willingness to guess. Same family as the Run #58 audit's
+  unwinnable checks, one layer in: the check is winnable, but only by guessing.
+- **One failure can cascade across steps and read as a gradient.** Three of luna's
+  four grounding misses are the SAME conf-08 extraction failure: two directly at
+  step 3, then `skipped_count=2` at step 8 because the unextractable trade
+  validates `invalid` and is correctly skipped. Remove it and luna is GRD 89,
+  level with the leaders, instead of an outlier at 59. **When one contestant is an
+  axis outlier, look for a single upstream cause before concluding it is weaker.**
+- **A "faint value" trap grades SUBSTITUTION, not OCR.** conf-11 states
+  `notional 636,000.00` faintly beside `num_options: "4,000"` and strike 163.50.
+  The wrong answers are 4,000 (the contract count, 5 of 8 trials) and 654,000
+  (computed 4,000 x 163.50) — never a misread digit — while the neighbouring
+  strike scores 8/8. A degraded value makes models substitute a legible field, so
+  such a check measures field discipline; write it knowing that.
 - **The ">20 min quiet trace clock = wedged" rule FALSE-POSITIVES here.** Step 1
   runs 12+ vision calls synchronously inside ONE tool body and they emit no
   agent-level spans, so a perfectly healthy run goes silent for ~20 minutes --

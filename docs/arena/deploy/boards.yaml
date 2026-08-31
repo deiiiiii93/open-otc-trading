@@ -37,7 +37,13 @@ boards:
       the four designed vision traps are saturated at 8/8 across the whole field,
       and 22 of 28 checks carry no ability signal. The glm-5-3-flash arm was
       re-run after a transport-level RemoteProtocolError cost it one of two
-      trials; at full depth it places second rather than first.
+      trials; at full depth it places second rather than first. INTERPRETATION
+      CORRECTED 2026-08-31 (scores unchanged): gpt-5-6-luna's GRD 59 is not a
+      sight deficit but one deterministic conf-08 extraction failure cascading
+      into three checks -- gemini-3-7-flash hits the identical failure and scores
+      84 by asserting values that appear in none of its tool results, so this
+      workflow's grounding axis partly measures the contestant-routed extraction
+      sub-call, and rewards assertion over honest abstention.
 
   - run: 20
     workflow: risk-manager-control-day

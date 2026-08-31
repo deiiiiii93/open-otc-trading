@@ -166,7 +166,11 @@ trials.</p>
 87.9 to deepseek's 86.3 and still places second: grounding carries 0.32 of OVR
 and deepseek reads better (94 vs 89), consistently (CON 96 vs 86), in fewer
 calls. <code>gpt-5-6-luna</code> shows the same effect at the bottom — 84.8 objective,
-third-highest in the field, but last on OVR because its GRD is 59.</p>
+third-highest in the field, but last on OVR because its GRD is 59. <strong>Read that
+59 with the analysis below before reading it as weak sight:</strong> three of its four
+grounding misses are one extraction-pipeline failure that hits <code>gemini-3-7-flash</code>
+identically, and the check that separates them rewards asserting an unverifiable
+number over honestly reporting an unobtainable one.</p>
 </blockquote>
 <h2>What this board was built to answer</h2>
 <p><strong>Can GLM 5.3 Flash — z.ai's first multimodal model — work a confirmations desk
@@ -233,7 +237,7 @@ appearing in several steps is counted once per occurrence.</p>
 <tr>
 <td><strong>Step 6 — ORCL notional 636,000</strong></td>
 <td><strong>2/8</strong></td>
-<td><strong>A low-contrast number beside a decoy. The hardest thing on the board.</strong></td>
+<td><strong>The hardest check. A substitution failure, not a reading one — see below.</strong></td>
 </tr>
 <tr>
 <td><code>get_confirmation_batch</code> called</td>
@@ -248,12 +252,12 @@ appearing in several steps is counted once per occurrence.</p>
 <tr>
 <td>Step 3 — AMD strike 185.0</td>
 <td>6/8</td>
-<td>Priced terms on <strong>page 2</strong> of a mixed text-and-scan document</td>
+<td>conf-08 page 2 — an <strong>extraction-pipeline</strong> failure, see below</td>
 </tr>
 <tr>
 <td>Step 3 — AMD initial_price 178.9</td>
 <td>6/8</td>
-<td>Same document, same page</td>
+<td>Same document, same page, same cause</td>
 </tr>
 <tr>
 <td>Step 9 — artifact names ARD-EQO-2026-04901</td>
@@ -267,17 +271,88 @@ arm on this board is healthy — a contaminated arm fails checks the healthy fie
 passes and manufactures apparent discrimination. On the pilot board, with one arm
 poisoned by an infra defect, the same instrument read 8 checks dead where the
 repaired board read 25.</p>
-<h3>The two things that are genuinely hard are not OCR</h3>
-<p><strong>A faint number is harder than a degraded page.</strong> The ORCL notional is rendered
-at low contrast next to a decoy value. It is not a scan, not handwriting, not a
-checkbox — it is ordinary printed text that is merely <em>faint</em>, and it is the only
-check on the board that most of the field misses. Two of eight trials read it:
-one gemini trial and one deepseek trial. <strong>No model read it in both of its
-trials.</strong> GLM and luna missed it 0/2 each.</p>
-<p><strong>A second page is harder than a second modality.</strong> conf-08 is the mixed
-text-and-scan document, and its priced terms are on page 2. The step's prompt says
-so explicitly. Both of its checks come in at 6/8 — and both misses are the same
-contestant, <code>gpt-5-6-luna</code>, in both trials.</p>
+<h3>Neither hard check is an OCR failure</h3>
+<p>Both were re-examined against the transcripts and the source documents after the
+board was first published. Neither is what it looked like.</p>
+<p><strong>The ORCL notional is a SUBSTITUTION failure.</strong> The document states a Notional
+Amount of 636,000.00 in a low-contrast column; the generator also gives it
+<code>num_options: "4,000"</code> and a strike of 163.50. The three wrong answers are not
+misread digits:</p>
+<table>
+<thead>
+<tr>
+<th>Answer</th>
+<th>Who</th>
+<th>What it actually is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>4,000</strong></td>
+<td>luna x2, gemini t1, glm x2</td>
+<td>the <strong>contract count</strong>, reported as the notional</td>
+</tr>
+<tr>
+<td><strong>654,000</strong></td>
+<td>deepseek t1</td>
+<td><strong>computed</strong> 4,000 x 163.50</td>
+</tr>
+<tr>
+<td>636,000</td>
+<td>gemini t2, deepseek t2</td>
+<td>correct — the stated value</td>
+</tr>
+</tbody>
+</table>
+<p>Every contestant read the neighbouring strike 163.50 correctly, <strong>8/8</strong>. So the
+field can see that region of the page. What a faint value produces is not a wrong
+digit but a <strong>substituted legible field</strong> — the same instinct step 7 traps, minus
+step 7's explicit permission to answer null.</p>
+<p><strong>The AMD page-2 checks measure the EXTRACTION PIPELINE, not the agent.</strong> Because
+this workflow routes the extraction sub-call to the contestant, a contestant can
+fail here without ever misreading anything itself. conf-08's outcome is bimodal
+and perfectly split by model, identical on every one of their attempts:</p>
+<ul>
+<li><code>gpt-5-6-luna</code> — <code>terms: {}</code>, always</li>
+<li><code>gemini-3-7-flash</code> — <code>terms: {}</code>, always</li>
+<li><code>glm-5-3-flash</code>, <code>deepseek-v4-flash-vision</code> — <code>185.0 / 178.9</code>, always</li>
+</ul>
+<p>Stage 1 succeeds for all four (family, counterparty and reference
+<code>ARD-EQO-2026-04781</code> at confidence 0.99). <strong>Stage 2 — filling the term schema
+from the rendered page — returns an empty dict for two of them.</strong></p>
+<h3>The grounding check rewards assertion over honest abstention</h3>
+<p>Luna and gemini suffer the <em>identical</em> extraction failure, and score GRD 59 and
+84. The difference is not what they saw. It is what they did about seeing nothing.</p>
+<p><strong>Luna re-parsed the document, searched 26 tool calls deep, and then recorded
+<code>null</code></strong> with a status naming the reason: <em>"page 2 still cannot be read via the
+vision extraction path; no numeric values extracted"</em>, and in its second trial
+<em>"could not be recovered ... without guessing."</em></p>
+<p><strong>Gemini recorded 185 / 178.9.</strong> Those values appear in <strong>no tool result anywhere
+in either of its transcripts</strong> — only in its own <code>record_answer</code>. conf-08's page 2
+has a zero-character text layer and page 1 contains neither number; all three of
+its <code>run_python</code> attempts failed on missing modules; it made <strong>zero <code>read_file</code>
+calls</strong>; its greps of the arena directory return file paths, not matching lines;
+and the desk's five long-term-memory entries are unrelated June-dated facts. It
+asserted the correct values without accessible evidence, in both trials.</p>
+<p>So on this workflow the grounding axis <strong>penalises the contestant that honestly
+reported an unobtainable term and rewards the one that asserted an unverifiable
+number.</strong> That directly contradicts step 7, which is <em>designed</em> to reward exactly
+the behaviour luna showed — and luna scores 8/8 there. Remove this one cascade and
+luna is 9/10 on grounding, <strong>GRD 89</strong>, level with the leaders.</p>
+<p>It is also worth stating plainly which behaviour a trade-support desk wants. An
+operator who invents a strike price is the failure this entire module exists to
+prevent.</p>
+<h3>One extraction failure, three of luna's four grounding misses</h3>
+<p>The cascade is why luna's GRD is an outlier rather than a gradient:</p>
+<ul>
+<li>conf-08 stage 2 returns <code>terms: {}</code> -&gt; step 3 <code>strike</code> and <code>initial_price</code>
+  recorded null (<strong>2 checks</strong>)</li>
+<li>conf-08 therefore validates <code>invalid</code> -&gt; at step 8 luna skips META <strong>and</strong> AMD,
+  so <code>skipped_count=2</code> rather than 1 (<strong>1 check</strong>)</li>
+<li>the fourth miss is the ORCL notional, which most of the field also misses</li>
+</ul>
+<p>Luna's identical GRD of 59 on the pilot board is consistent with the same
+deterministic cause.</p>
 <h2>The board's variance is procedural, not visual</h2>
 <p><code>glm-5-3-flash</code> scored <strong>97.0 and then 78.8</strong> — an 18-point spread on identical
 inputs, and the reason it dropped from first to second when its second trial
@@ -336,9 +411,16 @@ and this run is the evidence:</p>
 easy workflow.</p>
 <h2>Caveats a reader must carry</h2>
 <ul>
-<li><strong>Do not read this ordering as a vision ranking.</strong> Three of four contestants
-  score GRD 84–94 and 22 of 28 checks are saturated. Separation comes from
-  consistency, procedure and volume.</li>
+<li><strong>Do not read this ordering as a vision ranking.</strong> 22 of 28 checks are
+  saturated, separation comes from consistency, procedure and volume — and the
+  grounding axis itself is partly measuring the extraction sub-call rather than
+  the agent, because this workflow routes that sub-call to the contestant.</li>
+<li><strong><code>gpt-5-6-luna</code>'s GRD 59 is not a sight deficit.</strong> It is one deterministic
+  conf-08 extraction failure cascading into three checks, plus the field-wide
+  notional. <code>gemini-3-7-flash</code> hits the identical extraction failure and scores
+  84 by asserting values that appear in none of its tool results. Corrected
+  2026-08-31 after a post-publication root-cause pass; the scores are unchanged,
+  the interpretation is not.</li>
 <li><strong>EFF is uncalibrated</strong> (see above). Do not compare it across boards.</li>
 <li><strong>One arm was re-run.</strong> <code>glm-5-3-flash</code> lost a trial to a transport-level
   <code>RemoteProtocolError</code> — the peer closed the connection mid-body — and infra
@@ -359,10 +441,15 @@ easy workflow.</p>
 <li><strong>Reconsider the <code>get_confirmation_batch</code> checks.</strong> They are 1 of the 6
   surviving discriminators and the largest single source of objective variance,
   and what they reward is re-fetching held context.</li>
+<li><strong>Fix the step-3 grounding check, which currently inverts the desk's own
+  standard.</strong> As written it scores a model for producing a number it cannot
+  evidence and scores zero for reporting, correctly, that the term could not be
+  extracted. Either grade the extraction outcome explicitly, or word the step
+  like step 7 so that a justified null is a legal answer.</li>
 <li><strong>The workflow needs harder traps.</strong> Its designed vision difficulty is solved
-  by the whole field. The two things that still separate contestants — low
-  contrast and a second page — were incidental properties of the corpus, not
-  designed ones. That is where the next iteration should aim.</li>
+  by the whole field, and the two checks that still separate contestants turned
+  out to measure substitution and an extraction failure rather than sight. That
+  is where the next iteration should aim.</li>
 <li><strong>Do not calibrate par until a trial passes every check.</strong> The instrument is
   the median of fully-correct trials, and that set is currently empty.</li>
 </ul>
