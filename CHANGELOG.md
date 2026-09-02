@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`CLAUDE.md` split into per-subsystem guides.** The root file had grown to 2,424
+  lines / 168 KB and loaded in full at the start of every session whatever the task;
+  the arena and golden-workflow sections alone were 53% of it. Detail now lives in a
+  `CLAUDE.md` beside the code it governs — `config/`, `backend/app/golden_workflows/`,
+  `backend/app/routers/`, and seven directories under `backend/app/services/`
+  (deep_agent, arena, confirmations, settlement, reporting, domains, gateway) — so a
+  session loads only the trees it
+  touches. The root keeps orientation, an index of the guides, the cross-cutting rules
+  (tool registration, HITL levels, migration idempotency, test hermeticity) and the
+  environment traps, at 201 lines. **No guidance was removed** — every substantive line
+  of the old file is present in the new tree, verified line by line.
+
 ### Fixed
 - **`/large_tool_results/` was written per session and read globally.**
   `ContentAddressedFilesystemBackend`'s `read` / `ls` / `glob` / `grep` filtered
