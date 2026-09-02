@@ -74,6 +74,50 @@ while every OpenAI-protocol contestant ran at its provider default.
 
 ---
 
+## Gemini needs its thought signature echoed back, and ChatOpenAI drops it
+
+Gemini 3 routes return an ENCRYPTED thought signature in `reasoning_details`
+beside every tool call, and then **require it echoed back** on the assistant turn
+that carries that call. Without it the request is refused:
+
+```
+400 invalid_params — Function call is missing a thought_signature in functionCall
+parts. ... function call `default_api:task`, position 2.
+```
+
+`ChatOpenAI` cannot carry it, **by design**: its own docstring says it targets the
+official OpenAI spec and that non-standard fields "(e.g. `reasoning_content`,
+`reasoning_details`) are **not** extracted or preserved". So the signature is
+dropped on the way in and absent on the way out, and the **second** model turn of
+every tool loop dies. Turn one always succeeds, which is what makes the symptom so
+misleading — arena run #134 failed on all six workflows with a healthy model.
+
+- **It is not a model capability, and the tell is a control.** `gemini-3.7-flash`
+  — four published boards on this exact route — fails **identically** once the
+  field is stripped, and both models round-trip when it is preserved. So the
+  enforcement is what changed, not the client. Past boards keep their numbers;
+  they ran before enforcement. **A new gemini board could not have run at all.**
+- **`_ThoughtSignatureChat` patches THREE seams**, because the field is lost at
+  three places: `_create_chat_result` (non-streaming capture),
+  `_convert_chunk_to_generation_chunk` (streaming capture) and
+  `_get_request_payload` (re-attach). **The arena streams**, so the streaming
+  capture is the seam that actually carries a board — and the easiest to leave out
+  while a green non-streaming test says everything is fine.
+- **Self-gating, so it is safe for the whole field.** Only a route that SENT
+  `reasoning_details` gets it back, so a model that never emits one is untouched
+  and no request grows a field its upstream did not originate. Verified live
+  against `gpt-5.6-luna` and `deepseek-v4-pro`.
+- Same shape as `DeepSeekReasoningChat` — when a gateway model needs a field
+  LangChain does not model, that pair is the pattern.
+- **The first probe was NOT MEASURED and looked green.** Echoing the raw assistant
+  message back verbatim preserves the very field under test, so all six cases
+  returned 200. A probe must strip what the client strips, and carry a known-good
+  control, or it reports the harness's behaviour as the model's.
+- The **anthropic-protocol route round-trips it natively** (ZenMux maps it to a
+  `redacted_thinking` block) and was the tempting one-line fix. Rejected: changing
+  gemini's protocol would confound every comparison against its own published
+  boards.
+
 ## Reasoning effort: an unset knob is omitted, never sent as null
 
 Effort is chosen in the composer (**Effort**, left of Mode) and per arena run

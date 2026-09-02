@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Gemini 3.8 Flash (`google/gemini-3.8-flash:google-vertex`) as a contestant.**
+  Registered in both channel YAMLs, `CANDIDATE_MODELS` and the reasoning
+  snapshot. Its effort ladder was MEASURED, not inherited: `none`/`low`/`medium`/
+  `high`/`xhigh` accepted, `minimal` and `max` rejected with 4xx errors naming
+  `thinking_level` — identical to `gemini-3.7-flash`, which is what makes runs
+  #129 (`xhigh`) and #130 (`low`) usable as paired sibling baselines. The
+  `vision` tag was earned through the production extractor rather than copied
+  from a sibling: it read conf-04's image-only scan (0 text characters on the
+  page) and returned the strike and reference that exist only in the pixels,
+  matching the truth file exactly.
+
 ### Changed
 - **`CLAUDE.md` split into per-subsystem guides.** The root file had grown to 2,424
   lines / 168 KB and loaded in full at the start of every session whatever the task;
@@ -21,6 +33,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of the old file is present in the new tree, verified line by line.
 
 ### Fixed
+- **Gemini tool loops died on the second model turn: `ChatOpenAI` cannot carry a
+  thought signature.** Gemini 3 routes return an encrypted signature in
+  `reasoning_details` beside every tool call and then REQUIRE it echoed back on
+  the assistant turn carrying that call, rejecting the request otherwise with
+  `400 invalid_params — "Function call is missing a thought_signature in
+  functionCall parts"`. `ChatOpenAI` targets the official OpenAI spec and its own
+  docstring states that non-standard fields "(e.g. `reasoning_content`,
+  `reasoning_details`) are **not** extracted or preserved" — so the signature was
+  dropped on the way in and absent on the way out, and every arena arm died at
+  its second tool call. Run #134 failed on all six workflows this way before the
+  fix, and the first symptom read as a capability limit in the new model.
+  - **It is not a property of the new model.** Measured 2026-09-02, the control
+    `gemini-3.7-flash` — four published boards on this exact route — fails
+    identically once the field is stripped, and both models round-trip when it
+    is preserved. Enforcement is what is new, not the client's behaviour, so
+    every gemini contestant was affected and no past board's numbers move.
+  - `_ThoughtSignatureChat` (`deep_agent/model_factory.py`) patches **three**
+    seams, because the field is lost at three places: capture on the
+    non-streaming result, capture on each streaming delta, and re-attach when
+    the next request payload is built. The arena streams, so the streaming
+    capture is the one that actually carries a board and the easiest to omit.
+    Same shape as the existing `DeepSeekReasoningChat`, one vendor field along.
+  - **Self-gating by construction.** Only a route that SENT `reasoning_details`
+    can get it back, so a model that never emits one is untouched and no request
+    grows a field its upstream did not originate — verified live against
+    `gpt-5.6-luna` and `deepseek-v4-pro`, which both round-trip with nothing
+    captured.
+
 - **`/large_tool_results/` was written per session and read globally.**
   `ContentAddressedFilesystemBackend`'s `read` / `ls` / `glob` / `grep` filtered
   only on `kind` and `rendered_path` — no `workflow_id` predicate — while

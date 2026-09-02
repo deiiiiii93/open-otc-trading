@@ -314,6 +314,25 @@ channels:
         label: Gemini 3.7 Flash
         # `vision` probe-verified 2026-08-28.
         tags: [fast, tool-use, vision]
+      # Published 2026-09-01. Single upstream (`google-vertex`), so there is no
+      # provider lottery to pin against here -- the scrape of zenmux.ai returns
+      # exactly one `<id>:<provider>` pair.
+      #
+      # `vision` probe-verified 2026-09-02 through the PRODUCTION extractor: read
+      # conf-04's image-only scan (0 text characters on the page) and returned
+      # GOOGL / 205.00 / ARD-EQO-2026-04688, matching the truth file's
+      # `image_only` values exactly. Tagged on that measurement, never inherited
+      # from the 3.6/3.7 siblings.
+      #
+      # Effort ladder MEASURED 2026-09-02, identical to gemini-3.7-flash's:
+      # none/low/medium/high/xhigh accepted, `minimal` and `max` both rejected
+      # with 4xx errors naming thinking_level. That match is what makes runs #129
+      # (xhigh) and #130 (low) usable as paired sibling baselines.
+      - id: google/gemini-3.8-flash
+        provider: google-vertex
+        protocol: openai_chat
+        label: Gemini 3.8 Flash
+        tags: [fast, tool-use, vision]
 
       - id: openai/chat-latest
         provider: openai

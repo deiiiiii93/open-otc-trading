@@ -108,6 +108,45 @@ else:
         """Placeholder used when langchain-deepseek is not installed."""
 
 
+# --- Gemini thought signatures -------------------------------------------------
+#
+# Gemini 3 routes return an ENCRYPTED thought signature alongside every tool call
+# and then REQUIRE it echoed back on the assistant turn that carries the call:
+#
+#   400 invalid_params — "Function call is missing a thought_signature in
+#   functionCall parts. ... function call `default_api:task`, position 2."
+#
+# `ChatOpenAI` cannot carry it. Its own docstring is explicit: it targets the
+# official OpenAI spec and non-standard fields "(e.g. `reasoning_content`,
+# `reasoning_details`) are **not** extracted or preserved". So the signature is
+# dropped on the way in AND absent on the way out, and the SECOND model turn of
+# every tool loop 400s. That is a client defect, not a model capability limit —
+# measured 2026-09-02, `gemini-3.7-flash` fails identically once the field is
+# stripped, and it round-trips for both models when it is preserved.
+#
+# Self-gating by construction: only a route that SENT `reasoning_details` can get
+# it back, so a model that never emits one is untouched and no request grows a
+# field its upstream did not originate.
+_REASONING_DETAILS = "reasoning_details"
+
+
+def _stash_reasoning_details(message: Any, payload: Mapping[str, Any] | None) -> None:
+    """Copy a response's `reasoning_details` onto the message LangChain built."""
+    if not isinstance(payload, Mapping):
+        return
+    details = payload.get(_REASONING_DETAILS)
+    if details:
+        message.additional_kwargs[_REASONING_DETAILS] = details
+
+
+def _reasoning_details_of(message: AIMessage) -> Any:
+    for source in (message.additional_kwargs, message.response_metadata):
+        details = source.get(_REASONING_DETAILS)
+        if details:
+            return details
+    return None
+
+
 def default_agent_model_selection(registry: ChannelRegistry) -> dict[str, str]:
     return registry.default_selection()
 
@@ -489,6 +528,84 @@ def build_agent_model(
         )
 
     from langchain_openai import ChatOpenAI
+
+    class _ThoughtSignatureChat(ChatOpenAI):  # type: ignore[misc]
+        """ChatOpenAI that round-trips a route's own `reasoning_details`.
+
+        Three seams, because the field is dropped at three different places:
+        capture on the non-streaming result, capture on each streaming delta, and
+        re-attach when the next request payload is built. Missing any one of them
+        fixes nothing — the arena streams, so the streaming capture is the one
+        that matters in practice and the one easiest to leave out.
+
+        Mirrors `DeepSeekReasoningChat` above, one vendor field along.
+        """
+
+        def _create_chat_result(
+            self,
+            response: Any,
+            generation_info: dict | None = None,
+        ) -> Any:
+            result = super()._create_chat_result(response, generation_info)
+            raw = (
+                response
+                if isinstance(response, dict)
+                else response.model_dump()
+                if hasattr(response, "model_dump")
+                else {}
+            )
+            choices = raw.get("choices") or []
+            for generation, choice in zip(result.generations, choices, strict=False):
+                _stash_reasoning_details(generation.message, choice.get("message"))
+            return result
+
+        def _convert_chunk_to_generation_chunk(
+            self,
+            chunk: dict,
+            default_chunk_class: type,
+            base_generation_info: dict | None,
+        ) -> Any:
+            generation_chunk = super()._convert_chunk_to_generation_chunk(
+                chunk, default_chunk_class, base_generation_info
+            )
+            if generation_chunk is None:
+                return None
+            choices = (
+                chunk.get("choices")
+                or chunk.get("chunk", {}).get("choices")
+                or []
+            )
+            if choices:
+                # `reasoning_details` entries carry their own `index`, so
+                # langchain-core's list merge reassembles them across deltas
+                # instead of concatenating duplicates.
+                _stash_reasoning_details(generation_chunk.message, choices[0].get("delta"))
+            return generation_chunk
+
+        def _get_request_payload(
+            self,
+            input_: LanguageModelInput,
+            *,
+            stop: list[str] | None = None,
+            **kwargs: Any,
+        ) -> dict:
+            payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+            source_messages = [
+                message
+                for message in convert_to_messages(input_)
+                if isinstance(message, AIMessage)
+            ]
+            targets = [
+                message
+                for message in payload.get("messages", [])
+                if message.get("role") == "assistant"
+            ]
+            for source, target in zip(source_messages, targets, strict=False):
+                details = _reasoning_details_of(source)
+                if details:
+                    target[_REASONING_DETAILS] = details
+            return payload
+
     # stream_usage=True sends OpenAI's stream_options={"include_usage": true}, so
     # the final streamed chunk carries token usage. Without it, OpenAI-compatible
     # streaming (the arena's path) drops usage entirely and the tracer records
@@ -513,7 +630,7 @@ def build_agent_model(
     if openai_max_out:
         extra["max_tokens"] = int(openai_max_out)
 
-    return ChatOpenAI(
+    return _ThoughtSignatureChat(
         model=model_desc.wire_id,
         api_key=SecretStr(channel.api_key) if channel.api_key else SecretStr(""),
         base_url=channel.base_url,

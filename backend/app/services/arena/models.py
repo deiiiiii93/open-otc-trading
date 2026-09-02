@@ -248,6 +248,12 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         default_config=_DEFAULT_CONFIG,
     ),
     ArenaModel(
+        slug="gemini-3-8-flash",
+        zenmux_name="google/gemini-3.8-flash:google-vertex",
+        display_name="Gemini 3.8 Flash",
+        default_config=_DEFAULT_CONFIG,
+    ),
+    ArenaModel(
         slug="gpt-5-5-instant",
         zenmux_name="openai/chat-latest:openai",
         display_name="GPT-5.5 Instant",

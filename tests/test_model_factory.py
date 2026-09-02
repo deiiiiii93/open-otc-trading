@@ -720,3 +720,111 @@ def test_resolved_selection_refuses_a_nonsense_budget_rather_than_clamping():
                 "channel": "zenmux", "provider": "openai",
                 "model": "openai/gpt-5.4", "max_output_tokens": bad,
             })
+
+
+# --- Gemini thought signatures -------------------------------------------------
+#
+# Gemini 3 routes require the encrypted thought signature that came with a tool
+# call to be echoed back on the assistant turn carrying it, or the request is
+# rejected 400 "Function call is missing a thought_signature in functionCall
+# parts". `ChatOpenAI` documents that it does not preserve `reasoning_details`,
+# so without the wrapper the SECOND model turn of every tool loop dies -- which
+# is how run #134 failed on all six arms while the model itself was healthy.
+
+_DETAILS = [{"type": "reasoning.encrypted", "data": "AY89a1", "id": "r1",
+             "format": "google-vertex", "index": 0}]
+
+
+def _openai_protocol_model():
+    return build_agent_model(
+        _registry(),
+        selection={"channel": "zenmux", "provider": "openai", "model": "openai/gpt-5.4"},
+    )
+
+
+def test_openai_wrapper_replays_reasoning_details_after_tool_call():
+    payload = _openai_protocol_model()._get_request_payload(  # type: ignore[attr-defined]
+        [
+            HumanMessage(content="Read the positions file."),
+            AIMessage(
+                content="",
+                additional_kwargs={"reasoning_details": _DETAILS},
+                tool_calls=[{"id": "call_1", "name": "read_file",
+                             "args": {"path": "/artifacts/p.csv"}, "type": "tool_call"}],
+            ),
+            ToolMessage(content="date,symbol", tool_call_id="call_1"),
+        ]
+    )
+
+    assistant = payload["messages"][1]
+    assert assistant["role"] == "assistant"
+    assert assistant["reasoning_details"] == _DETAILS
+    assert assistant["tool_calls"][0]["id"] == "call_1"
+
+
+def test_openai_wrapper_leaves_messages_alone_when_route_sent_no_details():
+    """Self-gating: a route that never emits the field must not grow one.
+
+    This is what keeps the wrapper safe for every non-Gemini OpenAI-protocol
+    contestant -- verified live 2026-09-02 against gpt-5.6-luna and
+    deepseek-v4-pro, which round-trip with nothing captured.
+    """
+    payload = _openai_protocol_model()._get_request_payload(  # type: ignore[attr-defined]
+        [
+            HumanMessage(content="Read the positions file."),
+            AIMessage(
+                content="",
+                tool_calls=[{"id": "call_1", "name": "read_file",
+                             "args": {"path": "/artifacts/p.csv"}, "type": "tool_call"}],
+            ),
+            ToolMessage(content="date,symbol", tool_call_id="call_1"),
+        ]
+    )
+
+    assert "reasoning_details" not in payload["messages"][1]
+
+
+def test_openai_wrapper_captures_reasoning_details_from_response():
+    model = _openai_protocol_model()
+    result = model._create_chat_result(  # type: ignore[attr-defined]
+        {
+            "id": "cmpl-1",
+            "created": 1,
+            "model": "openai/gpt-5.4",
+            "object": "chat.completion",
+            "choices": [{
+                "index": 0,
+                "finish_reason": "tool_calls",
+                "message": {"role": "assistant", "content": "",
+                            "reasoning_details": _DETAILS},
+            }],
+        }
+    )
+
+    assert result.generations[0].message.additional_kwargs["reasoning_details"] == _DETAILS
+
+
+def test_openai_wrapper_captures_reasoning_details_from_stream_delta():
+    """The arena STREAMS, so this is the seam that actually carries a board."""
+    from langchain_core.messages import AIMessageChunk
+
+    model = _openai_protocol_model()
+    chunk = model._convert_chunk_to_generation_chunk(  # type: ignore[attr-defined]
+        {
+            "id": "cmpl-1",
+            "created": 1,
+            "model": "openai/gpt-5.4",
+            "object": "chat.completion.chunk",
+            "choices": [{
+                "index": 0,
+                "finish_reason": None,
+                "delta": {"role": "assistant", "content": "",
+                          "reasoning_details": _DETAILS},
+            }],
+        },
+        AIMessageChunk,
+        None,
+    )
+
+    assert chunk is not None
+    assert chunk.message.additional_kwargs["reasoning_details"] == _DETAILS

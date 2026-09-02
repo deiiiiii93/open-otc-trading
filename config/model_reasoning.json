@@ -1289,8 +1289,21 @@
         "toggle": false,
         "source": "measured",
         "measured_at": "2026-08-28"
+      },
+      "google/gemini-3.8-flash": {
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
+        "reasoning": true,
+        "toggle": false,
+        "source": "measured",
+        "measured_at": "2026-09-02"
       }
     }
   },
-  "probed_at": "2026-08-28"
+  "probed_at": "2026-09-02"
 }
