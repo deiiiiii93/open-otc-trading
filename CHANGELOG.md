@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Report: why Gemini 3.8 Flash loses to 3.7** —
+  `docs/arena/2026-09-03-run134-gemini38-flash.md`, published to the arena blog.
+  Traces the 84% call-count increase to its source in the transcripts: **filesystem
+  search is 55% of the entire increase** (grep 64.5 vs 14.5 calls per trial, `ls` 22.5
+  vs zero), at an identical hit rate (78% vs 79% returning content) and an identical
+  repeat rate. It is not retries (3.8 errors *less*) and not subagent fan-out (1.5 vs
+  1.4 dispatches) — the same search behaviour, five times as much of it, so the deficit
+  is in stopping rather than searching.
+  Includes the control that sizes our own confound: the 3.7 baseline predates the
+  thought-signature fix, so **run #135** re-ran 3.7 *with* the fix on
+  `ops-settlement-day`. The fix is **not inert** — it moves 3.7 from 45.5 calls to 55 —
+  but it accounts for only **21% of the gap** against 79% for the model, with the
+  transcript and trace-harvest instruments agreeing to the point. The ranking survives
+  the correction: stripped of the harness component 3.8 is still 2.5× par.
+
 - **Run #134 published as cards on `/arena/models.html`.** Gemini 3.8 Flash across
   all six golden workflows at `xhigh`, cards only (one model has no field to rank
   within). OVR 79 — GRD 91, ADH 97, SYN 99, PRC 95, **EFF 4**, CON 89. The finding

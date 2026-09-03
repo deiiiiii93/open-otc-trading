@@ -80,6 +80,7 @@ boards:
 provisional:
   - run: 134
     label: "Run #134 — Gemini 3.8 Flash, the first board after the thought-signature fix"
+    post: 2026-09-03-run134-gemini38-flash.md
     note: >-
       Gemini 3.8 Flash across all SIX golden workflows at xhigh, published as
       cards only: one model has no field, so a rank of #1 of 1 would measure

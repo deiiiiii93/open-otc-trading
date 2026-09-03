@@ -5,6 +5,19 @@
 # assets, publish.  A missing blurb FAILS THE BUILD by design — never let a
 # generated first paragraph ship as editorial copy.
 
+- file: 2026-09-03-run134-gemini38-flash.md
+  date: 2026-09-03
+  tags: [research]
+  run: "Run #134"
+  chips: ["1 model", "6 workflows", "11 trials"]
+  title: "The newer Gemini is more accurate, and it loses on where it stops"
+  blurb: >
+    Gemini 3.8 Flash wins four of five workflows on correctness and finishes behind the
+    model it replaces. The extra spend is not retries or fan-out but five times as much
+    filesystem searching, at the same hit rate, in the same places -- and a control run
+    says one fifth of it was a change we made to the harness, not the model.
+  publish: true
+
 - file: 2026-08-30-run133-confirmation-desk-day.md
   date: 2026-08-30
   tags: [board]
