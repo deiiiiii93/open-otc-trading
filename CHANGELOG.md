@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Run #134 published as cards on `/arena/models.html`.** Gemini 3.8 Flash across
+  all six golden workflows at `xhigh`, cards only (one model has no field to rank
+  within). OVR 79 — GRD 91, ADH 97, SYN 99, PRC 95, **EFF 4**, CON 89. The finding
+  is correctness bought at a price that outweighs it: against the
+  `gemini-3.7-flash` arm of run #129 at the same effort on the five shared
+  workflows it is 2.8 objective points better (97.1 vs 94.3) for 84% more tool
+  calls (96 vs 52), so EFF collapses 31 → 4 and mean OVR lands 80.6 vs 83.0 —
+  *behind* its predecessor while being the more accurate model. confirmation-desk-day
+  carries one trial rather than two; the second was lost to a ZenMux 402 and
+  recorded `invalid`/`infra_blank`, never scored.
+
 - **Gemini 3.8 Flash (`google/gemini-3.8-flash:google-vertex`) as a contestant.**
   Registered in both channel YAMLs, `CANDIDATE_MODELS` and the reasoning
   snapshot. Its effort ladder was MEASURED, not inherited: `none`/`low`/`medium`/

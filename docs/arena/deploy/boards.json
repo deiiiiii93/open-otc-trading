@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-31T08:06:52.057714+00:00",
+  "generated_at": "2026-09-03T08:53:16.431435+00:00",
   "models": [
     {
       "boards_total": 5,
@@ -1158,6 +1158,61 @@
     }
   ],
   "provisional": [
+    {
+      "cards": [
+        {
+          "con": 89,
+          "coverage": 6,
+          "effort": "xhigh",
+          "model": "gemini-3-8-flash",
+          "ovr": 79,
+          "ovr_max": 84,
+          "ovr_min": 71,
+          "per_workflow": [
+            {
+              "ovr": 84,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 83,
+              "workflow": "ops-settlement-day"
+            },
+            {
+              "ovr": 83,
+              "workflow": "risk-manager-control-day"
+            },
+            {
+              "ovr": 81,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 72,
+              "workflow": "high-board-portfolio-review-day"
+            },
+            {
+              "ovr": 71,
+              "workflow": "confirmation-desk-day"
+            }
+          ],
+          "position": "Playmaker",
+          "stats": {
+            "ADH": 97,
+            "EFF": 4,
+            "GRD": 91,
+            "PRC": 95,
+            "SYN": 99
+          },
+          "trials": null,
+          "workflows_total": 6
+        }
+      ],
+      "date": "2026-09-02",
+      "label": "Run #134 \u2014 Gemini 3.8 Flash, the first board after the thought-signature fix",
+      "models": 1,
+      "note": "Gemini 3.8 Flash across all SIX golden workflows at xhigh, published as cards only: one model has no field, so a rank of #1 of 1 would measure nothing, and six workflows cannot be folded into a single leaderboard row. Two trials per cell EXCEPT confirmation-desk-day, which carries ONE \u2014 its second trial was lost to a ZenMux 402 quota exhaustion and recorded invalid/infra_blank rather than scored, so that workflow's CON is not measured rather than perfect. Zero truncation and zero malformed tool calls across all six arms, measured rather than assumed. This is the FIRST board to run after the Gemini thought-signature fix. Gemini 3 routes return an encrypted signature beside every tool call and require it echoed back on the assistant turn carrying that call; ChatOpenAI does not preserve that field by design, so the second model turn of every tool loop was refused with a 400 and this run initially failed on all six workflows. The control is what settles the reading: gemini-3.7-flash, which has four published boards on this same route, fails identically once the field is stripped. So the enforcement is new, not the model, and no earlier board's numbers move. The finding is correctness bought at a price that outweighs it. Against the gemini-3.7-flash arm of run #129 \u2014 same route, same xhigh effort, the five workflows they share \u2014 3.8 is 2.8 objective points BETTER (97.1 against 94.3, ahead on four of the five, with a perfect 100.0 on two workflows). It spends 84% MORE tool calls to get there (96 against 52), and EFF collapses from 31 to 4. The efficiency loss more than eats the correctness gain: mean OVR over those same five workflows is 80.6 against 3.7's 83.0, so the newer model finishes 2.4 points BEHIND its predecessor while being the more accurate of the two. EFF is 0 on four of the six workflows, and the vision workflow alone took 490 tool calls. Read the per-workflow EFF before reading any mean here.",
+      "post": null,
+      "run": 134
+    },
     {
       "cards": [
         {
