@@ -260,3 +260,62 @@ def test_verify_live_checks_the_model_cards_page_the_same_way(served):
     failures = pub.verify_live(base, [POST], security_headers=(),
                                model_anchors=anchors)
     assert any("models.html" in f and "ops-settlement-day" in f for f in failures)
+
+
+ROSTER = (
+    '<section class="wf" id="ranked"><table class="roster"><tbody>'
+    '<tr><td class="model"><a href="models/gpt-5-6-terra.html">gpt-5-6-terra</a>'
+    "</td></tr>"
+    '<tr><td class="model"><a href="models/grok-4-6.html">grok-4-6</a></td></tr>'
+    "</tbody></table></section>"
+)
+
+
+def test_verify_live_requires_every_model_page_the_roster_links(served):
+    """The roster's whole job is routing to the per-model pages, so a roster
+    whose links 404 is worse than no roster. Read from the BUILT page, like the
+    workflow anchors, so the check verifies what was uploaded."""
+    base, root = served
+    _good_site(root)
+    root.joinpath("models.html").write_text(ROSTER)
+    root.joinpath("models").mkdir()
+    root.joinpath("models", "gpt-5-6-terra.html").write_text("<h1>gpt-5-6-terra</h1>")
+
+    assert pub.model_pages(ROSTER) == [
+        "models/gpt-5-6-terra.html", "models/grok-4-6.html"
+    ]
+
+    failures = pub.verify_live(base, [POST], security_headers=(),
+                               model_pages=pub.model_pages(ROSTER))
+    assert any("models/grok-4-6.html" in f for f in failures)
+    assert not any("gpt-5-6-terra" in f for f in failures)
+
+
+def test_a_served_model_page_must_carry_its_own_model_id(served):
+    """A 200 proves nothing under the SPA catch-all — the same reason the post
+    check compares titles rather than status codes."""
+    base, root = served
+    _good_site(root)
+    root.joinpath("models.html").write_text(ROSTER)
+    root.joinpath("models").mkdir()
+    for name in ("gpt-5-6-terra", "grok-4-6"):
+        root.joinpath("models", f"{name}.html").write_text("<h1>somebody else</h1>")
+
+    failures = pub.verify_live(base, [POST], security_headers=(),
+                               model_pages=pub.model_pages(ROSTER))
+    assert any("gpt-5-6-terra" in f for f in failures)
+
+
+def test_verify_live_probes_an_absent_path_inside_the_models_directory(served):
+    """The flat probe proves the alias answers instead of the SPA at the top
+    level. Model pages live a level down, and `try_files $uri $uri/ =404`
+    resolves a nested path by a different branch — so the control has to be run
+    at that depth too, not inferred from the shallow one."""
+    base, root = served
+    _good_site(root)
+    root.joinpath("models").mkdir()
+    root.joinpath("models", pub.ABSENT_PROBE).write_text("<h1>the SPA answered</h1>")
+
+    failures = pub.verify_live(base, [POST], security_headers=())
+
+    assert any(f"models/{pub.ABSENT_PROBE}" in f for f in failures)

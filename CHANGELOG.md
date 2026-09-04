@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`/arena/models.html` is now a roster plus one page per model.** It was a
+  single page carrying 118 ability cards — 131KB, roughly 8,000px of boxes — and
+  its bottom two-thirds restated per board what `/arena/leaderboard.html`
+  already publishes as compact tables, so a reader following one model had to
+  scroll five separate sections to assemble its story. The page is now a
+  scannable table of one row per published card (model, OVR, all six stats,
+  archetype, spread and coverage), 37KB, each row linking `models/<id>.html`.
+  That per-model page carries the model's whole story: its consolidated card,
+  every board measurement it averages in ONE comparable grid captioned by
+  workflow and run, and every provisional arm it has been measured at. Runs
+  #129 and #130 are the two halves of one effort A/B and now sit side by side
+  instead of a screen apart.
+  - The roster is ordered by OVR and **deliberately never numbered** — those
+    means span different sets of boards, so a place in that list would be the
+    cross-workflow ranking the leaderboard exists to refuse. Every row carries
+    its spread and coverage for the same reason: a 93 over three boards is not
+    the same claim as a 90 over four.
+  - `site_builder.model_index()` is the single enumeration behind both the
+    roster's links and the build loop that writes the pages, so a row cannot
+    offer a page nobody wrote.
+  - Model pages live in a subdirectory on purpose: `stats.classify()` buckets a
+    nested `.html` as an asset rather than a page view, so 27 new URLs cannot
+    inflate the published readership totals.
+  - A provisional-only model keeps its "All workflows" heading and states that
+    it has never contested a board, rather than dropping the section.
+- **Three `boards.yaml` notes referred to another card as "above" or "below".**
+  True only on the old single page; a card now appears on its own page and on
+  nobody else's. They name the run instead.
+
+### Fixed
+- **`verify_live`'s model-cards check would have gone dark.** It scrapes
+  `<section class="wf" id=…>` anchors and treats an empty list as "page not
+  built, valid site", so against a roster it would have passed while checking
+  nothing. Replaced with `model_pages()`, which reads the `models/*.html` hrefs
+  out of the BUILT roster and requires each to be served and to name its own
+  model. The absent-path probe now runs at both depths, because
+  `try_files $uri $uri/ =404` resolves a nested path by a different branch.
+- `.con` had no rule in `theme.css` at all — the leaderboard emitted the cell
+  and the stylesheet never claimed it.
+
 ### Added
 - **Correction to the run #134 report: the over-execution is mostly an EFFORT
   setting, not the model.** Runs #136/#137 added the effort arm the report itself

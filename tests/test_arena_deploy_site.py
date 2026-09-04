@@ -387,12 +387,13 @@ def models_snapshot(*workflows, models=(CAREER,)):
     return {**snapshot(*workflows), "models": list(models)}
 
 
-def test_models_page_has_a_consolidated_section_and_one_per_workflow():
+def test_the_roster_carries_no_workflow_axis_because_that_is_the_leaderboards():
+    """Board-major detail — who placed where in a given field — belongs to
+    /arena/leaderboard.html, which publishes it as compact tables. Restating it
+    here as 75 more boxes is what made the single page unreadable."""
     html = sb.render_models(models_snapshot(FLAGSHIP, UNMEASURED), THEME)
-    assert "All workflows" in html
-    assert 'id="risk-manager-control-day"' in html
-    # The consolidated view comes first: it is the page's headline claim.
-    assert html.index("All workflows") < html.index('id="risk-manager-control-day"')
+    assert 'id="ranked"' in html
+    assert 'id="risk-manager-control-day"' not in html
 
 
 def test_a_consolidated_card_publishes_the_spread_beside_the_mean():
@@ -403,28 +404,26 @@ def test_a_consolidated_card_publishes_the_spread_beside_the_mean():
 
 def test_a_consolidated_card_states_coverage_and_marks_an_uncontested_board():
     """A short list would let the reader assume the model simply ranked low."""
-    html = sb.render_models(models_snapshot(FLAGSHIP), THEME)
+    snap = models_snapshot(FLAGSHIP)
+    html = sb.render_model_page(sb.model_index(snap)[0], snap, THEME)
     assert "1 of 2 boards" in html
     card = html[html.index('class="mcard"'):]
     assert "Run #20" in card and "&mdash;" in card
 
 
 def test_a_per_workflow_card_shows_that_board_rank_not_a_career_average():
-    html = sb.render_models(models_snapshot(FLAGSHIP), THEME)
-    board = html[html.index('id="risk-manager-control-day"'):]
+    snap = models_snapshot(FLAGSHIP, models=(TERRA_CAREER,))
+    html = sb.render_model_page(sb.model_index(snap)[0], snap, THEME)
+    board = html[html.index('id="boards"'):]
     assert 'class="mcard-rank">#1<' in board
     assert ">86<" in board          # terra's OVR on this board, not its career mean
 
 
 def test_model_cards_show_the_effort_arm():
-    arms = {**CAREER, "model": "gpt-5-6-luna", "effort": "low"}
-    html = sb.render_models(models_snapshot(FLAGSHIP, models=(arms,)), THEME)
+    arm = {**CAREER, "model": "gpt-5-6-luna", "effort": "low"}
+    snap = models_snapshot(FLAGSHIP, models=(arm,))
+    html = sb.render_model_page(sb.model_index(snap)[0], snap, THEME)
     assert 'class="effort">low<' in html
-
-
-def test_a_workflow_with_no_board_still_says_so_on_the_cards_page():
-    html = sb.render_models(models_snapshot(FLAGSHIP, UNMEASURED), THEME)
-    assert "No board has been run" in html
 
 
 def test_the_masthead_links_the_cards_page_only_when_one_was_built():
@@ -436,9 +435,14 @@ def test_the_masthead_links_the_cards_page_only_when_one_was_built():
 def test_card_footnotes_join_with_a_separator_entity_not_an_escaped_one():
     """escape() over the joined string yields &amp;middot;, which renders as
     literal '&middot;' text — and uppercased by the stylesheet at that."""
-    html = sb.render_models(models_snapshot(FLAGSHIP), THEME)
-    assert "&amp;middot;" not in html
-    assert "obj 89.8 &middot; 2 trials" in html
+    snap = _with_provisional(FLAGSHIP)
+    assert "&amp;middot;" not in sb.render_models(snap, THEME)
+    for entry in sb.model_index(snap):
+        assert "&amp;middot;" not in sb.render_model_page(entry, snap, THEME)
+    # ...and the separator still has to reach the page as a separator.
+    terra = models_snapshot(FLAGSHIP, models=(TERRA_CAREER,))
+    page = sb.render_model_page(sb.model_index(terra)[0], terra, THEME)
+    assert "obj 89.8 &middot; 2 trials" in page
 
 
 # --------------------------------------------------------------------------
@@ -653,16 +657,20 @@ def _with_provisional(*workflows):
 
 
 def test_a_provisional_run_renders_its_card_with_the_run_and_the_note():
-    html = sb.render_models(_with_provisional(FLAGSHIP), THEME)
-    assert "gemini-3-7-flash" in html
-    assert "Run #113" in html
-    assert PROVISIONAL["note"] in html
+    snap = _with_provisional(FLAGSHIP)
+    roster = sb.render_models(snap, THEME)
+    assert "gemini-3-7-flash" in roster and "Run #113" in roster
+    # The caveat that makes an unranked card readable needs room, so it rides
+    # the model page rather than a roster cell.
+    page = sb.render_model_page(sb.model_index(snap)[1], snap, THEME)
+    assert PROVISIONAL["note"] in page
 
 
 def test_a_provisional_card_carries_no_rank_anywhere():
     """A one-model run has no field, so #1 of 1 measures nothing. Rank is absent
     by construction here, not blanked with an em dash after the fact."""
-    html = sb.render_models(_with_provisional(FLAGSHIP), THEME)
+    snap = _with_provisional(FLAGSHIP)
+    html = sb.render_model_page(sb.model_index(snap)[1], snap, THEME)
     section = html.split('id="provisional"', 1)[1].split("</section>", 1)[0]
     assert 'class="place"' not in section
     assert 'class="mcard-rank"' not in section
@@ -674,18 +682,22 @@ def test_a_provisional_card_carries_no_rank_anywhere():
 
 def test_a_provisional_card_states_its_trial_depth_and_coverage():
     """CON is an em dash here; without the trial count a reader cannot tell
-    whether that means unmeasured or perfectly consistent."""
-    html = sb.render_models(_with_provisional(FLAGSHIP), THEME)
+    whether that means unmeasured or perfectly consistent. True of the roster
+    row and of the card it indexes, so both carry the depth."""
+    snap = _with_provisional(FLAGSHIP)
+    roster = sb.render_models(snap, THEME)
+    assert "1 trial" in roster and "5 workflows" in roster
+    html = sb.render_model_page(sb.model_index(snap)[1], snap, THEME)
     section = html.split('id="provisional"', 1)[1].split("</section>", 1)[0]
     assert "1 trial" in section
     assert "5 workflows" in section
     assert "&mdash;" in section          # CON, not measured
 
 
-def test_the_provisional_section_sits_after_the_consolidated_grid():
+def test_the_provisional_section_sits_after_the_ranked_one():
+    """Ranked cards are the page's headline claim; unranked ones qualify it."""
     html = sb.render_models(_with_provisional(FLAGSHIP), THEME)
-    assert html.index("All workflows") < html.index('id="provisional"')
-    assert html.index('id="provisional"') < html.index('id="risk-manager-control-day"')
+    assert html.index('id="ranked"') < html.index('id="provisional"')
 
 
 def test_a_snapshot_with_no_provisional_runs_renders_no_such_section():
@@ -708,9 +720,10 @@ def test_a_provisional_run_links_its_report_when_published():
     report, so the reader needs a route to it."""
     entry = {**PROVISIONAL, "post": BOARD.file}
     snap = {**models_snapshot(FLAGSHIP), "provisional": [entry]}
-    section = sb.render_models(snap, THEME, POSTS).split(
-        'id="provisional"', 1)[1].split("</section>", 1)[0]
-    assert f'href="./{BOARD.html_name}"' in section and ">report<" in section
+    page = sb.render_model_page(sb.model_index(snap)[1], snap, THEME, POSTS)
+    section = page.split('id="provisional"', 1)[1].split("</section>", 1)[0]
+    # `../` because a model page sits one level down. `./` would 404.
+    assert f'href="../{BOARD.html_name}"' in section and ">report<" in section
 
 
 def test_a_provisional_report_link_is_omitted_when_the_post_is_unpublished():
@@ -719,3 +732,204 @@ def test_a_provisional_report_link_is_omitted_when_the_post_is_unpublished():
     entry = {**PROVISIONAL, "post": "2020-01-01-nope.md"}
     snap = {**models_snapshot(FLAGSHIP), "provisional": [entry]}
     assert "2020-01-01-nope" not in sb.render_models(snap, THEME, POSTS)
+    for e in sb.model_index(snap):
+        assert "2020-01-01-nope" not in sb.render_model_page(e, snap, THEME, POSTS)
+
+
+# --------------------------------------------------------------------------
+# Per-model pages: the roster indexes them, and one enumeration feeds both
+# --------------------------------------------------------------------------
+
+def test_model_index_lists_each_model_once_ranked_before_provisional_only():
+    """ONE definition of which models exist, shared by the roster and the build
+    loop. Two independent enumerations is how a roster links a page nobody wrote."""
+    index = sb.model_index(_with_provisional(FLAGSHIP))
+    assert [e["model"] for e in index] == ["gemini-3-6-flash", "gemini-3-7-flash"]
+    assert index[0]["card"] is CAREER and index[0]["arms"] == []
+    assert index[1]["card"] is None
+    assert [a["card"]["model"] for a in index[1]["arms"]] == ["gemini-3-7-flash"]
+
+
+TERRA_CAREER = {**CAREER, "model": "gpt-5-6-terra"}
+
+
+def test_a_model_page_leads_with_its_consolidated_card_then_its_board_cards():
+    snap = models_snapshot(FLAGSHIP, models=(TERRA_CAREER,))
+    html = sb.render_model_page(sb.model_index(snap)[0], snap, THEME)
+    assert "gpt-5-6-terra" in html
+    assert "All workflows" in html
+    assert html.index("All workflows") < html.index('id="boards"')
+    # The page is one model's story: the rest of the field belongs to the board,
+    # which /arena/leaderboard.html already publishes in full.
+    assert "gpt-5-6-luna" not in html
+
+
+def test_a_model_page_links_up_one_level_because_it_sits_in_a_subdirectory():
+    """models/<id>.html is one level down. A ./index.html in its masthead would
+    resolve to models/index.html and 404 on every model page at once."""
+    snap = models_snapshot(FLAGSHIP, models=(TERRA_CAREER,))
+    html = sb.render_model_page(sb.model_index(snap)[0], snap, THEME)
+    assert 'href="../index.html"' in html
+    assert 'href="../models.html"' in html
+    assert 'href="./' not in html
+
+
+SECOND_ARM = {
+    **PROVISIONAL, "run": 130, "label": "Run #130", "date": "2026-08-26",
+    "note": "The same field at low effort.",
+    "cards": [{**PROVISIONAL["cards"][0], "effort": "low", "ovr": 86}],
+}
+
+
+def test_a_model_page_gathers_every_provisional_arm_in_one_place():
+    """Run #129 at max and Run #130 at low are two halves of one A/B. On the
+    single cards page they sat in separate blocks thousands of pixels apart,
+    which is the comparison the split exists to make readable."""
+    snap = {**models_snapshot(FLAGSHIP), "provisional": [PROVISIONAL, SECOND_ARM]}
+    entry = sb.model_index(snap)[1]
+    assert entry["model"] == "gemini-3-7-flash"
+    html = sb.render_model_page(entry, snap, THEME)
+    assert "Run #113" in html and "Run #130" in html
+    assert SECOND_ARM["note"] in html
+    assert 'class="effort">low<' in html
+
+
+def test_a_provisional_only_model_keeps_the_section_and_says_why_it_is_empty():
+    """empty != unavailable. Dropping the heading would read as an oversight;
+    the model has simply never been measured in a contested field."""
+    snap = _with_provisional(FLAGSHIP)
+    entry = sb.model_index(snap)[1]
+    assert entry["card"] is None
+    html = sb.render_model_page(entry, snap, THEME)
+    assert "All workflows" in html
+    assert "never contested a board" in html
+
+
+def test_the_roster_is_one_linked_row_per_card_not_a_wall_of_boxes():
+    """118 cards on one page is unreadable and unnavigable. The roster indexes
+    them; the boxes move to the per-model pages where the card metaphor still
+    carries the measurement's identity."""
+    snap = _with_provisional(FLAGSHIP)
+    html = sb.render_models(snap, THEME)
+    assert 'href="models/gemini-3-6-flash.html"' in html
+    assert 'href="models/gemini-3-7-flash.html"' in html
+    assert '<table class="roster">' in html
+    assert 'class="mcard"' not in html
+
+
+def test_the_roster_is_ordered_but_never_numbered():
+    """Ordering by OVR is what the cards page already did. NUMBERING it would
+    make this the cross-workflow ranking the leaderboard refuses to publish —
+    these means span different sets of boards, so a place would be a claim the
+    data does not support."""
+    html = sb.render_models(_with_provisional(FLAGSHIP), THEME)
+    assert "<th>Rank</th>" not in html and "<th>#</th>" not in html
+    assert 'class="rank"' not in html and 'class="mcard-rank"' not in html
+
+
+def test_every_roster_row_carries_its_coverage_beside_its_mean():
+    """A 90 averaged over one board and a 90 over two are not the same claim. A
+    bare sorted OVR column invites the reader to treat them as one."""
+    html = sb.render_models(_with_provisional(FLAGSHIP), THEME)
+    assert "1 of 2 boards" in html          # the consolidated card's coverage
+    assert "5 workflows" in html            # the provisional arm's
+
+
+def test_every_class_the_cards_pages_emit_has_a_rule_in_the_stylesheet():
+    """theme.css is the ONLY stylesheet a built page carries, so markup with no
+    rule renders at browser defaults. That is not hypothetical here: nine report
+    pages shipped unstyled for months, and every chart bar collapsed to nothing
+    because a .bar has no intrinsic size."""
+    import re
+
+    css = (DEPLOY / "theme.css").read_text()
+    # The snapshot has to exercise every branch, or the guard passes by never
+    # rendering the markup it is meant to protect. CAREER contests no board in
+    # FLAGSHIP, so on its own it emits no board card at all.
+    snap = {**models_snapshot(FLAGSHIP, SETTLED, models=(CAREER, TERRA_CAREER)),
+            "provisional": [PROVISIONAL]}
+    pages = [sb.render_models(snap, THEME)]
+    pages += [sb.render_model_page(e, snap, THEME) for e in sb.model_index(snap)]
+
+    emitted: set[str] = set()
+    for page in pages:
+        for attr in re.findall(r'class="([^"]+)"', page):
+            emitted.update(attr.split())
+
+    assert sorted(c for c in emitted if f".{c}" not in css) == []
+
+
+def test_the_roster_scrolls_inside_its_own_box_so_the_page_body_never_does():
+    """Ten columns do not fit a phone. A wide table scrolling in its own
+    container is fine; the page body scrolling sideways is a different and
+    much worse thing."""
+    html = sb.render_models(_with_provisional(FLAGSHIP), THEME)
+    assert '<div class="board-scroll"><table class="roster">' in html
+
+
+SETTLED = {
+    "id": "ops-settlement-day", "title": "Operations Settlement Day",
+    "persona": "trader", "steps": 8, "par": 20,
+    "boards": [{
+        "run": 99, "label": "Run #99", "date": "2026-08-01", "post": None,
+        "checks": 44, "carded": True, "models": 2,
+        "rows": [{**TERRA, "rank": 2, "ovr": 91}],
+    }],
+}
+
+
+def test_a_model_page_puts_every_board_card_in_one_comparable_grid():
+    """A section per board left one 268px card alone in a 1080px column, once
+    per workflow. The question a model page answers is how this model moves
+    ACROSS boards, which needs the cards beside each other."""
+    snap = models_snapshot(FLAGSHIP, SETTLED, models=(TERRA_CAREER,))
+    html = sb.render_model_page(sb.model_index(snap)[0], snap, THEME)
+    # One grid for the consolidated card, one for every board card.
+    assert html.count('class="mgrid"') == 2
+    # ...so each card has to name the board it came from itself.
+    for fact in ("risk-manager-control-day", "Run #20",
+                 "ops-settlement-day", "Run #99"):
+        assert fact in html, fact
+
+
+def test_provisional_arms_share_one_grid_so_the_ab_pair_is_visible_at_once():
+    """Runs #129 and #130 are the two halves of one A/B. Pairing each card with
+    its own long run note pushed them a screen apart, which defeats the only
+    comparison they exist to support. Cards first, notes beneath."""
+    snap = {**models_snapshot(FLAGSHIP), "provisional": [PROVISIONAL, SECOND_ARM]}
+    html = sb.render_model_page(sb.model_index(snap)[1], snap, THEME)
+    section = html.split('id="provisional"', 1)[1].split("</section>", 1)[0]
+
+    assert section.count('class="mgrid"') == 1
+    assert "Run #113" in section and "Run #130" in section
+    # The caveats still publish, just after the comparison rather than between
+    # its halves — a card no reader can put beside its pair is the worse loss.
+    assert section.index('class="mcard"') < section.index(SECOND_ARM["note"])
+
+
+def test_a_provisional_roster_row_names_its_run_by_number_not_by_headline():
+    """An editorial run label runs to sixty characters and forced the model
+    column so wide that Range fell off the end of the scroll box — hiding the
+    coverage that keeps the OVR column honest. The number identifies the run;
+    the headline has room on the model page."""
+    snap = {**models_snapshot(FLAGSHIP), "provisional": [{
+        **PROVISIONAL,
+        "label": "Run #113 — a very long editorial headline about the field",
+    }]}
+    html = sb.render_models(snap, THEME)
+    assert "Run #113" in html
+    assert "very long editorial headline" not in html
+
+
+def test_a_run_label_is_escaped_wherever_a_card_caption_carries_it():
+    """Every other card helper escapes its own arguments. A caption that trusted
+    its caller instead would put the one unescaped path through the roster and
+    both model-page grids at once."""
+    snap = {**models_snapshot(FLAGSHIP), "provisional": [{
+        **PROVISIONAL, "label": "Run #113 <script> & co"}]}
+    for html in (sb.render_models(snap, THEME),
+                 sb.render_model_page(sb.model_index(snap)[1], snap, THEME)):
+        assert "<script>" not in html
+    page = sb.render_model_page(sb.model_index(snap)[1], snap, THEME)
+    assert "&lt;script&gt; &amp; co" in page
+    assert "&amp;lt;" not in page          # ...and escaped exactly once

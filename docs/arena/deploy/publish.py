@@ -90,6 +90,23 @@ def _find_anchors(html: str) -> list[str]:
     return WF_ANCHOR_RE.findall(html)
 
 
+MODEL_PAGE_RE = re.compile(r'href="(models/[A-Za-z0-9._-]+\.html)"')
+
+
+def model_pages(html: str) -> list[str]:
+    """The per-model pages a built roster links, in page order.
+
+    Read from the artifact for the same reason the workflow anchors are: the
+    check has to verify what was uploaded, not what we meant to upload. A roster
+    is nothing but routing, so a roster whose links 404 is worse than no roster.
+    """
+    seen: list[str] = []
+    for path in MODEL_PAGE_RE.findall(html):
+        if path not in seen:
+            seen.append(path)
+    return seen
+
+
 def workflow_anchors(html: str) -> list[str]:
     """The workflow sections a built leaderboard claims, in page order.
 
@@ -106,6 +123,7 @@ def verify_live(
     security_headers: tuple[str, ...] = SECURITY_HEADERS,
     workflow_anchors: tuple[str, ...] | list[str] = (),
     model_anchors: tuple[str, ...] | list[str] = (),
+    model_pages: tuple[str, ...] | list[str] = (),
 ) -> list[str]:
     """Return failure messages; an empty list means the site is healthy.
 
@@ -157,6 +175,17 @@ def verify_live(
             if slug not in served:
                 failures.append(f"{page_name}: no section for workflow {slug}")
 
+    for path in model_pages:
+        status, _, body = fetch(f"{base_url}{path}")
+        if status != 200:
+            failures.append(f"{path}: expected 200, got {status}")
+            continue
+        # A 200 proves nothing under the SPA catch-all, so read the body: the
+        # page must name the model whose row pointed at it.
+        model = path.rsplit("/", 1)[-1][: -len(".html")]
+        if escape(model) not in body.decode("utf-8", "replace"):
+            failures.append(f"{path}: served page does not name {model}")
+
     headers = fetch_headers(base_url) if security_headers else {}
     for name in security_headers:
         if name not in headers:
@@ -165,12 +194,16 @@ def verify_live(
                 "/arena/ location discards ALL inherited ones; use `expires` instead"
             )
 
-    status, _, _ = fetch(f"{base_url}{ABSENT_PROBE}")
-    if status != 404:
-        failures.append(
-            f"{ABSENT_PROBE}: expected 404, got {status} — a catch-all is still "
-            "answering, so the static alias is not serving this path"
-        )
+    # Both depths. `try_files $uri $uri/ =404` resolves a nested path by a
+    # different branch than a top-level one, so proving the alias answers at the
+    # root does not prove it answers under models/, where 27 pages now live.
+    for probe in (ABSENT_PROBE, f"models/{ABSENT_PROBE}"):
+        status, _, _ = fetch(f"{base_url}{probe}")
+        if status != 404:
+            failures.append(
+                f"{probe}: expected 404, got {status} — a catch-all is still "
+                "answering, so the static alias is not serving this path"
+            )
 
     return failures
 
@@ -201,10 +234,12 @@ def _cmd_publish(args) -> int:
         page = build_dir / name
         return workflow_anchors(page.read_text()) if page.is_file() else []
 
+    roster = build_dir / "models.html"
     failures = verify_live(
         args.base_url, _posts(),
         workflow_anchors=_anchors_of("leaderboard.html"),
         model_anchors=_anchors_of("models.html"),
+        model_pages=model_pages(roster.read_text()) if roster.is_file() else (),
     )
     if failures:
         print("\nVERIFICATION FAILED:", file=sys.stderr)

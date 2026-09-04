@@ -177,6 +177,15 @@ def build(
         (out_dir / "models.html").write_text(
             sb.render_models(board_snapshot, theme, posts)
         )
+        # The roster and this loop read the SAME enumeration, so a row can never
+        # offer a page that was not written. Two independent walks of the
+        # snapshot is exactly how a link rots into a 404.
+        model_dir = out_dir / sb.MODELS_DIR
+        model_dir.mkdir(parents=True, exist_ok=True)
+        for entry in sb.model_index(board_snapshot):
+            model_dir.joinpath(f"{entry['model']}.html").write_text(
+                sb.render_model_page(entry, board_snapshot, theme, posts)
+            )
     return result
 
 

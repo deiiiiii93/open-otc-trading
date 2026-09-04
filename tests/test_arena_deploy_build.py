@@ -332,3 +332,24 @@ def test_build_warns_when_a_provisional_run_links_an_unpublished_report(
     assert "2020-01-01-not-published.html" not in (out / "models.html").read_text()
     # The card itself still publishes; only the unresolvable link is dropped.
     assert "deepseek-v4-pro" in (out / "models.html").read_text()
+
+
+def test_build_writes_a_page_for_every_model_the_roster_links(project, tmp_path):
+    """The roster and the build loop read the SAME enumeration, so the page a
+    row offers is always a page that was written. Two independent walks of the
+    snapshot is how a roster ends up linking a 404."""
+    import re
+
+    mf, arena, out = project
+    deploy = _bare_deploy(tmp_path)
+    (deploy / "boards.json").write_text(
+        json.dumps({**BOARDS, "models": [MODEL_CARD]})
+    )
+
+    b.build(mf, arena, deploy, out, refresh_pdf=False)
+
+    assert (out / "models" / "gpt-5-6-terra.html").is_file()
+    linked = set(re.findall(r'href="models/([^"]+)"', (out / "models.html").read_text()))
+    assert linked
+    for name in linked:
+        assert (out / "models" / name).is_file(), name

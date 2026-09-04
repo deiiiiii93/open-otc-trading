@@ -241,6 +241,45 @@ footer.site{margin-top:52px; padding-top:18px; border-top:1px solid var(--line);
   font-weight:700; color:var(--accent-2); background:var(--bg);
   border:1px solid var(--line); text-transform:uppercase; letter-spacing:.04em}
 
+/* CON had no rule at all until the roster arrived: the leaderboard emitted the
+   cell and the stylesheet never claimed it. Consistency, not a new colour. */
+.board-table .con{font-weight:600}
+
+/* ---- the model roster -------------------------------------------------
+   Deliberately UNBOXED, like the board tables. The box belongs to the cards on
+   the per-model pages, where the card metaphor is the measurement's identity;
+   spending it on 43 index rows is what stops it meaning anything. */
+.roster{border-collapse:collapse; width:100%; font-size:.85rem;
+  font-variant-numeric:tabular-nums}
+.roster th{text-align:right; padding:9px 10px; font-size:.64rem; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.07em; white-space:nowrap; font-weight:700;
+  border-bottom:1px solid var(--line)}
+.roster td{text-align:right; padding:9px 10px; white-space:nowrap;
+  border-bottom:1px solid var(--rule); vertical-align:top}
+.roster tbody tr:last-child td{border-bottom:none}
+.roster tbody tr:hover{background:var(--paper)}
+/* The model column leads but stays TIGHT: giving it the slack pushed the stats
+   to the far right and broke the name-to-number read the roster exists for.
+   The slack goes to Range instead, so identity and numbers stay adjacent. */
+.roster th:first-child,.roster td:first-child{text-align:left; width:1%;
+  padding-right:22px}
+.roster .model{font-weight:600}
+.roster .model a{color:var(--ink)}
+.roster .model a:hover{color:var(--accent)}
+.roster .ovr{font-weight:700; color:var(--accent)}
+.roster .con{font-weight:600}
+.roster .pos{color:var(--muted); font-size:.78rem}
+.roster .none{color:var(--line)}
+/* Spread over coverage in one cell: the mean alone is not the claim. A 93 over
+   three boards and a 90 over four are different measurements, and stacking the
+   coverage under the range is what keeps them from reading as one column. */
+.roster .range{width:100%; color:var(--muted); font-size:.78rem;
+  text-align:right}
+.roster-sub,.roster-context{display:block; font-size:.68rem; color:var(--muted);
+  font-weight:400; letter-spacing:.02em}
+.roster-context{margin-top:2px; text-transform:uppercase; letter-spacing:.06em}
+.roster-context .effort{margin-left:4px}
+
 /* ---- model cards ------------------------------------------------------
    These keep their box on purpose: the page is called Model Cards and the
    card metaphor is the measurement's identity. Boxes were removed elsewhere
@@ -251,6 +290,15 @@ footer.site{margin-top:52px; padding-top:18px; border-top:1px solid var(--line);
   gap:14px; margin:12px 0 4px}
 .mcard{background:var(--paper); border:1px solid var(--line); border-radius:8px;
   padding:14px 16px 12px}
+/* Which board this card came from. It captions the card rather than heading a
+   section because a model page shows every board in ONE grid — a section per
+   card left a lone 268px box in a 1080px column, once per workflow. */
+.mcard-where{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;
+  margin:0 0 11px; padding-bottom:9px; border-bottom:1px solid var(--rule)}
+.mcard-where code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.68rem; color:var(--muted)}
+.mcard-where span{font-size:.64rem; font-weight:700; color:var(--accent-2);
+  text-transform:uppercase; letter-spacing:.06em}
 .mcard-head{display:flex; align-items:center; gap:12px}
 .mcard-ovr{display:flex; flex-direction:column; align-items:center; line-height:1;
   min-width:44px}

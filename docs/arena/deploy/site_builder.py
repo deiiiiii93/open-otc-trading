@@ -65,6 +65,7 @@ def _masthead(
     here: str = "",
     models: bool = False,
     nameplate: str = "compact",
+    prefix: str = "./",
 ) -> str:
     """The site nameplate plus nav.
 
@@ -74,6 +75,11 @@ def _masthead(
     heading has to lead, and repeating the tagline would stack two muted
     paragraphs above the data while the site title outweighed the page the
     reader is actually on.
+
+    `prefix` is how a page in a subdirectory reaches the site. The model pages
+    live under models/, where "./index.html" resolves to models/index.html and
+    404s on every one of them at once — the same class of sitewide breakage the
+    absence rule below exists to prevent, arrived at from the other direction.
 
     The flags gate the nav links, so the absence rule reaches the chrome.
 
@@ -88,12 +94,12 @@ def _masthead(
     # Unconditional, unlike the two derived pages: index.html is always built,
     # and the eyebrow points at the site root rather than /arena/ — so without
     # this the leaderboard and cards pages are one-way doors out of the feed.
-    links = [link("./index.html", "Blog", "blog")]
+    links = [link(f"{prefix}index.html", "Blog", "blog")]
     if leaderboard:
-        links.append(link("./leaderboard.html", "Leaderboard", "leaderboard"))
+        links.append(link(f"{prefix}leaderboard.html", "Leaderboard", "leaderboard"))
     if models:
-        links.append(link("./models.html", "Model Cards", "models"))
-    links.append(link("./about.html", "About", "about"))
+        links.append(link(f"{prefix}models.html", "Model Cards", "models"))
+    links.append(link(f"{prefix}about.html", "About", "about"))
     links.append(f'<a href="{GITHUB_URL}">GitHub</a>')
 
     full = nameplate == "full"
@@ -103,7 +109,7 @@ def _masthead(
     plate = '<a class="eyebrow" href="/">Artena</a>'
     plate += (
         f'<h1 class="plate-title">{escape(SITE_TITLE)}</h1>' if full
-        else f'<a class="plate-title" href="./index.html">{escape(SITE_TITLE)}</a>'
+        else f'<a class="plate-title" href="{prefix}index.html">{escape(SITE_TITLE)}</a>'
     )
     if full:
         plate += f'<p class="strap">{escape(SITE_TAGLINE)}</p>'
@@ -522,10 +528,10 @@ def render_leaderboard(snapshot: dict, posts: list[Post], theme: str) -> str:
 
 MODELS_TITLE = "Model Cards"
 MODELS_LEAD = (
-    "One ability card per contestant. The consolidated card averages a model "
-    "across every workflow it contested; the per-workflow cards below are the "
-    "measurements it averages. A card is absolute, not relative to the field, "
-    "which is why averaging cards is sound where merging leaderboards is not."
+    "Every ability card the arena has measured, one row each. Open a model to "
+    "see its card and every board measurement behind it. A card is absolute, "
+    "not relative to the field, which is why averaging cards is sound where "
+    "merging leaderboards is not."
 )
 CARD_STATS = (*STAT_ORDER, "CON")
 
@@ -592,8 +598,21 @@ def _career_card(card: dict) -> str:
     )
 
 
-def _board_card(row: dict, board: dict) -> str:
-    """One contestant's card on ONE board — the measurement, not an average."""
+def _board_card(row: dict, board: dict, workflow: str = "") -> str:
+    """One contestant's card on ONE board — the measurement, not an average.
+
+    `workflow` captions the card on a model page, where all of a model's boards
+    share a single grid. A section per board put one 268px card alone in a
+    1080px column, once per workflow, and buried the comparison the page exists
+    to make.
+    """
+    where = ""
+    if workflow:
+        where = (
+            '<p class="mcard-where"><code>'
+            f'{escape(workflow)}</code>'
+            f'<span>{escape(str(board.get("label") or ""))}</span></p>'
+        )
     facts = []
     if row.get("objective") is not None:
         facts.append(f'obj {format(row["objective"], ".1f")}')
@@ -604,6 +623,7 @@ def _board_card(row: dict, board: dict) -> str:
 
     return (
         '<article class="mcard">'
+        + where
         + _mcard_head(str(row.get("model", "")), row.get("effort"),
                       row.get("ovr"), row.get("position"), rank=row.get("rank"))
         + _stat_strip(row.get("stats") or {}, row.get("con"))
@@ -624,8 +644,17 @@ PROVISIONAL_LEAD = (
 )
 
 
-def _provisional_card(card: dict) -> str:
-    """One cards-only measurement. Structurally rankless, not rank-blanked."""
+def _provisional_card(card: dict, run: str = "") -> str:
+    """One cards-only measurement. Structurally rankless, not rank-blanked.
+
+    `run` captions the card where a model's arms share a grid, so a reader can
+    tell which run and effort produced which numbers without counting boxes. It
+    is escaped HERE, like every other card helper's arguments: a caption that
+    trusted its caller would be the one unescaped path on the page.
+    """
+    where = (
+        f'<p class="mcard-where"><span>{escape(run)}</span></p>' if run else ""
+    )
     rows = "".join(
         f'<li><code>{escape(str(e.get("workflow") or ""))}</code>'
         f'<span class="ovr">{_num(e.get("ovr"))}</span></li>'
@@ -646,6 +675,7 @@ def _provisional_card(card: dict) -> str:
         facts.append(f'{n} trial{"s" if n != 1 else ""}')
     return (
         '<article class="mcard">'
+        + where
         + _mcard_head(str(card.get("model", "")), card.get("effort"),
                       card.get("ovr"), card.get("position"))
         + _stat_strip(card.get("stats") or {}, card.get("con"))
@@ -693,49 +723,277 @@ def _cards_section(title: str, subtitle: str, body: str, anchor: str = "") -> st
     )
 
 
-def render_models(snapshot: dict, theme: str, posts: list | tuple = ()) -> str:
-    """Consolidated cards first, then the per-workflow cards they average."""
+def model_index(snapshot: dict) -> list[dict]:
+    """Every model the cards page publishes: board contestants first, then the
+    ones only ever measured provisionally.
+
+    This is the ONE definition of which models exist. The roster reads it to
+    decide what to link and the build loop reads it to decide what to write, so
+    the roster cannot offer a page nobody wrote. Each entry carries the
+    consolidated `card` (None for a provisional-only model) and every
+    provisional `arms` appearance, so a model page needs no second pass over
+    the snapshot.
+    """
+    arms: dict[str, list[dict]] = {}
+    for entry in snapshot.get("provisional") or []:
+        for card in entry.get("cards") or []:
+            arms.setdefault(str(card.get("model", "")), []).append(
+                {"entry": entry, "card": card}
+            )
+
+    index: list[dict] = []
+    seen: set[str] = set()
+    for card in snapshot.get("models") or []:
+        name = str(card.get("model", ""))
+        seen.add(name)
+        index.append({"model": name, "card": card, "arms": arms.get(name, [])})
+    for name, appearances in arms.items():
+        if name not in seen:
+            index.append({"model": name, "card": None, "arms": appearances})
+    return index
+
+
+# Model pages live in a subdirectory of their own so `stats.classify()` keeps
+# treating them as assets rather than posts — a nested .html is not a page view,
+# which is what stops 27 new URLs inflating the published readership totals.
+MODELS_DIR = "models"
+UP = "../"
+
+
+def render_model_page(entry: dict, snapshot: dict, theme: str,
+                      posts: list | tuple = ()) -> str:
+    """One model's whole story on one page.
+
+    The consolidated card leads, then every board measurement it averages. The
+    rest of each board's field is deliberately absent: who placed where is a
+    board-major question, and /arena/leaderboard.html already answers it in
+    full. Restating it here is what made the single cards page unreadable.
+    """
     from boards import ordered_workflows
 
-    cards = snapshot.get("models") or []
-    consolidated = _cards_section(
-        "All workflows",
-        f"{len(cards)} contestants &middot; each card averaged across the boards "
-        "it contested",
-        f'<div class="mgrid">{"".join(_career_card(c) for c in cards)}</div>',
-    )
-
-    # Absence reaches the section, not just the cards: no cards-only run means
-    # no heading at all, rather than an empty "Provisional" with nothing under it.
+    name = str(entry.get("model", ""))
+    card = entry.get("card")
     by_file = {p.file: p for p in posts}
-    provisional = (
-        _provisional_section(snapshot["provisional"], by_file)
-        if snapshot.get("provisional") else ""
-    )
 
     sections = []
+    # empty != unavailable, the same rule an unmeasured workflow gets on the
+    # leaderboard. Six of the published models have only ever been measured
+    # outside a field; dropping the heading would read as an oversight rather
+    # than as the fact it is.
+    if card is not None:
+        sections.append(_cards_section(
+            "All workflows",
+            "averaged across the boards this model contested",
+            f'<div class="mgrid">{_career_card(card)}</div>',
+        ))
+    else:
+        sections.append(_cards_section(
+            "All workflows",
+            "no consolidated card",
+            '<p class="empty">This model has never contested a board, so there '
+            "is nothing to average. Its measurements are below, and none of "
+            "them carries a rank.</p>",
+        ))
+
+    # One grid across every board, in the site's canonical workflow order. The
+    # workflow rides each card as a caption instead of a section heading.
+    cards = []
     for wf in ordered_workflows(snapshot.get("workflows") or []):
         slug = str(wf.get("id", ""))
-        persona = str(wf.get("persona") or "").replace("_", " ")
-        facts = " &middot; ".join(
-            escape(x) for x in (str(wf.get("title") or ""), persona) if x
-        )
-        boards = wf.get("boards") or []
-        if boards:
-            body = "".join(
-                f'<p class="board-heading">{escape(str(b.get("label") or ""))}</p>'
-                f'<div class="mgrid">'
-                f'{"".join(_board_card(r, b) for r in b.get("rows") or [])}</div>'
-                for b in boards
+        for board in wf.get("boards") or []:
+            cards += [
+                _board_card(r, board, workflow=slug)
+                for r in board.get("rows") or []
+                if str(r.get("model", "")) == name
+            ]
+    if cards:
+        sections.append(_cards_section(
+            "Per board",
+            f'{len(cards)} measurement{"s" if len(cards) != 1 else ""} '
+            "&middot; each against that board's own field",
+            f'<div class="mgrid">{"".join(cards)}</div>',
+            anchor="boards",
+        ))
+
+    arms = entry.get("arms") or []
+    if arms:
+        # ONE grid, then the caveats. Runs #129 and #130 are the two halves of a
+        # single A/B; interleaving each card with its own long run note put them
+        # a screen apart and defeated the only comparison they support.
+        cards, notes = [], []
+        for arm in arms:
+            run, arm_card = arm["entry"], arm["card"]
+            label = str(run.get("label") or "")
+            cards.append(_provisional_card(arm_card, run=label))
+
+            facts = [escape(str(run.get("date") or ""))] if run.get("date") else []
+            post = by_file.get(str(run.get("post") or ""))
+            if post is not None:
+                facts.append(f'<a href="{UP}{post.html_name}">report</a>')
+            note = run.get("note")
+            if note or facts:
+                notes.append(
+                    f'<p class="board-heading">{escape(label)}'
+                    + (f' <span class="board-facts">{" &middot; ".join(facts)}</span>'
+                       if facts else "")
+                    + "</p>"
+                    + (f'<p class="board-note">{escape(str(note))}</p>'
+                       if note else "")
+                )
+        sections.append(_cards_section(
+            escape(PROVISIONAL_TITLE),
+            f'{len(arms)} card{"s" if len(arms) != 1 else ""} '
+            "&middot; measured, never ranked",
+            f'<p class="board-note">{escape(PROVISIONAL_LEAD)}</p>'
+            + f'<div class="mgrid">{"".join(cards)}</div>'
+            + "".join(notes),
+            anchor="provisional",
+        ))
+
+    lead = f"Every ability card measured for {name}."
+    return (
+        _head(f"{name} — {MODELS_TITLE} — {SITE_TITLE}", theme, lead)
+        + '<div class="page">\n'
+        + _masthead(True, here="models", models=True, prefix=UP)
+        + f'<div class="intro"><h1>{escape(name)}</h1>'
+        + f'<p class="lead">{escape(lead)}</p>'
+        + "</div>\n"
+        + f'<main class="boards">\n{"".join(sections)}</main>\n'
+        + _site_footer()
+        + "</div>\n</body></html>\n"
+    )
+
+
+ROSTER_COLUMNS = ("Model", "OVR", *STAT_ORDER, "CON", "Archetype", "Range")
+
+
+def _roster_row(name: str, context: str, card: dict, range_cell: str) -> str:
+    """One CARD, not one model.
+
+    Seven models own both a consolidated card and provisional arms measured at
+    a different effort. Folding those into a single row would mean averaging
+    two conditions into one stat line — the cross-condition merge the arena
+    refuses everywhere else. A row per card keeps every number a measurement.
+    """
+    stats = card.get("stats") or {}
+    cells = "".join(
+        f"<td>{_num(stats.get(stat))}</td>" for stat in STAT_ORDER
+    )
+    position = str(card.get("position") or "")
+    return (
+        "<tr>"
+        f'<td class="model"><a href="{MODELS_DIR}/{escape(name)}.html">'
+        f"{escape(name)}</a>"
+        + (f'<span class="roster-context">{context}</span>' if context else "")
+        + "</td>"
+        f'<td class="ovr">{_num(card.get("ovr"))}</td>'
+        f"{cells}"
+        f'<td class="con">{_num(card.get("con"))}</td>'
+        f'<td class="pos">{escape(position) if position else "&mdash;"}</td>'
+        f'<td class="range">{range_cell}</td>'
+        "</tr>"
+    )
+
+
+def _roster_table(rows: list[str]) -> str:
+    head = "".join(f"<th>{escape(c)}</th>" for c in ROSTER_COLUMNS)
+    # Reuses the leaderboard's scroll box: ten columns do not fit a phone, and a
+    # table that scrolls in its own container beats a page body that does.
+    return (
+        '<div class="board-scroll">'
+        f'<table class="roster"><thead><tr>{head}</tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table></div>'
+    )
+
+
+def _career_range(card: dict) -> str:
+    coverage = int(card.get("coverage") or 0)
+    total = int(card.get("boards_total") or 0)
+    # Coverage is not decoration. A 93 averaged over three boards and a 90 over
+    # four are not the same claim, and a bare sorted OVR column would invite the
+    # reader to treat them as one.
+    return (
+        f'{_num(card.get("ovr_min"))}&ndash;{_num(card.get("ovr_max"))}'
+        f'<span class="roster-sub">{coverage} of {total} boards</span>'
+    )
+
+
+def _arm_range(card: dict) -> str:
+    coverage = int(card.get("coverage") or 0)
+    total = int(card.get("workflows_total") or coverage)
+    scope = (f"{coverage} workflows" if coverage == total
+             else f"{coverage} of {total} workflows")
+    trials = card.get("trials")
+    if trials:
+        n = int(trials)
+        scope += f' &middot; {n} trial{"s" if n != 1 else ""}'
+    return (
+        f'{_num(card.get("ovr_min"))}&ndash;{_num(card.get("ovr_max"))}'
+        f'<span class="roster-sub">{scope}</span>'
+    )
+
+
+ROSTER_RANKED_LEAD = (
+    "One row per consolidated card, ordered by OVR. Deliberately unnumbered: "
+    "these means span different sets of boards, so a place in this list would "
+    "be the cross-workflow ranking the leaderboard refuses to publish."
+)
+
+
+def render_models(snapshot: dict, theme: str, posts: list | tuple = ()) -> str:
+    """The roster: every published ability card, one scannable row each.
+
+    The cards themselves live on the per-model pages this links. Board-major
+    detail — who placed where in a given field — is /arena/leaderboard.html's
+    job, and restating it here as 75 more boxes is what made one page
+    unreadable.
+    """
+    index = model_index(snapshot)
+
+    ranked = [
+        _roster_row(e["model"], "", e["card"], _career_range(e["card"]))
+        for e in index if e.get("card") is not None
+    ]
+    arms = []
+    for entry in index:
+        for arm in entry.get("arms") or []:
+            run, card = arm["entry"], arm["card"]
+            # The run NUMBER, never the editorial label. A sixty-character
+            # headline forces the model column so wide that Range falls off the
+            # end of the scroll box, and Range is what keeps OVR honest. The
+            # headline has room on the model page, which is one click away.
+            number = run.get("run")
+            context = escape(
+                f"Run #{int(number)}" if number else str(run.get("label") or "")
             )
-        else:
-            body = (
-                '<p class="empty">No board has been run on this workflow yet. '
-                "The workflow exists and is scored; the field does not.</p>"
+            effort = card.get("effort")
+            if effort:
+                context += f' <span class="effort">{escape(str(effort))}</span>'
+            arms.append(
+                _roster_row(entry["model"], context, card, _arm_range(card))
             )
-        sections.append(
-            _cards_section(f"<code>{escape(slug)}</code>", facts, body, anchor=slug)
-        )
+
+    sections = []
+    if ranked:
+        sections.append(_cards_section(
+            "Board contestants",
+            f'{len(ranked)} card{"s" if len(ranked) != 1 else ""} '
+            "&middot; each averaged across the boards it contested",
+            f'<p class="board-note">{escape(ROSTER_RANKED_LEAD)}</p>'
+            + _roster_table(ranked),
+            anchor="ranked",
+        ))
+    # Absence reaches the section, not just the rows: no cards-only run means
+    # no heading at all, rather than an empty "Provisional" with nothing under it.
+    if arms:
+        sections.append(_cards_section(
+            escape(PROVISIONAL_TITLE),
+            f'{len(arms)} card{"s" if len(arms) != 1 else ""} '
+            "&middot; measured, never ranked &middot; grouped by model",
+            f'<p class="board-note">{escape(PROVISIONAL_LEAD)}</p>'
+            + _roster_table(arms),
+            anchor="provisional",
+        ))
 
     generated = str(snapshot.get("generated_at", ""))[:10]
     return (
@@ -746,7 +1004,7 @@ def render_models(snapshot: dict, theme: str, posts: list | tuple = ()) -> str:
         + f'<p class="lead">{escape(MODELS_LEAD)}</p>'
         + f'<p class="derived">derived from the arena database on {escape(generated)}</p>'
         + "</div>\n"
-        + f'<main class="boards">\n{consolidated}{provisional}{"".join(sections)}</main>\n'
+        + f'<main class="boards">\n{"".join(sections)}</main>\n'
         + _site_footer()
         + "</div>\n</body></html>\n"
     )

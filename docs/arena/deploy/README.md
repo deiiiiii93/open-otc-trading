@@ -30,13 +30,17 @@ same workflows, so only the runs listed reach the page.
 A run that is not a board can still be published as **cards only**, under
 `provisional:` in the same file. A one-model smoke has no field, so a rank of
 #1 of 1 measures nothing — but an ability card is absolute and stays meaningful
-with no opponent. Those cards appear on `models.html` under *Provisional*, carry
+with no opponent. Those cards appear on the roster under *Provisional*, carry
 no rank, and never reach the leaderboard.
 
-The same export also builds **Model Cards** (`models.html`): a consolidated card
-per contestant averaged over every workflow it contested, then the per-workflow
-cards that average is made of. Both pages come from `boards.json` — there is no
-second input to keep in step.
+The same export also builds **Model Cards**, which is two levels. `models.html`
+is a roster: one scannable row per published card, ordered by OVR and
+deliberately never numbered, each row linking a per-model page. `models/<id>.html`
+is one model's whole story — its consolidated card, every board measurement it
+averages in one comparable grid, and every provisional arm it has been measured
+at. Both levels come from `boards.json`, and `site_builder.model_index()` is the
+single enumeration behind both the roster's links and the loop that writes the
+pages, so a row cannot offer a page nobody wrote.
 
 ## How it works
 

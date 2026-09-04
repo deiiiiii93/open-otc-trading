@@ -134,6 +134,62 @@ leaderboard refuses to merge runs.
   become an empty one and the whole leaderboard would vanish without a word.
   Absent (`None`) is the only legitimate empty.
 
+## Model Cards is a ROSTER plus a page per model
+
+`models.html` was one page carrying every card — 118 of them, 131KB, roughly
+8,000px of boxes — and its bottom two-thirds restated per board what
+`/arena/leaderboard.html` already publishes as compact tables. It is now a
+roster of one row per card, and `models/<id>.html` per model.
+
+- **`model_index(snapshot)` is the ONE enumeration.** The roster reads it to
+  decide what to link and `build.py` reads it to decide what to write. Two
+  independent walks of the snapshot is exactly how a roster comes to offer a
+  404, so never enumerate models a second way.
+- **One row per CARD, not per model.** Seven contestants own both a consolidated
+  card and provisional arms measured at a different effort. Folding those into
+  one row means averaging two conditions into a single stat line — the
+  cross-condition merge the arena refuses everywhere else.
+- **The roster is ordered by OVR and never numbered.** Those means span
+  different sets of boards, so a place in that list would be the cross-workflow
+  ranking the leaderboard exists to refuse. Every row therefore also carries its
+  spread and coverage: a 93 over three boards is not the same claim as a 90 over
+  four, and a bare sorted OVR column invites the reader to treat them as one.
+- **The roster names a run by NUMBER, never by its editorial label.** A
+  sixty-character headline forces the model column wide enough to push the Range
+  column off the end of the scroll box — and Range is what keeps OVR honest. The
+  headline has room on the model page.
+- **Model pages live in a subdirectory on purpose.** `stats.classify()` buckets
+  any nested `.html` as an `asset`, not a `page`, so 27 new URLs cannot inflate
+  the published readership totals. That also means every link on a model page
+  needs `../`: `_masthead(prefix=UP)`, and `UP` before a report's `html_name`. A
+  `./index.html` there resolves to `models/index.html` and 404s on all 27 at once.
+- **A model page puts every board card in ONE grid**, captioned by workflow and
+  run (`mcard-where`). A section per board left a single 268px card alone in a
+  1080px column, once per workflow. Provisional arms share a grid too, with the
+  run notes collected beneath it: runs #129 and #130 are the two halves of one
+  A/B, and interleaving each card with its own long note put them a screen apart.
+- **A provisional-only model keeps its "All workflows" heading and says why it
+  is empty.** Same rule as an unmeasured workflow on the leaderboard: six of the
+  27 have never contested a board, and a missing section reads as an oversight.
+- **A `note:` in `boards.yaml` must not say "above" or "below" about another
+  card.** A card now appears on its own page and on nobody else's, so
+  cross-references have to name the run. Three notes said "above"/"below" and
+  became false the day the split shipped. The one remaining "below" (Run #101)
+  is about the table under it on the leaderboard, which is still true.
+- **`verify_live` gained `model_pages`, and the old `model_anchors` check would
+  otherwise have gone dark** — it scrapes `<section class="wf" id=…>`, the
+  roster has only two such sections, and an empty anchor list is read as "page
+  not built, valid site". So it would have passed while checking nothing.
+  `model_pages()` reads the `models/*.html` hrefs out of the BUILT roster and
+  requires each to be served AND to name its own model. The absent probe now
+  runs at both depths, because `try_files $uri $uri/ =404` resolves a nested
+  path by a different branch than a top-level one.
+- **The dead-class guard is only as good as its fixture.**
+  `test_every_class_the_cards_pages_emit_has_a_rule_in_the_stylesheet` passed a
+  new `.mcard-where` straight through, because the snapshot it rendered had a
+  consolidated card for a model that contested no board — so it emitted no board
+  card at all. A guard that never renders the markup it protects is not a guard.
+
 ## theme.css owns the report body ON THE WEB; render_report.py owns print
 
 `render_markdown()` returns **bare HTML with no stylesheet**. Only
