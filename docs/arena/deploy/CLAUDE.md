@@ -304,6 +304,19 @@ font files ship, so a webfont means adding `.woff2` to `static/` plus a
   (Run #104 is 80 vs 79) so they stop reading as measurements.
 - **`docs/arena/cards/` is gitignored,** so a clean checkout publishes no card
   images; the build warns and continues. That is expected, not a failure.
+- **BUILD FROM MAIN, NEVER FROM A WORKTREE, WHEN THE NEXT STEP IS PUBLISH.** The
+  two facts above are separately harmless and jointly destructive: a worktree has
+  no `docs/arena/cards/` (gitignored), so it builds without the card images, and
+  `rsync --delete` then strips them off the live server. The build says only
+  `asset directory missing, skipped` — a warning that reads like the documented
+  clean-checkout case. `deploy.sh build` from main reports `1 asset dirs`; a
+  worktree reports `0`. Always read `publish --dry-run` for `deleting ` lines
+  before shipping: a healthy publish has none.
+- **Run `deploy.sh stats` before `deploy.sh build`.** `stats.json` is untracked
+  and expires at `STATS_MAX_AGE_DAYS` (14), and the absence rule means a stale
+  snapshot silently publishes an index with NO readership counters rather than
+  failing. Nothing in the build or the verifier flags it, because "no counters"
+  is a legitimate site.
 - **Rollback is removing the `location /arena/` block** in open-slides-zero and
   redeploying nginx. `frontend/public/arena/` is deliberately retained, so the
   previous site is still there and no data restore is involved.
