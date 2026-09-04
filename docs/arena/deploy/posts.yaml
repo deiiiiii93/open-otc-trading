@@ -9,13 +9,15 @@
   date: 2026-09-03
   tags: [research]
   run: "Run #134"
-  chips: ["1 model", "6 workflows", "11 trials"]
-  title: "The newer Gemini is more accurate, and it loses on where it stops"
+  chips: ["1 model", "6 workflows", "13 trials", "corrected"]
+  title: "The newer Gemini looked like a regression. We had it on the wrong effort."
   blurb: >
-    Gemini 3.8 Flash wins four of five workflows on correctness and finishes behind the
-    model it replaces. The extra spend is not retries or fan-out but five times as much
-    filesystem searching, at the same hit rate, in the same places -- and a control run
-    says one fifth of it was a change we made to the harness, not the model.
+    Gemini 3.8 Flash wins four of five workflows on correctness and still finishes behind
+    the model it replaces, spending five times as much on filesystem searching at an
+    identical hit rate. Two controls then take the finding apart: one fifth of the gap was
+    a change we made to the harness, and the searching turns out to be driven by reasoning
+    effort -- at `low` the same model cuts its search calls 94% and posts the best cell
+    anyone has measured on the workflow.
   publish: true
 
 - file: 2026-08-30-run133-confirmation-desk-day.md

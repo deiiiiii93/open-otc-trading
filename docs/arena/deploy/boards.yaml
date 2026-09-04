@@ -106,10 +106,17 @@ provisional:
       workflows). It spends 84% MORE tool calls to get there (96 against 52),
       and EFF collapses from 31 to 4. The efficiency loss more than eats the
       correctness gain: mean OVR over those same five workflows is 80.6 against
-      3.7's 83.0, so the newer model finishes 2.4 points BEHIND its predecessor
-      while being the more accurate of the two. EFF is 0 on four of the six
-      workflows, and the vision workflow alone took 490 tool calls. Read the
-      per-workflow EFF before reading any mean here.
+      3.7's 83.0, so AT THIS EFFORT the newer model finishes 2.4 points behind its
+      predecessor while being the more accurate of the two. EFF is 0 on four of
+      the six workflows, and the vision workflow alone took 490 tool calls.
+      CORRECTED 2026-09-04 — read this card as a measurement of xhigh, not of
+      the model. A follow-up arm (run #137) pinned the same model to low on
+      ops-settlement-day: it cut filesystem search calls by 94%, from 36 to 2,
+      and total calls by 56%, posting OVR 89 there against 83 at xhigh and 85
+      for its predecessor — the best cell measured on that workflow. The
+      over-execution this card reports is substantially an effort setting
+      rather than a model trait, and the desk default is low. A low arm across
+      all six workflows has not been measured, so no low card is published.
 
   - run: 104
     post: 2026-08-13-run104-otc-desk-agent-arena.md

@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Correction to the run #134 report: the over-execution is mostly an EFFORT
+  setting, not the model.** Runs #136/#137 added the effort arm the report itself
+  named as the thing that would change its verdict, and it did. Free evidence
+  first: runs #127 and #130 are Gemini 3.7 Flash on the same five workflows with
+  effort as the only variable, and `low` cuts its filesystem search calls **91%**
+  (5.8 → 0.5 per workflow, zero on three of five). Gemini 3.8 Flash then responded
+  the same way and harder — at `low` on `ops-settlement-day` it cut search calls
+  **94%** (36 → 2) and total calls 56%, giving up 6.8 objective points and gaining
+  six OVR points as EFF moved 0 → 69. **At `low` it posts OVR 89, the best cell
+  measured on that workflow**, against 83 at `xhigh` and 85, 85, 83 for its
+  predecessor. The report, its title, its blurb and the published card note are
+  corrected in place: run #134 measured `xhigh`, and `xhigh` is the wrong setting
+  for this model. Scope stated on the page — the `low` arm is one workflow and one
+  trial, so no `low` card is published.
+- **The live `config/agent_channels.yaml` had lost the gemini-3.8-flash entry.**
+  It is gitignored and per-environment, so the registration made inside the run's
+  worktree died with the worktree and only the tracked template kept it. Run #136
+  failed at model resolution (`KeyError: unknown selection`) before spending any
+  quota. Restored into the live file from the template.
+
 - **Report: why Gemini 3.8 Flash loses to 3.7** —
   `docs/arena/2026-09-03-run134-gemini38-flash.md`, published to the arena blog.
   Traces the 84% call-count increase to its source in the transcripts: **filesystem

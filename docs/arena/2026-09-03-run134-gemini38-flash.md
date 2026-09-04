@@ -2,9 +2,14 @@
 
 **Gemini 3.8 Flash is the more accurate model and finishes behind the one it replaces.
 The extra spend is not retries and not subagent fan-out: it is five times as much
-filesystem searching, at the same hit rate, in the same places. A control run says
-roughly four fifths of that is the model and one fifth is a change we made to the
-harness the week before.**
+filesystem searching, at the same hit rate, in the same places.**
+
+> **Correction, 2026-09-04.** This report originally read the searching as a property of
+> the model. It is mostly a property of the **effort setting**. Pinned to `low`, Gemini
+> 3.8 Flash cuts its search calls by 94% and posts the best result anyone has measured on
+> `ops-settlement-day` — OVR **89**, against 83 at `xhigh` and 85 for its predecessor.
+> The finding below stands as a description of `xhigh`; it does not support the claim
+> that the newer model is worse. The evidence is in **The effort arm**, below.
 
 *2026-09-03 · run `#134` · 1 model × 6 workflows × 2 trials (5 workflows) and 1 trial
 (confirmation-desk-day) · pinned to `xhigh` · output budget unpinned · objective-only
@@ -187,6 +192,60 @@ rescues the ranking.
 
 ---
 
+## The effort arm: what actually drives the searching
+
+*Added 2026-09-04, runs `#136`/`#137`.*
+
+Everything above holds `xhigh` fixed and varies the model. The obvious complementary
+test is to hold the model fixed and vary the effort — and the arena already contained
+half the answer for free. Run #127 and run #130 are **Gemini 3.7 Flash on the same five
+workflows with effort as the only variable**:
+
+| | 3.7 at `xhigh` | 3.7 at `low` |
+|---|:--:|:--:|
+| Tool calls per workflow | 56.4 | **35.5** |
+| Search calls per workflow | 5.8 | **0.5** |
+| Search as a share of calls | 10.3% | **1.4%** |
+
+Search falls **91%**. On three of the five workflows it goes to exactly zero. Whatever
+the file rummaging is, it is switched on by reasoning effort rather than baked into the
+model.
+
+So we ran Gemini 3.8 Flash at `low` on `ops-settlement-day` — one workflow, one trial,
+chosen because it already carried four matched arms. The result reverses this report's
+framing.
+
+| Arm | OVR | GRD | ADH | SYN | PRC | **EFF** | Objective | Calls | × par | Search |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| 3.7 Flash `low` | 85 | 90 | 92 | 99 | 95 | 92 | 93.2 | 26.5 | 0.88 | 0 |
+| 3.7 Flash `xhigh` | 85 | 93 | 82 | 99 | 91 | 64 | 89.8 | 38.5 | 1.28 | 2.5 |
+| 3.7 Flash `xhigh` +fix | 83 | 93 | 85 | 99 | 91 | 36 | 90.9 | 48.0 | 1.60 | 10 |
+| **3.8 Flash `low` +fix** | **89** | 93 | 85 | 99 | 99 | 69 | 93.2 | 37.0 | 1.23 | **2** |
+| 3.8 Flash `xhigh` +fix | 83 | 99 | 99 | 99 | 99 | **0** | **100.0** | 84.5 | 2.82 | 36 |
+
+**Gemini 3.8 Flash responds to effort exactly as its predecessor does, and harder.**
+Dropping from `xhigh` to `low` cuts its search calls from 36 to 2 — **94%** — and its
+total calls by 56%. It gives up 6.8 objective points and gains six OVR points, because
+EFF moves from 0 to 69.
+
+**At `low` it is the best cell in the grid.** OVR 89 beats its own `xhigh` (83) and every
+arm its predecessor has posted on this workflow (85, 85, 83). It matches 3.7's `low`
+objective exactly, at 93.2, while scoring four points higher overall on the strength of
+PRC and a still-healthy EFF.
+
+That reframes the whole report. `xhigh` on this model does buy real accuracy — the
+perfect 100.0 is not an artifact, and no other arm in the grid comes close to it. But it
+buys that accuracy at 2.8× par, and the golf curve charges more for the calls than the
+correctness is worth. **The right reading of run #134 is not that Gemini 3.8 Flash
+regressed. It is that we measured it at the wrong effort**, and that the desk default —
+`low` — is where it belongs.
+
+The honest scope: this is **one workflow and one trial** for the 3.8 `low` arm, run
+against a five-workflow, two-trial measurement of the same effect in its predecessor.
+The direction is corroborated; the magnitude on other workflows is not yet measured.
+
+---
+
 ## Caveats
 
 - **The control is one workflow and one trial.** ZenMux subscription quota ran out
@@ -213,11 +272,9 @@ rescues the ranking.
 
 ## What would change the verdict
 
-- **A paired `low` arm.** Run #130 showed four of seven models score *higher* at `low`
-  than at their ceiling, because lower effort cuts tool calls and EFF has the widest
-  spread of any axis. Gemini 3.8 Flash is the most over-executing contestant the desk has
-  measured, which makes it the likeliest beneficiary in the field. This report says
-  nothing about how it behaves anywhere but `xhigh`.
+- ~~**A paired `low` arm.**~~ **Run, and it changed the verdict** — see the effort arm
+  above. What remains is the other four workflows: the `low` measurement covers
+  `ops-settlement-day` only, so the desk cannot yet publish a `low` card for this model.
 - **The rest of the harness control.** Four more paired 3.7 arms would turn the 21% from
   a single-workflow measurement into a real coefficient, and would settle whether the
   effect is uniform or concentrated in workflows with large artifact trees.
