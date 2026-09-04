@@ -4,12 +4,13 @@
 The extra spend is not retries and not subagent fan-out: it is five times as much
 filesystem searching, at the same hit rate, in the same places.**
 
-> **Correction, 2026-09-04.** This report originally read the searching as a property of
-> the model. It is mostly a property of the **effort setting**. Pinned to `low`, Gemini
-> 3.8 Flash cuts its search calls by 94% and posts the best result anyone has measured on
-> `ops-settlement-day` — OVR **89**, against 83 at `xhigh` and 85 for its predecessor.
-> The finding below stands as a description of `xhigh`; it does not support the claim
-> that the newer model is worse. The evidence is in **The effort arm**, below.
+> **Correction, 2026-09-04.** This report originally read the over-execution as a property
+> of the model. It is mostly a property of the **effort setting**. Run `#138` re-ran the
+> same model at `low` across all six workflows: calls fall 53%, objective gives up 1.8
+> points, and **OVR rises from 79 to 86** — a better consolidated card than its
+> predecessor's 83. The findings below stand as a description of `xhigh`; they do not
+> support the claim that the newer model is worse. The evidence is in **The effort arm**,
+> below.
 
 *2026-09-03 · run `#134` · 1 model × 6 workflows × 2 trials (5 workflows) and 1 trial
 (confirmation-desk-day) · pinned to `xhigh` · output budget unpinned · objective-only
@@ -211,48 +212,70 @@ Search falls **91%**. On three of the five workflows it goes to exactly zero. Wh
 the file rummaging is, it is switched on by reasoning effort rather than baked into the
 model.
 
-So we ran Gemini 3.8 Flash at `low` on `ops-settlement-day` — one workflow, one trial,
-chosen because it already carried four matched arms. The result reverses this report's
-framing.
+So we ran Gemini 3.8 Flash at `low` across **all six workflows** (run `#138`), one trial
+each — same model, same route, same harness, same commit, with effort as the only
+variable. It is the paired arm for run #134, and it reverses this report's framing.
 
-| Arm | OVR | GRD | ADH | SYN | PRC | **EFF** | Objective | Calls | × par | Search |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| 3.7 Flash `low` | 85 | 90 | 92 | 99 | 95 | 92 | 93.2 | 26.5 | 0.88 | 0 |
-| 3.7 Flash `xhigh` | 85 | 93 | 82 | 99 | 91 | 64 | 89.8 | 38.5 | 1.28 | 2.5 |
-| 3.7 Flash `xhigh` +fix | 83 | 93 | 85 | 99 | 91 | 36 | 90.9 | 48.0 | 1.60 | 10 |
-| **3.8 Flash `low` +fix** | **89** | 93 | 85 | 99 | 99 | 69 | 93.2 | 37.0 | 1.23 | **2** |
-| 3.8 Flash `xhigh` +fix | 83 | 99 | 99 | 99 | 99 | **0** | **100.0** | 84.5 | 2.82 | 36 |
+| | `low` (run #138) | `xhigh` (run #134) |
+|---|:--:|:--:|
+| **OVR** | **86** | 79 |
+| GRD | 91 | 91 |
+| ADH | 92 | 97 |
+| SYN | 99 | 99 |
+| PRC | 94 | 95 |
+| **EFF** | **47** | 4 |
+| Objective | 93.8 | **95.6** |
+| Tool calls per workflow | **75.3** | 161.6 |
+| Search calls per workflow | **26.7** | 51.3 |
 
-**Gemini 3.8 Flash responds to effort exactly as its predecessor does, and harder.**
-Dropping from `xhigh` to `low` cuts its search calls from 36 to 2 — **94%** — and its
-total calls by 56%. It gives up 6.8 objective points and gains six OVR points, because
-EFF moves from 0 to 69.
+**Halving the effort halves the work and raises the score.** Calls fall 53%, search calls
+fall 48%, objective gives up 1.8 points — and OVR rises seven, from 79 to 86, because EFF
+goes from 4 to 47. Grounding is *identical* at both efforts (91 and 91); the entire
+correctness cost is 5 points of adherence.
 
-**At `low` it is the best cell in the grid.** OVR 89 beats its own `xhigh` (83) and every
-arm its predecessor has posted on this workflow (85, 85, 83). It matches 3.7's `low`
-objective exactly, at 93.2, while scoring four points higher overall on the strength of
-PRC and a still-healthy EFF.
+Per workflow, `low` wins four, ties one and loses one by a single point:
 
-That reframes the whole report. `xhigh` on this model does buy real accuracy — the
-perfect 100.0 is not an artifact, and no other arm in the grid comes close to it. But it
-buys that accuracy at 2.8× par, and the golf curve charges more for the calls than the
-correctness is worth. **The right reading of run #134 is not that Gemini 3.8 Flash
-regressed. It is that we measured it at the wrong effort**, and that the desk default —
-`low` — is where it belongs.
+| Workflow | `low` OVR | `xhigh` OVR | Δ | `low` obj | `xhigh` obj |
+|---|:--:|:--:|:--:|:--:|:--:|
+| ops-settlement-day | **98** | 83 | **+15** | 100.0 | 100.0 |
+| risk-limit-breach-day | **97** | 84 | **+13** | 100.0 | 100.0 |
+| high-board-portfolio-review-day | **80** | 72 | +8 | 85.7 | 91.4 |
+| trader-rfq-booking-day | **87** | 81 | +6 | 96.8 | 96.8 |
+| confirmation-desk-day | 71 | 71 | 0 | 87.9 | 87.9 |
+| risk-manager-control-day | 82 | **83** | −1 | 92.3 | 97.4 |
 
-The honest scope: this is **one workflow and one trial** for the 3.8 `low` arm, run
-against a five-workflow, two-trial measurement of the same effect in its predecessor.
-The direction is corroborated; the magnitude on other workflows is not yet measured.
+**Four of the six score identically on objective at both efforts**, including both perfect
+100.0s. The accuracy `xhigh` buys is confined to two workflows —
+`risk-manager-control-day` and `high-board-portfolio-review-day` — and on the golf curve
+it costs far more in calls than it returns.
+
+**The effort effect on searching is not uniform, and that is the most useful detail here.**
+On five workflows filesystem search all but disappears at `low`. On
+`confirmation-desk-day` it barely moves: 151 search calls at `low` against 159 at `xhigh`,
+even though total calls halve from 490 to 256. That workflow's rummaging is **inherent to
+the task**, not bought by effort — which is exactly why it is the one workflow where
+dropping the effort changes nothing at all, OVR 71 either way.
+
+So the corrected reading of run #134 is simple. `xhigh` on this model is a
+misconfiguration. At the desk default it is not merely competitive but the strongest
+consolidated card the flash tier has produced — **OVR 86 against the 83 its predecessor
+posts at its own ceiling.**
+
+**Scope.** Run #138 is **one trial per cell**, so CON is *not measured* rather than
+perfect, and single-sample noise is real: `ops-settlement-day` was measured twice at
+`low`, in run #137 and run #138, and scored 93.2 and then 100.0. Read the per-workflow
+rows as indicative and the direction — five of six workflows improving, none worse by
+more than a point — as the finding.
 
 ---
 
 ## Caveats
 
-- **The control is one workflow and one trial.** ZenMux subscription quota ran out
-  mid-investigation, so the paired arm on `trader-rfq-booking-day` was deliberately
-  abandoned to preserve what remained. The 21% figure is measured on
+- **The harness control is one workflow and one trial.** ZenMux subscription quota ran
+  out mid-investigation, so the paired 3.7 arm on `trader-rfq-booking-day` was
+  deliberately abandoned to preserve what remained. The 21% figure is measured on
   `ops-settlement-day` and is **not** established as a constant across workflows. It is
-  sized, not solved.
+  sized, not solved. (The *effort* arm, by contrast, now covers all six workflows.)
 - **A comparability break now exists for Gemini contestants**, in the same way run #115
   created one for Anthropic-protocol models when the output budget was raised. Every
   Gemini board from #134 onward runs with the thought signature preserved; #113, #127,
@@ -272,9 +295,11 @@ The direction is corroborated; the magnitude on other workflows is not yet measu
 
 ## What would change the verdict
 
-- ~~**A paired `low` arm.**~~ **Run, and it changed the verdict** — see the effort arm
-  above. What remains is the other four workflows: the `low` measurement covers
-  `ops-settlement-day` only, so the desk cannot yet publish a `low` card for this model.
+- ~~**A paired `low` arm.**~~ **Run across all six workflows (`#138`), and it changed the
+  verdict** — see the effort arm above. A `low` card is now published beside the `xhigh`
+  one. What remains is **depth**: run #138 is one trial per cell, so it carries no CON and
+  the two `low` measurements of `ops-settlement-day` differ by 6.8 objective points. A
+  two-trial re-run would turn the direction into a number.
 - **The rest of the harness control.** Four more paired 3.7 arms would turn the 21% from
   a single-workflow measurement into a real coefficient, and would settle whether the
   effect is uniform or concentrated in workflows with large artifact trees.

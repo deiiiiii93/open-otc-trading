@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-04T01:50:43.061150+00:00",
+  "generated_at": "2026-09-04T05:43:46.617593+00:00",
   "models": [
     {
       "boards_total": 5,
@@ -1161,6 +1161,61 @@
     {
       "cards": [
         {
+          "con": null,
+          "coverage": 6,
+          "effort": "low",
+          "model": "gemini-3-8-flash",
+          "ovr": 86,
+          "ovr_max": 98,
+          "ovr_min": 71,
+          "per_workflow": [
+            {
+              "ovr": 98,
+              "workflow": "ops-settlement-day"
+            },
+            {
+              "ovr": 97,
+              "workflow": "risk-limit-breach-day"
+            },
+            {
+              "ovr": 87,
+              "workflow": "trader-rfq-booking-day"
+            },
+            {
+              "ovr": 82,
+              "workflow": "risk-manager-control-day"
+            },
+            {
+              "ovr": 80,
+              "workflow": "high-board-portfolio-review-day"
+            },
+            {
+              "ovr": 71,
+              "workflow": "confirmation-desk-day"
+            }
+          ],
+          "position": "Playmaker",
+          "stats": {
+            "ADH": 92,
+            "EFF": 47,
+            "GRD": 91,
+            "PRC": 94,
+            "SYN": 99
+          },
+          "trials": 1,
+          "workflows_total": 6
+        }
+      ],
+      "date": "2026-09-04",
+      "label": "Run #138 \u2014 the same model at low, the effort arm in full",
+      "models": 1,
+      "note": "Gemini 3.8 Flash across all six golden workflows at low, one trial each \u2014 the paired arm for run #134 above, same model, same route, same harness, same commit, with reasoning effort as the ONLY variable. Read the two cards together: this one is why run #134 should not be read as a model regression. Dropping from xhigh to low cuts tool calls 53% (161.6 to 75.3 per workflow) and costs 1.8 objective points (95.6 to 93.8) \u2014 and OVR RISES from 79 to 86, because EFF goes from 3.7 to 46.8. Four of the six workflows score IDENTICALLY at both efforts, including both perfect 100.0s, so the accuracy that xhigh buys is confined to two workflows and is worth less than the calls it spends. The effort effect on searching is NOT uniform: on five workflows filesystem search all but vanishes at low, but on the vision workflow it barely moves (151 calls against 159), so that workflow's rummaging is inherent rather than effort-driven. ONE TRIAL per cell, so CON is not measured rather than perfect, and the figures carry real single-sample noise \u2014 ops-settlement-day was measured twice at low, in run #137 and here, and scored 93.2 then 100.0.",
+      "post": "2026-09-03-run134-gemini38-flash.md",
+      "run": 138
+    },
+    {
+      "cards": [
+        {
           "con": 89,
           "coverage": 6,
           "effort": "xhigh",
@@ -1293,7 +1348,7 @@
       "date": "2026-08-13",
       "label": "Run #104",
       "models": 2,
-      "note": "An A/B probe against Grok 4.6 over four workflows, two trials each \u2014 a pair, not a field, so neither card is ranked. Read this as a DIFFERENT model from the deepseek-v4-pro card above: DeepSeek replaced the weights behind that id on 2026-08-13, so the boards measure the earlier one. risk-limit-breach-day was also rescored 39 \u2192 38 points after Run #101, so objective figures are not comparable across the two. RESCORED 2026-08-27: risk-limit-breach-day and ops-settlement-day were given calibrated pars (25 and 30) where they previously had none, so EFF on those two workflows was being scored against a theoretical minimum no real run achieves. Cards derive on read, so this card's figures are the recalculated ones; the affected per-workflow OVRs rose by 1 to 9 points and every other workflow is unchanged.",
+      "note": "An A/B probe against Grok 4.6 over four workflows, two trials each \u2014 a pair, not a field, so neither card is ranked. Read this as a DIFFERENT model from the consolidated deepseek-v4-pro card: DeepSeek replaced the weights behind that id on 2026-08-13, so the boards measure the earlier one. risk-limit-breach-day was also rescored 39 \u2192 38 points after Run #101, so objective figures are not comparable across the two. RESCORED 2026-08-27: risk-limit-breach-day and ops-settlement-day were given calibrated pars (25 and 30) where they previously had none, so EFF on those two workflows was being scored against a theoretical minimum no real run achieves. Cards derive on read, so this card's figures are the recalculated ones; the affected per-workflow OVRs rose by 1 to 9 points and every other workflow is unchanged.",
       "post": "2026-08-13-run104-otc-desk-agent-arena.md",
       "run": 104
     },
@@ -1395,7 +1450,7 @@
       "date": "2026-08-19",
       "label": "Run #115",
       "models": 1,
-      "note": "A single-model smoke across all five golden workflows, one trial each \u2014 cards only, for the same reasons as Run #113 above: no field means no rank, and one trial cannot disperse, so CON is not measured. This is also the FIRST run after the Anthropic-protocol output budget was raised from langchain's 4096-token fallback to 32768. GLM 5.3 routes over that protocol, and the capped attempt (Run #114, unpublished) truncated on 5-13% of its calls per workflow \u2014 a truncated turn emits reasoning and nothing else, so it produced no text and no tool call at all. That attempt averaged OVR 72 against 84 here, with risk-manager-control-day moving 67 \u2192 87 on the budget alone. Read EFF against the older boards with care: every Anthropic-protocol contestant on them ran under a cap this run did not. RESCORED 2026-08-27: risk-limit-breach-day and ops-settlement-day were given calibrated pars (25 and 30) where they previously had none, so EFF on those two workflows was being scored against a theoretical minimum no real run achieves. Cards derive on read, so this card's figures are the recalculated ones; the affected per-workflow OVRs rose by 1 to 9 points and every other workflow is unchanged.",
+      "note": "A single-model smoke across all five golden workflows, one trial each \u2014 cards only, for the same reasons as Run #113: no field means no rank, and one trial cannot disperse, so CON is not measured. This is also the FIRST run after the Anthropic-protocol output budget was raised from langchain's 4096-token fallback to 32768. GLM 5.3 routes over that protocol, and the capped attempt (Run #114, unpublished) truncated on 5-13% of its calls per workflow \u2014 a truncated turn emits reasoning and nothing else, so it produced no text and no tool call at all. That attempt averaged OVR 72 against 84 here, with risk-manager-control-day moving 67 \u2192 87 on the budget alone. Read EFF against the older boards with care: every Anthropic-protocol contestant on them ran under a cap this run did not. RESCORED 2026-08-27: risk-limit-breach-day and ops-settlement-day were given calibrated pars (25 and 30) where they previously had none, so EFF on those two workflows was being scored against a theoretical minimum no real run achieves. Cards derive on read, so this card's figures are the recalculated ones; the affected per-workflow OVRs rose by 1 to 9 points and every other workflow is unchanged.",
       "post": null,
       "run": 115
     },
@@ -1835,7 +1890,7 @@
       "date": "2026-08-26",
       "label": "Run #129 \u2014 flash tier at each model's effort ceiling",
       "models": 7,
-      "note": "A real seven-model field, but across all five golden workflows at once, so it is published as cards rather than a ranked board: a leaderboard section covers one workflow, and folding five into a single row per contestant would publish a cross-workflow average under one workflow's heading. Two trials per cell. This is the first flash-tier field measured after four harness defects were fixed \u2014 the Anthropic-protocol 4096-token output cap, the unpinned ZenMux upstream lottery, the unmeasurable truncated turn and malformed tool call, and the dead trap step \u2014 so it is NOT comparable to runs #8-#126 for these models. Every model ran at its OWN measured effort ceiling (max, xhigh or high depending on the route), which makes this a capability measurement, not a shippable configuration; run #130 below is the same field pinned to `low`.",
+      "note": "A real seven-model field, but across all five golden workflows at once, so it is published as cards rather than a ranked board: a leaderboard section covers one workflow, and folding five into a single row per contestant would publish a cross-workflow average under one workflow's heading. Two trials per cell. This is the first flash-tier field measured after four harness defects were fixed \u2014 the Anthropic-protocol 4096-token output cap, the unpinned ZenMux upstream lottery, the unmeasurable truncated turn and malformed tool call, and the dead trap step \u2014 so it is NOT comparable to runs #8-#126 for these models. Every model ran at its OWN measured effort ceiling (max, xhigh or high depending on the route), which makes this a capability measurement, not a shippable configuration; run #130 is the same field pinned to `low`.",
       "post": "2026-08-26-run129-flash-tier-board.md",
       "run": 129
     },

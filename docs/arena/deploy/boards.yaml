@@ -78,6 +78,27 @@ boards:
       for every contestant; it no longer separates a strong field.
 
 provisional:
+  - run: 138
+    label: "Run #138 — the same model at low, the effort arm in full"
+    post: 2026-09-03-run134-gemini38-flash.md
+    note: >-
+      Gemini 3.8 Flash across all six golden workflows at low, one trial each —
+      the paired arm for run #134 above, same model, same route, same harness,
+      same commit, with reasoning effort as the ONLY variable. Read the two
+      cards together: this one is why run #134 should not be read as a model
+      regression. Dropping from xhigh to low cuts tool calls 53% (161.6 to 75.3
+      per workflow) and costs 1.8 objective points (95.6 to 93.8) — and OVR
+      RISES from 79 to 86, because EFF goes from 3.7 to 46.8. Four of the six
+      workflows score IDENTICALLY at both efforts, including both perfect
+      100.0s, so the accuracy that xhigh buys is confined to two workflows and
+      is worth less than the calls it spends. The effort effect on searching is
+      NOT uniform: on five workflows filesystem search all but vanishes at low,
+      but on the vision workflow it barely moves (151 calls against 159), so
+      that workflow's rummaging is inherent rather than effort-driven. ONE
+      TRIAL per cell, so CON is not measured rather than perfect, and the
+      figures carry real single-sample noise — ops-settlement-day was measured
+      twice at low, in run #137 and here, and scored 93.2 then 100.0.
+
   - run: 134
     label: "Run #134 — Gemini 3.8 Flash, the first board after the thought-signature fix"
     post: 2026-09-03-run134-gemini38-flash.md

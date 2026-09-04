@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Run #138 published: Gemini 3.8 Flash at `low` across all six workflows**, the
+  paired arm for run #134 with effort as the only variable, and a second card on
+  `/arena/models.html` beside the `xhigh` one. **OVR 86 against 79** — calls fall
+  53% (161.6 → 75.3 per workflow) and search calls 48%, objective gives up 1.8
+  points (95.6 → 93.8), and EFF goes 4 → 47. Grounding is identical at both
+  efforts (91); the whole correctness cost is 5 points of adherence. `low` wins
+  four workflows, ties one and loses one by a point, and **four of six score
+  identically on objective at both efforts**, including both perfect 100.0s.
+  At `low` this is a better consolidated card than its predecessor's 83.
+  - **The effort effect on searching is not uniform.** On five workflows filesystem
+    search all but vanishes at `low`; on `confirmation-desk-day` it barely moves
+    (151 calls against 159) even as total calls halve — that workflow's rummaging
+    is inherent to the task, which is also why it is the one workflow where effort
+    changes nothing (OVR 71 either way).
+  - One trial per cell, so CON is *not measured* rather than perfect. Single-sample
+    noise is real and disclosed: `ops-settlement-day` was measured twice at `low`
+    (runs #137 and #138) and scored 93.2 then 100.0.
+  - The vision arm first failed on `APIConnectionError` and was recorded
+    `invalid`/`infra_error` rather than scored, then recovered with `--resume 138`.
+    Workflows were ordered cheapest-first by measured call count so an outage costs
+    the least; zero 402s in the whole run.
+
 - **`/arena/methodology.html` — how a score on the site is made.** The blog
   published boards, cards and OVR for months with nothing that defined them:
   a reader met `GRD`, `par`, `CON` and "provisional" as column headings and had
