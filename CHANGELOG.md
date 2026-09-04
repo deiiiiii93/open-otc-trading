@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`/arena/methodology.html` — how a score on the site is made.** The blog
+  published boards, cards and OVR for months with nothing that defined them:
+  a reader met `GRD`, `par`, `CON` and "provisional" as column headings and had
+  to infer the rest. The new page explains a match, the workflows, the grading,
+  the harness and the limits, and closes with a glossary of every term the
+  other pages publish. Written for a practitioner: the stats are explained in
+  words and the OVR weights are given as an order rather than as coefficients.
+  - **The workflow table is derived from `boards.json`**, the same export the
+    leaderboard reads, so a seventh workflow reaches the page the day it is
+    exported. An uncalibrated par renders an em dash, never the theoretical
+    minimum it is actually scored against — printing that number here would
+    read as a calibrated target and claim an anchoring that does not exist.
+  - **Built unconditionally, unlike the leaderboard and the cards page.** Those
+    two ARE the snapshot, so absence correctly costs them their page and their
+    nav link; this one is prose carrying one derived table, so a missing export
+    costs it the table alone. Its masthead link is therefore ungated, in the
+    same class as Blog and About.
+  - `publish.verify_live` requires it to serve and to carry its own heading —
+    a 200 proves nothing under the SPA catch-all — and the dead-class guard was
+    extended to render it, since theme.css is the only stylesheet a built page
+    carries. The page reuses `.post-body` for all of its prose, so the new CSS
+    surface is one definition-list rule.
+
 ### Changed
 - **`/arena/models.html` is now a roster plus one page per model.** It was a
   single page carrying 118 ability cards — 131KB, roughly 8,000px of boxes — and
