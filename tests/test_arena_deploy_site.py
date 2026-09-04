@@ -1101,10 +1101,41 @@ def test_the_panels_are_wrapped_so_the_target_rules_have_something_to_bind_to():
     assert body.count('<section class="wf"') == 2
 
 
-def test_the_tab_bar_precedes_the_panels():
-    """A control below the thing it controls is not a tab bar."""
+def test_the_board_leads_in_the_dom_and_the_grid_puts_the_rail_right():
+    """DOM order is READING order, and what a reader came for is the board. The
+    rail's position is the grid's job, not the markup's — so the source order
+    that would be wrong for a top bar is the right one for a right rail."""
     html = sb.render_leaderboard(models_snapshot(FLAGSHIP, UNMEASURED), POSTS, THEME)
-    assert html.index('class="wf-tabs"') < html.index('class="wf-panels"')
+    assert html.index('class="wf-panels"') < html.index('class="wf-tabs"')
+    assert '<div class="wf-layout">' in html
+    css = (DEPLOY / "theme.css").read_text()
+    assert "grid-template-columns:minmax(0,1fr) 164px" in css
+
+
+def test_on_one_column_the_rail_is_lifted_above_the_board():
+    """A control BELOW the thing it controls is not a tab bar. On a phone the
+    grid collapses to the DOM order, which puts the board first, so the rail
+    has to be pulled back up explicitly."""
+    css = (DEPLOY / "theme.css").read_text()
+    narrow = css[css.index("@media (max-width:860px){\n  .wf-layout"):]
+    narrow = narrow[:narrow.index("\n}")]
+    assert "order:-1" in narrow
+    assert "grid-template-columns:minmax(0,1fr)" in narrow
+
+
+def test_the_leaderboard_is_the_only_page_that_widens_its_container():
+    """The rail takes room the widest board table was using to the pixel. The
+    journal measure is right for every other page, so the override is scoped to
+    a modifier rather than applied to `.page` itself."""
+    css = (DEPLOY / "theme.css").read_text()
+    assert ".page{max-width:1080px" in css       # unchanged for everyone else
+    assert ".page.wide{max-width:1300px}" in css
+
+    wide = sb.render_leaderboard(models_snapshot(FLAGSHIP), POSTS, THEME)
+    assert '<div class="page wide">' in wide
+    for html in (sb.render_index(POSTS, MINUTES, THEME),
+                 sb.render_models(models_snapshot(FLAGSHIP), THEME)):
+        assert '<div class="page wide">' not in html
 
 
 def test_every_panel_keeps_the_id_the_deploy_verifier_scrapes():

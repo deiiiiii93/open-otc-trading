@@ -537,12 +537,25 @@ def render_leaderboard(snapshot: dict, posts: list[Post], theme: str) -> str:
     by_file = {p.file: p for p in posts}
     workflows = ordered_workflows(snapshot.get("workflows") or [])
     sections = "".join(_workflow_section(wf, by_file) for wf in workflows)
-    sections = f'{_workflow_tabs(workflows)}<div class="wf-panels">{sections}</div>'
+    # Panels first in the DOM, rail second: the reading order is the board, and
+    # the grid puts the rail on the right regardless. On a phone the grid
+    # collapses and CSS `order` lifts the rail ABOVE the panel, because a
+    # control belongs before the thing it controls — the opposite of the
+    # index's rail, which is commentary and correctly follows the feed.
+    sections = (
+        '<div class="wf-layout">'
+        f'<div class="wf-panels">{sections}</div>'
+        f"{_workflow_tabs(workflows)}"
+        "</div>"
+    )
     generated = str(snapshot.get("generated_at", ""))[:10]
 
     return (
         _head(f"{LEADERBOARD_TITLE} — {SITE_TITLE}", theme, LEADERBOARD_LEAD)
-        + '<div class="page">\n'
+        # Wider than every other page, and only this one. It is the only page
+        # carrying eleven-column tables, and the rail takes room the widest of
+        # them was already using to the pixel.
+        + '<div class="page wide">\n'
         + _masthead(True, here="leaderboard", models=bool(snapshot.get("models")))
         + f'<div class="intro"><h1>{escape(LEADERBOARD_TITLE)}</h1>'
         + f'<p class="lead">{escape(LEADERBOARD_LEAD)}</p>'

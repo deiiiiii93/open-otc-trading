@@ -8,11 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- **`/arena/leaderboard.html` is tabbed by workflow.** It was six stacked
-  sections, 5,351px of scroll, and the newest board's 1,443-character caveat
-  bought the whole page's first impression before a single number appeared. The
-  workflows are now tabs and the page is 1,368px: you land on one board and
-  choose the rest.
+- **`/arena/leaderboard.html` is tabbed by workflow, in a right-hand rail.** It
+  was six stacked sections, 5,351px of scroll, and the newest board's
+  1,443-character caveat bought the whole page's first impression before a
+  single number appeared. The workflows are now a sticky rail beside the board:
+  you land on one board, choose the rest, and the rail stays in view while you
+  read a long field rather than making you scroll back to a bar at the top.
+  - **The rail is 164px and the page widened to 1300px, for this page alone.**
+    The widest board table is 1032px and the container was 1032px to the pixel,
+    so every column the rail takes comes straight out of the measurements — and
+    the ones it would push out of view are the right-hand ones (EFF, CON, OBJ,
+    TRIALS), which are exactly what explains a ranking. Measured after the
+    change: every board table still renders whole at a 1280px viewport. The
+    widening is scoped to a `.page.wide` modifier so the journal measure the
+    rest of the site is set to does not move.
+  - **The board leads in the DOM and the grid places the rail.** Source order is
+    reading order, and what a reader came for is the table. On one column the
+    grid collapses to that order, so the rail is pulled back above the board
+    with `order:-1` — a control belongs before the thing it controls, which is
+    the opposite of the index's rail, where the cards are commentary and
+    correctly follow the feed.
   - **Selection is `:target` and nothing else — no JavaScript**, of which the
     site has none anywhere. A leaderboard is the last page that should need any:
     it is a table of measurements, and a reader with script blocked must still

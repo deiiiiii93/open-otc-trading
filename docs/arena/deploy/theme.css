@@ -15,6 +15,9 @@ body{margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans);
 a{color:var(--accent); text-decoration:none}
 a:hover{text-decoration:underline}
 .page{max-width:1080px; margin:0 auto; padding:28px 24px 72px}
+/* The leaderboard alone. Its widest table plus the workflow rail need more
+   room than the journal measure the rest of the site is set to. */
+.page.wide{max-width:1300px}
 
 /* ---- nameplate ---------------------------------------------------------
    Full on the index, where the site title IS the page's h1 and the tagline
@@ -234,14 +237,35 @@ footer.site{margin-top:52px; padding-top:18px; border-top:1px solid var(--line);
    the rule that theme.css is the only stylesheet a built page carries, which
    is what every dead-class guard rests on. The panel's own heading sits
    directly under the bar and names the selection instead.                  */
-.wf-tabs{display:flex; flex-wrap:wrap; gap:8px; padding:22px 0 4px}
-.wf-tab{display:inline-flex; align-items:baseline; gap:7px;
-  font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.78rem;
-  color:var(--ink); text-decoration:none; background:var(--paper);
-  border:1px solid var(--line); border-radius:6px; padding:6px 11px}
+/* Board left, tabs right. The rail is deliberately narrow: the widest board
+   table is 1032px and the page's content box WAS 1032px to the pixel, so every
+   column the rail takes comes straight out of the measurements — and the ones
+   it pushes out of view are the right-hand ones (EFF, CON, OBJ, TRIALS), which
+   are exactly what explains a ranking. Hence a 164px rail and a wider page for
+   this one document rather than the site's usual 268px aside. */
+.wf-layout{display:grid; grid-template-columns:minmax(0,1fr) 164px; gap:32px;
+  align-items:start}
+.wf-tabs{display:flex; flex-direction:column; gap:6px; padding:22px 0 4px;
+  position:sticky; top:18px}
+.wf-tab{display:block; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.7rem; line-height:1.35; color:var(--ink); text-decoration:none;
+  background:var(--paper); border:1px solid var(--line); border-radius:6px;
+  padding:7px 9px; overflow-wrap:anywhere}
 .wf-tab:hover{border-color:var(--accent); color:var(--accent)}
-.wf-tab-none{font-family:var(--sans); font-size:.6rem; text-transform:uppercase;
-  letter-spacing:.08em; color:var(--muted)}
+.wf-tab-none{display:block; margin-top:2px; font-family:var(--sans);
+  font-size:.58rem; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--muted)}
+
+/* One column on a phone, and the RAIL LEADS. It is a control, so it belongs
+   before what it controls — the opposite of the index's rail, which is
+   commentary and correctly follows the feed. */
+@media (max-width:860px){
+  .wf-layout{grid-template-columns:minmax(0,1fr)}
+  .wf-tabs{flex-direction:row; flex-wrap:wrap; position:static; order:-1;
+    padding-top:18px}
+  .wf-tab{font-size:.75rem}
+  .wf-tab-none{display:inline; margin-top:0; margin-left:6px}
+}
 /* The panel states the selection, since no tab can be highlighted. Its slug
    therefore has to stop wearing the TAB's costume: an identical bordered chip
    directly under the bar reads as a seventh tab that wrapped, not as the
