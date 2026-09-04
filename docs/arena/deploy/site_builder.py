@@ -988,10 +988,11 @@ def _provisional_section(entries: list[dict], by_file: dict) -> str:
     )
 
 
-def _cards_section(title: str, subtitle: str, body: str, anchor: str = "") -> str:
+def _cards_section(title: str, subtitle: str, body: str, anchor: str = "",
+                   attrs: str = "") -> str:
     ident = f' id="{escape(anchor)}"' if anchor else ""
     return (
-        f'<section class="wf"{ident}>'
+        f'<section class="wf"{ident}{attrs}>'
         f"<h2>{title}</h2>"
         f'<p class="wf-facts">{subtitle}</p>'
         f"{body}</section>\n"
@@ -1155,8 +1156,12 @@ def _roster_row(name: str, context: str, card: dict, range_cell: str) -> str:
         f"<td>{_num(stats.get(stat))}</td>" for stat in STAT_ORDER
     )
     position = str(card.get("position") or "")
+    # `data-model` is the ONE hook the search filters on. Matching the visible
+    # cell instead would tie the filter to the column order, and matching the
+    # whole row would answer a search for "90" with every card carrying a 90 in
+    # any of its eight numeric columns.
     return (
-        "<tr>"
+        f'<tr data-model="{escape(name)}">'
         f'<td class="model"><a href="{MODELS_DIR}/{escape(name)}.html">'
         f"{escape(name)}</a>"
         + (f'<span class="roster-context">{context}</span>' if context else "")
@@ -1174,11 +1179,30 @@ def _roster_table(rows: list[str]) -> str:
     head = "".join(f"<th>{escape(c)}</th>" for c in ROSTER_COLUMNS)
     # Reuses the leaderboard's scroll box: ten columns do not fit a phone, and a
     # table that scrolls in its own container beats a page body that does.
+    #
+    # The "no match" line is a sibling of the box rather than a row inside it,
+    # so the search can swap one for the other. A headed table with an empty
+    # body reads as "this section has nothing in it" instead of "your query
+    # excluded all of it" — empty != unavailable, the same rule an unmeasured
+    # workflow already gets on the leaderboard.
     return (
-        '<div class="board-scroll">'
+        '<div class="board-scroll" data-roster-table>'
         f'<table class="roster"><thead><tr>{head}</tr></thead>'
         f'<tbody>{"".join(rows)}</tbody></table></div>'
+        '<p class="roster-none" data-roster-none hidden>No model matches '
+        '<b data-roster-echo></b>.</p>'
     )
+
+
+def _roster_count(n: int) -> str:
+    """The card count, in a span the search rewrites while filtering.
+
+    A filtered table advertising its unfiltered total is the same lie the
+    derived-leaderboard rules exist to prevent: the number on screen has to
+    describe the rows on screen.
+    """
+    return (f'<span class="roster-count" data-roster-count>'
+            f'{n} card{"s" if n != 1 else ""}</span>')
 
 
 def _career_range(card: dict) -> str:
@@ -1213,6 +1237,90 @@ ROSTER_RANKED_LEAD = (
     "these means span different sets of boards, so a place in this list would "
     "be the cross-workflow ranking the leaderboard refuses to publish."
 )
+
+
+SEARCH_INPUT_ID = "roster-q"
+SEARCH_HINT_ID = "roster-q-hint"
+SEARCH_LABEL = "Find a model"
+SEARCH_PLACEHOLDER = "e.g. gemini"
+SEARCH_HINT = "Filters both tables by model name."
+
+
+def _roster_search() -> str:
+    """The one control on the site, emitted HIDDEN.
+
+    /arena/ shipped no JavaScript at all before this, so a reader with scripts
+    off would be handed an input that silently swallows every keystroke. The
+    script is what reveals the box, which makes its absence honest rather than
+    broken — the same empty-vs-unavailable rule the rest of the site follows,
+    arrived at from the other side.
+
+    It sits above both sections because it governs both: seven models own a
+    consolidated card AND provisional arms, so a filter that reached only one
+    table would hide half of what the reader searched for.
+    """
+    return (
+        '<div class="roster-search" role="search" data-roster-search hidden>'
+        f'<label class="roster-search-label" for="{SEARCH_INPUT_ID}">'
+        f"{escape(SEARCH_LABEL)}</label>"
+        f'<input class="roster-search-input" id="{SEARCH_INPUT_ID}" type="search"'
+        ' autocomplete="off" spellcheck="false" data-roster-input'
+        f' placeholder="{escape(SEARCH_PLACEHOLDER)}"'
+        f' aria-describedby="{SEARCH_HINT_ID}">'
+        f'<p class="roster-search-hint" id="{SEARCH_HINT_ID}">'
+        f"{escape(SEARCH_HINT)}</p>"
+        "</div>\n"
+    )
+
+
+# Inlined, like the stylesheet: there is no build step that could emit a second
+# file, and the served CSP is `script-src 'self' 'unsafe-inline'`. Every hook it
+# queries is pinned to the markup by a test, because a script looking for an
+# attribute the builder never emits fails silently and forever — nothing renders
+# wrong, the box simply never filters.
+ROSTER_SEARCH_JS = """
+(function () {
+  var box = document.querySelector('[data-roster-search]');
+  var input = box && box.querySelector('[data-roster-input]');
+  if (!input) return;
+  box.hidden = false;
+
+  var sections = document.querySelectorAll('[data-roster-section]');
+
+  function apply() {
+    var raw = input.value.trim();
+    var needle = raw.toLowerCase();
+    for (var i = 0; i < sections.length; i++) {
+      var section = sections[i];
+      var rows = section.querySelectorAll('[data-model]');
+      var shown = 0;
+      for (var j = 0; j < rows.length; j++) {
+        var name = rows[j].getAttribute('data-model').toLowerCase();
+        var hit = !needle || name.indexOf(needle) !== -1;
+        rows[j].hidden = !hit;
+        if (hit) shown++;
+      }
+      var total = rows.length;
+      section.querySelector('[data-roster-count]').textContent =
+        (shown === total ? String(total) : shown + ' of ' + total) +
+        ' card' + (total === 1 ? '' : 's');
+
+      var none = section.querySelector('[data-roster-none]');
+      var table = section.querySelector('[data-roster-table]');
+      none.querySelector('[data-roster-echo]').textContent = raw;
+      none.hidden = shown !== 0;
+      table.hidden = shown === 0;
+    }
+  }
+
+  input.addEventListener('input', apply);
+  // `type=search` draws its own clear cross in WebKit, and clearing that way
+  // has fired `search` without `input` — which would leave a filtered roster
+  // above an empty box. Harmless where the event does not exist.
+  input.addEventListener('search', apply);
+  apply();
+})();
+"""
 
 
 def render_models(snapshot: dict, theme: str, posts: list | tuple = ()) -> str:
@@ -1252,22 +1360,24 @@ def render_models(snapshot: dict, theme: str, posts: list | tuple = ()) -> str:
     if ranked:
         sections.append(_cards_section(
             "Board contestants",
-            f'{len(ranked)} card{"s" if len(ranked) != 1 else ""} '
+            f"{_roster_count(len(ranked))} "
             "&middot; each averaged across the boards it contested",
             f'<p class="board-note">{escape(ROSTER_RANKED_LEAD)}</p>'
             + _roster_table(ranked),
             anchor="ranked",
+            attrs=" data-roster-section",
         ))
     # Absence reaches the section, not just the rows: no cards-only run means
     # no heading at all, rather than an empty "Provisional" with nothing under it.
     if arms:
         sections.append(_cards_section(
             escape(PROVISIONAL_TITLE),
-            f'{len(arms)} card{"s" if len(arms) != 1 else ""} '
+            f"{_roster_count(len(arms))} "
             "&middot; measured, never ranked &middot; grouped by model",
             f'<p class="board-note">{escape(PROVISIONAL_LEAD)}</p>'
             + _roster_table(arms),
             anchor="provisional",
+            attrs=" data-roster-section",
         ))
 
     generated = str(snapshot.get("generated_at", ""))[:10]
@@ -1279,7 +1389,12 @@ def render_models(snapshot: dict, theme: str, posts: list | tuple = ()) -> str:
         + f'<p class="lead">{escape(MODELS_LEAD)}</p>'
         + f'<p class="derived">derived from the arena database on {escape(generated)}</p>'
         + "</div>\n"
+        # Both halves are gated on there being something to filter. The script
+        # would no-op on its own, but shipping a filter for a page with no rows
+        # is the same absence-vs-emptiness confusion the rest of the site avoids.
+        + (_roster_search() if sections else "")
         + f'<main class="boards">\n{"".join(sections)}</main>\n'
         + _site_footer()
+        + (f"<script>{ROSTER_SEARCH_JS}</script>\n" if sections else "")
         + "</div>\n</body></html>\n"
     )

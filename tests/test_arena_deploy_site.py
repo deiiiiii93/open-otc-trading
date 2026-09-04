@@ -863,8 +863,13 @@ def test_the_roster_scrolls_inside_its_own_box_so_the_page_body_never_does():
     """Ten columns do not fit a phone. A wide table scrolling in its own
     container is fine; the page body scrolling sideways is a different and
     much worse thing."""
+    import re
+
     html = sb.render_models(_with_provisional(FLAGSHIP), THEME)
-    assert '<div class="board-scroll"><table class="roster">' in html
+    # The nesting is the claim; the box's attribute list is not. Pinning the
+    # exact opening tag made adding one hook to the scroll box fail a test about
+    # sideways scrolling, which tells a future reader nothing true.
+    assert re.search(r'<div class="board-scroll"[^>]*><table class="roster">', html)
 
 
 SETTLED = {
@@ -929,7 +934,10 @@ def test_a_run_label_is_escaped_wherever_a_card_caption_carries_it():
         **PROVISIONAL, "label": "Run #113 <script> & co"}]}
     for html in (sb.render_models(snap, THEME),
                  sb.render_model_page(sb.model_index(snap)[1], snap, THEME)):
-        assert "<script>" not in html
+        # The roster now carries a script of its own — the search filter — so
+        # "no <script> on the page" would be a test of the site's chrome rather
+        # than of this label. What must never appear is a tag the LABEL opened.
+        assert "Run #113 <script>" not in html
     page = sb.render_model_page(sb.model_index(snap)[1], snap, THEME)
     assert "&lt;script&gt; &amp; co" in page
     assert "&amp;lt;" not in page          # ...and escaped exactly once
@@ -1056,3 +1064,207 @@ def test_every_class_the_methodology_page_emits_has_a_rule_in_the_stylesheet():
     for attr in re.findall(r'class="([^"]+)"', page):
         emitted.update(attr.split())
     assert sorted(c for c in emitted if f".{c}" not in css) == []
+
+
+# ---------------------------------------------------------------- roster search
+#
+# The roster is 44 rows over two tables and the site had no JavaScript at all
+# before this, so the search box is the first script /arena/ ships. That makes
+# markup assertions insufficient on their own: the whole feature IS the runtime
+# behaviour, and a page whose script silently matched nothing would render
+# identically to one that worked. These tests therefore drive the real script in
+# a real DOM, and a pure-Python guard below pins the script to the markup so the
+# two cannot drift apart on a checkout with no node_modules.
+
+SEARCH_MODELS = (CAREER, TERRA_CAREER)          # gemini-3-6-flash, gpt-5-6-terra
+UNTOUCHED = "__untouched__"                     # never type; report first paint
+
+
+def _search_snapshot():
+    """Two ranked rows and one provisional arm, with names that do NOT all share
+    a substring — so a query can empty one section while the other still has a
+    hit, which is the only way to exercise the empty-section branch."""
+    return {**models_snapshot(FLAGSHIP, models=SEARCH_MODELS),
+            "provisional": [PROVISIONAL]}
+
+
+# Loads the built page in jsdom, types a query, and reports what a reader would
+# actually see. jsdom lives in the frontend's node_modules, which is gitignored,
+# so this skips rather than fails on a checkout that never ran `npm install`.
+_DRIVER = r"""
+const fs = require('fs');
+const { JSDOM } = require(process.argv[2]);
+const dom = new JSDOM(fs.readFileSync(process.argv[3], 'utf8'),
+                      { runScripts: 'dangerously' });
+const { window } = dom;
+const { document } = window;
+
+// A LIST of steps, applied to ONE page: clearing a filter has to happen on the
+// page that was filtered, or the test measures nothing but first paint.
+const input = document.querySelector('[data-roster-input]');
+for (const step of JSON.parse(process.argv[4])) {
+  input.value = step.value;
+  input.dispatchEvent(new window.Event(step.event, { bubbles: true }));
+}
+
+const visible = (el) => window.getComputedStyle(el).display !== 'none';
+const report = {
+  sections: [],
+  control: visible(document.querySelector('[data-roster-search]')),
+};
+for (const section of document.querySelectorAll('[data-roster-section]')) {
+  const none = section.querySelector('[data-roster-none]');
+  report.sections.push({
+    id: section.id,
+    shown: [...section.querySelectorAll('[data-model]')]
+      .filter(visible).map((r) => r.getAttribute('data-model')),
+    count: section.querySelector('[data-roster-count]').textContent,
+    empty: visible(none) ? none.textContent : null,
+    table: visible(section.querySelector('[data-roster-table]')),
+  });
+}
+console.log(JSON.stringify(report));
+"""
+
+
+def _drive(steps, tmp_path, snap=None):
+    """`steps` is a query string (typed, then reported) or a list of
+    (value, event) pairs applied in order to a single page."""
+    import json
+    import shutil
+    import subprocess
+
+    if steps == UNTOUCHED:
+        steps = []
+    elif isinstance(steps, str):
+        steps = [(steps, "input")]
+    payload = json.dumps([{"value": v, "event": e} for v, e in steps])
+
+    jsdom = REPO / "frontend" / "node_modules" / "jsdom"
+    node = shutil.which("node")
+    if node is None or not jsdom.exists():
+        import pytest
+        pytest.skip("needs node and the frontend's jsdom")
+
+    theme = (DEPLOY / "theme.css").read_text()
+    page = tmp_path / "models.html"
+    page.write_text(sb.render_models(snap or _search_snapshot(), theme))
+    driver = tmp_path / "drive.js"
+    driver.write_text(_DRIVER)
+
+    out = subprocess.run(
+        [str(node), str(driver), str(jsdom), str(page), payload],
+        capture_output=True, text=True, check=True,
+    )
+    return json.loads(out.stdout)
+
+
+def _section(report, anchor):
+    return next(s for s in report["sections"] if s["id"] == anchor)
+
+
+def test_typing_a_model_name_hides_every_roster_row_that_does_not_match(tmp_path):
+    """The whole point of the box. gemini-3-6-flash stays, gpt-5-6-terra goes."""
+    report = _drive("gemini", tmp_path)
+    assert _section(report, "ranked")["shown"] == ["gemini-3-6-flash"]
+    assert _section(report, "provisional")["shown"] == ["gemini-3-7-flash"]
+
+
+def test_the_roster_search_matches_the_name_and_never_a_stat_cell(tmp_path):
+    """Matching a number would surface rows for reasons the reader did not ask
+    for: every card carrying a 90 in any column would answer a search for '90'.
+    The name is the only thing anyone searches a roster by."""
+    report = _drive("90", tmp_path)          # CAREER's OVR, and PROVISIONAL's
+    assert _section(report, "ranked")["shown"] == []
+    assert _section(report, "provisional")["shown"] == []
+
+
+def test_the_roster_search_ignores_case_so_a_capitalised_name_matches(tmp_path):
+    report = _drive("GEMINI", tmp_path)
+    assert _section(report, "ranked")["shown"] == ["gemini-3-6-flash"]
+
+
+def test_a_filtered_roster_section_counts_matches_against_its_total(tmp_path):
+    """A filtered table advertising its unfiltered total is the same lie the
+    derived-leaderboard rules exist to prevent: the number on screen has to
+    describe the rows on screen."""
+    report = _drive("gemini", tmp_path)
+    assert _section(report, "ranked")["count"] == "1 of 2 cards"
+
+
+def test_an_unfiltered_roster_section_states_its_total_with_no_of_clause(tmp_path):
+    """'2 of 2' reads as a filter that is doing something. Nothing is filtered
+    on first paint, so the count must look exactly as it does today."""
+    report = _drive(UNTOUCHED, tmp_path)
+    assert _section(report, "ranked")["count"] == "2 cards"
+    assert _section(report, "provisional")["count"] == "1 card"
+
+
+def test_clearing_the_roster_search_restores_every_row_and_count(tmp_path):
+    report = _drive("", tmp_path)
+    assert _section(report, "ranked")["shown"] == ["gemini-3-6-flash", "gpt-5-6-terra"]
+    assert _section(report, "ranked")["count"] == "2 cards"
+
+
+def test_a_roster_section_with_no_match_says_so_instead_of_an_empty_table(tmp_path):
+    """empty != unavailable, the rule an unmeasured workflow already gets on the
+    leaderboard. A headed table with no body reads as 'this section has nothing
+    in it', not 'your query excluded all of it'."""
+    report = _drive("terra", tmp_path)
+    ranked, prov = _section(report, "ranked"), _section(report, "provisional")
+    assert ranked["shown"] == ["gpt-5-6-terra"] and ranked["table"] is True
+    assert prov["shown"] == [] and prov["table"] is False
+    assert prov["empty"] is not None and "terra" in prov["empty"]
+
+
+def test_the_roster_search_box_is_absent_until_javascript_switches_it_on(tmp_path):
+    """The site shipped zero JavaScript before this, and a reader with scripts
+    off would otherwise get an input that silently swallows keystrokes. An
+    absent control is honest; a dead one lies. So the build emits it hidden and
+    the script is what reveals it."""
+    html = sb.render_models(_search_snapshot(), THEME)
+    control = html.split("data-roster-search", 1)[1].split(">", 1)[0]
+    assert "hidden" in control
+    assert _drive(UNTOUCHED, tmp_path)["control"] is True
+
+
+def test_every_roster_row_carries_the_model_name_the_search_filters_on():
+    """The one hook the script matches against. Reading the visible cell instead
+    would tie the filter to the column order."""
+    html = sb.render_models(_search_snapshot(), THEME)
+    assert 'data-model="gemini-3-6-flash"' in html
+    assert 'data-model="gpt-5-6-terra"' in html
+    assert 'data-model="gemini-3-7-flash"' in html
+
+
+def test_the_roster_search_script_queries_only_hooks_the_roster_emits():
+    """The dead-class guard's sibling, and the reason it is needed: a script
+    querying `[data-roster-rows]` while the builder emits `[data-roster-table]`
+    fails silently and forever. Nothing renders wrong — the box just never
+    filters — so only a guard reading both sides catches it. This one runs with
+    no node and no node_modules, which is what keeps the jsdom tests above from
+    being the only thing holding the feature together."""
+    import re
+
+    html = sb.render_models(_search_snapshot(), THEME)
+    js = sb.ROSTER_SEARCH_JS
+    hooks = set(re.findall(r"\[(data-[a-z-]+)\]", js))
+    hooks |= set(re.findall(r"""getAttribute\(['"](data-[a-z-]+)['"]\)""", js))
+    assert hooks, "the guard found no selectors to check — it is not guarding"
+    assert sorted(h for h in hooks
+                  if not any(f"{h}{t}" in html for t in ("=", " ", ">"))) == []
+
+
+def test_the_native_clear_button_restores_the_roster(tmp_path):
+    """WebKit's `type=search` draws its own clear cross, and clearing that way
+    has historically fired only the `search` event, not `input`. Listening for
+    `input` alone leaves the reader looking at a filtered roster above an empty
+    box, with no way to see why — the one state a filter must never reach."""
+    assert _section(_drive("terra", tmp_path), "provisional")["shown"] == []
+
+    # Filter, then clear the way the cross does: same page, `search` only.
+    cleared = _drive([("terra", "input"), ("", "search")], tmp_path)
+    assert _section(cleared, "ranked")["shown"] == [
+        "gemini-3-6-flash", "gpt-5-6-terra"]
+    assert _section(cleared, "provisional")["table"] is True
+    assert _section(cleared, "provisional")["count"] == "1 card"

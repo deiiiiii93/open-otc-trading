@@ -190,6 +190,57 @@ roster of one row per card, and `models/<id>.html` per model.
   consolidated card for a model that contested no board — so it emitted no board
   card at all. A guard that never renders the markup it protects is not a guard.
 
+## The roster search is the site's ONLY script
+
+`models.html` carries a filter box over both roster tables. Everything else on
+the site is static HTML with one inlined `<style>`, so this is the first and only
+JavaScript `/arena/` serves — treat adding a second as a decision, not a detail.
+
+- **The control is emitted `hidden` and the script reveals it.** A reader with
+  scripts off would otherwise get an input that silently swallows keystrokes.
+  Absence is honest, a dead control is not — the same `empty != unavailable`
+  rule the leaderboard's unmeasured workflows get, arrived at from the other
+  side. `_roster_search()` emits it; the first thing `ROSTER_SEARCH_JS` does is
+  clear `hidden`.
+- **Inlined, because there is no build step that could emit a second file** and
+  the served CSP is `script-src 'self' 'unsafe-inline'`. Nothing about the
+  search touches nginx, which matters given the `add_header` trap below.
+- **It matches the model name and NOTHING else.** Each row carries
+  `data-model`, so the filter never reads a visible cell — a match against the
+  row would answer a search for `90` with every card holding a 90 in any of
+  eight numeric columns, and a match against a cell would break when a column
+  moves. That `3-8` matches zero *ranked* rows is correct, not a bug: every
+  3.8-generation model has only ever been measured provisionally.
+- **A filtered section counts matches against its total; an unfiltered one does
+  not.** `3 of 21 cards` while filtering, `21 cards` otherwise. A filtered table
+  advertising its unfiltered total is the lie the derived leaderboard exists to
+  prevent; `21 of 21` invents a filter that is not running.
+- **Extra section attributes go AFTER the anchor, never before it.**
+  `_cards_section` emits `id` then `attrs` because `publish.WF_ANCHOR_RE` matches
+  `class="wf" id="` as adjacent text. A hook placed between them makes every
+  section anchor invisible to `verify_live` — which then reports a healthy site
+  with no sections, since an empty anchor list is legitimately "not built".
+- **A client-side feature fails INVISIBLY, so it needs guards on both sides.**
+  A roster whose filter never matched serves 200, carries every anchor and every
+  row, and simply does nothing. Three things cover that:
+  `tests/test_arena_deploy_site.py` drives the real script in a real DOM through
+  the frontend's **jsdom** (skipped where `node_modules` is absent, e.g. a fresh
+  worktree — symlink it in); a pure-stdlib guard asserts every `[data-…]` hook
+  `ROSTER_SEARCH_JS` queries is one the builder actually emits; and
+  `publish.ROSTER_SEARCH_PROBES` makes `verify_live` read the *served* roster for
+  them. The pure-Python guard is the one that always runs, and it is what keeps
+  the jsdom tests from being the only thing holding the feature together.
+- **The `hidden` attribute needs an explicit CSS escape per element.** Author
+  rules outrank the UA stylesheet regardless of specificity, so
+  `.roster-search{display:block}` would keep a hidden box visible.
+  `theme.css` therefore carries `.roster-search[hidden]`, `.roster-none[hidden]`,
+  `.board-scroll[hidden]` and `.roster tr[hidden]` rather than trusting source
+  order or the browser.
+- **A test asserting "no `<script>` on the page" is now wrong.** One did, as a
+  proxy for "an attacker-controlled run label cannot smuggle markup"; it broke
+  the day the first legitimate script shipped. Assert the payload's own tag is
+  absent instead.
+
 ## The methodology page is the one derived page built UNCONDITIONALLY
 
 `methodology.html` explains what a board, a card, `par` and OVR mean. It reads

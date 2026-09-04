@@ -52,6 +52,12 @@ wraps the same body in blog chrome.
 behind an nginx `alias`. Publishing is an rsync — it does not rebuild the
 open-slides-zero SPA.
 
+`models.html` carries the site's only JavaScript: a box that filters both roster
+tables by model name. It is inlined like the stylesheet, needs no nginx change,
+and ships `hidden` so a reader with scripts off gets no control rather than a
+dead one. `verify_live` reads the served page for its hooks, because a roster
+that lost the script still serves 200 with every row present.
+
 ## Gotchas
 
 - **`rsync --delete` is live.** Anything on the server that no build produces is

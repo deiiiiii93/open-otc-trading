@@ -8,6 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A search box on `/arena/models.html`.** The roster is 44 cards over two
+  tables and was navigable only by scrolling or by browser find, which does not
+  hide the rows it skips. Typing a model name now filters both tables at once —
+  necessary because seven models own a consolidated card *and* provisional arms,
+  so a filter reaching one table would hide half of what was searched for.
+  Matching is case-insensitive substring against the model name only.
+  - **It matches the name and never a stat cell.** Searching a roster by number
+    would answer "90" with every card carrying a 90 in any of eight numeric
+    columns, which is not what anyone means. Each row carries the name in a
+    `data-model` attribute rather than the filter reading a visible cell, so
+    the match cannot drift when a column moves.
+  - **A filtered section counts its matches against its total** (`3 of 21
+    cards`) and reverts to the plain total when nothing is filtered. A filtered
+    table advertising its unfiltered total is the same lie the derived
+    leaderboard exists to prevent; an unfiltered one saying `21 of 21` invents
+    a filter that is not running.
+  - **A section with no match says so** instead of heading an empty table —
+    `empty != unavailable`, the rule an unmeasured workflow already gets on the
+    leaderboard.
+  - **The control ships `hidden` and the script reveals it.** This is the first
+    JavaScript `/arena/` has ever served, and a reader with scripts off would
+    otherwise get an input that silently swallows keystrokes. An absent control
+    is honest; a dead one is not. The script is inlined like the stylesheet,
+    which the served CSP (`script-src 'self' 'unsafe-inline'`) allows, and no
+    nginx change is involved.
+  - **Two guards, because a client-side feature fails invisibly.** A page whose
+    filter never matched would render identically to one that worked. So the
+    tests drive the real script in a real DOM through jsdom, and a pure-Python
+    guard asserts every hook the script queries is one the builder emits — that
+    one runs with no node and no `node_modules`. `verify_live` reads the served
+    roster for the same hooks, since a 200 with every row present proves only
+    that the page shipped, not that it filters.
+
 - **Run #138 published: Gemini 3.8 Flash at `low` across all six workflows**, the
   paired arm for run #134 with effort as the only variable, and a second card on
   `/arena/models.html` beside the `xhigh` one. **OVR 86 against 79** — calls fall

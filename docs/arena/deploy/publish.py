@@ -122,6 +122,22 @@ def workflow_anchors(html: str) -> list[str]:
 METHODOLOGY_PAGE = "methodology.html"
 METHODOLOGY_HEADING = "How the Arena measures"
 
+# The roster's search is the site's only script, and a client-side feature fails
+# INVISIBLY: a roster that lost it still serves 200 with every row present and
+# simply never filters. Nothing else in the pipeline would notice, which is why
+# the verifier reads the served body for the hooks as well as the anchors.
+#
+# All three, not just the input: a page keeping the control while losing the
+# per-section hooks would serve a box that swallows keystrokes, which is the one
+# outcome the hidden-until-JS design exists to prevent.
+ROSTER_SEARCH_PROBES = ("data-roster-input", "data-roster-section",
+                        "data-roster-count")
+
+
+def _roster_search_failures(page: str) -> list[str]:
+    return [f"models.html: served roster is missing {probe}"
+            for probe in ROSTER_SEARCH_PROBES if probe not in page]
+
 
 def verify_live(
     base_url: str,
@@ -181,6 +197,8 @@ def verify_live(
         for slug in anchors:
             if slug not in served:
                 failures.append(f"{page_name}: no section for workflow {slug}")
+        if page_name == "models.html":
+            failures += _roster_search_failures(page)
 
     for path in model_pages:
         status, _, body = fetch(f"{base_url}{path}")

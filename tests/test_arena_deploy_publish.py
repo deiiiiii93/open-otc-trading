@@ -263,14 +263,16 @@ def test_verify_live_skips_the_leaderboard_when_none_was_built(served):
 def test_verify_live_checks_the_model_cards_page_the_same_way(served):
     base, root = served
     _good_site(root)
-    root.joinpath("models.html").write_text(LEADERBOARD)
+    # SERVED_ROSTER, not LEADERBOARD: a real roster also carries the search, and
+    # the verifier now reads the served body for it.
+    root.joinpath("models.html").write_text(SERVED_ROSTER)
     anchors = pub.workflow_anchors(LEADERBOARD)
 
     assert pub.verify_live(base, [POST], security_headers=(),
                            model_anchors=anchors) == []
 
     root.joinpath("models.html").write_text(
-        LEADERBOARD.replace('id="ops-settlement-day"', 'id="gone"')
+        SERVED_ROSTER.replace('id="ops-settlement-day"', 'id="gone"')
     )
     failures = pub.verify_live(base, [POST], security_headers=(),
                                model_anchors=anchors)
@@ -354,3 +356,65 @@ def test_verify_live_reads_the_methodology_body_not_just_its_status(served):
     root.joinpath(pub.METHODOLOGY_PAGE).write_text("<h1>the SPA answered</h1>")
     failures = pub.verify_live(base, [POST], security_headers=())
     assert any("does not carry its own heading" in f for f in failures)
+
+
+# ---------------------------------------------------- the roster's search box
+#
+# The search is the site's only script, and a client-side feature is the one
+# thing this verifier could not otherwise see: a roster that lost it serves 200,
+# carries every section anchor and every row, and simply never filters.
+
+# A leaderboard is NOT a roster — it carries no search — so the stand-in served
+# as models.html has to grow the hooks the real builder emits. The drift guard
+# below is what keeps this fixture honest about what "the hooks" are.
+#
+# The hook goes AFTER the id, which is where the builder puts it — `_cards_section`
+# emits the anchor before its extra attributes. That is load-bearing rather than
+# cosmetic: WF_ANCHOR_RE matches `class="wf" id="` as adjacent text, so a hook
+# placed between them makes every section anchor invisible to the verifier.
+SERVED_ROSTER = (
+    '<div class="roster-search" role="search" data-roster-search hidden>'
+    '<input data-roster-input></div>\n'
+    + LEADERBOARD.replace('"><h2>', '" data-roster-section><h2>')
+    .replace("</h2>", '</h2><p><span data-roster-count>2 cards</span></p>')
+)
+
+
+def test_verify_live_flags_a_roster_served_without_its_search(served):
+    """The failure this catches is invisible to every other check: status 200,
+    every anchor present, every row present, and a page that does not filter.
+    Only reading the served body for the hooks tells the two apart."""
+    base, root = served
+    _good_site(root)
+    anchors = pub.workflow_anchors(LEADERBOARD)
+
+    root.joinpath("models.html").write_text(SERVED_ROSTER)
+    assert pub.verify_live(base, [POST], security_headers=(),
+                           model_anchors=anchors) == []
+
+    # The control survives, the per-section hooks do not — which would serve a
+    # box that swallows keystrokes, the one outcome hiding-until-JS prevents.
+    root.joinpath("models.html").write_text(
+        SERVED_ROSTER.replace(" data-roster-section", "")
+    )
+    failures = pub.verify_live(base, [POST], security_headers=(),
+                               model_anchors=anchors)
+    assert any("data-roster-section" in f for f in failures)
+
+
+def test_every_search_probe_the_verifier_looks_for_is_one_the_roster_emits():
+    """The verifier names the hooks as bare strings, so nothing but this ties
+    them to the builder. Without it, renaming an attribute would leave a
+    verifier that passes every deploy while checking for markup no page has
+    emitted in months — a green light that stopped meaning anything."""
+    import site_builder as sb
+
+    roster = sb.render_models(
+        {"generated_at": "2026-09-04T00:00:00+00:00", "workflows": [],
+         "models": [{"model": "gemini-3-6-flash", "effort": None, "ovr": 90,
+                     "ovr_min": 84, "ovr_max": 99, "stats": {}, "con": 86,
+                     "position": "Sniper", "coverage": 1, "boards_total": 2,
+                     "per_board": []}]},
+        "body{}",
+    )
+    assert sorted(p for p in pub.ROSTER_SEARCH_PROBES if p not in roster) == []

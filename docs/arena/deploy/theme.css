@@ -297,6 +297,42 @@ footer.site{margin-top:52px; padding-top:18px; border-top:1px solid var(--line);
 .roster-context{margin-top:2px; text-transform:uppercase; letter-spacing:.06em}
 .roster-context .effort{margin-left:4px}
 
+/* ---- the roster search ------------------------------------------------
+   The only control on the site and the reason it carries the only script. It
+   is emitted with the `hidden` attribute and revealed by that script, so a
+   reader with JavaScript off gets no box rather than a box that swallows
+   keystrokes.
+
+   Every element the filter hides needs its OWN display escape below. An author
+   rule setting `display` beats the UA stylesheet's [hidden] rule regardless of
+   specificity, because author origin outranks UA origin — so `.roster-search`
+   would stay visible while hidden if the escape were left to the browser.
+   Scoping each escape to its own selector keeps that true wherever a later
+   rule lands, rather than depending on source order. */
+.roster-search{display:block; margin:26px 0 0; max-width:62ch}
+.roster-search[hidden]{display:none}
+.roster-search-label{display:block; font-family:var(--sans); font-size:.64rem;
+  font-weight:700; color:var(--muted); text-transform:uppercase;
+  letter-spacing:.07em; margin-bottom:6px}
+/* No `appearance:none`: it is what strips WebKit's native clear button, and a
+   one-click reset is most of the ergonomics of a filter this small. */
+.roster-search-input{width:100%; padding:9px 12px; font-family:var(--sans);
+  font-size:.9rem; color:var(--ink); background:var(--paper);
+  border:1px solid var(--line); border-radius:3px}
+.roster-search-input:focus{outline:2px solid var(--accent-2);
+  outline-offset:-1px; border-color:var(--accent-2)}
+.roster-search-input::placeholder{color:var(--line)}
+.roster-search-hint{margin:6px 0 0; font-family:var(--serif); font-size:.82rem;
+  color:var(--muted)}
+/* The count the filter rewrites, and the line that replaces an emptied table. */
+.roster-count{font-variant-numeric:tabular-nums}
+.roster-none{margin:12px 0 0; font-family:var(--serif); font-size:.9rem;
+  color:var(--muted)}
+.roster-none[hidden]{display:none}
+.roster-none b{font-family:var(--sans); font-weight:700; color:var(--ink)}
+.board-scroll[hidden]{display:none}
+.roster tr[hidden]{display:none}
+
 /* ---- model cards ------------------------------------------------------
    These keep their box on purpose: the page is called Model Cards and the
    card metaphor is the measurement's identity. Boxes were removed elsewhere
