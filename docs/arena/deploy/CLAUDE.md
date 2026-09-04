@@ -190,6 +190,42 @@ roster of one row per card, and `models/<id>.html` per model.
   consolidated card for a model that contested no board — so it emitted no board
   card at all. A guard that never renders the markup it protects is not a guard.
 
+## The methodology page is the one derived page built UNCONDITIONALLY
+
+`methodology.html` explains what a board, a card, `par` and OVR mean. It reads
+`boards.json` for its workflow table and is otherwise prose, which is exactly
+why it does NOT follow the absence rule the other two derived pages follow.
+
+- **Absence costs it the TABLE, never the page.** The leaderboard and the cards
+  page *are* the snapshot, so without one there is nothing to render and the
+  masthead correctly drops the link. This page would still be four-fifths
+  correct with no export at all, so gating it would only ever hide a page that
+  exists — and its nav link is therefore ungated, in the same class as Blog and
+  About. The no-snapshot branch says the export is missing rather than rendering
+  a headed table with no rows, which reads as "there are no workflows".
+- **`verify_live` checks it unconditionally too**, with no "an empty list means
+  it was not built" escape hatch — that hatch is legitimate for the two gated
+  pages and would be a hole here. It reads the body for the page's own heading,
+  because a 200 proves nothing under the SPA catch-all.
+- **An uncalibrated `par` renders an em dash, not the theoretical minimum.**
+  Those workflows really are scored against `sum(len(step.expected_tools))` on
+  the old hyperbolic curve, but publishing that number in a column headed "Par"
+  claims an empirical anchor that does not exist. A board count of **zero**,
+  by contrast, stays a zero: that workflow has genuinely had no field, which is
+  a measurement and not a missing value.
+- **Never type a workflow COUNT into the prose.** A glossary line reading "six
+  exist today" is the hand-typed staleness the derived table two sections above
+  it exists to prevent, and it would be wrong the day a seventh shipped. Point
+  at the table instead.
+- **The page reuses `.post-body` for all of its prose**, so headings, lists,
+  code spans and the scrolling-table rule all come from the report stylesheet
+  and the new CSS surface is one `.glossary` rule. `.post-body table` already
+  carries `display:block; overflow-x:auto` — markdown emits no wrapper element
+  to scroll inside — so a plain `<table>` is responsive for free.
+- The dead-class guard is per-page and was extended to render this one. The
+  cards guard does not cover it, and the newest page on the site is exactly the
+  one most likely to emit an unstyled class.
+
 ## theme.css owns the report body ON THE WEB; render_report.py owns print
 
 `render_markdown()` returns **bare HTML with no stylesheet**. Only

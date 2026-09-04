@@ -48,6 +48,12 @@ def _good_site(root: Path) -> None:
     root.joinpath("2026-08-18-run110-luna.html").write_text("<h1>Reasoning effort study</h1>")
     root.joinpath("model-ability-card-bg-v1.webp").write_bytes(b"RIFF....WEBP")
     root.joinpath("model-ability-card-bg-v2.webp").write_bytes(b"RIFF....WEBP")
+    # Built unconditionally and linked from every masthead, so a healthy site
+    # always has it — hence no "skips it when absent" case, unlike the two
+    # derived pages.
+    root.joinpath(pub.METHODOLOGY_PAGE).write_text(
+        f"<h1>{pub.METHODOLOGY_HEADING}</h1>"
+    )
 
 
 def test_rsync_cmd_uses_archive_delete_and_the_ssh_key():
@@ -151,6 +157,9 @@ def test_verify_live_compares_escaped_titles(served):
         '<a href="./x.html">Risk &amp; &lt;agent&gt; performance</a>'
     )
     root.joinpath("x.html").write_text("<h1>Risk &amp; &lt;agent&gt; performance</h1>")
+    root.joinpath(pub.METHODOLOGY_PAGE).write_text(
+        f"<h1>{pub.METHODOLOGY_HEADING}</h1>"
+    )
     assert pub.verify_live(base, [tricky], assets=(), security_headers=()) == []
 
 
@@ -171,7 +180,10 @@ def test_verify_live_flags_missing_security_headers(monkeypatch):
     deploy, because it only ever looked at status codes and body text.
     """
     def _fake_fetch(url, timeout=20):
-        body = b"<h1>Reasoning effort study</h1>2026-08-18-run110-luna.html"
+        body = (
+            b"<h1>Reasoning effort study</h1>2026-08-18-run110-luna.html"
+            b"How the Arena measures"
+        )
         if url.endswith(pub.ABSENT_PROBE):
             return 404, "", b""
         return 200, "text/html", body
@@ -186,7 +198,10 @@ def test_verify_live_flags_missing_security_headers(monkeypatch):
 
 def test_verify_live_passes_when_security_headers_are_present(monkeypatch):
     def _fake_fetch(url, timeout=20):
-        body = b"<h1>Reasoning effort study</h1>2026-08-18-run110-luna.html"
+        body = (
+            b"<h1>Reasoning effort study</h1>2026-08-18-run110-luna.html"
+            b"How the Arena measures"
+        )
         if url.endswith(pub.ABSENT_PROBE):
             return 404, "", b""
         return 200, "text/html", body
@@ -319,3 +334,23 @@ def test_verify_live_probes_an_absent_path_inside_the_models_directory(served):
     failures = pub.verify_live(base, [POST], security_headers=())
 
     assert any(f"models/{pub.ABSENT_PROBE}" in f for f in failures)
+
+
+def test_verify_live_requires_the_methodology_page_to_serve(served):
+    """It is linked from every page's masthead, so a 404 here is sitewide — and
+    it is never legitimately absent, because the build does not gate it."""
+    base, root = served
+    _good_site(root)
+    root.joinpath(pub.METHODOLOGY_PAGE).unlink()
+    failures = pub.verify_live(base, [POST], security_headers=())
+    assert any(pub.METHODOLOGY_PAGE in f and "404" in f for f in failures)
+
+
+def test_verify_live_reads_the_methodology_body_not_just_its_status(served):
+    """A 200 proves nothing under the SPA catch-all: before the nginx alias
+    existed every path answered 200, including nonsense ones."""
+    base, root = served
+    _good_site(root)
+    root.joinpath(pub.METHODOLOGY_PAGE).write_text("<h1>the SPA answered</h1>")
+    failures = pub.verify_live(base, [POST], security_headers=())
+    assert any("does not carry its own heading" in f for f in failures)

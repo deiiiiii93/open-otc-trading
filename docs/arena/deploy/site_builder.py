@@ -99,6 +99,10 @@ def _masthead(
         links.append(link(f"{prefix}leaderboard.html", "Leaderboard", "leaderboard"))
     if models:
         links.append(link(f"{prefix}models.html", "Model Cards", "models"))
+    # Unconditional, like Blog: the methodology page is prose plus one derived
+    # table, so a missing export costs it the table and not the page. Only the
+    # two pages that ARE the snapshot are gated above.
+    links.append(link(f"{prefix}methodology.html", "Methodology", "methodology"))
     links.append(link(f"{prefix}about.html", "About", "about"))
     links.append(f'<a href="{GITHUB_URL}">GitHub</a>')
 
@@ -517,6 +521,277 @@ def render_leaderboard(snapshot: dict, posts: list[Post], theme: str) -> str:
         + f'<p class="derived">derived from the arena database on {escape(generated)}</p>'
         + "</div>\n"
         + f'<main class="boards">\n{sections}</main>\n'
+        + _site_footer()
+        + "</div>\n</body></html>\n"
+    )
+
+
+# ---------------------------------------------------------------------------
+# The methodology page
+# ---------------------------------------------------------------------------
+
+METHOD_TITLE = "Methodology"
+METHOD_LEAD = (
+    "What a score on this site is made of: the workflows a model is asked to "
+    "work, the checks that grade it, the six stats those checks become, and "
+    "the harness that runs the whole thing without a human in the loop."
+)
+
+# Weights are stated as an ORDER, not as coefficients. A reader deciding whether
+# to trust a board needs to know that grounding outweighs procedure by three to
+# one; the third decimal place of the blend is in the source, where it belongs.
+OVR_WEIGHTS = (
+    ("GRD", "Grounding",
+     "Did the numbers in the answer come from the system?", "heaviest"),
+    ("ADH", "Adherence",
+     "Did it call the right tools, and leave the forbidden ones alone?", "second"),
+    ("SYN", "Synthesis",
+     "Did the report or artifact it was asked for actually get written?", "third"),
+    ("EFF", "Efficiency",
+     "How many tool calls did the answer cost?", "third"),
+    ("PRC", "Procedure",
+     "Did it follow the desk's documented route?", "lightest"),
+)
+
+GLOSSARY = (
+    # No count here. "Six exist today" was true when this was written and would
+    # have been wrong the day a seventh shipped — the same hand-typed staleness
+    # the workflow table above is derived to avoid, two sections apart.
+    ("Workflow", "A scripted desk day: an ordered set of turns a persona is asked "
+     "to work, with the checks that grade each one. The table above lists "
+     "every one."),
+    ("Run", "One launch of the arena. A run pairs some models with some workflows "
+     "and repeats each pairing for a number of trials."),
+    ("Board", "A run that was a real field on one workflow, curated by hand. A "
+     "one-model smoke test is a run but not a board, because a rank needs opponents."),
+    ("Match", "One contestant on one workflow inside one run. Its trials are folded "
+     "into a single match, so a two-trial contestant still has one row."),
+    ("Trial", "One complete play of a workflow. Trials are what let consistency be "
+     "measured: a single trial has nothing to be consistent against."),
+    ("Contestant", "A model together with its reasoning effort and its output "
+     "budget. The same model at two efforts is two contestants, because both "
+     "settings move scores enough to matter."),
+    ("Check", "One graded assertion, worth one point. Checks are deterministic "
+     "rules over the transcript, never a language model's opinion."),
+    ("Axis", "The kind of ability a check tests. Every check belongs to exactly "
+     "one of grounding, adherence, synthesis and procedure."),
+    ("Par", "A realistic tool-call budget for a competent run, taken as the median "
+     "of every fully correct trial a workflow has ever produced. Not the "
+     "theoretical minimum, which no real trial approaches."),
+    ("OVR", "The single 0&ndash;99 headline number: the five stats blended, then "
+     "discounted for inconsistency."),
+    ("Archetype", "A label for the shape of a card, not a sixth measurement. "
+     "A Sniper leads on grounding, an Anchor on adherence or procedure, a "
+     "Playmaker on synthesis or efficiency, and an All-rounder is a card whose "
+     "stats sit within eight points of each other."),
+    ("Provisional", "A run published as cards but never ranked, because it had no "
+     "field. A card is absolute and survives having no opponent; a rank does not."),
+    ("Invalid", "A match the harness threw away because the transport failed, not "
+     "because the model did. It is excluded from every average rather than "
+     "scored zero."),
+)
+
+
+def _workflow_table(snapshot: dict | None) -> str:
+    """Every workflow, read from the same export the leaderboard uses.
+
+    Typed into the page instead, this table would freeze the day a seventh
+    workflow shipped — the failure the manifest rules exist to prevent, arrived
+    at from the prose side. Absence degrades to a note, never to an empty table:
+    a page with a headed table and no rows reads as "there are no workflows".
+    """
+    from boards import ordered_workflows
+
+    workflows = ordered_workflows((snapshot or {}).get("workflows") or [])
+    if not workflows:
+        return (
+            "<p>The workflow table is derived from the arena database and that "
+            "export is not present in this build. The leaderboard names every "
+            "workflow that has been measured.</p>"
+        )
+
+    rows = []
+    for wf in workflows:
+        persona = str(wf.get("persona") or "").replace("_", " ")
+        # An uncalibrated par is an em dash, not a number: those workflows score
+        # efficiency against a theoretical minimum on the older curve, and
+        # printing that minimum here would read as a calibrated target.
+        par = _num(int(wf["par"]) if wf.get("par") else None)
+        boards = len(wf.get("boards") or [])
+        rows.append(
+            "<tr>"
+            f'<td><code>{escape(str(wf.get("id") or ""))}</code></td>'
+            f'<td>{escape(str(wf.get("title") or ""))}</td>'
+            f"<td>{escape(persona)}</td>"
+            f'<td>{_num(int(wf["steps"]) if wf.get("steps") else None)}</td>'
+            f"<td>{par}</td>"
+            f"<td>{boards}</td>"
+            "</tr>"
+        )
+    head = "".join(
+        f"<th>{h}</th>"
+        for h in ("Workflow", "Title", "Persona", "Steps", "Par", "Boards")
+    )
+    return (
+        f"<table><thead><tr>{head}</tr></thead>"
+        f'<tbody>{"".join(rows)}</tbody></table>'
+    )
+
+
+def _weight_list() -> str:
+    items = "".join(
+        f"<li><b>{code}</b> &mdash; {escape(name.lower())}. {escape(question)} "
+        f"<i>Weighted {weight}.</i></li>"
+        for code, name, question, weight in OVR_WEIGHTS
+    )
+    return f"<ul>{items}</ul>"
+
+
+def _glossary() -> str:
+    # Definitions carry an em dash entity, so they are escaped at the source and
+    # joined here — escaping the joined string would publish a literal &mdash;.
+    items = "".join(
+        f"<dt>{escape(term)}</dt><dd>{definition}</dd>" for term, definition in GLOSSARY
+    )
+    return f'<dl class="glossary">{items}</dl>'
+
+
+def render_methodology(
+    theme: str,
+    snapshot: dict | None = None,
+    leaderboard: bool = False,
+    models: bool = False,
+) -> str:
+    """How a score is produced, for a reader who has just seen one.
+
+    Built UNCONDITIONALLY, unlike the leaderboard and the cards page: those two
+    ARE the snapshot, so without it there is nothing to render and no link. This
+    page is prose carrying one derived table, so a missing export costs it a
+    table and not a page — which keeps its nav link in the same class as Blog
+    and About, and out of the absence rule that gates the other two.
+    """
+    return (
+        _head(f"{METHOD_TITLE} — {SITE_TITLE}", theme, METHOD_LEAD)
+        + '<div class="post-shell">\n'
+        + _masthead(leaderboard, here="methodology", models=models)
+        + f'<div class="intro"><h1>How the Arena measures</h1>'
+        + f'<p class="lead">{escape(METHOD_LEAD)}</p></div>\n'
+        + '<div class="post-body">\n'
+
+        + "<h2>What a match is</h2>"
+        + "<p>One model is given one workflow and works it end to end, several "
+        + "times over. Each play is a trial; the trials of one model on one "
+        + "workflow fold into a single match, and a set of matches on the same "
+        + "workflow is a board.</p>"
+        + "<p>The model is not answering questions about a trading desk. It is "
+        + "driving one. Every turn goes through the same application the desk "
+        + "uses, against a real database seeded for that match, and nothing "
+        + "pauses for a human to approve it. A step that books a trade books "
+        + "one.</p>"
+        + "<p>Nothing is graded on what the model says it did. After the match, "
+        + "the transcript is rebuilt from the system's own trace log &mdash; the "
+        + "tool calls that actually dispatched, the results they actually "
+        + "returned, the skill documents actually opened. A model that describes "
+        + "a tool call it never made has described nothing.</p>"
+
+        + "<h2>The workflows</h2>"
+        + "<p>Each workflow is a desk day written down: an ordered set of turns "
+        + "for one persona, with the checks that grade each turn. They are not "
+        + "prompts in the usual sense &mdash; the fixtures behind them are real "
+        + "positions, real risk runs and real counterparty documents, and the "
+        + "answers are harvested from the system rather than invented.</p>"
+        + _workflow_table(snapshot)
+        + "<p>Par is the tool-call budget efficiency is scored against. It is "
+        + "the median of every fully correct trial a workflow has ever produced, "
+        + "so it is a realistic competent run rather than the theoretical "
+        + "minimum &mdash; on one workflow the theoretical minimum is eleven "
+        + "calls and the leanest real trial in the arena's history took fifteen. "
+        + "A workflow with no par yet has not produced enough fully correct "
+        + "trials to calibrate one.</p>"
+
+        + "<h2>How a run is graded</h2>"
+        + "<p>Every turn carries checks, and every check is worth one point and "
+        + "decides itself by rule. Did this tool fire with these arguments. Does "
+        + "this number in the answer match the one the system returned. Was this "
+        + "artifact written. Was this forbidden tool left alone. There is no "
+        + "language model anywhere in the scoring path.</p>"
+        + "<p>Each check belongs to one of four axes, and each axis becomes a "
+        + "stat scored out of 99. A fifth stat, efficiency, is computed from the "
+        + "tool-call count rather than from checks. Those five blend into the "
+        + "OVR you see on the leaderboard, in this order:</p>"
+        + _weight_list()
+        + "<p>Grounding leads deliberately. It is the hardest axis to fake: a "
+        + "model cannot talk its way to a number it never fetched. It is also "
+        + "the first tie-break when two contestants land on the same OVR.</p>"
+        + "<p>Efficiency is scored like golf. Coming in at or under par is full "
+        + "marks and beating par earns nothing extra, because the arena is not "
+        + "looking for the shortest route. From par the score falls away "
+        + "steadily and reaches zero at twice par, and it is gated by "
+        + "correctness &mdash; a fast wrong answer scores nothing for being "
+        + "fast. Running no tools at all is not efficiency, it is not having "
+        + "done the work, and it scores zero.</p>"
+        + "<p>The sixth stat, consistency (<b>CON</b>), is the odd one out: it "
+        + "is not an "
+        + "ability but a spread. It measures how tightly a model's trials "
+        + "cluster on the same workflow, and it can only discount the OVR, never "
+        + "raise it &mdash; up to about a fifth of the score for a model that "
+        + "swings, nothing at all for one that repeats itself. A model with a "
+        + "single trial has no consistency and its cell shows an em dash, which "
+        + "means not measured, not perfect.</p>"
+
+        + "<h2>The harness</h2>"
+        + "<p>The arena runs the production desk, not a mock of it. Each match "
+        + "seeds its own fixtures into the database, runs, and then purges "
+        + "everything it created &mdash; positions, portfolios, requests, "
+        + "scenario files &mdash; on evidence from the trace, so the next "
+        + "contestant meets the same desk the last one did. Leftovers are not "
+        + "merely untidy here: workflows resolve books by name, so a stale row "
+        + "makes each successive contestant's job quietly harder than the last "
+        + "one's.</p>"
+        + "<p>No number in a score comes from a language model. Pricing, Greeks "
+        + "and risk are computed by a pinned deterministic quant engine, and the "
+        + "pin is exact rather than a minimum, because the engine's version is "
+        + "part of the evidence: a point release once moved a graded valuation "
+        + "with no change in this repository at all.</p>"
+        + "<p>A contestant is a model together with its reasoning effort and its "
+        + "output budget, because both move scores enough to be part of the "
+        + "identity. The same model at two efforts appears twice on a board, "
+        + "each arm badged, and the two are read as separate contestants rather "
+        + "than as one model measured twice.</p>"
+        + "<p>When the transport fails rather than the model &mdash; a dead "
+        + "gateway, a refused payment, a blank response with errors behind it "
+        + "&mdash; the match is recorded invalid and excluded from every "
+        + "average. It is not scored zero. An infrastructure outage that reads "
+        + "as poor ability is the single easiest way for a leaderboard to lie, "
+        + "and it has happened here often enough to be designed against.</p>"
+
+        + "<h2>What the numbers do not say</h2>"
+        + "<p><b>Boards are never merged.</b> A different field, a different "
+        + "manifest revision, or a repaired harness makes two boards "
+        + "incomparable, so each is published exactly as it was measured. Cards "
+        + "are a different matter: a card is an absolute measurement that does "
+        + "not depend on who else was in the field, which is why the model pages "
+        + "can average cards across workflows while the leaderboard refuses to "
+        + "merge the boards they came from.</p>"
+        + "<p><b>A saturated check measures nothing.</b> When every contestant "
+        + "passes a check, it still occupies the denominator while carrying no "
+        + "signal about ability. Several workflows have drifted that way as "
+        + "models improved, and the boards that show it say so in their own "
+        + "notes. A high score on a saturated workflow means the field cleared a "
+        + "bar, not that it is strong.</p>"
+        + "<p><b>Doing nothing is not zero.</b> Some checks grade restraint, and "
+        + "a model that never acts passes all of them by accident. The floor of "
+        + "the objective score is therefore a little under eight rather than "
+        + "zero, and a score near that floor usually means the transcript is "
+        + "empty rather than wrong.</p>"
+        + "<p><b>There is no LLM judge in the ranking.</b> A panel of judge "
+        + "models exists and can be switched on, but it is off by default and "
+        + "advisory when on. It was benched after a run in which it ranked "
+        + "models in roughly the reverse of the deterministic axis.</p>"
+
+        + "<h2>Glossary</h2>"
+        + _glossary()
+        + "</div>\n"
         + _site_footer()
         + "</div>\n</body></html>\n"
     )

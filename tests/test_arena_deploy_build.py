@@ -53,6 +53,7 @@ def test_build_emits_a_page_per_post_plus_index_and_about(project):
     for name in (
         "index.html",
         "about.html",
+        "methodology.html",
         "2026-08-18-run110-luna.html",
         "2026-08-13-run104-board.html",
     ):
@@ -353,3 +354,42 @@ def test_build_writes_a_page_for_every_model_the_roster_links(project, tmp_path)
     assert linked
     for name in linked:
         assert (out / "models" / name).is_file(), name
+
+
+def test_the_methodology_page_survives_a_missing_boards_snapshot(project, tmp_path):
+    """The leaderboard and the cards page ARE the snapshot, so without it they
+    are correctly absent. This one is prose with one derived table, so an absent
+    export must cost it the table and never the page — its nav link is
+    unconditional, and a link to an unbuilt page 404s on every page of the
+    site."""
+    mf, arena, out = project
+    deploy = _bare_deploy(tmp_path)
+    assert not (deploy / "boards.json").exists()
+
+    b.build(mf, arena, deploy, out, refresh_pdf=False)
+
+    page = (out / "methodology.html").read_text()
+    assert "How the Arena measures" in page
+    assert "not present in this build" in page
+    # ...and every page still links it, unlike the leaderboard next door.
+    for name in ("index.html", "about.html", "2026-08-13-run104-board.html"):
+        assert "methodology.html" in (out / name).read_text(), name
+
+
+def test_the_methodology_page_lists_the_workflows_the_leaderboard_ranks(
+    project, tmp_path
+):
+    """One export, two pages. A workflow table typed into the prose would drift
+    from the leaderboard the first time a seventh workflow shipped."""
+    mf, arena, out = project
+    deploy = _bare_deploy(tmp_path)
+    (deploy / "boards.json").write_text(json.dumps(BOARDS))
+
+    b.build(mf, arena, deploy, out, refresh_pdf=False)
+
+    page = (out / "methodology.html").read_text()
+    for wf in BOARDS["workflows"]:
+        assert wf["id"] in page, wf["id"]
+        assert wf["title"] in page, wf["title"]
+    # The par a board's EFF was scored against is the same number both pages read.
+    assert "<td>24</td>" in page

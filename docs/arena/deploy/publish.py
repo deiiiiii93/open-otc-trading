@@ -116,6 +116,13 @@ def workflow_anchors(html: str) -> list[str]:
     return _find_anchors(html)
 
 
+# The methodology page is built unconditionally, so it is verified the same way
+# — no "an empty list means the page was not built" escape hatch, which is what
+# the leaderboard and cards checks legitimately need.
+METHODOLOGY_PAGE = "methodology.html"
+METHODOLOGY_HEADING = "How the Arena measures"
+
+
 def verify_live(
     base_url: str,
     posts: list[Post],
@@ -185,6 +192,17 @@ def verify_live(
         model = path.rsplit("/", 1)[-1][: -len(".html")]
         if escape(model) not in body.decode("utf-8", "replace"):
             failures.append(f"{path}: served page does not name {model}")
+
+    # Unconditional, because the build is: methodology.html is prose with one
+    # derived table, so unlike the leaderboard it is never legitimately absent —
+    # and the masthead links it from every page, so a 404 here is sitewide.
+    status, _, body = fetch(f"{base_url}{METHODOLOGY_PAGE}")
+    if status != 200:
+        failures.append(f"{METHODOLOGY_PAGE}: expected 200, got {status}")
+    elif METHODOLOGY_HEADING not in body.decode("utf-8", "replace"):
+        failures.append(
+            f"{METHODOLOGY_PAGE}: served page does not carry its own heading"
+        )
 
     headers = fetch_headers(base_url) if security_headers else {}
     for name in security_headers:

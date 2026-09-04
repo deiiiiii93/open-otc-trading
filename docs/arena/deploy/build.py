@@ -169,6 +169,15 @@ def build(
     (out_dir / "about.html").write_text(
         sb.render_about(posts, theme, leaderboard=has_boards, models=has_models)
     )
+    # Unconditional on purpose. The two derived pages below are gated because
+    # they ARE the snapshot; this one is prose carrying one derived table, so an
+    # absent export costs it the table and never the page or its nav link.
+    (out_dir / "methodology.html").write_text(
+        sb.render_methodology(
+            theme, snapshot=board_snapshot,
+            leaderboard=has_boards, models=has_models,
+        )
+    )
     if has_boards:
         (out_dir / "leaderboard.html").write_text(
             sb.render_leaderboard(board_snapshot, posts, theme)

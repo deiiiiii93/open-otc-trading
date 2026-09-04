@@ -203,6 +203,23 @@ footer.site{margin-top:52px; padding-top:18px; border-top:1px solid var(--line);
   .post-body .chart .val{flex:0 0 96px}
 }
 
+/* ---- methodology glossary ------------------------------------------------
+   The page reuses .post-body for all of its prose, so headings, lists, code
+   spans and the scrolling table rule all come from the report stylesheet above
+   and nothing here restates them. A definition list is the one shape .post-body
+   has no rule for, because reports never emit one.                         */
+.glossary{margin:1.4em 0 0; display:grid; grid-template-columns:minmax(0,10rem) minmax(0,1fr);
+  gap:0; border-top:1px solid var(--line); font-family:var(--sans)}
+.glossary dt{grid-column:1; padding:.75em 1.2em .75em 0; font-weight:700;
+  font-size:.82rem; color:var(--ink); border-bottom:1px solid var(--rule)}
+.glossary dd{grid-column:2; margin:0; padding:.75em 0; font-size:.86rem;
+  line-height:1.5; color:var(--muted); border-bottom:1px solid var(--rule)}
+@media (max-width:620px){
+  .glossary{grid-template-columns:minmax(0,1fr)}
+  .glossary dt{grid-column:1; padding-bottom:.15em; border-bottom:0}
+  .glossary dd{grid-column:1; padding-top:0}
+}
+
 /* ---- leaderboard ---- */
 .boards{padding-top:6px}
 .wf{padding:26px 0 10px; border-bottom:1px solid var(--line)}

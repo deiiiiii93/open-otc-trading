@@ -933,3 +933,126 @@ def test_a_run_label_is_escaped_wherever_a_card_caption_carries_it():
     page = sb.render_model_page(sb.model_index(snap)[1], snap, THEME)
     assert "&lt;script&gt; &amp; co" in page
     assert "&amp;lt;" not in page          # ...and escaped exactly once
+
+
+# --------------------------------------------------------------------------
+# The methodology page
+# --------------------------------------------------------------------------
+
+def test_the_methodology_page_derives_its_workflow_table_from_the_snapshot():
+    """Typed in, this table freezes the day a seventh workflow ships — the
+    hand-typed-leaderboard failure arrived at from the prose side."""
+    html = sb.render_methodology(THEME, snapshot=snapshot(FLAGSHIP, UNMEASURED))
+    assert "risk-manager-control-day" in html
+    assert "Risk Manager Control Day" in html
+    assert "ops-settlement-day" in html          # unmeasured, still listed
+    assert "<td>9</td>" in html                  # the flagship's step count
+    assert "<td>24</td>" in html                 # ...and its calibrated par
+
+
+def test_the_methodology_page_humanises_the_persona_identifier():
+    """`risk_manager` uppercased in a table cell reads as a typo, not a role."""
+    html = sb.render_methodology(THEME, snapshot=snapshot(FLAGSHIP))
+    assert "risk manager" in html
+    assert "risk_manager" not in html
+
+
+def test_an_uncalibrated_par_is_an_em_dash_not_a_number():
+    """Those workflows score efficiency against a theoretical minimum on the
+    older curve. Printing that minimum here would read as a calibrated target
+    and quietly claim the workflow had been anchored on real trials."""
+    html = sb.render_methodology(THEME, snapshot=snapshot(UNMEASURED))
+    row = html[html.index("<tbody>"):html.index("</tbody>")]
+    assert '<td><span class="none">&mdash;</span></td>' in row
+    assert "None" not in row
+    # ...while a board count of zero stays a zero. That workflow really has had
+    # no field, which is a measurement and not a missing value.
+    assert row.endswith("<td>0</td></tr>")
+
+
+def test_the_methodology_page_is_built_without_a_snapshot():
+    """Unlike the leaderboard and the cards page, this one is NOT the snapshot:
+    it is prose carrying one derived table. An absent export must cost it the
+    table and never the page, because its nav link is unconditional and a link
+    to an unbuilt page 404s on every page of the site."""
+    html = sb.render_methodology(THEME, snapshot=None)
+    assert "How the Arena measures" in html
+    assert "How a run is graded" in html
+    # ...and the missing table says so rather than rendering empty headings.
+    assert "<thead>" not in html
+    assert "not present in this build" in html
+
+
+def test_the_methodology_nav_link_is_unconditional_like_the_blog():
+    """The two derived pages are gated because absence means they were not
+    built. This one is always built, so gating it would only ever hide a page
+    that exists."""
+    for kwargs in ({}, {"leaderboard": True, "models": True}):
+        html = sb.render_methodology(THEME, snapshot=snapshot(FLAGSHIP), **kwargs)
+        nav = html[html.index("<nav>"):html.index("</nav>")]
+        assert '<a href="./methodology.html"' in nav
+    # ...and it reaches every OTHER page's masthead too, or it is unreachable.
+    pages = [
+        sb.render_index(POSTS, MINUTES, THEME, leaderboard=True, models=True),
+        sb.render_about(POSTS, THEME, leaderboard=True, models=True),
+        sb.render_leaderboard(models_snapshot(FLAGSHIP), POSTS, THEME),
+        sb.render_models(models_snapshot(FLAGSHIP), THEME),
+        sb.render_post_page(MEMO, "<p>body</p>", 8, THEME, None, None),
+    ]
+    for html in pages:
+        nav = html[html.index("<nav>"):html.index("</nav>")]
+        assert ">Methodology<" in nav
+    # A model page lives one directory down and needs the ../ prefix, or the
+    # link resolves to models/methodology.html and 404s on all of them at once.
+    snap = models_snapshot(FLAGSHIP)
+    page = sb.render_model_page(sb.model_index(snap)[0], snap, THEME)
+    assert '<a href="../methodology.html"' in page
+
+
+def test_the_methodology_page_marks_itself_current_in_the_nav():
+    html = sb.render_methodology(THEME, snapshot=snapshot(FLAGSHIP))
+    assert '<a href="./methodology.html" class="here">Methodology</a>' in html
+
+
+def test_the_glossary_defines_every_term_the_other_pages_publish():
+    """A reader meets these on the leaderboard and the cards before they ever
+    reach this page. A glossary that omits one is why they came here."""
+    html = sb.render_methodology(THEME, snapshot=snapshot(FLAGSHIP))
+    for term in ("OVR", "Par", "Trial", "Contestant", "Board", "Provisional",
+                 "Archetype", "Invalid", "Check", "Axis"):
+        assert f"<dt>{term}</dt>" in html
+
+
+def test_the_glossary_em_dash_reaches_the_page_as_a_separator():
+    """escape() over a definition already carrying &mdash; publishes a literal
+    &amp;mdash; — the joined-string mistake the card footnotes made once."""
+    html = sb.render_methodology(THEME, snapshot=snapshot(FLAGSHIP))
+    assert "&amp;mdash;" not in html
+    assert "&mdash;" in html
+
+
+def test_every_stat_in_the_card_is_explained_and_weighted():
+    """Five stats blend into OVR and a sixth discounts it. A page that names
+    four of them leaves the reader to guess which column they are looking at."""
+    html = sb.render_methodology(THEME, snapshot=snapshot(FLAGSHIP))
+    for stat in sb.CARD_STATS:
+        assert stat in html
+    for weight in ("heaviest", "lightest"):
+        assert weight in html
+
+
+def test_every_class_the_methodology_page_emits_has_a_rule_in_the_stylesheet():
+    """theme.css is the ONLY stylesheet a built page carries, so markup with no
+    rule renders at browser defaults. The cards guard covers the cards pages;
+    without this one the newest page on the site is the unguarded one."""
+    import re
+
+    css = (DEPLOY / "theme.css").read_text()
+    # Render WITH a snapshot, or the table branch — the only branch that emits
+    # markup of its own — never runs and the guard protects nothing.
+    page = sb.render_methodology(THEME, snapshot=snapshot(FLAGSHIP, UNMEASURED),
+                                 leaderboard=True, models=True)
+    emitted: set[str] = set()
+    for attr in re.findall(r'class="([^"]+)"', page):
+        emitted.update(attr.split())
+    assert sorted(c for c in emitted if f".{c}" not in css) == []
