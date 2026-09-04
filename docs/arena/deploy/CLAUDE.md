@@ -95,12 +95,25 @@ listing the boards run on it. Two inputs, deliberately separate:
   each to be served, for the same reason it compares titles — a 200 under the SPA
   catch-all proves nothing.
 
-## The leaderboard is TABBED by workflow, in CSS, with no JavaScript
+## The leaderboard is TABBED by workflow, in a right rail, with no JavaScript
 
 Six stacked sections were 5,351px and put the newest board's 1,443-character
 caveat above every number on the page. The workflows are now `:target` tabs and
 the page is 1,368px.
 
+- **The rail costs table width, and this page had none to spare.** The widest
+  board table is 1032px and `.page`'s content box was 1032px **to the pixel** —
+  the table was sized to that container. So the rail is 164px rather than the
+  site's usual 268px aside, and `.page.wide` lifts this ONE page to 1300px.
+  Verify after any change here that every board still renders whole at a 1280px
+  viewport; the columns a squeeze hides are EFF/CON/OBJ/TRIALS, which are
+  precisely what explains a ranking.
+- **Panels come FIRST in the DOM; the grid puts the rail right.** Source order
+  is reading order and the reader came for the table. That makes the old
+  "tab bar precedes the panels" assertion wrong, not the markup — on one column
+  the grid collapses to DOM order, so `order:-1` lifts the rail back above the
+  board. A control belongs before what it controls, the opposite of the index's
+  rail, which is commentary and correctly follows the feed.
 - **There is no JavaScript anywhere on this site and the leaderboard must not be
   where that changes.** It is a table of measurements; a reader with script
   blocked has to be able to read all of them. The server's CSP would permit
