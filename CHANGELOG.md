@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`/arena/leaderboard.html` is tabbed by workflow.** It was six stacked
+  sections, 5,351px of scroll, and the newest board's 1,443-character caveat
+  bought the whole page's first impression before a single number appeared. The
+  workflows are now tabs and the page is 1,368px: you land on one board and
+  choose the rest.
+  - **Selection is `:target` and nothing else — no JavaScript**, of which the
+    site has none anywhere. A leaderboard is the last page that should need any:
+    it is a table of measurements, and a reader with script blocked must still
+    be able to read every one. Each panel keeps the `id` it always had, so
+    `#trader-rfq-booking-day` still addresses it and an old deep link becomes a
+    tab selection rather than breaking. A fragment naming nothing falls back to
+    the default panel, so a stale link costs a reader nothing.
+  - The tab bar is built from the **same ordered list** as the panels. Two walks
+    of the snapshot is how a tab comes to point at something nobody wrote — and
+    here that failure is silent, since an unmatched fragment simply leaves the
+    default showing.
+  - **Printing still prints every workflow.** Tabs are a reading aid on screen;
+    on paper they would drop five workflows out of the record without saying so.
+  - The active tab is deliberately **not** highlighted: `:target` lands on the
+    panel, not the link, so marking the link needs either a rule per slug or
+    generated per-page CSS — and generated CSS would undercut the rule that
+    `theme.css` is the only stylesheet a built page carries. The panel's own
+    heading names the selection instead, and no longer wears the tab's bordered
+    chip styling, which read as a seventh tab that had wrapped.
+
+### Fixed
+- **Two leaderboard cell classes had no stylesheet rule at all.** `.obj` and
+  `.n` — the objective score and the trial depth — were emitted on every board
+  row and styled by nothing. They now get the muted treatment `.rank` already
+  carries, so the card stats read as the measurement and these two as the record
+  of it. Found by giving the leaderboard its first dead-class guard; the cards
+  and methodology pages each had one and this page never did.
+- **The dead-class guards matched class names by substring**, so `.n` counted as
+  covered because `.none` contains it — the guard missed precisely the dead
+  class it exists to catch. The leaderboard's guard matches whole tokens.
+
 ### Added
 - **Run #138 published: Gemini 3.8 Flash at `low` across all six workflows**, the
   paired arm for run #134 with effort as the only variable, and a second card on

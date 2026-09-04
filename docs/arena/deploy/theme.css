@@ -222,6 +222,56 @@ footer.site{margin-top:52px; padding-top:18px; border-top:1px solid var(--line);
 
 /* ---- leaderboard ---- */
 .boards{padding-top:6px}
+/* ---- workflow tabs ------------------------------------------------------
+   Selection is :target and nothing else. There is no JavaScript anywhere on
+   this site, and a leaderboard is the last page that should need any: it is a
+   table of measurements, and a reader with script blocked must still be able
+   to read every one of them.
+
+   The active tab is deliberately NOT highlighted. :target lands on the PANEL,
+   not on the link pointing at it, so marking the link needs either a rule per
+   workflow slug or generated per-page CSS — and generated CSS would undercut
+   the rule that theme.css is the only stylesheet a built page carries, which
+   is what every dead-class guard rests on. The panel's own heading sits
+   directly under the bar and names the selection instead.                  */
+.wf-tabs{display:flex; flex-wrap:wrap; gap:8px; padding:22px 0 4px}
+.wf-tab{display:inline-flex; align-items:baseline; gap:7px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.78rem;
+  color:var(--ink); text-decoration:none; background:var(--paper);
+  border:1px solid var(--line); border-radius:6px; padding:6px 11px}
+.wf-tab:hover{border-color:var(--accent); color:var(--accent)}
+.wf-tab-none{font-family:var(--sans); font-size:.6rem; text-transform:uppercase;
+  letter-spacing:.08em; color:var(--muted)}
+/* The panel states the selection, since no tab can be highlighted. Its slug
+   therefore has to stop wearing the TAB's costume: an identical bordered chip
+   directly under the bar reads as a seventh tab that wrapped, not as the
+   heading of what you just chose. Same glyphs, no box. */
+.wf-panels .wf h2 code{background:none; border:none; padding:0;
+  font-size:1.05rem; color:var(--accent)}
+
+/* One panel at a time. With no fragment the FIRST is shown, and
+   ordered_workflows puts the most recently measured workflow there — the same
+   "newest leads" opinion the feed carries.
+
+   :has() is what suppresses that default once a tab is chosen. Where it is not
+   supported the reader sees the default panel PLUS the selected one: degraded,
+   never broken, and never a page with nothing on it.                       */
+.wf-panels > .wf{display:none}
+.wf-panels > .wf:first-child{display:block}          /* default: no fragment  */
+.wf-panels > .wf:target{display:block}               /* no-:has() fallback    */
+.wf-panels:has(> .wf:target) > .wf{display:none}     /* a tab was chosen...   */
+.wf-panels:has(> .wf:target) > .wf:target{display:block}  /* ...show only it  */
+/* The browser scrolls a target into view; without this the tab bar goes with
+   it and the reader loses the control they just used. */
+.wf-panels > .wf{scroll-margin-top:96px}
+
+/* A printed leaderboard is the WHOLE leaderboard. Tabs are a reading aid on a
+   screen; on paper they would silently drop five workflows out of the record. */
+@media print{
+  .wf-tabs{display:none}
+  .wf-panels > .wf{display:block !important}
+}
+
 .wf{padding:26px 0 10px; border-bottom:1px solid var(--line)}
 .wf h2{margin:0; font-family:var(--serif); font-weight:400; font-size:1.35rem}
 .wf h2 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -261,6 +311,12 @@ footer.site{margin-top:52px; padding-top:18px; border-top:1px solid var(--line);
 /* CON had no rule at all until the roster arrived: the leaderboard emitted the
    cell and the stylesheet never claimed it. Consistency, not a new colour. */
 .board-table .con{font-weight:600}
+/* The trailing provenance pair: the pre-card objective axis and the trial
+   depth behind CON. Muted like .rank, the table's other non-stat column, so
+   the card stats read as the measurement and these as the record of it. Both
+   classes were emitted with NO rule at all until the leaderboard gained a
+   dead-class guard. */
+.board-table .obj,.board-table .n{color:var(--muted)}
 
 /* ---- the model roster -------------------------------------------------
    Deliberately UNBOXED, like the board tables. The box belongs to the cards on
