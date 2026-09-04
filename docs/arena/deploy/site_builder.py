@@ -497,24 +497,65 @@ def _workflow_section(wf: dict, by_file: dict[str, Post]) -> str:
     )
 
 
+def _workflow_tabs(workflows: list[dict]) -> str:
+    """The tab bar, built from the SAME ordered list that builds the panels.
+
+    Never enumerate the workflows a second way. The roster taught this once
+    already: two independent walks of the snapshot is exactly how a link comes
+    to point at something nobody wrote, and here the failure is quieter still —
+    a tab whose panel is missing selects nothing and silently leaves the default
+    panel showing, which reads as a dead click rather than an error.
+
+    An unmeasured workflow keeps its tab and says so. Dropping it would read as
+    "this workflow does not exist" rather than "nobody has run it", the same
+    rule its section already follows.
+    """
+    tabs = []
+    for wf in workflows:
+        slug = str(wf.get("id", ""))
+        empty = "" if wf.get("boards") else '<span class="wf-tab-none">no board</span>'
+        tabs.append(
+            f'<a class="wf-tab" href="#{escape(slug)}">{escape(slug)}{empty}</a>'
+        )
+    return f'<nav class="wf-tabs">{"".join(tabs)}</nav>'
+
+
 def render_leaderboard(snapshot: dict, posts: list[Post], theme: str) -> str:
     """Every board we have, grouped by the workflow it was measured on.
 
     Nothing here is typed: `snapshot` comes from collect_boards.py, which reads
     the arena DB through the same ranking kernel the desk UI uses.
+
+    The workflows are TABBED, selected by `:target` and no JavaScript — there is
+    none anywhere on this site. Each panel keeps the id it always had, so
+    `#trader-rfq-booking-day` still addresses it and an old deep link becomes a
+    tab selection rather than breaking. A fragment naming nothing falls back to
+    the default panel, so a stale link costs a reader nothing.
     """
     from boards import ordered_workflows
 
     by_file = {p.file: p for p in posts}
-    sections = "".join(
-        _workflow_section(wf, by_file)
-        for wf in ordered_workflows(snapshot.get("workflows") or [])
+    workflows = ordered_workflows(snapshot.get("workflows") or [])
+    sections = "".join(_workflow_section(wf, by_file) for wf in workflows)
+    # Panels first in the DOM, rail second: the reading order is the board, and
+    # the grid puts the rail on the right regardless. On a phone the grid
+    # collapses and CSS `order` lifts the rail ABOVE the panel, because a
+    # control belongs before the thing it controls — the opposite of the
+    # index's rail, which is commentary and correctly follows the feed.
+    sections = (
+        '<div class="wf-layout">'
+        f'<div class="wf-panels">{sections}</div>'
+        f"{_workflow_tabs(workflows)}"
+        "</div>"
     )
     generated = str(snapshot.get("generated_at", ""))[:10]
 
     return (
         _head(f"{LEADERBOARD_TITLE} — {SITE_TITLE}", theme, LEADERBOARD_LEAD)
-        + '<div class="page">\n'
+        # Wider than every other page, and only this one. It is the only page
+        # carrying eleven-column tables, and the rail takes room the widest of
+        # them was already using to the pixel.
+        + '<div class="page wide">\n'
         + _masthead(True, here="leaderboard", models=bool(snapshot.get("models")))
         + f'<div class="intro"><h1>{escape(LEADERBOARD_TITLE)}</h1>'
         + f'<p class="lead">{escape(LEADERBOARD_LEAD)}</p>'

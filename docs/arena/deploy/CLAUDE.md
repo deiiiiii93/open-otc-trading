@@ -95,6 +95,67 @@ listing the boards run on it. Two inputs, deliberately separate:
   each to be served, for the same reason it compares titles — a 200 under the SPA
   catch-all proves nothing.
 
+## The leaderboard is TABBED by workflow, in a right rail, with no JavaScript
+
+Six stacked sections were 5,351px and put the newest board's 1,443-character
+caveat above every number on the page. The workflows are now `:target` tabs and
+the page is 1,368px.
+
+- **The rail costs table width, and this page had none to spare.** The widest
+  board table is 1032px and `.page`'s content box was 1032px **to the pixel** —
+  the table was sized to that container. So the rail is 164px rather than the
+  site's usual 268px aside, and `.page.wide` lifts this ONE page to 1300px.
+  Verify after any change here that every board still renders whole at a 1280px
+  viewport; the columns a squeeze hides are EFF/CON/OBJ/TRIALS, which are
+  precisely what explains a ranking.
+- **Panels come FIRST in the DOM; the grid puts the rail right.** Source order
+  is reading order and the reader came for the table. That makes the old
+  "tab bar precedes the panels" assertion wrong, not the markup — on one column
+  the grid collapses to DOM order, so `order:-1` lifts the rail back above the
+  board. A control belongs before what it controls, the opposite of the index's
+  rail, which is commentary and correctly follows the feed.
+- **The leaderboard carries no JavaScript, and must not become where that
+  changes.** It is a table of measurements; a reader with script blocked has to
+  be able to read all of them. The server's CSP would permit inline script —
+  that is not the reason. The roster's search box is the site's one script and
+  the exception that proves the rule: it *adds* a way to narrow 44 rows and
+  removes nothing, so with scripts off the roster still publishes every row.
+  Tabs are not like that — a tab is the only way to reach the panel it hides, so
+  doing them in script would take measurements away from a reader who blocks it.
+  **The test is whether the feature hides content or only offers to.**
+- **Panels keep the ids `verify_live` already scrapes.** `_find_anchors` reads
+  `<section class="wf" id=…>` out of the BUILT page, so tabbing must not touch
+  that markup or the live check goes dark while still reporting success. An old
+  `#trader-rfq-booking-day` deep link now selects a tab instead of scrolling.
+- **The tab bar and the panels come from ONE `ordered_workflows` list.** The
+  roster taught this with `model_index`, but here the failure is quieter: a tab
+  whose panel does not exist matches no `:target`, so the default panel simply
+  stays up and the click reads as dead rather than broken.
+- **`:has()` takes the specificity of its most specific argument.** The first
+  attempt hid the default with `.wf-panels:has(> .wf:target) > .wf:first-child`
+  (0,5,0) and tried to re-show it with `.wf:target:first-child` (0,4,0) — so
+  clicking the FIRST tab displayed nothing at all. Both sides now carry the same
+  `:has()` prefix and source order settles it. The bare `.wf-panels > .wf:target`
+  rule is kept as the no-`:has()` fallback: without it that browser is stuck on
+  the default panel, which is worse than the extra-panel degradation.
+- **`@media print` reveals every workflow and hides the bar.** Tabs are a screen
+  affordance; on paper they would silently drop five workflows out of the record.
+- **The active tab is NOT highlighted, by construction.** `:target` lands on the
+  panel, not on the link pointing at it, so marking the link needs a rule per
+  slug or generated per-page CSS — and generated CSS would undercut the premise
+  every dead-class guard rests on. The panel heading names the selection, and
+  drops the bordered chip styling so it stops reading as a tab that wrapped.
+- **Hidden panels are invisible to find-in-page.** That is the accepted cost;
+  searching the leaderboard only matches the workflow on screen.
+
+### A dead-class guard must match WHOLE class names
+
+Adding the leaderboard's first guard immediately found `.obj` and `.n` emitted
+on every board row with no rule at all. `.n` had also been invisible to the
+older guards, because they test `f".{cls}" not in css` and `.none` contains
+`.n` — a guard that misses precisely the dead class it exists to catch. Match
+the class as a token (`rf"\.{cls}(?![\w-])"`).
+
 ## A run may be published as CARDS ONLY (`provisional:`)
 
 `boards.yaml` has two sections. `boards:` are ranked and reach the leaderboard;

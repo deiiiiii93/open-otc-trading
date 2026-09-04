@@ -1268,3 +1268,176 @@ def test_the_native_clear_button_restores_the_roster(tmp_path):
         "gemini-3-6-flash", "gpt-5-6-terra"]
     assert _section(cleared, "provisional")["table"] is True
     assert _section(cleared, "provisional")["count"] == "1 card"
+# --------------------------------------------------------------------------
+# Leaderboard workflow tabs
+# --------------------------------------------------------------------------
+
+def test_the_tab_bar_offers_exactly_the_panels_that_were_built():
+    """One enumeration, two renderings. A tab pointing at a panel nobody wrote
+    selects nothing and silently leaves the default showing — a dead click with
+    no error anywhere, which is the quietest version of the failure the roster's
+    single `model_index` exists to prevent."""
+    import re
+
+    html = sb.render_leaderboard(models_snapshot(FLAGSHIP, UNMEASURED), POSTS, THEME)
+    tabs = re.findall(r'<a class="wf-tab" href="#([^"]+)"', html)
+    panels = re.findall(r'<section class="wf" id="([^"]+)"', html)
+    assert tabs == panels
+    assert tabs == ["risk-manager-control-day", "ops-settlement-day"]
+
+
+def test_a_workflow_with_no_board_keeps_its_tab_and_says_so():
+    """Dropping it would read as "this workflow does not exist" rather than
+    "nobody has run it" — the rule its section already follows, applied to the
+    control that reaches the section."""
+    import re
+
+    html = sb.render_leaderboard(models_snapshot(FLAGSHIP, UNMEASURED), POSTS, THEME)
+    # Scope to each anchor ELEMENT. A fixed-width slice runs into the next tab,
+    # which is how this test first passed the marker check by accident.
+    tabs = dict(re.findall(r'<a class="wf-tab" href="#([^"]+)">(.*?)</a>', html))
+    assert "no board" in tabs["ops-settlement-day"]
+    assert "no board" not in tabs["risk-manager-control-day"]
+
+
+def test_the_panels_are_wrapped_so_the_target_rules_have_something_to_bind_to():
+    """`.wf-panels > .wf` is the whole selection mechanism. Without the wrapper
+    every :target rule silently matches nothing and all six workflows render at
+    once — which looks exactly like the page before this change, so nothing
+    would report it."""
+    html = sb.render_leaderboard(models_snapshot(FLAGSHIP, UNMEASURED), POSTS, THEME)
+    assert '<div class="wf-panels">' in html
+    body = html[html.index('<div class="wf-panels">'):]
+    assert body.count('<section class="wf"') == 2
+
+
+def test_the_board_leads_in_the_dom_and_the_grid_puts_the_rail_right():
+    """DOM order is READING order, and what a reader came for is the board. The
+    rail's position is the grid's job, not the markup's — so the source order
+    that would be wrong for a top bar is the right one for a right rail."""
+    html = sb.render_leaderboard(models_snapshot(FLAGSHIP, UNMEASURED), POSTS, THEME)
+    assert html.index('class="wf-panels"') < html.index('class="wf-tabs"')
+    assert '<div class="wf-layout">' in html
+    css = (DEPLOY / "theme.css").read_text()
+    assert "grid-template-columns:minmax(0,1fr) 164px" in css
+
+
+def test_on_one_column_the_rail_is_lifted_above_the_board():
+    """A control BELOW the thing it controls is not a tab bar. On a phone the
+    grid collapses to the DOM order, which puts the board first, so the rail
+    has to be pulled back up explicitly."""
+    css = (DEPLOY / "theme.css").read_text()
+    narrow = css[css.index("@media (max-width:860px){\n  .wf-layout"):]
+    narrow = narrow[:narrow.index("\n}")]
+    assert "order:-1" in narrow
+    assert "grid-template-columns:minmax(0,1fr)" in narrow
+
+
+def test_the_leaderboard_is_the_only_page_that_widens_its_container():
+    """The rail takes room the widest board table was using to the pixel. The
+    journal measure is right for every other page, so the override is scoped to
+    a modifier rather than applied to `.page` itself."""
+    css = (DEPLOY / "theme.css").read_text()
+    assert ".page{max-width:1080px" in css       # unchanged for everyone else
+    assert ".page.wide{max-width:1300px}" in css
+
+    wide = sb.render_leaderboard(models_snapshot(FLAGSHIP), POSTS, THEME)
+    assert '<div class="page wide">' in wide
+    for html in (sb.render_index(POSTS, MINUTES, THEME),
+                 sb.render_models(models_snapshot(FLAGSHIP), THEME)):
+        assert '<div class="page wide">' not in html
+
+
+def test_every_panel_keeps_the_id_the_deploy_verifier_scrapes():
+    """`publish._find_anchors` reads `<section class="wf" id=...>` out of the
+    BUILT page and requires each to serve. Tabbing must not change that markup,
+    or the live check goes dark while still reporting success."""
+    import sys
+    sys.path.insert(0, str(DEPLOY.parent))
+    import publish as pub
+
+    html = sb.render_leaderboard(models_snapshot(FLAGSHIP, UNMEASURED), POSTS, THEME)
+    assert pub._find_anchors(html) == [
+        "risk-manager-control-day", "ops-settlement-day",
+    ]
+
+
+def test_the_target_rules_cover_a_first_panel_that_is_itself_the_target():
+    """:has() takes the specificity of its most specific argument, so the rule
+    that hides the default outranks a bare `:target:first-child` and clicking
+    the FIRST tab would show nothing at all. Both sides carry the same :has()
+    prefix so source order settles it instead."""
+    css = (DEPLOY / "theme.css").read_text()
+    assert ".wf-panels:has(> .wf:target) > .wf{display:none}" in css
+    show = ".wf-panels:has(> .wf:target) > .wf:target{display:block}"
+    assert show in css
+    # ...and the shorthand must come LAST, or equal specificity resolves the
+    # other way and every panel stays hidden.
+    assert css.index(show) > css.index(".wf-panels:has(> .wf:target) > .wf{")
+
+
+def test_a_browser_without_has_still_reveals_a_chosen_tab():
+    """The bare :target rule is the entire mechanism where :has() is
+    unsupported. Without it the fallback is a page stuck on its default panel —
+    worse than the extra-panel degradation this design accepts."""
+    css = (DEPLOY / "theme.css").read_text()
+    assert ".wf-panels > .wf:target{display:block}" in css
+    assert ".wf-panels > .wf:first-child{display:block}" in css
+
+
+def test_printing_the_leaderboard_prints_every_workflow():
+    """Tabs are a reading aid on a screen. On paper they would drop five
+    workflows out of the record without saying so."""
+    css = (DEPLOY / "theme.css").read_text()
+    printing = css[css.index("@media print{"):]
+    assert ".wf-panels > .wf{display:block !important}" in printing
+    assert ".wf-tabs{display:none}" in printing
+
+
+def test_the_leaderboard_carries_no_javascript():
+    """Selection is CSS. A table of measurements must stay readable with script
+    blocked, and nothing else on this site needs a script either."""
+    html = sb.render_leaderboard(models_snapshot(FLAGSHIP, UNMEASURED), POSTS, THEME)
+    assert "<script" not in html
+    assert "onclick" not in html
+
+
+def test_every_class_the_leaderboard_emits_has_a_rule_in_the_stylesheet():
+    """The cards and methodology pages each have this guard; the leaderboard
+    never did, and it is the page gaining new markup."""
+    import re
+
+    css = (DEPLOY / "theme.css").read_text()
+    # Both branches: a measured workflow and an unmeasured one, or the guard
+    # never renders the empty-state markup it is meant to protect.
+    html = sb.render_leaderboard(
+        models_snapshot(FLAGSHIP, UNMEASURED), POSTS, THEME
+    )
+    emitted: set[str] = set()
+    for attr in re.findall(r'class="([^"]+)"', html):
+        emitted.update(attr.split())
+
+    # Whole-token match, unlike the two older guards: a substring test reads
+    # `.n` as covered because `.none` contains it, so the dead class it exists
+    # to catch is exactly the one it misses.
+    def styled(cls: str) -> bool:
+        return re.search(rf"\.{re.escape(cls)}(?![\w-])", css) is not None
+
+    assert sorted(c for c in emitted if not styled(c)) == []
+
+
+def test_the_selected_panel_heading_does_not_wear_the_tabs_costume():
+    """No tab can be highlighted, so the panel heading IS the selection
+    indicator. Left as an identical bordered chip directly under the bar it
+    reads as a seventh tab that wrapped onto a new row."""
+    css = (DEPLOY / "theme.css").read_text()
+    rule = css[css.index(".wf-panels .wf h2 code{"):]
+    rule = rule[:rule.index("}")]
+    for declaration in ("background:none", "border:none"):
+        assert declaration in rule, declaration
+    # ...and it has to OUTRANK the boxed rule it overrides. The base selector
+    # carries one class; qualifying it with the wrapper adds a second, so the
+    # override wins on specificity rather than on source order, which is what
+    # lets it sit earlier in the file beside the rest of the tab rules.
+    assert ".wf h2 code{" in css                      # the boxed base rule
+    assert ".wf-panels .wf h2 code{" in css           # strictly more specific

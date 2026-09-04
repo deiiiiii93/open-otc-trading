@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`/arena/leaderboard.html` is tabbed by workflow, in a right-hand rail.** It
+  was six stacked sections, 5,351px of scroll, and the newest board's
+  1,443-character caveat bought the whole page's first impression before a
+  single number appeared. The workflows are now a sticky rail beside the board:
+  you land on one board, choose the rest, and the rail stays in view while you
+  read a long field rather than making you scroll back to a bar at the top.
+  - **The rail is 164px and the page widened to 1300px, for this page alone.**
+    The widest board table is 1032px and the container was 1032px to the pixel,
+    so every column the rail takes comes straight out of the measurements — and
+    the ones it would push out of view are the right-hand ones (EFF, CON, OBJ,
+    TRIALS), which are exactly what explains a ranking. Measured after the
+    change: every board table still renders whole at a 1280px viewport. The
+    widening is scoped to a `.page.wide` modifier so the journal measure the
+    rest of the site is set to does not move.
+  - **The board leads in the DOM and the grid places the rail.** Source order is
+    reading order, and what a reader came for is the table. On one column the
+    grid collapses to that order, so the rail is pulled back above the board
+    with `order:-1` — a control belongs before the thing it controls, which is
+    the opposite of the index's rail, where the cards are commentary and
+    correctly follow the feed.
+  - **Selection is `:target` and nothing else — no JavaScript**, of which the
+    site has none anywhere. A leaderboard is the last page that should need any:
+    it is a table of measurements, and a reader with script blocked must still
+    be able to read every one. Each panel keeps the `id` it always had, so
+    `#trader-rfq-booking-day` still addresses it and an old deep link becomes a
+    tab selection rather than breaking. A fragment naming nothing falls back to
+    the default panel, so a stale link costs a reader nothing.
+  - The tab bar is built from the **same ordered list** as the panels. Two walks
+    of the snapshot is how a tab comes to point at something nobody wrote — and
+    here that failure is silent, since an unmatched fragment simply leaves the
+    default showing.
+  - **Printing still prints every workflow.** Tabs are a reading aid on screen;
+    on paper they would drop five workflows out of the record without saying so.
+  - The active tab is deliberately **not** highlighted: `:target` lands on the
+    panel, not the link, so marking the link needs either a rule per slug or
+    generated per-page CSS — and generated CSS would undercut the rule that
+    `theme.css` is the only stylesheet a built page carries. The panel's own
+    heading names the selection instead, and no longer wears the tab's bordered
+    chip styling, which read as a seventh tab that had wrapped.
+
+### Fixed
+- **Two leaderboard cell classes had no stylesheet rule at all.** `.obj` and
+  `.n` — the objective score and the trial depth — were emitted on every board
+  row and styled by nothing. They now get the muted treatment `.rank` already
+  carries, so the card stats read as the measurement and these two as the record
+  of it. Found by giving the leaderboard its first dead-class guard; the cards
+  and methodology pages each had one and this page never did.
+- **The dead-class guards matched class names by substring**, so `.n` counted as
+  covered because `.none` contains it — the guard missed precisely the dead
+  class it exists to catch. The leaderboard's guard matches whole tokens.
+
 ### Added
 - **A search box on `/arena/models.html`.** The roster is 44 cards over two
   tables and was navigable only by scrolling or by browser find, which does not
