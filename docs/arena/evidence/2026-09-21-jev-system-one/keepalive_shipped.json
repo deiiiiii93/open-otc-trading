@@ -1,0 +1,244 @@
+[
+ {
+  "key": "F1",
+  "fact": "Desk reports P&L in CNY by default; USD only when a client asks for it.",
+  "age_days": 40,
+  "kind": "standing rule",
+  "expected": 1.0,
+  "scores": [
+   0.049999999999999996,
+   0.06666666666666667,
+   0.05333333333333334
+  ],
+  "confidence": [
+   0.85,
+   0.8,
+   0.84
+  ],
+  "reasons": [
+   null,
+   null,
+   null
+  ]
+ },
+ {
+  "key": "F2",
+  "fact": "Use ACT/365 for CNY snowball coupon accrual unless the term sheet says otherwise.",
+  "age_days": 60,
+  "kind": "standing rule",
+  "expected": 1.0,
+  "scores": [
+   0.96,
+   0.9700000000000001,
+   0.9700000000000001
+  ],
+  "confidence": [
+   0.88,
+   0.91,
+   0.91
+  ],
+  "reasons": [
+   null,
+   null,
+   null
+  ]
+ },
+ {
+  "key": "F3",
+  "fact": "Any booking above the desk's notional threshold needs head-of-desk approval before release.",
+  "age_days": 90,
+  "kind": "standing rule",
+  "expected": 1.0,
+  "scores": [
+   0.9700000000000001,
+   0.9700000000000001,
+   0.9700000000000001
+  ],
+  "confidence": [
+   0.91,
+   0.91,
+   0.91
+  ],
+  "reasons": [
+   null,
+   null,
+   null
+  ]
+ },
+ {
+  "key": "F4",
+  "fact": "Current project: migrating snowball pricing from Monte Carlo to the PDE engine.",
+  "age_days": 10,
+  "kind": "for now",
+  "expected": 0.67,
+  "scores": [
+   0.6433333333333333,
+   0.6533333333333333,
+   0.65
+  ],
+  "confidence": [
+   0.93,
+   0.95,
+   0.95
+  ],
+  "reasons": [
+   null,
+   null,
+   null
+  ]
+ },
+ {
+  "key": "F5",
+  "fact": "Book 3's vega limit is temporarily raised until month-end while its hedge is rebuilt.",
+  "age_days": 5,
+  "kind": "for now",
+  "expected": 0.67,
+  "scores": [
+   0.59,
+   0.5733333333333334,
+   0.5533333333333333
+  ],
+  "confidence": [
+   0.77,
+   0.72,
+   0.65
+  ],
+  "reasons": [
+   null,
+   null,
+   null
+  ]
+ },
+ {
+  "key": "F6",
+  "fact": "Run #134 is the latest flash board.",
+  "age_days": 18,
+  "kind": "one-off",
+  "expected": 0.33,
+  "scores": [
+   0.3233333333333333,
+   0.3233333333333333,
+   0.3233333333333333
+  ],
+  "confidence": [
+   0.95,
+   0.95,
+   0.95
+  ],
+  "reasons": [
+   null,
+   null,
+   null
+  ]
+ },
+ {
+  "key": "F7",
+  "fact": "Position 27 is being reopened today pending the knock-out dispute.",
+  "age_days": 3,
+  "kind": "one-off",
+  "expected": 0.33,
+  "scores": [
+   0.3333333333333333,
+   0.3333333333333333,
+   0.33666666666666667
+  ],
+  "confidence": [
+   0.93,
+   0.91,
+   0.91
+  ],
+  "reasons": [
+   null,
+   null,
+   null
+  ]
+ },
+ {
+  "key": "F8",
+  "fact": "Today's CSI 500 close was 6,812.4.",
+  "age_days": 1,
+  "kind": "one-off",
+  "expected": 0.33,
+  "scores": [
+   0.33,
+   0.33,
+   0.33
+  ],
+  "confidence": [
+   0.99,
+   0.98,
+   0.99
+  ],
+  "reasons": [
+   null,
+   null,
+   null
+  ]
+ },
+ {
+  "key": "F9",
+  "fact": "Desk reports P&L in USD by default.",
+  "age_days": 200,
+  "kind": "contradicted by F1",
+  "expected": 0.0,
+  "scores": [
+   0.01,
+   0.006666666666666667,
+   0.01
+  ],
+  "confidence": [
+   0.97,
+   0.98,
+   0.97
+  ],
+  "reasons": [
+   null,
+   null,
+   null
+  ]
+ },
+ {
+  "key": "F10",
+  "fact": "Settlement notices go out to counterparties by fax.",
+  "age_days": 300,
+  "kind": "contradicted by F11",
+  "expected": 0.0,
+  "scores": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "confidence": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "reasons": [
+   null,
+   null,
+   null
+  ]
+ },
+ {
+  "key": "F11",
+  "fact": "Settlement notices are emailed as PDF; fax was retired in August.",
+  "age_days": 20,
+  "kind": "standing rule",
+  "expected": 1.0,
+  "scores": [
+   0.023333333333333334,
+   0.03666666666666667,
+   0.043333333333333335
+  ],
+  "confidence": [
+   0.93,
+   0.89,
+   0.87
+  ],
+  "reasons": [
+   null,
+   null,
+   null
+  ]
+ }
+]

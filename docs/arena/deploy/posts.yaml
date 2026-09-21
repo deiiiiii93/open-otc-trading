@@ -5,6 +5,19 @@
 # assets, publish.  A missing blurb FAILS THE BUILD by design — never let a
 # generated first paragraph ship as editorial copy.
 
+- file: 2026-09-21-jev-system-one.md
+  date: 2026-09-21
+  tags: [research]
+  chips: ["1 classifier", "3 integrations", "234 live calls"]
+  title: "How does Jev boost our OTC trading agent?"
+  blurb: >
+    TypeSafe's Jev is a classifier that cannot write a word or call a tool. We put it in
+    three places on the desk and made 234 live calls. Under the wording we shipped, the AUTO
+    guard flagged all 30 trap calls we ran and was reached from inside a real persona turn;
+    every false alarm traced to how we worded the question, and a post-hoc rewording -- not
+    shipped -- cleared nine of nine held-out controls. It moves no arena score, by design.
+  publish: true
+
 - file: 2026-09-03-run134-gemini38-flash.md
   date: 2026-09-03
   tags: [research]

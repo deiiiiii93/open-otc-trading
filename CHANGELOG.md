@@ -41,6 +41,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   disagreement shows on the Confirmations row and on the `book_extracted_trade`
   approval card. Advisory only; never on arena turns. `extracted_trades.family_check`
   (migration `0063`); opt out with `OPEN_OTC_CONFIRMATION_FAMILY_CHECK=false`.
+- **Arena post: "How does Jev boost our OTC trading agent?"** — 234 live Jev calls: 231
+  through the merged guard, keep-alive and family-check paths, 2 in one live AUTO
+  session, 1 connectivity probe. Under the shipped wording the guard flagged all 30 trap
+  calls in matched pairs and was reached from inside a persona subagent on a real turn.
+  Every false alarm traced to predicate wording — 9 of 21 should-clear calls in the
+  first run; 18 of 21 in the rewording run, including 9 of 9 on held-out pairs — and a
+  post-hoc rewording cleared all 21 of the latter (**not shipped**). Two defects of our
+  own: the shipped `from_document` predicate ranks one trap *below* its control (0.39 vs
+  0.51), and keep-alive marks the newer half of a contradicting pair as dead because
+  sibling facts carry no age (sibling ages restore the direction, not the standing).
+  Raw per-call results and scripts in `docs/arena/evidence/2026-09-21-jev-system-one/`.
 
 ### Changed
 - **`/arena/leaderboard.html` is tabbed by workflow, in a right-hand rail.** It

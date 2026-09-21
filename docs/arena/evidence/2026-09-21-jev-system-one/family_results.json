@@ -1,0 +1,703 @@
+[
+ {
+  "rep": 0,
+  "doc": "conf-01-american-call-aapl.pdf",
+  "pages": [],
+  "truth": "AmericanOption",
+  "near_miss": "EuropeanVanillaOption",
+  "meaning": "exercise style misread",
+  "jev_family": "AmericanOption",
+  "confidence": 1.0,
+  "top": [
+   [
+    "AmericanOption",
+    1.0
+   ],
+   [
+    "AsianOption",
+    0.0
+   ],
+   [
+    "BarrierOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 0,
+  "doc": "conf-02-european-put-msft.docx",
+  "pages": [],
+  "truth": "EuropeanVanillaOption",
+  "near_miss": "AmericanOption",
+  "meaning": "exercise style misread",
+  "jev_family": "EuropeanVanillaOption",
+  "confidence": 1.0,
+  "top": [
+   [
+    "EuropeanVanillaOption",
+    1.0
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ],
+   [
+    "AsianOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 0,
+  "doc": "conf-03-multi-trade-sablefish.pdf",
+  "pages": [
+   2
+  ],
+  "truth": "EuropeanVanillaOption",
+  "near_miss": "AmericanOption",
+  "meaning": "exercise style misread",
+  "jev_family": "EuropeanVanillaOption",
+  "confidence": 1.0,
+  "top": [
+   [
+    "EuropeanVanillaOption",
+    1.0
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ],
+   [
+    "AsianOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 0,
+  "doc": "conf-03-multi-trade-sablefish.pdf",
+  "pages": [
+   3
+  ],
+  "truth": "EuropeanVanillaOption",
+  "near_miss": "BarrierOption",
+  "meaning": "neighbouring trade's barrier bled in",
+  "jev_family": "EuropeanVanillaOption",
+  "confidence": 1.0,
+  "top": [
+   [
+    "EuropeanVanillaOption",
+    1.0
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ],
+   [
+    "AsianOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 0,
+  "doc": "conf-03-multi-trade-sablefish.pdf",
+  "pages": [
+   4
+  ],
+  "truth": "BarrierOption",
+  "near_miss": "EuropeanVanillaOption",
+  "meaning": "barrier missed",
+  "jev_family": null,
+  "confidence": null,
+  "top": null,
+  "status_correct": "unscored",
+  "status_near_miss": "unscored",
+  "reason": "timeout"
+ },
+ {
+  "rep": 0,
+  "doc": "conf-05-knockout-barrier-tsla.pdf",
+  "pages": [],
+  "truth": "BarrierOption",
+  "near_miss": "EuropeanVanillaOption",
+  "meaning": "barrier missed",
+  "jev_family": "BarrierOption",
+  "confidence": 0.97,
+  "top": [
+   [
+    "BarrierOption",
+    0.98
+   ],
+   [
+    "SingleSharkfinOption",
+    0.02
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 0,
+  "doc": "conf-06-asian-average-spy.pdf",
+  "pages": [],
+  "truth": "AsianOption",
+  "near_miss": "EuropeanVanillaOption",
+  "meaning": "averaging missed",
+  "jev_family": "AsianOption",
+  "confidence": 0.97,
+  "top": [
+   [
+    "AsianOption",
+    0.98
+   ],
+   [
+    "EuropeanVanillaOption",
+    0.02
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 0,
+  "doc": "conf-07-missing-initial-price-meta.pdf",
+  "pages": [],
+  "truth": "EuropeanVanillaOption",
+  "near_miss": "AmericanOption",
+  "meaning": "exercise style misread",
+  "jev_family": "EuropeanVanillaOption",
+  "confidence": 1.0,
+  "top": [
+   [
+    "EuropeanVanillaOption",
+    1.0
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ],
+   [
+    "AsianOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 1,
+  "doc": "conf-01-american-call-aapl.pdf",
+  "pages": [],
+  "truth": "AmericanOption",
+  "near_miss": "EuropeanVanillaOption",
+  "meaning": "exercise style misread",
+  "jev_family": "AmericanOption",
+  "confidence": 1.0,
+  "top": [
+   [
+    "AmericanOption",
+    1.0
+   ],
+   [
+    "AsianOption",
+    0.0
+   ],
+   [
+    "BarrierOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 1,
+  "doc": "conf-02-european-put-msft.docx",
+  "pages": [],
+  "truth": "EuropeanVanillaOption",
+  "near_miss": "AmericanOption",
+  "meaning": "exercise style misread",
+  "jev_family": "EuropeanVanillaOption",
+  "confidence": 1.0,
+  "top": [
+   [
+    "EuropeanVanillaOption",
+    1.0
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ],
+   [
+    "AsianOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 1,
+  "doc": "conf-03-multi-trade-sablefish.pdf",
+  "pages": [
+   2
+  ],
+  "truth": "EuropeanVanillaOption",
+  "near_miss": "AmericanOption",
+  "meaning": "exercise style misread",
+  "jev_family": "EuropeanVanillaOption",
+  "confidence": 1.0,
+  "top": [
+   [
+    "EuropeanVanillaOption",
+    1.0
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ],
+   [
+    "AsianOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 1,
+  "doc": "conf-03-multi-trade-sablefish.pdf",
+  "pages": [
+   3
+  ],
+  "truth": "EuropeanVanillaOption",
+  "near_miss": "BarrierOption",
+  "meaning": "neighbouring trade's barrier bled in",
+  "jev_family": "EuropeanVanillaOption",
+  "confidence": 1.0,
+  "top": [
+   [
+    "EuropeanVanillaOption",
+    1.0
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ],
+   [
+    "AsianOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 1,
+  "doc": "conf-03-multi-trade-sablefish.pdf",
+  "pages": [
+   4
+  ],
+  "truth": "BarrierOption",
+  "near_miss": "EuropeanVanillaOption",
+  "meaning": "barrier missed",
+  "jev_family": "BarrierOption",
+  "confidence": 1.0,
+  "top": [
+   [
+    "BarrierOption",
+    1.0
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ],
+   [
+    "AsianOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 1,
+  "doc": "conf-05-knockout-barrier-tsla.pdf",
+  "pages": [],
+  "truth": "BarrierOption",
+  "near_miss": "EuropeanVanillaOption",
+  "meaning": "barrier missed",
+  "jev_family": "BarrierOption",
+  "confidence": 0.97,
+  "top": [
+   [
+    "BarrierOption",
+    0.98
+   ],
+   [
+    "SingleSharkfinOption",
+    0.02
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 1,
+  "doc": "conf-06-asian-average-spy.pdf",
+  "pages": [],
+  "truth": "AsianOption",
+  "near_miss": "EuropeanVanillaOption",
+  "meaning": "averaging missed",
+  "jev_family": "AsianOption",
+  "confidence": 0.96,
+  "top": [
+   [
+    "AsianOption",
+    0.97
+   ],
+   [
+    "EuropeanVanillaOption",
+    0.03
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 1,
+  "doc": "conf-07-missing-initial-price-meta.pdf",
+  "pages": [],
+  "truth": "EuropeanVanillaOption",
+  "near_miss": "AmericanOption",
+  "meaning": "exercise style misread",
+  "jev_family": "EuropeanVanillaOption",
+  "confidence": 1.0,
+  "top": [
+   [
+    "EuropeanVanillaOption",
+    1.0
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ],
+   [
+    "AsianOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 2,
+  "doc": "conf-01-american-call-aapl.pdf",
+  "pages": [],
+  "truth": "AmericanOption",
+  "near_miss": "EuropeanVanillaOption",
+  "meaning": "exercise style misread",
+  "jev_family": "AmericanOption",
+  "confidence": 1.0,
+  "top": [
+   [
+    "AmericanOption",
+    1.0
+   ],
+   [
+    "AsianOption",
+    0.0
+   ],
+   [
+    "BarrierOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 2,
+  "doc": "conf-02-european-put-msft.docx",
+  "pages": [],
+  "truth": "EuropeanVanillaOption",
+  "near_miss": "AmericanOption",
+  "meaning": "exercise style misread",
+  "jev_family": "EuropeanVanillaOption",
+  "confidence": 1.0,
+  "top": [
+   [
+    "EuropeanVanillaOption",
+    1.0
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ],
+   [
+    "AsianOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 2,
+  "doc": "conf-03-multi-trade-sablefish.pdf",
+  "pages": [
+   2
+  ],
+  "truth": "EuropeanVanillaOption",
+  "near_miss": "AmericanOption",
+  "meaning": "exercise style misread",
+  "jev_family": "EuropeanVanillaOption",
+  "confidence": 1.0,
+  "top": [
+   [
+    "EuropeanVanillaOption",
+    1.0
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ],
+   [
+    "AsianOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 2,
+  "doc": "conf-03-multi-trade-sablefish.pdf",
+  "pages": [
+   3
+  ],
+  "truth": "EuropeanVanillaOption",
+  "near_miss": "BarrierOption",
+  "meaning": "neighbouring trade's barrier bled in",
+  "jev_family": "EuropeanVanillaOption",
+  "confidence": 1.0,
+  "top": [
+   [
+    "EuropeanVanillaOption",
+    1.0
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ],
+   [
+    "AsianOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 2,
+  "doc": "conf-03-multi-trade-sablefish.pdf",
+  "pages": [
+   4
+  ],
+  "truth": "BarrierOption",
+  "near_miss": "EuropeanVanillaOption",
+  "meaning": "barrier missed",
+  "jev_family": "BarrierOption",
+  "confidence": 1.0,
+  "top": [
+   [
+    "BarrierOption",
+    1.0
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ],
+   [
+    "AsianOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 2,
+  "doc": "conf-05-knockout-barrier-tsla.pdf",
+  "pages": [],
+  "truth": "BarrierOption",
+  "near_miss": "EuropeanVanillaOption",
+  "meaning": "barrier missed",
+  "jev_family": "BarrierOption",
+  "confidence": 0.97,
+  "top": [
+   [
+    "BarrierOption",
+    0.97
+   ],
+   [
+    "SingleSharkfinOption",
+    0.03
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 2,
+  "doc": "conf-06-asian-average-spy.pdf",
+  "pages": [],
+  "truth": "AsianOption",
+  "near_miss": "EuropeanVanillaOption",
+  "meaning": "averaging missed",
+  "jev_family": "AsianOption",
+  "confidence": 0.97,
+  "top": [
+   [
+    "AsianOption",
+    0.98
+   ],
+   [
+    "EuropeanVanillaOption",
+    0.02
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 2,
+  "doc": "conf-07-missing-initial-price-meta.pdf",
+  "pages": [],
+  "truth": "EuropeanVanillaOption",
+  "near_miss": "AmericanOption",
+  "meaning": "exercise style misread",
+  "jev_family": "EuropeanVanillaOption",
+  "confidence": 1.0,
+  "top": [
+   [
+    "EuropeanVanillaOption",
+    1.0
+   ],
+   [
+    "AmericanOption",
+    0.0
+   ],
+   [
+    "AsianOption",
+    0.0
+   ]
+  ],
+  "status_correct": "agree",
+  "status_near_miss": "disagree",
+  "reason": null
+ },
+ {
+  "rep": 0,
+  "doc": "conf-04-scanned-call-googl.pdf",
+  "pages": [],
+  "truth": "EuropeanVanillaOption",
+  "status_correct": "unscored",
+  "reason": "no_text_layer",
+  "jev_family": null
+ },
+ {
+  "rep": 0,
+  "doc": "conf-08-mixed-text-and-scan-amd.pdf",
+  "pages": [
+   1,
+   2
+  ],
+  "truth": "EuropeanVanillaOption",
+  "status_correct": "unscored",
+  "reason": "no_text_layer",
+  "jev_family": null
+ },
+ {
+  "rep": 0,
+  "doc": "conf-09-amended-strike-nvda.pdf",
+  "pages": [],
+  "truth": "EuropeanVanillaOption",
+  "status_correct": "unscored",
+  "reason": "no_text_layer",
+  "jev_family": null
+ },
+ {
+  "rep": 0,
+  "doc": "conf-10-ticked-barrier-amzn.pdf",
+  "pages": [],
+  "truth": "BarrierOption",
+  "status_correct": "unscored",
+  "reason": "no_text_layer",
+  "jev_family": null
+ },
+ {
+  "rep": 0,
+  "doc": "conf-11-faint-notional-orcl.pdf",
+  "pages": [],
+  "truth": "EuropeanVanillaOption",
+  "status_correct": "unscored",
+  "reason": "no_text_layer",
+  "jev_family": null
+ }
+]
