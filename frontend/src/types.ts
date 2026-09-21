@@ -98,6 +98,12 @@ export interface MemoryFact {
   source_session_id: number | null;
   created_at: string;
   updated_at: string;
+  /** System One keep-alive score in [0, 1]; null = never scored (display-only). */
+  keep_alive_score: number | null;
+  keep_alive_confidence: number | null;
+  keep_alive_scored_at: string | null;
+  /** Why the last attempt failed (e.g. no_key); null after a success. */
+  keep_alive_unscored_reason: string | null;
 }
 
 export interface MemoryStatus {
@@ -1921,6 +1927,8 @@ export interface AuditAction {
   error: string | null;
   occurred_at: string;
   completed_at: string | null;
+  /** System One tool-guard verdict for this call; null = never guarded. */
+  guard: { verdict: 'clear' | 'flagged' | 'unscored'; max_probability: number | null } | null;
 }
 
 export interface AuditActionDetail extends AuditAction {
@@ -1936,6 +1944,16 @@ export interface AuditSummary {
 
 // --- Trade confirmations -----------------------------------------------
 
+/** System One's independent read of a trade's product family (display-only). */
+export type FamilyCheck = {
+  status: 'agree' | 'disagree' | 'unscored';
+  reason: string | null;
+  jev_family: string | null;
+  confidence: number | null;
+  top: Array<[string, number]> | null;
+  model: string | null;
+};
+
 export type ExtractedTrade = {
   id: number; document_id: number; seq: number; family: string;
   extracted_terms: Record<string, unknown>; terms: Record<string, unknown>;
@@ -1946,6 +1964,7 @@ export type ExtractedTrade = {
   validation_status: 'valid' | 'invalid' | 'unsupported';
   validation_errors: unknown[]; status: 'extracted' | 'booked' | 'rejected';
   booked_position_id: number | null; reject_reason: string | null;
+  family_check: FamilyCheck | null;
 };
 
 export type ConfirmationDocument = {

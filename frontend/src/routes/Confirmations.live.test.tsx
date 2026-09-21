@@ -13,6 +13,7 @@ function makeTrade(o: Partial<ExtractedTrade> = {}): ExtractedTrade {
     external_trade_id: null, confidence: 0.9,
     evidence: {}, validation_status: 'valid', validation_errors: [],
     status: 'extracted', booked_position_id: null, reject_reason: null,
+    family_check: null,
     ...o,
   };
 }

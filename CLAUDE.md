@@ -36,6 +36,7 @@ Detail lives next to the code it governs, so a session loads only what it touche
 | [`backend/app/services/reporting/`](backend/app/services/reporting/CLAUDE.md) | templated reports and the grounding guard |
 | [`backend/app/services/domains/`](backend/app/services/domains/CLAUDE.md) | position lifecycle events, term-structure pricing curves |
 | [`backend/app/services/gateway/`](backend/app/services/gateway/CLAUDE.md) | the Feishu/Lark IM gateway |
+| [`backend/app/services/system_one/`](backend/app/services/system_one/CLAUDE.md) | System One (TypeSafe Jev): the AUTO tool guard, memory keep-alive, the confirmation family cross-check |
 | [`backend/app/routers/`](backend/app/routers/CLAUDE.md) | the chat thread list's scoping, paging and search |
 | [`docs/arena/deploy/`](docs/arena/deploy/CLAUDE.md) | building or shipping the artena.one arena blog |
 | [`docs/arena/intro-video/`](docs/arena/intro-video/CLAUDE.md) | the HyperFrames intro-video composition |
@@ -101,6 +102,11 @@ These bite in more than one subsystem. Each links to where it is argued in full.
   lifecycle vocabulary and the trader-rfq live-reachability fix.
   ([domains](backend/app/services/domains/CLAUDE.md),
   [golden_workflows](backend/app/golden_workflows/CLAUDE.md))
+- **A HITL resume must re-stamp the turn's audit context — `mode` and `thread_id`
+  included.** LangGraph re-runs the interrupted node from the top; a mode-gated
+  `after_model` middleware that sees a different mode on the resume pass skips its
+  `interrupt()` and the human's decision is silently dropped.
+  ([system_one](backend/app/services/system_one/CLAUDE.md))
 
 ---
 
@@ -176,6 +182,13 @@ Four classes of self-invalidating assertion have already bitten this repo. All w
   into `os.environ`** and republished `.env` over conftest's own pins for every test
   that ran afterwards — so the failure set was order-dependent. A test needing a dotenv
   points `OPEN_OTC_ENV_FILE` at its own fixture file (see `test_config.py`).
+- **A leaked `Settings` override.** `create_app` calls `configure_settings`, which
+  parks its `Settings` in a process-wide override that `get_settings()` prefers over
+  the environment. Seven test files built an app outside the `client` fixture and
+  never cleared it, so every later `monkeypatch.setenv(...)` read through
+  `get_settings()` was silently ignored — the System One tests passed or failed by
+  alphabetical position. `tests/conftest.py::_reset_settings_override` now clears it
+  after every test; don't reintroduce per-file `configure_settings(None)` workarounds.
 - **Asserting on a gitignored, per-environment file.** `test_agent_channels_router`,
   `test_agent_registry_config` and `test_channel_registry_writer` read the live
   `config/agent_channels.yaml` and hardcoded `zenmux` as the default-holding channel. That

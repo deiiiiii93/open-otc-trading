@@ -35,6 +35,10 @@ class FactOut(BaseModel):
     source_session_id: int | None
     created_at: Any
     updated_at: Any
+    keep_alive_score: float | None = None
+    keep_alive_confidence: float | None = None
+    keep_alive_scored_at: Any = None
+    keep_alive_unscored_reason: str | None = None
 
 
 class FactCreate(BaseModel):
@@ -65,7 +69,11 @@ def _out(fact) -> dict:
                    pinned=fact.pinned, created_by=fact.created_by,
                    extractor_model=em if isinstance(em, str) else None,
                    source_session_id=sid if isinstance(sid, int) else None,
-                   created_at=fact.created_at, updated_at=fact.updated_at).model_dump()
+                   created_at=fact.created_at, updated_at=fact.updated_at,
+                   keep_alive_score=fact.keep_alive_score,
+                   keep_alive_confidence=fact.keep_alive_confidence,
+                   keep_alive_scored_at=fact.keep_alive_scored_at,
+                   keep_alive_unscored_reason=fact.keep_alive_unscored_reason).model_dump()
 
 
 def build_memory_router() -> APIRouter:

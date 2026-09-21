@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Test suite: a leaked `Settings` override made env-driven tests order-dependent.**
+  `create_app` parks its `Settings` process-wide and seven test files never cleared
+  it, so later tests' `monkeypatch.setenv` was silently ignored. An autouse conftest
+  fixture now clears it after every test.
+
+### Added
+- **System One (TypeSafe Jev) client** — `services/system_one/`, the single exit
+  for calibrated yes/no, one-of-N and ordered-level questions over ZenMux's
+  `/systemone` route. Sanitizes and size-budgets `state`, maps every failure to
+  `no_key` / `state_too_large` / `timeout` / `http_error` / `bad_response`.
+  **Inert by default**: nothing calls it unless `OPEN_OTC_SYSTEM_ONE=true`.
+- **System One tool guard, shadow mode.** In AUTO mode, nine destroy-and-terminate
+  tools (`void_settlement_cashflow`, `close_position`, `settle_position`,
+  `mark_knockout`, `waive_limit_incident`, `resolve_limit_incident`,
+  `delete_pricing_parameter_rows`, `remove_portfolio_sources`,
+  `import_otc_positions`) get a per-call Jev verdict against a per-tool predicate,
+  recorded in `agent_tool_guard_verdicts` (migration `0061`) and readable at
+  `GET /api/audit/guard-verdicts[/summary]`; the Audit page shows a Guard column.
+  Shadow never blocks. Every HITL resume now stamps its execution `mode`.
+- **System One tool guard, `enforce` mode** (`OPEN_OTC_TOOL_GUARD=enforce`, off by
+  default): flagged or unscoreable AUTO calls to the nine guarded tools take the
+  normal approval card, with the reason on the card; an unwritable verdict store
+  refuses them fail-closed.
+- **Memory keep-alive score** — with System One on, the memory writer asks Jev
+  whether each fact is still worth keeping (given its scope siblings and age) and
+  shows it in a `Keep` column beside `Conf` on the Memory page. Display-only: it
+  changes no eviction, injection or status. Five nullable columns on
+  `memory_entries` (migration `0062`); opt out with `OPEN_OTC_MEMORY_KEEP_ALIVE=off`.
+- **Confirmation family cross-check** — with System One on, each parsed trade
+  segment's text layer is classified independently of the extractor LLM; a
+  disagreement shows on the Confirmations row and on the `book_extracted_trade`
+  approval card. Advisory only; never on arena turns. `extracted_trades.family_check`
+  (migration `0063`); opt out with `OPEN_OTC_CONFIRMATION_FAMILY_CHECK=false`.
+
 ### Changed
 - **`/arena/leaderboard.html` is tabbed by workflow, in a right-hand rail.** It
   was six stacked sections, 5,351px of scroll, and the newest board's

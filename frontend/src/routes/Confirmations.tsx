@@ -151,6 +151,25 @@ const VALIDATION_VARIANT: Record<ExtractedTrade['validation_status'], BadgeVaria
   unsupported: 'warn',
 };
 
+/** null = never checked (feature off / arena / older row): render nothing. */
+function familyCheckBadge(check: ExtractedTrade['family_check']) {
+  if (!check) return null;
+  if (check.status === 'agree') return <Badge variant="pos">family ✓</Badge>;
+  if (check.status === 'disagree') {
+    const conf = check.confidence != null ? ` at ${check.confidence.toFixed(2)}` : '';
+    return (
+      <span title={`System One reads ${check.jev_family}${conf}. Review before booking.`}>
+        <Badge variant="warn">family? {check.jev_family}</Badge>
+      </span>
+    );
+  }
+  return (
+    <span title={`family check: ${check.reason ?? 'unscored'}`}>
+      <Badge variant="ink">family unchecked</Badge>
+    </span>
+  );
+}
+
 function parseTime(iso: string): Date {
   return new Date(/Z|[+-]\d\d:\d\d$/.test(iso) ? iso : `${iso}Z`);
 }
@@ -476,6 +495,7 @@ function TradeCard({
       <div className="wl-confirmations__trade-head">
         <span className="wl-confirmations__trade-family">{trade.family}</span>
         <Badge variant={VALIDATION_VARIANT[trade.validation_status]}>{trade.validation_status}</Badge>
+        {familyCheckBadge(trade.family_check)}
         {trade.status === 'booked' && <Badge variant="pos" solid>booked</Badge>}
         {trade.status === 'rejected' && <Badge variant="ink">rejected</Badge>}
       </div>

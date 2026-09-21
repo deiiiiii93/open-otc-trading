@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -7,6 +8,8 @@ from typing import Any
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ENV_FILE = _REPO_ROOT / ".env"
@@ -50,6 +53,26 @@ def _coerce_bool(value: Any) -> bool:
         if normalized in {"0", "false", "no", "off", ""}:
             return False
     return bool(value)
+
+
+#: System One tool-guard modes (spec 2026-09-21 §0).
+TOOL_GUARD_MODES: tuple[str, ...] = ("off", "shadow", "enforce")
+
+
+def _normalize_tool_guard_mode(value: Any) -> str:
+    """`off` | `shadow` | `enforce`; anything else FAILS CLOSED to `shadow`.
+
+    Never to `off` — a typo must not silently stop measurement — and never to
+    `enforce` — a typo must not start blocking.
+    """
+    mode = str(value if value is not None else "").strip().lower()
+    if mode in TOOL_GUARD_MODES:
+        return mode
+    logger.warning(
+        "OPEN_OTC_TOOL_GUARD=%r is not one of %s; using 'shadow'",
+        value, "/".join(TOOL_GUARD_MODES),
+    )
+    return "shadow"
 
 
 class _EnvironmentSettings(BaseSettings):
@@ -225,6 +248,27 @@ class _EnvironmentSettings(BaseSettings):
         None,
         validation_alias="OPEN_OTC_DESK_REGION",
     )
+    # System One (TypeSafe Jev), spec 2026-09-21. The master switch is the
+    # data-policy opt-in (D15): while it is false no request is ever made.
+    system_one_enabled: bool = Field(False, validation_alias="OPEN_OTC_SYSTEM_ONE")
+    system_one_model: str = Field(
+        "typesafe/jev-1.13", validation_alias="OPEN_OTC_SYSTEM_ONE_MODEL"
+    )
+    system_one_base_url: str = Field(
+        "https://zenmux.ai/api/v1", validation_alias="OPEN_OTC_SYSTEM_ONE_BASE_URL"
+    )
+    system_one_timeout_seconds: float = Field(
+        5.0, validation_alias="OPEN_OTC_SYSTEM_ONE_TIMEOUT_S"
+    )
+    system_one_max_state_chars: int = Field(
+        60000, validation_alias="OPEN_OTC_SYSTEM_ONE_MAX_STATE_CHARS"
+    )
+    # A plain str, normalised in Settings.__post_init__, so an unknown value
+    # degrades to "shadow" with a warning instead of failing app start-up.
+    tool_guard_mode: str = Field("shadow", validation_alias="OPEN_OTC_TOOL_GUARD")
+    confirmation_family_check_enabled: bool = Field(
+        True, validation_alias="OPEN_OTC_CONFIRMATION_FAMILY_CHECK"
+    )
 
 
 def _read_environment_settings() -> _EnvironmentSettings:
@@ -363,6 +407,25 @@ class Settings:
     desk_region: str | None = field(
         default_factory=lambda: _env_value("desk_region")
     )
+    system_one_enabled: bool = field(
+        default_factory=lambda: _env_value("system_one_enabled")
+    )
+    system_one_model: str = field(
+        default_factory=lambda: _env_value("system_one_model")
+    )
+    system_one_base_url: str = field(
+        default_factory=lambda: _env_value("system_one_base_url")
+    )
+    system_one_timeout_seconds: float = field(
+        default_factory=lambda: _env_value("system_one_timeout_seconds")
+    )
+    system_one_max_state_chars: int = field(
+        default_factory=lambda: _env_value("system_one_max_state_chars")
+    )
+    tool_guard_mode: str = field(default_factory=lambda: _env_value("tool_guard_mode"))
+    confirmation_family_check_enabled: bool = field(
+        default_factory=lambda: _env_value("confirmation_family_check_enabled")
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "artifact_dir", Path(self.artifact_dir))
@@ -410,6 +473,24 @@ class Settings:
             self,
             "feature_model_write_api",
             _coerce_bool(self.feature_model_write_api),
+        )
+        object.__setattr__(
+            self, "system_one_enabled", _coerce_bool(self.system_one_enabled)
+        )
+        object.__setattr__(
+            self,
+            "confirmation_family_check_enabled",
+            _coerce_bool(self.confirmation_family_check_enabled),
+        )
+        timeout = float(self.system_one_timeout_seconds)
+        if timeout <= 0:
+            raise ValueError("system_one_timeout_seconds must be positive")
+        object.__setattr__(self, "system_one_timeout_seconds", timeout)
+        object.__setattr__(
+            self, "system_one_max_state_chars", max(1, int(self.system_one_max_state_chars))
+        )
+        object.__setattr__(
+            self, "tool_guard_mode", _normalize_tool_guard_mode(self.tool_guard_mode)
         )
 
 

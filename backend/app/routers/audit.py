@@ -6,6 +6,7 @@ append-only evidence; no mutating endpoint may ever be added here.
 from __future__ import annotations
 
 from datetime import datetime
+from statistics import median
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -13,7 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 
 from app import database
-from app.models import AgentActionAudit
+from app.models import AgentActionAudit, AgentToolGuardVerdict
 from app.services.audit_trail import unpersisted_refusals
 
 
@@ -43,11 +44,96 @@ class AuditActionOut(BaseModel):
     error: str | None
     occurred_at: Any
     completed_at: Any
+    guard: dict[str, Any] | None = None
 
 
-def _out(row: AgentActionAudit) -> dict:
-    return AuditActionOut(
-        **{field: getattr(row, field) for field in AuditActionOut.model_fields}
+_GUARD_VERDICTS = frozenset({"clear", "flagged", "unscored"})
+
+
+def _call_key(thread_id: int | None, tool_call_id: str) -> tuple[int, str]:
+    """Both halves of the verdict key; a NULL audit thread matches verdict thread 0."""
+    return (thread_id or 0, tool_call_id)
+
+
+def _guard_by_call(session, rows) -> dict[tuple[int, str], dict]:
+    wanted = {_call_key(r.thread_id, r.tool_call_id) for r in rows if r.tool_call_id}
+    if not wanted:
+        return {}
+    verdicts = (
+        session.query(AgentToolGuardVerdict)
+        .filter(AgentToolGuardVerdict.tool_call_id.in_({key[1] for key in wanted}))
+        .all()
+    )
+    # The UNIQUE key makes each (thread_id, tool_call_id) at most one row.
+    return {
+        (v.thread_id, v.tool_call_id): {"verdict": v.verdict, "max_probability": v.max_probability}
+        for v in verdicts
+        if (v.thread_id, v.tool_call_id) in wanted
+    }
+
+
+def _out(row: AgentActionAudit, guard: dict | None = None) -> dict:
+    data = {field: getattr(row, field) for field in AuditActionOut.model_fields if field != "guard"}
+    return AuditActionOut(**data, guard=guard).model_dump()
+
+
+def _outs(session, rows) -> list[dict]:
+    guards = _guard_by_call(session, rows)
+    return [
+        _out(r, guards.get(_call_key(r.thread_id, r.tool_call_id)) if r.tool_call_id else None)
+        for r in rows
+    ]
+
+
+class GuardVerdictOut(BaseModel):
+    id: int
+    thread_id: int
+    tool_call_id: str
+    persona: str | None
+    exec_mode: str | None
+    guard_mode: str
+    tool_name: str
+    args_json: Any
+    redacted: bool
+    verdict: str
+    unscored_reason: str | None
+    predicates: list[Any]
+    max_probability: float | None
+    action: str
+    model: str | None
+    latency_ms: int | None
+    error: str | None
+    created_at: Any
+    execution_status: str | None
+
+
+def _execution_status_by_call(session, verdicts) -> dict[tuple[int, str], str]:
+    call_ids = {v.tool_call_id for v in verdicts if v.tool_call_id}
+    if not call_ids:
+        return {}
+    rows = (
+        session.query(AgentActionAudit.thread_id, AgentActionAudit.tool_call_id,
+                      AgentActionAudit.status)
+        .filter(AgentActionAudit.kind == "execution",
+                AgentActionAudit.tool_call_id.in_(call_ids))
+        .order_by(AgentActionAudit.id.asc())
+        .all()
+    )
+    out: dict[tuple[int, str], str] = {}
+    for thread_id, call_id, status in rows:
+        out[_call_key(thread_id, call_id)] = status  # ascending id: newest wins
+    return out
+
+
+def _verdict_out(v: AgentToolGuardVerdict, execution_status: str | None) -> dict:
+    return GuardVerdictOut(
+        id=v.id, thread_id=v.thread_id, tool_call_id=v.tool_call_id, persona=v.persona,
+        exec_mode=v.exec_mode, guard_mode=v.guard_mode, tool_name=v.tool_name,
+        args_json=v.args_json, redacted=v.redacted, verdict=v.verdict,
+        unscored_reason=v.unscored_reason, predicates=list(v.predicates_json or []),
+        max_probability=v.max_probability, action=v.action, model=v.model,
+        latency_ms=v.latency_ms, error=v.error, created_at=v.created_at,
+        execution_status=execution_status,
     ).model_dump()
 
 
@@ -97,7 +183,7 @@ def build_audit_router() -> APIRouter:
                 .limit(limit)
                 .all()
             )
-            return {"items": [_out(r) for r in rows], "total": total}
+            return {"items": _outs(session, rows), "total": total}
 
     @router.get("/actions/{action_id}")
     def get_action(action_id: int):
@@ -125,7 +211,8 @@ def build_audit_router() -> APIRouter:
                 if related_q is not None
                 else []
             )
-            return {**_out(row), "related": [_out(r) for r in related]}
+            outs = _outs(session, [row, *related])
+            return {**outs[0], "related": outs[1:]}
 
     @router.get("/summary")
     def summary(since: datetime | None = None):
@@ -150,5 +237,78 @@ def build_audit_router() -> APIRouter:
                     "unpersisted": unpersisted_refusals(),
                 },
             }
+
+    @router.get("/guard-verdicts")
+    def list_guard_verdicts(
+        verdict: str | None = None,
+        tool_name: str | None = None,
+        thread_id: int | None = None,
+        since: datetime | None = None,
+        limit: int = Query(50, le=200, ge=1),
+        offset: int = Query(0, ge=0),
+    ):
+        """System One guard verdicts, newest first (spec §1 "Reading shadow data")."""
+        if verdict is not None and verdict not in _GUARD_VERDICTS:
+            raise HTTPException(400, f"verdict must be one of {sorted(_GUARD_VERDICTS)}")
+        with database.SessionLocal() as session:
+            q = session.query(AgentToolGuardVerdict)
+            if verdict is not None:
+                q = q.filter(AgentToolGuardVerdict.verdict == verdict)
+            if tool_name is not None:
+                q = q.filter(AgentToolGuardVerdict.tool_name == tool_name)
+            if thread_id is not None:
+                q = q.filter(AgentToolGuardVerdict.thread_id == thread_id)
+            if since is not None:
+                q = q.filter(AgentToolGuardVerdict.created_at >= since)
+            total = q.count()
+            rows = (
+                q.order_by(AgentToolGuardVerdict.created_at.desc(),
+                           AgentToolGuardVerdict.id.desc())
+                .offset(offset).limit(limit).all()
+            )
+            status = _execution_status_by_call(session, rows)
+            return {
+                "items": [
+                    _verdict_out(v, status.get(_call_key(v.thread_id, v.tool_call_id))
+                                 if v.tool_call_id else None)
+                    for v in rows
+                ],
+                "total": total,
+            }
+
+    @router.get("/guard-verdicts/summary")
+    def guard_verdict_summary(since: datetime | None = None):
+        """`flagged_then_ok` = flagged verdicts whose call then ran `ok` — the
+        candidate false positives shadow mode exists to count."""
+        with database.SessionLocal() as session:
+            q = session.query(AgentToolGuardVerdict)
+            if since is not None:
+                q = q.filter(AgentToolGuardVerdict.created_at >= since)
+            verdicts = q.all()
+            status = _execution_status_by_call(session, verdicts)
+        by_tool: dict[str, dict[str, Any]] = {}
+        latencies: dict[str, list[int]] = {}
+        reasons: dict[str, int] = {}
+        for v in verdicts:
+            row = by_tool.setdefault(v.tool_name, {
+                "tool_name": v.tool_name, "total": 0, "clear": 0, "flagged": 0,
+                "unscored": 0, "flagged_then_ok": 0, "median_latency_ms": None,
+            })
+            row["total"] += 1
+            if v.verdict in _GUARD_VERDICTS:
+                row[v.verdict] += 1
+            if (v.verdict == "flagged" and v.tool_call_id
+                    and status.get(_call_key(v.thread_id, v.tool_call_id)) == "ok"):
+                row["flagged_then_ok"] += 1
+            if v.latency_ms is not None:
+                latencies.setdefault(v.tool_name, []).append(v.latency_ms)
+            if v.unscored_reason:
+                reasons[v.unscored_reason] = reasons.get(v.unscored_reason, 0) + 1
+        for name, values in latencies.items():
+            by_tool[name]["median_latency_ms"] = median(values)
+        return {
+            "by_tool": [by_tool[name] for name in sorted(by_tool)],
+            "unscored_reasons": reasons,
+        }
 
     return router

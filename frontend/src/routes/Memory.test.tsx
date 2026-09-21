@@ -7,7 +7,10 @@ const f = (o: Partial<MemoryFact> = {}): MemoryFact => ({
   id: 1, scope_type: 'domain', scope_id: 'global', content: 'c', confidence: 0.8,
   status: 'proposed', category: null, source_error: false, pinned: false,
   created_by: 'extractor', extractor_model: 'm', source_session_id: 9,
-  created_at: '', updated_at: '', ...o,
+  created_at: '', updated_at: '',
+  keep_alive_score: null, keep_alive_confidence: null,
+  keep_alive_scored_at: null, keep_alive_unscored_reason: null,
+  ...o,
 });
 
 const base: MemoryProps = {
@@ -29,6 +32,21 @@ const base: MemoryProps = {
 };
 
 describe('Memory presentational', () => {
+  it('Keep column: 2dp score, and a dash that says why it is unscored', () => {
+    render(
+      <Memory
+        {...base}
+        facts={[
+          f({ id: 1, keep_alive_score: 0.6667 }),
+          f({ id: 2, content: 'd', keep_alive_unscored_reason: 'no_key' }),
+        ]}
+      />,
+    );
+    expect(screen.getByText('Keep')).toBeInTheDocument();
+    expect(screen.getByText('0.67')).toBeInTheDocument();
+    expect(screen.getByTitle('unscored: no_key')).toBeInTheDocument();
+  });
+
   it('shows the proposed attention chip from counts', () => {
     render(<Memory {...base} facts={[f()]} />);
     expect(screen.getByText(/proposed 2/i)).toBeInTheDocument();

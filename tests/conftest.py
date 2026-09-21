@@ -30,6 +30,11 @@ os.environ.setdefault("OPEN_OTC_TRACING", "off")
 # Default the whole suite to memory OFF: tests opt in explicitly.
 os.environ.setdefault("OPEN_OTC_MEMORY", "off")
 
+# System One (Jev) is a paid, non-deterministic third-party call. Hard-set (not
+# setdefault): a developer shell exporting OPEN_OTC_SYSTEM_ONE=true must not
+# turn every AUTO-mode test into a Jev client. Tests opt in via monkeypatch.
+os.environ["OPEN_OTC_SYSTEM_ONE"] = "false"
+
 from app import database
 from app.config import Settings
 
@@ -60,6 +65,36 @@ def _bypass_capability_gate(request, monkeypatch):
     from app.services.deep_agent.envelopes import Envelope as _Env
 
     monkeypatch.setattr(_cg, "_envelope_from_config", lambda _config: _Env.DESK_WORKFLOW)
+
+
+@pytest.fixture(autouse=True)
+def _no_live_system_one(monkeypatch):
+    """No test may reach TypeSafe. pytest.fail raises a BaseException, so no
+    `except Exception` in feature code can swallow it into an `http_error`."""
+    from app.services.system_one import client as _system_one
+
+    def _refuse(url, payload, timeout):
+        pytest.fail(
+            f"a test reached the live System One POST ({url}); "
+            "inject post= or patch client._default_post"
+        )
+
+    monkeypatch.setattr(_system_one, "_default_post", _refuse)
+
+
+@pytest.fixture(autouse=True)
+def _reset_settings_override():
+    """`create_app` parks its Settings in a process-wide override that
+    `get_settings()` prefers over the environment. A test that builds an app
+    without the `client` fixture used to leak it into every later test, so an
+    env var a later test set (OPEN_OTC_SYSTEM_ONE, ...) was silently ignored and
+    the failure set depended on test order. Clear it after every test — for the
+    class, not file by file (ten files had their own `configure_settings(None)`).
+    """
+    yield
+    from app.config import configure_settings
+
+    configure_settings(None)
 
 
 @pytest.fixture

@@ -16,6 +16,7 @@ function makeTrade(o: Partial<ExtractedTrade> = {}): ExtractedTrade {
     evidence: { underlying: { quote: '600519.SH', page: 1 } },
     validation_status: 'valid', validation_errors: [],
     status: 'extracted', booked_position_id: null, reject_reason: null,
+    family_check: null,
     ...o,
   };
 }
@@ -67,6 +68,40 @@ const baseProps: ConfirmationsProps = {
 };
 
 describe('Confirmations presentational', () => {
+  it('shows the System One family check on the trade row', () => {
+    const disagree = makeTrade({
+      id: 20,
+      family_check: {
+        status: 'disagree', reason: null, jev_family: 'PhoenixOption', confidence: 0.82,
+        top: [['PhoenixOption', 0.82]], model: 'typesafe/jev-1.13',
+      },
+    });
+    const agree = makeTrade({
+      id: 21,
+      family_check: {
+        status: 'agree', reason: null, jev_family: 'SnowballOption', confidence: 0.9,
+        top: null, model: 'typesafe/jev-1.13',
+      },
+    });
+    const unscored = makeTrade({
+      id: 22,
+      family_check: {
+        status: 'unscored', reason: 'no_key', jev_family: null, confidence: null, top: null,
+        model: 'typesafe/jev-1.13',
+      },
+    });
+    const never = makeTrade({ id: 23 });
+    const batch = makeBatch({
+      documents: [makeDocument({ id: 9, trades: [disagree, agree, unscored, never] })],
+    });
+    render(<Confirmations {...baseProps} batches={[batch]} selectedBatch={batch} />);
+    expect(screen.getByText('family? PhoenixOption')).toBeInTheDocument();
+    expect(screen.getByText('family ✓')).toBeInTheDocument();
+    expect(screen.getByTitle('family check: no_key')).toBeInTheDocument();
+    const neverRow = screen.getByTestId('confirmation-trade-23');
+    expect(within(neverRow).queryByText(/family/)).not.toBeInTheDocument();
+  });
+
   // Scoped to the document card: the batch rail now carries its own headline
   // 'parsing' badge, so an unscoped query matches both.
   it('shows a status badge for a document still parsing', () => {

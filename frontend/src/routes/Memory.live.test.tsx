@@ -9,7 +9,10 @@ const fact = (over: Partial<MemoryFact> = {}): MemoryFact => ({
   id: 1, scope_type: 'domain', scope_id: 'global', content: 'vol skew steepens',
   confidence: 0.88, status: 'proposed', category: null, source_error: false,
   pinned: false, created_by: 'extractor', extractor_model: 'deepseek/deepseek-v4-flash',
-  source_session_id: 318, created_at: '2026-06-30T00:00:00', updated_at: '2026-06-30T00:00:00', ...over,
+  source_session_id: 318, created_at: '2026-06-30T00:00:00', updated_at: '2026-06-30T00:00:00',
+  keep_alive_score: null, keep_alive_confidence: null,
+  keep_alive_scored_at: null, keep_alive_unscored_reason: null,
+  ...over,
 });
 const status = {
   enabled: true,

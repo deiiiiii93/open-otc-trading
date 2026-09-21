@@ -8,6 +8,7 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 
 from app.models import MemoryEntry
@@ -74,6 +75,10 @@ class Fact:
     mutable: bool
     created_by: str
     meta: dict
+    keep_alive_score: float | None = None
+    keep_alive_confidence: float | None = None
+    keep_alive_scored_at: datetime | None = None
+    keep_alive_unscored_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -91,6 +96,10 @@ def _to_fact(row: MemoryEntry) -> Fact:
         category=row.category, source_error=row.source_error, pinned=row.pinned,
         created_at=row.created_at, updated_at=row.updated_at, mutable=not row.pinned,
         created_by=row.created_by, meta=row.meta if isinstance(row.meta, dict) else {},
+        keep_alive_score=row.keep_alive_score,
+        keep_alive_confidence=row.keep_alive_confidence,
+        keep_alive_scored_at=row.keep_alive_scored_at,
+        keep_alive_unscored_reason=row.keep_alive_unscored_reason,
     )
 
 
@@ -108,6 +117,17 @@ def _normalize_source_error(row: MemoryEntry) -> None:
     Called on EVERY mutation path (create/update/set_status/archive/apply_diff)
     so a wrong value is silently corrected, never persisted."""
     row.source_error = (row.scope_type == "correction")
+
+
+#: Invalidation = all five keep-alive columns NULL (spec §2). Clearing
+#: attempted_at too puts the row at the front of the scoring rotation.
+KEEP_ALIVE_RESET: dict[str, None] = {
+    "keep_alive_score": None,
+    "keep_alive_confidence": None,
+    "keep_alive_scored_at": None,
+    "keep_alive_attempted_at": None,
+    "keep_alive_unscored_reason": None,
+}
 
 
 class MemoryStore:
@@ -131,7 +151,7 @@ class MemoryStore:
             out.extend(_to_fact(r) for r in rows)
         return out
 
-    def load_existing(self, session, scope_type, scope_id) -> list[Fact]:
+    def load_existing(self, session, scope_type, scope_id, limit: int = 50) -> list[Fact]:
         statuses = ("proposed", "approved") if scope_type == "domain" else ("active",)
         rows = (session.query(MemoryEntry)
                 .filter(MemoryEntry.scope_type == scope_type,
@@ -139,7 +159,7 @@ class MemoryStore:
                         MemoryEntry.status.in_(statuses))
                 .order_by(MemoryEntry.confidence.desc(),
                           MemoryEntry.updated_at.desc(), MemoryEntry.id.asc())
-                .limit(50).all())
+                .limit(limit).all())
         return [_to_fact(r) for r in rows]
 
     # -- validation helpers ----------------------------------------------
@@ -228,6 +248,7 @@ class MemoryStore:
 
     def _update_row(self, session, row, *, content=None, confidence=None, category=None) -> None:
         new_content = content if content is not None else row.content
+        content_changed = new_content != row.content
         new_conf = confidence if confidence is not None else row.confidence
         norm = self._validate_new(row.scope_type, new_content, new_conf)
         if self._dedup_exists(session, row.scope_type, row.scope_id, norm, exclude_id=row.id):
@@ -238,6 +259,10 @@ class MemoryStore:
         if category is not None:
             row.category = _clean_category(category, self.config.category_max_chars)
         _normalize_source_error(row)
+        if content_changed:
+            # A different fact now: its old keep-alive judgment no longer applies.
+            for column, value in KEEP_ALIVE_RESET.items():
+                setattr(row, column, value)
         session.flush()
 
     def update(self, session, fact_id, *, content=None, confidence=None, category=None) -> Fact:
@@ -374,4 +399,19 @@ class MemoryStore:
                 continue
         session.flush()
         for scope_type, scope_id in touched:
+            self._invalidate_keep_alive(session, scope_type, scope_id)
+        for scope_type, scope_id in touched:
             self._enforce_caps(session, scope_type, scope_id)
+
+    def _invalidate_keep_alive(self, session, scope_type, scope_id) -> None:
+        """A new sibling can supersede an old fact (keep-alive level 0), so every
+        live fact in the scope is re-scored. updated_at is pinned to itself: the
+        column has onupdate=utcnow and load_injectable orders by it (D3)."""
+        session.execute(
+            update(MemoryEntry)
+            .where(MemoryEntry.scope_type == scope_type,
+                   MemoryEntry.scope_id == scope_id,
+                   MemoryEntry.status != "archived")
+            .values(**KEEP_ALIVE_RESET, updated_at=MemoryEntry.updated_at)
+            .execution_options(synchronize_session="fetch")
+        )

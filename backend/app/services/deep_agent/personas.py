@@ -198,6 +198,7 @@ def all_personas(
     from .term_grounding import TermGroundingMiddleware
     from .fanout_readonly import FanoutReadOnlyMiddleware
     from .tool_error_boundary import ToolErrorBoundaryMiddleware
+    from .tool_guard import ToolGuardMiddleware
 
     for spec in specs:
         sources = list(spec.get("skills", []))
@@ -230,6 +231,10 @@ def all_personas(
         middleware.insert(5, FanoutReadOnlyMiddleware(tools=tools))
         if yolo_mode:
             middleware.append(LongRunningCostHITLMiddleware(tools=tools))
+        if yolo_mode and allow_reply_options:
+            # AUTO only: the System One guard (tool_guard). Personas are where the
+            # nine guarded tools actually run.
+            middleware.append(ToolGuardMiddleware(persona=spec["name"]))
         # Inject the orchestrator-resolved desk scope (portfolio_id, profile_id,
         # dates) inherited via desk_context state, so required_context skills see
         # their scope as supplied; also snoops this persona's own domain calls.

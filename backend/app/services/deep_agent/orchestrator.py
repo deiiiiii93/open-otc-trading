@@ -117,7 +117,7 @@ def _filesystem_permissions() -> list[Any]:
 
 
 def _general_purpose_subagent(
-    tools: Sequence[BaseTool], *, yolo_mode: bool = False
+    tools: Sequence[BaseTool], *, yolo_mode: bool = False, allow_reply_options: bool = True
 ) -> dict[str, Any]:
     """Claim the `general-purpose` name so our guards reach that stack too.
 
@@ -150,6 +150,8 @@ def _general_purpose_subagent(
     either. Two existing suite assertions walk *every* subagent and require it —
     they passed before only because the auto-added agent was invisible to them,
     which is the same "not covered, not compliant" gap this function closes.
+    `yolo_mode and allow_reply_options` (AUTO) adds the System One tool guard,
+    for the same reason.
 
     `skills: []` matches what `all_personas` sets. Behaviourally it is identical
     to omitting the key (deepagents reads `spec.get("skills")` and treats `None`
@@ -175,6 +177,11 @@ def _general_purpose_subagent(
     ]
     if yolo_mode:
         middleware.append(LongRunningCostHITLMiddleware(tools=tools))
+    if yolo_mode and allow_reply_options:
+        # AUTO only — never interactive, never headless YOLO (spec §1 truth table).
+        from .tool_guard import ToolGuardMiddleware
+
+        middleware.append(ToolGuardMiddleware(persona="general-purpose"))
 
     return {
         **GENERAL_PURPOSE_SUBAGENT,
@@ -190,6 +197,7 @@ def _agent_middleware(
     backend: Any,
     tools: Sequence[BaseTool],
     yolo_mode: bool = False,
+    allow_reply_options: bool = True,
     goal_grader: Any = None,
 ) -> list[Any]:
     from .audit_trail_middleware import AuditTrailMiddleware
@@ -228,6 +236,13 @@ def _agent_middleware(
     ]
     if yolo_mode:
         middleware.append(LongRunningCostHITLMiddleware(tools=tools))
+    if yolo_mode and allow_reply_options:
+        # System One per-call guard, AUTO only (see tool_guard). The orchestrator
+        # holds none of the nine guarded tools today; registering it anyway keeps
+        # "every stack" true when that changes.
+        from .tool_guard import ToolGuardMiddleware
+
+        middleware.append(ToolGuardMiddleware(persona="orchestrator"))
     middleware.extend(
         [
             RunPythonArtifactHITLMiddleware(enabled=not yolo_mode),
@@ -353,6 +368,7 @@ def build_orchestrator(
             backend=backend,
             tools=persona_tools,
             yolo_mode=yolo_mode,
+            allow_reply_options=allow_reply_options,
             goal_grader=goal_grader,
         ),
         subagents=[
@@ -365,7 +381,9 @@ def build_orchestrator(
             ),
             # Claim `general-purpose` so deepagents does not auto-add an
             # unguarded, unaudited one. See _general_purpose_subagent.
-            _general_purpose_subagent(persona_tools, yolo_mode=yolo_mode),
+            _general_purpose_subagent(
+                persona_tools, yolo_mode=yolo_mode, allow_reply_options=allow_reply_options
+            ),
         ],
         interrupt_on=interrupt_on if interrupt_on is not None else interrupt_on_config(),
         checkpointer=checkpointer,

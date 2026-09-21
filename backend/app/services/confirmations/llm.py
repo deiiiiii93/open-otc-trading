@@ -65,6 +65,7 @@ class TradeDraft:
     external_trade_id: str | None = None
     confidence: float | None = None
     evidence: dict = field(default_factory=dict)
+    family_check: dict | None = None
 
 
 class ExtractorClient(Protocol):

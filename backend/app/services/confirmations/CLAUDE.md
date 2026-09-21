@@ -82,6 +82,10 @@ and the server re-validates).
 - `extracted_terms` is **immutable** (what the model returned); `terms` is the
   human-editable copy. Both are kept so a review can always be audited against the
   original parse.
+- **`family_check` is advisory.** System One's independent read of the family
+  (`extracted_trades.family_check`, migration `0063`) is shown on the row and on
+  the booking card; it never changes validation or bookability, and it is never
+  computed on arena turns. See [`../system_one/CLAUDE.md`](../system_one/CLAUDE.md).
 
 ### Gotchas
 
