@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Test suite: a leaked `Settings` override made env-driven tests order-dependent.**
+  `create_app` parks its `Settings` process-wide and seven test files never cleared
+  it, so later tests' `monkeypatch.setenv` was silently ignored. An autouse conftest
+  fixture now clears it after every test.
+
 ### Added
 - **System One (TypeSafe Jev) client** — `services/system_one/`, the single exit
   for calibrated yes/no, one-of-N and ordered-level questions over ZenMux's
@@ -25,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default): flagged or unscoreable AUTO calls to the nine guarded tools take the
   normal approval card, with the reason on the card; an unwritable verdict store
   refuses them fail-closed.
+- **Memory keep-alive score** — with System One on, the memory writer asks Jev
+  whether each fact is still worth keeping (given its scope siblings and age) and
+  shows it in a `Keep` column beside `Conf` on the Memory page. Display-only: it
+  changes no eviction, injection or status. Five nullable columns on
+  `memory_entries` (migration `0062`); opt out with `OPEN_OTC_MEMORY_KEEP_ALIVE=off`.
 
 ### Changed
 - **`/arena/leaderboard.html` is tabbed by workflow, in a right-hand rail.** It

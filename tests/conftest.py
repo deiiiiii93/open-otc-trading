@@ -82,6 +82,21 @@ def _no_live_system_one(monkeypatch):
     monkeypatch.setattr(_system_one, "_default_post", _refuse)
 
 
+@pytest.fixture(autouse=True)
+def _reset_settings_override():
+    """`create_app` parks its Settings in a process-wide override that
+    `get_settings()` prefers over the environment. A test that builds an app
+    without the `client` fixture used to leak it into every later test, so an
+    env var a later test set (OPEN_OTC_SYSTEM_ONE, ...) was silently ignored and
+    the failure set depended on test order. Clear it after every test — for the
+    class, not file by file (ten files had their own `configure_settings(None)`).
+    """
+    yield
+    from app.config import configure_settings
+
+    configure_settings(None)
+
+
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
     return Settings(

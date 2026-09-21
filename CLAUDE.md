@@ -182,6 +182,13 @@ Four classes of self-invalidating assertion have already bitten this repo. All w
   into `os.environ`** and republished `.env` over conftest's own pins for every test
   that ran afterwards — so the failure set was order-dependent. A test needing a dotenv
   points `OPEN_OTC_ENV_FILE` at its own fixture file (see `test_config.py`).
+- **A leaked `Settings` override.** `create_app` calls `configure_settings`, which
+  parks its `Settings` in a process-wide override that `get_settings()` prefers over
+  the environment. Seven test files built an app outside the `client` fixture and
+  never cleared it, so every later `monkeypatch.setenv(...)` read through
+  `get_settings()` was silently ignored — the System One tests passed or failed by
+  alphabetical position. `tests/conftest.py::_reset_settings_override` now clears it
+  after every test; don't reintroduce per-file `configure_settings(None)` workarounds.
 - **Asserting on a gitignored, per-environment file.** `test_agent_channels_router`,
   `test_agent_registry_config` and `test_channel_registry_writer` read the live
   `config/agent_channels.yaml` and hardcoded `zenmux` as the default-holding channel. That

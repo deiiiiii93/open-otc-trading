@@ -82,3 +82,17 @@ arena contestant, never a source of numbers.
 - **Before enabling it:** `build_resume_command` sends ONE decision, so a card
   holding ≥ 2 guarded calls from one AIMessage cannot be resumed (the same
   pre-existing limit every HITL middleware here has).
+
+## Memory keep-alive (`deep_agent/memory/keep_alive.py`)
+
+- One `score` question, four situation levels; `keep_alive_score` =
+  `answer.normalized`. DISPLAY-ONLY (D3): pinned by tests that eviction and
+  injection order do not move.
+- **Every keep-alive write sets `updated_at = updated_at`.** `MemoryEntry.updated_at`
+  has `onupdate=utcnow` and `load_injectable` orders by it — a plain UPDATE would
+  silently reorder injection.
+- Runs on the memory writer only: after a committed job (not while draining at
+  shutdown) and on each sweep tick. Outage reasons end the batch; row reasons
+  do not. Content edits and sibling adds null all five columns.
+- Live iff `OPEN_OTC_SYSTEM_ONE` AND `OPEN_OTC_MEMORY` AND
+  `OPEN_OTC_MEMORY_KEEP_ALIVE`.

@@ -135,6 +135,22 @@ export function Memory(props: MemoryProps) {
     { key: 'status', header: 'Status', width: '7rem', render: (f) => <Badge variant={statusBadge(f.status)}>{f.status}</Badge> },
     { key: 'content', header: 'Content', width: 'minmax(0, 2.4fr)', render: (f) => f.content },
     { key: 'confidence', header: 'Conf', numeric: true, width: '4.5rem', render: (f) => f.confidence.toFixed(2) },
+    {
+      key: 'keep_alive',
+      header: 'Keep',
+      numeric: true,
+      width: '4.5rem',
+      render: (f) =>
+        f.keep_alive_score != null ? (
+          f.keep_alive_score.toFixed(2)
+        ) : (
+          <span
+            title={f.keep_alive_unscored_reason ? `unscored: ${f.keep_alive_unscored_reason}` : 'not scored'}
+          >
+            —
+          </span>
+        ),
+    },
     { key: 'category', header: 'Category', width: 'minmax(0, 1fr)', render: (f) => f.category ?? '—' },
     {
       key: 'source',

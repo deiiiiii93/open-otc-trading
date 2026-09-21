@@ -99,14 +99,33 @@ class MemoryWriteQueue:
         return count
 
     def _run_sweep(self) -> None:
+        committed = False
         with memory_write_session(self._session_factory,
                                   self.config.writer_busy_timeout_ms) as session:
             try:
                 self.sweep(session)
                 session.commit()
+                committed = True
             except Exception:  # noqa: BLE001
                 session.rollback()
                 logger.warning("memory sweep failed", exc_info=True)
+        if committed:
+            self._score_keep_alive()   # backfill tick
+
+    def _score_keep_alive(self) -> None:
+        """System One keep-alive scoring (spec 2026-09-21 §2), strictly AFTER a
+        commit: never on a turn, never inside apply_diff's transaction, never
+        able to roll it back or fail the writer."""
+        try:
+            from . import keep_alive
+
+            keep_alive.score_pending(
+                lambda: memory_write_session(self._session_factory,
+                                             self.config.writer_busy_timeout_ms),
+                self.store, self.config,
+            )
+        except Exception:  # noqa: BLE001 — best-effort, isolated
+            logger.warning("memory keep-alive pass failed", exc_info=True)
 
     def _ensure_writer(self) -> None:
         if self._writer is not None or not self._accepting or self._session_factory is None:
@@ -267,14 +286,20 @@ class MemoryWriteQueue:
         job = self._next_job()
         if job is None:
             return False
+        committed = False
         with memory_write_session(self._session_factory,
                                   self.config.writer_busy_timeout_ms) as session:
             try:
                 self.run_job(session, job.spec)
                 session.commit()
+                committed = True
             except Exception:  # noqa: BLE001
                 session.rollback()
                 logger.warning("memory job crashed; left for sweep", exc_info=True)
+        # Not while draining at shutdown: a scoring pass (up to ~10 Jev calls)
+        # would blow the flush() grace budget.
+        if committed and self._accepting:
+            self._score_keep_alive()
         return True
 
     def _next_job(self) -> QueueJob | None:

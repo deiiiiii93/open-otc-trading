@@ -98,6 +98,12 @@ export interface MemoryFact {
   source_session_id: number | null;
   created_at: string;
   updated_at: string;
+  /** System One keep-alive score in [0, 1]; null = never scored (display-only). */
+  keep_alive_score: number | null;
+  keep_alive_confidence: number | null;
+  keep_alive_scored_at: string | null;
+  /** Why the last attempt failed (e.g. no_key); null after a success. */
+  keep_alive_unscored_reason: string | null;
 }
 
 export interface MemoryStatus {

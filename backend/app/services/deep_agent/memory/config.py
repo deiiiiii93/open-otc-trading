@@ -61,6 +61,13 @@ class MemoryConfig:
     # OPEN_OTC_MEMORY_RECONCILE_SINCE) when first enabling memory on an existing
     # DB so the sweep does not mass-extract the entire historical backlog.
     reconcile_since: datetime | None = None
+    # System One keep-alive score (spec 2026-09-21 §2) — DISPLAY-ONLY. Live iff
+    # OPEN_OTC_SYSTEM_ONE, OPEN_OTC_MEMORY and OPEN_OTC_MEMORY_KEEP_ALIVE are all on.
+    keep_alive_enabled: bool = True
+    keep_alive_batch: int = 10          # due facts per scoring pass
+    keep_alive_sibling_limit: int = 50  # other facts in scope sent as context
+    keep_alive_sibling_chars: int = 240
+    keep_alive_refresh_days: int = 30   # a score is itself a staleness judgment
     correction_phrases: tuple[str, ...] = field(default_factory=lambda: DEFAULT_CORRECTION_PHRASES)
     denylist: tuple[str, ...] = field(default_factory=lambda: DEFAULT_DENYLIST)
 
@@ -83,10 +90,14 @@ def _parse_reconcile_since(raw: str | None) -> datetime | None:
         return None
 
 
+def _switch(name: str) -> bool:
+    return os.environ.get(name, "on").lower() not in {"off", "0", "false"}
+
+
 def get_memory_config() -> MemoryConfig:
-    raw = os.environ.get("OPEN_OTC_MEMORY", "on").lower()
     return MemoryConfig(
-        enabled=raw not in {"off", "0", "false"},
+        enabled=_switch("OPEN_OTC_MEMORY"),
+        keep_alive_enabled=_switch("OPEN_OTC_MEMORY_KEEP_ALIVE"),
         reconcile_since=_parse_reconcile_since(
             os.environ.get("OPEN_OTC_MEMORY_RECONCILE_SINCE")),
     )

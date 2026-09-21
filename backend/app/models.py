@@ -247,6 +247,13 @@ class MemoryEntry(Base):
     meta: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    # System One keep-alive (spec 2026-09-21 §2) — DISPLAY-ONLY; NULL = never
+    # scored (D14). Writers pin updated_at to itself: load_injectable orders by it.
+    keep_alive_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    keep_alive_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    keep_alive_scored_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    keep_alive_attempted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    keep_alive_unscored_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     __table_args__ = (
         Index("ix_memory_scope_status", "scope_type", "scope_id", "status"),

@@ -182,6 +182,7 @@ degrades to a cheap model rather than the expensive agent default
 |---|---|
 | `OPEN_OTC_MEMORY` | `on` (default) / `off` — master capture switch. Even when `off`, existing facts stay editable via the API/console. |
 | `OPEN_OTC_MEMORY_RECONCILE_SINCE` | ISO-8601 instant. The sweep only **discovers** sessions closed at/after it. Set when first enabling memory on an existing DB so it doesn't mass-extract the whole backlog. Malformed → fails open (no cutoff) with a warning. |
+| `OPEN_OTC_MEMORY_KEEP_ALIVE` | `on` (default) / `off` — System One keep-alive score (display-only). Needs `OPEN_OTC_SYSTEM_ONE=true` and `OPEN_OTC_MEMORY` on. |
 
 Defaults live in `MemoryConfig` (`config.py`): floor `0.7`, caps `100`/`20`,
 injection budgets `2000`/`1000` tokens.

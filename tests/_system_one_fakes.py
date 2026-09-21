@@ -65,3 +65,35 @@ class JevPost:
                 for key in payload["questions"]
             },
         }
+
+
+class ScorePost:
+    """Answers the keep-alive `score` question with `score` / `confidence`.
+
+    `.exc` raises instead; `.bad_for` holds fact contents that get a malformed
+    reply (a per-row bad_response).
+    """
+
+    def __init__(self, score: float = 3.0, confidence: float = 0.9) -> None:
+        self.score = score
+        self.confidence = confidence
+        self.exc: BaseException | None = None
+        self.bad_for: set[str] = set()
+        self.calls: list[dict] = []
+
+    def __call__(self, url: str, payload: dict, timeout: float) -> Any:
+        self.calls.append(copy.deepcopy(payload))
+        if self.exc is not None:
+            raise self.exc
+        if payload["state"].get("fact") in self.bad_for:
+            return {"answers": {}}
+        levels = len(payload["questions"]["keep_alive"]["criteria"])
+        probabilities = {str(i): 0.0 for i in range(levels)}
+        probabilities[str(min(levels - 1, round(self.score)))] = 1.0
+        return {
+            "model": "typesafe/jev-1.13",
+            "answers": {"keep_alive": {
+                "type": "score", "score": self.score, "confidence": self.confidence,
+                "probabilities": probabilities,
+            }},
+        }
