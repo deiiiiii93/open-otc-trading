@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recorded in `agent_tool_guard_verdicts` (migration `0061`) and readable at
   `GET /api/audit/guard-verdicts[/summary]`; the Audit page shows a Guard column.
   Shadow never blocks. Every HITL resume now stamps its execution `mode`.
+- **System One tool guard, `enforce` mode** (`OPEN_OTC_TOOL_GUARD=enforce`, off by
+  default): flagged or unscoreable AUTO calls to the nine guarded tools take the
+  normal approval card, with the reason on the card; an unwritable verdict store
+  refuses them fail-closed.
 
 ### Changed
 - **`/arena/leaderboard.html` is tabbed by workflow, in a right-hand rail.** It

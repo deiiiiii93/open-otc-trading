@@ -8,7 +8,7 @@ desk's per-tool predicates (tool_guard_policy.GUARD_POLICY) about THIS call and
 commits the verdict.
 
 `shadow` (default) records and never blocks. `enforce` re-promotes a flagged or
-unscoreable call to the normal approval card (added by the guard-enforce commit).
+unscoreable call to the normal approval card.
 
 Registered iff the turn is AUTO (`yolo_mode and allow_reply_options`) in all four
 stacks. The runtime belt re-checks the server-stamped audit-context mode because
@@ -27,15 +27,21 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from langchain.agents.middleware.human_in_the_loop import HumanInTheLoopMiddleware
+from langchain.agents.middleware.human_in_the_loop import (
+    ActionRequest,
+    HITLRequest,
+    HumanInTheLoopMiddleware,
+    ReviewConfig,
+)
 from langchain.agents.middleware.types import AgentState, ContextT, ResponseT, StateT
-from langchain_core.messages import AIMessage, AnyMessage, ToolCall
+from langchain_core.messages import AIMessage, AnyMessage, ToolCall, ToolMessage
 from langgraph.runtime import Runtime
+from langgraph.types import interrupt
 
 from ...config import Settings, get_settings
 from ..system_one import Noul, SystemOneUnavailable, ask, is_enabled
 from .audit_trail_middleware import _read_audit_context
-from .hitl import _RISK_LEVEL_BY_TOOL
+from .hitl import GUARD_NOTE_PREFIX, _RISK_LEVEL_BY_TOOL
 from .tool_guard_policy import GUARD_POLICY, GuardPredicate, validate_policy
 from .tool_guard_state import build_guard_state, load_user_request
 from .tool_guard_store import (
@@ -44,6 +50,7 @@ from .tool_guard_store import (
     args_fingerprint,
     commit_verdict,
     find_verdict,
+    mark_interrupted,
     record_structural,
 )
 
@@ -51,6 +58,11 @@ logger = logging.getLogger(__name__)
 
 #: A verdict that could not be committed THIS pass. Never stored.
 PERSIST_FAILED = "persist_failed"
+
+_REFUSAL = (
+    "Guard verdict store unavailable; destructive action '{name}' blocked "
+    "(fail-closed). Read-only tools still work; retry shortly."
+)
 
 
 @dataclass(frozen=True)
@@ -96,6 +108,20 @@ def _decision_from(index: int, call: ToolCall, stored: StoredVerdict,
         return GuardDecision(index, call, "unscored", "tool_call_id_collision")
     return GuardDecision(index, call, stored.verdict, stored.unscored_reason,
                          list(stored.predicates), stored.id)
+
+
+def guard_note(decision: GuardDecision) -> str:
+    """The card's "why". Probabilities only for a flag; the reason otherwise."""
+    if decision.verdict == "flagged":
+        fired = ", ".join(
+            f"{p['key']} p={p['probability']:.2f} ≥ {p['threshold']:.2f}"
+            for p in decision.predicates if p.get("flagged")
+        )
+        return f"{GUARD_NOTE_PREFIX} flagged — {fired}"
+    return (
+        f"{GUARD_NOTE_PREFIX} could not score this call ({decision.unscored_reason}); "
+        "review it as you would in interactive mode"
+    )
 
 
 class ToolGuardMiddleware(HumanInTheLoopMiddleware[StateT, ContextT, ResponseT]):
@@ -236,7 +262,80 @@ class ToolGuardMiddleware(HumanInTheLoopMiddleware[StateT, ContextT, ResponseT])
             return _unscored("internal_error", model=requested)
 
     def _conclude(self, p: _Pass, decisions: list[GuardDecision]) -> dict[str, Any] | None:
-        # Shadow: verdicts are recorded; nothing is interrupted or refused.
-        # `enforce` is added by the guard-enforce commit; until then it records
-        # exactly like shadow.
-        return None
+        if p.settings.tool_guard_mode != "enforce":
+            return None  # shadow: recorded, never blocked
+        # D10 rule 3: a pass either refuses or interrupts, never both. An interrupt
+        # here would be followed on resume by a lookup that finds nothing, a fresh
+        # Jev call, and possibly a different card set.
+        if any(d.verdict == PERSIST_FAILED for d in decisions):
+            return self._refuse(p.ai_message, decisions)
+        carded = [d for d in decisions if d.verdict in ("flagged", "unscored")]
+        if not carded:
+            return None
+        return self._interrupt(p.ai_message, carded)
+
+    def _refuse(self, ai: AIMessage, decisions: list[GuardDecision]) -> dict[str, Any]:
+        """Refuse every guarded call that is not a committed clear.
+
+        The calls STAY on the AIMessage, each answered by an error ToolMessage —
+        the construction _process_decision uses for a rejection. A dropped call
+        would orphan its ToolMessage, which providers reject. No interrupt is
+        raised, so the node is never re-entered: nothing to keep deterministic.
+        Not a new posture: the audit trail's fail-closed phase 1 would refuse
+        these writes against the same database a moment later.
+        """
+        refused = {d.index for d in decisions if d.verdict != "clear"}
+        answers = [
+            ToolMessage(
+                content=_REFUSAL.format(name=tool_call["name"]),
+                name=tool_call["name"],
+                tool_call_id=tool_call.get("id") or "",
+                status="error",
+            )
+            for index, tool_call in enumerate(ai.tool_calls)
+            if index in refused
+        ]
+        return {"messages": [ai, *answers]}
+
+    def _interrupt(self, ai: AIMessage, carded: list[GuardDecision]) -> dict[str, Any]:
+        """One HITLRequest for every carded call, in original tool-call order;
+        decisions processed exactly as LongRunningCostHITLMiddleware does (D8)."""
+        response = interrupt(
+            HITLRequest(
+                action_requests=[
+                    ActionRequest(
+                        name=d.tool_call["name"],
+                        args=d.tool_call.get("args") or {},
+                        description=guard_note(d),
+                    )
+                    for d in carded
+                ],
+                review_configs=[
+                    ReviewConfig(
+                        action_name=d.tool_call["name"],
+                        allowed_decisions=self.interrupt_on[d.tool_call["name"]]["allowed_decisions"],
+                    )
+                    for d in carded
+                ],
+            )
+        )
+        decisions = response["decisions"]
+        if len(decisions) != len(carded):
+            raise ValueError("Number of human decisions does not match tool-guard interrupts.")
+        by_index = {d.index: decision for d, decision in zip(carded, decisions)}
+        revised: list[ToolCall] = []
+        answers: list[ToolMessage] = []
+        for index, tool_call in enumerate(ai.tool_calls):
+            if index not in by_index:
+                revised.append(tool_call)  # clear and unguarded calls run as AUTO intends
+                continue
+            new_call, message = self._process_decision(
+                by_index[index], tool_call, self.interrupt_on[tool_call["name"]]
+            )
+            if new_call is not None:
+                revised.append(new_call)
+            if message is not None:
+                answers.append(message)
+        mark_interrupted(d.row_id for d in carded)
+        ai.tool_calls = revised
+        return {"messages": [ai, *answers]}

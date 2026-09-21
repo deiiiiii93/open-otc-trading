@@ -539,6 +539,11 @@ def _summarize_record_lifecycle_event(args: dict[str, Any]) -> str:
     return _lifecycle_card(f"Record {event_type} on {subject}", extras)
 
 
+#: Prefix of the ActionRequest.description the System One tool guard writes
+#: (deep_agent/tool_guard.py). _summary_for keeps such a note on the card even
+#: when a summary builder wins, so the card always says why AUTO paused.
+GUARD_NOTE_PREFIX = "System One guard:"
+
 _SUMMARY_BUILDERS: dict[str, Callable[[dict[str, Any]], str]] = {
     "book_position": _summarize_book_position,
     "register_underlying": _summarize_register_underlying,
@@ -553,9 +558,24 @@ _SUMMARY_BUILDERS: dict[str, Callable[[dict[str, Any]], str]] = {
 }
 
 
+def _generic_summary(name: str, args: dict[str, Any]) -> str:
+    if not args:
+        return f"Run {name}"
+    arg_summary = ", ".join(f"{k}={_compact_value(v)}" for k, v in list(args.items())[:4])
+    return f"Run {name} ({arg_summary})"
+
+
 def _summary_for(action_request: dict[str, Any]) -> str:
     name = action_request["name"]
     args = action_request.get("args") or {}
+    description = action_request.get("description")
+    # The System One guard's "why" must survive a winning builder, or the card
+    # never says why AUTO paused for close/settle/knockout.
+    guard_note = (
+        description
+        if isinstance(description, str) and description.startswith(GUARD_NOTE_PREFIX)
+        else None
+    )
     # A registered builder is a deliberate, tool-specific override and MUST win
     # over the description. HumanInTheLoopMiddleware stamps every action request
     # with generic boilerplate ("Tool execution requires approval\n\nTool: ...\n
@@ -566,14 +586,14 @@ def _summary_for(action_request: dict[str, Any]) -> str:
     # proves they work, not that anything calls them.
     builder = _SUMMARY_BUILDERS.get(name)
     if builder is not None:
-        return builder(args)
-    description = action_request.get("description")
-    if isinstance(description, str) and description:
+        summary = builder(args)
+    elif guard_note is not None:
+        summary = _generic_summary(name, args)
+    elif isinstance(description, str) and description:
         return description
-    if not args:
-        return f"Run {name}"
-    arg_summary = ", ".join(f"{k}={_compact_value(v)}" for k, v in list(args.items())[:4])
-    return f"Run {name} ({arg_summary})"
+    else:
+        return _generic_summary(name, args)
+    return f"{summary} — {guard_note}" if guard_note else summary
 
 
 def pending_actions_from_interrupts(

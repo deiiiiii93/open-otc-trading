@@ -70,3 +70,15 @@ arena contestant, never a source of numbers.
 - Shadow data: `GET /api/audit/guard-verdicts[/summary]`. `flagged_then_ok` is
   the candidate-false-positive count. Do not read early numbers as validation of
   the wording — the only evidence is post-hoc.
+
+### Enforce
+
+- `OPEN_OTC_TOOL_GUARD=enforce`: `flagged` and every `unscored` reason take the
+  normal approval card (D8) — AUTO degrades to interactive for the nine tools; it
+  stops nothing. The one refusal: if any guarded call's verdict cannot be
+  committed, the pass raises NO interrupt and refuses every guarded call that is
+  not a committed `clear` (calls stay on the AIMessage, answered by error
+  ToolMessages).
+- **Before enabling it:** `build_resume_command` sends ONE decision, so a card
+  holding ≥ 2 guarded calls from one AIMessage cannot be resumed (the same
+  pre-existing limit every HITL middleware here has).
