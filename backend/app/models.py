@@ -598,6 +598,54 @@ class AgentActionAudit(Base):
     )
 
 
+class AgentToolGuardVerdict(Base):
+    """System One guard verdict for one AUTO-mode tool call (spec 2026-09-21 §1).
+
+    Keyed UNIQUE (thread_id, tool_call_id) so a LangGraph resume re-reads the
+    committed verdict instead of re-asking a non-deterministic model (D10).
+    `thread_id` is NOT NULL DEFAULT 0 because SQL treats NULLs as distinct in a
+    UNIQUE key. Empty-`tool_call_id` rows are structural and exempt from the key.
+    Joined to agent_action_audits by tool_call_id, so the fail-closed audit write
+    path is untouched. `persist_failed` is never stored — by definition no row.
+    """
+
+    __tablename__ = "agent_tool_guard_verdicts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    thread_id: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    tool_call_id: Mapped[str] = mapped_column(
+        String(120), nullable=False, default="", server_default=text("''")
+    )
+    persona: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    exec_mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    guard_mode: Mapped[str] = mapped_column(String(10))
+    tool_name: Mapped[str] = mapped_column(String(120), index=True)
+    args_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    redacted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    args_hash: Mapped[str] = mapped_column(String(64))
+    user_request_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    verdict: Mapped[str] = mapped_column(String(10))
+    unscored_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    predicates_json: Mapped[list] = mapped_column(JSON, default=list)
+    max_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    action: Mapped[str] = mapped_column(String(12), default="recorded")
+    model: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+    __table_args__ = (
+        Index(
+            "ux_agent_tool_guard_verdicts_call", "thread_id", "tool_call_id",
+            unique=True,
+            sqlite_where=text("tool_call_id != ''"),
+            postgresql_where=text("tool_call_id != ''"),
+        ),
+    )
+
+
 class Portfolio(Base):
     __tablename__ = "portfolios"
 

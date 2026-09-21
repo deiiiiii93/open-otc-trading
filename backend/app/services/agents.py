@@ -1393,6 +1393,19 @@ def resolve_execution_mode(
     return mode, clear_hitl, allow_reply_options
 
 
+def _resume_audit_mode(yolo_mode: bool) -> str:
+    """The execution mode a HITL resume continues.
+
+    A pending action exists only on an interactive or AUTO turn — YOLO raises no
+    interrupts — so the persisted clear-HITL flag recovers the mode exactly.
+    Stamped on every resume so mode-gated middleware (the System One tool guard)
+    sees the SAME mode on the resume pass as on the pass that interrupted; without
+    it the guard's re-run would skip interrupt() and the human's decision would
+    never be consumed.
+    """
+    return "auto" if yolo_mode else "interactive"
+
+
 class AgentService:
     def __init__(
         self,
@@ -2328,6 +2341,9 @@ class AgentService:
                     "envelope": resolved_envelope.value,
                     "model": model_selection.get("model"),
                     "thread_id": thread_id,
+                    # The turn's own user message (persisted before the stream):
+                    # the System One guard scopes "what the user asked" to it.
+                    "user_message_id": latest_user.id if latest_user is not None else None,
                     "workflow_id": route.workflow_id,
                     "session_id": route.session_id,
                     "desk_workflow_slug": desk_workflow_slug,
@@ -2865,6 +2881,12 @@ class AgentService:
                 effective_accounting_date,
                 thread_id=thread_id,
             )
+            # The endpoint commits the user message before streaming, so this is
+            # THIS turn's message; the System One guard reads the user's words
+            # from it rather than from whatever is latest when a call is guarded.
+            from .deep_agent.memory.runtime import latest_user_message_id
+
+            user_message_id = latest_user_message_id(session, thread_id)
         assets = self._context_assets(page_context)
         prompt = _orchestrator_user_prompt(
             content,
@@ -2884,6 +2906,7 @@ class AgentService:
                 "envelope": resolved_envelope.value,
                 "model": resolved.get("model") if isinstance(resolved, dict) else None,
                 "thread_id": thread_id,
+                "user_message_id": user_message_id,
             },
             # Arena-only: route the confirmation extractor to THIS match's model
             # (see the routed path's build above -- both must stamp it).
@@ -3270,6 +3293,7 @@ class AgentService:
                     yolo_mode=yolo_mode,
                     decision=resume_decision,
                     actor=actor,
+                    thread_id=thread_id,
                 )
             except WorkflowResumeConflict:
                 raise
@@ -3465,6 +3489,7 @@ class AgentService:
                 # proposal's audit_ref so the chain correlates.
                 AUDIT_CONTEXT_KEY: {
                     "actor": actor,
+                    "mode": _resume_audit_mode(yolo_mode),
                     "thread_id": thread_id,
                     "workflow_id": action_source_meta.get("workflow_id"),
                     "session_id": action_source_meta.get("session_id"),
@@ -3635,6 +3660,7 @@ class AgentService:
             # proposal's audit_ref so the chain correlates.
             AUDIT_CONTEXT_KEY: {
                 "actor": actor,
+                "mode": _resume_audit_mode(yolo_mode),
                 "thread_id": thread_id,
                 "message_id": message_id,
                 "audit_ref": (
@@ -3747,6 +3773,7 @@ class AgentService:
         yolo_mode: bool = False,
         decision: str,
         actor: str = "desk_user",
+        thread_id: int | None = None,
     ) -> TaskExecutionResult:
         task_id = int(source_meta["task_id"])
         workflow_id = int(source_meta["workflow_id"])
@@ -3832,6 +3859,18 @@ class AgentService:
                 "envelope": envelope,
                 "confirmed_cost_preview": True,
                 "tools_scope": list(effective_tools_scope(registration.tools_scope)),
+                # Same resume contract as the other HITL resume paths: without an
+                # audit context this path was unaudited AND invisible to the
+                # System One guard, whose re-run must see mode + thread_id.
+                AUDIT_CONTEXT_KEY: {
+                    "actor": actor,
+                    "mode": _resume_audit_mode(yolo_mode),
+                    "thread_id": thread_id,
+                    "workflow_id": workflow_id,
+                    "session_id": source_session_id,
+                    "task_id": task.id,
+                    "audit_ref": (source_meta.get("audit") or {}).get("audit_ref"),
+                },
             },
         )
         try:

@@ -58,6 +58,10 @@ stack can't silently skip it.
   as Positions/Portfolios/Reports/Tasks, not a bespoke "Load more" button.
 - `fail_closed_refusals.unpersisted` (surfaced in `/api/audit/summary`) is an
   in-memory counter — it resets per process.
+- The System One tool guard stores its verdicts beside this trail, in
+  `agent_tool_guard_verdicts`, joined by `(thread_id, tool_call_id)` — see
+  [`services/system_one/CLAUDE.md`](../system_one/CLAUDE.md). Its resume
+  determinism depends on every resume path stamping `mode` + `thread_id`.
 
 ---
 

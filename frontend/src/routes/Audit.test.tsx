@@ -29,6 +29,7 @@ const ROW: AuditAction = {
   error: null,
   occurred_at: '2026-07-02T10:00:00',
   completed_at: '2026-07-02T10:00:01',
+  guard: null,
 };
 
 function props(overrides: Partial<AuditProps> = {}): AuditProps {
@@ -133,5 +134,24 @@ describe('Audit', () => {
     expect(next).not.toBeDisabled();
     next.click();
     expect(onPage).toHaveBeenCalledWith(1);
+  });
+});
+
+describe('Guard column', () => {
+  it('shows the System One verdict, and a dash when the call was never guarded', () => {
+    render(
+      <Audit
+        {...props({
+          items: [
+            { ...ROW, id: 1, guard: { verdict: 'flagged', max_probability: 0.85 } },
+            { ...ROW, id: 2, tool_call_id: 'c2', guard: null },
+          ],
+          total: 2,
+        })}
+      />,
+    );
+    expect(screen.getByText('Guard')).toBeInTheDocument();
+    expect(screen.getByText('flagged')).toBeInTheDocument();
+    expect(screen.getByTitle('System One p=0.85')).toBeInTheDocument();
   });
 });

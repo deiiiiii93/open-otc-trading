@@ -1921,6 +1921,8 @@ export interface AuditAction {
   error: string | null;
   occurred_at: string;
   completed_at: string | null;
+  /** System One tool-guard verdict for this call; null = never guarded. */
+  guard: { verdict: 'clear' | 'flagged' | 'unscored'; max_probability: number | null } | null;
 }
 
 export interface AuditActionDetail extends AuditAction {

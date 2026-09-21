@@ -45,6 +45,12 @@ const STATUS_VARIANT: Record<string, BadgeVariant> = {
   rejected: 'ink',
 };
 
+const GUARD_VARIANT: Record<NonNullable<AuditAction['guard']>['verdict'], BadgeVariant> = {
+  clear: 'pos',
+  flagged: 'neg',
+  unscored: 'warn',
+};
+
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
   ...[
@@ -133,6 +139,25 @@ export function Audit(props: AuditProps) {
             <Badge variant={row.mode === 'yolo' ? 'neg' : 'ink'} solid={row.mode === 'yolo'}>
               {row.mode}
             </Badge>
+          ) : (
+            '—'
+          ),
+      },
+      {
+        key: 'guard',
+        header: 'Guard',
+        width: '6.5rem',
+        render: (row) =>
+          row.guard ? (
+            <span
+              title={
+                row.guard.max_probability != null
+                  ? `System One p=${row.guard.max_probability.toFixed(2)}`
+                  : 'System One could not score this call'
+              }
+            >
+              <Badge variant={GUARD_VARIANT[row.guard.verdict]}>{row.guard.verdict}</Badge>
+            </span>
           ) : (
             '—'
           ),

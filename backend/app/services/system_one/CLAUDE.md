@@ -44,3 +44,29 @@ arena contestant, never a source of numbers.
 - Tests: conftest hard-sets `OPEN_OTC_SYSTEM_ONE=false` and replaces
   `client._default_post` with a `pytest.fail`. Inject `post=` or patch
   `_default_post` with a fake from `tests/_system_one_fakes.py`.
+
+## The AUTO tool guard (`deep_agent/tool_guard*.py`)
+
+- Scope: the nine destroy-and-terminate `"write"` tools in
+  `tool_guard_policy.GUARD_POLICY` — desk policy, edited as data.
+  `validate_policy` fails the agent build on a dead, non-`"write"`, duplicate or
+  out-of-range entry.
+- Registered iff `yolo_mode and allow_reply_options` (AUTO) in all FOUR stacks
+  (orchestrator, each persona, the `general-purpose` override, the async agent),
+  plus a runtime belt on `AUDIT_CONTEXT_KEY['mode'] == "auto"` — the default
+  orchestrator graph is built once and reused across turns.
+- **Determinism (D10).** A verdict is committed under UNIQUE
+  `(thread_id, tool_call_id)` before any interrupt and read back on re-entry;
+  a stored row is reused only if `tool_name` and `args_hash` match
+  (`tool_call_id_collision` otherwise). Empty ids are never sent to Jev.
+- **Every HITL resume path must stamp `mode` and `thread_id`** into the audit
+  context (`agents._resume_audit_mode`; pinned by
+  `tests/test_audit_context_stamping.py`). A resume without `mode` fails the
+  belt, the re-run skips `interrupt()`, the decision is never consumed — and a
+  call the human rejected runs.
+- The user's words come from the DB (`user_message_id`, stamped by both streaming
+  builds; else the thread's latest user message) — never from a persona's first
+  human message, which is the orchestrator's paraphrase (D11).
+- Shadow data: `GET /api/audit/guard-verdicts[/summary]`. `flagged_then_ok` is
+  the candidate-false-positive count. Do not read early numbers as validation of
+  the wording — the only evidence is post-hoc.

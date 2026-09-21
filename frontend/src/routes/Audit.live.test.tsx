@@ -53,6 +53,7 @@ function action(
     error: null,
     occurred_at: '2026-07-18T09:00:00Z',
     completed_at: '2026-07-18T09:00:01Z',
+    guard: null,
     ...overrides,
   };
 }

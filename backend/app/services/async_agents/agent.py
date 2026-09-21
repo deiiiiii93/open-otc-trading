@@ -104,6 +104,7 @@ def build_async_agent(
     checkpointer: Any,
     task_id: int | str,
     yolo_mode: bool = False,
+    allow_reply_options: bool = True,
 ) -> Any:
     """Build a flat deep-agent for one async-agent task.
 
@@ -131,6 +132,13 @@ def build_async_agent(
     ]
     if yolo_mode:
         middleware.append(LongRunningCostHITLMiddleware(tools=tools))
+    if yolo_mode and allow_reply_options:
+        # Same AUTO-only guard as the other stacks. Today every async dispatch is
+        # built with yolo_mode=False, so this is dormant — kept so a future AUTO
+        # async path cannot silently skip it.
+        from ..deep_agent.tool_guard import ToolGuardMiddleware
+
+        middleware.append(ToolGuardMiddleware(persona="async_agent"))
     middleware.extend(
         [
             RunPythonArtifactHITLMiddleware(enabled=not yolo_mode),

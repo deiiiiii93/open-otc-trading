@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/systemone` route. Sanitizes and size-budgets `state`, maps every failure to
   `no_key` / `state_too_large` / `timeout` / `http_error` / `bad_response`.
   **Inert by default**: nothing calls it unless `OPEN_OTC_SYSTEM_ONE=true`.
+- **System One tool guard, shadow mode.** In AUTO mode, nine destroy-and-terminate
+  tools (`void_settlement_cashflow`, `close_position`, `settle_position`,
+  `mark_knockout`, `waive_limit_incident`, `resolve_limit_incident`,
+  `delete_pricing_parameter_rows`, `remove_portfolio_sources`,
+  `import_otc_positions`) get a per-call Jev verdict against a per-tool predicate,
+  recorded in `agent_tool_guard_verdicts` (migration `0061`) and readable at
+  `GET /api/audit/guard-verdicts[/summary]`; the Audit page shows a Guard column.
+  Shadow never blocks. Every HITL resume now stamps its execution `mode`.
 
 ### Changed
 - **`/arena/leaderboard.html` is tabbed by workflow, in a right-hand rail.** It

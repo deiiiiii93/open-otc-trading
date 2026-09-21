@@ -102,6 +102,11 @@ These bite in more than one subsystem. Each links to where it is argued in full.
   lifecycle vocabulary and the trader-rfq live-reachability fix.
   ([domains](backend/app/services/domains/CLAUDE.md),
   [golden_workflows](backend/app/golden_workflows/CLAUDE.md))
+- **A HITL resume must re-stamp the turn's audit context — `mode` and `thread_id`
+  included.** LangGraph re-runs the interrupted node from the top; a mode-gated
+  `after_model` middleware that sees a different mode on the resume pass skips its
+  `interrupt()` and the human's decision is silently dropped.
+  ([system_one](backend/app/services/system_one/CLAUDE.md))
 
 ---
 
