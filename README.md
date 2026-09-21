@@ -295,6 +295,8 @@ mkdir -p data artifacts
 | `OPEN_OTC_TRACING` | Tracing mode: `local` \| `langsmith` \| `both` \| `off` | No |
 | `OPEN_OTC_MEMORY` | Long-term memory capture: `on` (default) \| `off` | No |
 | `OPEN_OTC_MEMORY_RECONCILE_SINCE` | ISO-8601 cutoff — when first enabling memory on an existing DB, only extract sessions closed at/after this instant (avoids mass-extracting the historical backlog) | No |
+| `OPEN_OTC_SYSTEM_ONE` | Master switch (default `false`) for TypeSafe Jev via ZenMux. **Turning it on is the data-policy opt-in**: the features below then send sanitized desk text to a new upstream (TypeSafe). Each feature has its own opt-out switch | No |
+| `OPEN_OTC_SYSTEM_ONE_MODEL` / `_BASE_URL` / `_TIMEOUT_S` / `_MAX_STATE_CHARS` | Jev model slug (`typesafe/jev-1.13`), base URL (`https://zenmux.ai/api/v1`), timeout (`5.0` s), state budget (`60000` chars) | No |
 | `OPEN_OTC_HEDGE_RISK_MAX_AGE_SECONDS` | Maximum age of risk evidence allowed for hedge sizing/booking (default `900`); historical valuations are rejected regardless | No |
 | `GATEWAY_ENABLED_CONNECTORS` | Comma-separated IM connectors to run (e.g. `feishu`); empty = gateway off | No |
 | `GATEWAY_AGENT_MODEL` | Model for IM-originated turns, `channel:provider:model` (e.g. `zenmux:openai:deepseek/deepseek-v4-flash`); unset = registry default | No |

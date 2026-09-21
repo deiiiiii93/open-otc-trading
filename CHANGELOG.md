@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **System One (TypeSafe Jev) client** — `services/system_one/`, the single exit
+  for calibrated yes/no, one-of-N and ordered-level questions over ZenMux's
+  `/systemone` route. Sanitizes and size-budgets `state`, maps every failure to
+  `no_key` / `state_too_large` / `timeout` / `http_error` / `bad_response`.
+  **Inert by default**: nothing calls it unless `OPEN_OTC_SYSTEM_ONE=true`.
+
 ### Changed
 - **`/arena/leaderboard.html` is tabbed by workflow, in a right-hand rail.** It
   was six stacked sections, 5,351px of scroll, and the newest board's

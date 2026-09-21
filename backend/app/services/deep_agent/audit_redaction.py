@@ -91,3 +91,41 @@ def redact_text(text: str | None, cap: int = _TEXT_CAP) -> str | None:
     if text is None:
         return None
     return text if len(text) <= cap else text[:cap] + "…[truncated]"
+
+
+# Free-text token patterns. The key regex above catches `{"api_key": ...}`;
+# these catch the same secrets pasted into prose, which is how they arrive in a
+# user request or a tool result that is about to leave the process.
+_SECRET_TEXT_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bsk-[A-Za-z0-9_-]{16,}"), "[REDACTED]"),
+    (re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}"), "Bearer [REDACTED]"),
+    (
+        re.compile(r"(?i)\b(api[_-]?key|secret|password|passwd|token)\b(\s*[:=]\s*)[^\s,;]+"),
+        r"\1\2[REDACTED]",
+    ),
+)
+
+
+def mask_text(text: str) -> str:
+    """Mask secret-looking tokens inside free text; the label stays readable."""
+    for pattern, replacement in _SECRET_TEXT_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
+def mask_secrets(value: Any) -> Any:
+    """Recursively mask secrets in a JSON-able value before it leaves the process.
+
+    The System One client runs this over `state` at its single exit (D16), so no
+    feature can forget it. Returns a new structure; never mutates the input.
+    """
+    if isinstance(value, str):
+        return mask_text(value)
+    if isinstance(value, dict):
+        return {
+            key: "[REDACTED]" if _SECRET_KEY_RE.search(str(key)) else mask_secrets(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [mask_secrets(item) for item in value]
+    return value

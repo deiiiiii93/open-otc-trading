@@ -36,6 +36,7 @@ Detail lives next to the code it governs, so a session loads only what it touche
 | [`backend/app/services/reporting/`](backend/app/services/reporting/CLAUDE.md) | templated reports and the grounding guard |
 | [`backend/app/services/domains/`](backend/app/services/domains/CLAUDE.md) | position lifecycle events, term-structure pricing curves |
 | [`backend/app/services/gateway/`](backend/app/services/gateway/CLAUDE.md) | the Feishu/Lark IM gateway |
+| [`backend/app/services/system_one/`](backend/app/services/system_one/CLAUDE.md) | System One (TypeSafe Jev): the AUTO tool guard, memory keep-alive, the confirmation family cross-check |
 | [`backend/app/routers/`](backend/app/routers/CLAUDE.md) | the chat thread list's scoping, paging and search |
 | [`docs/arena/deploy/`](docs/arena/deploy/CLAUDE.md) | building or shipping the artena.one arena blog |
 | [`docs/arena/intro-video/`](docs/arena/intro-video/CLAUDE.md) | the HyperFrames intro-video composition |
