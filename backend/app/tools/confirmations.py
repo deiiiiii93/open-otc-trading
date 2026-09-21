@@ -54,6 +54,7 @@ def _batch_out(batch: ConfirmationBatch) -> dict[str, Any]:
                         "validation_errors": list(t.validation_errors or []),
                         "status": t.status,
                         "booked_position_id": t.booked_position_id,
+                        "family_check": t.family_check,
                     }
                     for t in d.trades
                 ],
@@ -145,6 +146,17 @@ def _extractor_override_from_config(config: RunnableConfig | None) -> dict | Non
     return override if isinstance(override, dict) and override else None
 
 
+def _family_check_allowed(config: RunnableConfig | None) -> bool:
+    """False on arena turns, which the server marks by stamping
+    CONFIRMATION_EXTRACTOR_SELECTION_KEY. confirmation-desk-day contestants must
+    never see a field the rest of the board's history did not. Presence — even
+    a malformed stamp — is enough."""
+    from ..services.confirmations.llm import CONFIRMATION_EXTRACTOR_SELECTION_KEY
+
+    configurable = (config or {}).get("configurable") or {}
+    return CONFIRMATION_EXTRACTOR_SELECTION_KEY not in configurable
+
+
 @capability_gated(group=ToolGroup.DOMAIN_WRITE)
 @tool("parse_trade_confirmation", args_schema=ParseTradeConfirmationInput)
 def parse_trade_confirmation(
@@ -200,7 +212,10 @@ def parse_trade_confirmation(
             session, files=stored, source="agent", portfolio_id=portfolio_id)
         session.commit()
         for document in batch.documents:
-            confirmations.parse_document(session, document, client=client)
+            confirmations.parse_document(
+                session, document, client=client,
+                family_check=_family_check_allowed(config),
+            )
             session.commit()
         session.refresh(batch)
         return {"ok": True, **_batch_out(batch)}

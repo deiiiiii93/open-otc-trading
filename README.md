@@ -299,6 +299,7 @@ mkdir -p data artifacts
 | `OPEN_OTC_SYSTEM_ONE_MODEL` / `_BASE_URL` / `_TIMEOUT_S` / `_MAX_STATE_CHARS` | Jev model slug (`typesafe/jev-1.13`), base URL (`https://zenmux.ai/api/v1`), timeout (`5.0` s), state budget (`60000` chars) | No |
 | `OPEN_OTC_TOOL_GUARD` | `off` \| `shadow` (default) \| `enforce`. With System One on, AUTO-mode calls to nine destructive tools send the user's latest request, recent tool call/result heads and the pending call (sanitized) to Jev; `shadow` only records the verdict (`/api/audit/guard-verdicts`) | No |
 | `OPEN_OTC_MEMORY_KEEP_ALIVE` | `on` (default) \| `off`. With System One and memory on, sends each memory fact's text and up to 50 same-scope sibling facts (sanitized, denylisted facts excluded) to Jev for a display-only keep-alive score | No |
+| `OPEN_OTC_CONFIRMATION_FAMILY_CHECK` | `true` (default) \| `false`. With System One on, sends the text layer of text-only confirmation segments (sanitized) to Jev to cross-check the extractor's product family; advisory only | No |
 | `OPEN_OTC_HEDGE_RISK_MAX_AGE_SECONDS` | Maximum age of risk evidence allowed for hedge sizing/booking (default `900`); historical valuations are rejected regardless | No |
 | `GATEWAY_ENABLED_CONNECTORS` | Comma-separated IM connectors to run (e.g. `feishu`); empty = gateway off | No |
 | `GATEWAY_AGENT_MODEL` | Model for IM-originated turns, `channel:provider:model` (e.g. `zenmux:openai:deepseek/deepseek-v4-flash`); unset = registry default | No |

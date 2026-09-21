@@ -1633,6 +1633,10 @@ class ExtractedTrade(Base):
         ForeignKey("positions.id"), nullable=True
     )
     reject_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # System One family cross-check (spec 2026-09-21 §3): {status, reason,
+    # jev_family, confidence, top, model}. NULL = never checked (feature off,
+    # arena, or older row). Never read by validation or booking.
+    family_check: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, onupdate=utcnow

@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shows it in a `Keep` column beside `Conf` on the Memory page. Display-only: it
   changes no eviction, injection or status. Five nullable columns on
   `memory_entries` (migration `0062`); opt out with `OPEN_OTC_MEMORY_KEEP_ALIVE=off`.
+- **Confirmation family cross-check** — with System One on, each parsed trade
+  segment's text layer is classified independently of the extractor LLM; a
+  disagreement shows on the Confirmations row and on the `book_extracted_trade`
+  approval card. Advisory only; never on arena turns. `extracted_trades.family_check`
+  (migration `0063`); opt out with `OPEN_OTC_CONFIRMATION_FAMILY_CHECK=false`.
 
 ### Changed
 - **`/arena/leaderboard.html` is tabbed by workflow, in a right-hand rail.** It

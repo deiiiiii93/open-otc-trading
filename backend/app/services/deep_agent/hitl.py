@@ -387,6 +387,16 @@ def _summarize_book_extracted_trade(args: dict[str, Any]) -> str:
                 )
             if trade.validation_status and trade.validation_status != "valid":
                 extras.append(f"VALIDATION {trade.validation_status}")
+            check = trade.family_check if isinstance(trade.family_check, dict) else None
+            if check and check.get("status") == "disagree":
+                # The human is about to approve an IRREVERSIBLE booking off the
+                # extractor's family choice; System One read it differently.
+                confidence = check.get("confidence")
+                shown = f" ({confidence:.2f})" if isinstance(confidence, (int, float)) else ""
+                extras.append(
+                    f"FAMILY CHECK: System One reads {check.get('jev_family')}{shown} "
+                    f"— review before approving"
+                )
             return head + (" — " + ", ".join(extras) if extras else "")
     except Exception:
         # Card rendering must never 500 the turn over a preview lookup.

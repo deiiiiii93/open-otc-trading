@@ -889,6 +889,7 @@ class ExtractedTradeOut(BaseModel):
     status: str
     booked_position_id: int | None = None
     reject_reason: str | None = None
+    family_check: dict[str, Any] | None = None
 
     model_config = {"from_attributes": True}
 

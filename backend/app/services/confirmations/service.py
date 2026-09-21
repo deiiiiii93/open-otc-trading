@@ -7,13 +7,15 @@ bookable without prepare_booking_product_spec passing and a human action.
 from __future__ import annotations
 
 import hashlib
+import logging
 import mimetypes
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from ...config import get_settings
 from ...models import (
     ConfirmationBatch, ConfirmationDocument, ExtractedTrade, Portfolio, Position,
     TaskRun, TaskStatus,
@@ -25,11 +27,15 @@ from ..domains.products import product_family_for_quantark_class
 from ..engine_configs import DEFAULT_ENGINE_BY_PRODUCT_TYPE
 from ..instruments import resolve_bookable_underlying
 from ..task_runner import submit_async_task
+from .. import system_one
 from .extract import extract_document
+from .family_check import FamilyCheck, check_family
 from .llm import (
     ExtractionError, TradeDraft, build_extractor_client, extract_trade,
     segment_document,
 )
+
+logger = logging.getLogger(__name__)
 
 # NOTE: app.tools.product_term_schema is imported lazily at each use site
 # below (validate_trade_terms / parse_document), not at module scope — same
@@ -100,6 +106,7 @@ def _draft_to_row(document_id: int, seq: int, draft: TradeDraft) -> ExtractedTra
         counterparty=draft.counterparty, trade_date=draft.trade_date,
         external_trade_id=draft.external_trade_id, confidence=draft.confidence,
         evidence=dict(draft.evidence), validation_errors=[],
+        family_check=draft.family_check,
     )
 
 
@@ -200,7 +207,33 @@ def validate_trade_terms(session: Session, trade: ExtractedTrade) -> tuple[str, 
     return "valid", []
 
 
-def parse_document(session: Session, document: ConfirmationDocument, *, client) -> None:
+def _family_checker(requested: bool):
+    """Per-segment System One cross-check (spec 2026-09-21 §3).
+
+    Inert — every segment gets None, "never checked" — unless the caller allows
+    it AND the master switch AND OPEN_OTC_CONFIRMATION_FAMILY_CHECK are on. A
+    live check can never fail the document: any exception becomes
+    unscored:internal_error with every Jev field null (logged, not stored).
+    """
+    settings = get_settings()
+    if not (requested and system_one.is_enabled(settings)
+            and settings.confirmation_family_check_enabled):
+        return lambda content, segment, families: None
+
+    def check(content, segment, families) -> dict:
+        try:
+            return check_family(content, segment, schema_families=families,
+                                settings=settings).as_json()
+        except Exception:  # noqa: BLE001 — a cross-check must never fail a document
+            logger.warning("confirmation family cross-check failed", exc_info=True)
+            return FamilyCheck.unscored("internal_error").as_json()
+
+    return check
+
+
+def parse_document(
+    session: Session, document: ConfirmationDocument, *, client, family_check: bool = True
+) -> None:
     from app.tools.product_term_schema import _SCHEMA_FAMILIES
 
     document.status = "parsing"
@@ -211,12 +244,19 @@ def parse_document(session: Session, document: ConfirmationDocument, *, client) 
         document.page_count = content.page_count
         document.extract_mode = content.extract_mode
         segments = segment_document(content, client)
+        # Segment -> draft -> row is 1:1, so the check rides on the draft; if
+        # stage 2 raises, the document fails exactly as before and the checks
+        # are dropped with its rows.
+        checker = _family_checker(family_check)
         drafts = []
         for seg in segments:
+            checked = checker(content, seg, _SCHEMA_FAMILIES)
             if seg.family not in _SCHEMA_FAMILIES:
-                drafts.append(TradeDraft(family=seg.family, terms={}))
+                # Still checked: "LLM said unknown, Jev reads SnowballOption at
+                # 0.9" is a visible disagree on an unsupported row.
+                drafts.append(TradeDraft(family=seg.family, terms={}, family_check=checked))
                 continue
-            drafts.append(extract_trade(content, seg, client))
+            drafts.append(replace(extract_trade(content, seg, client), family_check=checked))
         for i, draft in enumerate(drafts, start=1):
             row = _draft_to_row(document.id, i, draft)
             session.add(row)
@@ -238,7 +278,9 @@ def parse_document(session: Session, document: ConfirmationDocument, *, client) 
         session.flush()
 
 
-def run_parse_batch(batch_id: int, task_id: int | None = None, *, client=None) -> None:
+def run_parse_batch(
+    batch_id: int, task_id: int | None = None, *, client=None, family_check: bool = True
+) -> None:
     """Async-task entrypoint: own session per phase, per-document isolation."""
     from ... import database
 
@@ -255,7 +297,8 @@ def run_parse_batch(batch_id: int, task_id: int | None = None, *, client=None) -
             session.commit()
         for doc_id in doc_ids:
             document = session.get(ConfirmationDocument, doc_id)
-            parse_document(session, document, client=resolved_client)
+            parse_document(session, document, client=resolved_client,
+                           family_check=family_check)
             session.commit()
         if task is not None:
             statuses = {d.status for d in session.get(ConfirmationBatch, batch_id).documents}

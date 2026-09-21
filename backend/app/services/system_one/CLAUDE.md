@@ -96,3 +96,14 @@ arena contestant, never a source of numbers.
   do not. Content edits and sibling adds null all five columns.
 - Live iff `OPEN_OTC_SYSTEM_ONE` AND `OPEN_OTC_MEMORY` AND
   `OPEN_OTC_MEMORY_KEEP_ALIVE`.
+
+## Confirmation family cross-check (`confirmations/family_check.py`)
+
+- One `choice` over `sorted(_SCHEMA_FAMILIES) + ["unknown"]` from the segment's
+  TEXT LAYER; any scan page in the segment ⇒ `unscored:no_text_layer` (Jev has no
+  vision). `"unknown"` is reserved.
+- A flag, never a gate: `validation_status`, `validation_errors` and bookability
+  are untouched. Surfaces: the trade row badge, the tool payload, and the
+  `book_extracted_trade` approval card.
+- Off on arena turns (the server-stamped `CONFIRMATION_EXTRACTOR_SELECTION_KEY`
+  marks them); a check failure can never fail a document.

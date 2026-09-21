@@ -97,3 +97,27 @@ class ScorePost:
                 "probabilities": probabilities,
             }},
         }
+
+
+class ChoicePost:
+    """Answers every `choice` question with `choice` at `confidence`; the
+    remaining mass goes to the first other option."""
+
+    def __init__(self, choice: str, confidence: float = 0.9) -> None:
+        self.choice = choice
+        self.confidence = confidence
+        self.calls: list[dict] = []
+
+    def __call__(self, url: str, payload: dict, timeout: float) -> Any:
+        self.calls.append(copy.deepcopy(payload))
+        answers = {}
+        for key, question in payload["questions"].items():
+            options = list(question["criteria"])
+            probabilities = {option: 0.0 for option in options}
+            probabilities[self.choice] = self.confidence
+            others = [option for option in options if option != self.choice]
+            if others:
+                probabilities[others[0]] = round(1 - self.confidence, 2)
+            answers[key] = {"type": "choice", "choice": self.choice,
+                            "confidence": self.confidence, "probabilities": probabilities}
+        return {"model": "typesafe/jev-1.13", "answers": answers}

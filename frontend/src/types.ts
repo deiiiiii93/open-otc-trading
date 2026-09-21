@@ -1944,6 +1944,16 @@ export interface AuditSummary {
 
 // --- Trade confirmations -----------------------------------------------
 
+/** System One's independent read of a trade's product family (display-only). */
+export type FamilyCheck = {
+  status: 'agree' | 'disagree' | 'unscored';
+  reason: string | null;
+  jev_family: string | null;
+  confidence: number | null;
+  top: Array<[string, number]> | null;
+  model: string | null;
+};
+
 export type ExtractedTrade = {
   id: number; document_id: number; seq: number; family: string;
   extracted_terms: Record<string, unknown>; terms: Record<string, unknown>;
@@ -1954,6 +1964,7 @@ export type ExtractedTrade = {
   validation_status: 'valid' | 'invalid' | 'unsupported';
   validation_errors: unknown[]; status: 'extracted' | 'booked' | 'rejected';
   booked_position_id: number | null; reject_reason: string | null;
+  family_check: FamilyCheck | null;
 };
 
 export type ConfirmationDocument = {
