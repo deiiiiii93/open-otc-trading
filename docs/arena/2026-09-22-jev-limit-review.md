@@ -31,9 +31,9 @@ none should be.
 
 What follows a breach is text. A waiver needs a rationale and an expiry, and the
 incident's thread collects the desk's comments. Nobody reads that text a second time.
-The ledger stores *"Waiver approved."* and *"Cause: the Dec 6000 call block bought
-Monday. LW will sell 40% of it by 2026-10-02"* in the same column, and nothing on the
-page tells them apart.
+The ledger stores *"Waiver approved."* and *"Cause: the 000300 Dec 6000 call block
+bought Monday. LW will sell 40% of it by 2026-10-02, inside the waiver window."* in
+the same column, and nothing on the page tells them apart.
 
 The guard from the first post reads the same waive call, but it asks a different
 question: did the user ask for this waiver? It has no view on whether the reason
@@ -53,11 +53,12 @@ wrote:
 
 The design splits the work: Jev reads and code checks. Three of the claims leave
 traces in the database, so a deterministic checker looks for each one. For *position
-rolling off* it looks for an open position in scope that expires before the waiver
-does. For *data error* it looks for a reason code, a coverage gap or a stale source
+rolling off* it looks for an open option in scope that expires between the day the
+waiver was written and the day it expires. For *data error* it looks for a reason code, a coverage gap or a stale source
 behind the breach. For *limit under review* it looks for a new version of the limit
-since the incident opened. A check can say `supported` or `no_evidence`, but never
-"contradicted", because the review might be happening by email.
+since the incident opened. A check says `supported`, `no_evidence`, or `unverified` when
+no checker exists for the claim or the checker fails. It never says "contradicted",
+because the review might be happening by email.
 
 The same rules as the first post apply. The review is display-only: it changes no
 status and blocks no waiver. The agent's tools never see it, so a model cannot write
@@ -125,9 +126,10 @@ likely level differs from the rounded score. On the held-out line, the single mo
 likely level was **4** in all three runs (p 0.44–0.56). Rounding the
 probability-weighted score dragged it to 3.
 
-The UI shows the rounded score. It stores the confidence but does not display it. A
-rule that muted grades below 0.6 confidence would have flagged both terse lines and
-nothing else here. But we wrote that rule after seeing the misses, on one author's
+The UI shows the rounded score. It stores the confidence but does not display it. Outside the ladder, four of the pair calls below sat at
+0.65–0.68, each with the right verdict. A rule that muted grades below 0.6 confidence
+would have flagged both terse lines and nothing else among the 107 waiver reads in
+this post. But we wrote that rule after seeing the misses, on one author's
 cases, and have not shipped it.
 
 ## Claims, checked against the database
@@ -179,12 +181,14 @@ higher.
 
 That result says the six options can be separated. It does not say real comments fall
 cleanly into them, and real comments exist. The arena's `risk-limit-breach-day`
-workflow has been played by 26 models across 16 runs. At step 5 each is invited to
-waive the breach and none has: the corpus holds **zero** `waive_limit_incident`
-calls. But step 3 asks every model to *"acknowledge the breach incident and log a
-comment on its timeline summarizing your root-cause analysis"*. That produced 98
-comments in 91 threads, each written under a prompt that says what the comment should
-be. The feature never scores arena threads, so we ran them through the same thread
+workflow has been played by 26 models across at least 16 runs. At step 5 each is
+invited to waive the breach and none has written a waiver: the corpus holds **zero**
+waiver rationales. But step 3 tells every model: *"Acknowledge the breach incident and
+log a comment on its timeline summarizing your root-cause analysis."* That produced 98
+comments in 91 threads. 85 threads hold the single step-3 comment, written under a
+prompt that says what it should be. The other six threads hold seven later comments,
+where a model logged its step-5 decision or the step-6 re-run, and all six are among
+the sixteen outliers below. The feature never scores arena threads, so we ran them through the same thread
 question as a read-only probe, once each, and read every thread that did not come
 back *root cause only*.
 
@@ -195,7 +199,7 @@ back *root cause only*.
 | remediating | 4 | the figure leaves out the hedge, or was a data artefact |
 | remediating | 7 | a fix is **recommended**, but no one has taken it |
 | remediating | 2 | a decision to **hold the incident open** pending verification (p 0.96, 0.98) |
-| disputes the number | 1 | the figure was a data artefact ✓, at p 0.48, below the 0.50 bar, so the feature would store it `unscored` |
+| disputes the number | 1 | the figure was a data artefact ✓, at p 0.48, below the 0.50 bar, so the feature would store it `unscored` and ask again |
 
 Only 2 of the 15 *remediating* readings describe action taken. Reading the option
 text against the threads, as the first post did with its predicates, explains the
@@ -228,19 +232,22 @@ a 600 cap, with an open breach incident. Then we drove it through a running serv
 | Step | What happened | What was stored |
 |---|---|---|
 | 1 · no key | a desk waiver via REST: the AAPL call is the driver, LW sold 400 futures, risk re-runs by 2026-09-24 | the waive returned **200 in 54 ms**; review `unscored · no_key` |
-| 2 · no key | a comment via REST: "Hedge booked… waiting on the risk re-run" | `unscored · no_key` |
+| 2 · no key | a comment via REST: "Hedge booked: 400 AAPL futures sold at 09:40. Waiting on the risk re-run." | `unscored · no_key` |
 | 3 · key restored | nothing | nothing retried; both rows stayed unscored |
-| 4 · AUTO turn | the user: "…extend the waiver until 2026-10-06, and write the rationale yourself"; the `risk_manager` persona read the incident and the book, then called `waive_limit_incident` | **guard: clear**, max 0.23, 1.9 s · **review: 3/4**, *hedge in progress*, 2.9 s, stored before the turn ended |
+| 4 · AUTO turn | the user: "The risk committee has approved extending the waiver … until 2026-10-06. Extend it, and write the waiver rationale yourself from what the incident and the book show: the cause, the remediation, who owns it and by when." The `risk_manager` persona read the incident and the book, then called `waive_limit_incident` | **guard: clear**, max 0.23, 1.9 s · **review: 3/4**, *hedge in progress*, 2.9 s, stored before the turn ended |
 | 5 · re-run and monitor | risk re-run, then a monitoring run, via REST (the arena's step-6 order); the book already held the hedge: net delta 402.7, **incident recovered** | the run's sweep scored both outage rows: the desk waiver **4/4** (p 0.93), the thread *remediating* |
 | 6 · one more comment | "Post-hedge re-run reads inside the cap…" | fast path: *remediating*, 0.98, reviewed **1.9 s** after the POST |
 
 Put the two waivers side by side. The desk one was 205 characters: cause, remediation,
 owner initials and a date, all inside the waiver. It graded 4. The model's was 1,125
-characters and graded 3 (p 0.87). The model read the incident carefully and then
-wrote: *"Owner: NOT recorded — the incident's assignee field is null and no structured
-owner is set; 'LW' appears only as the actor in the prior waiver/comment. Due date:
-NOT recorded as a field."* The ladder gives exactly that text level 3, so Jev graded
-what was written. The model had declined to promote an actor name into an owner. A
+characters and graded 3 (p 0.87). The user had asked for an owner and a date. The model read the incident carefully
+and then wrote: *"Owner: NOT recorded — the incident's assignee field is null and no
+structured owner is set; "LW" appears only as the actor in the prior waiver/comment.
+Due date: NOT recorded as a field — the only timing reference is the 2026-09-24
+re-run cited in the prior waiver."* So the text keeps a date and says in so many
+words that there is no owner, and level 4 needs one. Level 3 is what the ladder gives
+that text, and Jev graded what was written. The model had declined to promote an
+actor name into an owner. A
 desk that wants agent-written waivers to grade complete needs to put the owner in a
 field, not only in someone's prose.
 
@@ -274,9 +281,14 @@ Three more details from the same session:
 - **An outage is a row, not a loss.** An unreachable Jev leaves `unscored` rows, and
   the next monitoring run's sweep scores them. Nothing retries between sweeps, so a
   desk with no monitoring schedule would wait.
-- **Non-determinism, contained.** Jev's answers are stored once per event and never
-  re-asked. The checks are re-run against the database on each sweep, so a
-  re-threshold is a re-render, not a re-score.
+- **Non-determinism, mostly contained.** A scored answer is stored once per event and
+  never re-asked. The checks on a still-waived incident's current waiver are re-run
+  against the database at each sweep, and the chip threshold is served with the row,
+  so a re-threshold is a re-render, not a re-score. An `unscored` row is asked again
+  at every sweep, and that includes a thread answer under the 0.50 bar. For an outage
+  that is the point. For a borderline thread it means the stored state will be
+  whichever answer first clears the bar, and with a non-deterministic classifier that
+  is retrying until lucky. We had not seen that until this post.
 
 ## What it is not
 
@@ -292,8 +304,8 @@ Three more details from the same session:
 
 - **Hand-written and small.** Twelve held-out rationales, eight threads and four
   pairs, all written by one author. The fixture's fifteen tuned the wording.
-- **The model-written comments are one prompt.** They come from one workflow, one
-  step, and models under evaluation. They are the only desk-shaped text available
+- **The model-written comments are one prompt, mostly.** They come from one workflow,
+  mostly one step, and models under evaluation. They are the only desk-shaped text available
   and they are not desk text. The hand classification of the sixteen outliers is one
   reader's.
 - **The live session is one session, one model, one run.** It shows reachability, not
@@ -311,6 +323,9 @@ Three more details from the same session:
   without inventing one.
 - **An instance-level roll-off check** that matches the expiry a rationale names, not
   any expiry inside the window.
+- **A retry rule for low-confidence answers:** cap the retries, or keep the first
+  low-confidence answer as the stored state instead of asking until one clears the
+  bar.
 
 ---
 

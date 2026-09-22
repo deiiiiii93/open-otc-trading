@@ -18,6 +18,7 @@ probe and says so: the feature never scores an arena thread.
 | `e2e_log.json` | `e2e_seed.py`, then `e2e_drive.py outage / agent / heal` against a server | 5 | the live-desk table |
 | `e2e_results.json` | `e2e_export.py` (the session database) | — | review rows, events, guard verdict, audit, agent tool view |
 | `arena_threads.json` | `arena_threads.py` (read-only over the arena corpus) | 91 | the model-written comments |
+| `arena_corpus_counts.json` | `arena_corpus_counts.py` (same reader, no Jev calls) | — | 98 comments, 0 waiver rationales, 26 models, 4 threads without a run id |
 | `ui_outage.png`, `ui_healed*.png` | Playwright against `vite` on the same server | — | the UI before and after |
 
 In total 225 live Jev calls (129 + 91 + 5), of which 1 is the tool guard's (the
@@ -43,11 +44,19 @@ level and option text in `backend/app/services/limits/review.py`.
    passes `trust_env=False`.
 3. `heal` — risk re-run and a monitoring run through REST (the arena's step-6
    order). The book already holds the hedge, so the incident recovers; the run's
-   sweep scores the two outage rows. The first `heal` crashed after queuing the run
-   (the run GET needs `portfolio_id`); `finish 2` completed it from run 2, and waited
-   out a 120 s poll because the run's terminal status was `completed_with_unknowns`
-   (both script bugs are fixed in the committed file). The log's first `heal` entry
-   ("restarted with key; nothing retried yet") is from that crashed attempt.
+   sweep scores the two outage rows. It took three tries:
+   - The first `heal` ran right after the keyed restart, before `agent`. It logged
+     "restarted with key; nothing retried yet" (05:26:45 UTC, the first `heal` entry
+     in the log) and then died in `derive_monitoring_envelope`: the seeded risk run
+     carries no market-evidence id. No run was queued. The script was changed to
+     re-run risk first, and because that recovers the incident, `agent` was moved
+     before `heal`.
+   - The second `heal` (after `agent`) re-ran risk, queued monitoring run 2 at
+     05:30:41 and crashed polling it (the run GET needs `portfolio_id`). The sweep
+     had already scored both rows by 05:30:41.9.
+   - `finish 2` completed that tail from run 2. It waited out a 120 s poll because
+     the run's terminal status was `completed_with_unknowns`. Both script bugs are
+     fixed in the committed file.
 
 ## The arena threads, hand-read
 

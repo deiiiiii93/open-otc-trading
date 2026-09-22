@@ -66,12 +66,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   incident review: 129 through the merged `score_event` path (three repeats per
   hand-written case), 91 in a read-only probe over the arena's model-written incident
   comments, 5 in one live server session. Held-out rationales (committed before any
-  run): level right on 11 of 12, claims and authority flags 36 of 36; the one miss is
-  terse desk shorthand, and the only six sub-0.70-confidence grades are exactly the two
-  terse lines. Database-matched pairs flip `supported` ↔ `no_evidence` with Jev's
+  run): level right on 11 of 12, claims and authority flags 36 of 36; the one miss is terse desk shorthand, and the only six sub-0.70-confidence ladder
+  grades are exactly the two terse lines. Database-matched pairs flip `supported` ↔ `no_evidence` with Jev's
   probability unchanged. Hand-written threads 24 of 24; on 91 arena threads only 2 of
   15 `remediating` readings describe action taken — the option set lacks "proposes a
-  fix nobody has taken" and "holds pending verification" (**not changed**). Live: an
+  fix nobody has taken" and "holds pending verification" (**not changed**), and an
+  `unscored` low-confidence thread row is re-asked at every sweep until an answer clears
+  the bar (**not changed**). Live: an
   outage leaves `unscored` rows the next monitoring sweep scores; the first
   model-written waiver graded 3/4 because it honestly recorded no owner. Raw per-call
   results and scripts in `docs/arena/evidence/2026-09-22-jev-limit-review/`.
