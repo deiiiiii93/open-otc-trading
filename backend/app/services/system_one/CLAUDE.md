@@ -177,6 +177,12 @@ arena contestant, never a source of numbers.
   which emitted the call (the live guard never sees a sibling persona's calls, nor the
   other calls in its own pending AIMessage). No trace, or no own span ⇒ `audit_only`,
   never pooled with `trace`.
+- **A persona scope is keyed by its `task` call id, never its `dotted_order` alone.** A
+  HITL resume starts a NEW trace root and re-enters the same `task` call under it: the
+  dotted_order changes, the tool_call_id does not. Scoping by prefix gave every resumed
+  call an empty window while still stamping `trace` fidelity — 8 desk rows of the first
+  evidence run, the daemon smoke's `book_position` flag among them (0.82 on the empty
+  window, 0.63 on the real one). Arena rows cannot hit it: `yolo` never pauses.
 - **An outage writes nothing** (`no_key`, `timeout`, `http_error`): the call stays due and
   the pass ends. Row facts (`bad_response`, `state_too_large`, `no_user_request`) stamp an
   `unscored` sweep row. Any other exception propagates — a bug must not stamp rows.

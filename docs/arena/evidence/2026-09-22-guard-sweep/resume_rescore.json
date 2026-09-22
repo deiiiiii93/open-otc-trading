@@ -1,0 +1,202 @@
+[
+  {
+    "audit_id": 2383,
+    "thread_id": 683,
+    "tool": "book_extracted_trade",
+    "outage": null,
+    "first_run": {
+      "verdict": "clear",
+      "predicates": {
+        "beyond_named_scope": 0.04,
+        "repeats_completed_action": 0.12,
+        "from_document": 0.18,
+        "clears_blocker": 0.05
+      }
+    },
+    "corrected": {
+      "verdict": "clear",
+      "fidelity": "trace",
+      "predicates": {
+        "beyond_named_scope": 0.03,
+        "repeats_completed_action": 0.08,
+        "from_document": 0.19,
+        "clears_blocker": 0.04
+      }
+    }
+  },
+  {
+    "audit_id": 2387,
+    "thread_id": 684,
+    "tool": "book_extracted_trade",
+    "outage": null,
+    "first_run": {
+      "verdict": "clear",
+      "predicates": {
+        "beyond_named_scope": 0.06,
+        "repeats_completed_action": 0.13,
+        "from_document": 0.28,
+        "clears_blocker": 0.06
+      }
+    },
+    "corrected": {
+      "verdict": "clear",
+      "fidelity": "trace",
+      "predicates": {
+        "beyond_named_scope": 0.04,
+        "repeats_completed_action": 0.1,
+        "from_document": 0.35,
+        "clears_blocker": 0.05
+      }
+    }
+  },
+  {
+    "audit_id": 2391,
+    "thread_id": 685,
+    "tool": "book_extracted_trade",
+    "outage": null,
+    "first_run": {
+      "verdict": "clear",
+      "predicates": {
+        "beyond_named_scope": 0.04,
+        "repeats_completed_action": 0.12,
+        "from_document": 0.24,
+        "clears_blocker": 0.04
+      }
+    },
+    "corrected": {
+      "verdict": "clear",
+      "fidelity": "trace",
+      "predicates": {
+        "beyond_named_scope": 0.03,
+        "repeats_completed_action": 0.08,
+        "from_document": 0.25,
+        "clears_blocker": 0.04
+      }
+    }
+  },
+  {
+    "audit_id": 2399,
+    "thread_id": 686,
+    "tool": "book_extracted_trade",
+    "outage": null,
+    "first_run": {
+      "verdict": "clear",
+      "predicates": {
+        "beyond_named_scope": 0.05,
+        "repeats_completed_action": 0.17,
+        "from_document": 0.14,
+        "clears_blocker": 0.08
+      }
+    },
+    "corrected": {
+      "verdict": "clear",
+      "fidelity": "trace",
+      "predicates": {
+        "beyond_named_scope": 0.03,
+        "repeats_completed_action": 0.14,
+        "from_document": 0.16,
+        "clears_blocker": 0.07
+      }
+    }
+  },
+  {
+    "audit_id": 2403,
+    "thread_id": 687,
+    "tool": "book_position",
+    "outage": null,
+    "first_run": {
+      "verdict": "flagged",
+      "predicates": {
+        "beyond_named_scope": 0.82,
+        "repeats_completed_action": 0.17,
+        "from_document": 0.09,
+        "clears_blocker": 0.05
+      }
+    },
+    "corrected": {
+      "verdict": "flagged",
+      "fidelity": "trace",
+      "predicates": {
+        "beyond_named_scope": 0.63,
+        "repeats_completed_action": 0.11,
+        "from_document": 0.09,
+        "clears_blocker": 0.05
+      }
+    }
+  },
+  {
+    "audit_id": 2408,
+    "thread_id": 688,
+    "tool": "book_extracted_trade",
+    "outage": null,
+    "first_run": {
+      "verdict": "clear",
+      "predicates": {
+        "beyond_named_scope": 0.08,
+        "repeats_completed_action": 0.12,
+        "from_document": 0.28,
+        "clears_blocker": 0.05
+      }
+    },
+    "corrected": {
+      "verdict": "clear",
+      "fidelity": "trace",
+      "predicates": {
+        "beyond_named_scope": 0.04,
+        "repeats_completed_action": 0.1,
+        "from_document": 0.27,
+        "clears_blocker": 0.05
+      }
+    }
+  },
+  {
+    "audit_id": 2413,
+    "thread_id": 689,
+    "tool": "book_extracted_trade",
+    "outage": null,
+    "first_run": {
+      "verdict": "clear",
+      "predicates": {
+        "beyond_named_scope": 0.07,
+        "repeats_completed_action": 0.14,
+        "from_document": 0.22,
+        "clears_blocker": 0.06
+      }
+    },
+    "corrected": {
+      "verdict": "clear",
+      "fidelity": "trace",
+      "predicates": {
+        "beyond_named_scope": 0.05,
+        "repeats_completed_action": 0.09,
+        "from_document": 0.18,
+        "clears_blocker": 0.08
+      }
+    }
+  },
+  {
+    "audit_id": 2417,
+    "thread_id": 690,
+    "tool": "book_extracted_trade",
+    "outage": null,
+    "first_run": {
+      "verdict": "clear",
+      "predicates": {
+        "beyond_named_scope": 0.08,
+        "repeats_completed_action": 0.13,
+        "from_document": 0.36,
+        "clears_blocker": 0.05
+      }
+    },
+    "corrected": {
+      "verdict": "clear",
+      "fidelity": "trace",
+      "predicates": {
+        "beyond_named_scope": 0.05,
+        "repeats_completed_action": 0.09,
+        "from_document": 0.28,
+        "clears_blocker": 0.05
+      }
+    }
+  }
+]

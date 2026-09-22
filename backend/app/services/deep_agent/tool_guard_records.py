@@ -234,13 +234,21 @@ class RecordWindow:
     agent: str | None = None       # the stack that made the call, when the trace says
 
 
+def _task_key(task: Span) -> str:
+    """A `task` call's identity. A HITL resume starts a NEW trace root and re-enters
+    the same `task` call under it, so its dotted_order changes and its
+    tool_call_id does not; dotted_order is only the fallback."""
+    return task.tool_call_id or task.dotted_order
+
+
 def _scope(span: Span, tasks: Sequence[Span]) -> str:
-    """dotted_order of the nearest enclosing `task` span; "" = the orchestrator."""
-    best = ""
+    """The key of the nearest enclosing `task` span; "" = the orchestrator."""
+    best: Span | None = None
     for task in tasks:
-        if span.dotted_order.startswith(task.dotted_order + ".") and len(task.dotted_order) > len(best):
-            best = task.dotted_order
-    return best
+        if (span.dotted_order.startswith(task.dotted_order + ".")
+                and (best is None or len(task.dotted_order) > len(best.dotted_order))):
+            best = task
+    return _task_key(best) if best is not None else ""
 
 
 def _persona(agent: str | None) -> str | None:
@@ -269,7 +277,7 @@ def window_from_trace(spans: Sequence[Span], tool_call_id: str, turn: UserTurn) 
     )
     delegated: str | None = None
     if scope:
-        task = next((t for t in tasks if t.dotted_order == scope), None)
+        task = next((t for t in tasks if _task_key(t) == scope), None)
         description = (task.args or {}).get("description") if task is not None else None
         delegated = description if isinstance(description, str) else None
     return RecordWindow(TurnWindow(turn.text, delegated, earlier), TRACE, _persona(own.agent))

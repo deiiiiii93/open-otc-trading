@@ -151,6 +151,44 @@ def test_persona_state_equals_the_live_guards_and_carries_its_task(session, agen
     assert state["delegated_task"] == task_text
 
 
+def test_a_resumed_persona_call_keeps_the_calls_before_the_pause(session, agent_thread_factory,
+                                                                tmp_path):
+    """A HITL resume starts a NEW trace root, and LangGraph re-enters the same
+    `task` call (same tool_call_id) under it. Scoping by dotted_order alone gave
+    the resumed call an empty window at `trace` fidelity; the live guard, which
+    judged it before the pause, saw every earlier call."""
+    thread = agent_thread_factory()
+    ask = "Parse and book the attached confirmation into portfolio 1. Proceed directly."
+    task_text = "Parse the confirmation and book it via book_position."
+    _user(session, thread, ask, 0)
+    row = _audit(session, thread, "book_position", "b1", 40, args={"portfolio_id": 1})
+    session.commit()
+    db = _trace_db(tmp_path, [
+        _tool(thread.id, "R1.K.T", "task", 1, call_id="t1", agent=ORCH,
+              args={"subagent_type": "trader", "description": task_text}),
+        _llm(thread.id, "R1.K.T.P.L1", 2),
+        _tool(thread.id, "R1.K.T.P.X.p1", "parse_trade_confirmation", 3, call_id="p1",
+              agent="trader", args={"path": "conf.pdf"}, result="AAPL call, strike 232.5"),
+        _llm(thread.id, "R1.K.T.P.L2", 4),                      # emits book_position, then pauses
+        _tool(thread.id, "R2.K.Tr", "task", 40, call_id="t1", agent=ORCH,   # the resume
+              args={"subagent_type": "trader", "description": task_text}),
+        _tool(thread.id, "R2.K.Tr.P.Y.b1", "book_position", 40.001, call_id="b1",
+              agent="trader", args={"portfolio_id": 1}, error="ValueError('bad term')"),
+        _llm(thread.id, "R2.K.Tr.P.L3", 41),
+    ])
+    pending = _call("book_position", {"portfolio_id": 1}, "b1")
+    live = build_guard_state([
+        HumanMessage(task_text),
+        AIMessage("", tool_calls=[_call("parse_trade_confirmation", {"path": "conf.pdf"}, "p1")]),
+        ToolMessage("AAPL call, strike 232.5", tool_call_id="p1"),
+        AIMessage("", tool_calls=[pending]),
+    ], pending, user_request=ask, is_subagent=True)
+    rec = _rebuild(session, row, db)
+    state = assemble_guard_state(rec.window, {"name": row.tool_name, "args": row.args_json})
+    assert (rec.fidelity, rec.agent) == (records.TRACE, "trader")
+    assert state == live
+
+
 def test_turn_scoping_parses_time_across_both_formats(session, agent_thread_factory, tmp_path):
     """D6: the call in turn 2 gets turn 2's words and none of turn 1's or turn 3's calls."""
     thread = agent_thread_factory()
