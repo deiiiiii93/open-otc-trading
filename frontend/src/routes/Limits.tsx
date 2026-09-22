@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileClock, ShieldAlert } from 'lucide-react';
 import { Badge, type BadgeVariant } from '../components/Badge';
+import type { LimitIncidentClaim, LimitIncidentReview } from '../types';
 import { Button } from '../components/Button';
 import { Empty } from '../components/Empty';
 import { HeaderControls } from '../components/HeaderControls';
@@ -990,6 +991,20 @@ function BreachesTab(props: LimitsProps) {
     );
   }), [props.incidents, search, severity, status]);
 
+  const [rationaleSort, setRationaleSort] = useState<'none' | 'asc' | 'desc'>('none');
+  const sorted = useMemo(() => {
+    if (rationaleSort === 'none') return visible;
+    const key = (row: LimitIncident) => rationaleLevel(row.reviews.waiver);
+    return [...visible].sort((a, b) => {
+      const ga = key(a);
+      const gb = key(b);
+      if (ga == null && gb == null) return 0;
+      if (ga == null) return 1;                       // unreviewed always last
+      if (gb == null) return -1;
+      return rationaleSort === 'asc' ? ga - gb : gb - ga;
+    });
+  }, [visible, rationaleSort]);
+
   const columns = useMemo<Column<LimitIncident>[]>(() => [
     {
       key: 'id',
@@ -1033,6 +1048,26 @@ function BreachesTab(props: LimitsProps) {
       ),
     },
     {
+      key: 'rationale',
+      header: (
+        <button
+          type="button"
+          className="limits-sort-header"
+          aria-label="Sort by rationale grade"
+          onClick={() => setRationaleSort((s) => (s === 'asc' ? 'desc' : 'asc'))}
+        >
+          Rationale{rationaleSort === 'asc' ? ' ↑' : rationaleSort === 'desc' ? ' ↓' : ''}
+        </button>
+      ),
+      width: '6rem',
+      render: (row) => {
+        const level = rationaleLevel(row.reviews.waiver);
+        return level == null
+          ? <span className="limits-review--muted">—</span>
+          : <span title={RATIONALE_LEVEL_LABELS[level]}>{`${level}/4`}</span>;
+      },
+    },
+    {
       key: 'owner',
       header: 'Owner / assignee',
       width: '1fr',
@@ -1044,7 +1079,7 @@ function BreachesTab(props: LimitsProps) {
       width: '1fr',
       render: (row) => dateTime(row.last_seen_at),
     },
-  ], []);
+  ], [rationaleSort]);
 
   if (props.loading && !props.incidents.length) return <LoadingState />;
 
@@ -1093,7 +1128,7 @@ function BreachesTab(props: LimitsProps) {
       ) : (
         <Table
           columns={columns}
-          rows={visible}
+          rows={sorted}
           rowKey={(row) => row.id}
           selectedKey={props.selectedIncidentId}
           onRowClick={(row) => props.onSelectIncident(row.id)}
@@ -1226,9 +1261,19 @@ function IncidentDetail({
         <Fact label="First seen" value={dateTime(incident.first_seen_at)} />
         <Fact label="Last seen" value={dateTime(incident.last_seen_at)} />
         <Fact label="Waiver expires" value={dateTime(incident.waiver_expires_at)} />
-        <Fact label="Waiver rationale" value={incident.waiver_rationale ?? '—'} />
+        <div className="limits-incident-facts__wide">
+          <dt>Waiver rationale</dt>
+          <dd>
+            {incident.waiver_rationale ?? '—'}
+            <ReviewChips review={incident.reviews.waiver} />
+          </dd>
+        </div>
       </dl>
       <div className="limits-ledger">
+        <div className="limits-ledger__head">
+          <strong>Timeline</strong>
+          <ThreadStateChip review={incident.reviews.thread} />
+        </div>
         {incident.events.map((event) => (
           <article className="limits-ledger__event" key={event.id}>
             <div className="limits-ledger__rail" aria-hidden="true" />
@@ -2544,6 +2589,87 @@ function boundaryLabel(row: LimitEvaluation): string {
     return `${formatMetric(row.hard_lower)} – ${formatMetric(row.hard_upper)}`;
   }
   return '—';
+}
+
+const RATIONALE_LEVEL_LABELS = [
+  'no reason', 'cause not checkable', 'cause, no remediation', 'remediation, no owner/date', 'complete',
+] as const;
+
+const CLAIM_LABELS: Record<LimitIncidentClaim['claim'], string> = {
+  position_rolling_off: 'rolling off',
+  data_error: 'data error',
+  limit_under_review: 'limit under review',
+  hedge_in_progress: 'hedge in progress',
+  client_flow_expected: 'client flow',
+  market_reversion: 'market reversion',
+};
+
+const THREAD_STATE_LABELS: Record<NonNullable<LimitIncidentReview['thread_state']>, string> = {
+  disputes_number: 'disputes number',
+  remediating: 'remediating',
+  requests_limit_change: 'asks limit change',
+  requests_more_time: 'asks more time',
+  root_cause_only: 'root cause only',
+  no_position: 'no position',
+};
+
+const CHECK_MARK: Record<NonNullable<LimitIncidentClaim['check']>, string> = {
+  supported: '✓', no_evidence: '?', unverified: '·',
+};
+const CHECK_VARIANT: Record<NonNullable<LimitIncidentClaim['check']>, BadgeVariant> = {
+  supported: 'pos', no_evidence: 'warn', unverified: 'ink',
+};
+
+/** Nearest of the five levels; null = never scored (not 0). */
+function rationaleLevel(review: LimitIncidentReview | null): number | null {
+  if (!review || review.rationale_grade == null) return null;
+  return Math.round(review.rationale_grade * 4);
+}
+
+function gradeVariant(level: number): BadgeVariant {
+  return level <= 1 ? 'neg' : level === 2 ? 'warn' : 'pos';
+}
+
+/** Display-only (spec D5): chips describe the text; nothing here acts on it. */
+function ReviewChips({ review }: { review: LimitIncidentReview | null }) {
+  if (!review) return <span className="limits-review--muted">—</span>;
+  if (review.status === 'unscored') {
+    return <span className="limits-review--muted">{`unscored · ${review.unscored_reason ?? 'unknown'}`}</span>;
+  }
+  const level = rationaleLevel(review);
+  return (
+    <div className="limits-review-chips">
+      {level != null ? (
+        <Badge variant={gradeVariant(level)}>{`${level}/4 · ${RATIONALE_LEVEL_LABELS[level]}`}</Badge>
+      ) : null}
+      {review.claims
+        .filter((claim) => claim.p >= review.chip_min_p)
+        .map((claim) => (
+          <span key={claim.claim} title={claim.detail ?? `p ${claim.p.toFixed(2)}`}>
+            <Badge variant={claim.check ? CHECK_VARIANT[claim.check] : 'ink'}>
+              {`${CLAIM_LABELS[claim.claim]} ${claim.check ? CHECK_MARK[claim.check] : '·'}`}
+            </Badge>
+          </span>
+        ))}
+      {review.authority_only_p != null && review.authority_only_p >= review.chip_min_p ? (
+        <span title={`p ${review.authority_only_p.toFixed(2)}`}>
+          <Badge variant="warn">authority only</Badge>
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function ThreadStateChip({ review }: { review: LimitIncidentReview | null }) {
+  if (!review) return <span className="limits-review--muted">—</span>;
+  if (review.status === 'unscored' || !review.thread_state) {
+    return <span className="limits-review--muted">{`unscored · ${review.unscored_reason ?? 'unknown'}`}</span>;
+  }
+  return (
+    <span title={`thread state at ${(review.thread_state_p ?? 0).toFixed(2)}`}>
+      <Badge variant="info">{THREAD_STATE_LABELS[review.thread_state]}</Badge>
+    </span>
+  );
 }
 
 function incidentStatusCode(status: LimitIncident['status']): string {

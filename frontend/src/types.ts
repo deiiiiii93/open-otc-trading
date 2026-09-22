@@ -1256,6 +1256,56 @@ export type LimitIncidentEvent = {
   created_at: string;
 };
 
+export type LimitIncidentClaimKey =
+  | 'position_rolling_off'
+  | 'data_error'
+  | 'limit_under_review'
+  | 'hedge_in_progress'
+  | 'client_flow_expected'
+  | 'market_reversion';
+
+export type LimitIncidentClaim = {
+  claim: LimitIncidentClaimKey;
+  p: number;
+  check: 'supported' | 'no_evidence' | 'unverified' | null;
+  detail: string | null;
+  checked_at: string | null;
+};
+
+export type LimitIncidentThreadState =
+  | 'disputes_number'
+  | 'remediating'
+  | 'requests_limit_change'
+  | 'requests_more_time'
+  | 'root_cause_only'
+  | 'no_position';
+
+/** System One's display-only read of one incident text event. null = never scored. */
+export type LimitIncidentReview = {
+  id: number;
+  incident_id: number;
+  event_id: number;
+  kind: 'waiver' | 'thread';
+  status: 'scored' | 'unscored';
+  unscored_reason: string | null;
+  rationale_grade: number | null;
+  rationale_confidence: number | null;
+  authority_only_p: number | null;
+  thread_state: LimitIncidentThreadState | null;
+  thread_state_p: number | null;
+  claims: LimitIncidentClaim[];
+  chip_min_p: number;
+  model: string | null;
+  latency_ms: number | null;
+  attempted_at: string | null;
+  created_at: string;
+};
+
+export type LimitIncidentReviews = {
+  waiver: LimitIncidentReview | null;
+  thread: LimitIncidentReview | null;
+};
+
 export type LimitIncident = {
   id: number;
   risk_limit_id: number;
@@ -1281,6 +1331,7 @@ export type LimitIncident = {
   updated_at: string;
   risk_limit: RiskLimit | null;
   events: LimitIncidentEvent[];
+  reviews: LimitIncidentReviews;
 };
 
 export type LimitDashboardSummary = {

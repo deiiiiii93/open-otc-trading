@@ -204,7 +204,7 @@
 }
 
 .limits-incident-table .wl-table__row {
-  min-width: 48rem;
+  min-width: 54rem;
 }
 
 .limits-table-stack {
@@ -600,4 +600,39 @@
   .limits-controls > .wl-field:last-child {
     grid-column: auto;
   }
+}
+
+.limits-incident-facts__wide {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.limits-review-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-1);
+  margin-top: var(--gap-1);
+}
+
+.limits-review--muted {
+  color: var(--ink-2);
+  font-size: var(--type-small-size);
+}
+
+.limits-ledger__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-3);
+  margin-bottom: var(--gap-2);
+  font-family: var(--font-numeric);
+}
+
+.limits-sort-header {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
 }

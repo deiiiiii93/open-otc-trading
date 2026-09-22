@@ -254,6 +254,7 @@ function incident(
     updated_at: AS_OF,
     risk_limit: LIMIT,
     events: [OPEN_EVENT],
+    reviews: { waiver: null, thread: null },
     ...overrides,
   };
 }
@@ -2171,5 +2172,117 @@ describe('LimitsLive breaches', () => {
       requests(fetchMock, '/api/limit-incidents/81/reopen', 'POST')[0].body,
     ).toEqual({ expected_row_version: 9 });
     expect(screen.getByText(/row version 12/i)).toBeInTheDocument();
+  });
+});
+
+const CLAIM = (
+  claim: string,
+  p: number,
+  check: 'supported' | 'no_evidence' | 'unverified' | null,
+  detail: string | null,
+) => ({
+  claim, p, check, detail, checked_at: check ? '2026-07-18T10:00:00' : null,
+});
+
+const WAIVER_REVIEW = {
+  id: 1, incident_id: 81, event_id: 402, kind: 'waiver', status: 'scored', unscored_reason: null,
+  rationale_grade: 0.5, rationale_confidence: 0.9, authority_only_p: 0.81,
+  thread_state: null, thread_state_p: null,
+  claims: [
+    CLAIM('position_rolling_off', 0.05, null, null),
+    CLAIM('data_error', 0.83, 'no_evidence', '1 evaluation behind this incident carries no reason code, coverage gap or stale source'),
+    CLAIM('limit_under_review', 0.12, null, null),
+    CLAIM('hedge_in_progress', 0.91, 'unverified', 'no checker for this claim'),
+    CLAIM('client_flow_expected', 0.02, null, null),
+    CLAIM('market_reversion', 0.69, null, null),
+  ],
+  chip_min_p: 0.7, model: 'typesafe/jev-1.13', latency_ms: 1300,
+  attempted_at: '2026-07-18T10:00:00', created_at: '2026-07-18T10:00:00',
+};
+
+const THREAD_REVIEW = {
+  ...WAIVER_REVIEW, id: 2, event_id: 403, kind: 'thread', rationale_grade: null,
+  rationale_confidence: null, authority_only_p: null, claims: [],
+  thread_state: 'disputes_number', thread_state_p: 0.74,
+};
+
+describe('limit incident reviews', () => {
+  it('renders the grade, the claims at or above the threshold, the authority warning and the thread state', async () => {
+    const reviewed = incident({
+      status: 'waived', waiver_rationale: 'stale mark, and the Dec position rolls off',
+      reviews: { waiver: WAIVER_REVIEW, thread: THREAD_REVIEW },
+    });
+    installApi((request) => {
+      if (request.method === 'GET' && request.url.pathname === '/api/limit-incidents') {
+        return json({ items: [reviewed], total: 1 });
+      }
+      if (request.method === 'GET' && request.url.pathname === '/api/limit-incidents/81') {
+        return json(reviewed);
+      }
+      return undefined;
+    });
+    // The route drives the tab and the selected incident (see the pushState tests above).
+    window.history.replaceState(null, '', '/limits?portfolio=1&tab=breaches&incident=81');
+    render(<LimitsLive portfolioId={1} />);
+
+    expect(await screen.findByText('2/4 · cause, no remediation')).toBeInTheDocument();
+    expect(screen.getByText('data error ?').closest('span[title]')).toHaveAttribute(
+      'title', '1 evaluation behind this incident carries no reason code, coverage gap or stale source');
+    expect(screen.getByText('hedge in progress ·')).toBeInTheDocument();
+    expect(screen.queryByText(/market reversion/)).not.toBeInTheDocument();   // 0.69 < 0.70
+    expect(screen.queryByText(/rolling off/)).not.toBeInTheDocument();
+    expect(screen.getByText('authority only')).toBeInTheDocument();
+    expect(screen.getByText('disputes number').closest('span[title]')).toHaveAttribute(
+      'title', 'thread state at 0.74');
+  });
+
+  it('renders an unscored reason muted and a missing review as a dash', async () => {
+    const unscored = incident({
+      reviews: {
+        waiver: { ...WAIVER_REVIEW, status: 'unscored', unscored_reason: 'no_key',
+                  rationale_grade: null, authority_only_p: null, claims: [] },
+        thread: null,
+      },
+    });
+    installApi((request) => {
+      if (request.method === 'GET' && request.url.pathname === '/api/limit-incidents') {
+        return json({ items: [unscored], total: 1 });
+      }
+      if (request.method === 'GET' && request.url.pathname === '/api/limit-incidents/81') {
+        return json(unscored);
+      }
+      return undefined;
+    });
+    // The route drives the tab and the selected incident (see the pushState tests above).
+    window.history.replaceState(null, '', '/limits?portfolio=1&tab=breaches&incident=81');
+    render(<LimitsLive portfolioId={1} />);
+    expect(await screen.findByText('unscored · no_key')).toHaveClass('limits-review--muted');
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+  });
+
+  it('sorts the Rationale column weakest first, unreviewed last', async () => {
+    const weak = incident({ id: 81, reviews: { waiver: { ...WAIVER_REVIEW, rationale_grade: 0.0 }, thread: null } });
+    const strong = incident({
+      id: 82, reviews: { waiver: { ...WAIVER_REVIEW, id: 9, incident_id: 82, rationale_grade: 1.0 }, thread: null },
+    });
+    const none = incident({ id: 83 });
+    installApi((request) => {
+      if (request.method === 'GET' && request.url.pathname === '/api/limit-incidents') {
+        return json({ items: [strong, none, weak], total: 3 });
+      }
+      if (request.method === 'GET' && request.url.pathname.startsWith('/api/limit-incidents/')) {
+        return json(strong);
+      }
+      return undefined;
+    });
+    window.history.replaceState(null, '', '/limits?portfolio=1&tab=breaches');
+    render(<LimitsLive portfolioId={1} />);
+    await screen.findByText('#83');
+    const order = () => screen.getAllByRole('row').slice(1).map((row) => row.textContent?.match(/#8\d/)?.[0]);
+    expect(order()).toEqual(['#82', '#83', '#81']);           // server order
+    await userEvent.click(screen.getByRole('button', { name: /sort by rationale grade/i }));
+    expect(order()).toEqual(['#81', '#82', '#83']);           // 0/4, 4/4, —
+    await userEvent.click(screen.getByRole('button', { name: /sort by rationale grade/i }));
+    expect(order()).toEqual(['#82', '#81', '#83']);           // 4/4, 0/4, — (unreviewed stay last)
   });
 });
