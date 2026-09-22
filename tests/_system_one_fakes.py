@@ -121,3 +121,53 @@ class ChoicePost:
             answers[key] = {"type": "choice", "choice": self.choice,
                             "confidence": self.confidence, "probabilities": probabilities}
         return {"model": "typesafe/jev-1.13", "answers": answers}
+
+
+class ReviewPost:
+    """Answers the limit-review request: the `score` at `score`/`confidence`,
+    every `noul` at `nouls.get(key, 0.05)`, and every `choice` as `choice` at
+    `choice_p` (the rest of the mass on the first other option).
+
+    `.exc` raises instead; `.bad_for_rationale` holds rationale texts that get a
+    malformed body (a per-row bad_response). `.calls` keeps each payload.
+    """
+
+    def __init__(self, *, score: float = 2.0, confidence: float = 0.9,
+                 nouls: dict[str, float] | None = None,
+                 choice: str = "remediating", choice_p: float = 0.8) -> None:
+        self.score = score
+        self.confidence = confidence
+        self.nouls = dict(nouls or {})
+        self.choice = choice
+        self.choice_p = choice_p
+        self.exc: BaseException | None = None
+        self.bad_for_rationale: set[str] = set()
+        self.calls: list[dict] = []
+
+    def __call__(self, url: str, payload: dict, timeout: float) -> Any:
+        self.calls.append(copy.deepcopy(payload))
+        if self.exc is not None:
+            raise self.exc
+        rationale = ((payload["state"].get("waiver") or {}).get("rationale"))
+        if rationale in self.bad_for_rationale:
+            return {"answers": {}}
+        answers: dict[str, Any] = {}
+        for key, question in payload["questions"].items():
+            if question["type"] == "noul":
+                answers[key] = {"type": "noul", "noul": self.nouls.get(key, 0.05)}
+            elif question["type"] == "score":
+                levels = len(question["criteria"])
+                probabilities = {str(i): 0.0 for i in range(levels)}
+                probabilities[str(min(levels - 1, round(self.score)))] = 1.0
+                answers[key] = {"type": "score", "score": self.score,
+                                "confidence": self.confidence, "probabilities": probabilities}
+            else:
+                options = list(question["criteria"])
+                probabilities = {option: 0.0 for option in options}
+                probabilities[self.choice] = self.choice_p
+                others = [o for o in options if o != self.choice]
+                if others:
+                    probabilities[others[0]] = round(1 - self.choice_p, 2)
+                answers[key] = {"type": "choice", "choice": self.choice,
+                                "confidence": self.choice_p, "probabilities": probabilities}
+        return {"model": "typesafe/jev-1.13", "answers": answers}
