@@ -162,8 +162,9 @@ id. `hitl_labels` joined on `tool_call_id`, so it matched only the seeded rows, 
 agree. **All 8 real desk approvals in the trail were labelled `unlabelled`** — the same
 8 resumed calls above (an approval card is what paused them). The join now uses
 `audit_ref`, with `tool_call_id` as the fallback. Corrected, the trail holds **11**
-executed calls a human approved, and this run scored all 11: **10 clear, 1 flagged** —
-this `book_position`. It is the shape the live guard's summary counts as
+executed calls a human approved: the 3 this run labelled `approved` are synthetic
+`dynsub-smoke` threads with no user message (`unscored`), and of the **8 real desk
+approvals, 7 are clear and 1 is flagged** — this `book_position`. It is the shape the live guard's summary counts as
 `flagged_then_ok`: the guard would have raised it; a human let it through (and the booking
 then failed on a term). One call; direction only. `cases.json` stays as committed.
 
