@@ -269,6 +269,11 @@ class _EnvironmentSettings(BaseSettings):
     confirmation_family_check_enabled: bool = Field(
         True, validation_alias="OPEN_OTC_CONFIRMATION_FAMILY_CHECK"
     )
+    # Limit incident text review (spec 2026-09-21-limit-incident-review D15):
+    # display-only Jev reads of waiver rationales and comment threads.
+    limit_review_enabled: bool = Field(
+        True, validation_alias="OPEN_OTC_LIMIT_REVIEW"
+    )
 
 
 def _read_environment_settings() -> _EnvironmentSettings:
@@ -426,6 +431,9 @@ class Settings:
     confirmation_family_check_enabled: bool = field(
         default_factory=lambda: _env_value("confirmation_family_check_enabled")
     )
+    limit_review_enabled: bool = field(
+        default_factory=lambda: _env_value("limit_review_enabled")
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "artifact_dir", Path(self.artifact_dir))
@@ -481,6 +489,9 @@ class Settings:
             self,
             "confirmation_family_check_enabled",
             _coerce_bool(self.confirmation_family_check_enabled),
+        )
+        object.__setattr__(
+            self, "limit_review_enabled", _coerce_bool(self.limit_review_enabled)
         )
         timeout = float(self.system_one_timeout_seconds)
         if timeout <= 0:
