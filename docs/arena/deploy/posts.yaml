@@ -5,6 +5,20 @@
 # assets, publish.  A missing blurb FAILS THE BUILD by design — never let a
 # generated first paragraph ship as editorial copy.
 
+- file: 2026-09-22-jev-limit-review.md
+  date: 2026-09-22
+  tags: [research]
+  chips: ["4 questions", "12 held-out cases", "225 live calls"]
+  title: "Can Jev read a limit waiver?"
+  blurb: >
+    Jev now reads the text on a limit breach: how complete a waiver's reason is, which
+    claims it makes, and where the comment thread leaves the incident, while code checks
+    the claims against the database. On twelve held-out rationales it matched the hand
+    grade on eleven, and its own confidence flagged the miss. On 98 comments that models
+    wrote in the arena, it showed two states our option set lacks. The first waiver we
+    saw a model write graded 3 of 4, because it honestly recorded no owner.
+  publish: true
+
 - file: 2026-09-21-jev-system-one.md
   date: 2026-09-21
   tags: [research]

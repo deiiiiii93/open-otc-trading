@@ -62,6 +62,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Opt out with `OPEN_OTC_LIMIT_REVIEW=false`.
 - Shared `thread_is_arena()` (tri-state) and `limits/scopes.py` (the one
   scope-membership rule monitoring, sources and the review checkers all use).
+- **Arena post: "Can Jev read a limit waiver?"** — 225 live Jev calls against the limit
+  incident review: 129 through the merged `score_event` path (three repeats per
+  hand-written case), 91 in a read-only probe over the arena's model-written incident
+  comments, 5 in one live server session. Held-out rationales (committed before any
+  run): level right on 11 of 12, claims and authority flags 36 of 36; the one miss is
+  terse desk shorthand, and the only six sub-0.70-confidence grades are exactly the two
+  terse lines. Database-matched pairs flip `supported` ↔ `no_evidence` with Jev's
+  probability unchanged. Hand-written threads 24 of 24; on 91 arena threads only 2 of
+  15 `remediating` readings describe action taken — the option set lacks "proposes a
+  fix nobody has taken" and "holds pending verification" (**not changed**). Live: an
+  outage leaves `unscored` rows the next monitoring sweep scores; the first
+  model-written waiver graded 3/4 because it honestly recorded no owner. Raw per-call
+  results and scripts in `docs/arena/evidence/2026-09-22-jev-limit-review/`.
 - **Arena post: "How does Jev boost our OTC trading agent?"** — 234 live Jev calls: 231
   through the merged guard, keep-alive and family-check paths, 2 in one live AUTO
   session, 1 connectivity probe. Under the shipped wording the guard flagged all 30 trap

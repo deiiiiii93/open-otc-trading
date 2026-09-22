@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OTC Desk Agent Arena — Run</title>
+<style>
+:root{
+  --ink:#1a1d21; --muted:#5b6470; --line:#e3e6eb; --bg:#ffffff;
+  --accent:#2f5d8a; --soft:#f4f6f9;
+  --gold:#caa12e; --silver:#9aa0a6; --bronze:#b06a3b; --mid:#3b6fb0; --floor:#c5c9d1;
+  --good:#2e8b57; --neutral:#6b7280; --warn:#d98a2b; --bad:#c0392b; --frontier:#3b6fb0;
+}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+body{
+  font-family:"Charter","Georgia",Cambria,"Times New Roman",serif;
+  color:var(--ink); background:var(--bg); line-height:1.62;
+  max-width:820px; margin:0 auto; padding:56px 40px 80px; font-size:16.5px;
+}
+h1,h2,h3,h4{font-family:-apple-system,"Inter","Segoe UI",Helvetica,Arial,sans-serif;
+  line-height:1.22; letter-spacing:-.01em; color:var(--ink)}
+h1{font-size:2.05rem; margin:.2em 0 .1em; font-weight:800}
+h2{font-size:1.42rem; margin:2.1em 0 .55em; padding-bottom:.28em;
+  border-bottom:2px solid var(--line); font-weight:750}
+h3{font-size:1.12rem; margin:1.7em 0 .5em; font-weight:700; color:#2b3038}
+h1+p em, body>p:first-of-type em{color:var(--muted)}
+p,li{font-size:1rem}
+a{color:var(--accent); text-decoration:none}
+hr{border:none; border-top:1px solid var(--line); margin:2.2em 0}
+code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.86em;
+  background:var(--soft); padding:.1em .35em; border-radius:4px}
+blockquote{margin:1.1em 0; padding:.7em 1.1em; background:var(--soft);
+  border-left:4px solid var(--accent); border-radius:0 6px 6px 0; color:#2b3038}
+blockquote p{margin:.3em 0}
+strong{font-weight:700}
+
+/* tables */
+table{border-collapse:collapse; width:100%; margin:1.1em 0; font-size:.9rem;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+th,td{padding:.5em .7em; border-bottom:1px solid var(--line); text-align:left}
+thead th{background:#f7f9fc; border-bottom:2px solid #d6dbe3; font-weight:700;
+  font-size:.82rem; letter-spacing:.01em; color:#39414c}
+tbody tr:nth-child(even){background:#fbfcfe}
+td:first-child,th:first-child{white-space:nowrap}
+
+/* charts */
+.chart{margin:1.3em 0 1.6em; padding:0}
+.chart .row{display:flex; align-items:center; gap:12px; margin:5px 0;
+  font-family:-apple-system,"Inter","Segoe UI",sans-serif}
+.chart .lbl{flex:0 0 168px; text-align:right; font-size:.82rem; color:#39414c; font-weight:600}
+.chart .track{flex:1; height:22px; background:#eef1f5; border-radius:5px; overflow:hidden}
+.chart .bar{display:block; height:100%; border-radius:5px}
+.chart .val{flex:0 0 150px; font-size:.78rem; color:var(--muted); font-variant-numeric:tabular-nums}
+.chart figcaption{margin-top:.7em; font-size:.76rem; color:var(--muted);
+  font-family:-apple-system,"Inter",sans-serif; text-align:right}
+.bar.gold{background:linear-gradient(90deg,#d9b13f,#caa12e)}
+.bar.silver{background:linear-gradient(90deg,#aab0b6,#9aa0a6)}
+.bar.bronze{background:linear-gradient(90deg,#c07c4a,#b06a3b)}
+.bar.mid{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.frontier{background:linear-gradient(90deg,#4d80bf,#3b6fb0)}
+.bar.floor{background:#c5c9d1}
+.bar.good{background:linear-gradient(90deg,#37a169,#2e8b57)}
+.bar.neutral{background:#8a929e}
+.bar.warn{background:linear-gradient(90deg,#e09a3e,#d98a2b)}
+.bar.bad{background:linear-gradient(90deg,#d04b3c,#c0392b)}
+
+/* report header band */
+.masthead{border-bottom:3px solid var(--ink); padding-bottom:.6em; margin-bottom:1.4em}
+.footer-note{margin-top:3em; padding-top:1em; border-top:1px solid var(--line);
+  font-size:.8rem; color:var(--muted); font-family:-apple-system,"Inter",sans-serif}
+
+@page{size:A4; margin:16mm 15mm}
+@media print{
+  body{max-width:none; margin:0; padding:0; font-size:10.6pt}
+  h2{margin-top:1.4em}
+  h2,h3,h4{break-after:avoid}
+  table,.chart,blockquote,figure{break-inside:avoid}
+  tr{break-inside:avoid}
+  a{color:var(--ink)}
+}
+</style>
+</head><body>
+<h1>Can Jev read a limit waiver?</h1>
+<p><strong>Short answer: it can grade what a waiver says, and it shows where that grade stops
+being trustworthy.</strong> When a risk limit is breached and someone waives it, the desk
+now asks Jev, TypeSafe's classifier and the subject of
+<a href="2026-09-21-jev-system-one.html">our first post</a>, three things about the text: how
+complete the reason is, which claims it makes, and where the comment thread leaves
+the incident. Then code checks three of those claims against the database. On twelve
+held-out rationales Jev matched the hand grade on eleven and got every claim and
+every "authority only" flag right. The one miss was terse desk shorthand, the risk we
+named before building it, and Jev's own confidence flagged it. On 98 comments that 26
+models wrote during arena matches, it gave 75 of 91 threads the reading their prompt
+asked for. The other threads showed that our six thread states lack two that real
+comments contain. And the first waiver we have seen a model write graded three of
+four, because the model wrote, honestly, that no owner was recorded.</p>
+<p><em>2026-09-22 · <code>typesafe/jev-1.13</code> via ZenMux · desk commit <code>569ab1a</code> · </em><em>225 live
+calls</em><em>, three repeats per hand-written case · every rationale, thread and pair
+hand-written by one author, so the rates below are directions, not measurements of
+desk text · one live session on the arena's <code>risk-limit-breach-day</code> book, driven by
+DeepSeek V4 Flash · raw per-call results and the scripts that produced them are kept
+in the desk repository at <code>docs/arena/evidence/2026-09-22-jev-limit-review/</code></em></p>
+<hr />
+<h2>Why this exists</h2>
+<p>The limits module decides a breach by arithmetic. The evaluator compares a measured
+exposure with a threshold and opens an incident. No language model is involved, and
+none should be.</p>
+<p>What follows a breach is text. A waiver needs a rationale and an expiry, and the
+incident's thread collects the desk's comments. Nobody reads that text a second time.
+The ledger stores <em>"Waiver approved."</em> and <em>"Cause: the Dec 6000 call block bought
+Monday. LW will sell 40% of it by 2026-10-02"</em> in the same column, and nothing on the
+page tells them apart.</p>
+<p>The guard from the first post reads the same waive call, but it asks a different
+question: did the user ask for this waiver? It has no view on whether the reason
+holds up. Reading the reason is the job here.</p>
+<h2>What Jev is asked</h2>
+<p>Four reads, each built from the immutable event row that the waive or the comment
+wrote:</p>
+<table>
+<thead>
+<tr>
+<th>Read</th>
+<th>Question type</th>
+<th>What comes back</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Rationale grade</strong></td>
+<td>one <code>score</code> over five levels</td>
+<td>0 no reason · 1 cause not checkable · 2 cause, no remediation · 3 remediation, no owner or date · 4 complete</td>
+</tr>
+<tr>
+<td><strong>Claims</strong></td>
+<td>six <code>noul</code>s (yes/no)</td>
+<td>position rolling off · data error · limit under review · hedge in progress · client flow expected · market reversion</td>
+</tr>
+<tr>
+<td><strong>Authority only</strong></td>
+<td>one <code>noul</code></td>
+<td>the only justification is that someone asked for or approved the waiver</td>
+</tr>
+<tr>
+<td><strong>Thread state</strong></td>
+<td>one <code>choice</code> over six options</td>
+<td>disputes the number · remediating · requests a limit change · requests more time · root cause only · no position</td>
+</tr>
+</tbody>
+</table>
+<p>The design splits the work: Jev reads and code checks. Three of the claims leave
+traces in the database, so a deterministic checker looks for each one. For <em>position
+rolling off</em> it looks for an open position in scope that expires before the waiver
+does. For <em>data error</em> it looks for a reason code, a coverage gap or a stale source
+behind the breach. For <em>limit under review</em> it looks for a new version of the limit
+since the incident opened. A check can say <code>supported</code> or <code>no_evidence</code>, but never
+"contradicted", because the review might be happening by email.</p>
+<p>The same rules as the first post apply. The review is display-only: it changes no
+status and blocks no waiver. The agent's tools never see it, so a model cannot write
+for the grader. Arena threads are never scored. It is off unless
+<code>OPEN_OTC_SYSTEM_ONE=true</code>. A review is due as a database fact. A fast path scores it
+after the waive commits, and a sweep after every monitoring run catches anything the
+fast path missed.</p>
+<hr />
+<h2>The grade, on hand-written rationales</h2>
+<p>The fifteen-case fixture in the repository tuned the wording. Two passes moved it from
+11/15 to 14/15, so its result here (14 of 15 cases, 42 of 45 calls) is post-hoc and
+proves nothing about new text. So we wrote twelve more rationales for a different
+limit (vega on 000905, 12% over), labelled them, and <strong>committed them before any of
+them was sent to Jev</strong>. Each ran three times through the merged <code>score_event</code>, on a
+real waived event in a scratch database. The waiver was written 2026-09-22 and
+expires 2026-10-04.</p>
+<table>
+<thead>
+<tr>
+<th>Case</th>
+<th>The rationale said</th>
+<th style="text-align: center;">Hand</th>
+<th style="text-align: center;">Jev, 3 runs</th>
+<th>Claims at ≥ 0.70</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>H1</td>
+<td>"Per Wang Lei's instruction."</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0.17–0.22</td>
+<td><em>authority only</em> 0.96</td>
+</tr>
+<tr>
+<td>H2</td>
+<td>"See ticket."</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0.03–0.04</td>
+<td>—</td>
+</tr>
+<tr>
+<td>H3</td>
+<td>"Quarter-end effect, nothing unusual."</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1.05–1.07</td>
+<td>—</td>
+</tr>
+<tr>
+<td>H4</td>
+<td>"Vega jumped when we sold the 000905 Mar-27 straddle to a client on Monday."</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">2.01</td>
+<td>—</td>
+</tr>
+<tr>
+<td>H5</td>
+<td>"Artefact of a bad input: yesterday's 000905 vol surface was loaded with the wrong expiry mapping."</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">2.02–2.03</td>
+<td>data error</td>
+</tr>
+<tr>
+<td>H6</td>
+<td>"The Mar-27 straddle is the driver; we will buy back vega in listed options."</td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">3.00–3.01</td>
+<td>hedge in progress</td>
+</tr>
+<tr>
+<td>H7</td>
+<td>"…ZM buys back half the vega by 2026-11-15." <em>(after the waiver expires)</em></td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">3.00</td>
+<td>hedge in progress</td>
+</tr>
+<tr>
+<td>H8</td>
+<td>"Cause: Monday's 000905 Mar-27 straddle sale. Zhang Min buys 60% of the vega back in listed Dec options by 2026-09-30."</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">3.94–3.95</td>
+<td>hedge in progress</td>
+</tr>
+<tr>
+<td>H9</td>
+<td>"mar straddle, buying back vega thu — ZM"</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;"><strong><em>3.29–3.47</em></strong> ✗</td>
+<td>hedge in progress</td>
+</tr>
+<tr>
+<td>H10</td>
+<td>"…the client has said it intends to unwind, which would bring vega back inside."</td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">3.04–3.06</td>
+<td>client flow expected</td>
+</tr>
+<tr>
+<td>H11</td>
+<td>"…risk is proposing a 150k cap at the committee on 2026-09-29 — owner JW."</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">3.78–3.81</td>
+<td>limit under review</td>
+</tr>
+<tr>
+<td>H12</td>
+<td>"Vol should mean-revert after the index rebalance, and the Oct-02 000905 puts expire inside the waiver anyway."</td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">2.75–2.89</td>
+<td>market reversion, position rolling off</td>
+</tr>
+</tbody>
+</table>
+<p>The Jev column is the probability-weighted level, the number the UI rounds.</p>
+<p><strong>Level right on 11 of 12 cases (33 of 36 calls), claims 36 of 36, authority 36 of
+36.</strong> Both two-claim rationales (H12, and the fixture's stale-mark-plus-roll-off case)
+got both claims. Across all 43 three-run cells in this post, no verdict changed
+between repeats, and the widest spread was 0.18 of a level.</p>
+<p>H7 is the case the date clause exists for. It names an owner and a date, but the date
+falls six weeks after the waiver expires, and Jev put it at level 3 in all three runs.
+That clause only became answerable during tuning. At first the state carried just the
+waiver's length in days, and "by 2026-10-02" cannot be compared with "12 days". Now
+it carries the dates.</p>
+<h2>The miss we named, and Jev knew</h2>
+<p>Both misses in the post, one post-hoc and one held out, are the same kind of text:</p>
+<ul>
+<li><em>"rolling Dec CSI500, done Fri — LW"</em> (fixture) read <strong>2.65–2.69</strong>, and the
+  <em>hedge in progress</em> claim came in under the line at 0.45–0.49.</li>
+<li><em>"mar straddle, buying back vega thu — ZM"</em> (held out) read <strong>3.29–3.47</strong>.</li>
+</ul>
+<p>The question already tells Jev that initials or a name count as an owner and a
+weekday counts as a date. That was not enough. Terse desk shorthand was the open risk
+named in the design before any code existed, and the held-out set reproduced it.</p>
+<p>What makes this survivable is in the answer itself. These six calls are the <strong>only
+six of 81</strong> where Jev's confidence in its grade fell below 0.70. They ran 0.34–0.56,
+and every other call was at 0.70 or above. They are also the only six where the most
+likely level differs from the rounded score. On the held-out line, the single most
+likely level was <strong>4</strong> in all three runs (p 0.44–0.56). Rounding the
+probability-weighted score dragged it to 3.</p>
+<p>The UI shows the rounded score. It stores the confidence but does not display it. A
+rule that muted grades below 0.6 confidence would have flagged both terse lines and
+nothing else here. But we wrote that rule after seeing the misses, on one author's
+cases, and have not shipped it.</p>
+<h2>Claims, checked against the database</h2>
+<p>Jev saying a rationale <em>claims</em> something is half the read. The other half is whether
+the database backs the claim. So we built two books that are identical as Jev sees
+them: same limit name, scope, utilization, days open and waiver dates. The only
+difference is facts Jev never sees. The first book holds a 000300 option expiring
+inside the waiver, a breach evaluation with 80% coverage and a freshly drafted limit
+version. The second holds none of those. Each rationale was waived on both books,
+three times.</p>
+<table>
+<thead>
+<tr>
+<th>Rationale, waived on both books</th>
+<th>Claim</th>
+<th style="text-align: center;">Jev p, both books</th>
+<th style="text-align: center;">With the facts</th>
+<th style="text-align: center;">Without</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"The 000300 calls expire next week and the exposure rolls off with them."</td>
+<td>rolling off</td>
+<td style="text-align: center;">0.94</td>
+<td style="text-align: center;"><strong>supported</strong></td>
+<td style="text-align: center;">no evidence</td>
+</tr>
+<tr>
+<td>"The breach is a stale vol mark from last night's failed risk run."</td>
+<td>data error</td>
+<td style="text-align: center;">0.94–0.95</td>
+<td style="text-align: center;"><strong>supported</strong></td>
+<td style="text-align: center;">no evidence</td>
+</tr>
+<tr>
+<td>"The cap is mis-sized for this book; risk is drafting a larger one this week."</td>
+<td>limit under review</td>
+<td style="text-align: center;">0.96–0.97</td>
+<td style="text-align: center;"><strong>supported</strong></td>
+<td style="text-align: center;">no evidence</td>
+</tr>
+<tr>
+<td>"The Dec calls expire on 2026-12-18 and the exposure drops out then."</td>
+<td>rolling off</td>
+<td style="text-align: center;">0.94–0.95</td>
+<td style="text-align: center;"><strong>supported</strong> ⚠</td>
+<td style="text-align: center;">no evidence</td>
+</tr>
+</tbody>
+</table>
+<p>Each check also writes one sentence, built from database facts and never from the
+rationale. On the book with the facts the three read <em>"1 position in scope expires on
+or before 2026-10-04"</em>, <em>"evaluation #4 coverage 0.80"</em> and <em>"limit version 2 (draft)
+was created on 2026-09-22, after the incident opened"</em>. On the book without, they read
+<em>"no open position in scope expires between 2026-09-22 and 2026-10-04"</em>, <em>"1
+evaluation behind this incident carries no reason code, coverage gap or stale
+source"</em> and <em>"no limit version has been created since the incident opened"</em>. In the
+UI the sentence is the claim chip's tooltip.</p>
+<p>Jev's probability did not move by more than 0.01 between the books, and every check
+went the way the database said it should. Jev read the claim and the database decided
+whether it held.</p>
+<p>The last row shows what the checker does not do. The rationale names a December
+expiry. The book with the facts has an option expiring next week, which is a
+different position, and the check still reads <code>supported</code>. The checker tests the kind
+of claim (<em>a</em> position in scope rolls off inside the waiver), not the instance the
+text names. Matching the date a rationale gives is a job for a stricter checker, and
+we have not built one.</p>
+<hr />
+<h2>Comment threads</h2>
+<p><strong>Hand-written threads: 24 of 24.</strong> Eight threads, one written for each state plus two
+that change direction, each ran three times. In one, a dispute ends in a fix. In the
+other, a plan ends with the client pulling out. The question asks where the thread
+<em>leaves</em> the incident, and Jev followed both turns. Every probability was 0.96 or
+higher.</p>
+<p>That result says the six options can be separated. It does not say real comments fall
+cleanly into them, and real comments exist. The arena's <code>risk-limit-breach-day</code>
+workflow has been played by 26 models across 16 runs. At step 5 each is invited to
+waive the breach and none has: the corpus holds <strong>zero</strong> <code>waive_limit_incident</code>
+calls. But step 3 asks every model to <em>"acknowledge the breach incident and log a
+comment on its timeline summarizing your root-cause analysis"</em>. That produced 98
+comments in 91 threads, each written under a prompt that says what the comment should
+be. The feature never scores arena threads, so we ran them through the same thread
+question as a read-only probe, once each, and read every thread that did not come
+back <em>root cause only</em>.</p>
+<table>
+<thead>
+<tr>
+<th>Jev's reading</th>
+<th style="text-align: center;">Threads</th>
+<th>What the threads actually say (hand-read)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>root cause only</td>
+<td style="text-align: center;">75</td>
+<td>a root-cause analysis, as asked (66 of them at p ≥ 0.9)</td>
+</tr>
+<tr>
+<td>remediating</td>
+<td style="text-align: center;">2</td>
+<td>the hedge booked and a fresh run confirming the book is back inside ✓</td>
+</tr>
+<tr>
+<td>remediating</td>
+<td style="text-align: center;">4</td>
+<td>the figure leaves out the hedge, or was a data artefact</td>
+</tr>
+<tr>
+<td>remediating</td>
+<td style="text-align: center;">7</td>
+<td>a fix is <strong>recommended</strong>, but no one has taken it</td>
+</tr>
+<tr>
+<td>remediating</td>
+<td style="text-align: center;">2</td>
+<td>a decision to <strong>hold the incident open</strong> pending verification (p 0.96, 0.98)</td>
+</tr>
+<tr>
+<td>disputes the number</td>
+<td style="text-align: center;">1</td>
+<td>the figure was a data artefact ✓, at p 0.48, below the 0.50 bar, so the feature would store it <code>unscored</code></td>
+</tr>
+</tbody>
+</table>
+<p>Only 2 of the 15 <em>remediating</em> readings describe action taken. Reading the option
+text against the threads, as the first post did with its predicates, explains the
+rest. <em>Remediating</em> says "the desk accepts the breach and describes action taken or
+under way". Nothing among the six options covers <strong>"proposes a fix nobody has taken"</strong>
+or <strong>"keeps it open pending verification"</strong>. So a one-of-six choice puts those
+threads on the nearest neighbour, the two holds with high confidence. The same content
+also lands on both sides of the line. A keyword pass over the 75 <em>root cause only</em>
+threads finds eleven carrying the same "the hedge is missing from the run" caveat as
+the four above, and four carrying a recommendation. Hand-written threads scored 24/24 because we wrote each one for one
+option. Model-written threads mix a root cause with a caveat and a recommendation,
+and the boundary between <em>root cause only</em> and <em>remediating</em> is where the confidence
+drops. Five of the 15 <em>remediating</em> readings are at p ≥ 0.9, against 66 of the 75
+<em>root cause only</em> ones.</p>
+<p>The fix is the first post's lesson again, this time on a choice question instead of a
+predicate. Add the two missing states, and narrow <em>remediating</em> to "reports an action
+already taken or started". We have neither shipped nor tested it. It should be tested
+on comments from a new run, not on these 91.</p>
+<hr />
+<h2>On the live desk</h2>
+<p>A test that constructs its own subject proves the review <em>can</em> work, not that the live
+stack reaches it. So we seeded a scratch desk with the arena's
+<code>risk-limit-breach-day</code> book: the Arena Limit Control Book, 802.7 of net delta against
+a 600 cap, with an open breach incident. Then we drove it through a running server.</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>What happened</th>
+<th>What was stored</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 · no key</td>
+<td>a desk waiver via REST: the AAPL call is the driver, LW sold 400 futures, risk re-runs by 2026-09-24</td>
+<td>the waive returned <strong>200 in 54 ms</strong>; review <code>unscored · no_key</code></td>
+</tr>
+<tr>
+<td>2 · no key</td>
+<td>a comment via REST: "Hedge booked… waiting on the risk re-run"</td>
+<td><code>unscored · no_key</code></td>
+</tr>
+<tr>
+<td>3 · key restored</td>
+<td>nothing</td>
+<td>nothing retried; both rows stayed unscored</td>
+</tr>
+<tr>
+<td>4 · AUTO turn</td>
+<td>the user: "…extend the waiver until 2026-10-06, and write the rationale yourself"; the <code>risk_manager</code> persona read the incident and the book, then called <code>waive_limit_incident</code></td>
+<td><strong>guard: clear</strong>, max 0.23, 1.9 s · <strong>review: 3/4</strong>, <em>hedge in progress</em>, 2.9 s, stored before the turn ended</td>
+</tr>
+<tr>
+<td>5 · re-run and monitor</td>
+<td>risk re-run, then a monitoring run, via REST (the arena's step-6 order); the book already held the hedge: net delta 402.7, <strong>incident recovered</strong></td>
+<td>the run's sweep scored both outage rows: the desk waiver <strong>4/4</strong> (p 0.93), the thread <em>remediating</em></td>
+</tr>
+<tr>
+<td>6 · one more comment</td>
+<td>"Post-hedge re-run reads inside the cap…"</td>
+<td>fast path: <em>remediating</em>, 0.98, reviewed <strong>1.9 s</strong> after the POST</td>
+</tr>
+</tbody>
+</table>
+<p>Put the two waivers side by side. The desk one was 205 characters: cause, remediation,
+owner initials and a date, all inside the waiver. It graded 4. The model's was 1,125
+characters and graded 3 (p 0.87). The model read the incident carefully and then
+wrote: <em>"Owner: NOT recorded — the incident's assignee field is null and no structured
+owner is set; 'LW' appears only as the actor in the prior waiver/comment. Due date:
+NOT recorded as a field."</em> The ladder gives exactly that text level 3, so Jev graded
+what was written. The model had declined to promote an actor name into an owner. A
+desk that wants agent-written waivers to grade complete needs to put the owner in a
+field, not only in someone's prose.</p>
+<p>Three more details from the same session:</p>
+<ul>
+<li><strong>Both Jev integrations read the same call.</strong> The guard asked whether the user asked
+  for the waive, and the answer was clear: the user had. The review asked whether the
+  reason holds up: level 3. Before the call, the model told the user the waiver was
+  <em>"HITL-gated — it will pause for your confirmation"</em>. It did not pause, because in
+  AUTO <code>waive_limit_incident</code> is a <code>"write"</code> tool and runs unattended. That is the gap
+  the first post's guard sits in.</li>
+<li><strong>The agent cannot see its grade.</strong> Read back through the agent's own
+  <code>get_limit_incident</code> tool, the incident carries no review field.</li>
+<li><strong>The smoke found a bug the tests had pinned as correct.</strong> With System One off,
+  which is the default, a missing review rendered as a dash glued to the end of every
+  waiver rationale. An unscored one ran into the text: <em>"…once the hedge is
+  in.unscored · no_key"</em>. A unit test asserted the dash. The fix is desk commit
+  <code>656bde8</code>: a missing review now renders nothing and an unscored one sits on its own
+  line.</li>
+</ul>
+<hr />
+<h2>What it costs</h2>
+<ul>
+<li><strong>Latency, off the critical path.</strong> A waiver read is eight questions in one request:
+  median <strong>2.0 s</strong>, p90 3.3 s, max 5.0 s over 105 calls. A thread read: median
+  2.1 s over 24 calls. Nobody waits for it, because the review runs after the waive
+  commits, and with Jev unreachable the REST waive still returned in 54 ms.</li>
+<li><strong>Timeouts: none in 225 calls.</strong> The five-second budget applies to each network
+  read, not to the whole call, so the slowest call took 6.2 s and still answered.</li>
+<li><strong>An outage is a row, not a loss.</strong> An unreachable Jev leaves <code>unscored</code> rows, and
+  the next monitoring run's sweep scores them. Nothing retries between sweeps, so a
+  desk with no monitoring schedule would wait.</li>
+<li><strong>Non-determinism, contained.</strong> Jev's answers are stored once per event and never
+  re-asked. The checks are re-run against the database on each sweep, so a
+  re-threshold is a re-render, not a re-score.</li>
+</ul>
+<h2>What it is not</h2>
+<ul>
+<li><strong>Not a gate.</strong> Display-only. A level-0 rationale is waived exactly as before.</li>
+<li><strong>Not a verdict on truth.</strong> <code>no_evidence</code> means this database holds none, not that
+  the claim is false, and the checker tests the kind of claim, not the instance.</li>
+<li><strong>Not the agent's input.</strong> Its tools never return a review, so a model cannot learn
+  to write for the grader.</li>
+<li><strong>Not an arena feature.</strong> Arena threads are never scored, and nothing here moves a
+  board.</li>
+</ul>
+<h2>Caveats</h2>
+<ul>
+<li><strong>Hand-written and small.</strong> Twelve held-out rationales, eight threads and four
+  pairs, all written by one author. The fixture's fifteen tuned the wording.</li>
+<li><strong>The model-written comments are one prompt.</strong> They come from one workflow, one
+  step, and models under evaluation. They are the only desk-shaped text available
+  and they are not desk text. The hand classification of the sixteen outliers is one
+  reader's.</li>
+<li><strong>The live session is one session, one model, one run.</strong> It shows reachability, not
+  behaviour at rate.</li>
+</ul>
+<h2>What would change the verdict</h2>
+<ul>
+<li><strong>Waivers written on a real desk.</strong> The arena has none and this desk has none yet.
+  The first real ones are the first evidence, and the probe re-runs on them.</li>
+<li><strong>Terse shorthand written by traders,</strong> not by us, and then a decision on muting a
+  low-confidence grade.</li>
+<li><strong>The two missing thread states,</strong> tested on comments from a fresh run rather than
+  these 91.</li>
+<li><strong>An owner field an agent can cite,</strong> so a careful model's waiver can reach level 4
+  without inventing one.</li>
+<li><strong>An instance-level roll-off check</strong> that matches the expiry a rationale names, not
+  any expiry inside the window.</li>
+</ul>
+<hr />
+<p><em>The limit incident review shipped in desk commit <code>569ab1a</code>, off by default; the
+display fix the smoke prompted is <code>656bde8</code>. Every table above is computed from the
+per-call records in <code>docs/arena/evidence/2026-09-22-jev-limit-review/</code>.</em></p>
+<p class="footer-note">Rendered from
+<code>docs/arena/2026-09-22-jev-limit-review.md</code> ·
+OTC Desk Agent Arena · Run.</p>
+</body></html>
