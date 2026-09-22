@@ -1,0 +1,87 @@
+{
+  "_provenance": "Written 2026-09-22 BEFORE any of these cases was run through Jev, and committed before the first run. The ladder fixture in scripts/fixtures/limit_review_rationales.json is NOT here: it was used to tune the wording (11/15 -> 14/15) and is post-hoc. Labels are one author's reading of the level and option text in backend/app/services/limits/review.py.",
+  "holdout_incident": {
+    "limit_name": "Desk net vega", "metric_kind": "vega", "unit": "CNY/1volpct",
+    "scope_type": "underlying", "scope_value": "000905",
+    "utilization": 1.12, "days_open": 1, "duration_days": 12
+  },
+  "holdout": [
+    {"id": "H1-authority", "rationale": "Per Wang Lei's instruction.",
+     "expected_level": 0, "expected_claims": [], "expected_authority_only": true},
+    {"id": "H2-filler", "rationale": "See ticket.",
+     "expected_level": 0, "expected_claims": [], "expected_authority_only": false},
+    {"id": "H3-uncheckable", "rationale": "Quarter-end effect, nothing unusual.",
+     "expected_level": 1, "expected_claims": [], "expected_authority_only": false},
+    {"id": "H4-cause-only", "rationale": "Vega jumped when we sold the 000905 Mar-27 straddle to a client on Monday.",
+     "expected_level": 2, "expected_claims": [], "expected_authority_only": false},
+    {"id": "H5-data-error", "rationale": "Artefact of a bad input: yesterday's 000905 vol surface was loaded with the wrong expiry mapping.",
+     "expected_level": 2, "expected_claims": ["data_error"], "expected_authority_only": false},
+    {"id": "H6-no-owner-date", "rationale": "The Mar-27 straddle is the driver; we will buy back vega in listed options.",
+     "expected_level": 3, "expected_claims": ["hedge_in_progress"], "expected_authority_only": false},
+    {"id": "H7-after-expiry", "rationale": "The Mar-27 straddle is the driver; ZM buys back half the vega by 2026-11-15.",
+     "expected_level": 3, "expected_claims": ["hedge_in_progress"], "expected_authority_only": false,
+     "note": "owner and date given, but the date is after the waiver expires (2026-10-04): level 3 by the second clause"},
+    {"id": "H8-complete", "rationale": "Cause: Monday's 000905 Mar-27 straddle sale. Zhang Min buys 60% of the vega back in listed Dec options by 2026-09-30.",
+     "expected_level": 4, "expected_claims": ["hedge_in_progress"], "expected_authority_only": false},
+    {"id": "H9-terse", "rationale": "mar straddle, buying back vega thu — ZM",
+     "expected_level": 4, "expected_claims": ["hedge_in_progress"], "expected_authority_only": false,
+     "note": "the spec's named risk, held out: 2026-09-22 is a Tuesday, so 'thu' is inside the waiver"},
+    {"id": "H10-client-flow", "rationale": "The Mar-27 straddle drives it; the client has said it intends to unwind, which would bring vega back inside.",
+     "expected_level": 3, "expected_claims": ["client_flow_expected"], "expected_authority_only": false},
+    {"id": "H11-limit-change", "rationale": "The vega cap was set for last year's smaller book; risk is proposing a 150k cap at the committee on 2026-09-29 — owner JW.",
+     "expected_level": 4, "expected_claims": ["limit_under_review"], "expected_authority_only": false},
+    {"id": "H12-two-claims", "rationale": "Vol should mean-revert after the index rebalance, and the Oct-02 000905 puts expire inside the waiver anyway.",
+     "expected_level": 3, "expected_claims": ["market_reversion", "position_rolling_off"], "expected_authority_only": false}
+  ],
+  "thread_incident": {
+    "limit_name": "Desk net delta", "metric_kind": "delta", "unit": "underlying_units",
+    "scope_type": "underlying", "scope_value": "000300", "utilization": 1.18, "days_open": 3
+  },
+  "threads": [
+    {"id": "T1-dispute", "expected": "disputes_number", "comments": [
+      ["lw", "This number looks wrong — the 000300 futures hedge booked at 09:40 is not in the risk run."],
+      ["lw", "The run is stamped 07:10, before the hedge. We think delta is overstated by about 400."]]},
+    {"id": "T2-remediating", "expected": "remediating", "comments": [
+      ["lw", "Accepted. Driver is the Dec 3000-strike call block."],
+      ["lw", "Sold 40% of the block at 14:20; the rest goes by Thursday."]]},
+    {"id": "T3-limit-change", "expected": "requests_limit_change", "comments": [
+      ["lw", "The book has doubled since the 500 cap was set; it no longer fits."],
+      ["lw", "Asking risk to move the cap to 750 rather than cut the position."]]},
+    {"id": "T4-more-time", "expected": "requests_more_time", "comments": [
+      ["lw", "Can we have another week on this one?"],
+      ["lw", "Need until month-end, please extend the waiver."]]},
+    {"id": "T5-root-cause", "expected": "root_cause_only", "comments": [
+      ["lw", "Breach came from Friday's rally lifting delta on the Dec calls."],
+      ["lw", "The move was concentrated in the last hour of trading."]]},
+    {"id": "T6-admin", "expected": "no_position", "comments": [
+      ["risk-jw", "Assigning to LW."],
+      ["risk-jw", "FYI — risk committee copied."]]},
+    {"id": "T7-dispute-then-fix", "expected": "remediating", "comments": [
+      ["lw", "The number looks too high to us."],
+      ["risk-jw", "Checked the run: the figure is right, the hedge is included."],
+      ["lw", "Understood. Selling 200 futures now; done by the close."]],
+     "note": "where the thread LEAVES the incident, not where it started"},
+    {"id": "T8-fix-then-stall", "expected": "requests_more_time", "comments": [
+      ["lw", "We will unwind the calls with the client this week."],
+      ["lw", "Client pulled out of the unwind. Need two more weeks; no plan yet."]],
+     "note": "the reverse turn: a plan withdrawn"}
+  ],
+  "pairs_incident": {
+    "limit_name": "Desk net delta", "metric_kind": "delta", "unit": "underlying_units",
+    "scope_type": "underlying", "scope_value": "000300", "utilization": 1.18, "days_open": 3,
+    "duration_days": 12,
+    "with_facts": "an open 000300 option expiring 8 days after the waiver is written; the breach evaluation's coverage is 0.80; a draft limit version created after the incident opened",
+    "without_facts": "an open 000300 option expiring 2026-12-18; full coverage and a fresh source; no new limit version"
+  },
+  "pairs": [
+    {"id": "C1-rolling-off", "claim": "position_rolling_off",
+     "rationale": "The 000300 calls expire next week and the exposure rolls off with them."},
+    {"id": "C2-data-error", "claim": "data_error",
+     "rationale": "The breach is a stale vol mark from last night's failed risk run."},
+    {"id": "C3-limit-review", "claim": "limit_under_review",
+     "rationale": "The cap is mis-sized for this book; risk is drafting a larger one this week."},
+    {"id": "C4-wrong-expiry", "claim": "position_rolling_off",
+     "rationale": "The Dec calls expire on 2026-12-18 and the exposure drops out then.",
+     "note": "the checker tests the CLASS of claim (a scoped position expires inside the waiver), not the instance the text names — so this reads supported on the with-facts book although no Dec position rolls off in the window"}
+  ]
+}
