@@ -13,18 +13,20 @@ evidence CLI; it may read arena history when a person runs it).
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Collection
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import exists, or_
 from sqlalchemy.orm import Query, Session
 
+from ... import database
 from ...config import Settings, get_settings
 from ...models import AgentActionAudit, AgentThread, AgentToolGuardVerdict
-from ..system_one import Noul, SystemOneUnavailable, ask
+from ..system_one import Noul, SystemOneUnavailable, ask, is_enabled
 from .tool_guard import _unscored, scored_fields
 from .tool_guard_policy import policy_for, swept_tools
 from .tool_guard_records import user_turn, window_from_records
@@ -170,3 +172,83 @@ def score_audit_row(session: Session, audit_row: AgentActionAudit, *,
         fields = scored_fields(predicates, result, user_request_source=USER_REQUEST_SOURCE)
     stored = commit_verdict({**base, **fields, "state_fidelity": rec.fidelity})
     return SweepResult(audit_row.id, stored, None, rec.fidelity)
+
+
+class SweepDaemon:
+    """The hourly desk sweep (D8, D11), on its own daemon thread — never on a
+    request path. Inert (no thread, no call, no row) unless BOTH the master
+    switch and OPEN_OTC_GUARD_SWEEP are on (parent D17). Worst case ≤ 20
+    requests per pass; expected ≈ 1 a day."""
+
+    def __init__(self, settings: Settings, *, post: Any = None,
+                 trace_path: str | Path | None = None) -> None:
+        self._settings = settings
+        self._post = post
+        self._trace_path = trace_path
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    @staticmethod
+    def is_live(settings: Settings) -> bool:
+        return is_enabled(settings) and bool(settings.guard_sweep_enabled)
+
+    @property
+    def running(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+    def start(self) -> bool:
+        if self._thread is not None or not self.is_live(self._settings):
+            return False
+        self._thread = threading.Thread(target=self._loop, name="guard-sweep", daemon=True)
+        self._thread.start()
+        return True
+
+    def stop(self, timeout: float = 5.0) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=timeout)
+
+    def _loop(self) -> None:
+        while not self._stop.is_set():     # an initial pass on start, then every interval
+            self.run_pass()
+            if self._stop.wait(sweep_interval_s):
+                return
+
+    def run_pass(self) -> dict[str, int]:
+        """One bounded pass. Never raises: an exception is logged and ends the
+        pass; the next tick retries. Outage reasons end it too (the parent's
+        keep-alive rule); row facts do not."""
+        counts = {"scored": 0, "unscored": 0, "outage": 0, "skipped": 0}
+        try:
+            trace = (Path(self._settings.trace_db_path) if self._trace_path is None
+                     else Path(self._trace_path))
+            if not trace.is_file():
+                logger.info("guard sweep: no trace DB at %s; this pass scores at audit_only", trace)
+            since = (datetime.now(timezone.utc).replace(tzinfo=None)
+                     - timedelta(days=sweep_lookback_days))
+            with database.SessionLocal() as session:
+                ids = [row.id for row in due_rows(session, kinds={DESK}, since=since,
+                                                  limit=sweep_batch)]
+            for audit_id in ids:
+                if self._stop.is_set():
+                    break
+                with database.SessionLocal() as session:
+                    row = session.get(AgentActionAudit, audit_id)
+                    if row is None:
+                        counts["skipped"] += 1
+                        continue
+                    result = score_audit_row(session, row, settings=self._settings,
+                                             post=self._post, trace_path=trace)
+                if result.outage is not None:
+                    counts["outage"] += 1
+                    logger.warning("guard sweep: %s; pass ends, the call stays due", result.outage)
+                    break
+                if result.already_scored:
+                    counts["skipped"] += 1
+                elif result.stored is not None and result.stored.verdict == "unscored":
+                    counts["unscored"] += 1
+                else:
+                    counts["scored"] += 1
+        except Exception:  # noqa: BLE001 — the sweep never takes anything down
+            logger.exception("guard sweep pass failed; the next tick retries")
+        return counts

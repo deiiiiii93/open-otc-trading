@@ -4236,6 +4236,21 @@ def create_app(
     async def _stop_gateway_runtime() -> None:
         await app.state.gateway_runtime.stop()
 
+    # Retrospective guard sweep (spec 2026-09-22-guard-sweep D11): inert unless
+    # OPEN_OTC_SYSTEM_ONE and OPEN_OTC_GUARD_SWEEP are both on. Its own daemon
+    # thread; never on a request path.
+    from app.services.deep_agent.tool_guard_sweep import SweepDaemon
+
+    app.state.guard_sweep = SweepDaemon(active_settings)
+
+    @app.on_event("startup")
+    async def _start_guard_sweep() -> None:
+        app.state.guard_sweep.start()
+
+    @app.on_event("shutdown")
+    async def _stop_guard_sweep() -> None:
+        app.state.guard_sweep.stop()
+
     @app.on_event("shutdown")
     async def _drain_memory_queue() -> None:
         from app.services.deep_agent.memory.runtime import shutdown_memory_runtime
