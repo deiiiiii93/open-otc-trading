@@ -205,15 +205,10 @@ class MemoryWriteQueue:
 
     @staticmethod
     def _is_arena_thread(session, thread_id) -> bool:
-        if thread_id is None:
-            return False
-        try:
-            from app.models import AgentThread
+        # Fail-open: "cannot tell" (None) means extraction proceeds.
+        from app.services.thread_access import thread_is_arena
 
-            thread = session.get(AgentThread, thread_id)
-            return thread is not None and thread.source == "arena"
-        except Exception:  # noqa: BLE001 — fail-open: extraction proceeds
-            return False
+        return thread_is_arena(session, thread_id) is True
 
     def run_job(self, session, spec: RunSpec) -> None:
         # enqueue_run returns False for a TERMINAL run (succeeded, or failed at

@@ -70,3 +70,22 @@ def get_public_thread(session: Session, thread_id: Any) -> AgentThread | None:
     except (TypeError, ValueError):
         return None
     return public_thread_query(session).filter(AgentThread.id == primary_key).one_or_none()
+
+
+def thread_is_arena(session: Session, thread_id: int | None) -> bool | None:
+    """Is `thread_id` an arena match's thread? True / False when known, None when
+    it cannot be told (no such row, or the lookup itself failed).
+
+    Tri-state on purpose (limit-review spec D14): memory extraction treats None
+    as "proceed", the limit review treats None as "skip and retry next sweep".
+    A thread id of None is a REST/desk action, so it is a known False.
+    """
+    if thread_id is None:
+        return False
+    try:
+        thread = session.get(AgentThread, thread_id)
+    except Exception:  # noqa: BLE001 — the caller decides what "unknown" means
+        return None
+    if thread is None:
+        return None
+    return thread.source == "arena"
