@@ -1425,6 +1425,42 @@ class LimitIncidentEventOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class LimitIncidentClaimOut(BaseModel):
+    claim: str
+    p: float
+    check: str | None
+    detail: str | None
+    checked_at: datetime | None
+
+
+class LimitIncidentReviewOut(BaseModel):
+    """System One's display-only read of one incident text event. Every served field
+    is named here on purpose: a pydantic model silently drops unnamed keys."""
+
+    id: int
+    incident_id: int
+    event_id: int
+    kind: str
+    status: str
+    unscored_reason: str | None
+    rationale_grade: float | None
+    rationale_confidence: float | None
+    authority_only_p: float | None
+    thread_state: str | None
+    thread_state_p: float | None
+    claims: list[LimitIncidentClaimOut] = Field(default_factory=list)
+    chip_min_p: float
+    model: str | None
+    latency_ms: int | None
+    attempted_at: datetime | None
+    created_at: datetime
+
+
+class LimitIncidentReviewsOut(BaseModel):
+    waiver: LimitIncidentReviewOut | None = None
+    thread: LimitIncidentReviewOut | None = None
+
+
 class LimitIncidentOut(BaseModel):
     id: int
     risk_limit_id: int
@@ -1450,6 +1486,7 @@ class LimitIncidentOut(BaseModel):
     updated_at: datetime
     risk_limit: RiskLimitOut | None = None
     events: list[LimitIncidentEventOut] = Field(default_factory=list)
+    reviews: LimitIncidentReviewsOut = Field(default_factory=LimitIncidentReviewsOut)
 
 
 class LimitDashboardSummaryOut(BaseModel):

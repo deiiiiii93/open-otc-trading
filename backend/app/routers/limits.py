@@ -6,7 +6,7 @@ portfolio visibility boundary, and serializes stable read models.
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Mapping
 from datetime import datetime
 from typing import Any
 
@@ -19,6 +19,7 @@ from app import database
 from app.models import (
     LimitEvaluation,
     LimitIncident,
+    LimitIncidentReview,
     LimitMonitoringRun,
     MarketSnapshot,
     Portfolio,
@@ -33,8 +34,11 @@ from app.schemas import (
     LimitCreateIn,
     LimitEvaluationOut,
     LimitIncidentAssignIn,
+    LimitIncidentClaimOut,
     LimitIncidentCommentIn,
     LimitIncidentOut,
+    LimitIncidentReviewOut,
+    LimitIncidentReviewsOut,
     LimitIncidentWaiveIn,
     LimitMonitoringDashboardOut,
     LimitMetadataPatchIn,
@@ -142,7 +146,38 @@ def _run_out(row: LimitMonitoringRun) -> dict[str, Any]:
     ).model_dump()
 
 
-def _incident_out(row: LimitIncident, *, portfolio_id: int) -> dict[str, Any]:
+def _review_out(row: LimitIncidentReview | None) -> LimitIncidentReviewOut | None:
+    if row is None:
+        return None
+    return LimitIncidentReviewOut(
+        id=row.id,
+        incident_id=row.incident_id,
+        event_id=row.event_id,
+        kind=row.kind,
+        status=row.status,
+        unscored_reason=row.unscored_reason,
+        rationale_grade=row.rationale_grade,
+        rationale_confidence=row.rationale_confidence,
+        authority_only_p=row.authority_only_p,
+        thread_state=row.thread_state,
+        thread_state_p=row.thread_state_p,
+        claims=[LimitIncidentClaimOut(**claim) for claim in (row.claims_json or [])],
+        # Served so the client filters chips with the server's threshold: changing it
+        # is a re-render, never a re-score (limit-review spec §Thresholds).
+        chip_min_p=review.review_chip_min_p,
+        model=row.model,
+        latency_ms=row.latency_ms,
+        attempted_at=row.attempted_at,
+        created_at=row.created_at,
+    )
+
+
+def _incident_out(
+    row: LimitIncident,
+    *,
+    portfolio_id: int,
+    reviews: Mapping[str, LimitIncidentReview | None],
+) -> dict[str, Any]:
     if row.portfolio_id != portfolio_id:
         raise ValueError("incident portfolio scope mismatch")
     return LimitIncidentOut(
@@ -172,6 +207,10 @@ def _incident_out(row: LimitIncident, *, portfolio_id: int) -> dict[str, Any]:
         # Event ids are the monotonic ledger cursor exposed by summary polling;
         # use the same deterministic order rather than trusting client clocks.
         events=sorted(row.events, key=lambda event: event.id),
+        reviews=LimitIncidentReviewsOut(
+            waiver=_review_out(reviews.get(review.KIND_WAIVER)),
+            thread=_review_out(reviews.get(review.KIND_THREAD)),
+        ),
     ).model_dump()
 
 
@@ -591,10 +630,12 @@ def build_limits_router(
                 )
             )
         )
+        page = rows[offset : offset + limit]
+        review_lookup = review.latest_reviews(session, [row.id for row in page])
         return {
             "items": [
-                _incident_out(row, portfolio_id=portfolio_id)
-                for row in rows[offset : offset + limit]
+                _incident_out(row, portfolio_id=portfolio_id, reviews=review_lookup[row.id])
+                for row in page
             ],
             "total": len(rows),
         }
@@ -603,9 +644,11 @@ def build_limits_router(
     def get_incident(
         incident_id: int, portfolio_id: int, session: Session = Depends(db_dependency)
     ):
+        row = _incident_with_portfolio(session, incident_id, portfolio_id)
         return _incident_out(
-            _incident_with_portfolio(session, incident_id, portfolio_id),
+            row,
             portfolio_id=portfolio_id,
+            reviews=review.latest_reviews(session, [row.id])[row.id],
         )
 
     def _apply_incident_action(
@@ -640,7 +683,11 @@ def build_limits_router(
         # After the commit, never inside it: a review can delay, never fail, an action.
         if review_kind is not None:
             review.enqueue_latest(fresh, review_kind)
-        return _incident_out(fresh, portfolio_id=portfolio_id)
+        return _incident_out(
+            fresh,
+            portfolio_id=portfolio_id,
+            reviews=review.latest_reviews(session, [fresh.id])[fresh.id],
+        )
 
     @router.post("/limit-incidents/{incident_id}/acknowledge")
     def acknowledge_incident(
@@ -818,6 +865,9 @@ def build_limits_router(
             groups.setdefault(category, []).append(
                 LimitEvaluationOut.model_validate(row).model_dump()
             )
+        review_lookup = review.latest_reviews(
+            session, [row.id for row in active_incidents]
+        )
         return LimitMonitoringDashboardOut(
             summary={
                 "breaches": breaches,
@@ -839,7 +889,7 @@ def build_limits_router(
             ),
             latest_run=_run_out(runs[0]) if runs else None,
             active_incidents=[
-                _incident_out(row, portfolio_id=portfolio_id)
+                _incident_out(row, portfolio_id=portfolio_id, reviews=review_lookup[row.id])
                 for row in active_incidents
             ],
             trends=[
