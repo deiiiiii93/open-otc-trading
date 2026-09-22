@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Limits page: a missing review glued a dash onto every waiver rationale.** With
+  System One off — the default — the incident panel rendered `…hedge booked.—`, and
+  an unscored review ran into the text (`…is in.unscored · no_key`). A missing review
+  now renders nothing, an unscored one sits on its own line, and the sortable
+  Rationale header takes the table's uppercase tracking. Found by the live smoke of
+  the limit incident review.
 - **Test suite: a leaked `Settings` override made env-driven tests order-dependent.**
   `create_app` parks its `Settings` process-wide and seven test files never cleared
   it, so later tests' `monkeypatch.setenv` was silently ignored. An autouse conftest

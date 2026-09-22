@@ -634,5 +634,9 @@
   padding: 0;
   color: inherit;
   font: inherit;
+  /* The UA stylesheet resets both on <button>; without these the header reads
+     "Rationale" beside uppercase, tracked neighbours. */
+  text-transform: inherit;
+  letter-spacing: inherit;
   cursor: pointer;
 }

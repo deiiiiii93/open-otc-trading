@@ -2632,9 +2632,14 @@ function gradeVariant(level: number): BadgeVariant {
 
 /** Display-only (spec D5): chips describe the text; nothing here acts on it. */
 function ReviewChips({ review }: { review: LimitIncidentReview | null }) {
-  if (!review) return <span className="limits-review--muted">—</span>;
+  // No review is the default (System One is off), not a finding: the rationale stands alone.
+  if (!review) return null;
   if (review.status === 'unscored') {
-    return <span className="limits-review--muted">{`unscored · ${review.unscored_reason ?? 'unknown'}`}</span>;
+    return (
+      <div className="limits-review-chips">
+        <span className="limits-review--muted">{`unscored · ${review.unscored_reason ?? 'unknown'}`}</span>
+      </div>
+    );
   }
   const level = rationaleLevel(review);
   return (
@@ -2661,7 +2666,7 @@ function ReviewChips({ review }: { review: LimitIncidentReview | null }) {
 }
 
 function ThreadStateChip({ review }: { review: LimitIncidentReview | null }) {
-  if (!review) return <span className="limits-review--muted">—</span>;
+  if (!review) return null;
   if (review.status === 'unscored' || !review.thread_state) {
     return <span className="limits-review--muted">{`unscored · ${review.unscored_reason ?? 'unknown'}`}</span>;
   }

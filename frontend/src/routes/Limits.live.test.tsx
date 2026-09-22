@@ -2236,28 +2236,46 @@ describe('limit incident reviews', () => {
       'title', 'thread state at 0.74');
   });
 
-  it('renders an unscored reason muted and a missing review as a dash', async () => {
-    const unscored = incident({
-      reviews: {
-        waiver: { ...WAIVER_REVIEW, status: 'unscored', unscored_reason: 'no_key',
-                  rationale_grade: null, authority_only_p: null, claims: [] },
-        thread: null,
-      },
-    });
+  const renderSelected = (row: ReturnType<typeof incident>) => {
     installApi((request) => {
       if (request.method === 'GET' && request.url.pathname === '/api/limit-incidents') {
-        return json({ items: [unscored], total: 1 });
+        return json({ items: [row], total: 1 });
       }
       if (request.method === 'GET' && request.url.pathname === '/api/limit-incidents/81') {
-        return json(unscored);
+        return json(row);
       }
       return undefined;
     });
     // The route drives the tab and the selected incident (see the pushState tests above).
     window.history.replaceState(null, '', '/limits?portfolio=1&tab=breaches&incident=81');
     render(<LimitsLive portfolioId={1} />);
-    expect(await screen.findByText('unscored · no_key')).toHaveClass('limits-review--muted');
-    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+  };
+
+  it('renders an unscored reason muted on its own line, never run into the rationale', async () => {
+    renderSelected(incident({
+      status: 'waived', waiver_rationale: 'hedge booked',
+      reviews: {
+        waiver: { ...WAIVER_REVIEW, status: 'unscored', unscored_reason: 'no_key',
+                  rationale_grade: null, authority_only_p: null, claims: [] },
+        thread: null,
+      },
+    }));
+    const muted = await screen.findByText('unscored · no_key');
+    expect(muted).toHaveClass('limits-review--muted');
+    // The live smoke rendered "…hedge booked.unscored · no_key" when this was an inline span.
+    expect(muted.parentElement).toHaveClass('limits-review-chips');
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);          // the Rationale column
+  });
+
+  it('adds nothing to a rationale that has no review — System One is off by default', async () => {
+    renderSelected(incident({
+      status: 'waived', waiver_rationale: 'hedge booked',
+      reviews: { waiver: null, thread: null },
+    }));
+    const label = await screen.findByText('Waiver rationale');
+    // Not "hedge booked—": a missing review is the default, not a finding.
+    expect(label.nextElementSibling).toHaveTextContent(/^hedge booked$/);
+    expect(screen.getByText('Timeline').parentElement).toHaveTextContent(/^Timeline$/);
   });
 
   it('sorts the Rationale column weakest first, unreviewed last', async () => {
