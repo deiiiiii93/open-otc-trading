@@ -20,6 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixture now clears it after every test.
 
 ### Added
+- **System One: a retrospective sweep of the tool guard over executed calls.** The guard
+  had written zero verdicts — it runs only in AUTO — while the audit trail held 4,548
+  rows of exactly the calls it is about. The sweep rebuilds each call's state from the
+  trace DB (agent scope read structurally from `dotted_order`) or, failing that, the audit
+  trail; assembles it with the SAME function the live guard uses; and stores an advisory
+  `source="sweep"` verdict (migration `0065`). An hourly desk daemon
+  (`OPEN_OTC_GUARD_SWEEP`, on under the `OPEN_OTC_SYSTEM_ONE` master) and an evidence CLI
+  (`scripts/guard_sweep.py select | score | report`) share one scorer. A 19-tool candidate
+  family (`SWEEP_POLICY`) covers the settlement, RFQ, lifecycle and booking money path and
+  never reaches the live guard. The Audit page marks sweep verdicts `· sweep` and gains a
+  Guard filter; `/api/audit/guard-verdicts/summary` now defaults to `source=live`.
 - **System One (TypeSafe Jev) client** — `services/system_one/`, the single exit
   for calibrated yes/no, one-of-N and ordered-level questions over ZenMux's
   `/systemone` route. Sanitizes and size-budgets `state`, maps every failure to

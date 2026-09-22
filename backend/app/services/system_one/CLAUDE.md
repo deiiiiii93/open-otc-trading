@@ -153,3 +153,41 @@ arena contestant, never a source of numbers.
   carried `waiver.written_on` / `waiver.expires_on` — `duration_days` alone cannot be
   compared with "by 2026-10-02". The one remaining miss is the spec's named risk: the
   terse desk line "rolling Dec CSI500, done Fri — LW" grades level 3, not 4.
+
+## Retrospective sweep (`deep_agent/tool_guard_sweep.py`, `tool_guard_records.py`, `scripts/guard_sweep.py`)
+
+- Spec: `docs/superpowers/specs/2026-09-22-guard-sweep-design.md`; planning findings F1–F9
+  in `docs/superpowers/plans/2026-09-22-guard-sweep.md`. The guard's predicates over
+  EXECUTED calls: `GUARD_POLICY` plus the candidate `SWEEP_POLICY`, which the live guard
+  never reads — promotion is an edit to `GUARD_POLICY` that cites a sweep run.
+- **D3 invariant:** a sweep row exists only for a call with a terminal (`ok`/`error`/
+  `denied`) `execution` audit row. The live guard scores BEFORE a call runs, so it can
+  never meet one; `due_rows` and `score_audit_row` both enforce it.
+- **One assembler.** `build_guard_state` is `window_from_messages` + `assemble_guard_state`;
+  the sweep builds its `TurnWindow` from records and calls the same assembler. A sweep
+  state that drifts from the live one says nothing about the guard — pinned by the
+  orchestrator and persona equivalence tests.
+- **Timestamps:** audit `occurred_at` is naive `YYYY-MM-DD HH:MM:SS`, trace `start_time`
+  is ISO with `T` and `+00:00`, and a string comparison returns nothing. `parse_utc`
+  everything. `occurred_at` also PRECEDES the call's own span by ~1 ms — find the span
+  by `extra.tool_call_id`, never by time.
+- **Scope is structural.** Audit `persona` is NULL on ~99% of rows. The call's agent is
+  its span's `lc_agent_name`; its task is the `task` span whose `dotted_order` prefixes
+  the call's; its window is that scope's tool spans that started before the LLM span
+  which emitted the call (the live guard never sees a sibling persona's calls, nor the
+  other calls in its own pending AIMessage). No trace, or no own span ⇒ `audit_only`,
+  never pooled with `trace`.
+- **An outage writes nothing** (`no_key`, `timeout`, `http_error`): the call stays due and
+  the pass ends. Row facts (`bad_response`, `state_too_large`, `no_user_request`) stamp an
+  `unscored` sweep row. Any other exception propagates — a bug must not stamp rows.
+- **`source=live` is the summary default**: `flagged_then_ok` must keep meaning "the LIVE
+  guard flagged and the call ran". The verdict list defaults to `all`.
+- **Daemon:** desk threads only (thread `source` not `arena`/`smoke`), 7-day lookback,
+  ≤ 20 calls per hourly pass; live iff `OPEN_OTC_SYSTEM_ONE` AND `OPEN_OTC_GUARD_SWEEP`.
+- **Held-out (D10):** commit `cases.json` BEFORE `score`; `score` refuses a moved policy
+  hash (exit 2). `tested-heldout` needs the wording's last edit AFTER the cases were
+  locked and no edit after the report — no 2026-09-21 wording can get it from a later run.
+- **Labels are transcript-joined:** every arena match transcript lists each step's call
+  ids. Today's definition + the scorer's own `evaluate_assertion` decide `trap` /
+  `expected`; a transcript of another manifest era is `no_match`. Labels live in
+  `cases.json`, never on verdict rows.
