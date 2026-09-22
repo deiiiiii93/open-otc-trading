@@ -2361,6 +2361,47 @@ class LimitIncidentEvent(Base):
     incident: Mapped[LimitIncident] = relationship(back_populates="events")
 
 
+class LimitIncidentReview(Base):
+    """System One's display-only read of ONE incident text event.
+
+    Spec: docs/superpowers/specs/2026-09-21-limit-incident-review-design.md.
+    One row per (event_id, kind): an incident can be waived, expire, reopen and
+    be waived again, and each waiver's rationale keeps its own grade (D3). Built
+    from the event, never from the incident's mutable columns (D6). A `scored`
+    row is never overwritten; only its `claims_json` checks are recomputed (D12).
+    """
+
+    __tablename__ = "limit_incident_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    incident_id: Mapped[int] = mapped_column(
+        ForeignKey("limit_incidents.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    event_id: Mapped[int] = mapped_column(
+        ForeignKey("limit_incident_events.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(12), nullable=False)      # waiver | thread
+    status: Mapped[str] = mapped_column(String(10), nullable=False)    # scored | unscored
+    unscored_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    rationale_grade: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rationale_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    authority_only_p: Mapped[float | None] = mapped_column(Float, nullable=True)
+    thread_state: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    thread_state_p: Mapped[float | None] = mapped_column(Float, nullable=True)
+    claims_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    answers_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    model: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    attempted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, index=True, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("event_id", "kind", name="uq_limit_incident_reviews_event_kind"),
+    )
+
+
 class TaskRun(Base):
     __tablename__ = "task_runs"
 
