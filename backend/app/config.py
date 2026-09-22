@@ -274,6 +274,11 @@ class _EnvironmentSettings(BaseSettings):
     limit_review_enabled: bool = Field(
         True, validation_alias="OPEN_OTC_LIMIT_REVIEW"
     )
+    # Retrospective guard sweep (spec 2026-09-22-guard-sweep D11): the hourly
+    # desk daemon, an opt-out under the master switch. The CLI has no switch.
+    guard_sweep_enabled: bool = Field(
+        True, validation_alias="OPEN_OTC_GUARD_SWEEP"
+    )
 
 
 def _read_environment_settings() -> _EnvironmentSettings:
@@ -434,6 +439,9 @@ class Settings:
     limit_review_enabled: bool = field(
         default_factory=lambda: _env_value("limit_review_enabled")
     )
+    guard_sweep_enabled: bool = field(
+        default_factory=lambda: _env_value("guard_sweep_enabled")
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "artifact_dir", Path(self.artifact_dir))
@@ -492,6 +500,9 @@ class Settings:
         )
         object.__setattr__(
             self, "limit_review_enabled", _coerce_bool(self.limit_review_enabled)
+        )
+        object.__setattr__(
+            self, "guard_sweep_enabled", _coerce_bool(self.guard_sweep_enabled)
         )
         timeout = float(self.system_one_timeout_seconds)
         if timeout <= 0:

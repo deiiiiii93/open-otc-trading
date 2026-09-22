@@ -11,6 +11,7 @@ _VARS = (
     "OPEN_OTC_SYSTEM_ONE", "OPEN_OTC_SYSTEM_ONE_MODEL", "OPEN_OTC_SYSTEM_ONE_BASE_URL",
     "OPEN_OTC_SYSTEM_ONE_TIMEOUT_S", "OPEN_OTC_SYSTEM_ONE_MAX_STATE_CHARS",
     "OPEN_OTC_TOOL_GUARD", "OPEN_OTC_CONFIRMATION_FAMILY_CHECK", "OPEN_OTC_LIMIT_REVIEW",
+    "OPEN_OTC_GUARD_SWEEP",
 )
 
 
@@ -30,6 +31,7 @@ def test_defaults_are_inert_and_match_the_spec():
     assert s.tool_guard_mode == "shadow"
     assert s.confirmation_family_check_enabled is True
     assert s.limit_review_enabled is True
+    assert s.guard_sweep_enabled is True
     assert TOOL_GUARD_MODES == ("off", "shadow", "enforce")
 
 
@@ -42,6 +44,7 @@ def test_env_overrides(monkeypatch):
     monkeypatch.setenv("OPEN_OTC_TOOL_GUARD", "enforce")
     monkeypatch.setenv("OPEN_OTC_CONFIRMATION_FAMILY_CHECK", "false")
     monkeypatch.setenv("OPEN_OTC_LIMIT_REVIEW", "false")
+    monkeypatch.setenv("OPEN_OTC_GUARD_SWEEP", "false")
     s = Settings()
     assert s.system_one_enabled is True
     assert s.system_one_model == "typesafe/jev-latest"
@@ -51,6 +54,7 @@ def test_env_overrides(monkeypatch):
     assert s.tool_guard_mode == "enforce"
     assert s.confirmation_family_check_enabled is False
     assert s.limit_review_enabled is False
+    assert s.guard_sweep_enabled is False
 
 
 @pytest.mark.parametrize("raw, expected", [
@@ -72,12 +76,13 @@ def test_unknown_guard_mode_fails_closed_to_shadow(monkeypatch, caplog, raw):
 
 def test_direct_construction_coerces_like_the_env_path():
     s = Settings(system_one_enabled="on", confirmation_family_check_enabled="0",
-                 limit_review_enabled="0",
+                 limit_review_enabled="0", guard_sweep_enabled="0",
                  system_one_timeout_seconds="3", system_one_max_state_chars="99",
                  tool_guard_mode="bogus")
     assert s.system_one_enabled is True
     assert s.confirmation_family_check_enabled is False
     assert s.limit_review_enabled is False
+    assert s.guard_sweep_enabled is False
     assert s.system_one_timeout_seconds == 3.0
     assert s.system_one_max_state_chars == 99
     assert s.tool_guard_mode == "shadow"
@@ -92,3 +97,10 @@ def test_limit_review_is_an_opt_out_under_the_master_switch():
     """Parent D15: default-enabled data class, opted out per feature."""
     assert Settings().limit_review_enabled is True
     assert Settings(limit_review_enabled="off").limit_review_enabled is False
+
+
+def test_guard_sweep_is_an_opt_out_under_the_master_switch():
+    """Spec 2026-09-22 D11 / parent D15: on by default, inert while the master is off."""
+    assert Settings().guard_sweep_enabled is True
+    assert Settings().system_one_enabled is False
+    assert Settings(guard_sweep_enabled="off").guard_sweep_enabled is False
