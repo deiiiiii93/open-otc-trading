@@ -1,7 +1,7 @@
 """Limits agent tools — read surface and HITL writes."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from app import database, models
@@ -471,3 +471,38 @@ def test_run_limit_monitoring_end_to_end(tmp_path, monkeypatch):
             ).scalars()
         )
         assert evaluations and all(e.status == "ok" for e in evaluations)
+
+
+def test_agent_tool_payloads_never_carry_reviews(tmp_path, monkeypatch):
+    """D13: a model that can see its rationale's grade will write to the grader."""
+    from _system_one_fakes import ReviewPost
+    from app.services.limits import review
+    from app.tools.limits import (
+        get_limit_incident_tool,
+        list_limit_incidents_tool,
+        waive_limit_incident_tool,
+    )
+
+    monkeypatch.setenv("OPEN_OTC_SYSTEM_ONE", "true")
+    monkeypatch.setenv("ZENMUX_API_KEY", "test-key")
+    monkeypatch.setattr("app.services.system_one.client._default_post", ReviewPost())
+    monkeypatch.setattr(review, "_submit", lambda fn, *a, **k: fn(*a))
+    _configure_test_db(tmp_path)
+    with database.SessionLocal() as session:
+        ids = _seed_limit_world(session)
+
+    waived = waive_limit_incident_tool.func(
+        incident_id=ids["incident"], rationale="stale mark",
+        expires_at=(datetime.utcnow() + timedelta(days=5)).isoformat(),
+        expected_row_version=1)
+    assert waived["status"] == "waived"
+    with database.SessionLocal() as session:
+        assert session.query(models.LimitIncidentReview).count() == 1   # a row EXISTS…
+
+    got = get_limit_incident_tool.func(incident_id=ids["incident"])
+    listed = list_limit_incidents_tool.func(portfolio_id=ids["portfolio"])["incidents"][0]
+    for payload in (waived, got, listed):
+        flat = str(payload)
+        assert "reviews" not in payload
+        for key in ("rationale_grade", "thread_state", "authority_only", "claims", "unscored"):
+            assert key not in flat                                        # …and is invisible

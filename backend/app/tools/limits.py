@@ -297,6 +297,7 @@ from langchain_core.runnables import RunnableConfig  # noqa: E402
 from ..services.audit_trail import AUDIT_CONTEXT_KEY  # noqa: E402
 from ..services.limits import incidents as incidents_service  # noqa: E402
 from ..services.limits import monitoring as monitoring_service  # noqa: E402
+from ..services.limits import review as review_service  # noqa: E402
 from ..services.limits.agent_support import derive_monitoring_envelope  # noqa: E402
 from ..services.limits.contracts import LimitActionContext  # noqa: E402
 from ..services.limits.errors import (  # noqa: E402
@@ -416,7 +417,9 @@ def run_limit_monitoring_tool(
         }
 
 
-def _mutate_incident(action, *, incident_id: int, **kwargs) -> dict[str, Any]:
+def _mutate_incident(
+    action, *, incident_id: int, review_kind: str | None = None, **kwargs
+) -> dict[str, Any]:
     database.init_db()
     with database.SessionLocal() as session:
         try:
@@ -445,6 +448,9 @@ def _mutate_incident(action, *, incident_id: int, **kwargs) -> dict[str, Any]:
                 "error": exc.__class__.__name__,
                 "detail": str(exc),
             }
+        if review_kind is not None:
+            # After the commit (D9 fast path). Payloads stay review-free (D13).
+            review_service.enqueue_latest(incident, review_kind)
         return _incident_out(session, incident)
 
 
@@ -495,6 +501,7 @@ def comment_limit_incident_tool(
     return _mutate_incident(
         incidents_service.comment,
         incident_id=incident_id,
+        review_kind=review_service.KIND_THREAD,
         comment=comment,
         expected_row_version=expected_row_version,
         context=_tool_context(config),
@@ -529,6 +536,7 @@ def waive_limit_incident_tool(
     return _mutate_incident(
         incidents_service.waive,
         incident_id=incident_id,
+        review_kind=review_service.KIND_WAIVER,
         rationale=rationale,
         expires_at=expiry,
         expected_row_version=expected_row_version,

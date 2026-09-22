@@ -46,7 +46,7 @@ from app.schemas import (
     MarketSnapshotOut,
     RiskLimitOut,
 )
-from app.services.limits import definitions, incidents, monitoring
+from app.services.limits import definitions, incidents, monitoring, review
 from app.services.limits.contracts import LimitActionContext, LimitVersionSpec
 from app.services.limits.errors import (
     LimitConflictError,
@@ -615,6 +615,7 @@ def build_limits_router(
         portfolio_id: int,
         payload: LimitActionIn,
         action: Callable[..., LimitIncident],
+        review_kind: str | None = None,
         **extra: Any,
     ) -> dict[str, Any]:
         _incident_with_portfolio(session, incident_id, portfolio_id)
@@ -631,13 +632,15 @@ def build_limits_router(
             # service appended its immutable event; expire eager collections so
             # the response reflects the just-committed ledger row.
             session.expire_all()
-            return _incident_out(
-                _incident_with_portfolio(session, row.id, portfolio_id),
-                portfolio_id=portfolio_id,
-            )
+            fresh = _incident_with_portfolio(session, row.id, portfolio_id)
         except Exception as exc:
             session.rollback()
             _raise_domain_error(exc)
+            raise  # unreachable: _raise_domain_error always raises
+        # After the commit, never inside it: a review can delay, never fail, an action.
+        if review_kind is not None:
+            review.enqueue_latest(fresh, review_kind)
+        return _incident_out(fresh, portfolio_id=portfolio_id)
 
     @router.post("/limit-incidents/{incident_id}/acknowledge")
     def acknowledge_incident(
@@ -683,6 +686,7 @@ def build_limits_router(
             portfolio_id=portfolio_id,
             payload=payload,
             action=incidents.comment,
+            review_kind=review.KIND_THREAD,
             comment=payload.comment,
         )
 
@@ -699,6 +703,7 @@ def build_limits_router(
             portfolio_id=portfolio_id,
             payload=payload,
             action=incidents.waive,
+            review_kind=review.KIND_WAIVER,
             rationale=payload.rationale,
             expires_at=payload.expires_at,
         )

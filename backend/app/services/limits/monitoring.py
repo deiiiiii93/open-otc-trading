@@ -44,6 +44,7 @@ from .contracts import LimitActionContext
 from .definitions import canonical_version_snapshot
 from .errors import LimitConflictError
 from .evaluator import EvaluationResult, LimitRule, NormalizedObservation, evaluate
+from . import review
 from .scopes import scope_key_for, scope_matches
 from .source_planner import (
     SourcePlanKey,
@@ -998,6 +999,9 @@ def _finalize(
             result_payload={"limit_monitoring_run_id": run.id},
         )
         session.commit()
+    # After that run's work has committed: the review sweep (limit-review spec §Flow 4).
+    # It opens its own sessions and never raises — a review cannot fail a monitoring run.
+    review.sweep(session_factory)
 
 
 def _mark_failed(
