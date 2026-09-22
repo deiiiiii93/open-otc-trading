@@ -1,0 +1,10 @@
+{"scored": 9, "unscored": 0, "outage": 0, "skipped": 0}
+{"tool": "book_extracted_trade", "verdict": "clear", "fidelity": "trace", "persona": "trader", "max_p": 0.13, "reason": null}
+{"tool": "book_extracted_trade", "verdict": "clear", "fidelity": "trace", "persona": "trader", "max_p": 0.18, "reason": null}
+{"tool": "book_extracted_trade", "verdict": "clear", "fidelity": "trace", "persona": "trader", "max_p": 0.28, "reason": null}
+{"tool": "book_extracted_trade", "verdict": "clear", "fidelity": "trace", "persona": "trader", "max_p": 0.25, "reason": null}
+{"tool": "book_extracted_trade", "verdict": "clear", "fidelity": "trace", "persona": "trader", "max_p": 0.18, "reason": null}
+{"tool": "book_position", "verdict": "flagged", "fidelity": "trace", "persona": "trader", "max_p": 0.83, "reason": null}
+{"tool": "book_extracted_trade", "verdict": "clear", "fidelity": "trace", "persona": "trader", "max_p": 0.28, "reason": null}
+{"tool": "book_extracted_trade", "verdict": "clear", "fidelity": "trace", "persona": "trader", "max_p": 0.23, "reason": null}
+{"tool": "book_extracted_trade", "verdict": "clear", "fidelity": "trace", "persona": "trader", "max_p": 0.35, "reason": null}
