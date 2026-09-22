@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -39,7 +39,7 @@ from langgraph.runtime import Runtime
 from langgraph.types import interrupt
 
 from ...config import Settings, get_settings
-from ..system_one import Noul, SystemOneUnavailable, ask, is_enabled
+from ..system_one import Noul, SystemOneResult, SystemOneUnavailable, ask, is_enabled
 from .audit_trail_middleware import _read_audit_context
 from .hitl import GUARD_NOTE_PREFIX, _RISK_LEVEL_BY_TOOL
 from .tool_guard_policy import GUARD_POLICY, GuardPredicate, validate_policy
@@ -97,6 +97,30 @@ def _unscored(reason: str, *, model: str | None = None, latency_ms: int | None =
         "latency_ms": latency_ms,
         "error": error,
         "user_request_source": source,
+    }
+
+
+def scored_fields(predicates: Sequence[GuardPredicate], result: SystemOneResult, *,
+                  user_request_source: str | None) -> dict[str, Any]:
+    """Verdict fields from one Jev answer — the ONE flag rule, live and sweep:
+    flagged iff any predicate's probability >= its threshold. Every raw
+    probability is stored, so a threshold change is a re-render, not a re-score."""
+    scored = []
+    for q in predicates:
+        probability = result.answers[q.key].probability
+        scored.append({
+            "key": q.key, "probability": probability, "threshold": q.threshold,
+            "flagged": probability >= q.threshold, "evidence": q.evidence,
+        })
+    return {
+        "verdict": "flagged" if any(s["flagged"] for s in scored) else "clear",
+        "unscored_reason": None,
+        "predicates_json": scored,
+        "max_probability": max(s["probability"] for s in scored),
+        "model": result.model,
+        "latency_ms": result.latency_ms,
+        "error": None,
+        "user_request_source": user_request_source,
     }
 
 
@@ -240,23 +264,7 @@ class ToolGuardMiddleware(HumanInTheLoopMiddleware[StateT, ContextT, ResponseT])
             except SystemOneUnavailable as exc:
                 return _unscored(exc.reason, model=requested, latency_ms=exc.latency_ms,
                                  error=exc.detail, source=source)
-            scored = []
-            for q in predicates:
-                probability = result.answers[q.key].probability
-                scored.append({
-                    "key": q.key, "probability": probability, "threshold": q.threshold,
-                    "flagged": probability >= q.threshold, "evidence": q.evidence,
-                })
-            return {
-                "verdict": "flagged" if any(s["flagged"] for s in scored) else "clear",
-                "unscored_reason": None,
-                "predicates_json": scored,
-                "max_probability": max(s["probability"] for s in scored),
-                "model": result.model,
-                "latency_ms": result.latency_ms,
-                "error": None,
-                "user_request_source": source,
-            }
+            return scored_fields(predicates, result, user_request_source=source)
         except Exception:  # noqa: BLE001 — the guard never raises into the agent loop
             logger.exception("tool guard: evaluation failed for %s", call.get("name"))
             return _unscored("internal_error", model=requested)

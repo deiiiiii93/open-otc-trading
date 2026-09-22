@@ -8,7 +8,8 @@ serializes and size-checks).
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, ToolCall, ToolMessage
@@ -74,7 +75,31 @@ def _render_args(tool_name: str, args: dict[str, Any] | None) -> str:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
 
 
-def _earlier_calls(messages: Sequence[AnyMessage]) -> list[str]:
+@dataclass(frozen=True)
+class EarlierCall:
+    """One earlier call in the guarded stack's turn, before rendering."""
+
+    name: str
+    args: dict[str, Any] | None
+    result: str | None          # the ToolMessage text; None = no result seen
+
+
+@dataclass(frozen=True)
+class TurnWindow:
+    """What the guard knows about the turn, before rendering and caps (spec 2026-09-22 D5).
+
+    The live guard builds it from the stack's `state["messages"]`; the
+    retrospective sweep builds it from durable records (tool_guard_records).
+    Both hand it to `assemble_guard_state`, so rendering, caps and order cannot
+    drift between the two.
+    """
+
+    user_request: str
+    delegated_task: str | None                 # None = orchestrator stack (key omitted)
+    earlier_calls: tuple[EarlierCall, ...] = ()
+
+
+def _earlier_calls(messages: Sequence[AnyMessage]) -> list[EarlierCall]:
     last_human = max(
         (i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=-1
     )
@@ -82,19 +107,50 @@ def _earlier_calls(messages: Sequence[AnyMessage]) -> list[str]:
     if window and isinstance(window[-1], AIMessage):
         window = window[:-1]  # the pending AIMessage is not "earlier"
     results = {m.tool_call_id: m for m in window if isinstance(m, ToolMessage)}
-    rendered: list[str] = []
+    calls: list[EarlierCall] = []
     for message in window:
         if not isinstance(message, AIMessage):
             continue
         for call in message.tool_calls:
-            args_text = cap(_render_args(call["name"], call.get("args")), ARGS_HEAD_CHARS)
             result = results.get(call.get("id") or "")
-            head = (
-                cap(_text_of(result.content), RESULT_HEAD_CHARS)
-                if result is not None else "(no result)"
-            )
-            rendered.append(f"{call['name']}({args_text}) -> {head}")
-    return rendered[-EARLIER_CALLS:]
+            calls.append(EarlierCall(
+                call["name"], call.get("args"),
+                _text_of(result.content) if result is not None else None,
+            ))
+    return calls
+
+
+def window_from_messages(
+    messages: Sequence[AnyMessage], *, user_request: str, is_subagent: bool
+) -> TurnWindow:
+    delegated: str | None = None
+    if is_subagent:
+        first = next((m for m in messages if isinstance(m, HumanMessage)), None)
+        if first is not None:
+            delegated = _text_of(first.content)
+    return TurnWindow(user_request, delegated, tuple(_earlier_calls(messages)))
+
+
+def render_earlier_call(call: EarlierCall) -> str:
+    args_text = cap(_render_args(call.name, call.args), ARGS_HEAD_CHARS)
+    head = cap(call.result, RESULT_HEAD_CHARS) if call.result is not None else "(no result)"
+    return f"{call.name}({args_text}) -> {head}"
+
+
+def assemble_guard_state(window: TurnWindow, tool_call: Mapping[str, Any]) -> dict[str, Any]:
+    """The ONE projection sent to Jev, live or retrospective (spec 2026-09-22 D5)."""
+    state: dict[str, Any] = {
+        "mode": "auto (no human will review this call)",
+        "user_request": cap(window.user_request, USER_REQUEST_CHARS),
+    }
+    if window.delegated_task is not None:
+        state["delegated_task"] = cap(window.delegated_task, DELEGATED_TASK_CHARS)
+    state["earlier_in_this_turn"] = [
+        render_earlier_call(call) for call in window.earlier_calls[-EARLIER_CALLS:]
+    ]
+    payload, _redacted = redact_args(tool_call["name"], tool_call.get("args"))
+    state["pending_tool_call"] = {"name": tool_call["name"], "args": payload}
+    return state
 
 
 def build_guard_state(
@@ -104,15 +160,7 @@ def build_guard_state(
     user_request: str,
     is_subagent: bool,
 ) -> dict[str, Any]:
-    state: dict[str, Any] = {
-        "mode": "auto (no human will review this call)",
-        "user_request": cap(user_request, USER_REQUEST_CHARS),
-    }
-    if is_subagent:
-        first = next((m for m in messages if isinstance(m, HumanMessage)), None)
-        if first is not None:
-            state["delegated_task"] = cap(_text_of(first.content), DELEGATED_TASK_CHARS)
-    state["earlier_in_this_turn"] = _earlier_calls(messages)
-    payload, _redacted = redact_args(tool_call["name"], tool_call.get("args"))
-    state["pending_tool_call"] = {"name": tool_call["name"], "args": payload}
-    return state
+    return assemble_guard_state(
+        window_from_messages(messages, user_request=user_request, is_subagent=is_subagent),
+        tool_call,
+    )

@@ -258,3 +258,19 @@ def test_construction_validates_the_policy():
     with pytest.raises(ValueError):
         ToolGuardMiddleware(persona="trader",
                             policy={"book_extracted_trade": (GuardPredicate("k", "p"),)})
+
+
+def test_scored_fields_is_the_one_flag_rule():
+    """Spec 2026-09-22 D5: the sweep flags with the live guard's own rule."""
+    from app.services.deep_agent.tool_guard import scored_fields
+    from app.services.deep_agent.tool_guard_policy import GuardPredicate
+    from app.services.system_one import NoulAnswer, SystemOneResult
+
+    predicates = (GuardPredicate("a", "p", threshold=0.5), GuardPredicate("b", "q", threshold=0.7))
+    result = SystemOneResult(answers={"a": NoulAnswer(0.5), "b": NoulAnswer(0.69)},
+                             model="m", latency_ms=12)
+    fields = scored_fields(predicates, result, user_request_source="occurred_at")
+    assert fields["verdict"] == "flagged"                     # >= threshold flags
+    assert [p["flagged"] for p in fields["predicates_json"]] == [True, False]
+    assert (fields["max_probability"], fields["model"], fields["latency_ms"],
+            fields["user_request_source"], fields["unscored_reason"]) == (0.69, "m", 12, "occurred_at", None)

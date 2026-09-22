@@ -5,7 +5,8 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.models import AgentMessage
 from app.services.deep_agent.tool_guard_state import (
-    ARGS_HEAD_CHARS, build_guard_state, load_user_request,
+    ARGS_HEAD_CHARS, EarlierCall, TurnWindow, assemble_guard_state, build_guard_state,
+    load_user_request, render_earlier_call, window_from_messages,
 )
 
 
@@ -105,3 +106,38 @@ def test_a_call_without_a_result_is_marked():
                 AIMessage("", tool_calls=[pending])]
     [earlier] = build_guard_state(messages, pending, user_request="go", is_subagent=False)["earlier_in_this_turn"]
     assert earlier == "x({}) -> (no result)"
+
+
+def test_the_live_builder_is_window_then_assembler():
+    """Spec 2026-09-22 D5: live and sweep share ONE assembler."""
+    pending = _call("void_settlement_cashflow", {"cashflow_id": 9300}, "c9")
+    messages = [HumanMessage("delegated"),
+                AIMessage("", tool_calls=[_call("get_x", {"id": 1}, "c1")]),
+                ToolMessage("r1", tool_call_id="c1"),
+                AIMessage("", tool_calls=[pending])]
+    window = window_from_messages(messages, user_request="void 9300", is_subagent=True)
+    assert window == TurnWindow("void 9300", "delegated", (EarlierCall("get_x", {"id": 1}, "r1"),))
+    assert assemble_guard_state(window, pending) == build_guard_state(
+        messages, pending, user_request="void 9300", is_subagent=True)
+
+
+def test_orchestrator_window_has_no_delegated_task():
+    pending = _call("close_position", {"position_id": 1}, "c1")
+    window = window_from_messages([HumanMessage("hi"), AIMessage("", tool_calls=[pending])],
+                                  user_request="close 1", is_subagent=False)
+    assert window.delegated_task is None
+    assert "delegated_task" not in assemble_guard_state(window, pending)
+
+
+def test_render_earlier_call_redacts_caps_and_marks_missing_results():
+    assert render_earlier_call(EarlierCall("x", {}, None)) == "x({}) -> (no result)"
+    rendered = render_earlier_call(EarlierCall("x", {"api_key": "sk-1"}, "r" * 400))
+    assert '"[REDACTED]"' in rendered
+    head = rendered.split(" -> ", 1)[1]
+    assert len(head) == 300 and head.endswith("…")
+
+
+def test_the_assembler_keeps_only_the_last_eight():
+    calls = tuple(EarlierCall("get_x", {"i": i}, f"r{i}") for i in range(10))
+    state = assemble_guard_state(TurnWindow("u", None, calls), _call("close_position", {}, "p"))
+    assert [e.split(" -> ")[1] for e in state["earlier_in_this_turn"]] == [f"r{i}" for i in range(2, 10)]
