@@ -2,6 +2,7 @@
   "limit": {"name": "Desk net delta", "metric_kind": "delta", "unit": "underlying_units",
             "scope_type": "underlying", "scope_label": "000300"},
   "breach": {"severity": "breach", "utilization": 1.18, "days_open": 3},
+  "written_on": "2026-09-22",
   "cases": [
     {"id": "L0-approved", "rationale": "Waiver approved.", "duration_days": 12,
      "expected_level": 0, "expected_claims": [], "expected_authority_only": true},
@@ -10,7 +11,8 @@
     {"id": "L1-market-move", "rationale": "Market move, temporary.", "duration_days": 12,
      "expected_level": 1, "expected_claims": [], "expected_authority_only": false},
     {"id": "L1-known-issue", "rationale": "Known issue, will normalise.", "duration_days": 12,
-     "expected_level": 1, "expected_claims": ["market_reversion"], "expected_authority_only": false},
+     "expected_level": 1, "expected_claims": [], "expected_authority_only": false,
+     "note": "'will normalise' names no mechanism; a market-reversion claim would be a stretch"},
     {"id": "L2-cause-only", "rationale": "The Dec 000300 snowball book is the driver; delta ran up after Friday's rally.", "duration_days": 12,
      "expected_level": 2, "expected_claims": [], "expected_authority_only": false},
     {"id": "L2-data-error", "rationale": "Breach is a stale vol mark on 000300 from Thursday's failed overnight run.", "duration_days": 12,

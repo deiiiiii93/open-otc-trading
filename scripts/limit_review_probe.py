@@ -19,6 +19,7 @@ import argparse
 import json
 import sqlite3
 import sys
+from datetime import date, timedelta
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
@@ -97,9 +98,14 @@ def _corpus(limit: int) -> list[dict[str, Any]]:
     return rows[:limit]
 
 
-def _waiver_state(limit: dict, breach: dict, rationale: str, duration_days: int | None) -> dict:
+def _waiver_state(limit: dict, breach: dict, rationale: str, duration_days: int | None,
+                  written_on: str | None = None) -> dict:
+    expires_on = None
+    if written_on and duration_days is not None:
+        expires_on = (date.fromisoformat(written_on) + timedelta(days=duration_days)).isoformat()
     return {"limit": limit, "breach": breach,
-            "waiver": {"rationale": rationale, "duration_days": duration_days}}
+            "waiver": {"rationale": rationale, "written_on": written_on,
+                       "expires_on": expires_on, "duration_days": duration_days}}
 
 
 def _level(answer) -> int:
@@ -133,7 +139,8 @@ def _print_corpus(rows: list[dict[str, Any]]) -> None:
     for row in rows:
         if row["tool"] != "waive_limit_incident":
             continue
-        scored = _score_waiver(_waiver_state(limit, breach, row["text"], None))
+        scored = _score_waiver(_waiver_state(limit, breach, row["text"], None,
+                                             (row["at"] or "")[:10] or None))
         if isinstance(scored, str):
             print(f"  ! {scored} on thread {row['thread_id']}")
             continue
@@ -151,7 +158,7 @@ def _print_fixture() -> int:
     misses = 0
     for case in data["cases"]:
         scored = _score_waiver(_waiver_state(data["limit"], data["breach"], case["rationale"],
-                                             case["duration_days"]))
+                                             case["duration_days"], data.get("written_on")))
         if isinstance(scored, str):
             print(f"  ! {scored}: {case['id']}")
             misses += 1

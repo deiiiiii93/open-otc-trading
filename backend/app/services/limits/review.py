@@ -86,8 +86,11 @@ RATIONALE_LEVELS: tuple[str, ...] = (
 RATIONALE_QUESTION = Score(
     instructions=(
         "Which situation best describes the waiver rationale in `waiver.rationale`, "
-        "read against the breach in `breach` and the limit in `limit`? The waiver "
-        "lasts `waiver.duration_days` days from the day it was written."
+        "read against the breach in `breach` and the limit in `limit`? The waiver was "
+        "written on `waiver.written_on` and expires on `waiver.expires_on` "
+        "(`waiver.duration_days` days later); compare any date in the text with "
+        "`waiver.expires_on`. Terse desk shorthand counts: initials or a name are an "
+        "owner, and a weekday or a date is a date."
     ),
     criteria=RATIONALE_LEVELS,
 )
@@ -99,10 +102,11 @@ CLAIM_QUESTIONS: dict[str, Noul] = {
     "data_error": Noul(_CLAIM + "the breach comes from a wrong, stale or missing market "
                        "input or a failed risk run, not from real exposure"),
     "limit_under_review": Noul(_CLAIM + "the limit itself is mis-sized or is being changed"),
-    "hedge_in_progress": Noul(_CLAIM + "a hedge or unwind trade has been ordered or is "
-                              "being executed"),
-    "client_flow_expected": Noul(_CLAIM + "an expected client trade or unwind will reduce "
-                                 "the exposure"),
+    "hedge_in_progress": Noul(_CLAIM + "the desk itself will hedge, sell, roll or unwind its "
+                              "position on its own initiative — a trade that has been done, "
+                              "ordered or is planned — rather than waiting for a client to trade"),
+    "client_flow_expected": Noul(_CLAIM + "a trade or unwind expected FROM A CLIENT (not the "
+                                 "desk's own hedging) will reduce the exposure"),
     "market_reversion": Noul(_CLAIM + "the exposure will return inside the limit because "
                              "the market will move back"),
 }
@@ -284,6 +288,10 @@ def build_waiver_state(
         },
         "waiver": {
             "rationale": rationale,
+            # Dates as well as the count: a "by 2026-10-02" in the text can only be
+            # compared with the expiry if the expiry is IN the state (probe 2026-09-22).
+            "written_on": event.created_at.date().isoformat(),
+            "expires_on": expires.date().isoformat() if expires is not None else None,
             "duration_days": (
                 ceil_days(expires, event.created_at) if expires is not None else None
             ),

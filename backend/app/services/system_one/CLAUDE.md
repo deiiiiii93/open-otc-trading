@@ -143,3 +143,13 @@ arena contestant, never a source of numbers.
 - Every question is `untested`. `scripts/limit_review_probe.py` scores the arena
   corpus (split by the step-5 outcome) and `scripts/fixtures/limit_review_rationales.json`;
   its output is direction, never a rate.
+- **Probe run 2026-09-22 (hand-written fixture, not desk text — so still `untested`):**
+  the arena corpus holds 98 `risk-limit-breach-day` text rows, ALL comments (92 from
+  matches that held the waiver, 6 unknown) and **zero `waive_limit_incident` calls** —
+  the labelled-waiver corpus the spec hoped for is empty. Fixture went 11/15 → 14/15
+  over two wording passes: `client_flow_expected` had said "client trade or unwind" and
+  swallowed the desk's own unwinds (now "FROM A CLIENT" vs `hedge_in_progress` "on its
+  own initiative"), and the level-3/4 date clause was unanswerable until the state
+  carried `waiver.written_on` / `waiver.expires_on` — `duration_days` alone cannot be
+  compared with "by 2026-10-02". The one remaining miss is the spec's named risk: the
+  terse desk line "rolling Dec CSI500, done Fri — LW" grades level 3, not 4.

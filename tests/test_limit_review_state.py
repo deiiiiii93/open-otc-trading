@@ -82,7 +82,8 @@ def test_waiver_state_is_read_from_the_event(session):
     assert incident.waiver_rationale == "second reason"
 
     state = review.build_waiver_state(session, incident, first)
-    assert state["waiver"] == {"rationale": "stale mark", "duration_days": 12}
+    assert state["waiver"] == {"rationale": "stale mark", "written_on": "2026-07-21",
+                               "expires_on": "2026-08-02", "duration_days": 12}
     assert state["breach"] == {"severity": "breach", "utilization": 1.18, "days_open": 3}
     assert state["limit"] == {"name": limit.name, "metric_kind": "delta",
                               "unit": "underlying_units", "scope_type": "position",
