@@ -22,6 +22,7 @@ export function AuditLive() {
   const [statusFilter, setStatusFilter] = useState('');
   const [classFilter, setClassFilter] = useState('');
   const [modeFilter, setModeFilter] = useState('');
+  const [guardFilter, setGuardFilter] = useState('');
   const [detail, setDetail] = useState<AuditActionDetail | null>(null);
   const [auditRef, setAuditRef] = useState<string | null>(auditRefFromLocation);
   const loadRequestIdRef = useRef(0);
@@ -31,7 +32,7 @@ export function AuditLive() {
   // page 0 rather than showing an out-of-range offset.
   useEffect(() => {
     setPage(0);
-  }, [auditRef, search, statusFilter, classFilter, modeFilter, pageSize]);
+  }, [auditRef, search, statusFilter, classFilter, modeFilter, guardFilter, pageSize]);
 
   // A deep-link target owns the open detail. Back/Forward navigation must
   // replace it immediately, and pending requests must not reopen stale rows.
@@ -74,6 +75,7 @@ export function AuditLive() {
             status: statusFilter || undefined,
             tool_class: classFilter || undefined,
             mode: modeFilter || undefined,
+            guard: guardFilter || undefined,
             limit: pageSize,
             offset: page * pageSize,
           }),
@@ -109,7 +111,7 @@ export function AuditLive() {
         if (requestId === loadRequestIdRef.current) setLoading(false);
       }
     },
-    [auditRef, search, statusFilter, classFilter, modeFilter, page, pageSize],
+    [auditRef, search, statusFilter, classFilter, modeFilter, guardFilter, page, pageSize],
   );
 
   useEffect(() => {
@@ -141,11 +143,13 @@ export function AuditLive() {
       statusFilter={statusFilter}
       classFilter={classFilter}
       modeFilter={modeFilter}
+      guardFilter={guardFilter}
       detail={detail}
       onSearch={setSearch}
       onStatusFilter={setStatusFilter}
       onClassFilter={setClassFilter}
       onModeFilter={setModeFilter}
+      onGuardFilter={setGuardFilter}
       onRowClick={onRowClick}
       onCloseDetail={() => {
         detailRequestIdRef.current += 1;

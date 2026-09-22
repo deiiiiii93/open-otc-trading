@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { Audit, type AuditProps } from './Audit';
 import type { AuditAction } from '../types';
 
@@ -45,11 +45,13 @@ function props(overrides: Partial<AuditProps> = {}): AuditProps {
     statusFilter: '',
     classFilter: '',
     modeFilter: '',
+    guardFilter: '',
     detail: null,
     onSearch: vi.fn(),
     onStatusFilter: vi.fn(),
     onClassFilter: vi.fn(),
     onModeFilter: vi.fn(),
+    onGuardFilter: vi.fn(),
     onRowClick: vi.fn(),
     onCloseDetail: vi.fn(),
     onPage: vi.fn(),
@@ -143,7 +145,7 @@ describe('Guard column', () => {
       <Audit
         {...props({
           items: [
-            { ...ROW, id: 1, guard: { verdict: 'flagged', max_probability: 0.85 } },
+            { ...ROW, id: 1, guard: { verdict: 'flagged', max_probability: 0.85, source: 'live', state_fidelity: null } },
             { ...ROW, id: 2, tool_call_id: 'c2', guard: null },
           ],
           total: 2,
@@ -153,5 +155,46 @@ describe('Guard column', () => {
     expect(screen.getByText('Guard')).toBeInTheDocument();
     expect(screen.getByText('flagged')).toBeInTheDocument();
     expect(screen.getByTitle('System One p=0.85')).toBeInTheDocument();
+  });
+
+  it('marks a sweep verdict and says what it saw', () => {
+    render(
+      <Audit
+        {...props({
+          items: [{
+            ...ROW,
+            guard: { verdict: 'flagged', max_probability: 0.91, source: 'sweep', state_fidelity: 'trace' },
+          }],
+        })}
+      />,
+    );
+    expect(screen.getByText('flagged · sweep')).toBeInTheDocument();
+    expect(screen.getByTitle('System One p=0.91, sweep, trace')).toBeInTheDocument();
+  });
+
+  it('keeps a live verdict unmarked', () => {
+    render(
+      <Audit
+        {...props({
+          items: [{
+            ...ROW,
+            guard: { verdict: 'clear', max_probability: 0.1, source: 'live', state_fidelity: null },
+          }],
+        })}
+      />,
+    );
+    expect(screen.getByText('clear')).toBeInTheDocument();
+    expect(screen.getByTitle('System One p=0.10')).toBeInTheDocument();
+  });
+
+  it('offers the risk manager a Guard filter', () => {
+    const onGuardFilter = vi.fn();
+    render(<Audit {...props({ onGuardFilter })} />);
+    for (const name of ['All guard', 'Flagged', 'Clear', 'Unscored', 'No verdict']) {
+      expect(screen.getByRole('option', { name })).toBeInTheDocument();
+    }
+    const select = screen.getByRole('option', { name: 'Flagged' }).closest('select')!;
+    fireEvent.change(select, { target: { value: 'flagged' } });
+    expect(onGuardFilter).toHaveBeenCalledWith('flagged');
   });
 });

@@ -21,11 +21,13 @@ export interface AuditProps {
   statusFilter: string;
   classFilter: string;
   modeFilter: string;
+  guardFilter: string;
   detail: AuditActionDetail | null;
   onSearch: (value: string) => void;
   onStatusFilter: (value: string) => void;
   onClassFilter: (value: string) => void;
   onModeFilter: (value: string) => void;
+  onGuardFilter: (value: string) => void;
   onRowClick: (row: AuditAction) => void;
   onCloseDetail: () => void;
   onPage: (page: number) => void;
@@ -71,6 +73,28 @@ const MODE_OPTIONS = [
   ...['interactive', 'auto', 'yolo'].map((value) => ({ value, label: value })),
 ];
 
+const GUARD_OPTIONS = [
+  { value: '', label: 'All guard' },
+  { value: 'flagged', label: 'Flagged' },
+  { value: 'clear', label: 'Clear' },
+  { value: 'unscored', label: 'Unscored' },
+  { value: 'none', label: 'No verdict' },
+];
+
+type Guard = NonNullable<AuditAction['guard']>;
+
+/** A sweep verdict read a call that had already run: advisory, and marked so. */
+function guardLabel(guard: Guard): string {
+  return guard.source === 'sweep' ? `${guard.verdict} · sweep` : guard.verdict;
+}
+
+function guardTitle(guard: Guard): string {
+  const read = guard.max_probability != null
+    ? `System One p=${guard.max_probability.toFixed(2)}`
+    : 'System One could not score this call';
+  return guard.source === 'sweep' ? `${read}, sweep, ${guard.state_fidelity ?? 'no state'}` : read;
+}
+
 function statusBadge(status: string) {
   return <Badge variant={STATUS_VARIANT[status] ?? 'ink'}>{status}</Badge>;
 }
@@ -94,7 +118,7 @@ function argsSummary(row: AuditAction): string {
 export function Audit(props: AuditProps) {
   const {
     items, total, page, pageSize, summary, loading, error, search,
-    statusFilter, classFilter, modeFilter, detail,
+    statusFilter, classFilter, modeFilter, guardFilter, detail,
   } = props;
 
   const columns = useMemo<Column<AuditAction>[]>(
@@ -146,17 +170,11 @@ export function Audit(props: AuditProps) {
       {
         key: 'guard',
         header: 'Guard',
-        width: '6.5rem',
+        width: '8.5rem',
         render: (row) =>
           row.guard ? (
-            <span
-              title={
-                row.guard.max_probability != null
-                  ? `System One p=${row.guard.max_probability.toFixed(2)}`
-                  : 'System One could not score this call'
-              }
-            >
-              <Badge variant={GUARD_VARIANT[row.guard.verdict]}>{row.guard.verdict}</Badge>
+            <span title={guardTitle(row.guard)}>
+              <Badge variant={GUARD_VARIANT[row.guard.verdict]}>{guardLabel(row.guard)}</Badge>
             </span>
           ) : (
             '—'
@@ -202,6 +220,13 @@ export function Audit(props: AuditProps) {
         onChange={props.onModeFilter}
         options={MODE_OPTIONS}
         placeholder="Mode"
+        variant="inline"
+      />
+      <Select
+        value={guardFilter}
+        onChange={props.onGuardFilter}
+        options={GUARD_OPTIONS}
+        placeholder="Guard"
         variant="inline"
       />
     </>

@@ -105,6 +105,8 @@ export interface AuditListParams {
   tool_name?: string;
   tool_class?: string;
   mode?: string;
+  guard?: string;
+  guard_source?: string;
   limit?: number;
   offset?: number;
 }

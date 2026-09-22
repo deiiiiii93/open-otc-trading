@@ -1,5 +1,6 @@
 import {
   act,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -171,5 +172,24 @@ describe('AuditLive deep links', () => {
 
     expect(getSpy).not.toHaveBeenCalledWith(staleRow.id);
     expect(screen.getByText('detail-10')).toBeInTheDocument();
+  });
+});
+
+describe('AuditLive guard filter', () => {
+  it('asks the server for flagged rows from page one', async () => {
+    window.history.replaceState(null, '', '/audit');
+    vi.spyOn(client, 'listAuditActions').mockResolvedValue({ items: [], total: 0 });
+
+    render(<AuditLive />);
+    await waitFor(() => expect(client.listAuditActions).toHaveBeenCalled());
+
+    const select = screen.getByRole('option', { name: 'Flagged' }).closest('select')!;
+    fireEvent.change(select, { target: { value: 'flagged' } });
+
+    await waitFor(() => {
+      expect(client.listAuditActions).toHaveBeenLastCalledWith(
+        expect.objectContaining({ guard: 'flagged', offset: 0 }),
+      );
+    });
   });
 });

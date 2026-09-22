@@ -1978,8 +1978,14 @@ export interface AuditAction {
   error: string | null;
   occurred_at: string;
   completed_at: string | null;
-  /** System One tool-guard verdict for this call; null = never guarded. */
-  guard: { verdict: 'clear' | 'flagged' | 'unscored'; max_probability: number | null } | null;
+  /** System One tool-guard verdict for this call; null = never guarded. A
+   *  `sweep` verdict scored the call AFTER it ran — advisory, never a gate. */
+  guard: {
+    verdict: 'clear' | 'flagged' | 'unscored';
+    max_probability: number | null;
+    source: 'live' | 'sweep';
+    state_fidelity: 'trace' | 'audit_only' | null;
+  } | null;
 }
 
 export interface AuditActionDetail extends AuditAction {
