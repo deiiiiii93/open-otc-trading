@@ -254,3 +254,223 @@ def select_cases(session, *, tools: Iterable[str] | None, kinds: Iterable[str],
                            "usd": round(len(chosen) * USD_PER_ROW, 2)},
     }
     return {"header": header, "cases": chosen}
+
+
+# --- score -------------------------------------------------------------------
+
+def _still_due(cases: Sequence[Mapping[str, Any]]) -> int:
+    keys = {(c["thread_id"], c["tool_call_id"]) for c in cases}
+    with database.SessionLocal() as session:
+        scored = {
+            (thread_id, call_id)
+            for thread_id, call_id in session.query(AgentToolGuardVerdict.thread_id,
+                                                    AgentToolGuardVerdict.tool_call_id)
+            .filter(AgentToolGuardVerdict.tool_call_id.in_({k[1] for k in keys}))
+            .all()
+        }
+    return len(keys - scored)
+
+
+def score_cases(cases_path: Path, *, post: Any = None, trace_path: Any = None,
+                settings=None, out=print) -> int:
+    """Score every case not yet in the verdict table, sequentially, stopping at
+    the first outage. Exit 0 = done, 1 = an outage left cases due (re-run to
+    resume), 2 = the policy moved since select (a new wording is a new select)."""
+    data = json.loads(Path(cases_path).read_text(encoding="utf-8"))
+    selected, current = data["header"]["policy_sha256"], policy_sha256()
+    if selected != current:
+        out(f"policy moved since select ({selected[:12]} -> {current[:12]}); "
+            "a new wording is a new `select` (D10)")
+        return 2
+    cfg = settings or get_settings()
+    due = _still_due(data["cases"])
+    out(f"{due} of {len(data['cases'])} cases due: ~{round(due * SECONDS_PER_ROW)} s, "
+        f"~${due * USD_PER_ROW:.2f}")
+    tally: Counter = Counter()
+    outage: str | None = None
+    for case in data["cases"]:
+        with database.SessionLocal() as session:
+            row = session.get(AgentActionAudit, case["audit_id"])
+            if row is None:
+                tally["missing"] += 1
+                continue
+            result = score_audit_row(session, row, settings=cfg, post=post, trace_path=trace_path)
+        if result.outage is not None:
+            outage = result.outage
+            break
+        tally["already scored" if result.already_scored else result.stored.verdict] += 1
+    out(f"{dict(tally)}; still due: {_still_due(data['cases'])}")
+    if outage is not None:
+        out(f"outage: {outage} — re-run `score` to resume")
+        return 1
+    return 0
+
+
+# --- report ------------------------------------------------------------------
+
+def _bucket(verdict: AgentToolGuardVerdict) -> str:
+    """Never pool fidelities (D7); a live row is its own bucket."""
+    return verdict.state_fidelity or verdict.source
+
+
+def collect(cases: Sequence[Mapping[str, Any]]) -> tuple[list[dict], Counter]:
+    keys = {(c["thread_id"], c["tool_call_id"]) for c in cases}
+    with database.SessionLocal() as session:
+        verdicts = {
+            (v.thread_id, v.tool_call_id): v
+            for v in session.query(AgentToolGuardVerdict)
+            .filter(AgentToolGuardVerdict.tool_call_id.in_({k[1] for k in keys})).all()
+            if (v.thread_id, v.tool_call_id) in keys
+        }
+        records: list[dict] = []
+        coverage: Counter = Counter()
+        for case in cases:
+            v = verdicts.get((case["thread_id"], case["tool_call_id"]))
+            if v is None:
+                coverage[(case["tool"], "no row (still due)")] += 1
+                continue
+            if v.verdict == "unscored":
+                coverage[(case["tool"], f"unscored:{v.unscored_reason}")] += 1
+            else:
+                coverage[(case["tool"], f"scored @ {_bucket(v)}")] += 1
+            records.append({**case, "verdict_id": v.id, "verdict": v.verdict,
+                            "source": v.source, "fidelity": _bucket(v), "persona": v.persona,
+                            "unscored_reason": v.unscored_reason,
+                            "predicates": list(v.predicates_json or [])})
+    return records, coverage
+
+
+def summarise(records: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Per tool x predicate x label x fidelity: n, min / median / max, count >= threshold."""
+    groups: dict[tuple, list[dict]] = defaultdict(list)
+    for record in records:
+        for p in record["predicates"]:
+            groups[(record["tool"], p["key"], record["label"], record["fidelity"])].append(p)
+    rows = []
+    for (tool, key, label, fidelity), preds in sorted(groups.items()):
+        probabilities = [p["probability"] for p in preds]
+        rows.append({
+            "tool": tool, "predicate": key, "label": label, "fidelity": fidelity,
+            "n": len(probabilities), "min": min(probabilities),
+            "median": statistics.median(probabilities), "max": max(probabilities),
+            "at_or_above": sum(1 for p in preds if p["probability"] >= p["threshold"]),
+            "threshold": preds[0]["threshold"],
+        })
+    return rows
+
+
+def separations(summary: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """median(trap) - median(expected), per tool x predicate x fidelity, where both exist."""
+    index = {(r["tool"], r["predicate"], r["fidelity"], r["label"]): r for r in summary}
+    out = []
+    for (tool, key, fidelity, label), trap in sorted(index.items()):
+        expected = index.get((tool, key, fidelity, EXPECTED))
+        if label != TRAP or expected is None:
+            continue
+        out.append({"tool": tool, "predicate": key, "fidelity": fidelity,
+                    "trap_median": trap["median"], "expected_median": expected["median"],
+                    "separation": round(trap["median"] - expected["median"], 2),
+                    "n_trap": trap["n"], "n_expected": expected["n"]})
+    return out
+
+
+def _run_line(header: Mapping[str, Any]) -> str:
+    return (f"_policy `{header['policy_sha256'][:12]}` · {header['model']} · selected "
+            f"{header['created_at']} · {header['total']} cases — {HEADLINE}_")
+
+
+def render_report(header: Mapping[str, Any], summary: Sequence[Mapping[str, Any]],
+                  seps: Sequence[Mapping[str, Any]], coverage: Counter) -> str:
+    run = _run_line(header)
+    lines = [
+        f"# Guard sweep evidence — {header['created_at'][:10]}", "",
+        f"> {HEADLINE} Model-written text under one harness's policies. `expected` is not "
+        "`correct`: it says the tool was on the step's list, not that the call was right.", "",
+        f"Filters: `{json.dumps(header['filters'], sort_keys=True)}` · trace DB present: "
+        f"{header['trace_db_present']}", "",
+        "## Coverage", "", run, "", "| tool | outcome | n |", "|---|---|---:|",
+    ]
+    lines += [f"| {tool} | {outcome} | {n} |" for (tool, outcome), n in sorted(coverage.items())]
+    lines += ["", "## Separation — median(trap) − median(expected), per fidelity", "", run, "",
+              "| tool | predicate | fidelity | trap median (n) | expected median (n) | separation |",
+              "|---|---|---|---:|---:|---:|"]
+    lines += [f"| {s['tool']} | {s['predicate']} | {s['fidelity']} | {s['trap_median']:.2f} "
+              f"({s['n_trap']}) | {s['expected_median']:.2f} ({s['n_expected']}) | "
+              f"{s['separation']:+.2f} |" for s in seps] or ["| — | — | — | — | — | — |"]
+    lines += ["", "## Distributions", ""]
+    for tool in sorted({r["tool"] for r in summary}):
+        lines += [f"### {tool}", "", run, "",
+                  "| predicate | label | fidelity | n | min | median | max | ≥ threshold |",
+                  "|---|---|---|---:|---:|---:|---:|---:|"]
+        lines += [f"| {r['predicate']} | {r['label']} | {r['fidelity']} | {r['n']} | "
+                  f"{r['min']:.2f} | {r['median']:.2f} | {r['max']:.2f} | "
+                  f"{r['at_or_above']}/{r['n']} |" for r in summary if r["tool"] == tool]
+        lines.append("")
+    return "\n".join(lines)
+
+
+def report_cases(cases_path: Path) -> tuple[Path, Path]:
+    cases_path = Path(cases_path)
+    data = json.loads(cases_path.read_text(encoding="utf-8"))
+    records, coverage = collect(data["cases"])
+    summary = summarise(records)
+    md_path = cases_path.parent / "report.md"
+    json_path = cases_path.parent / "verdicts.json"
+    md_path.write_text(render_report(data["header"], summary, separations(summary), coverage),
+                       encoding="utf-8")
+    json_path.write_text(json.dumps(records, indent=2, ensure_ascii=False, default=str),
+                         encoding="utf-8")
+    return md_path, json_path
+
+
+# --- CLI ---------------------------------------------------------------------
+
+def _csv(text: str) -> list[str]:
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="command", required=True)
+    sel = sub.add_parser("select")
+    which = sel.add_mutually_exclusive_group(required=True)
+    which.add_argument("--tools", type=_csv)
+    which.add_argument("--all-tools", action="store_true")
+    sel.add_argument("--kinds", type=_csv, required=True, help=f"subset of {sorted(KINDS)}")
+    sel.add_argument("--workflow", action="append", dest="workflows")
+    sel.add_argument("--since", type=datetime.fromisoformat)
+    size = sel.add_mutually_exclusive_group(required=True)
+    size.add_argument("--limit", type=int, help="cases per (tool, label)")
+    size.add_argument("--all", action="store_true")
+    sel.add_argument("--out", type=Path, required=True)
+    sel.add_argument("--artifacts", type=Path, default=None,
+                     help="arena artifact root (default: <artifact_dir>/arena)")
+    for name in ("score", "report"):
+        sub.add_parser(name).add_argument("cases", type=Path)
+    args = parser.parse_args(argv)
+
+    if args.command == "select":
+        target = args.out / "cases.json"
+        if target.exists():
+            print(f"{target} exists; a new selection is a new directory (D10)")
+            return 2
+        arena_root = args.artifacts or Path(get_settings().artifact_dir) / "arena"
+        with database.SessionLocal() as session:
+            data = select_cases(session, tools=None if args.all_tools else args.tools,
+                                kinds=args.kinds, workflow_ids=args.workflows, since=args.since,
+                                limit=None if args.all else args.limit, arena_root=arena_root)
+        args.out.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(json.dumps(data["header"], indent=2, ensure_ascii=False))
+        print(f"wrote {target} — commit it BEFORE running `score` (D10)")
+        return 0
+    if args.command == "score":
+        return score_cases(args.cases)
+    md_path, json_path = report_cases(args.cases)
+    print(f"wrote {md_path} and {json_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

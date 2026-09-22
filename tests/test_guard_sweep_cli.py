@@ -7,10 +7,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
+from _system_one_fakes import JevPost
 from app.golden_workflows.schema import ToolExpectation, _ToolNotCalled
-from app.models import AgentActionAudit, AgentMessage
+from app.models import AgentActionAudit, AgentMessage, AgentToolGuardVerdict
+from app.services.deep_agent import tool_guard_policy as policy
+from app.services.deep_agent.tool_guard_policy import GuardPredicate
+from app.services.deep_agent.tool_guard_store import args_fingerprint, commit_verdict
 
 _SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "guard_sweep.py"
 
@@ -161,3 +163,89 @@ def test_workflow_filter_keeps_only_that_workflows_arena_threads(session, agent_
     dropped = cli.select_cases(session, tools=None, kinds={"arena"}, workflow_ids=["other"],
                                arena_root=tmp_path, workflows={})
     assert len(kept["cases"]) == 1 and dropped["cases"] == []
+
+
+def _desk_cases(session, factory, tmp_path, n=2):
+    desk = factory()
+    session.add(AgentMessage(thread_id=desk.id, role="user", content="release it", meta={},
+                             created_at=T))
+    for i in range(n):
+        _exec(session, desk, "release_settlement_cashflow", f"c{i}", minutes=i + 1)
+    session.commit()
+    data = cli.select_cases(session, tools=["release_settlement_cashflow"], kinds={"desk"},
+                            arena_root=tmp_path, workflows={})
+    path = tmp_path / "cases.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
+def _quiet(*_args):
+    return None
+
+
+def test_score_is_resumable_and_refuses_a_moved_policy(session, agent_thread_factory, tmp_path,
+                                                       monkeypatch):
+    monkeypatch.setenv("ZENMUX_API_KEY", "test-key")
+    path = _desk_cases(session, agent_thread_factory, tmp_path)
+    jev = JevPost()
+    none = tmp_path / "none.sqlite3"
+    assert cli.score_cases(path, post=jev, trace_path=none, out=_quiet) == 0
+    assert len(jev.calls) == 2
+    assert cli.score_cases(path, post=jev, trace_path=none, out=_quiet) == 0
+    assert len(jev.calls) == 2                        # the table is the checkpoint
+    assert session.query(AgentToolGuardVerdict).filter_by(source="sweep").count() == 2
+    moved = (GuardPredicate("beyond_named_scope", "another wording"),
+             *policy.SWEEP_POLICY["quote_rfq"][1:])
+    monkeypatch.setitem(policy.SWEEP_POLICY, "quote_rfq", moved)
+    assert cli.score_cases(path, post=jev, trace_path=none, out=_quiet) == 2
+
+
+def test_an_outage_exits_non_zero_and_leaves_the_cases_due(session, agent_thread_factory,
+                                                           tmp_path, monkeypatch):
+    monkeypatch.setenv("ZENMUX_API_KEY", "test-key")
+    path = _desk_cases(session, agent_thread_factory, tmp_path)
+    jev = JevPost()
+    jev.exc = TimeoutError("slow")
+    assert cli.score_cases(path, post=jev, trace_path=tmp_path / "none", out=_quiet) == 1
+    assert len(jev.calls) == 1
+    assert session.query(AgentToolGuardVerdict).count() == 0
+
+
+def test_summarise_never_pools_fidelities_and_separates_trap_from_expected():
+    def rec(label, fidelity, p):
+        return {"tool": "void_settlement_cashflow", "label": label, "fidelity": fidelity,
+                "predicates": [{"key": "unnamed_target", "probability": p, "threshold": 0.5}]}
+    summary = cli.summarise([rec("trap", "trace", 0.9), rec("trap", "trace", 0.8),
+                             rec("expected", "trace", 0.2), rec("trap", "audit_only", 0.6)])
+    assert {(r["label"], r["fidelity"], r["n"], r["at_or_above"]) for r in summary} == {
+        ("trap", "trace", 2, 2), ("expected", "trace", 1, 0), ("trap", "audit_only", 1, 1)}
+    [sep] = cli.separations(summary)
+    assert (sep["fidelity"], sep["separation"], sep["n_trap"], sep["n_expected"]) == (
+        "trace", 0.65, 2, 1)
+
+
+def test_report_writes_both_files_headed_by_the_run(session, agent_thread_factory, tmp_path):
+    path = _desk_cases(session, agent_thread_factory, tmp_path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for case, fidelity, p in zip(data["cases"], ("trace", "audit_only"), (0.7, 0.2)):
+        fp = args_fingerprint(case["tool"], {"id": 1})
+        commit_verdict(dict(
+            thread_id=case["thread_id"], tool_call_id=case["tool_call_id"], persona=None,
+            exec_mode="yolo", guard_mode="shadow", tool_name=case["tool"], args_json=fp.payload,
+            redacted=False, args_hash=fp.sha256, user_request_source="occurred_at",
+            verdict="flagged" if p >= 0.5 else "clear", unscored_reason=None,
+            predicates_json=[{"key": "beyond_named_scope", "probability": p, "threshold": 0.5,
+                              "flagged": p >= 0.5, "evidence": "untested"}],
+            max_probability=p, source="sweep", state_fidelity=fidelity, audit_id=case["audit_id"]))
+    md_path, json_path = cli.report_cases(path)
+    report = md_path.read_text(encoding="utf-8")
+    assert cli.HEADLINE in report and data["header"]["policy_sha256"][:12] in report
+    assert "| trace |" in report and "| audit_only |" in report
+    assert "`expected` is not `correct`" in report
+    assert len(json.loads(json_path.read_text(encoding="utf-8"))) == 2
+
+
+def test_main_select_refuses_to_overwrite_a_committed_case_set(tmp_path):
+    (tmp_path / "cases.json").write_text("{}", encoding="utf-8")
+    assert cli.main(["select", "--all-tools", "--kinds", "desk", "--all",
+                     "--out", str(tmp_path)]) == 2
