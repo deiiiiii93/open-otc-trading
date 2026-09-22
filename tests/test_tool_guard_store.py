@@ -97,3 +97,14 @@ def test_best_effort_writers_never_raise(session, monkeypatch):
                         _broken_session_factory(OperationalError("s", {}, Exception("locked"))))
     store.record_structural(_fields(tool_call_id=""))
     store.mark_interrupted([1])
+
+
+def test_a_sweep_commit_on_a_live_key_returns_the_live_row(session):
+    """Spec 2026-09-22 D3: an existing row of ANY source wins; nothing is overwritten."""
+    live = store.commit_verdict(_fields())
+    assert live.source == "live"
+    again = store.commit_verdict(_fields(source="sweep", state_fidelity="trace", audit_id=41,
+                                         verdict="clear", max_probability=0.1))
+    assert again == live
+    rows = session.query(AgentToolGuardVerdict).all()
+    assert [(r.source, r.verdict, r.audit_id) for r in rows] == [("live", "flagged", None)]

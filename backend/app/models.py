@@ -642,6 +642,17 @@ class AgentToolGuardVerdict(Base):
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    # Retrospective sweep (spec 2026-09-22-guard-sweep D3). The middleware writes
+    # `live` rows BEFORE a call runs; `sweep` rows only ever describe a call that
+    # already has a terminal execution audit row, so the live guard's lookup and
+    # resume can never meet one.
+    source: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="live", server_default=text("'live'")
+    )
+    state_fidelity: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    # The execution row a sweep verdict describes. No FK on purpose: audit rows
+    # are append-only, so a constraint would add only a downgrade-path rebuild.
+    audit_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
     __table_args__ = (
         Index(
@@ -650,6 +661,7 @@ class AgentToolGuardVerdict(Base):
             sqlite_where=text("tool_call_id != ''"),
             postgresql_where=text("tool_call_id != ''"),
         ),
+        Index("ix_agent_tool_guard_verdicts_source_created", "source", "created_at"),
     )
 
 

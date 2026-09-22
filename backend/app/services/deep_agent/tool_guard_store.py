@@ -42,6 +42,7 @@ class StoredVerdict:
     unscored_reason: str | None
     predicates: list[dict]
     max_probability: float | None
+    source: str = "live"     # live | sweep (spec 2026-09-22 D3)
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,7 @@ def _snapshot(row: AgentToolGuardVerdict) -> StoredVerdict:
         unscored_reason=row.unscored_reason,
         predicates=list(row.predicates_json or []),
         max_probability=row.max_probability,
+        source=row.source or "live",
     )
 
 
