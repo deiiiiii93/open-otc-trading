@@ -18,6 +18,7 @@ from ..source_evidence import (
 )
 from .evaluator import NormalizedObservation
 from .metrics import get_metric
+from .scopes import scope_matches
 
 
 SCENARIO_TAIL_METHODOLOGY: dict[str, Any] = {
@@ -236,32 +237,28 @@ def _risk_rows_for_scope(
     requested_ids = scope.position_ids
     if requested_ids is not None:
         wanted = set(requested_ids)
-        selected = [
-            row for row in selected if row.get("position_id") in wanted
-        ]
-    if scope.scope_type == "underlying":
-        selected = [
-            row for row in selected if str(row.get("underlying")) == str(scope.value)
-        ]
-    elif scope.scope_type == "product_family":
-        selected = [
-            row
-            for row in selected
-            if str(row.get("product_family") or row.get("product_type"))
-            == str(scope.value)
-        ]
-    elif scope.scope_type == "position":
-        position_id = (
+        selected = [row for row in selected if row.get("position_id") in wanted]
+    value: Any = scope.value
+    if scope.scope_type == "position":
+        value = (
             int(scope.value)
             if scope.value is not None
             else requested_ids[0]
             if requested_ids
             else None
         )
-        selected = [
-            row for row in selected if row.get("position_id") == position_id
-        ]
-        requested_ids = (position_id,) if position_id is not None else ()
+        requested_ids = (value,) if value is not None else ()
+    selected = [
+        row
+        for row in selected
+        if scope_matches(
+            scope.scope_type,
+            value,
+            position_id=row.get("position_id"),
+            underlying=row.get("underlying"),
+            family=row.get("product_family") or row.get("product_type"),
+        )
+    ]
     return selected, requested_ids
 
 

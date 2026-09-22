@@ -44,6 +44,7 @@ from .contracts import LimitActionContext
 from .definitions import canonical_version_snapshot
 from .errors import LimitConflictError
 from .evaluator import EvaluationResult, LimitRule, NormalizedObservation, evaluate
+from .scopes import scope_key_for, scope_matches
 from .source_planner import (
     SourcePlanKey,
     SourcePlanRequest,
@@ -190,11 +191,25 @@ def _resolve_scopes(
 ) -> tuple[_ResolvedScope, ...]:
     config = dict(version.scope_config or {})
     by_id = {position.id: position for position in positions}
+
+    def _members(scope_type: str, value: Any) -> tuple[int, ...]:
+        return tuple(
+            position.id
+            for position in positions
+            if scope_matches(
+                scope_type,
+                value,
+                position_id=position.id,
+                underlying=position.underlying,
+                family=str(position.product_type),
+            )
+        )
+
     if version.scope_type == "portfolio":
         return (
             _ResolvedScope(
                 "portfolio",
-                f"portfolio:{portfolio.id}",
+                scope_key_for("portfolio", portfolio.id),
                 portfolio.name,
                 tuple(sorted(by_id)),
                 portfolio.id,
@@ -206,7 +221,7 @@ def _resolve_scopes(
         return tuple(
             _ResolvedScope(
                 "position",
-                f"position:{position_id}",
+                scope_key_for("position", position_id),
                 f"Position {position_id}",
                 (position_id,),
                 position_id,
@@ -223,17 +238,13 @@ def _resolve_scopes(
         return tuple(
             _ResolvedScope(
                 "underlying",
-                f"underlying:{value}",
+                scope_key_for("underlying", value),
                 value,
-                tuple(
-                    position.id
-                    for position in positions
-                    if position.underlying == value
-                ),
+                _members("underlying", value),
                 value,
             )
             for value in values
-            if any(position.underlying == value for position in positions)
+            if _members("underlying", value)
         )
     if version.scope_type == "product_family":
         families = config.get("families")
@@ -245,17 +256,13 @@ def _resolve_scopes(
         return tuple(
             _ResolvedScope(
                 "product_family",
-                f"product_family:{value}",
+                scope_key_for("product_family", value),
                 value,
-                tuple(
-                    position.id
-                    for position in positions
-                    if str(position.product_type) == value
-                ),
+                _members("product_family", value),
                 value,
             )
             for value in values
-            if any(str(position.product_type) == value for position in positions)
+            if _members("product_family", value)
         )
     raise ValueError(f"unsupported scope type {version.scope_type!r}")
 
