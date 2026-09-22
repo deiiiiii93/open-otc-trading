@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import exists, func
 
 from app import database
 from app.models import AgentActionAudit, AgentToolGuardVerdict
@@ -48,6 +48,32 @@ class AuditActionOut(BaseModel):
 
 
 _GUARD_VERDICTS = frozenset({"clear", "flagged", "unscored"})
+_GUARD_SOURCES = frozenset({"live", "sweep"})
+_FIDELITIES = frozenset({"trace", "audit_only"})
+_GUARD_FILTERS = _GUARD_VERDICTS | {"none"}
+
+
+def _one_of(name: str, value: str | None, allowed: frozenset[str]) -> None:
+    if value is not None and value not in allowed:
+        raise HTTPException(400, f"{name} must be one of {sorted(allowed)}")
+
+
+def _guard_filter(guard: str | None, guard_source: str | None):
+    """EXISTS on the verdict key, so the action list stays server-paginated. A
+    NULL audit thread matches verdict thread 0 (as `_call_key`); an empty id
+    never joins."""
+    v = AgentToolGuardVerdict
+    conditions = [
+        v.thread_id == func.coalesce(AgentActionAudit.thread_id, 0),
+        v.tool_call_id == AgentActionAudit.tool_call_id,
+        v.tool_call_id != "",
+    ]
+    if guard_source is not None:
+        conditions.append(v.source == guard_source)
+    if guard in _GUARD_VERDICTS:
+        conditions.append(v.verdict == guard)
+    matched = exists().where(*conditions)
+    return ~matched if guard == "none" else matched
 
 
 def _call_key(thread_id: int | None, tool_call_id: str) -> tuple[int, str]:
@@ -66,7 +92,10 @@ def _guard_by_call(session, rows) -> dict[tuple[int, str], dict]:
     )
     # The UNIQUE key makes each (thread_id, tool_call_id) at most one row.
     return {
-        (v.thread_id, v.tool_call_id): {"verdict": v.verdict, "max_probability": v.max_probability}
+        (v.thread_id, v.tool_call_id): {
+            "verdict": v.verdict, "max_probability": v.max_probability,
+            "source": v.source, "state_fidelity": v.state_fidelity,
+        }
         for v in verdicts
         if (v.thread_id, v.tool_call_id) in wanted
     }
@@ -105,6 +134,9 @@ class GuardVerdictOut(BaseModel):
     error: str | None
     created_at: Any
     execution_status: str | None
+    source: str
+    state_fidelity: str | None
+    audit_id: int | None
 
 
 def _execution_status_by_call(session, verdicts) -> dict[tuple[int, str], str]:
@@ -134,6 +166,7 @@ def _verdict_out(v: AgentToolGuardVerdict, execution_status: str | None) -> dict
         max_probability=v.max_probability, action=v.action, model=v.model,
         latency_ms=v.latency_ms, error=v.error, created_at=v.created_at,
         execution_status=execution_status,
+        source=v.source, state_fidelity=v.state_fidelity, audit_id=v.audit_id,
     ).model_dump()
 
 
@@ -151,9 +184,13 @@ def build_audit_router() -> APIRouter:
         thread_id: int | None = None,
         since: datetime | None = None,
         until: datetime | None = None,
+        guard: str | None = None,
+        guard_source: str | None = None,
         limit: int = Query(50, le=200, ge=1),
         offset: int = Query(0, ge=0),
     ):
+        _one_of("guard", guard, _GUARD_FILTERS)
+        _one_of("guard_source", guard_source, _GUARD_SOURCES)
         with database.SessionLocal() as session:
             q = session.query(AgentActionAudit)
             for column, value in (
@@ -174,6 +211,8 @@ def build_audit_router() -> APIRouter:
                 q = q.filter(AgentActionAudit.occurred_at >= since)
             if until is not None:
                 q = q.filter(AgentActionAudit.occurred_at <= until)
+            if guard is not None or guard_source is not None:
+                q = q.filter(_guard_filter(guard, guard_source))
             total = q.count()
             rows = (
                 q.order_by(
@@ -244,12 +283,16 @@ def build_audit_router() -> APIRouter:
         tool_name: str | None = None,
         thread_id: int | None = None,
         since: datetime | None = None,
+        source: str = "all",
+        state_fidelity: str | None = None,
         limit: int = Query(50, le=200, ge=1),
         offset: int = Query(0, ge=0),
     ):
-        """System One guard verdicts, newest first (spec §1 "Reading shadow data")."""
-        if verdict is not None and verdict not in _GUARD_VERDICTS:
-            raise HTTPException(400, f"verdict must be one of {sorted(_GUARD_VERDICTS)}")
+        """System One guard verdicts, newest first (spec §1 "Reading shadow data").
+        Both sources by default: a reader asking for verdicts wants to see them."""
+        _one_of("verdict", verdict, _GUARD_VERDICTS)
+        _one_of("source", source, _GUARD_SOURCES | {"all"})
+        _one_of("state_fidelity", state_fidelity, _FIDELITIES)
         with database.SessionLocal() as session:
             q = session.query(AgentToolGuardVerdict)
             if verdict is not None:
@@ -260,6 +303,10 @@ def build_audit_router() -> APIRouter:
                 q = q.filter(AgentToolGuardVerdict.thread_id == thread_id)
             if since is not None:
                 q = q.filter(AgentToolGuardVerdict.created_at >= since)
+            if source != "all":
+                q = q.filter(AgentToolGuardVerdict.source == source)
+            if state_fidelity is not None:
+                q = q.filter(AgentToolGuardVerdict.state_fidelity == state_fidelity)
             total = q.count()
             rows = (
                 q.order_by(AgentToolGuardVerdict.created_at.desc(),
@@ -277,13 +324,18 @@ def build_audit_router() -> APIRouter:
             }
 
     @router.get("/guard-verdicts/summary")
-    def guard_verdict_summary(since: datetime | None = None):
+    def guard_verdict_summary(since: datetime | None = None, source: str = "live"):
         """`flagged_then_ok` = flagged verdicts whose call then ran `ok` — the
-        candidate false positives shadow mode exists to count."""
+        candidate false positives shadow mode exists to count. Defaults to
+        source=live (spec 2026-09-22 D12): a sweep row describes a call that ran
+        by definition, so pooling it would inflate the count."""
+        _one_of("source", source, _GUARD_SOURCES | {"all"})
         with database.SessionLocal() as session:
             q = session.query(AgentToolGuardVerdict)
             if since is not None:
                 q = q.filter(AgentToolGuardVerdict.created_at >= since)
+            if source != "all":
+                q = q.filter(AgentToolGuardVerdict.source == source)
             verdicts = q.all()
             status = _execution_status_by_call(session, verdicts)
         by_tool: dict[str, dict[str, Any]] = {}
@@ -307,6 +359,7 @@ def build_audit_router() -> APIRouter:
         for name, values in latencies.items():
             by_tool[name]["median_latency_ms"] = median(values)
         return {
+            "source": source,
             "by_tool": [by_tool[name] for name in sorted(by_tool)],
             "unscored_reasons": reasons,
         }

@@ -119,8 +119,10 @@ def test_actions_carry_the_guard_joined_on_both_key_halves(api, seeded):
     t1, _ = seeded
     items = api.get("/api/audit/actions?limit=200").json()["items"]
     guard = {(i["thread_id"], i["tool_call_id"]): i["guard"] for i in items}
-    assert guard[(t1.id, "a")] == {"verdict": "flagged", "max_probability": 0.85}
-    assert guard[(t1.id, "b")] == {"verdict": "clear", "max_probability": 0.1}
+    assert guard[(t1.id, "a")] == {"verdict": "flagged", "max_probability": 0.85,
+                                   "source": "live", "state_fidelity": None}
+    assert guard[(t1.id, "b")] == {"verdict": "clear", "max_probability": 0.1,
+                                   "source": "live", "state_fidelity": None}
     assert guard[(seeded[1].id, "zz")] is None
     assert guard[(None, "")] is None
     one = next(i for i in items if (i["thread_id"], i["tool_call_id"]) == (t1.id, "a"))
