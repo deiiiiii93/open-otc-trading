@@ -107,3 +107,39 @@ arena contestant, never a source of numbers.
   `book_extracted_trade` approval card.
 - Off on arena turns (the server-stamped `CONFIRMATION_EXTRACTOR_SELECTION_KEY`
   marks them); a check failure can never fail a document.
+
+## Limit incident review (`limits/review.py`, `limits/review_checks.py`)
+
+- Spec: `docs/superpowers/specs/2026-09-21-limit-incident-review-design.md`. Three reads
+  of incident TEXT: a waiver rationale's 5-level grade (`score`), six claims (`noul`, one
+  each — a rationale often makes two), `authority_only` (`noul`), and a comment
+  thread's state (`choice`). DISPLAY-ONLY; invisible to the agent tools (pinned).
+- **Built from the EVENT, never the incident's columns.** A re-waive overwrites
+  `waiver_rationale`; the review scores the `waived` event's payload, and severity /
+  utilization come from the latest evaluation-stamped event at or before it — not
+  `last_evaluation_id`, which keeps moving after the waiver.
+- **Due is a database fact**: a `waived` event, or an incident's LATEST `commented`
+  event, with no row or an `unscored` row. The post-commit `enqueue` is only the fast
+  path; `sweep()` after every monitoring run is the guarantee. There is no `pending`
+  state to go stale.
+- **Insert-or-select on UNIQUE (event_id, kind).** A `scored` row is never overwritten.
+  Checks (`claims_json`) are recomputed each sweep for the incident's current waiver;
+  Jev answers (`answers_json`) never are. `review_chip_min_p` is therefore a re-render,
+  not a re-score — the API serves it as `chip_min_p` so the UI never hardcodes it.
+- **Checks never say "contradicted."** `supported` / `no_evidence` / `unverified` only.
+  Scope membership goes through `limits/scopes.py::scope_matches` — the same rule
+  monitoring and sources use — and expiry through `option_core_terms.expiry_date`.
+- **Arena threads are never scored; "cannot tell" means skip.** `thread_access.
+  thread_is_arena()` is tri-state; this caller treats `None` as skip (the memory queue
+  treats it as proceed). A skipped event is still due, so it is retried. Test fixtures
+  that name a `thread_id` with no `AgentThread` row are therefore skipped — use a
+  thread-less (REST-style) context or create the thread.
+- **Dates in fixtures:** `incidents.waive` checks `expires_at` against the REAL clock,
+  so a test whose incident lives in 2026-07 must pass a wall-clock-relative expiry.
+- Outage reasons (`no_key`, `timeout`, `http_error`) end a sweep batch; `bad_response`,
+  `state_too_large`, `low_confidence` are row facts and the batch continues. Any other
+  exception ⇒ `unscored:internal_error`; a waive, a comment or a monitoring run can
+  never fail because of a review.
+- Every question is `untested`. `scripts/limit_review_probe.py` scores the arena
+  corpus (split by the step-5 outcome) and `scripts/fixtures/limit_review_rationales.json`;
+  its output is direction, never a rate.

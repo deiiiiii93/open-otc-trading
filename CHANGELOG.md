@@ -41,6 +41,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   disagreement shows on the Confirmations row and on the `book_extracted_trade`
   approval card. Advisory only; never on arena turns. `extracted_trades.family_check`
   (migration `0063`); opt out with `OPEN_OTC_CONFIRMATION_FAMILY_CHECK=false`.
+- **Limit incident text review** — with System One on, every waiver rationale and
+  the latest comment on a limit incident get a display-only Jev read: a 5-level
+  completeness grade, six claim probabilities (three of them — `position_rolling_off`,
+  `data_error`, `limit_under_review` — checked against the book as
+  `supported` / `no_evidence` / `unverified`, never "contradicted"), an
+  `authority only` flag, and a comment-thread state. Built from the immutable
+  event, stored once per `(event_id, kind)` in `limit_incident_reviews`
+  (migration `0064`), served as `reviews` on every incident payload and shown on
+  the Limits → Breaches tab with a sortable `Rationale` column. Enqueued after each
+  waive/comment commit; a sweep after every limit-monitoring run catches anything
+  missed. Invisible to the agent tools. Every predicate ships `untested`;
+  `scripts/limit_review_probe.py` scores the arena corpus and a committed fixture.
+  Opt out with `OPEN_OTC_LIMIT_REVIEW=false`.
+- Shared `thread_is_arena()` (tri-state) and `limits/scopes.py` (the one
+  scope-membership rule monitoring, sources and the review checkers all use).
 - **Arena post: "How does Jev boost our OTC trading agent?"** — 234 live Jev calls: 231
   through the merged guard, keep-alive and family-check paths, 2 in one live AUTO
   session, 1 connectivity probe. Under the shipped wording the guard flagged all 30 trap
