@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
-from datetime import datetime, timedelta
+import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,6 +14,7 @@ from app.models import AgentActionAudit, AgentMessage, AgentToolGuardVerdict
 from app.services.deep_agent import tool_guard_policy as policy
 from app.services.deep_agent.tool_guard_policy import GuardPredicate
 from app.services.deep_agent.tool_guard_store import args_fingerprint, commit_verdict
+from app.services.tracing.store import _SCHEMA
 
 _SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "guard_sweep.py"
 
@@ -139,6 +141,47 @@ def test_select_labels_arena_calls_and_hitl_decisions(session, agent_thread_fact
     assert header["spend_estimate"]["requests"] == 9
     assert header["counts"]["release_settlement_cashflow"] == {
         "expected": 1, "no_match": 3, "unlabelled": 1}
+
+
+def _span_trace_db(tmp_path, thread_id, *spans):
+    """A trace DB holding tool spans given as (span_id, tool_call_id, start)."""
+    path = tmp_path / "traces.sqlite3"
+    conn = sqlite3.connect(path)
+    conn.executescript(_SCHEMA)
+    conn.executemany(
+        "INSERT INTO trace_runs (id, trace_id, dotted_order, thread_id, name, run_type, "
+        "start_time, status, inputs, outputs, error, extra) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        [(span_id, "tr", f"R.{span_id}", thread_id, "release_settlement_cashflow", "tool",
+          start.replace(tzinfo=timezone.utc).isoformat(), "error", "{}", "{}", "raised",
+          json.dumps({"tool_call_id": call_id})) for span_id, call_id, start in spans])
+    conn.commit()
+    conn.close()
+    return path
+
+
+def test_a_call_the_transcript_keyed_by_its_span_id_still_joins(session, agent_thread_factory,
+                                                                 tmp_path):
+    """trace_harvest keys a call by its span run id when the tool's output is not a
+    ToolMessage — a tool that raised. Those calls join through the row's own span,
+    or every failed call would read `no_match`."""
+    wf = _workflow()
+    root = tmp_path / "arena"
+    thread = _arena_thread(session, agent_thread_factory, "m1")
+    _write_transcript(root, 7, "ops-mini", "m1", [s.user for s in wf.steps],
+                      {0: [("01a0-span-r1", "release_settlement_cashflow")]})
+    _exec(session, thread, "release_settlement_cashflow", "r1", status="error")
+    _exec(session, thread, "release_settlement_cashflow", "r2", minutes=2, status="error")
+    session.commit()
+    rows = session.query(AgentActionAudit).filter_by(thread_id=thread.id).order_by(
+        AgentActionAudit.id).all()
+    trace = _span_trace_db(tmp_path, thread.id,
+                           ("01a0-span-r1", "r1", T + timedelta(minutes=1, milliseconds=1)),
+                           ("01a0-span-r2", "r2", T + timedelta(minutes=2, milliseconds=1)))
+    joined = cli.arena_labels(thread, rows, arena_root=root, workflows={"ops-mini": wf},
+                              trace_path=trace)
+    assert [joined[r.id] for r in rows] == ["expected", "no_match"]   # r2's span is in no transcript
+    blind = cli.arena_labels(thread, rows, arena_root=root, workflows={"ops-mini": wf})
+    assert [blind[r.id] for r in rows] == ["no_match", "no_match"]
 
 
 def test_limit_is_per_tool_and_label_and_spreads_over_time(session, agent_thread_factory, tmp_path):

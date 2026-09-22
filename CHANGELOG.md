@@ -30,7 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`scripts/guard_sweep.py select | score | report`) share one scorer. A 19-tool candidate
   family (`SWEEP_POLICY`) covers the settlement, RFQ, lifecycle and booking money path and
   never reaches the live guard. The Audit page marks sweep verdicts `· sweep` and gains a
-  Guard filter; `/api/audit/guard-verdicts/summary` now defaults to `source=live`.
+  Guard filter; `/api/audit/guard-verdicts/summary` now defaults to `source=live`. The CLI
+  labels an arena call by joining its match transcript on `tool_call_id` or, for a tool
+  that raised (which the transcript keys by span id), on the call's own trace span. First
+  evidence run: `docs/arena/evidence/2026-09-22-guard-sweep/` (628 calls, direction only).
 - **System One (TypeSafe Jev) client** — `services/system_one/`, the single exit
   for calibrated yes/no, one-of-N and ordered-level questions over ZenMux's
   `/systemone` route. Sanitizes and size-budgets `state`, maps every failure to

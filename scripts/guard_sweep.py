@@ -15,7 +15,8 @@ Plan: docs/superpowers/plans/2026-09-22-guard-sweep.md (findings F4, F5).
 `--limit N` keeps N cases per (tool, label), evenly spread over time, so a
 tool's few traps are never crowded out by its many expected calls.
 
-Labels (F5) come from each arena match's transcript, joined by tool_call_id,
+Labels (F5) come from each arena match's transcript, joined by tool_call_id (or
+by the call's own trace span id, which the transcript uses for a tool that raised),
 and TODAY's workflow definition: `trap` = the call's step (or the session)
 forbids that tool and the scorer's own evaluate_assertion fails on it;
 `expected` = the step expects it; `unlabelled` otherwise; `no_match` = the call
@@ -40,7 +41,7 @@ import statistics
 import sys
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +58,7 @@ from app.services.deep_agent.hitl import _RISK_LEVEL_BY_TOOL  # noqa: E402
 from app.services.deep_agent.tool_guard_policy import (  # noqa: E402
     GUARD_POLICY, SWEEP_POLICY, policy_sha256, validate_policy, validate_sweep_policy,
 )
+from app.services.deep_agent.tool_guard_records import read_spans  # noqa: E402
 from app.services.deep_agent.tool_guard_sweep import (  # noqa: E402
     ARENA, KINDS, eligible_rows, score_audit_row,
 )
@@ -122,8 +124,19 @@ def label_call(workflow: Any, step: Mapping[str, Any], step_index: int, call_id:
     return UNLABELLED
 
 
+def _span_ids(trace_path: Path | None, thread_id: int, rows: Sequence[Any]) -> dict[str, str]:
+    """tool_call_id -> the call's own trace span id, for one thread's rows.
+
+    trace_harvest keys a call by its span run id when the tool's output is not a
+    ToolMessage — a tool that raised — so those calls join only through the span.
+    """
+    since = min(row.occurred_at for row in rows) - timedelta(minutes=1)
+    spans = read_spans(trace_path, thread_id, since) or []
+    return {s.tool_call_id: s.id for s in spans if s.run_type == "tool" and s.tool_call_id}
+
+
 def arena_labels(thread: Any, rows: Sequence[Any], *, arena_root: Path,
-                 workflows: Mapping[str, Any]) -> dict[int, str]:
+                 workflows: Mapping[str, Any], trace_path: Path | None = None) -> dict[int, str]:
     """audit id -> arena label for one arena thread's rows."""
     parsed = parse_title(thread.title)
     workflow = workflows.get(parsed[0]) if parsed else None
@@ -144,14 +157,20 @@ def arena_labels(thread: Any, rows: Sequence[Any], *, arena_root: Path,
                 if call.get("id"):
                     located.setdefault(call["id"], (step, index))
     out: dict[int, str] = {}
+    span_ids: dict[str, str] | None = None      # read lazily: most threads never miss
     for row in rows:
-        hit = located.get(row.tool_call_id or "")
+        key = row.tool_call_id or ""
+        hit = located.get(key)
+        if hit is None and located:
+            if span_ids is None:
+                span_ids = _span_ids(trace_path, thread.id, rows)
+            key = span_ids.get(key, "")
+            hit = located.get(key)
         if hit is None:
             out[row.id] = NO_MATCH
             continue
-        name = next(c.get("name", "") for c in hit[0]["tool_calls"]
-                    if c.get("id") == row.tool_call_id)
-        out[row.id] = (label_call(workflow, hit[0], hit[1], row.tool_call_id)
+        name = next(c.get("name", "") for c in hit[0]["tool_calls"] if c.get("id") == key)
+        out[row.id] = (label_call(workflow, hit[0], hit[1], key)
                        if normalize_tool_name(name) == normalize_tool_name(row.tool_name)
                        else NO_MATCH)
     return out
@@ -212,11 +231,12 @@ def select_cases(session, *, tools: Iterable[str] | None, kinds: Iterable[str],
     by_thread: dict[int, list[Any]] = defaultdict(list)
     for row in rows:
         by_thread[row.thread_id].append(row)
+    trace = Path(cfg.trace_db_path)
     arena: dict[int, str] = {}
     for thread_id, group in by_thread.items():
         if threads[thread_id].source == ARENA:
             arena.update(arena_labels(threads[thread_id], group, arena_root=arena_root,
-                                      workflows=registry))
+                                      workflows=registry, trace_path=trace))
     hitl = hitl_labels(session, rows)
     cases = []
     for row in rows:
@@ -237,7 +257,6 @@ def select_cases(session, *, tools: Iterable[str] | None, kinds: Iterable[str],
     counts: dict[str, Counter] = defaultdict(Counter)
     for case in chosen:
         counts[case["tool"]][case["label"]] += 1
-    trace = Path(cfg.trace_db_path)
     header = {
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "policy_sha256": policy_sha256(),

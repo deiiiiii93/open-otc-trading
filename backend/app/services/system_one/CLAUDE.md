@@ -191,3 +191,13 @@ arena contestant, never a source of numbers.
   ids. Today's definition + the scorer's own `evaluate_assertion` decide `trap` /
   `expected`; a transcript of another manifest era is `no_match`. Labels live in
   `cases.json`, never on verdict rows.
+- **A transcript keys a FAILED call by its span id, not its `tool_call_id`.**
+  `trace_harvest` records `tcid or span id`, and a tool that raised leaves no ToolMessage
+  to parse a `tcid` from. A join on `tool_call_id` alone turned every failed call into
+  `no_match` — 87 arena rows, mostly `expected` `book_position`/`quote_rfq`, so the
+  `expected` buckets were skewed toward calls that succeeded. `arena_labels` retries a
+  miss through the row's own trace span. The first evidence run
+  (`docs/arena/evidence/2026-09-22-guard-sweep/`) predates the fix and says so.
+- **`no_match` is mostly lost evidence.** Purged run directories, matches that never
+  wrote a transcript, threads with no `arena_run_id`, and trial files a re-run of the
+  same match overwrote. Diagnose a large `no_match` before trusting the labelled rest.
