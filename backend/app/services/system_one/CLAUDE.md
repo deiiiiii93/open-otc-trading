@@ -204,6 +204,10 @@ arena contestant, never a source of numbers.
   `expected` buckets were skewed toward calls that succeeded. `arena_labels` retries a
   miss through the row's own trace span. The first evidence run
   (`docs/arena/evidence/2026-09-22-guard-sweep/`) predates the fix and says so.
+- **A HITL chain joins by `audit_ref`, never `tool_call_id`.** The live middleware stamps
+  a proposal and its decision with its own hashed id; only the execution row carries the
+  provider call id. A `tool_call_id` join matched the seeded rows alone and labelled all
+  8 real desk approvals `unlabelled`.
 - **`no_match` is mostly lost evidence.** Purged run directories, matches that never
   wrote a transcript, threads with no `arena_run_id`, and trial files a re-run of the
   same match overwrote. Diagnose a large `no_match` before trusting the labelled rest.

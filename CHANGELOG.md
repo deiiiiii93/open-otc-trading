@@ -34,7 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   labels an arena call by joining its match transcript on `tool_call_id` or, for a tool
   that raised (which the transcript keys by span id), on the call's own trace span. A
   persona's window is scoped by its `task` call id, so a call resumed after a HITL pause
-  keeps the calls made before it (the resume starts a new trace root). First
+  keeps the calls made before it (the resume starts a new trace root), and a human
+  approval is joined to its call by `audit_ref`. First
   evidence run: `docs/arena/evidence/2026-09-22-guard-sweep/` (628 calls, direction only).
 - **System One (TypeSafe Jev) client** — `services/system_one/`, the single exit
   for calibrated yes/no, one-of-N and ordered-level questions over ZenMux's

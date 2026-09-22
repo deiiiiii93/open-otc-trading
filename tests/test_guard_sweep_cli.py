@@ -143,6 +143,28 @@ def test_select_labels_arena_calls_and_hitl_decisions(session, agent_thread_fact
         "expected": 1, "no_match": 3, "unlabelled": 1}
 
 
+def test_a_live_hitl_chain_joins_by_audit_ref(session, agent_thread_factory, tmp_path):
+    """The live middleware stamps a proposal/decision with its OWN id and links the
+    chain by the server-minted audit_ref; the execution row carries the provider's
+    call id. A tool_call_id join labelled every real desk approval `unlabelled`."""
+    desk = agent_thread_factory()
+    session.add(AgentMessage(thread_id=desk.id, role="user", content="book it", meta={},
+                             created_at=T))
+    for kind, status, call_id in (("hitl_proposal", "proposed", "c1a0hash"),
+                                  ("hitl_decision", "approved", "c1a0hash"),
+                                  ("execution", "error", "call_00_real")):
+        session.add(AgentActionAudit(kind=kind, status=status, tool_name="book_position",
+                                     tool_class="domain_write", tool_call_id=call_id,
+                                     audit_ref="ref-1", thread_id=desk.id, mode="auto",
+                                     args_json={}, occurred_at=T + timedelta(minutes=1)))
+    session.commit()
+    data = cli.select_cases(session, tools=["book_position"], kinds={"desk"},
+                            arena_root=tmp_path, workflows={})
+    [case] = data["cases"]
+    assert (case["tool_call_id"], case["hitl_label"], case["label"]) == (
+        "call_00_real", "approved", "approved")
+
+
 def _span_trace_db(tmp_path, thread_id, *spans):
     """A trace DB holding tool spans given as (span_id, tool_call_id, start)."""
     path = tmp_path / "traces.sqlite3"

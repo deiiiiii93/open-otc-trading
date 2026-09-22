@@ -48,6 +48,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
+from sqlalchemy import or_  # noqa: E402
+
 from app import database  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.golden_workflows.assertions import AssertionContext, evaluate_assertion  # noqa: E402
@@ -177,14 +179,21 @@ def arena_labels(thread: Any, rows: Sequence[Any], *, arena_root: Path,
 
 
 def hitl_labels(session, rows: Sequence[Any]) -> dict[int, str]:
-    """audit id -> approved | rejected, from the call's latest hitl_decision row."""
+    """audit id -> approved | rejected, from the call's latest hitl_decision row.
+
+    The chain key is `audit_ref`: the live middleware stamps a proposal and its
+    decision with its own id, not the provider call id the execution row carries.
+    `tool_call_id` is the fallback for rows that carry no ref.
+    """
     out: dict[int, str] = {}
     for row in rows:
+        same_call = AgentActionAudit.tool_call_id == row.tool_call_id
+        if row.audit_ref:
+            same_call = or_(same_call, AgentActionAudit.audit_ref == row.audit_ref)
         decision = (
             session.query(AgentActionAudit.status)
             .filter(AgentActionAudit.kind == "hitl_decision",
-                    AgentActionAudit.thread_id == row.thread_id,
-                    AgentActionAudit.tool_call_id == row.tool_call_id)
+                    AgentActionAudit.thread_id == row.thread_id, same_call)
             .order_by(AgentActionAudit.id.desc())
             .first()
         )
