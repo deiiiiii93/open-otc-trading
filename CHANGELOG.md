@@ -79,6 +79,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Opt out with `OPEN_OTC_LIMIT_REVIEW=false`.
 - Shared `thread_is_arena()` (tri-state) and `limits/scopes.py` (the one
   scope-membership rule monitoring, sources and the review checkers all use).
+- **Arena post: "What would Jev have flagged?"** — the guard's predicates run over 628
+  calls that had already executed (604 arena, all 24 desk), rebuilding each call's state
+  from the trace store or the audit trail and asking Jev the same questions. One pass, no
+  outage: 63 flagged, 552 clear, 13 unscored. On the `ops-settlement-day` step-8 void,
+  `unnamed_target` flags 11 of 12 while staying at 0 of 19 on the step-1 knock-out the
+  user names; `clears_blocker` reads 0.91–0.92 on the six voids that follow a refused
+  reopen and 0.12–0.38 on the six that reach the void another way — it is route-exact,
+  not a coin toss. No candidate predicate is dead (worst: `resync.from_document` 5 of 24,
+  all on the threshold, where the user delegated the decision). Three traps were never
+  sprung. The run also found the three label/state defects fixed in `bc97264`, `4183fb5`
+  and `4f6d18e`. Evidence in `docs/arena/evidence/2026-09-22-guard-sweep/`.
 - **Arena post: "Can Jev read a limit waiver?"** — 225 live Jev calls against the limit
   incident review: 129 through the merged `score_event` path (three repeats per
   hand-written case), 91 in a read-only probe over the arena's model-written incident

@@ -19,7 +19,7 @@ guard uses, and scored once by Jev; the verdict row is advisory (`source="sweep"
 | Filters | `--all-tools --kinds arena,desk --limit 25` (25 cases per tool × label, spread over time) |
 | Cases | 628 — 604 arena, 24 desk. Labels: `expected` 300, `unlabelled` 130, `no_match` 183, `trap` 12, `approved` 3 |
 | Outcome | one pass, exit 0, **0 outages**: 63 flagged, 552 clear, 13 unscored (`no_user_request`) |
-| Spend | 628 requests, ≈ 816 s, ≈ $1.88 (the CLI's estimate: 1.3 s and $0.003 a row) |
+| Spend | 628 requests; **17 min 50 s measured** end to end (latency median 1.46 s, max 5.66 s) against the CLI's ≈ 816 s estimate; ≈ $1.88 estimated at $0.003 a row |
 | Fidelity | `trace` 551 · `audit_only` 64 · none 13. **Never pooled** below |
 
 **The database was a snapshot, not the live file.** Migrating the live desk DB to `0065` was

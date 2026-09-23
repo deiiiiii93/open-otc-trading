@@ -5,6 +5,20 @@
 # assets, publish.  A missing blurb FAILS THE BUILD by design — never let a
 # generated first paragraph ship as editorial copy.
 
+- file: 2026-09-22-jev-guard-sweep.md
+  date: 2026-09-22
+  tags: [research]
+  chips: ["28 tools", "628 past calls", "12 real traps"]
+  title: "What would Jev have flagged?"
+  blurb: >
+    The guard from our first Jev post has written no verdicts: it runs only in AUTO, and
+    nobody has used AUTO with it on. So we asked Jev about 628 calls that had already run,
+    rebuilding what the guard would have seen. It would have flagged the arena's
+    refusal-clearing void on eleven of twelve. The question written for that trap caught
+    exactly the six that followed a refusal, because the other models reached the void
+    another way. The run also found three defects in our own evidence plumbing.
+  publish: true
+
 - file: 2026-09-22-jev-limit-review.md
   date: 2026-09-22
   tags: [research]
