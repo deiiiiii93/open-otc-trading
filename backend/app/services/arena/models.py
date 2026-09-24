@@ -105,6 +105,12 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         default_config=_DEFAULT_CONFIG,
     ),
     ArenaModel(
+        slug="gpt-6-luna",
+        zenmux_name="openai/gpt-6-luna:openai",
+        display_name="GPT-6 Luna",
+        default_config=_DEFAULT_CONFIG,
+    ),
+    ArenaModel(
         slug="gpt-5-6-sol",
         zenmux_name="openai/gpt-5.6-sol:openai",
         display_name="GPT-5.6 Sol",
@@ -301,6 +307,12 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         # demonstrably not blind. Pinned to the model owner's own metal.
         zenmux_name="deepseek/deepseek-v4-flash-vision-exp:deepseek",
         display_name="DeepSeek V4 Flash Vision (exp)",
+        default_config=_DEFAULT_CONFIG,
+    ),
+    ArenaModel(
+        slug="mimo-2-6-flash",
+        zenmux_name="xiaomi/mimo-v2.6-flash:xiaomi",
+        display_name="MiMo V2.6 Flash",
         default_config=_DEFAULT_CONFIG,
     ),
     ArenaModel(
