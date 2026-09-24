@@ -253,6 +253,19 @@ the **OpenAI Responses API** emitted 132 calls with **zero** malformed and score
   one tool bound and a short prompt. It appears under real agentic load (~15k prompt
   tokens, many tools). Only a real match convicts, the same lesson longcat-2.0 taught.
 
+- **An UNPARSEABLE call is a second, louder variant (run #139, 2026-09-24).** The
+  xiaomi upstream returned `finish_reason: tool_calls` with one call whose id and
+  name were `null` and whose args were `<parameter=...>` markup. langchain parks
+  that in `invalid_tool_calls` — `tool_calls` stays EMPTY, so the detector above
+  read zero — and then REPLAYED it on every later request, which every gateway
+  rejects (400 "`id` is null"). Unlike the empty-id loop this one raises, but only
+  as step errors deep in the match, which was recorded `scored` at 41.3. Fixed at
+  the client (`model_factory._neutralize_invalid_tool_calls`, all four client
+  classes) and counted by the detector as `reason: "unparseable"`. **A replay
+  failure on one route reproduces on every route** — gpt-6-luna 400s on the same
+  history — so suspect the HARNESS when the rejected turn is one the model never
+  had executed.
+
 ---
 
 ## A contestant is `(model_id, reasoning_effort, max_output_tokens)`

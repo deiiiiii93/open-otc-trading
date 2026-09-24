@@ -75,6 +75,7 @@ if _ChatDeepSeek is not None:
             stop: list[str] | None = None,
             **kwargs: Any,
         ) -> dict:
+            input_ = _neutralize_invalid_tool_calls(input_)
             payload = super()._get_request_payload(input_, stop=stop, **kwargs)
             source_messages = convert_to_messages(input_)
             payload_messages = payload.get("messages", [])
@@ -106,6 +107,86 @@ else:
 
     class DeepSeekReasoningChat:  # type: ignore[no-redef]
         """Placeholder used when langchain-deepseek is not installed."""
+
+
+# --- Malformed tool calls ----------------------------------------------------
+#
+# A tool call the client could not parse becomes an `invalid_tool_call` with
+# id=None. It was never executed, but langchain replays it on the next request
+# TWICE over: as an `invalid_tool_call` content block (output_version v1) and as
+# a `tool_calls` entry built from `message.invalid_tool_calls`. Every gateway
+# measured rejects that turn -- 400 "`id` is null" on chat completions, 400
+# "Missing required parameter 'input[1].content[0].text'" on the Responses API --
+# so ONE malformed call poisons every later request in the thread. Arena run #139
+# lost mimo-v2.6-flash's last six trader-rfq steps to a single markup-leaked call
+# (1 in 543). The replay is our defect, not the model's: the turn is rewritten to
+# say in TEXT that the call did not run, which is also what the model needs to
+# know to recover.
+
+_INVALID_TOOL_CALL = "invalid_tool_call"
+
+
+def _describe_invalid_tool_call(call: Mapping[str, Any]) -> str:
+    args = str(call.get("args") or "")
+    if len(args) > 500:
+        args = args[:500] + "…"
+    return (
+        f"[malformed tool call not executed: name={call.get('name')!r}, "
+        f"args={args!r}]"
+    )
+
+
+def _neutralize_invalid_tool_calls(input_: LanguageModelInput) -> LanguageModelInput:
+    """Rewrite never-executed malformed tool calls in the history as text.
+
+    Self-gating: returns *input_* itself unless some AIMessage carries one, so
+    every healthy request is byte-identical to what it was before.
+    """
+    messages = convert_to_messages(input_)
+    if not any(
+        isinstance(m, AIMessage)
+        and (
+            m.invalid_tool_calls
+            or (
+                isinstance(m.content, list)
+                and any(
+                    isinstance(b, dict) and b.get("type") == _INVALID_TOOL_CALL
+                    for b in m.content
+                )
+            )
+        )
+        for m in messages
+    ):
+        return input_
+
+    cleaned = []
+    for message in messages:
+        if not isinstance(message, AIMessage):
+            cleaned.append(message)
+            continue
+        notes = [_describe_invalid_tool_call(c) for c in message.invalid_tool_calls]
+        if isinstance(message.content, list):
+            content: list[Any] = []
+            for block in message.content:
+                if isinstance(block, dict) and block.get("type") == _INVALID_TOOL_CALL:
+                    note = _describe_invalid_tool_call(block)
+                    if note not in notes:
+                        notes.append(note)
+                elif not (
+                    isinstance(block, dict)
+                    and block.get("type") == "text"
+                    and not block.get("text")
+                ):
+                    content.append(block)
+            content.extend({"type": "text", "text": n} for n in notes)
+        else:
+            text = "\n".join([message.content, *notes]) if message.content else "\n".join(notes)
+            content = text  # type: ignore[assignment]
+        cleaned.append(
+            message.model_copy(update={"content": content, "invalid_tool_calls": []})
+            if notes else message
+        )
+    return cleaned
 
 
 # --- Gemini thought signatures -------------------------------------------------
@@ -388,7 +469,9 @@ def _zenmux_responses_chat(**kwargs: Any) -> BaseChatModel:
         def _get_request_payload(
             self, input_: LanguageModelInput, **kw: Any
         ) -> dict[str, Any]:
-            payload = super()._get_request_payload(input_, **kw)
+            payload = super()._get_request_payload(
+                _neutralize_invalid_tool_calls(input_), **kw
+            )
             items = payload.get("input")
             if isinstance(items, list):
                 for item in items:
@@ -492,7 +575,15 @@ def build_agent_model(
             _max_output_tokens_for(selection)
             or int(get_settings().agent_max_output_tokens)
         )
-        return ChatAnthropic(
+        class _NeutralizingChatAnthropic(ChatAnthropic):  # type: ignore[misc]
+            def _get_request_payload(
+                self, input_: LanguageModelInput, **kw: Any
+            ) -> dict:
+                return super()._get_request_payload(
+                    _neutralize_invalid_tool_calls(input_), **kw
+                )
+
+        return _NeutralizingChatAnthropic(
             model_name=model_desc.wire_id,
             api_key=SecretStr(channel.api_key or ""),
             base_url=channel.anthropic_base_url,
@@ -589,6 +680,7 @@ def build_agent_model(
             stop: list[str] | None = None,
             **kwargs: Any,
         ) -> dict:
+            input_ = _neutralize_invalid_tool_calls(input_)
             payload = super()._get_request_payload(input_, stop=stop, **kwargs)
             source_messages = [
                 message

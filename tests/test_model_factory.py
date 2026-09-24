@@ -828,3 +828,106 @@ def test_openai_wrapper_captures_reasoning_details_from_stream_delta():
 
     assert chunk is not None
     assert chunk.message.additional_kwargs["reasoning_details"] == _DETAILS
+
+
+# --- Malformed tool calls must not poison the history --------------------------
+#
+# Run #139 (2026-09-24): mimo-v2.6-flash emitted ONE tool call as text markup
+# (`<tool_call><parameter=task>...`) that langchain parsed into an
+# `invalid_tool_call` with id=None and name=None. Echoing that turn back put a
+# null-id call on the wire twice over -- as an `invalid_tool_call` content block
+# (output_version v1) and as a `tool_calls` entry built from
+# `message.invalid_tool_calls` -- and the gateway rejected EVERY later request in
+# the thread: 400 "`id` is null" on chat completions, 400 "Missing required
+# parameter 'input[1].content[0].text'" on the Responses API. One bad call in 543
+# cost the match its last six steps. The call was never executed, so the history
+# must say so in text, never replay it as a call.
+
+_MARKUP = '{"task": "<parameter=description>Retry book_position</parameter>'
+
+
+def _poisoned_turn() -> AIMessage:
+    return AIMessage(
+        content=[
+            {"type": "invalid_tool_call", "id": None, "name": None, "args": _MARKUP},
+            {"type": "text", "text": ""},
+        ],
+        invalid_tool_calls=[{"type": "invalid_tool_call", "id": None, "name": None,
+                             "args": _MARKUP, "error": None}],
+        response_metadata={"output_version": "v1"},
+    )
+
+
+def _null_id_calls(node) -> list:
+    """Every tool-call-shaped object on the wire whose id is missing.
+
+    Scoped to CALLS on purpose: a Responses-API assistant message item carries
+    its own `"id": null`, which the gateway accepts (verified live on gpt-6-luna).
+    """
+    found = []
+    if isinstance(node, dict):
+        is_call = (
+            node.get("type") in {"function", "function_call", "tool_use", "tool_call"}
+            or "function" in node
+        )
+        if is_call and not node.get("id") and not node.get("call_id"):
+            found.append(node)
+        for key, value in node.items():
+            if key == "tool_calls" and isinstance(value, list):
+                found.extend(v for v in value if isinstance(v, dict) and not v.get("id"))
+            found.extend(_null_id_calls(value))
+    elif isinstance(node, list):
+        for value in node:
+            found.extend(_null_id_calls(value))
+    return found
+
+
+def _anthropic_model():
+    return build_agent_model(_registry())
+
+
+def _responses_model(monkeypatch):
+    monkeypatch.setenv("OPEN_OTC_ZENMUX_FORCE_PROTOCOL", "openai_responses")
+    return _openai_protocol_model()
+
+
+def _deepseek_model():
+    return build_agent_model(
+        _registry(),
+        selection={"channel": "deepseek", "provider": "deepseek", "model": "deepseek-v4-flash"},
+    )
+
+
+@pytest.mark.parametrize("build", ["chat", "responses", "anthropic", "deepseek"])
+def test_a_malformed_tool_call_is_replayed_as_text_not_as_a_call(build, monkeypatch):
+    import json
+
+    model = {
+        "chat": _openai_protocol_model,
+        "responses": lambda: _responses_model(monkeypatch),
+        "anthropic": _anthropic_model,
+        "deepseek": _deepseek_model,
+    }[build]()
+    payload = model._get_request_payload(  # type: ignore[attr-defined]
+        [HumanMessage(content="Book the MSFT put."), _poisoned_turn(),
+         HumanMessage(content="Status?")]
+    )
+    wire = json.dumps(payload)
+
+    assert "invalid_tool_call" not in wire
+    assert not _null_id_calls(payload)
+    # The model must still see that its attempt did not run.
+    assert "not executed" in wire
+    assert "Retry book_position" in wire
+
+
+def test_a_turn_without_malformed_calls_is_passed_through_untouched():
+    healthy = [
+        HumanMessage(content="Read the positions file."),
+        AIMessage(content="", tool_calls=[{"id": "call_1", "name": "read_file",
+                                           "args": {"path": "/p.csv"}, "type": "tool_call"}]),
+        ToolMessage(content="date,symbol", tool_call_id="call_1"),
+    ]
+    from app.services.deep_agent.model_factory import _neutralize_invalid_tool_calls
+
+    assert _neutralize_invalid_tool_calls(healthy) is healthy

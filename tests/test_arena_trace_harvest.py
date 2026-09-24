@@ -413,3 +413,26 @@ def test_malformed_tool_calls_are_not_appended_to_step_errors():
     turn = _spans_to_turn_events(0, "do the thing", spans)
     assert len(turn["malformed_tool_calls"]) == 1
     assert turn["errors"] == []
+
+
+def test_malformed_detector_counts_unparseable_calls():
+    """Run #139: the xiaomi upstream returned finish_reason=tool_calls with ONE
+    call whose id and name were null and whose args were `<parameter=...>` markup.
+    langchain parks that in `invalid_tool_calls` and leaves `tool_calls` EMPTY, so
+    the detector read a clean zero while the replayed call 400'd the rest of the
+    thread. Absence from `tool_calls` is not evidence the call was well-formed."""
+    from app.services.arena.trace_harvest import _llm_malformed_tool_calls
+    raw = json.dumps({"generations": [[{
+        "text": "",
+        "message": {"kwargs": {
+            "content": [],
+            "tool_calls": [],
+            "invalid_tool_calls": [{
+                "type": "invalid_tool_call", "id": None, "name": None,
+                "args": '{"task": "<parameter=description>Retry', "error": None,
+            }],
+        }},
+    }]]})
+    bad = _llm_malformed_tool_calls(raw)
+    assert [b["reason"] for b in bad] == ["unparseable"]
+    assert bad[0]["arg_keys"] == []

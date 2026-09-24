@@ -238,10 +238,20 @@ def _llm_malformed_tool_calls(outputs_raw: Any) -> list[dict]:
     except (KeyError, IndexError, TypeError):
         return []
     kwargs = (gen.get("message") or {}).get("kwargs")
-    calls = kwargs.get("tool_calls") if isinstance(kwargs, dict) else None
-    if not isinstance(calls, list):
+    if not isinstance(kwargs, dict):
         return []
     out: list[dict] = []
+    # A call the client could not PARSE never reaches `tool_calls` at all —
+    # langchain parks it in `invalid_tool_calls`. Run #139: one such call (null
+    # id and name, `<parameter=...>` markup for args) read as a clean zero here
+    # while its replay 400'd the rest of the thread.
+    for call in kwargs.get("invalid_tool_calls") or []:
+        if isinstance(call, dict):
+            out.append({"name": call.get("name") or "", "reason": "unparseable",
+                        "arg_keys": []})
+    calls = kwargs.get("tool_calls")
+    if not isinstance(calls, list):
+        return out
     for call in calls:
         if not isinstance(call, dict):
             continue

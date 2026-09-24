@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Agent runtime: one unparseable tool call poisoned the rest of the thread.** A
+  call the client cannot parse becomes an `invalid_tool_call` with `id: null`; it
+  never runs, but langchain replayed it on every later request (as a v1 content
+  block and as a `tool_calls` entry), and every gateway measured rejected it — 400
+  "`id` is null" on chat completions, "Missing required parameter
+  'input[1].content[0].text'" on the Responses API. Arena run #139 lost
+  mimo-2-6-flash's last six trader-rfq steps to one such call (2 in 552). All four
+  client classes now replay it as text saying the call was not executed. The arena
+  malformed-tool-call detector also counts these (`reason: "unparseable"`); it read
+  a clean zero on that match because the call never enters `tool_calls`.
 - **Limits page: a missing review glued a dash onto every waiver rationale.** With
   System One off — the default — the incident panel rendered `…hedge booked.—`, and
   an unscored review ran into the text (`…is in.unscored · no_key`). A missing review
