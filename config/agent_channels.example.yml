@@ -147,7 +147,12 @@ channels:
         provider: openai
         protocol: openai_chat
         label: GPT-6 Luna
-        tags: [tool-use, reasoning]
+        # `vision` probe-verified 2026-09-24 on conf-04's image-only scan (0 text
+        # characters, rendered as the production extractor renders it): GOOGL and
+        # 205.00 read correctly 3/3, but the reference misread 3/3
+        # (`AR-EQ-2026-0468` for `ARD-EQO-2026-04688`). It sees the image; the
+        # accuracy gap is a board finding, not a missing capability.
+        tags: [tool-use, reasoning, vision]
 
       - id: openai/gpt-5.6-sol
         provider: openai
@@ -404,7 +409,9 @@ channels:
         provider: xiaomi
         protocol: openai_chat
         label: MiMo V2.6 Flash
-        tags: [fast, tool-use]
+        # `vision` probe-verified 2026-09-24 on conf-04's image-only scan:
+        # GOOGL / 205.00 / ARD-EQO-2026-04688, matching the truth file exactly.
+        tags: [fast, tool-use, vision]
 
       - id: tencent/hy3
         provider: tencent-cloud

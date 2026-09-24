@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   channel template, with effort ladders measured into `config/model_reasoning.json`
   (2026-09-24). Luna takes none/low/medium/high/xhigh/max; MiMo 2.6 Flash takes only
   none/low/medium/high — minimal, xhigh and max are rejected.
+  Both carry `vision`, probe-verified on conf-04's image-only scan; Luna misreads
+  that scan's reference 3 of 3 times while MiMo reads it exactly.
 - **System One: a retrospective sweep of the tool guard over executed calls.** The guard
   had written zero verdicts — it runs only in AUTO — while the audit trail held 4,548
   rows of exactly the calls it is about. The sweep rebuilds each call's state from the
