@@ -96,6 +96,52 @@ def test_image_pages_become_image_parts():
     assert "image_url" in kinds
 
 
+def _mixed_doc():
+    png = b"\x89PNG\r\n\x1a\n" + b"0" * 10
+    return DocumentContent(
+        pages=[PageContent(index=1, text="Ardsley Ref. No: ARD-EQO-2026-04781"),
+               PageContent(index=2, text="", image_png=png)],
+        page_count=2, extract_mode="mixed",
+    )
+
+
+def test_every_image_page_is_labelled_with_its_page_number():
+    """Run #141: on conf-08 (text page 1, scanned page 2) the scan carried no page
+    number, gpt-6-luna put the trade on page [1], and stage 2 never saw the scan.
+    """
+    client = FakeClient([json.dumps({"trades": []})])
+    segment_document(_mixed_doc(), client)
+    parts = client.calls[0]
+    image_at = next(i for i, p in enumerate(parts) if p["type"] == "image_url")
+    assert parts[image_at - 1] == {"type": "text", "text": "[page 2 — scanned image]"}
+
+
+def test_stage2_retries_with_all_pages_when_its_subset_holds_no_terms():
+    empty = {"terms": {}, "counterparty": "Larkspur Pension Trust", "confidence": 0.3}
+    full = {"terms": {"strike": 185.0, "initial_price": 178.9}, "confidence": 0.95}
+    client = FakeClient([json.dumps(empty), json.dumps(full)])
+    seg = TradeSegment(family="EuropeanVanillaOption", pages=[1], anchor="Put")
+    draft = extract_trade(_mixed_doc(), seg, client)
+    assert draft.terms == {"strike": 185.0, "initial_price": 178.9}
+    assert len(client.calls) == 2
+    assert not any(p["type"] == "image_url" for p in client.calls[0])  # page 1 only
+    assert any(p["type"] == "image_url" for p in client.calls[1])      # whole document
+
+
+def test_stage2_does_not_retry_when_it_already_saw_every_page():
+    client = FakeClient([json.dumps({"terms": {}, "confidence": 0.1})])
+    seg = TradeSegment(family="EuropeanVanillaOption", pages=[1, 2], anchor="x")
+    draft = extract_trade(_mixed_doc(), seg, client)
+    assert draft.terms == {} and len(client.calls) == 1
+
+
+def test_stage2_does_not_retry_a_subset_that_found_terms():
+    client = FakeClient([json.dumps({"terms": {"strike": 1.0}})])
+    seg = TradeSegment(family="EuropeanVanillaOption", pages=[1], anchor="x")
+    extract_trade(_mixed_doc(), seg, client)
+    assert len(client.calls) == 1
+
+
 def test_resolver_prefers_dedicated_tag():
     from app.services.confirmations.llm import resolve_confirmation_extractor_selection
 

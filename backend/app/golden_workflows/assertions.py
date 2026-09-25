@@ -431,6 +431,31 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
         return ok, "" if ok else (
             f"{a.tool} {a.numer}/({a.denom}×{a.denom_mult}) = {value:.6g} "
             f"!= {a.equals} (rel_tol={a.rel_tol})")
+    if t == "own_result_read":
+        from app.golden_workflows.schema import normalize_tool_name
+        want = normalize_tool_name(a.tool)
+        via = {normalize_tool_name(v) for v in a.via}
+        own = {
+            r.get("tool_call_id") for r in ctx.tool_results
+            if normalize_tool_name(r.get("name", "")) == want
+            and not r.get("error") and r.get("tool_call_id")
+        }
+        if not own:
+            return False, f"no {a.tool} call of this match to read back"
+        step_reads = {
+            c.get("id") for c in ctx.tool_calls
+            if normalize_tool_name(c.get("name", "")) in via
+        }
+        for r in ctx.tool_results:
+            if (normalize_tool_name(r.get("name", "")) not in via or r.get("error")
+                    or r.get("tool_call_id") not in step_reads):
+                continue
+            content = r.get("content") if isinstance(r.get("content"), dict) else {}
+            if (normalize_tool_name(str(content.get("tool_name", ""))) == want
+                    and content.get("tool_call_id") in own):
+                return True, ""
+        return False, (f"no {sorted(via)} this step of a {a.tool} result "
+                       f"produced by this match")
     if t == "assertion_any_of":
         reasons = []
         for member in a.any_of:

@@ -172,3 +172,10 @@ and the server re-validates).
 - The frontend vitest suite is **flaky under load** (slow route tests hit the 5s
   timeout; `main` alone varies 12→18 failures run to run). Compare failing-file sets
   against a same-machine `main` run before blaming a branch.
+
+- **Every image page is labelled `[page N — scanned image]`, and stage 2 falls
+  back to the whole document.** Stage 1's page list filters what stage 2 sees;
+  an unlabelled scan made a mixed document's page numbers a guess (run #141,
+  gpt-6-luna, conf-08: terms on page 2, segmented as [1], no terms). When a
+  page subset yields no terms, `extract_trade` retries once with all pages and
+  logs a warning.

@@ -1,7 +1,7 @@
 ---
 id: confirmation-desk-day
 schema_version: 1
-manifest_version: 1   # bump on ANY scoring-relevant edit; stamped onto every arena run
+manifest_version: 2   # bump on ANY scoring-relevant edit; stamped onto every arena run
 persona: trader
 title: "Confirmation Desk Day"
 objective: >
@@ -76,12 +76,23 @@ steps:
 
   - user: "Read back the GOOGL confirmation (conf-04) from the batch and record your answer by calling record_answer(answer={\"strike\": <number>, \"reference\": <the Ardsley reference number>})."
     expected_skill: null
-    expected_tools:
-      - name: get_confirmation_batch
     outcome: >
       The scanned page is skewed and grainy but ordinary. This is the FLOOR: a
       contestant that misreads here makes nothing downstream interpretable.
     assertions:
+      # Read-back path is route-free but OWNERSHIP-PROVEN (manifest v2, 2026-09-25):
+      # get_confirmation_batch, or read_artifact of the stored parse result — only
+      # if that artifact came from THIS match's own parse_trade_confirmation call
+      # (own_result_read matches its tool_call_id). Run #141: gpt-6-luna read every
+      # value correctly this way and lost a tool check per step for it.
+      - type: assertion_any_of
+        axis: procedural
+        scope: session
+        any_of:
+          - type: tool_called
+            name: get_confirmation_batch
+          - type: own_result_read
+            tool: parse_trade_confirmation
       - type: answer_field_quotes
         field: strike
         value: 205.0
@@ -92,13 +103,24 @@ steps:
 
   - user: "Read back the AMD confirmation (conf-08) from the batch — its priced terms are on the second page — and record your answer by calling record_answer(answer={\"strike\": <number>, \"initial_price\": <number>})."
     expected_skill: null
-    expected_tools:
-      - name: get_confirmation_batch
     outcome: >
       Page 1 is text and page 2 is a scan carrying the priced terms. Stage 1's
       page list is a hard filter on what stage 2 sees, so dropping page 2 yields
       empty terms rather than a wrong number.
     assertions:
+      # Read-back path is route-free but OWNERSHIP-PROVEN (manifest v2, 2026-09-25):
+      # get_confirmation_batch, or read_artifact of the stored parse result — only
+      # if that artifact came from THIS match's own parse_trade_confirmation call
+      # (own_result_read matches its tool_call_id). Run #141: gpt-6-luna read every
+      # value correctly this way and lost a tool check per step for it.
+      - type: assertion_any_of
+        axis: procedural
+        scope: session
+        any_of:
+          - type: tool_called
+            name: get_confirmation_batch
+          - type: own_result_read
+            tool: parse_trade_confirmation
       - type: answer_field_quotes
         field: strike
         value: 185.0
@@ -109,13 +131,24 @@ steps:
 
   - user: "Read back the NVDA confirmation (conf-09) from the batch. Report the strike price that is controlling for the transaction, and record your answer by calling record_answer(answer={\"strike\": <number>, \"reference\": <the Ardsley reference number>})."
     expected_skill: null
-    expected_tools:
-      - name: get_confirmation_batch
     outcome: >
       The printed strike is struck through and an amended figure is inked beside
       it, with the amendment clause stating the amended figure controls. Reading
       the field without noticing the correction returns the superseded 780.00.
     assertions:
+      # Read-back path is route-free but OWNERSHIP-PROVEN (manifest v2, 2026-09-25):
+      # get_confirmation_batch, or read_artifact of the stored parse result — only
+      # if that artifact came from THIS match's own parse_trade_confirmation call
+      # (own_result_read matches its tool_call_id). Run #141: gpt-6-luna read every
+      # value correctly this way and lost a tool check per step for it.
+      - type: assertion_any_of
+        axis: procedural
+        scope: session
+        any_of:
+          - type: tool_called
+            name: get_confirmation_batch
+          - type: own_result_read
+            tool: parse_trade_confirmation
       - type: answer_field_quotes
         field: strike
         value: 1045.0
@@ -126,12 +159,23 @@ steps:
 
   - user: "Read back the AMZN confirmation (conf-10) from the batch and record your answer by calling record_answer(answer={\"barrier_type\": <UP_OUT or DOWN_OUT>, \"barrier\": <number>})."
     expected_skill: null
-    expected_tools:
-      - name: get_confirmation_batch
     outcome: >
       Both direction labels are printed; only the tick distinguishes them, so
       there is no textual fallback and no lexical hint.
     assertions:
+      # Read-back path is route-free but OWNERSHIP-PROVEN (manifest v2, 2026-09-25):
+      # get_confirmation_batch, or read_artifact of the stored parse result — only
+      # if that artifact came from THIS match's own parse_trade_confirmation call
+      # (own_result_read matches its tool_call_id). Run #141: gpt-6-luna read every
+      # value correctly this way and lost a tool check per step for it.
+      - type: assertion_any_of
+        axis: procedural
+        scope: session
+        any_of:
+          - type: tool_called
+            name: get_confirmation_batch
+          - type: own_result_read
+            tool: parse_trade_confirmation
       - type: answer_field_equals
         field: barrier_type
         equals: "DOWN_OUT"
@@ -142,12 +186,23 @@ steps:
 
   - user: "Read back the ORCL confirmation (conf-11) from the batch and record your answer by calling record_answer(answer={\"notional\": <number>, \"strike\": <number>})."
     expected_skill: null
-    expected_tools:
-      - name: get_confirmation_batch
     outcome: >
       The notional sits in a low-contrast column beside a collateral figure of
       similar magnitude at ordinary contrast. The wrong number is the easier read.
     assertions:
+      # Read-back path is route-free but OWNERSHIP-PROVEN (manifest v2, 2026-09-25):
+      # get_confirmation_batch, or read_artifact of the stored parse result — only
+      # if that artifact came from THIS match's own parse_trade_confirmation call
+      # (own_result_read matches its tool_call_id). Run #141: gpt-6-luna read every
+      # value correctly this way and lost a tool check per step for it.
+      - type: assertion_any_of
+        axis: procedural
+        scope: session
+        any_of:
+          - type: tool_called
+            name: get_confirmation_batch
+          - type: own_result_read
+            tool: parse_trade_confirmation
       - type: answer_field_quotes
         field: notional
         value: 636000.0
@@ -158,8 +213,6 @@ steps:
 
   - user: "Review the META confirmation (conf-07) in the batch. Report the initial price it states and the validation status the queue assigned it, by calling record_answer(answer={\"initial_price\": <the value stated, or null>, \"validation_status\": <status>}). Do not book this trade in this step."
     expected_skill: null
-    expected_tools:
-      - name: get_confirmation_batch
     outcome: >
       The document states NO Initial Price. Every builder family requires it and
       it is explicitly never invented, so the trade lands `invalid`. The graded
@@ -168,6 +221,19 @@ steps:
       extractor, which filled initial_price with 780.00 and cited "Strike Price:"
       as its own evidence.
     assertions:
+      # Read-back path is route-free but OWNERSHIP-PROVEN (manifest v2, 2026-09-25):
+      # get_confirmation_batch, or read_artifact of the stored parse result — only
+      # if that artifact came from THIS match's own parse_trade_confirmation call
+      # (own_result_read matches its tool_call_id). Run #141: gpt-6-luna read every
+      # value correctly this way and lost a tool check per step for it.
+      - type: assertion_any_of
+        axis: procedural
+        scope: session
+        any_of:
+          - type: tool_called
+            name: get_confirmation_batch
+          - type: own_result_read
+            tool: parse_trade_confirmation
       - type: answer_field_equals
         field: initial_price
         is_null: true

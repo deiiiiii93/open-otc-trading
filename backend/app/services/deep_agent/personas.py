@@ -73,7 +73,11 @@ _BOARD_POLICY = (
 
 
 # Fragments that presume a user who can answer; headless mode drops them.
-_INTERACTIVE_ONLY_FRAGMENTS = frozenset({"cost-preview-policy", "clarification-policy"})
+# yolo-hitl-policy is the persona copy of the batch-size-1 rule: it pairs an
+# approval card with one pending action, and headless shows no cards. Kept, it
+# made gpt-6-luna book 1 of 5 valid trades and stop (run #141 confirmation-desk).
+_INTERACTIVE_ONLY_FRAGMENTS = frozenset(
+    {"cost-preview-policy", "clarification-policy", "yolo-hitl-policy"})
 
 
 def _load_identity(name: str) -> str:

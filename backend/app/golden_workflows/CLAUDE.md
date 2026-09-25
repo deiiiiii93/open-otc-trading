@@ -670,3 +670,15 @@ mix them.
 - **`max_calls` / `all_calls` ignore a call whose own result has an `error`** — it did
   nothing. A call with no surviving result still counts (positive evidence only), so
   a genuine duplicate still fails.
+
+## `own_result_read` — a stored result counts only if this match made it
+
+A model can re-read an earlier tool result via `read_artifact` of its offloaded
+artifact, which is a legitimate route that `expected_tools` cannot express.
+`own_result_read(tool=X)` passes when THIS step's `read_artifact` returned an
+artifact whose `tool_name` is X AND whose `tool_call_id` is one of this
+transcript's own successful X calls. That id proof is what shuts out leftover
+and foreign artifacts. It needs earlier steps, so wrap it in
+`assertion_any_of` with `scope: session` (a composite's members inherit its
+context). Replacing an `expected_tools` entry this way lowers an uncalibrated
+workflow's designed par: say so and bump `manifest_version`.

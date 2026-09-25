@@ -9,10 +9,13 @@ dedicated tag -> "fast" tag -> registry default.
 from __future__ import annotations
 
 import base64
+import logging
 import json
 import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+
+logger = logging.getLogger(__name__)
 
 # NOTE: app.tools.product_term_schema is imported lazily inside the two
 # functions below (segment_document / extract_trade), not at module scope.
@@ -157,6 +160,12 @@ def _content_parts(content, pages: list[int] | None = None) -> list[dict]:
         if wanted is not None and page.index not in wanted:
             continue
         if page.image_png is not None:
+            # Label the image like a text page. Unlabelled, a scanned page has no
+            # number the model can see, so on a MIXED document stage 1 has to
+            # guess which page it is — and a wrong guess filters it out of stage 2.
+            # Run #141: gpt-6-luna put conf-08's trade on page [1] while quoting
+            # the page-2 scan, and stage 2 got no terms (confidence 0.3).
+            parts.append({"type": "text", "text": f"[page {page.index} — scanned image]"})
             b64 = base64.b64encode(page.image_png).decode("ascii")
             parts.append({
                 "type": "image_url",
@@ -257,6 +266,18 @@ def extract_trade(content, segment: TradeSegment, client: ExtractorClient) -> Tr
     parts = [{"type": "text", "text": prompt}] + _content_parts(
         content, segment.pages or None)
     data = _complete_json(client, parts)
+    # Stage 1's page list is a hint, not a guarantee. If stage 2 found NO terms
+    # on the pages it was given and other pages exist, read the whole document
+    # once more rather than recording an empty trade: a page misattribution in
+    # stage 1 must not silently drop the page that holds the economics.
+    all_pages = {page.index for page in content.pages}
+    if (not data.get("terms") and segment.pages
+            and set(segment.pages) < all_pages):
+        logger.warning(
+            "confirmation extraction: no terms on pages %s of %s; retrying with all pages",
+            segment.pages, sorted(all_pages))
+        data = _complete_json(
+            client, [{"type": "text", "text": prompt}] + _content_parts(content))
 
     def _num(key):
         value = data.get(key)

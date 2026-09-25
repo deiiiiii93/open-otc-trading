@@ -438,6 +438,8 @@ def _assertion_label(a) -> str:
     if t == "tool_result_ratio":
         denom = a.denom if a.denom_mult is None else f"{a.denom}×{a.denom_mult}"
         return f"{a.tool}[{a.source}] {a.numer}/({denom}) ≈ {a.equals}"
+    if t == "own_result_read":
+        return f"read back own {a.tool} result"
     if t == "assertion_any_of":
         return "any of: [" + " | ".join(_assertion_label(m) for m in a.any_of) + "]"
     if t == "response_quotes_tool_value":

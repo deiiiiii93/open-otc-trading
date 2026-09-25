@@ -86,7 +86,7 @@ def test_every_mode_section_has_both_variants():
     names = set(
         mode_prompts._MODE_SECTION.findall((_PROMPTS_DIR / "orchestrator.md").read_text())
     )
-    assert names == {"clarification", "profile-choice"}
+    assert names == {"clarification", "profile-choice", "batch-size-one"}
     for name in names:
         for variant in ("interactive", "headless"):
             assert (mode_prompts._MODES_DIR / f"{name}.{variant}.md").is_file()
@@ -104,3 +104,15 @@ def test_headless_personas_drop_clarification_policy(spec):
     assert "## Clarify before acting" in user
     assert "## Clarify before acting" not in headless
     assert "## Resolve ambiguity with reads" in headless
+
+
+def test_headless_drops_the_batch_size_one_rule():
+    """Run #141: headless gpt-6-luna booked 1 of 5 valid trades, citing the
+    one-write-per-turn limit that exists only to pair approval cards."""
+    interactive = _orchestrator_prompt(allow_reply_options=True)
+    headless = _orchestrator_prompt(allow_reply_options=False)
+    assert "request the first, wait for confirmation" in interactive
+    assert "request the first, wait for confirmation" not in headless
+    for spec in (trader_spec, risk_spec, board_spec):
+        assert "## Batch-size-1 HITL rule" in spec(None, [], allow_reply_options=True)["system_prompt"]
+        assert "## Batch-size-1 HITL rule" not in spec(None, [], allow_reply_options=False)["system_prompt"]

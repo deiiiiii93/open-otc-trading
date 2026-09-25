@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Confirmation extraction: scanned pages carry their page number, and a page slip
+  no longer drops the term sheet.** Text pages reached the extractor labelled
+  `[page N]`, but image pages arrived unlabelled. On a mixed document stage 1 had
+  to guess the scan's page number, and stage 2 only sees the pages stage 1 lists.
+  Run #141: gpt-6-luna put conf-08's trade on page [1] while quoting the page-2
+  scan, and got no terms (confidence 0.3). Each image is now preceded by
+  `[page N — scanned image]`, and stage 2 retries once with every page when its
+  subset yields no terms.
+- **Headless runs no longer carry the batch-size-1 HITL rule.** The rule pairs
+  each approval card with one pending action. Headless shows no cards, yet
+  gpt-6-luna obeyed it and booked 1 of 5 valid confirmations (run #141). It is
+  now a `MODE_SECTION` in `orchestrator.md` with a headless variant saying it
+  does not apply, and `yolo-hitl-policy` joins the persona fragments dropped in
+  headless mode. Interactive and AUTO are unchanged.
+
+### Changed
+- **confirmation-desk → manifest v2: reading the stored parse result counts, if
+  this match produced it.** The six read-back steps accept `get_confirmation_batch`
+  OR the new `own_result_read`: `read_artifact` of a `parse_trade_confirmation`
+  result whose `tool_call_id` is one of this transcript's own successful parse
+  calls, so a leftover or foreign artifact cannot pass. `assertion_any_of` gains
+  `scope: session` for members that need earlier steps. Side effect: the
+  workflow has no explicit par, so its designed par (sum of `expected_tools`)
+  drops from 9 to 3, and EFF on v2 cards follows. Stamped v1 runs keep their
+  frozen par.
 - **Arena: reports a contestant creates no longer outlive its match.**
   `report_jobs` has no portfolio column, so the portfolio-dependents purge
   could not reach a report, and only seeded reports were cleaned up. Every

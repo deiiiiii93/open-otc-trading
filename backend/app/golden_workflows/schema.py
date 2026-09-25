@@ -261,6 +261,19 @@ class _ToolResultRatio(BaseModel):
         return self
 
 
+class _OwnResultRead(BaseModel):
+    # Reading back a tool's STORED result (``read_artifact`` of the offloaded
+    # tool-result artifact) counts as reading it — but only a result THIS match
+    # produced: the artifact's ``tool_call_id`` must be one of this transcript's
+    # own successful calls of ``tool``. A leftover or foreign artifact cannot
+    # carry one of those ids, so contamination cannot pass. Always session
+    # scoped: the producing call is usually in an earlier step.
+    type: Literal["own_result_read"]
+    tool: str
+    via: list[str] = Field(default_factory=lambda: ["read_artifact"])
+    scope: Literal["session"] = "session"
+
+
 class _AssertionAnyOf(BaseModel):
     # Composite: scores as ONE check, passes iff any member passes. Expresses an
     # "either competent path" ground (e.g. a trap the model may refuse two ways)
@@ -268,6 +281,10 @@ class _AssertionAnyOf(BaseModel):
     type: Literal["assertion_any_of"]
     axis: str
     any_of: list["Assertion"] = Field(min_length=2)
+    # Members are evaluated against the composite's context, so a member that
+    # needs earlier steps' results (own_result_read) needs the composite to be
+    # session scoped. Step-only members are unaffected: tool_calls stay per-step.
+    scope: Literal["step", "session"] = "step"
 
     @model_validator(mode="after")
     def _axis_ok(self) -> "_AssertionAnyOf":
@@ -281,7 +298,7 @@ Assertion = Annotated[
           _TaskReturnedId, _ArtifactExists, _ResponseContains, _ToolResultPath,
           _ToolNotCalled, _ArtifactContains, _ResponseQuotesToolValue,
           _ResponseQuotesValue, _AnswerFieldEquals, _AnswerFieldQuotes,
-          _ToolResultRatio, _AssertionAnyOf],
+          _ToolResultRatio, _OwnResultRead, _AssertionAnyOf],
     Field(discriminator="type"),
 ]
 

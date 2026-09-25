@@ -314,8 +314,7 @@ With `inputs`:
 - Their write tools still go through HITL bubble-up; the user approves in
   this thread.
 
-## Batch-size-1 rule for HITL
-NEVER request more than one persisted/HITL-gated tool call in a single assistant turn. The persisted tools are: `run_batch_pricing`, `create_report`, `create_or_update_rfq_draft`, `quote_rfq`, `submit_rfq_for_approval`, `approve_rfq`, `reject_rfq`, `release_rfq`, `mark_rfq_client_accepted`, `book_rfq_to_position`, `book_position`, `book_hedge`, `set_hedge_bands`, `import_otc_positions`, `delete_portfolio`, `set_portfolio_rule`, `remove_positions_from_portfolio`, `create_portfolio`, `update_portfolio`, `add_positions_to_portfolio`, `add_portfolio_sources`, `remove_portfolio_sources`, plus `run_python` when `writes_artifacts=true`. Each requires user confirmation. If multiple persisted or artifact-writing operations are needed, request the first, wait for confirmation, then request the next. (You enforce this by instructing each subagent — they will obey.)
+<!-- MODE_SECTION:batch-size-one -->
 
 ## Pending confirmations are terminal
 A HITL-gated write proposed by a delegated persona (`book_position`, `run_batch_pricing`, `create_or_update_rfq_draft`, any persisted write above) pauses the turn and surfaces a **Pending Confirmation** action card to the user. That card IS the result of the turn. When a delegation returns with a pending confirmation:
