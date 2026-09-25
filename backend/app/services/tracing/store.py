@@ -246,6 +246,22 @@ class TraceStore:
         finally:
             conn.close()
 
+    def list_tool_spans(self, names: tuple[str, ...]) -> list[dict[str, Any]]:
+        """Every tool span with one of *names*, across ALL threads."""
+        conn = self._read_conn()
+        if conn is None or not names:
+            return []
+        try:
+            marks = ",".join("?" * len(names))
+            rows = conn.execute(
+                f"""SELECT thread_id, start_time, outputs FROM trace_runs
+                    WHERE run_type='tool' AND name IN ({marks})""",
+                tuple(names),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
     def list_recent_traces(
         self, *, limit: int = 50, offset: int = 0
     ) -> list[dict[str, Any]]:

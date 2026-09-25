@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Arena: a killed match leaked its portfolios forever.** The per-match purge
+  runs in a `finally`, which a SIGKILL skips, and every later match baselines above
+  the leak. Run #115's leaked "Board Review" view (id 9103) pointed — ids being
+  reused — at every later high-board match's freshly seeded "Desk Control Book",
+  and gpt-6-luna@high reused it instead of creating one. A pre-match sweep now
+  reclaims any portfolio an arena thread's `create_portfolio` minted at that row's
+  `created_at` (the timestamp spares a row that later reused the id).
 - **Agent runtime: one unparseable tool call poisoned the rest of the thread.** A
   call the client cannot parse becomes an `invalid_tool_call` with `id: null`; it
   never runs, but langchain replayed it on every later request (as a v1 content

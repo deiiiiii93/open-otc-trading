@@ -89,6 +89,14 @@ no error anywhere.
   `create_portfolio`, and Run #58 caught two model-created views that spontaneously
   tagged themselves `arena`. So the tag alone is never sufficient ownership proof for
   deletion; pair it with a known fixture name, or use trace+baseline evidence instead.
+- **A KILLED match skips every `finally` purge** — and the leak is then permanent,
+  because every later baseline sits above it. Run #115 (SIGKILLed 2026-08-19) left
+  a "Board Review" view over id 9101 that shadowed every high-board match through
+  run #140. **`_sweep_orphaned_match_portfolios`** runs before seeding and reclaims
+  a portfolio when an ARENA thread's `create_portfolio` span minted that id at that
+  row's `created_at` (±30 s): the timestamp replaces the lost baseline and spares a
+  row that later reused the id. Portfolios only — RFQs, batches and scenario sets
+  still rely on the `finally`; extend the same proof if one of them leaks.
 - Both share `_delete_portfolios_with_dependents`, which sweeps dependents by
   introspecting mapped tables for `portfolio_id` / `position_id` in reverse
   FK-dependency order. **Ownership is the caller's job** — that helper re-checks nothing.

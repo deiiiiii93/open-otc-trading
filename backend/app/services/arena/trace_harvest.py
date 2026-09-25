@@ -429,6 +429,31 @@ def collect_portfolio_ids_created(thread_id, store=None) -> set[int]:
     return out
 
 
+def collect_portfolio_creations(store=None) -> list[dict]:
+    """Every portfolio a ``create_portfolio`` call minted, in ANY thread, with the
+    minting thread and moment: ``{portfolio_id, thread_id, start_time}``.
+
+    The pre-match orphan sweep needs this cross-thread view: the thread that
+    leaked the row belongs to a match that was killed, so nothing remembers its
+    id or its baseline.
+    """
+    if store is None:
+        from app.config import get_settings
+        from app.services.tracing.store import get_trace_store
+        store = get_trace_store(get_settings())
+    if hasattr(store, "flush"):
+        store.flush()
+
+    out: list[dict] = []
+    for sp in store.list_tool_spans(tuple(_PORTFOLIO_CREATE_TOOLS)):
+        content, _name, _tcid = _parse_tool_output(sp.get("outputs"))
+        pid = _extract_portfolio_id(content)
+        if pid is not None and sp.get("thread_id") is not None:
+            out.append({"portfolio_id": pid, "thread_id": int(sp["thread_id"]),
+                        "start_time": sp.get("start_time")})
+    return out
+
+
 _CONFIRMATION_PARSE_TOOLS = {"parse_trade_confirmation"}
 
 

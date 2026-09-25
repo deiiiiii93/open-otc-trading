@@ -130,6 +130,7 @@ def test_no_mutation_api():
     assert public <= {
         "enqueue_insert", "enqueue_finalize", "flush", "close",
         "get_run", "get_trace", "list_thread_traces", "list_recent_traces",
+        "list_tool_spans",
     }
 
 

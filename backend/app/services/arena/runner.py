@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -23,6 +24,7 @@ from app.golden_workflows.fixtures import apply_seed, stage_documents
 from app.models import AgentThread
 from app.services.arena.models import arena_model_to_selection
 from app.services.arena.trace_harvest import (
+    collect_portfolio_creations,
     collect_portfolio_ids_created,
     collect_rfq_ids_touched,
     collect_confirmation_batch_ids_created,
@@ -569,6 +571,62 @@ def _scrub_dangling_scope_portfolio_ids(session, purged_portfolio_ids) -> None:
             version.scope_config = config
 
 
+#: A create_portfolio span starts a moment before its row is inserted; ids are
+#: reused, so a span far from the row's created_at minted an EARLIER row.
+_ORPHAN_MINT_TOLERANCE = timedelta(seconds=30)
+
+
+def _sweep_orphaned_match_portfolios() -> list[int]:
+    """Pre-match: reclaim portfolios created by a prior match that was KILLED.
+
+    A killed match never reaches the ``finally`` that runs
+    ``_purge_match_portfolios``, and the leak is then permanent: every later
+    match takes its baseline above the row. Run #115 (SIGKILLed 2026-08-19) left
+    a "Board Review" view over id 9101 that — ids being reused — pointed at every
+    later match's freshly seeded "Desk Control Book", and gpt-6-luna@high reused
+    it instead of creating one.
+
+    Ownership: an ARENA thread's create_portfolio span minted this id at this
+    row's ``created_at``. The timestamp stands in for the lost baseline and is
+    what spares an unrelated row that later reused the id. Never raises.
+    Returns the reclaimed ids.
+    """
+    from app import models
+
+    try:
+        creations = collect_portfolio_creations()
+        if not creations:
+            return []
+        with database.SessionLocal() as session:
+            arena_threads = {
+                tid for (tid,) in session.query(AgentThread.id).filter(
+                    AgentThread.source == "arena")
+            }
+            minted: dict[int, list[datetime]] = {}
+            for c in creations:
+                if c["thread_id"] in arena_threads and c.get("start_time"):
+                    at = datetime.fromisoformat(str(c["start_time"]))
+                    if at.tzinfo is not None:
+                        at = at.astimezone(timezone.utc).replace(tzinfo=None)
+                    minted.setdefault(c["portfolio_id"], []).append(at)
+            doomed = [
+                p.id
+                for p in session.query(models.Portfolio).filter(
+                    models.Portfolio.id.in_(minted))
+                if p.created_at is not None and any(
+                    abs(p.created_at - at) <= _ORPHAN_MINT_TOLERANCE
+                    for at in minted[p.id])
+            ]
+            if doomed:
+                _delete_portfolios_with_dependents(session, doomed)
+                session.commit()
+                logger.warning("arena: reclaimed orphaned match portfolios %s", doomed)
+            return doomed
+    except Exception:
+        logger.warning("arena: orphaned-portfolio sweep failed", exc_info=True)
+        return []
+
+
 def _purge_seeded_portfolios(session, bundle) -> None:
     """Delete prior arena-seeded fixture rows sharing a fixture name (portfolios
     and pricing profiles), plus their dependents, so a re-seed for the next match
@@ -1041,6 +1099,9 @@ def run_match(
     # Reset any prior same-named seed, then seed fresh (autoincrement IDs) and
     # create the arena-tagged thread.
     seeded_report_ids: list[int] = []
+    # A KILLED prior match never ran its finally purge; reclaim what it created
+    # before seeding, or a leaked row can shadow this match's fixtures.
+    _sweep_orphaned_match_portfolios()
     with database.SessionLocal() as session:
         # Foreign-limit preflight BEFORE any seeding commits (a post-seed
         # failure would strand the seeded world).
