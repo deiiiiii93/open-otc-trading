@@ -72,6 +72,10 @@ _BOARD_POLICY = (
 )
 
 
+# Fragments that presume a user who can answer; headless mode drops them.
+_INTERACTIVE_ONLY_FRAGMENTS = frozenset({"cost-preview-policy", "clarification-policy"})
+
+
 def _load_identity(name: str) -> str:
     return (_PROMPTS_DIR / name).read_text(encoding="utf-8")
 
@@ -85,13 +89,18 @@ def _resolve_policy_fragments(
     headless operation and makes cautious models stall in prose forever (no user
     answers). The headless policy's "Expensive actions" section supplies the
     autonomous replacement (run inline / dispatch async). Server-side cost gates
-    (`confirmed_cost_preview`) still bound long runs."""
+    (`confirmed_cost_preview`) still bound long runs.
+
+    The clarification policy goes too: "reply with a defaulted question" is the
+    same stall in a different sentence — gpt-6-luna asked on 9 of 9 steps of a
+    headless run (#139). The headless policy's "Resolve ambiguity with reads"
+    section carries its name-lookup rule over."""
     if allow_reply_options:
         return tuple(fragments)
     return tuple(
         "headless-policy" if f == "reply-options-policy" else f
         for f in fragments
-        if f != "cost-preview-policy"
+        if f not in _INTERACTIVE_ONLY_FRAGMENTS
     )
 
 

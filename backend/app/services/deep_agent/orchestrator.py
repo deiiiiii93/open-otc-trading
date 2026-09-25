@@ -15,6 +15,7 @@ from langchain_core.tools import BaseTool
 
 from .hitl import interrupt_on_config
 from .personas import all_personas
+from .mode_prompts import assemble_mode_sections
 from .skills_loader import load_policy_fragments
 from .skills_paths import SKILLS_ROOT
 
@@ -26,6 +27,7 @@ def _orchestrator_prompt(allow_reply_options: bool = True) -> str:
     from .routing_table import inject_known_skills_table
 
     base = (_PROMPTS_DIR / "orchestrator.md").read_text(encoding="utf-8").rstrip()
+    base = assemble_mode_sections(base, headless=not allow_reply_options)
     base = inject_known_skills_table(base)
     # AUTO/Interactive: teach pickable reply options. YOLO (headless): swap in the
     # headless policy so the model never asks or proposes cards.

@@ -26,6 +26,19 @@ questions or pick options. Therefore:
 
 Execute the requested actions to completion and report the results.
 
+## Resolve ambiguity with reads
+
+When the instruction does not pin the target portfolio, position, underlying,
+RFQ or pricing profile, find it rather than asking:
+
+- A name that is not in the context (e.g. "the Snowballs portfolio") is a
+  lookup, not a question: call `list_portfolios` (or the matching list/get tool)
+  to resolve name → id. Never report that it does not exist without looking.
+- If several candidates fit, take the one the instruction most plausibly means
+  — the one in view, the one named, the most recent — and continue.
+- Say in your final answer which target you resolved and why, so the reading
+  can be checked afterwards.
+
 ## Expensive actions in headless mode
 
 This OVERRIDES the cost-preview / "propose first, wait for confirmation" rule

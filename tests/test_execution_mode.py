@@ -51,7 +51,7 @@ def test_policy_fragments_swap_to_headless_under_yolo():
     base = ("escalation-policy", "reply-options-policy", "clarification-policy")
     assert _resolve_policy_fragments(base, True) == base
     assert _resolve_policy_fragments(base, False) == (
-        "escalation-policy", "headless-policy", "clarification-policy",
+        "escalation-policy", "headless-policy",
     )
 
 
@@ -92,11 +92,10 @@ def test_cost_preview_policy_dropped_in_headless():
     )
     # Interactive/AUTO: unchanged — the preview-and-wait rule applies.
     assert _resolve_policy_fragments(base, True) == base
-    # Headless: cost-preview dropped, reply-options swapped for headless.
+    # Headless: cost-preview and clarification dropped, reply-options swapped.
     assert _resolve_policy_fragments(base, False) == (
         "escalation-policy",
         "headless-policy",
-        "clarification-policy",
     )
 
 

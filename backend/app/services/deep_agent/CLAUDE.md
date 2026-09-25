@@ -374,3 +374,27 @@ test would notice. What to know before touching the stacks:
   tools.** Our ids carry the vendor prefix (`openai/gpt-6-luna:openai`), so nothing
   switches today; a bare id would silently bypass `_ThoughtSignatureChat`'s
   chat-completions seams. The payload-based switch rules are unchanged from 1.2.
+
+## Mode-assembled prompts (headless never asks)
+
+A sentence that presumes a user who can answer belongs to a MODE, not to the
+prompt. Three places assemble by mode:
+
+- **Per-turn text** — `mode_prompts.py`: the execution-mode block and the context
+  brief's "nothing in view" lines, keyed `interactive` / `auto` / `yolo`.
+  `render_context_brief(context, mode=)` and `_orchestrator_user_prompt(mode=)`;
+  legacy callers passing only `yolo_mode` get AUTO, never headless.
+- **Orchestrator system prompt** — `<!-- MODE_SECTION:<name> -->` markers in
+  `prompts/orchestrator.md`, filled by `assemble_mode_sections` from
+  `prompts/modes/<name>.interactive.md` | `.headless.md`. A marker without its
+  file raises. The Skills page edits `orchestrator.md` raw, so it shows the markers,
+  not the section text.
+- **Persona policies** — `personas._resolve_policy_fragments` swaps
+  `reply-options-policy` for `headless-policy` and drops
+  `_INTERACTIVE_ONLY_FRAGMENTS` (`cost-preview-policy`, `clarification-policy`).
+
+Only the wording about ASKING varies by mode. Tool authorization is the HITL
+interrupt map's job; the headless execution block inherits AUTO's wording
+verbatim, and `test_mode_prompts.py` pins that. Adding a new "ask the user" sentence
+anywhere the orchestrator or a persona reads it? Give it a headless variant —
+`test_mode_prompts.py` fails if the headless clarification section says ASK.

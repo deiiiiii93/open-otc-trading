@@ -51,6 +51,13 @@ from .deep_agent.hitl import (
     interrupt_on_config,
     pending_actions_from_interrupts,
 )
+from .deep_agent.mode_prompts import (
+    INTERACTIVE,
+    execution_mode_text,
+    no_portfolio_line,
+    no_profile_line,
+    turn_mode,
+)
 from .deep_agent.model_factory import (
     build_agent_model,
     default_agent_model_selection,
@@ -687,34 +694,27 @@ def _orchestrator_user_prompt(
     context: dict[str, Any],
     *,
     yolo_mode: bool = False,
+    mode: str | None = None,
 ) -> str:
-    brief = render_context_brief(context)
+    mode = turn_mode(mode, yolo_mode)
+    brief = render_context_brief(context, mode=mode)
     hint = (
         f"(User suggested persona: {character_hint.replace('_', ' ')}.)\n\n"
         if character_hint and character_hint != "auto"
         else ""
-    )
-    execution_mode = (
-        "YOLO mode is ON. This app is using LangChain's built-in "
-        "auto-approval policy for ordinary write tools, so those tools may "
-        "run without pausing for confirmation. Irreversible tools still "
-        "require explicit user confirmation."
-        if yolo_mode
-        else "YOLO mode is OFF. Follow the normal confirmation policy for "
-        "write and irreversible tools."
     )
     return (
         f"{hint}"
         f"=== Conversation context ===\n"
         f"{brief}\n\n"
         f"=== Execution mode ===\n"
-        f"{execution_mode}\n\n"
+        f"{execution_mode_text(mode)}\n\n"
         f"=== User says ===\n"
         f"{content}"
     )
 
 
-def render_context_brief(context: dict[str, Any]) -> str:
+def render_context_brief(context: dict[str, Any], *, mode: str = INTERACTIVE) -> str:
     """Render the four-key context dict as a natural-language briefing.
 
     Replaces the prior JSON-dump prompt format. Goals:
@@ -722,6 +722,9 @@ def render_context_brief(context: dict[str, Any]) -> str:
     - Lead with DB-truth (portfolio_summary) over UI snapshot
     - Expose entity_ids only as compact "internal references" for tools
     - Stay under ~150 tokens for the typical case
+
+    ``mode`` picks the wording of the "nothing in view" lines: a headless run
+    has no user to ask (see ``deep_agent.mode_prompts``).
     """
     page = context.get("current_page_context") or {}
     portfolio = context.get("portfolio_summary") or {}
@@ -754,10 +757,7 @@ def render_context_brief(context: dict[str, Any]) -> str:
             lines.append(f"Selected position: {_selected_position_brief(selected)}")
     else:
         lines.append("")
-        lines.append(
-            "No portfolio is in view from this page. Ask the user which portfolio, "
-            "position, or underlying they mean before invoking domain tools."
-        )
+        lines.append(no_portfolio_line(mode))
 
     if recent_messages:
         lines.append("")
@@ -789,12 +789,7 @@ def render_context_brief(context: dict[str, Any]) -> str:
         lines.append(profile_line)
     elif portfolio:
         lines.append("")
-        lines.append(
-            "No pricing parameter profile is selected. Before proposing "
-            "run_batch_pricing or create_report for portfolio/risk "
-            "calculations, ask which pricing parameter profile to use unless "
-            "the user explicitly says to run without one."
-        )
+        lines.append(no_profile_line(mode))
 
     refs = _internal_references_line(page.get("entity_ids"))
     if refs:
@@ -2322,6 +2317,7 @@ class AgentService:
                 requested_character,
                 context,
                 yolo_mode=yolo_mode,
+                mode=mode,
             )
             resolved_envelope = self._resolve_envelope(envelope, page_context)
             configurable_extra: dict[str, Any] = {
@@ -2893,6 +2889,7 @@ class AgentService:
             requested_character,
             context,
             yolo_mode=yolo_mode,
+            mode=mode,
         )
         resolved_envelope = self._resolve_envelope(envelope, page_context)
         configurable_extra: dict[str, Any] = {

@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **YOLO (headless) prompts no longer tell the model to ask the user.** Prompt text
+  that presumes a user now comes in a separate version for each mode. The per-turn
+  execution block and the context brief's "no portfolio / no profile" lines come
+  from `deep_agent/mode_prompts.py`. The orchestrator's system prompt marks two
+  sections with `<!-- MODE_SECTION:<name> -->`: the clarification protocol and
+  the profile-choice rule. Each is filled from
+  `prompts/modes/<name>.{interactive,headless}.md`. Headless personas also drop
+  `clarification-policy`. `headless-policy` gains "Resolve ambiguity with
+  reads": look the target up with read tools, take the most likely reading, and
+  state the assumption in the answer. Motivated by run #139, where gpt-6-luna in
+  a headless run asked the same clarifying question on 9 of 9 risk-manager
+  steps. Interactive and AUTO text is unchanged, and so is the confirmation
+  policy for irreversible tools. Arena runs are headless, so this changes what
+  every later board ran under (app 0.2.x).
 - **Golden workflows: manifest review for tools added since they were written.**
   high-board and trader-rfq are now `manifest_version: 2`: their position-read checks
   accept `get_position_summaries` (callable since 2026-08-21, same fields) alongside
