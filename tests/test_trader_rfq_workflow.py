@@ -189,10 +189,11 @@ def test_in_memory_calculate_risk_still_passes_step7():
         replay["step-8-impact"].response_text = (
             "Net book impact from the new MSFT put — its delta -0.4164 lowers the desk's net delta.")
     score, passed, total = _score_with_mutation(mutate)
-    # Exactly the two canonical-path checks drop — the step's expected_tool
-    # (get_latest_risk_run) and the success-level tools_routed_sequence. Both
-    # step-7 numeric/quote grounds must pass on the calculate_risk evidence.
-    assert total - passed == 2, f"in-memory risk read lost {total - passed} checks"
+    # Exactly ONE canonical-path check drops: the success-level
+    # tools_routed_sequence. (v2 removed the step's expected_tools entry, which
+    # double-scored the read the adherence any_of already accepts.) Both
+    # numeric/quote grounds must pass on the calculate_risk evidence.
+    assert total - passed == 1, f"in-memory risk read lost {total - passed} checks"
 
 
 def test_wrong_delta_number_loses_points():
@@ -232,3 +233,26 @@ def test_trap_booking_loses_points():
             {"id": "cbook", "name": "book_position", "args": {"portfolio_id": 3}})
     _, passed, total = _score_with_mutation(mutate)
     assert passed < total, "booking the trap product still scored full marks"
+
+
+def test_a_failed_booking_retried_is_not_a_duplicate():
+    """Run #139/#140: gpt-6-luna's first book_position raised (unsupported kwarg,
+    NOTHING booked), its retry booked position 30 -- and `max_calls: 1` failed it
+    as a duplicate. A call whose own result carries an error changed nothing, so
+    it is neither a duplicate nor an over-execution. A real duplicate (above)
+    must still lose points."""
+    _, clean_passed, total = _score_with_mutation(lambda replay: None)
+
+    def mutate(replay):
+        entry = replay["step-5-book"]
+        good = entry.ai["tool_calls"][0]
+        failed = copy.deepcopy(good)
+        failed["id"] = "c5-failed"
+        failed["args"]["product"]["terms"]["barrier_type"] = "DOWN_OUT"  # wrong, and it failed
+        entry.ai["tool_calls"].insert(0, failed)
+        entry.tool_results.insert(0, {
+            "name": "book_position", "tool_call_id": "c5-failed", "content": {},
+            "error": "ValueError('Unsupported kwargs for BarrierOption: initial_price')"})
+
+    _, passed, _ = _score_with_mutation(mutate)
+    assert passed == clean_passed == total

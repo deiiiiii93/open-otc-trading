@@ -1,7 +1,7 @@
 ---
 id: trader-rfq-booking-day
 schema_version: 1
-manifest_version: 1   # bump on ANY scoring-relevant edit; stamped onto every arena run
+manifest_version: 2   # bump on ANY scoring-relevant edit; stamped onto every arena run
 persona: trader
 title: "Trader RFQ-to-Booking Day"
 objective: >
@@ -225,19 +225,36 @@ steps:
 
   - user: "Show me the booked position — confirm it's the MSFT down-and-in barrier we just booked."
     expected_skill: position-snapshot
-    expected_tools:
-      - name: get_positions
     outcome: >
-      The agent reads the booked MSFT position via get_positions and confirms a
-      persisted MSFT BarrierOption.
+      The agent reads the booked MSFT position (get_positions or
+      get_position_summaries) and confirms a persisted MSFT BarrierOption.
     assertions:
+      # v2 (2026-09-25): `get_position_summaries` became callable on 2026-08-21
+      # (e1dfd58) with the same total_count / portfolio_total_count / positions[]
+      # fields, and this check fell from 8/8 (run #110) to ~0 from run #127 on while
+      # the COUNTS stayed right. The step grades the reading, not which of two
+      # equivalent tools produced it.
+      - type: assertion_any_of
+        axis: procedural
+        any_of:
+          - type: tool_called
+            name: get_positions
+          - type: tool_called
+            name: get_position_summaries
       # get_positions is the tool the agent actually calls; it exposes product_type on
       # the row (barrier/strike are NOT promoted here — those are grounded on the
       # booking/quote). A MSFT BarrierOption must be persisted.
-      - type: tool_result_path
-        tool: get_positions
-        path: positions[underlying=MSFT].product_type
-        equals: BarrierOption
+      - type: assertion_any_of
+        axis: grounding
+        any_of:
+          - type: tool_result_path
+            tool: get_positions
+            path: positions[underlying=MSFT].product_type
+            equals: BarrierOption
+          - type: tool_result_path
+            tool: get_position_summaries
+            path: positions[underlying=MSFT].product_type
+            equals: BarrierOption
       - type: response_contains
         any_of: ["down-and-in", "DOWN_IN"]
     replay: step-6-snapshot
@@ -258,8 +275,10 @@ steps:
 
   - user: "What's the net delta impact of the new trade on the book? Run the risk calculation on the desk book."
     expected_skill: run-risk
-    expected_tools:
-      - name: get_latest_risk_run
+    # v2 (2026-09-25): no expected_tools. The adherence any_of below already scores
+    # the risk read and accepts BOTH competent paths; an expected_tools entry scored
+    # the same fact a second time, and only for get_latest_risk_run — so the path
+    # this manifest itself accepts (calculate_risk) lost a point for being accepted.
     outcome: >
       The agent reads the desk book's fresh stored risk run (the batch-pricing
       run from the pricing step already persists risk metrics; a new run may be
@@ -419,7 +438,8 @@ success:
         - submit_rfq_for_approval
         - build_product
         - book_position
-        - get_positions
+        # v2: the position read left the sequence (get_positions OR
+        # get_position_summaries — a sequence cannot express alternatives).
         - run_batch_pricing
         - get_latest_risk_run
         - write_report_artifact

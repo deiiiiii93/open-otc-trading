@@ -340,8 +340,27 @@ def evaluate_assertion(a, ctx: AssertionContext) -> tuple[bool, str]:
                 return True
             return False
 
-        matching_name = [c.get("args", {}) or {} for c in ctx.tool_calls
-                         if normalize_tool_name(c.get("name", "")) == want]
+        named = [c for c in ctx.tool_calls
+                 if normalize_tool_name(c.get("name", "")) == want]
+        matching_name = [c.get("args", {}) or {} for c in named]
+        if getattr(a, "max_calls", None) is not None or getattr(a, "all_calls", False):
+            # Over-execution is about what a call DID. A call whose own result
+            # carries an error booked/changed nothing, so it is neither a
+            # duplicate nor a non-compliant use: gpt-6-luna's failed first
+            # book_position (unsupported kwarg) plus its successful retry was
+            # failed as a "duplicate" on runs #139/#140. Positive evidence only —
+            # a call with no surviving result still counts.
+            results = [r for r in ctx.tool_results
+                       if normalize_tool_name(r.get("name", "")) == want]
+
+            def _errored(call: dict, idx: int) -> bool:
+                cid = call.get("id")
+                r = (next((x for x in results if x.get("tool_call_id") == cid), None)
+                     if cid else (results[idx] if idx < len(results) else None))
+                return bool(r and r.get("error"))
+
+            matching_name = [c.get("args", {}) or {} for i, c in enumerate(named)
+                             if not _errored(c, i)]
         max_calls = getattr(a, "max_calls", None)
         if max_calls is not None and len(matching_name) > max_calls:
             return False, (f"{a.name} called {len(matching_name)}x "

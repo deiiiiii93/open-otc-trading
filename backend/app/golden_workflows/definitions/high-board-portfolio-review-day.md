@@ -1,7 +1,7 @@
 ---
 id: high-board-portfolio-review-day
 schema_version: 1
-manifest_version: 1   # bump on ANY scoring-relevant edit; stamped onto every arena run
+manifest_version: 2   # bump on ANY scoring-relevant edit; stamped onto every arena run
 persona: high_board
 title: "High-Board Portfolio Review Day"
 objective: >
@@ -107,25 +107,49 @@ steps:
     # incidental. The COUNT itself is still graded, and more strictly, by the
     # answer_field checks below.
     expected_skill: null
-    expected_tools:
-      - name: get_positions
     outcome: >
       The agent counts the Snowball subset of the view and reports it against the
       view's full membership.
     assertions:
+      # v2 (2026-09-25): `get_position_summaries` became callable on 2026-08-21
+      # (e1dfd58) with the same total_count / portfolio_total_count / positions[]
+      # fields, and this check fell from 8/8 (run #110) to ~0 from run #127 on while
+      # the COUNTS stayed right. The step grades the reading, not which of two
+      # equivalent tools produced it.
+      - type: assertion_any_of
+        axis: procedural
+        any_of:
+          - type: tool_called
+            name: get_positions
+          - type: tool_called
+            name: get_position_summaries
       # No `product_type` arg is required. A filtered call and an unfiltered call that
       # counts the subset client-side are EQUALLY correct — the live smoke did the
       # latter (`get_positions(portfolio_id=…)` ×3, no filter) and the old assertion
       # scored 0/17 for it. Grading a calling CONVENTION measured style, not ability;
       # the answer_field checks below grade the actual number instead.
-      - type: tool_result_path
-        tool: get_positions
-        path: total_count
-        gte: 1
-      - type: tool_result_path
-        tool: get_positions
-        path: portfolio_total_count
-        equals: 5
+      - type: assertion_any_of
+        axis: grounding
+        any_of:
+          - type: tool_result_path
+            tool: get_positions
+            path: total_count
+            gte: 1
+          - type: tool_result_path
+            tool: get_position_summaries
+            path: total_count
+            gte: 1
+      - type: assertion_any_of
+        axis: grounding
+        any_of:
+          - type: tool_result_path
+            tool: get_positions
+            path: portfolio_total_count
+            equals: 5
+          - type: tool_result_path
+            tool: get_position_summaries
+            path: portfolio_total_count
+            equals: 5
       - type: answer_field_quotes
         field: snowball_count
         value: 2
@@ -305,7 +329,10 @@ success:
     # resolution route, so requiring it here would fail the whole sequence for a model
     # that used `list_portfolios` — which is exactly what happened to terra.
     - type: tools_routed_sequence
-      names: [create_portfolio, get_positions, get_latest_risk_run, list_reports, get_report, write_report_artifact]
+      # v2: the position read left the sequence — it may be get_positions OR
+      # get_position_summaries, and a sequence cannot express alternatives. Step 3
+      # still grades that the read happened.
+      names: [create_portfolio, get_latest_risk_run, list_reports, get_report, write_report_artifact]
     # NOTE (2026-07-25 validity audit): `portfolio_total_count == 5`,
     # `artifact_exists(text)` and `tool_not_called: create_report` used to be
     # repeated here as well as per-step. Success assertions evaluate against the

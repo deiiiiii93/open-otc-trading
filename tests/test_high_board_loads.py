@@ -34,7 +34,7 @@ def test_high_board_objective_point_manifest():
     tools = sum(len(s.expected_tools) for s in wf.steps)
     step_assertions = sum(len(s.assertions) for s in wf.steps)
     success_assertions = len(wf.success.assertions)
-    assert (skills, tools, step_assertions, success_assertions) == (4, 6, 23, 2)
+    assert (skills, tools, step_assertions, success_assertions) == (4, 5, 24, 2)  # v2: step-3 get_positions moved from expected_tools into an any_of (total unchanged, 35)
     assert skills + tools + step_assertions + success_assertions == 35
 
 
