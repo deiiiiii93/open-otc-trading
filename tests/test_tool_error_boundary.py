@@ -12,6 +12,7 @@ hook that turns tool-body exceptions into error ``ToolMessage``s so the agent ca
 recover — while still letting control-flow signals (HITL interrupts) propagate.
 """
 from __future__ import annotations
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 
 import pytest
 from langchain.agents.middleware.types import ToolCallRequest
@@ -117,7 +118,7 @@ def test_orchestrator_installs_boundary_outermost():
     """Defense-in-depth: the orchestrator (task dispatch + propose_reply_options)
     also carries the boundary as its outermost middleware."""
     middleware = _agent_middleware(
-        False, model=None, backend=object(), tools=[], yolo_mode=False
+        False, model=GenericFakeChatModel(messages=iter([])), backend=object(), tools=[], yolo_mode=False
     )
 
     assert middleware

@@ -175,7 +175,9 @@ class EnvelopeSkillsMiddleware(SkillsMiddleware):
         runtime: Any,
         config: RunnableConfig,
     ) -> SkillsStateUpdate:
-        backend = self._get_backend(state, runtime, config)
+        # deepagents 0.7 removed _get_backend (factories are rejected; the
+        # backend is always the instance passed to __init__).
+        backend = self._backend
         envelope = _envelope_from_config(config, self.default_envelope)
         skills, errors = load_envelope_filtered_skills_with_errors(
             backend,
@@ -194,7 +196,9 @@ class EnvelopeSkillsMiddleware(SkillsMiddleware):
         runtime: Any,
         config: RunnableConfig,
     ) -> SkillsStateUpdate:
-        backend = self._get_backend(state, runtime, config)
+        # deepagents 0.7 removed _get_backend (factories are rejected; the
+        # backend is always the instance passed to __init__).
+        backend = self._backend
         envelope = _envelope_from_config(config, self.default_envelope)
         skills, errors = await aload_envelope_filtered_skills_with_errors(
             backend,

@@ -1,5 +1,6 @@
 """Envelope-aware workflow skill catalog tests."""
 from __future__ import annotations
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 
 from app.services.deep_agent.envelopes import Envelope
 from app.services.deep_agent.envelope_skills import (
@@ -82,7 +83,7 @@ def test_build_orchestrator_installs_envelope_skill_middleware(monkeypatch) -> N
     monkeypatch.setattr("deepagents.create_deep_agent", fake_create_deep_agent)
 
     build_orchestrator(
-        model=object(),
+        model=GenericFakeChatModel(messages=iter([])),
         tools=[],
         checkpointer=object(),
         interrupt_on={},

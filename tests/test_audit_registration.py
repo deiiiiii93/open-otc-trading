@@ -1,3 +1,4 @@
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 """Every agent middleware stack must carry AuditTrailMiddleware (audit spec §5.2a).
 
 A factory that forgets the middleware fails here rather than silently
@@ -13,7 +14,7 @@ def _names(middleware):
 def test_orchestrator_stack_has_audit_inside_error_boundary():
     from app.services.deep_agent.orchestrator import _agent_middleware
 
-    mw = _agent_middleware(False, model=None, backend=object(), tools=[])
+    mw = _agent_middleware(False, model=GenericFakeChatModel(messages=iter([])), backend=object(), tools=[])
     names = _names(mw)
     assert names[0] == "ToolErrorBoundaryMiddleware"
     assert names[1] == "AuditTrailMiddleware"

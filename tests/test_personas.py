@@ -183,6 +183,8 @@ def test_orchestrator_can_enable_quickjs_code_interpreter_middleware(monkeypatch
         "RunPythonArtifactHITLMiddleware",
         "LedgerScopedCompactionMiddleware",
         "TermGroundingMiddleware",
+        # deepagents 0.7 no longer adds it; the orchestrator restores write_todos.
+        "TodoListMiddleware",
         "EvalAttributionGateMiddleware",
         "CodeInterpreterMiddleware",
     ]
@@ -235,6 +237,7 @@ def test_orchestrator_installs_ledger_scoped_compaction_middleware(monkeypatch):
         "RunPythonArtifactHITLMiddleware",
         "LedgerScopedCompactionMiddleware",
         "TermGroundingMiddleware",
+        "TodoListMiddleware",
     ]
 
 

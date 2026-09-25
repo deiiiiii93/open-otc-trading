@@ -149,6 +149,10 @@ def build_async_agent(
             ),
         ]
     )
+    from langchain.agents.middleware import TodoListMiddleware
+
+    # deepagents 0.7 dropped TodoListMiddleware from every stack it builds.
+    middleware.append(TodoListMiddleware())
     return create_deep_agent(
         model=model,
         tools=list(tools),

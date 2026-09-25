@@ -183,6 +183,10 @@ def _general_purpose_subagent(
 
         middleware.append(ToolGuardMiddleware(persona="general-purpose"))
 
+    from langchain.agents.middleware import TodoListMiddleware
+
+    # deepagents 0.7 dropped TodoListMiddleware from the base stack it prepends.
+    middleware.append(TodoListMiddleware())
     return {
         **GENERAL_PURPOSE_SUBAGENT,
         "skills": [],
@@ -262,6 +266,10 @@ def _agent_middleware(
     # (see term_grounding.py NUDGE_TEXT).
     from .term_grounding import TermGroundingMiddleware
     middleware.append(TermGroundingMiddleware())
+    # deepagents 0.7 dropped TodoListMiddleware from the stacks it builds; the
+    # orchestrator prompt and the SSE todo panel still rely on `write_todos`.
+    from langchain.agents.middleware import TodoListMiddleware
+    middleware.append(TodoListMiddleware())
     if not enable_code_interpreter:
         _append_goal_grader(middleware, goal_grader)
         return middleware

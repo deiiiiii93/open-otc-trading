@@ -46,7 +46,7 @@ SCOPE_KEYS: tuple[str, ...] = (
 )
 
 # Tools whose args are NOT authoritative desk scope (meta/subagent plumbing).
-_IGNORED_TOOLS = {"task", "read_file", "write_todos", "write_file", "edit_file", "ls"}
+_IGNORED_TOOLS = {"task", "read_file", "write_todos", "write_file", "edit_file", "delete", "ls"}
 
 
 def extract_scope(tool_calls: list[dict]) -> dict[str, Any]:

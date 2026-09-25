@@ -1,3 +1,4 @@
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 # tests/test_memory_wiring.py
 from langchain_core.messages import SystemMessage
 
@@ -10,7 +11,7 @@ def test_agent_middleware_includes_memory_when_enabled(monkeypatch):
     from app.services.deep_agent.memory.middleware import MemoryMiddleware
     from app.services.deep_agent import orchestrator
     reset_memory_runtime()
-    mws = orchestrator._agent_middleware(False, model=None, backend=None, tools=[])
+    mws = orchestrator._agent_middleware(False, model=GenericFakeChatModel(messages=iter([])), backend=None, tools=[])
     assert any(isinstance(m, MemoryMiddleware) for m in mws)
     reset_memory_runtime()
 
@@ -21,7 +22,7 @@ def test_agent_middleware_omits_memory_when_disabled(monkeypatch):
     from app.services.deep_agent.memory.middleware import MemoryMiddleware
     from app.services.deep_agent import orchestrator
     reset_memory_runtime()
-    mws = orchestrator._agent_middleware(False, model=None, backend=None, tools=[])
+    mws = orchestrator._agent_middleware(False, model=GenericFakeChatModel(messages=iter([])), backend=None, tools=[])
     assert not any(isinstance(m, MemoryMiddleware) for m in mws)
 
 
@@ -41,7 +42,7 @@ def test_real_prompt_path_via_assembled_chain(monkeypatch):
         pass
 
     for code_interp in branches:
-        mws = orchestrator._agent_middleware(code_interp, model=None, backend=None, tools=[])
+        mws = orchestrator._agent_middleware(code_interp, model=GenericFakeChatModel(messages=iter([])), backend=None, tools=[])
         mem = [m for m in mws if isinstance(m, MemoryMiddleware)]
         assert len(mem) == 1
         idx_mem = mws.index(mem[0])
@@ -124,7 +125,7 @@ def test_correction_enqueued_via_real_middleware_and_config(session, agent_threa
     session.add(msg); session.commit()
 
     # REAL assembled middleware chain (not get_memory_middleware() directly)
-    mws = orchestrator._agent_middleware(False, model=None, backend=None, tools=[])
+    mws = orchestrator._agent_middleware(False, model=GenericFakeChatModel(messages=iter([])), backend=None, tools=[])
     mem = next(m for m in mws if isinstance(m, MemoryMiddleware))
     q = get_memory_queue()
     q._ensure_writer = lambda: None   # deterministic: inspect the queued job, no drain

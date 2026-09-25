@@ -49,6 +49,7 @@ from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ToolCallRequest
+from langgraph.types import Command
 from langchain_core.messages import ToolMessage
 
 logger = logging.getLogger(__name__)
@@ -121,6 +122,8 @@ class BinaryReadGuardMiddleware(AgentMiddleware):
     """
 
     def _guard(self, request: ToolCallRequest, result: _ToolResult) -> _ToolResult:
+        if isinstance(result, Command):
+            return self._guard_command(request, result)
         if not isinstance(result, ToolMessage):
             return result
         blocks = _media_blocks(result.content)
@@ -143,6 +146,25 @@ class BinaryReadGuardMiddleware(AgentMiddleware):
                 "status": "error",
             }
         )
+
+    def _guard_command(self, request: ToolCallRequest, result: Command) -> _ToolResult:
+        """deepagents 0.7 returns a VIDEO read_file as a Command whose update
+        carries a synthetic HumanMessage of frames -- not a ToolMessage, so the
+        check above never saw it. Any media bytes anywhere in the update poison
+        the history the same way; replace the whole Command with the error."""
+        update = result.update if isinstance(result.update, dict) else {}
+        messages = update.get("messages") or []
+        blocks = [b for m in messages for b in _media_blocks(getattr(m, "content", None))]
+        if not blocks:
+            return result
+        call = request.tool_call or {}
+        args = call.get("args") or {}
+        path = str(args.get("file_path") or args.get("path") or "<unknown>")
+        logger.info("binary read guard: replaced a %d-block media Command from %s (%s)",
+                    len(blocks), call.get("name", "?"), path)
+        return ToolMessage(content=_replacement_text(path, blocks),
+                           tool_call_id=call.get("id") or "",
+                           name=call.get("name"), status="error")
 
     def wrap_tool_call(
         self,

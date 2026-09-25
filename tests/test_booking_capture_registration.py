@@ -1,3 +1,4 @@
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 """Every agent middleware stack must carry BookingResultMiddleware.
 
 A booking made inside a persona subagent lives in that subagent's own
@@ -16,7 +17,7 @@ def _names(middleware):
 def test_orchestrator_stack_captures_bookings():
     from app.services.deep_agent.orchestrator import _agent_middleware
 
-    names = _names(_agent_middleware(False, model=None, backend=object(), tools=[]))
+    names = _names(_agent_middleware(False, model=GenericFakeChatModel(messages=iter([])), backend=object(), tools=[]))
     assert "BookingResultMiddleware" in names
     # Inside the error boundary and the audit trail: a booking that was
     # refused by audit fail-closed must never be reported as a booking.

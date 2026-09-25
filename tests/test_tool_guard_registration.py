@@ -4,6 +4,7 @@ Mirrors test_audit_registration.py, and additionally pins ABSENCE under
 interactive and under headless YOLO (every arena run).
 """
 from __future__ import annotations
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 
 from unittest.mock import MagicMock
 
@@ -21,7 +22,7 @@ def _names(middleware):
 def _orchestrator(yolo_mode, allow_reply_options):
     from app.services.deep_agent.orchestrator import _agent_middleware
 
-    return _names(_agent_middleware(False, model=None, backend=object(), tools=[],
+    return _names(_agent_middleware(False, model=GenericFakeChatModel(messages=iter([])), backend=object(), tools=[],
                                     yolo_mode=yolo_mode,
                                     allow_reply_options=allow_reply_options))
 
@@ -74,7 +75,7 @@ def test_truth_table_in_every_stack(monkeypatch, mode, legacy_yolo, expected):
 def test_each_stack_labels_its_persona():
     from app.services.deep_agent.orchestrator import _agent_middleware, _general_purpose_subagent
 
-    guard = next(m for m in _agent_middleware(False, model=None, backend=object(), tools=[],
+    guard = next(m for m in _agent_middleware(False, model=GenericFakeChatModel(messages=iter([])), backend=object(), tools=[],
                                               yolo_mode=True, allow_reply_options=True)
                  if type(m).__name__ == GUARD)
     assert guard.persona == "orchestrator"

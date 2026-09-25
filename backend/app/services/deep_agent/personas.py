@@ -199,6 +199,7 @@ def all_personas(
     from .fanout_readonly import FanoutReadOnlyMiddleware
     from .tool_error_boundary import ToolErrorBoundaryMiddleware
     from .tool_guard import ToolGuardMiddleware
+    from langchain.agents.middleware import TodoListMiddleware
 
     for spec in specs:
         sources = list(spec.get("skills", []))
@@ -243,5 +244,9 @@ def all_personas(
         # term_grounding.py) - personas hold the grounding tools.
         middleware.append(TermGroundingMiddleware())
         middleware.append(EnvelopeSkillsMiddleware(backend=skills_backend, sources=sources))
+        # deepagents 0.7 dropped TodoListMiddleware from every stack it builds; the
+        # orchestrator prompt, the SSE todo panel and the tests still rely on
+        # `write_todos`, so every stack of ours restores it explicitly.
+        middleware.append(TodoListMiddleware())
         spec["middleware"] = middleware  # pyright: ignore[reportGeneralTypeIssues]
     return specs

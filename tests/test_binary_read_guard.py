@@ -8,6 +8,7 @@ read one PDF and then made zero tool calls for the remaining five steps.
 """
 
 from __future__ import annotations
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 
 from unittest.mock import MagicMock
 
@@ -92,7 +93,7 @@ def _names(middleware):
 def test_guard_registered_in_orchestrator_stack():
     from app.services.deep_agent.orchestrator import _agent_middleware
 
-    names = _names(_agent_middleware(False, model=None, backend=object(), tools=[]))
+    names = _names(_agent_middleware(False, model=GenericFakeChatModel(messages=iter([])), backend=object(), tools=[]))
     assert "BinaryReadGuardMiddleware" in names
 
 
@@ -222,3 +223,31 @@ def test_general_purpose_gets_the_yolo_cost_gate_like_every_persona():
 
     on = _names(_general_purpose_subagent(tools=[], yolo_mode=True)["middleware"])
     assert "LongRunningCostHITLMiddleware" in on
+
+
+def test_video_read_returned_as_a_command_is_also_replaced():
+    """deepagents 0.7 returns a video read_file as a Command carrying a synthetic
+    HumanMessage of frames, not a ToolMessage -- which walked straight past a
+    guard that only inspected ToolMessages. Same poison, different envelope."""
+    from langchain_core.messages import HumanMessage
+    from langgraph.types import Command
+
+    frames = HumanMessage(content=[
+        {"type": "image", "base64": "iVBORw0KGgo=", "mime_type": "image/png"}])
+    video = Command(update={"messages": [
+        ToolMessage(content="video frames attached", tool_call_id="call_1",
+                    name="read_file"),
+        frames]})
+    out = _run(BinaryReadGuardMiddleware(), _request(file_path="/trading_desk/clip.mp4"), video)
+
+    assert isinstance(out, ToolMessage), "the Command must not reach the history"
+    assert out.status == "error" and out.tool_call_id == "call_1"
+    assert "/trading_desk/clip.mp4" in out.content and "image/png" in out.content
+
+
+def test_a_command_without_media_is_untouched():
+    from langgraph.types import Command
+
+    cmd = Command(update={"messages": [
+        ToolMessage(content="ok", tool_call_id="call_1", name="read_file")]})
+    assert _run(BinaryReadGuardMiddleware(), _request(file_path="/a.txt"), cmd) is cmd

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Harness upgrade — app 0.2.0, a new arena era.** deepagents 0.6.12 → 0.7.19,
+  langchain 1.3 → 1.4.2, langchain-core 1.4 → 1.6.5, langchain-openai 1.2 → 1.6.6,
+  langchain-anthropic 1.4 → 1.7.4, langgraph 1.2.9 → 1.2.12, openai 2.36 → 3.19.
+  Adopted upstream's minimal harness: deepagents 0.7 no longer sends its base agent,
+  filesystem or `task` system prompts and shortened the tool descriptions, so every
+  agent's prompt changed. Arena scores from app 0.1.x and 0.2.x are not comparable;
+  every run now states its version (see provenance). Repairs for the upgrade:
+  `EnvelopeSkillsMiddleware` read a removed backend accessor (every persona would
+  have crashed); `write_todos` is restored on every stack (0.7 dropped
+  `TodoListMiddleware`); 0.7's new `delete` file tool is classified as a file write
+  (audited, blocked under fan-out); the binary-read guard now also catches a video
+  `read_file`, which 0.7 returns as a `Command` of image frames.
+
 ### Fixed
 - **Arena: a killed match leaked its portfolios forever.** The per-match purge
   runs in a `finally`, which a SIGKILL skips, and every later match baselines above

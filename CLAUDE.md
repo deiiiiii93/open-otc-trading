@@ -201,6 +201,11 @@ Four classes of self-invalidating assertion have already bitten this repo. All w
 
 ## Environment traps
 
+- **App 0.2.0 needs the 0.7 agent stack: run `uv sync --extra dev` after pulling it.**
+  The repo code restores `TodoListMiddleware` that deepagents 0.7 dropped, so on a
+  stale 0.6 venv every agent build dies with "Please remove duplicate middleware
+  instances". The arena provenance stamp records the installed `deepagents` version —
+  check it if a board looks wrong.
 - **The DB env var is `OPEN_OTC_DATABASE_URL`, not `DATABASE_URL`** (it is a
   `validation_alias`). Getting it wrong does NOT error — it silently falls back to
   `./data/open_otc.sqlite3`, i.e. the LIVE DB, and reports `exit=0`. The only tell is

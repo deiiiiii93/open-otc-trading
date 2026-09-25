@@ -4,6 +4,7 @@ P3.8 deletes routing skills and keeps compound-flow behavior as explicit
 orchestrator prompt contracts.
 """
 from __future__ import annotations
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 
 from pathlib import Path
 
@@ -100,7 +101,7 @@ def test_build_orchestrator_no_longer_loads_routing_skill_source(monkeypatch) ->
     monkeypatch.setattr("deepagents.create_deep_agent", fake_create_deep_agent)
 
     orchestrator.build_orchestrator(
-        model=object(),
+        model=GenericFakeChatModel(messages=iter([])),
         tools=[],
         checkpointer=object(),
         interrupt_on={},

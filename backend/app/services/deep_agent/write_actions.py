@@ -14,7 +14,9 @@ from langchain_core.tools import BaseTool
 from .envelopes import ToolGroup
 
 # deepagents filesystem/shell built-ins are NOT capability-gated; classify by name.
-FS_WRITE_TOOLS = frozenset({"write_file", "edit_file", "execute"})
+# `delete` is deepagents 0.7's new built-in filesystem tool: a file mutation, so
+# it is audited and blocked under Case-3 fan-out exactly like write_file/edit_file.
+FS_WRITE_TOOLS = frozenset({"write_file", "edit_file", "delete", "execute"})
 
 _GROUP_TO_CLASS = {
     ToolGroup.DOMAIN_WRITE: "domain_write",
