@@ -442,3 +442,15 @@ escalation (run #141 match 633: 64.1 → 97.4 on rescore). Thirteen historical
 arena threads carry the pattern. To fix a stored row without re-running it,
 use `scripts/rescore_arena_match.py --match ID --thread TID --reason …`
 (`--dry-run` first).
+
+## Reports are a purge namespace too (2026-09-25)
+
+`report_jobs` has NO portfolio column (the portfolio is in `request_payload`), so
+`_delete_portfolios_with_dependents` cannot reach a report, and
+`_purge_seeded_reports` only knows `ARENA_REPORT_MARKER`. A contestant's
+`create_report` (`report_job_id`) or `generate_report` (`report_id`) row is
+handled by `_purge_match_reports(thread_id, report_id_baseline)` in the
+`finally`, and by `_sweep_orphaned_match_reports()` before seeding. Five rows
+had leaked (ids 1–4 from risk-manager-control, 8 from high-board). Because ids
+are reused, report 8 posed as the fresh 9101 book's prior board report.
+Adding a tool that inserts `ReportJob`? Add it to `_REPORT_CREATE_TOOLS`.

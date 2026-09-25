@@ -26,6 +26,8 @@ from app.services.arena.models import arena_model_to_selection
 from app.services.arena.trace_harvest import (
     collect_portfolio_creations,
     collect_portfolio_ids_created,
+    collect_report_creations,
+    collect_report_ids_created,
     collect_rfq_ids_touched,
     collect_confirmation_batch_ids_created,
     collect_scenario_set_names_saved,
@@ -627,6 +629,99 @@ def _sweep_orphaned_match_portfolios() -> list[int]:
         return []
 
 
+def _delete_reports(session, report_ids) -> None:
+    """Delete ReportJob rows, first detaching the TaskRuns that point at them.
+
+    ``task_runs.report_job_id`` is a nullable FK; the task row stays as the
+    audit record of the work that was done, it just no longer names a report
+    that is gone.
+    """
+    from sqlalchemy import delete, update
+
+    from app import models
+
+    ids = list(report_ids)
+    if not ids:
+        return
+    session.execute(
+        update(models.TaskRun)
+        .where(models.TaskRun.report_job_id.in_(ids))
+        .values(report_job_id=None)
+    )
+    session.execute(delete(models.ReportJob).where(models.ReportJob.id.in_(ids)))
+
+
+def _purge_match_reports(thread_id: int, report_id_baseline: int) -> None:
+    """Delete the ReportJob rows THIS match's contestant created.
+
+    Ownership is the pair the other purges use: this thread's create_report /
+    generate_report calls named the id (``collect_report_ids_created``), AND the
+    id is above the pre-match high-water mark, so a pre-existing report the
+    model merely read is never touched. Seeded reports are purged separately by
+    id. Runs in the ``finally``; never raises.
+    """
+    try:
+        candidates = {
+            rid for rid in collect_report_ids_created(thread_id)
+            if rid > report_id_baseline
+        }
+        if not candidates:
+            return
+        with database.SessionLocal() as session:
+            _delete_reports(session, candidates)
+            session.commit()
+    except Exception:  # noqa: BLE001 — best-effort; never mask the match outcome
+        logger.warning("arena report cleanup failed for thread %s", thread_id, exc_info=True)
+
+
+def _sweep_orphaned_match_reports() -> list[int]:
+    """Pre-match: reclaim ReportJob rows a prior arena match created but never
+    purged — killed before its ``finally``, or from before report cleanup
+    existed. Report 8 (portfolio 9101, 2026-08-26) is the case in point: every
+    high-board match re-seeds "Desk Control Book" as 9101, so the stale report
+    looked like it belonged to the fresh book and answered "last quarter's board
+    report" with the wrong number.
+
+    Same ownership proof as ``_sweep_orphaned_match_portfolios``: an ARENA
+    thread's create_report / generate_report span minted this id at this row's
+    ``created_at`` (ids are reused). Never raises. Returns the reclaimed ids.
+    """
+    from app import models
+
+    try:
+        creations = collect_report_creations()
+        if not creations:
+            return []
+        with database.SessionLocal() as session:
+            arena_threads = {
+                tid for (tid,) in session.query(AgentThread.id).filter(
+                    AgentThread.source == "arena")
+            }
+            minted: dict[int, list[datetime]] = {}
+            for c in creations:
+                if c["thread_id"] in arena_threads and c.get("start_time"):
+                    at = datetime.fromisoformat(str(c["start_time"]))
+                    if at.tzinfo is not None:
+                        at = at.astimezone(timezone.utc).replace(tzinfo=None)
+                    minted.setdefault(c["report_id"], []).append(at)
+            doomed = [
+                r.id
+                for r in session.query(models.ReportJob).filter(
+                    models.ReportJob.id.in_(minted))
+                if r.created_at is not None and any(
+                    abs(r.created_at - at) <= _ORPHAN_MINT_TOLERANCE
+                    for at in minted[r.id])
+            ]
+            if doomed:
+                _delete_reports(session, doomed)
+                session.commit()
+                logger.warning("arena: reclaimed orphaned match reports %s", doomed)
+            return doomed
+    except Exception:
+        logger.warning("arena: orphaned-report sweep failed", exc_info=True)
+        return []
+
+
 def _purge_seeded_portfolios(session, bundle) -> None:
     """Delete prior arena-seeded fixture rows sharing a fixture name (portfolios
     and pricing profiles), plus their dependents, so a re-seed for the next match
@@ -1102,6 +1197,7 @@ def run_match(
     # A KILLED prior match never ran its finally purge; reclaim what it created
     # before seeding, or a leaked row can shadow this match's fixtures.
     _sweep_orphaned_match_portfolios()
+    _sweep_orphaned_match_reports()
     with database.SessionLocal() as session:
         # Foreign-limit preflight BEFORE any seeding commits (a post-seed
         # failure would strand the seeded world).
@@ -1162,6 +1258,11 @@ def run_match(
         confirmation_batch_baseline = (
             session.query(func.max(models.ConfirmationBatch.id)).scalar() or 0
         )
+        # And for reports: ``report_jobs`` has no portfolio column, so the
+        # portfolio dependents sweep cannot reach one (see _purge_match_reports).
+        report_id_baseline = (
+            session.query(func.max(models.ReportJob.id)).scalar() or 0
+        )
 
     # Same discipline for the scenario-set library, which is a DIRECTORY rather than
     # a table, so the high-water mark is the set of names present now. A model asked
@@ -1184,6 +1285,7 @@ def run_match(
         # would otherwise make that portfolio's delete fail on an FK constraint.
         _purge_match_confirmations(thread_id, confirmation_batch_baseline)
         _purge_match_rfqs(thread_id, rfq_id_baseline)
+        _purge_match_reports(thread_id, report_id_baseline)
         _purge_match_portfolios(thread_id, portfolio_id_baseline)
         _purge_match_scenario_sets(thread_id, set_name_baseline, _settings)
         with database.SessionLocal() as session:

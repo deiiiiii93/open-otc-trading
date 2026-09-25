@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Arena: reports a contestant creates no longer outlive its match.**
+  `report_jobs` has no portfolio column, so the portfolio-dependents purge
+  could not reach a report, and only seeded reports were cleaned up. Every
+  `create_report` / `generate_report` call from a match leaked a row. Five had
+  built up in the live DB: four from risk-manager-control matches (June–July)
+  and "Board — Daily One-Pager" (portfolio 9101) from a high-board match on
+  2026-08-26. Every high-board match re-seeds its book as 9101, so that report
+  read as "last quarter's board report": gpt-6-luna answered its 299.17 instead
+  of the seeded 211.34, and wrote its step-7 board report from it (run #141).
+  The purge now runs at the end of each match (the thread's report-creating
+  calls, ids above the pre-match high-water mark). A pre-match sweep reclaims
+  leftovers on the same proof as the portfolio sweep: an arena thread's span
+  minted that id at that row's `created_at`. A task linked to a deleted report
+  keeps its row; only the link is cleared.
 - **Arena harvest: a scope-widening retry is part of the same turn, not the next
   step.** When a contestant calls a tool its envelope denies, the service widens
   the envelope and re-drives the same prompt, which leaves two root traces for one

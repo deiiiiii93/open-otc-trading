@@ -497,6 +497,79 @@ def collect_portfolio_creations(store=None) -> list[dict]:
     return out
 
 
+# The contestant-callable tools that INSERT a ReportJob row. ``run_report_batch``
+# is inline (never persisted) and ``write_report_artifact`` writes a file, not a
+# row, so neither belongs here.
+_REPORT_CREATE_TOOLS = {"create_report", "generate_report"}
+
+
+def _extract_report_id(content: Any) -> int | None:
+    """The ReportJob id a create_report / generate_report result names.
+
+    ``create_report`` answers ``report_job_id`` (it queues a job);
+    ``generate_report`` answers ``report_id``. Both shapes, wrapped or not.
+    """
+    if isinstance(content, dict):
+        for scope in (content.get("data"), content):
+            if isinstance(scope, dict):
+                for key in ("report_job_id", "report_id"):
+                    if isinstance(scope.get(key), int):
+                        return scope[key]
+    return None
+
+
+def collect_report_ids_created(thread_id, store=None) -> set[int]:
+    """ReportJob ids this thread's create_report / generate_report calls minted.
+
+    ``report_jobs`` has no portfolio column — the portfolio lives inside
+    ``request_payload`` — so the portfolio-dependents purge structurally cannot
+    reach a report a contestant created, and the seeded-report purge only knows
+    the reserved arena marker type. Before this existed such a report outlived
+    its match: report 8 ("Board — Daily One-Pager", portfolio 9101), minted by a
+    minimax-m3 high-board match on 2026-08-26, sat in every later high-board
+    match as a decoy for "last quarter's board report" (run #141).
+    """
+    if store is None:
+        from app.config import get_settings
+        from app.services.tracing.store import get_trace_store
+        store = get_trace_store(get_settings())
+    if hasattr(store, "flush"):
+        store.flush()
+
+    out: set[int] = set()
+    for root in store.list_thread_traces(thread_id, limit=1000):
+        for sp in store.get_trace(root["trace_id"]):
+            if sp.get("run_type") != "tool" or sp.get("name") not in _REPORT_CREATE_TOOLS:
+                continue
+            content, _name, _tcid = _parse_tool_output(sp.get("outputs"))
+            rid = _extract_report_id(content)
+            if rid is not None:
+                out.add(rid)
+    return out
+
+
+def collect_report_creations(store=None) -> list[dict]:
+    """Every ReportJob a create_report / generate_report call minted, in ANY
+    thread: ``{report_id, thread_id, start_time}``. The cross-thread view the
+    pre-match orphan sweep needs — same reasoning as
+    ``collect_portfolio_creations``."""
+    if store is None:
+        from app.config import get_settings
+        from app.services.tracing.store import get_trace_store
+        store = get_trace_store(get_settings())
+    if hasattr(store, "flush"):
+        store.flush()
+
+    out: list[dict] = []
+    for sp in store.list_tool_spans(tuple(_REPORT_CREATE_TOOLS)):
+        content, _name, _tcid = _parse_tool_output(sp.get("outputs"))
+        rid = _extract_report_id(content)
+        if rid is not None and sp.get("thread_id") is not None:
+            out.append({"report_id": rid, "thread_id": int(sp["thread_id"]),
+                        "start_time": sp.get("start_time")})
+    return out
+
+
 _CONFIRMATION_PARSE_TOOLS = {"parse_trade_confirmation"}
 
 
