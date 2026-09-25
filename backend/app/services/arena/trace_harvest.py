@@ -270,6 +270,44 @@ def _llm_malformed_tool_calls(outputs_raw: Any) -> list[dict]:
     return out
 
 
+def _llm_usage(outputs_raw: Any) -> dict | None:
+    """One LLM call's metered usage and the gateway's generation id.
+
+    Token counts come from ``usage_metadata`` (langchain's normalised form), which
+    unlike the trace table's three token columns keeps the cache and reasoning
+    splits — the difference between a cheap call and an expensive one when 97% of
+    a prompt is a cache read. ``input`` INCLUDES cached tokens and ``output``
+    INCLUDES reasoning tokens, as the providers report them.
+
+    ``generation_id`` is the key the gateway's billing API answers on; the chat
+    client stashes it (see ``model_factory.GENERATION_IDS``). ``None`` on calls
+    made before that capture existed, or on a route that does not carry one.
+    """
+    parsed = _loads(outputs_raw) or {}
+    try:
+        kwargs = parsed["generations"][0][0]["message"]["kwargs"]
+    except (KeyError, IndexError, TypeError):
+        return None
+    if not isinstance(kwargs, dict):
+        return None
+    meta = kwargs.get("usage_metadata")
+    if not isinstance(meta, dict):
+        return None
+    in_detail = meta.get("input_token_details") or {}
+    out_detail = meta.get("output_token_details") or {}
+    rmeta = kwargs.get("response_metadata") or {}
+    ids = rmeta.get("generation_ids") or []
+    return {
+        "model": rmeta.get("model_name"),
+        "generation_id": ids[0] if ids else None,
+        "input": int(meta.get("input_tokens") or 0),
+        "cache_read": int(in_detail.get("cache_read") or 0),
+        "cache_write": int(in_detail.get("cache_creation") or 0),
+        "output": int(meta.get("output_tokens") or 0),
+        "reasoning": int(out_detail.get("reasoning") or 0),
+    }
+
+
 def _spans_to_turn_events(index: int, user: str, spans: list[dict]) -> dict:
     tool_calls: list[dict] = []
     tool_results: list[dict] = []
@@ -278,6 +316,7 @@ def _spans_to_turn_events(index: int, user: str, spans: list[dict]) -> dict:
     errors: list[dict] = []
     truncations: list[dict] = []
     malformed_tool_calls: list[dict] = []
+    usage: list[dict] = []
     response_text = ""
 
     for sp in spans:
@@ -338,6 +377,9 @@ def _spans_to_turn_events(index: int, user: str, spans: list[dict]) -> dict:
                 {**bad, "span": name}
                 for bad in _llm_malformed_tool_calls(sp.get("outputs"))
             )
+            metered = _llm_usage(sp.get("outputs"))
+            if metered is not None:
+                usage.append(metered)
 
     skills_routed = [s for _, s in sorted(skill_spans, key=lambda x: x[0])]
     return {
@@ -352,6 +394,7 @@ def _spans_to_turn_events(index: int, user: str, spans: list[dict]) -> dict:
         "errors": errors,
         "truncations": truncations,
         "malformed_tool_calls": malformed_tool_calls,
+        "usage": usage,
     }
 
 
@@ -592,7 +635,7 @@ def transcript_from_trace(thread_id, workflow, model, *, store=None) -> MatchTra
                 "index": i, "user": wf_step.user, "messages": [],
                 "tool_calls": [], "tool_results": [], "skills_routed": [],
                 "artifacts": [], "response_text": "", "truncations": [],
-                "malformed_tool_calls": [],
+                "malformed_tool_calls": [], "usage": [],
                 "errors": [{"type": "missing_trace", "step": i}],
             }
         steps.append(extract_step_from_events(turn))

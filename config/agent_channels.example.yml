@@ -399,6 +399,19 @@ channels:
         label: DeepSeek V4 Flash Vision (exp)
         tags: [fast, tool-use, reasoning, vision]
 
+      # DeepSeek V4.1 Flash (onboarded 2026-09-25). Pinned to the model owner's
+      # own metal like v4-flash above: ZenMux also serves it from `alibaba` and
+      # `baidu`, and `:alibaba` is the upstream that blanked streaming tool-call
+      # ids on v4-flash — probed clean 2026-09-25: 272 streaming tool-call
+      # continuation deltas over 3 calls, all null identifiers, zero empty strings.
+      # `vision` probe-verified 2026-09-25 on conf-04's image-only scan, 4/4:
+      # GOOGL / USD 205.00 / ARD-EQO-2026-04688, matching the truth file exactly.
+      - id: deepseek/deepseek-v4.1-flash
+        provider: deepseek
+        protocol: openai_chat
+        label: DeepSeek V4.1 Flash
+        tags: [fast, tool-use, reasoning, vision]
+
       - id: xiaomi/mimo-v2.5
         provider: xiaomi
         protocol: openai_chat

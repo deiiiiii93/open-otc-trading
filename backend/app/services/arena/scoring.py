@@ -40,6 +40,7 @@ from app.golden_workflows.transcript import (
     MatchTranscript,
     extract_assertion_context,
 )
+from app.services.arena.cost import fold_usage
 
 
 # ---------------------------------------------------------------------------
@@ -314,6 +315,7 @@ def fold_trial_breakdowns(trials: list[dict]) -> dict:
         # is a different claim from 3 of 3.
         "truncation": _fold_truncation(trials),
         "malformed": _fold_malformed(trials),
+        "usage": fold_usage([t.get("usage") for t in trials]),
     }
 
 

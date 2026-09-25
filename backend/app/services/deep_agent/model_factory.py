@@ -228,6 +228,23 @@ def _reasoning_details_of(message: AIMessage) -> Any:
     return None
 
 
+# The gateway's own id for one generation — the key its billing API answers on
+# (GET /api/v1/management/generation?id=…, 3–5 minutes after the call). Streaming
+# drops it: langchain-openai never copies a chunk's `id` onto the message, so a
+# traced call kept only langchain's `lc_run--…` id and its real cost could not be
+# looked up. Stored as a LIST under its own key because response_metadata is
+# merged chunk by chunk and langchain-core CONCATENATES repeated string values
+# (only `id`, `output_version` and `model_provider` are exempt when equal) — a
+# string here would come back as the id twice over. Readers de-duplicate.
+GENERATION_IDS = "generation_ids"
+
+
+def _stash_generation_id(message: Any, raw: Mapping[str, Any] | None) -> None:
+    gen_id = raw.get("id") if isinstance(raw, Mapping) else None
+    if isinstance(gen_id, str) and gen_id:
+        message.response_metadata[GENERATION_IDS] = [gen_id]
+
+
 def default_agent_model_selection(registry: ChannelRegistry) -> dict[str, str]:
     return registry.default_selection()
 
@@ -648,6 +665,7 @@ def build_agent_model(
             choices = raw.get("choices") or []
             for generation, choice in zip(result.generations, choices, strict=False):
                 _stash_reasoning_details(generation.message, choice.get("message"))
+                _stash_generation_id(generation.message, raw)
             return result
 
         def _convert_chunk_to_generation_chunk(
@@ -671,6 +689,10 @@ def build_agent_model(
                 # langchain-core's list merge reassembles them across deltas
                 # instead of concatenating duplicates.
                 _stash_reasoning_details(generation_chunk.message, choices[0].get("delta"))
+            # Only the closing chunks (finish_reason, or the usage-only tail) —
+            # every delta carries the same id, and one copy per call is enough.
+            if chunk.get("usage") or (choices and choices[0].get("finish_reason")):
+                _stash_generation_id(generation_chunk.message, chunk)
             return generation_chunk
 
         def _get_request_payload(

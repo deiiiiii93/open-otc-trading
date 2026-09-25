@@ -1328,8 +1328,23 @@
         "toggle": false,
         "source": "measured",
         "measured_at": "2026-09-24"
+      },
+      "deepseek/deepseek-v4.1-flash": {
+        "efforts": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "reasoning": true,
+        "toggle": false,
+        "source": "measured",
+        "measured_at": "2026-09-25"
       }
     }
   },
-  "probed_at": "2026-09-24"
+  "probed_at": "2026-09-25"
 }

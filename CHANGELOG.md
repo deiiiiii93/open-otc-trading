@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Arena: every match records its tokens and cost.** Each LLM call's usage is
+  harvested from the trace: input (cache reads included), cache reads and writes,
+  output (reasoning included), reasoning, and ZenMux's **generation id**.
+  Streaming used to drop that id; the chat client now keeps it in
+  `response_metadata.generation_ids`. Each match stores a `usage` block with token
+  totals and a **list-price USD estimate**, priced when the match runs against
+  the vendored `config/model_pricing.json` (from ZenMux's public model list via
+  `scripts/refresh_model_pricing.py`; includes tiered prompt pricing). Where
+  unconditioned list entries disagree (deepseek-v4.1-flash), the estimate is a
+  low–high range with `usd: null`. An unpriced call is counted, never treated as
+  free. The block is served on `GET /api/arena/runs/{id}` (`MatchSummary.usage`).
+  `scripts/arena_cost_report.py --run N` prints tokens and cost per match.
+  `--billed` sums ZenMux's billed amounts per generation id; it needs
+  `ZENMUX_MGT_KEY`, and billing lands 3–5 minutes after a call.
+- **Arena contestant `deepseek-v4-1-flash`** (`deepseek/deepseek-v4.1-flash:deepseek`).
+  Probes: streaming tool-call deltas clean (0 empty ids in 272), vision 4/4 on
+  conf-04, and effort levels none..max all accepted.
+
 ### Changed
 - **YOLO (headless) prompts no longer tell the model to ask the user.** Prompt text
   that presumes a user now comes in a separate version for each mode. The per-turn

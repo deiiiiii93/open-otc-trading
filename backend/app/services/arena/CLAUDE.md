@@ -407,3 +407,25 @@ directory, and part of the React `rowKey`.
   projection, at a different layer — and the loudest of the three, since `tsc`
   reports it the moment anything reads the field. When a value is in the DB and
   in the response but not on screen, check the client type before the server.
+
+## Cost metering (2026-09-25)
+
+Each match's `score_breakdown.usage` holds token totals and a **list-price** USD
+estimate (`cost.py`), priced at score time against `config/model_pricing.json`
+and stamped with that snapshot's `fetched_at`/`sha256`. A price refresh never
+re-costs a finished match. The rules:
+
+- `usage: null` = NOT METERED (before 2026-09-25, or a replay) — never "free".
+- `usd: null` with `usd_low < usd_high` = the list is ambiguous for that model
+  (deepseek-v4.1-flash lists 0.075 and 0.15 with no condition). Report the range;
+  do not pick one.
+- `unpriced_calls > 0` = a model missing from the snapshot; the dollar figures
+  are then a floor. Refresh the snapshot (`scripts/refresh_model_pricing.py`).
+- `input` includes cached tokens and `output` includes reasoning, as the
+  providers report them. Cache reads dominate agentic matches (~86% of a luna
+  risk-manager match) — pricing them at the prompt rate would overstate cost ~5×.
+- The BILLED amount is per generation id (`steps[].usage[].generation_id` in the
+  transcript). `scripts/arena_cost_report.py --run N --billed` sums it with
+  `ZENMUX_MGT_KEY`. Only the `openai_chat` client (`_ThoughtSignatureChat`)
+  records ids so far; Responses-API and Anthropic-protocol contestants show
+  `generation_ids: 0`.

@@ -76,6 +76,10 @@ class MatchSummary(BaseModel):
     # could not dispatch. null = never measured, and is NOT `calls: 0` — a
     # pre-instrument match may well have malformed every call it made.
     malformed: dict | None = None
+    # Tokens (input incl. cache reads, output incl. reasoning) and list-price
+    # USD for the match, from services/arena/cost.py. null = not metered (a
+    # match from before 2026-09-25), never "free".
+    usage: dict | None = None
     # Corroborating failure reason (e.g. "infra_blank" for invalid matches) —
     # exclusions must be auditable, not just visible as a count.
     error: str | None = None
@@ -390,6 +394,7 @@ def build_arena_router(
                 score_breakdown=m.get("score_breakdown"),
                 truncation=m.get("truncation"),
                 malformed=m.get("malformed"),
+                usage=m.get("usage"),
                 error=m.get("error"),
             )
             for m in (run_dict.get("matches") or [])

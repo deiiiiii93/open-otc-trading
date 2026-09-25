@@ -830,6 +830,47 @@ def test_openai_wrapper_captures_reasoning_details_from_stream_delta():
     assert chunk.message.additional_kwargs["reasoning_details"] == _DETAILS
 
 
+# --- The gateway's generation id survives streaming ----------------------------
+#
+# ZenMux bills per generation id (GET /api/v1/management/generation?id=…), and
+# langchain-openai never copies a stream chunk's `id` onto the message — every
+# traced arena call kept only langchain's `lc_run--…` id, so its real cost could
+# not be looked up. Verified live 2026-09-25 on mimo-v2.6-flash and gpt-6-luna.
+
+
+def test_openai_wrapper_records_generation_id_from_response():
+    model = _openai_protocol_model()
+    result = model._create_chat_result(  # type: ignore[attr-defined]
+        {"id": "gen-abc", "created": 1, "model": "x/y", "object": "chat.completion",
+         "choices": [{"index": 0, "finish_reason": "stop",
+                      "message": {"role": "assistant", "content": "ok"}}]}
+    )
+    assert result.generations[0].message.response_metadata["generation_ids"] == ["gen-abc"]
+
+
+def test_openai_wrapper_records_generation_id_on_closing_chunks_only():
+    from langchain_core.messages import AIMessageChunk
+
+    model = _openai_protocol_model()
+
+    def convert(chunk):
+        return model._convert_chunk_to_generation_chunk(  # type: ignore[attr-defined]
+            {"id": "gen-abc", "created": 1, "model": "x/y",
+             "object": "chat.completion.chunk", **chunk}, AIMessageChunk, None)
+
+    delta = convert({"choices": [{"index": 0, "finish_reason": None,
+                                  "delta": {"role": "assistant", "content": "o"}}]})
+    closing = convert({"choices": [{"index": 0, "finish_reason": "stop",
+                                    "delta": {"content": "k"}}]})
+    tail = convert({"choices": [], "usage": {"prompt_tokens": 3,
+                                             "completion_tokens": 2, "total_tokens": 5}})
+    assert "generation_ids" not in delta.message.response_metadata
+    merged = delta.message + closing.message + tail.message
+    # A LIST, because response_metadata merges chunk by chunk and a repeated
+    # string would be concatenated into "gen-abcgen-abc".
+    assert set(merged.response_metadata["generation_ids"]) == {"gen-abc"}
+
+
 # --- Malformed tool calls must not poison the history --------------------------
 #
 # Run #139 (2026-09-24): mimo-v2.6-flash emitted ONE tool call as text markup

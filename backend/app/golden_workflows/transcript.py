@@ -48,6 +48,11 @@ class MatchStep(BaseModel):
     # older transcript or a replay fixture means "not observed", never
     # "observed zero".
     malformed_tool_calls: list[dict] = []
+    # One entry per LLM call this turn: ``{model, generation_id, input,
+    # cache_read, cache_write, output, reasoning}``. Defaulted for the same
+    # reason as the two above — an older transcript or a replay fixture carries
+    # no metering, and absence means "not measured", never "zero tokens".
+    usage: list[dict] = []
 
 
 class MatchTranscript(BaseModel):
@@ -156,6 +161,7 @@ def extract_step_from_events(turn_events: dict) -> MatchStep:
     malformed_tool_calls: list[dict] = list(
         turn_events.get("malformed_tool_calls") or []
     )
+    usage: list[dict] = list(turn_events.get("usage") or [])
 
     # Normalise tool_results
     normalised_results: list[dict] = []
@@ -191,6 +197,7 @@ def extract_step_from_events(turn_events: dict) -> MatchStep:
         errors=errors,
         truncations=truncations,
         malformed_tool_calls=malformed_tool_calls,
+        usage=usage,
     )
 
 

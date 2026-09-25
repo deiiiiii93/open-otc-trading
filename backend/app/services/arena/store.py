@@ -815,6 +815,10 @@ def _match_to_dict(m: ArenaMatch) -> dict:
         # would show nothing for exactly the wrapped matches that carry it.
         "truncation": _match_truncation(m.score_breakdown or {}),
         "malformed": _match_malformed(m.score_breakdown or {}),
+        # Tokens + list-price cost, hoisted like the flags above. None = the
+        # match predates metering, never "free".
+        "usage": (m.score_breakdown or {}).get("usage") if isinstance(
+            (m.score_breakdown or {}).get("usage"), dict) else None,
         "transcript_path": m.transcript_path,
         "error": m.error,
         "created_at": m.created_at.isoformat() if m.created_at else None,

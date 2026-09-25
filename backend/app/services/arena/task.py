@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app import database
 from app.models import TaskKind, TaskRun, TaskStatus
-from app.services.arena import store
+from app.services.arena import cost, store
 from app.services.arena.models import validate_model_ids
 from app.services.arena.provenance import match_provenance, run_provenance
 
@@ -628,6 +628,10 @@ def _run_and_score_once(
         "calls": heuristic["malformed_tool_calls"],
         "steps": heuristic["malformed_tool_call_steps"],
     }
+    # Tokens and list-price cost, top-level for the same reason as the two flags
+    # above: fold_trial_breakdowns must be able to reach it. Priced NOW, against
+    # the snapshot in force, so a later price refresh never re-costs this match.
+    breakdown["usage"] = cost.usage_block(transcript)
     if judge_result is not None:
         breakdown["judge"] = {
             "rubric_scores": judge_result.rubric_scores,

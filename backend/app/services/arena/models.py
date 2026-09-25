@@ -310,6 +310,17 @@ CANDIDATE_MODELS: list[ArenaModel] = [
         default_config=_DEFAULT_CONFIG,
     ),
     ArenaModel(
+        # Onboarded 2026-09-25. A new model, not an arm of deepseek-v4-flash-ds:
+        # its own weights and its own history. Provider-pinned for the same
+        # reason as that sibling — ZenMux also serves it from `alibaba` and
+        # `baidu`. Streaming tool-call deltas probed clean on `:deepseek`
+        # (0 empty identifiers in 272 continuations); vision 4/4 on conf-04.
+        slug="deepseek-v4-1-flash",
+        zenmux_name="deepseek/deepseek-v4.1-flash:deepseek",
+        display_name="DeepSeek V4.1 Flash",
+        default_config=_DEFAULT_CONFIG,
+    ),
+    ArenaModel(
         slug="mimo-2-6-flash",
         zenmux_name="xiaomi/mimo-v2.6-flash:xiaomi",
         display_name="MiMo V2.6 Flash",
