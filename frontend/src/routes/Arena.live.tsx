@@ -18,6 +18,7 @@ import {
   listArenaRuns,
   listArenaWorkflows,
   mergeArenaRuns,
+  provenanceLabel,
   type ArenaLeaderboardRow,
   type ArenaMatchSummary,
   type ArenaModel,
@@ -1191,6 +1192,9 @@ export function ArenaLive() {
                     {runDetail.run.status}
                   </span>
                 </div>
+                <p className="wl-arena__provenance" data-testid="arena-run-provenance">
+                  {provenanceLabel(runDetail.run.provenance)}
+                </p>
                 {runDetail.matches.length === 0 ? (
                   <Empty message="No matches in this run." />
                 ) : (

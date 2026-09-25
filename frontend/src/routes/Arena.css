@@ -21,6 +21,16 @@
   color: var(--ink-2);
 }
 
+/* Which app + manifest versions scored this run: scores across versions are
+   not comparable, so the version sits directly under the run header. */
+.wl-arena__provenance {
+  margin: 0 0 var(--gap-2);
+  font-family: var(--font-numeric);
+  font-size: var(--type-small-size);
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
 .wl-arena__panel {
   border: 1px solid var(--hairline);
   background: var(--paper);

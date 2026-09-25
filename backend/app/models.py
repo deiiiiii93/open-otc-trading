@@ -2743,6 +2743,12 @@ class ArenaRun(Base):
     # column, so a resume that omitted it silently finished a run at a DIFFERENT
     # budget than it started with, and nothing in the stored data would reveal it.
     max_output_tokens: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # WHICH manifests and WHICH app produced this run (services/arena/provenance):
+    # {stamped_at, app: {version, git_sha, git_dirty, label, packages},
+    #  manifests: {workflow_id: {manifest_version, sha256, par_tool_calls, ...}}}.
+    # NULL = a run from before stamping existed (2026-09-25) — unknown, which is
+    # not the same claim as "same as today".
+    provenance: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     matches: Mapped[list["ArenaMatch"]] = relationship(

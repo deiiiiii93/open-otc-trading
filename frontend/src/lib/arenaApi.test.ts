@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ARENA_REASONING_EFFORTS, reasoningEffortsFor, type ArenaModel } from './arenaApi';
+import { ARENA_REASONING_EFFORTS, provenanceLabel, reasoningEffortsFor, type ArenaModel } from './arenaApi';
 
 const model = (slug: string, reasoning_efforts?: string[]): ArenaModel => ({
   slug,
@@ -52,5 +52,26 @@ describe('measured ladders match what the gateway really accepts', () => {
 
     const chatLatest = model('gpt-5-5-instant', ['medium']);
     expect(reasoningEffortsFor(chatLatest)).toEqual(['medium']);
+  });
+});
+
+describe('provenanceLabel', () => {
+  it('names the app and each manifest version with a short hash', () => {
+    expect(
+      provenanceLabel({
+        app: { label: '0.2.0+b07ab49' },
+        manifests: { 'risk-limit-breach-day': { manifest_version: 2, sha256: 'abcdef0123456789' } },
+      }),
+    ).toBe('app 0.2.0+b07ab49 · risk-limit-breach-day v2 (abcdef01)');
+  });
+
+  it('says a pre-stamp run is unversioned rather than implying current', () => {
+    expect(provenanceLabel(null)).toMatch(/unversioned/);
+  });
+
+  it('lists every app a merged run folded', () => {
+    expect(provenanceLabel({ apps: ['0.1.0+a', '0.1.0+b'], manifests: {} })).toBe(
+      'app 0.1.0+a, 0.1.0+b',
+    );
   });
 });

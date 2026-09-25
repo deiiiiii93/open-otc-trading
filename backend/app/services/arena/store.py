@@ -68,7 +68,8 @@ def _agg_malformed(blocks: list[dict | None]) -> dict | None:
     }
 
 
-def _derive_card(bd: dict, workflow_id: str) -> tuple[dict | None, str | None]:
+def _derive_card(bd: dict, workflow_id: str,
+                 frozen: dict | None = None) -> tuple[dict | None, str | None]:
     """Derive an ability card from a stored score_breakdown, or (None, reason).
 
     Fail-honest: requires non-empty objective.axes, an explicit numeric
@@ -86,15 +87,24 @@ def _derive_card(bd: dict, workflow_id: str) -> tuple[dict | None, str | None]:
     # evidence — leave the row uncarded rather than let it rank on a fabricated number.
     if not isinstance(tc, (int, float)) or isinstance(tc, bool) or tc < 0:
         return None, "missing_tool_count"
-    try:
-        from app.golden_workflows.registry import get_workflow
-        wf = get_workflow(workflow_id)
-        par = scoring.designed_par(wf)
-    except Exception:
-        return None, "workflow_unavailable"
+    # The par in force when the match was STAMPED wins over today's manifest: a
+    # card is derived on read, so without the frozen value a par edit would
+    # silently re-card every historical match (provenance, 2026-09-25).
+    frozen = frozen or {}
+    if isinstance(frozen.get("par_tool_calls"), int):
+        par = frozen["par_tool_calls"]
+        calibrated = bool(frozen.get("par_calibrated"))
+    else:
+        try:
+            from app.golden_workflows.registry import get_workflow
+            wf = get_workflow(workflow_id)
+            par = scoring.designed_par(wf)
+            calibrated = scoring.par_calibrated(wf)
+        except Exception:
+            return None, "workflow_unavailable"
     judged = (bd.get("judge") or {}).get("judged_score")
     return scoring.card_from_axes(axes, int(tc), par, judged=judged,
-                                  par_calibrated=scoring.par_calibrated(wf)), None
+                                  par_calibrated=calibrated), None
 
 
 def create_run(
@@ -105,9 +115,11 @@ def create_run(
     trials: int = 1,
     reasoning_efforts: dict | None = None,
     max_output_tokens: dict | None = None,
+    provenance: dict | None = None,
 ) -> int:
     """Insert a new ArenaRun in 'queued' status; return its id."""
     run = ArenaRun(
+        provenance=provenance,
         status="queued",
         workflow_ids=workflow_ids,
         model_ids=model_ids,
@@ -252,6 +264,23 @@ def merge_runs(session: Session, source_run_ids: list[int]) -> int:
     for ms in groups.values():
         ms.sort(key=lambda m: (pos[m.run_id], m.id))
 
+    # A fold across manifest versions averages two different tests into one
+    # number. Refuse it whenever both sides are stamped; an unstamped (pre-
+    # 2026-09-25) match cannot be checked, so it is recorded as unknown instead.
+    manifest_of: dict[str, dict] = {}
+    for (wf, _md, _ef, _bd), ms in groups.items():
+        for m in ms:
+            prov = (m.config or {}).get("provenance") or {}
+            sha = prov.get("sha256")
+            if not sha:
+                continue
+            seen = manifest_of.setdefault(wf, prov)
+            if seen.get("sha256") != sha:
+                raise ValueError(
+                    f"cannot merge {wf}: runs used different manifests "
+                    f"(v{seen.get('manifest_version')} {seen['sha256'][:12]} vs "
+                    f"v{prov.get('manifest_version')} {sha[:12]})")
+
     # A cross-effort merge no longer needs refusing: two efforts of one model land
     # in DIFFERENT groups, so they become two merged rows that rank against each
     # other rather than one row averaging two operating regimes. That refusal
@@ -276,9 +305,13 @@ def merge_runs(session: Session, source_run_ids: list[int]) -> int:
                 budget_arms.append(budget)
     merged_efforts = {k: sorted(v) for k, v in merged_efforts.items()}
     merged_budgets = {k: sorted(v) for k, v in merged_budgets.items()}
+    apps = sorted({(m.config or {}).get("provenance", {}).get("app")
+                   for ms in groups.values() for m in ms} - {None})
     new_run_id = create_run(
         session, workflow_ids, model_ids, reasoning_efforts=merged_efforts or None,
         max_output_tokens=merged_budgets or None,
+        provenance={"merged_from": ordered, "apps": apps,
+                    "manifests": manifest_of} if (apps or manifest_of) else None,
     )
 
     for (workflow_id, model_id, effort, budget), ms in groups.items():
@@ -306,7 +339,9 @@ def merge_runs(session: Session, source_run_ids: list[int]) -> int:
             # _record_pair does — a merged row that cannot state its regime
             # cannot defend its EFF or CON either.
             config={"merged_from": ordered, "reasoning_effort": effort,
-                    "max_output_tokens": budget},
+                    "max_output_tokens": budget,
+                    **({"provenance": manifest_of[workflow_id]}
+                       if workflow_id in manifest_of else {})},
             transcript_path=None,
             status="scored", score_breakdown=aggregate,
             reasoning_effort=effort,
@@ -526,7 +561,8 @@ def leaderboard(
         # final OVR; a single-trial row's con is None. Uncarded rows (no axes / no
         # tool count / unloadable workflow / partial trial coverage) contribute
         # NOTHING to card_mean.
-        card, _reason = _match_card(bd, m.workflow_id)
+        card, _reason = _match_card(bd, m.workflow_id,
+                                    frozen=(m.config or {}).get("provenance"))
         if card is not None:
             model_final_ovrs[key].append(card["ovr"])
             model_base_ovrs[key].append(card.get("base_ovr", card["ovr"]))
@@ -632,7 +668,8 @@ def leaderboard(
 
 
 def _match_card(bd: dict, workflow_id: str, *,
-                allow_stored_fallback: bool = False) -> tuple[dict | None, str | None]:
+                allow_stored_fallback: bool = False,
+                frozen: dict | None = None) -> tuple[dict | None, str | None]:
     """The ability card for a whole match — AGGREGATE-AWARE.
 
     A multi-trial match (``aggregate``) is carded from its TRIALS: each trial is
@@ -668,7 +705,7 @@ def _match_card(bd: dict, workflow_id: str, *,
         for t in trials:
             if not isinstance(t, dict):              # null / primitive placeholder
                 return None, "invalid_trial_shape"   # (fail closed, never crash)
-            tc, _reason = _derive_card(t, workflow_id)
+            tc, _reason = _derive_card(t, workflow_id, frozen)
             if tc is None and allow_stored_fallback:
                 # Mirror the single-trial fallback exactly (same two
                 # conditions, same "presentation only, never ranking"
@@ -690,7 +727,7 @@ def _match_card(bd: dict, workflow_id: str, *,
     # Single-trial match. RECOMPUTE from the stored evidence first — never let a
     # persisted `card` number override recomputable axes (a stale/corrupted card whose
     # OVR disagrees with its axes must not rank on the public board).
-    derived, reason = _derive_card(bd, workflow_id)
+    derived, reason = _derive_card(bd, workflow_id, frozen)
     if derived is not None:
         return derived, None
     # Recompute impossible. The stored card is a PRESENTATION-ONLY fallback (drilldown,
@@ -721,7 +758,9 @@ def _serialized_breakdown(m: ArenaMatch) -> dict | None:
     out = dict(bd)
     # Drilldown is presentation: a non-recomputable single-match row may fall back to
     # its stored write-time card (the leaderboard, ranking, does not — see _match_card).
-    card, reason = _match_card(bd, m.workflow_id, allow_stored_fallback=True)
+    frozen = (m.config or {}).get("provenance")
+    card, reason = _match_card(bd, m.workflow_id, allow_stored_fallback=True,
+                               frozen=frozen)
     out["card"] = card
     if card is None:
         out["card_reason"] = reason
@@ -736,7 +775,7 @@ def _serialized_breakdown(m: ArenaMatch) -> dict | None:
     # state.)
     if isinstance(trials, list) and trials:
         if card is not None:
-            out["aggregate"] = [{**t, "card": _derive_card(t, m.workflow_id)[0]}
+            out["aggregate"] = [{**t, "card": _derive_card(t, m.workflow_id, frozen)[0]}
                                 for t in trials]
         else:
             # Uncarded aggregate: STRIP any pre-stored per-trial card/reason so a
@@ -811,6 +850,7 @@ def _run_to_dict(run: ArenaRun, *, include_matches: bool = True) -> dict:
             slug: ([budgets] if not isinstance(budgets, list) else list(budgets))
             for slug, budgets in (run.max_output_tokens or {}).items()
         },
+        "provenance": run.provenance,
         "error": run.error,
         "created_at": run.created_at.isoformat() if run.created_at else None,
     }

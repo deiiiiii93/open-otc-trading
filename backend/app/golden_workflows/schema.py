@@ -315,6 +315,11 @@ class Step(BaseModel):
 class GoldenWorkflow(BaseModel):
     id: str
     schema_version: Literal[1]
+    # CONTENT version, bumped by hand on any scoring-relevant edit and stamped onto
+    # every arena run (services/arena/provenance.py). Scores from different
+    # manifest versions are not comparable; the stamped content hash catches the
+    # edit nobody bumped. schema_version above is the FORMAT, not the content.
+    manifest_version: int = Field(default=1, ge=1)
     persona: Literal["trader", "risk_manager", "sales", "quant", "high_board"]
     title: str = Field(min_length=1)
     objective: str = Field(min_length=1)

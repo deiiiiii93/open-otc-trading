@@ -20,6 +20,7 @@ from app import database
 from app.models import TaskKind, TaskRun, TaskStatus
 from app.services.arena import store
 from app.services.arena.models import validate_model_ids
+from app.services.arena.provenance import match_provenance, run_provenance
 
 
 def effort_levels_for(
@@ -295,6 +296,7 @@ def queue_arena_run(
         trials=trials,
         reasoning_efforts=canonical_efforts or None,
         max_output_tokens=canonical_budgets or None,
+        provenance=run_provenance(workflow_ids),
     )
 
     # Arms are the CROSS PRODUCT of effort and budget arms: a model pinned at two
@@ -667,6 +669,7 @@ def _record_pair(
     last_infra_path: str | None = None,
     reasoning_effort: str | None = None,
     max_output_tokens: int | None = None,
+    provenance: dict | None = None,
 ) -> None:
     """Persist exactly one match row for a (workflow, model) pair after its trials.
 
@@ -685,6 +688,10 @@ def _record_pair(
     cfg = {"weights": weights, "trials": trials_n,
            "reasoning_effort": reasoning_effort,
            "max_output_tokens": max_output_tokens}
+    # And which app + manifest it ran under — its OWN, since a resumed match can
+    # run on newer code than the run that queued it.
+    if provenance:
+        cfg["provenance"] = provenance
     if clean:
         agg = scoring.fold_trial_breakdowns(clean)
 
@@ -910,7 +917,8 @@ def _execute(
                              trials_n, clean, last_path, last_infra, failed_exc,
                              last_infra_path=last_infra_path,
                              reasoning_effort=model_effort,
-                             max_output_tokens=model_budget)
+                             max_output_tokens=model_budget,
+                             provenance=match_provenance(loaded))
                 session.commit()
 
     # All arms processed — always mark completed (individual match failures are ok)

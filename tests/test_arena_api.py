@@ -1861,3 +1861,27 @@ def test_create_run_accepts_two_arms_for_one_model(session, settings):
     assert resp.status_code == 202, resp.json()
     run = arena_store.get_run(session, resp.json()["run_id"])
     assert run["reasoning_efforts"] == {"deepseek-v4-pro": [None, "high"]}
+
+
+def test_run_provenance_reaches_the_wire(session, settings):
+    """Asserted at the HTTP layer: RunSummary has a response_model, and pydantic
+    silently drops any key it does not name (arena/CLAUDE.md)."""
+    prov = {"app": {"label": "0.1.0+abc"},
+            "manifests": {"wf-a": {"manifest_version": 2, "sha256": "f" * 64}}}
+    run_id = arena_store.create_run(session, workflow_ids=["wf-a"],
+                                    model_ids=["model-x"], provenance=prov)
+    session.commit()
+    client = _make_arena_app(session, settings)
+    assert client.get(f"/api/arena/runs/{run_id}").json()["run"]["provenance"] == prov
+    listed = client.get("/api/arena/runs").json()["runs"]
+    assert next(r for r in listed if r["id"] == run_id)["provenance"] == prov
+
+
+def test_queue_arena_run_stamps_provenance(session, settings):
+    from app.services.arena.task import queue_arena_run
+    run_id, _task = queue_arena_run(session, workflow_ids=["risk-limit-breach-day"],
+                                    model_ids=[CANDIDATE_MODELS[0].slug])
+    run = session.get(ArenaRun, run_id)
+    assert run.provenance["app"]["label"]
+    fp = run.provenance["manifests"]["risk-limit-breach-day"]
+    assert fp["manifest_version"] >= 1 and len(fp["sha256"]) == 64

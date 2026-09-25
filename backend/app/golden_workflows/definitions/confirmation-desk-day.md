@@ -1,6 +1,7 @@
 ---
 id: confirmation-desk-day
 schema_version: 1
+manifest_version: 1   # bump on ANY scoring-relevant edit; stamped onto every arena run
 persona: trader
 title: "Confirmation Desk Day"
 objective: >

@@ -105,6 +105,20 @@ def resume(run_id: int) -> int:
         # would reveal it. Reading it off the run makes that impossible.
         max_output_tokens = run.get("max_output_tokens") or {}
         todo = _resume_todo(run)
+        # A board is one test. Resuming it on an EDITED manifest would splice two
+        # tests into one run, so refuse; start a new run instead. An unstamped
+        # (pre-2026-09-25) run cannot be checked and is resumed as before.
+        from app.services.arena.provenance import manifest_drift, match_provenance
+        drift = manifest_drift(run.get("provenance"),
+                               sorted({w for w, _m, _e, _b in todo}))
+        if drift:
+            for w, d in drift.items():
+                print(f"  REFUSED: {w} manifest changed since run {run_id} was stamped "
+                      f"(v{d['stamped'].get('manifest_version')} "
+                      f"{str(d['stamped'].get('sha256'))[:12]} -> "
+                      f"v{d['current']['manifest_version']} "
+                      f"{d['current']['sha256'][:12]}); start a new run", flush=True)
+            return 2
         from app.services.arena.task import arms_for
         arms_total = len(run["workflow_ids"]) * sum(
             len(arms_for(reasoning_efforts, max_output_tokens, m))
@@ -177,7 +191,8 @@ def resume(run_id: int) -> int:
                          clean, last_path, last_infra, failed_exc,
                          last_infra_path=last_infra_path,
                          reasoning_effort=model_effort,
-                         max_output_tokens=model_budget)
+                         max_output_tokens=model_budget,
+                         provenance=match_provenance(loaded))
             session.commit()
             print(f"  recorded {model_id} @ {model_effort or 'default'}"
                   f"/{model_budget or 'default'} x {workflow_id} "

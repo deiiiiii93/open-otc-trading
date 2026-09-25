@@ -16,7 +16,37 @@ export type ArenaRunSummary = {
    */
   reasoning_efforts?: Record<string, (string | null)[]>;
   max_output_tokens?: Record<string, (number | null)[]>;
+  /**
+   * Which app and which manifests produced the run. null = the run predates
+   * stamping (2026-09-25): its versions are UNKNOWN, not "current".
+   */
+  provenance?: ArenaRunProvenance | null;
 };
+
+export type ArenaManifestStamp = {
+  manifest_version?: number;
+  sha256?: string;
+  par_tool_calls?: number;
+  unavailable?: string;
+};
+
+export type ArenaRunProvenance = {
+  stamped_at?: string;
+  app?: { label?: string; version?: string; git_sha?: string; git_dirty?: boolean };
+  /** Present on a MERGED run: every app label its source matches ran under. */
+  apps?: string[];
+  manifests?: Record<string, ArenaManifestStamp>;
+};
+
+/** One line naming the app and each manifest version a run was scored under. */
+export function provenanceLabel(p: ArenaRunProvenance | null | undefined): string {
+  if (!p) return 'unversioned (run predates version stamping)';
+  const app = p.app?.label ?? (p.apps?.length ? p.apps.join(', ') : 'app unknown');
+  const manifests = Object.entries(p.manifests ?? {}).map(([wf, m]) =>
+    m.sha256 ? `${wf} v${m.manifest_version ?? '?'} (${m.sha256.slice(0, 8)})` : `${wf} unavailable`,
+  );
+  return [`app ${app}`, ...manifests].join(' · ');
+}
 
 export type ArenaCheck = {
   kind: string;

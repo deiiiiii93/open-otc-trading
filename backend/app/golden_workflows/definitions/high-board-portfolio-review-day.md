@@ -1,6 +1,7 @@
 ---
 id: high-board-portfolio-review-day
 schema_version: 1
+manifest_version: 1   # bump on ANY scoring-relevant edit; stamped onto every arena run
 persona: high_board
 title: "High-Board Portfolio Review Day"
 objective: >

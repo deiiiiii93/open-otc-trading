@@ -1367,3 +1367,46 @@ def test_merge_runs_folds_by_budget_so_two_regimes_never_average(session):
     # The merged run states every regime it contains.
     merged = store.get_run(session, merged_id)
     assert merged["max_output_tokens"] == {"m-x": [4096, 32768]}
+
+
+# ---- provenance (2026-09-25): frozen par + cross-manifest merge refusal ----
+
+def test_card_uses_the_par_frozen_at_stamp_time_not_todays_manifest():
+    """Cards are derived on read. Without the frozen par, editing a manifest's
+    par_tool_calls would silently re-card every historical match."""
+    today = store._derive_card(_trial(_STRONG), _WF)[0]
+    frozen = store._derive_card(_trial(_STRONG), _WF,
+                                {"par_tool_calls": 1, "par_calibrated": True})[0]
+    assert frozen["stats"]["EFF"] != today["stats"]["EFF"]
+
+
+def _stamped(session, rid, model, breakdown, obj, sha):
+    store.record_match(
+        session, rid, _WF, model,
+        objective_score=obj, judged_score=None, total_score=obj,
+        judge_missing=False, transcript_path=None, status="scored",
+        config={"provenance": {"app": "0.1.0+abc", "manifest_version": 1,
+                               "sha256": sha, "par_tool_calls": 20}},
+        score_breakdown={**breakdown, "objective_score": obj,
+                         "subjective_mode": "disabled"})
+
+
+def test_merge_refuses_runs_that_used_different_manifests(session):
+    import pytest
+    r1 = _make_run(session, model_ids=["m"])
+    _stamped(session, r1, "m", _trial(_STRONG), 84.6, "a" * 64)
+    r2 = _make_run(session, model_ids=["m"])
+    _stamped(session, r2, "m", _trial(_WEAK), 48.7, "b" * 64)
+    with pytest.raises(ValueError, match="different manifests"):
+        store.merge_runs(session, [r1, r2])
+
+
+def test_merge_of_one_manifest_stamps_the_merged_run(session):
+    r1 = _make_run(session, model_ids=["m"])
+    _stamped(session, r1, "m", _trial(_STRONG), 84.6, "a" * 64)
+    r2 = _make_run(session, model_ids=["m"])
+    _stamped(session, r2, "m", _trial(_WEAK), 48.7, "a" * 64)
+    run = store.get_run(session, store.merge_runs(session, [r1, r2]))
+    assert run["provenance"]["manifests"][_WF]["sha256"] == "a" * 64
+    assert run["provenance"]["apps"] == ["0.1.0+abc"]
+    assert run["matches"][0]["config"]["provenance"]["sha256"] == "a" * 64

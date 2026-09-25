@@ -44,6 +44,31 @@ The `/arena` Runs panel launches, deletes, and merges runs (endpoints in
 
 ---
 
+## Provenance: a board is one manifest on one app
+
+Since 2026-09-25 (`provenance.py`, migration `0066`) every run carries
+`arena_run.provenance` = `{stamped_at, app: {version, git_sha, git_dirty, label,
+packages}, manifests: {workflow_id: {manifest_version, sha256, par_tool_calls,
+par_calibrated}}}`, and every match `config.provenance` = what THAT match ran under.
+
+- **Bump `manifest_version` on any scoring-relevant manifest edit.** The sha256
+  (definition + fixtures + staged documents) catches an unbumped edit; the version
+  is what a human reads on the board.
+- **`--resume` refuses a run whose manifest changed** since it was stamped — start a
+  new run. **`merge_runs` refuses** stamped matches with different manifest hashes.
+  A pre-stamp run (`provenance` NULL) cannot be checked either way: NULL means
+  UNKNOWN, never "same as today".
+- **Cards derive on read, so the par is FROZEN in the stamp.** `_derive_card` prefers
+  `config.provenance.par_tool_calls`; without it, editing a manifest's par re-cards
+  every historical match. Pre-stamp matches still read today's par — freeze them
+  before changing a par that published boards depend on.
+- **The app label is captured ONCE per process** (`lru_cache`): the code in memory is
+  fixed at import, so a commit landing mid-run must not relabel later matches.
+- **Stamping never fails a run**: an unreadable manifest is recorded as
+  `{"unavailable": reason}`, an explicit absence.
+
+---
+
 ## A DB-wide tally must exclude MERGED runs
 
 Any statistic computed by walking `arena_match` across **all** runs — a par

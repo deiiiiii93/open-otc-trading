@@ -221,6 +221,27 @@ describe('ArenaLive', () => {
     expect(invalidCell.querySelector('.wl-arena__match-ability')).toBeNull();
   });
 
+  it('shows which app and manifest versions scored the run', async () => {
+    // Scores across manifest/app versions are not comparable, so the run
+    // header states the versions it was scored under.
+    setupMocks();
+    vi.mocked(arenaApi.getArenaRun).mockResolvedValue({
+      run: {
+        ...mockRuns[0],
+        provenance: {
+          app: { label: '0.2.0+b07ab49' },
+          manifests: { 'workflow-a': { manifest_version: 3, sha256: '0123456789abcdef' } },
+        },
+      },
+      matches: mockMatches,
+    });
+    render(<ArenaLive />);
+    await userEvent.click(await screen.findByText('1'));
+    expect(await screen.findByTestId('arena-run-provenance')).toHaveTextContent(
+      'app 0.2.0+b07ab49 · workflow-a v3 (01234567)',
+    );
+  });
+
   it('labels each arm with the reasoning effort it ran at', async () => {
     // A contestant is (model, effort). One model at two efforts is two cells
     // that are otherwise identical — model, workflow, status and radar all

@@ -45,6 +45,9 @@ class RunSummary(BaseModel):
     # at. Same shape and same reading as reasoning_efforts: null is the explicit
     # unpinned (process-default) arm, absent means one arm at that default.
     max_output_tokens: dict[str, list[int | None]] = Field(default_factory=dict)
+    # Which app and which manifests produced the run (services/arena/provenance).
+    # null = stamped before provenance existed — unknown, not "current".
+    provenance: dict | None = None
 
 
 class MatchSummary(BaseModel):
@@ -344,6 +347,7 @@ def build_arena_router(
                 model_ids=r.get("model_ids") or [],
                 reasoning_efforts=r.get("reasoning_efforts") or {},
                 max_output_tokens=r.get("max_output_tokens") or {},
+                provenance=r.get("provenance"),
             )
             for r in rows
         ]
@@ -367,6 +371,7 @@ def build_arena_router(
             model_ids=run_dict.get("model_ids") or [],
             reasoning_efforts=run_dict.get("reasoning_efforts") or {},
             max_output_tokens=run_dict.get("max_output_tokens") or {},
+            provenance=run_dict.get("provenance"),
         )
 
         match_summaries = [

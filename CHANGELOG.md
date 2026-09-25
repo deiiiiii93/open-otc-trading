@@ -37,6 +37,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixture now clears it after every test.
 
 ### Added
+- **Arena: every run records which manifest and which app produced it.** Scores from
+  different workflow manifests or harness versions are not comparable, and nothing
+  recorded either. `arena_run.provenance` (migration `0066`) stamps the app (pyproject
+  version + git commit, dirty flag, agent-stack and QuantArk versions) and, per
+  workflow, a new `manifest_version` frontmatter field plus a content hash of the
+  definition, fixtures and staged documents. Each match records what IT ran under (a
+  resumed match can run on newer code). A `--resume` or a merge across a manifest
+  change is refused; ability cards use the par frozen at stamp time, so a manifest
+  edit can no longer silently re-card history. Shown under the run header in /arena.
 - **Arena: `gpt-6-luna` and `mimo-2-6-flash` contestants.** `openai/gpt-6-luna:openai`
   and `xiaomi/mimo-v2.6-flash:xiaomi` are registered in `CANDIDATE_MODELS` and the
   channel template, with effort ladders measured into `config/model_reasoning.json`

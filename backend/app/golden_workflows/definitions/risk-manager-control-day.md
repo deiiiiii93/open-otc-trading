@@ -1,6 +1,7 @@
 ---
 id: risk-manager-control-day
 schema_version: 1
+manifest_version: 1   # bump on ANY scoring-relevant edit; stamped onto every arena run
 persona: risk_manager
 title: "Risk Manager Control Day"
 objective: >
