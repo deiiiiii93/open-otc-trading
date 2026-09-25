@@ -72,7 +72,9 @@ def main() -> int:
         print(f"match {row.id} {row.workflow_id} {row.model_id}@{row.reasoning_effort}: "
               f"stored {old_score}")
 
-        artifact_root = REPO_ROOT / "artifacts" / "arena" / str(row.run_id)
+        # Relative, like the live runner's, so the stored transcript_path matches
+        # every other row (the script must run from the repo root).
+        artifact_root = Path("artifacts") / "arena" / str(row.run_id)
         if old_path and not args.dry_run:
             old = REPO_ROOT / old_path
             keep = old.parent / f"superseded-{date.today().isoformat()}"
