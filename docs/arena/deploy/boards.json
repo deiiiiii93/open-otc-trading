@@ -1,11 +1,12 @@
 {
-  "generated_at": "2026-09-04T05:43:46.617593+00:00",
+  "generated_at": "2026-09-25T07:48:01.298630+00:00",
   "models": [
     {
       "boards_total": 5,
       "con": 86,
       "coverage": 3,
       "effort": null,
+      "mixed_versions": false,
       "model": "gemini-3-6-flash",
       "ovr": 93,
       "ovr_max": 99,
@@ -61,6 +62,7 @@
       "con": 92,
       "coverage": 4,
       "effort": null,
+      "mixed_versions": false,
       "model": "gpt-5-6-terra",
       "ovr": 90,
       "ovr_max": 98,
@@ -116,6 +118,7 @@
       "con": 89,
       "coverage": 4,
       "effort": null,
+      "mixed_versions": false,
       "model": "deepseek-v4-pro",
       "ovr": 88,
       "ovr_max": 96,
@@ -171,6 +174,7 @@
       "con": 94,
       "coverage": 4,
       "effort": null,
+      "mixed_versions": false,
       "model": "grok-4-5",
       "ovr": 88,
       "ovr_max": 98,
@@ -226,6 +230,7 @@
       "con": 87,
       "coverage": 4,
       "effort": null,
+      "mixed_versions": false,
       "model": "deepseek-v4-flash",
       "ovr": 86,
       "ovr_max": 92,
@@ -281,6 +286,7 @@
       "con": 78,
       "coverage": 4,
       "effort": null,
+      "mixed_versions": false,
       "model": "qwen-3-7-max",
       "ovr": 84,
       "ovr_max": 94,
@@ -336,6 +342,7 @@
       "con": 80,
       "coverage": 5,
       "effort": null,
+      "mixed_versions": false,
       "model": "gpt-5-6-luna",
       "ovr": 82,
       "ovr_max": 93,
@@ -391,6 +398,7 @@
       "con": 74,
       "coverage": 4,
       "effort": null,
+      "mixed_versions": false,
       "model": "mimo-2-5-pro",
       "ovr": 82,
       "ovr_max": 98,
@@ -446,6 +454,7 @@
       "con": 96,
       "coverage": 1,
       "effort": null,
+      "mixed_versions": false,
       "model": "deepseek-v4-flash-vision",
       "ovr": 81,
       "ovr_max": 81,
@@ -501,6 +510,7 @@
       "con": 83,
       "coverage": 4,
       "effort": null,
+      "mixed_versions": false,
       "model": "gemini-3-5-flash",
       "ovr": 78,
       "ovr_max": 95,
@@ -556,6 +566,7 @@
       "con": 66,
       "coverage": 4,
       "effort": null,
+      "mixed_versions": false,
       "model": "kimi-2-7",
       "ovr": 78,
       "ovr_max": 98,
@@ -611,6 +622,7 @@
       "con": 86,
       "coverage": 1,
       "effort": null,
+      "mixed_versions": false,
       "model": "glm-5-3-flash",
       "ovr": 78,
       "ovr_max": 78,
@@ -666,6 +678,7 @@
       "con": 78,
       "coverage": 4,
       "effort": null,
+      "mixed_versions": false,
       "model": "hunyuan-3",
       "ovr": 76,
       "ovr_max": 82,
@@ -721,6 +734,7 @@
       "con": 47,
       "coverage": 4,
       "effort": null,
+      "mixed_versions": false,
       "model": "claude-sonnet-5",
       "ovr": 75,
       "ovr_max": 81,
@@ -776,6 +790,7 @@
       "con": 71,
       "coverage": 4,
       "effort": null,
+      "mixed_versions": false,
       "model": "glm-5-2",
       "ovr": 75,
       "ovr_max": 85,
@@ -831,6 +846,7 @@
       "con": 66,
       "coverage": 4,
       "effort": null,
+      "mixed_versions": false,
       "model": "step-3-7-flash",
       "ovr": 74,
       "ovr_max": 81,
@@ -886,6 +902,7 @@
       "con": 60,
       "coverage": 4,
       "effort": null,
+      "mixed_versions": false,
       "model": "doubao-seed-2-1-pro",
       "ovr": 73,
       "ovr_max": 80,
@@ -941,6 +958,7 @@
       "con": 68,
       "coverage": 4,
       "effort": null,
+      "mixed_versions": false,
       "model": "longcat-2-0",
       "ovr": 72,
       "ovr_max": 83,
@@ -996,6 +1014,7 @@
       "con": 32,
       "coverage": 4,
       "effort": null,
+      "mixed_versions": false,
       "model": "mimo-2-5",
       "ovr": 70,
       "ovr_max": 79,
@@ -1051,6 +1070,7 @@
       "con": 92,
       "coverage": 1,
       "effort": null,
+      "mixed_versions": false,
       "model": "gemini-3-7-flash",
       "ovr": 67,
       "ovr_max": 67,
@@ -1106,6 +1126,7 @@
       "con": 50,
       "coverage": 4,
       "effort": null,
+      "mixed_versions": false,
       "model": "minimax-m3",
       "ovr": 64,
       "ovr_max": 92,
@@ -2197,6 +2218,7 @@
     {
       "boards": [
         {
+          "app_label": null,
           "carded": true,
           "carded_rows": 4,
           "checks": 33,
@@ -2284,7 +2306,8 @@
             }
           ],
           "run": 133,
-          "trials": 2
+          "trials": 2,
+          "version": "unversioned (before 2026-09-25)"
         }
       ],
       "id": "confirmation-desk-day",
@@ -2296,6 +2319,7 @@
     {
       "boards": [
         {
+          "app_label": null,
           "carded": true,
           "carded_rows": 18,
           "checks": 39,
@@ -2649,7 +2673,8 @@
             }
           ],
           "run": 101,
-          "trials": 2
+          "trials": 2,
+          "version": "unversioned (before 2026-09-25)"
         }
       ],
       "id": "risk-limit-breach-day",
@@ -2661,6 +2686,7 @@
     {
       "boards": [
         {
+          "app_label": null,
           "carded": true,
           "carded_rows": 18,
           "checks": 35,
@@ -3014,7 +3040,8 @@
             }
           ],
           "run": 94,
-          "trials": null
+          "trials": null,
+          "version": "unversioned (before 2026-09-25)"
         }
       ],
       "id": "high-board-portfolio-review-day",
@@ -3026,6 +3053,7 @@
     {
       "boards": [
         {
+          "app_label": null,
           "carded": true,
           "carded_rows": 18,
           "checks": 63,
@@ -3379,7 +3407,8 @@
             }
           ],
           "run": 33,
-          "trials": 2
+          "trials": 2,
+          "version": "unversioned (before 2026-09-25)"
         }
       ],
       "id": "trader-rfq-booking-day",
@@ -3391,6 +3420,7 @@
     {
       "boards": [
         {
+          "app_label": null,
           "carded": true,
           "carded_rows": 17,
           "checks": 39,
@@ -3725,7 +3755,8 @@
             }
           ],
           "run": 20,
-          "trials": 2
+          "trials": 2,
+          "version": "unversioned (before 2026-09-25)"
         }
       ],
       "id": "risk-manager-control-day",
