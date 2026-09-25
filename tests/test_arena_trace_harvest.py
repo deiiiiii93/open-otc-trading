@@ -200,6 +200,59 @@ def test_transcript_from_trace_flushes_store_before_reading():
     assert "read" in events
 
 
+def _root(tid, t, prompt, status="success"):
+    inputs = {"messages": [{"lc": 1, "type": "constructor",
+                            "kwargs": {"content": prompt, "type": "human"}}]}
+    return {"trace_id": tid, "start_time": t, "status": status,
+            "inputs": json.dumps(inputs)}
+
+
+def test_escalation_retry_root_is_the_same_turn_not_the_next_step():
+    """Run #141 match 633: a denied first pass + its widened retry are ONE turn.
+
+    Mapped 1:1, the retry was filed as step 2 and the real step 2 fell off the
+    end — the step-8 report of a 9-step workflow vanished and the match scored
+    64.1 for a play that earned 38/39.
+    """
+    roots = [
+        _root("T1", "1", "step one prompt", status="error"),  # CapabilityDeniedError
+        _root("T1b", "2", "step one prompt"),                  # widened retry
+        _root("T2", "3", "step two prompt"),
+    ]
+    traces = {
+        "T1": [{"run_type": "chain", "name": "otc_desk_orchestrator", "start_time": "1",
+                "status": "error", "error": "CapabilityDeniedError(...)"}],
+        "T1b": [{"run_type": "tool", "name": "run_backtest", "start_time": "2", "id": "b",
+                 "inputs": json.dumps({}), "outputs": _tool_output({"task_id": 7}, "run_backtest")},
+                {"run_type": "llm", "name": "ChatOpenAI", "start_time": "2",
+                 "outputs": _llm_output("backtest done")}],
+        "T2": [{"run_type": "llm", "name": "ChatOpenAI", "start_time": "3",
+                "outputs": _llm_output("report written")}],
+    }
+    model = ArenaModel(slug="m", zenmux_name="openai/x", display_name="M", default_config={})
+    transcript = transcript_from_trace(1, _WF(), model, store=_FakeStore(roots, traces))
+    assert [c["name"] for c in transcript.steps[0].tool_calls] == ["run_backtest"]
+    assert transcript.steps[0].response_text == "backtest done"
+    assert transcript.steps[1].response_text == "report written"
+
+
+def test_identical_consecutive_prompts_without_an_error_stay_two_turns():
+    roots = [_root("T1", "1", "same"), _root("T2", "2", "same")]
+    traces = {"T1": [{"run_type": "llm", "name": "x", "start_time": "1", "outputs": _llm_output("a")}],
+              "T2": [{"run_type": "llm", "name": "x", "start_time": "2", "outputs": _llm_output("b")}]}
+    model = ArenaModel(slug="m", zenmux_name="openai/x", display_name="M", default_config={})
+    transcript = transcript_from_trace(1, _WF(), model, store=_FakeStore(roots, traces))
+    assert [s.response_text for s in transcript.steps] == ["a", "b"]
+
+
+def test_an_errored_turn_followed_by_a_new_prompt_is_not_merged():
+    roots = [_root("T1", "1", "one", status="error"), _root("T2", "2", "two")]
+    traces = {"T2": [{"run_type": "llm", "name": "x", "start_time": "2", "outputs": _llm_output("b")}]}
+    model = ArenaModel(slug="m", zenmux_name="openai/x", display_name="M", default_config={})
+    transcript = transcript_from_trace(1, _WF(), model, store=_FakeStore(roots, traces))
+    assert transcript.steps[1].response_text == "b"
+
+
 def test_transcript_from_trace_missing_root_records_error():
     roots = [{"trace_id": "T1", "start_time": "1", "end_time": "2"}]  # only 1 root, 2 steps
     traces = {"T1": [{"run_type": "llm", "name": "ChatAnthropic", "start_time": "1",

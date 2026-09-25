@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Arena harvest: a scope-widening retry is part of the same turn, not the next
+  step.** When a contestant calls a tool its envelope denies, the service widens
+  the envelope and re-drives the same prompt, which leaves two root traces for one
+  turn. The harvester mapped roots to steps one to one, so the retry was filed as
+  the next step, every later step shifted by one, and the final step was lost. Run
+  #141, gpt-6-luna on risk-manager-control: the escalated backtest landed under
+  step 7 and the report under nothing, scoring 64.1 for a play that earns 38/39.
+  Consecutive roots now merge into one turn when the earlier one errored and the
+  later one repeats its prompt. Thirteen older arena-shaped threads (June to
+  August) show the same pattern and were scored shifted.
+  `scripts/rescore_arena_match.py` re-harvests and re-scores one match from its
+  trace, with no model calls, through the live scoring path.
+
 ### Added
 - **Arena: every match records its tokens and cost.** Each LLM call's usage is
   harvested from the trace: input (cache reads included), cache reads and writes,

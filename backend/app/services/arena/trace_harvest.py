@@ -601,6 +601,46 @@ def collect_rfq_ids_touched(thread_id, store=None) -> set[int]:
     return out
 
 
+def _root_prompt(root: dict) -> str | None:
+    """The user prompt a root trace was invoked with, or None if unreadable."""
+    inputs = _loads(root.get("inputs")) or {}
+    messages = inputs.get("messages") if isinstance(inputs, dict) else None
+    if not isinstance(messages, list) or not messages:
+        return None
+    last = messages[-1]
+    content = last.get("kwargs", {}).get("content") if isinstance(last, dict) else None
+    return content if isinstance(content, str) else None
+
+
+def _group_roots_into_turns(roots: list[dict]) -> list[list[dict]]:
+    """Group chronologically sorted root traces into one list per TURN.
+
+    A turn is normally one root. Envelope escalation makes it two: the first
+    pass raises ``CapabilityDeniedError`` (root status ``error``), and the
+    service re-drives the SAME prompt under the widened envelope as a new root
+    (``_apply_runtime_signals``). Mapping roots 1:1 onto steps then files the
+    retry as the next step and shifts every later step by one — run #141,
+    gpt-6-luna on risk-manager-control: step 6 escalated to ``desk_async``, the
+    backtest landed under step 7, and the step-8 report fell off the end
+    (scored 64.1). A root joins the previous turn only when it repeats that
+    turn's prompt AND the turn's last root errored, so two genuinely identical
+    consecutive steps still count as two.
+    """
+    turns: list[list[dict]] = []
+    for root in roots:
+        prev = turns[-1] if turns else None
+        if (
+            prev is not None
+            and prev[-1].get("status") == "error"
+            and _root_prompt(root) is not None
+            and _root_prompt(root) == _root_prompt(prev[-1])
+        ):
+            prev.append(root)
+        else:
+            turns.append([root])
+    return turns
+
+
 def transcript_from_trace(thread_id, workflow, model, *, store=None) -> MatchTranscript:
     """Build a MatchTranscript for *thread_id* by reading its trace spans.
 
@@ -625,10 +665,11 @@ def transcript_from_trace(thread_id, workflow, model, *, store=None) -> MatchTra
         key=lambda r: r.get("start_time") or "",
     )
 
+    turns = _group_roots_into_turns(roots)
     steps = []
     for i, wf_step in enumerate(workflow.steps):
-        if i < len(roots):
-            spans = store.get_trace(roots[i]["trace_id"])
+        if i < len(turns):
+            spans = [sp for root in turns[i] for sp in store.get_trace(root["trace_id"])]
             turn = _spans_to_turn_events(i, wf_step.user, spans)
         else:
             turn = {

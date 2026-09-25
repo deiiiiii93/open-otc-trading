@@ -429,3 +429,16 @@ re-costs a finished match. The rules:
   `ZENMUX_MGT_KEY`. Only the `openai_chat` client (`_ThoughtSignatureChat`)
   records ids so far; Responses-API and Anthropic-protocol contestants show
   `generation_ids: 0`.
+
+## One turn can be two root traces (escalation retry)
+
+`transcript_from_trace` maps TURNS, not roots, onto steps. A denied tool call
+raises `CapabilityDeniedError` and ends the first pass as an `error` root. When
+the envelope table has a widening, `_apply_runtime_signals` re-drives the same
+prompt as a second root. `_group_roots_into_turns` merges a root into the
+previous turn only if that turn's last root errored AND the prompt is identical.
+Before 2026-09-25 roots were mapped 1:1, which shifted every step after an
+escalation (run #141 match 633: 64.1 → 97.4 on rescore). Thirteen historical
+arena threads carry the pattern. To fix a stored row without re-running it,
+use `scripts/rescore_arena_match.py --match ID --thread TID --reason …`
+(`--dry-run` first).
