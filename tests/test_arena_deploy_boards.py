@@ -451,3 +451,41 @@ def test_a_provisional_entry_may_link_its_report(tmp_path):
         bd.ProvisionalRef(run=104, label="Run #104", post="r.md"),
         [_entry("a", 90)], date="d",
     )["post"] == "r.md"
+
+
+# ---- versions (2026-09-25): every board states what scored it ----
+
+def test_an_unstamped_run_says_unversioned_rather_than_claiming_v1():
+    """Manifests were edited many times before versioning existed, so a pre-stamp
+    board's manifest is UNKNOWN — "v1" would be a false claim."""
+    assert bd.version_label(None, "risk-manager-control-day") == bd.UNVERSIONED
+
+
+def test_a_stamped_run_names_its_app_and_this_workflows_manifest():
+    prov = {"app": {"version": "0.2.0", "label": "0.2.0+abc"},
+            "manifests": {"trader-rfq-booking-day": {"manifest_version": 2}}}
+    assert bd.version_label(prov, "trader-rfq-booking-day") == "app 0.2.0 · manifest v2"
+
+
+def test_a_merged_run_names_every_app_it_folded():
+    prov = {"apps": ["0.2.0+a", "0.2.1+b"], "manifests": {"w": {"manifest_version": 1}}}
+    assert bd.version_label(prov, "w") == "app 0.2.0, 0.2.1 · manifest v1"
+
+
+def test_shape_board_carries_the_version():
+    got = bd.shape_board(REF, [STORE_ROW], {REF.workflow}, "2026-09-25", 39,
+                         provenance={"app": {"version": "0.2.0", "label": "0.2.0+abc"},
+                                     "manifests": {REF.workflow: {"manifest_version": 1}}})
+    assert got["version"] == "app 0.2.0 · manifest v1"
+    assert got["app_label"] == "0.2.0+abc"
+
+
+def test_a_card_averaged_across_versions_is_flagged():
+    mixed = [dict(TWO_WORKFLOWS[0], boards=[dict(TWO_WORKFLOWS[0]["boards"][0],
+                                               version="app 0.2.0 · manifest v1")]),
+             TWO_WORKFLOWS[1]]
+    cards = {c["model"]: c for c in bd.consolidated_cards(mixed)}
+    assert cards["wide"]["mixed_versions"] is True        # v1 board + unversioned board
+    assert cards["newcomer"]["mixed_versions"] is False   # one board only
+    same = {c["model"]: c for c in bd.consolidated_cards(TWO_WORKFLOWS)}
+    assert same["wide"]["mixed_versions"] is False

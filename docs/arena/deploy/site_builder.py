@@ -436,6 +436,11 @@ def _board(board: dict, by_file: dict[str, Post]) -> str:
     if invalid:
         facts.append(f"{invalid} invalid")
 
+    # The version the board was scored under, always shown: a reader comparing two
+    # boards must be able to see whether they measured the same instrument.
+    if board.get("version"):
+        facts.append(escape(str(board["version"])))
+
     post = by_file.get(str(board.get("post") or ""))
     if post is not None:
         facts.append(f'<a href="./{post.html_name}">report</a>')
@@ -520,6 +525,17 @@ def _workflow_tabs(workflows: list[dict]) -> str:
     return f'<nav class="wf-tabs">{"".join(tabs)}</nav>'
 
 
+#: Shown on every page that puts two scores side by side. Scores from different
+#: app or manifest versions measure different instruments, and a reader cannot tell
+#: that from the numbers alone.
+VERSION_NOTICE = (
+    '<p class="board-note">Scores are only comparable within one version. Every '
+    "board states the app and workflow-manifest version it was scored under, and a "
+    "difference between versions can move a score as much as a difference between "
+    'models. <a href="./methodology.html#versions">How versions work</a>.</p>'
+)
+
+
 def render_leaderboard(snapshot: dict, posts: list[Post], theme: str) -> str:
     """Every board we have, grouped by the workflow it was measured on.
 
@@ -560,6 +576,7 @@ def render_leaderboard(snapshot: dict, posts: list[Post], theme: str) -> str:
         + f'<div class="intro"><h1>{escape(LEADERBOARD_TITLE)}</h1>'
         + f'<p class="lead">{escape(LEADERBOARD_LEAD)}</p>'
         + f'<p class="derived">derived from the arena database on {escape(generated)}</p>'
+        + VERSION_NOTICE
         + "</div>\n"
         + f'<main class="boards">\n{sections}</main>\n'
         + _site_footer()
@@ -627,6 +644,9 @@ GLOSSARY = (
      "stats sit within eight points of each other."),
     ("Provisional", "A run published as cards but never ranked, because it had no "
      "field. A card is absolute and survives having no opponent; a rank does not."),
+    ("Version", "The app release and the workflow-manifest revision a board was "
+     "scored under. Each board states both; boards before 2026-09-25 predate "
+     "versioning and say so."),
     ("Invalid", "A match the harness threw away because the transport failed, not "
      "because the model did. It is excluded from every average rather than "
      "scored zero."),
@@ -750,6 +770,25 @@ def render_methodology(
         + "A workflow with no par yet has not produced enough fully correct "
         + "trials to calibrate one.</p>"
 
+        + '<h2 id="versions">Versions and comparability</h2>'
+        + "<p>A score is a measurement taken with a particular instrument, and the "
+        + "instrument changes. Two things can change it: the <strong>workflow "
+        + "manifest</strong> &mdash; which checks a workflow grades and which "
+        + "tools count as the right route &mdash; and the <strong>app</strong> "
+        + "itself, including the agent framework every model runs inside. An "
+        + "upgrade to that framework changes what every model is told before it "
+        + "starts, so a score can move without the model changing at all.</p>"
+        + "<p>Since 2026-09-25 every run records both: the app version, and for "
+        + "each workflow a manifest version plus a fingerprint of every file that "
+        + "grades it. Each board on the leaderboard states its versions. Treat "
+        + "scores from different versions as different measurements. A gap "
+        + "between two boards on different versions can come from the versions "
+        + "as easily as from the models, and a model card that averages across "
+        + "versions says so on the card.</p>"
+        + "<p>Boards from before that date are marked <em>unversioned</em>. They "
+        + "are not wrong, but nothing records exactly which manifest or harness "
+        + "they ran, so they compare cleanly only with boards from the same "
+        + "period.</p>"
         + "<h2>How a run is graded</h2>"
         + "<p>Every turn carries checks, and every check is worth one point and "
         + "decides itself by rule. Did this tool fire with these arguments. Does "
@@ -909,6 +948,12 @@ def _career_card(card: dict) -> str:
                       card.get("ovr"), card.get("position"))
         + _stat_strip(card.get("stats") or {}, card.get("con"))
         + f'<p class="mcard-spread">{spread}</p>'
+        + (
+            '<p class="board-note">This average spans boards scored under '
+            'different versions. <a href="./methodology.html#versions">Why that '
+            "matters</a>.</p>"
+            if card.get("mixed_versions") else ""
+        )
         + f'<ul class="mcard-boards">{"".join(rows)}</ul>'
         + "</article>"
     )
@@ -1429,6 +1474,7 @@ def render_models(snapshot: dict, theme: str, posts: list | tuple = ()) -> str:
         + f'<div class="intro"><h1>{escape(MODELS_TITLE)}</h1>'
         + f'<p class="lead">{escape(MODELS_LEAD)}</p>'
         + f'<p class="derived">derived from the arena database on {escape(generated)}</p>'
+        + VERSION_NOTICE
         + "</div>\n"
         # Both halves are gated on there being something to filter. The script
         # would no-op on its own, but shipping a filter for a page with no rows

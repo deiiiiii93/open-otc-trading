@@ -1441,3 +1441,19 @@ def test_the_selected_panel_heading_does_not_wear_the_tabs_costume():
     # lets it sit earlier in the file beside the rest of the tab rules.
     assert ".wf h2 code{" in css                      # the boxed base rule
     assert ".wf-panels .wf h2 code{" in css           # strictly more specific
+
+
+# ---- versions (2026-09-25) ----
+
+def test_every_board_states_its_version_and_the_page_warns_across_versions():
+    board = dict(FLAGSHIP["boards"][0], version="app 0.2.0 · manifest v2")
+    html = sb.render_leaderboard(snapshot(dict(FLAGSHIP, boards=[board])), POSTS, THEME)
+    assert "app 0.2.0 · manifest v2" in html
+    assert "only comparable within one version" in html
+    assert 'href="./methodology.html#versions"' in html
+
+
+def test_methodology_explains_versions_at_the_anchor_the_notices_link_to():
+    html = sb.render_methodology(THEME, snapshot(FLAGSHIP))
+    assert '<h2 id="versions">Versions and comparability</h2>' in html
+    assert "unversioned" in html

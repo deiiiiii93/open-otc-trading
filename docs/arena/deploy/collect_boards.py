@@ -156,6 +156,7 @@ def collect(session, refs, provisional_refs=()) -> dict:
             date=str(run.created_at)[:10],
             checks=_checks_denominator(matches),
             trials_by_arm=trials_by_arm,
+            provenance=run.provenance,
         )
         by_workflow.setdefault(ref.workflow, []).append(board)
 

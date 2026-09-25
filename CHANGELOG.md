@@ -59,6 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixture now clears it after every test.
 
 ### Added
+- **artena.one: every board states the version it was scored under.** Board facts
+  carry "app X · manifest vN" (pre-2026-09-25 boards say *unversioned*), the
+  leaderboard and Model Cards warn that scores are only comparable within one
+  version, a model card that averages across versions says so, and the methodology
+  page gains a "Versions and comparability" section.
 - **Arena: every run records which manifest and which app produced it.** Scores from
   different workflow manifests or harness versions are not comparable, and nothing
   recorded either. `arena_run.provenance` (migration `0066`) stamps the app (pyproject

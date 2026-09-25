@@ -295,6 +295,29 @@ def shape_row(row: dict, trials: int | None = None) -> dict:
     }
 
 
+#: A run created before 2026-09-25 carries no provenance. Its manifest and harness
+#: are UNKNOWN — manifests were edited many times before versioning existed — so the
+#: label says so rather than claiming "v1".
+UNVERSIONED = "unversioned (before 2026-09-25)"
+
+
+def version_label(provenance: dict | None, workflow: str) -> str:
+    """The public version line for one board: app version and this workflow's
+    manifest version, from the run's stamp. The git commit stays out of the page;
+    it is in the export for anyone who needs to trace a board exactly."""
+    if not provenance:
+        return UNVERSIONED
+    app = (provenance.get("app") or {}).get("version")
+    if not app:
+        apps = provenance.get("apps") or []
+        app = ", ".join(sorted({str(a).split("+")[0] for a in apps})) or None
+    manifest = ((provenance.get("manifests") or {}).get(workflow) or {}).get(
+        "manifest_version")
+    parts = [f"app {app}" if app else "app unknown",
+             f"manifest v{manifest}" if manifest else "manifest unknown"]
+    return " \u00b7 ".join(parts)
+
+
 def shape_board(
     ref: BoardRef,
     rows: list[dict],
@@ -302,6 +325,7 @@ def shape_board(
     date: str,
     checks: int | None,
     trials_by_arm: dict[tuple[str, str | None], int] | None = None,
+    provenance: dict | None = None,
 ) -> dict:
     """Validate a run against its declaration, then publish it.
 
@@ -332,6 +356,11 @@ def shape_board(
         "post": ref.post,
         "note": ref.note,
         "checks": checks,
+        # Which app + manifest scored this board. Boards on different versions are
+        # not comparable; the page says which is which instead of leaving the reader
+        # to assume "same as today".
+        "version": version_label(provenance, ref.workflow),
+        "app_label": ((provenance or {}).get("app") or {}).get("label"),
         # A single carded contestant is enough to warrant the OVR column; the
         # uncarded rows render an em dash there, which is the honest reading.
         "carded": carded_rows > 0,
@@ -486,12 +515,17 @@ def consolidated_cards(workflows: list[dict]) -> list[dict]:
                 "rank": int(row["rank"]) if row else None,
                 "field": board.get("models"),
             })
+        versions = {flat[i][1].get("version") or UNVERSIONED for i in slot["at"]}
         cards.append({
             "model": model,
             "effort": effort,
             **_average_cards(slot["rows"]),
             "boards_total": len(flat),
             "per_board": per_board,
+            # An average across boards scored under different app/manifest versions
+            # mixes instruments. Flagged, never refused: each card is still a true
+            # measurement of its own board.
+            "mixed_versions": len(versions) > 1,
         })
 
     # Coverage breaks a tie on the mean: between two equal means, the one measured

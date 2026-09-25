@@ -95,6 +95,23 @@ listing the boards run on it. Two inputs, deliberately separate:
   each to be served, for the same reason it compares titles — a 200 under the SPA
   catch-all proves nothing.
 
+## Every board states its VERSION (2026-09-25)
+
+Scores are only comparable within one app + manifest version, and a reader cannot
+see that from the numbers. `collect_boards` passes each run's `provenance`
+(migration `0066`) to `shape_board`, which publishes `version` ("app 0.2.0 ·
+manifest v2") and `app_label` (with the git commit, for tracing).
+
+- **A pre-stamp run publishes `unversioned (before 2026-09-25)`, never "v1".**
+  Manifests were edited many times before versioning existed; claiming v1 would
+  be false. `manifest_version: 1` was only written into the manifests that day.
+- **`consolidated_cards` sets `mixed_versions`** when a model's average spans
+  boards on different versions. Flagged on the card, never refused: each card is
+  still a true measurement of its own board.
+- The leaderboard and Model Cards carry `VERSION_NOTICE`, linking to
+  `methodology.html#versions` — that anchor is the contract; keep it stable.
+- No new CSS: the notices reuse `.board-note`, so the dead-class guard holds.
+
 ## The leaderboard is TABBED by workflow, in a right rail, with no JavaScript
 
 Six stacked sections were 5,351px and put the newest board's 1,443-character
