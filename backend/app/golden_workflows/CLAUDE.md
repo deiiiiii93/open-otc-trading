@@ -643,3 +643,30 @@ can score against harvested truth. Package: `golden_workflows/determinism.py`
   it must also seed that history on the live path and add purge/exclusion, since a live
   arena backtest currently still fetches real akshare history (the other four truth
   targets match live via fallback-spot determinism).
+
+
+---
+
+## Manifest versions (2026-09-25)
+
+Every manifest carries `manifest_version` (frontmatter) and every arena run stamps it
+plus a content hash (`services/arena/provenance.py`). **Bump it on any scoring-relevant
+edit** — assertions, expected tools/skills, par, fixtures, staged documents. Boards
+from different versions are not comparable, and `--resume` / `merge_runs` refuse to
+mix them.
+
+- **Tools arrive after manifests.** When a newer tool returns the same fields, accept
+  it with `assertion_any_of` over `tool_called` / `tool_result_path` (the step grades
+  the reading, not the tool name) and drop it from any `tools_routed_sequence`, which
+  cannot express alternatives. The tell is a check that was N/N on older boards and
+  near 0 later while the ANSWER checks still pass — cross-reference the tool's
+  allowlist date (`git log -S <tool> -- backend/app/services/agents.py`).
+- **Converting an `expected_tools` entry to an assertion moves a point** between the
+  tools count and the step-assertion count (the total can stay the same) — update
+  the pinned point manifests (`test_high_board_loads.py` etc.).
+- **Pin `par_tool_calls` before touching `expected_tools` on a manifest without an
+  explicit par**: the derived par is `sum(len(expected_tools))`, and pre-stamp matches
+  card against the CURRENT par (confirmation-desk derives 9).
+- **`max_calls` / `all_calls` ignore a call whose own result has an `error`** — it did
+  nothing. A call with no surviving result still counts (positive evidence only), so
+  a genuine duplicate still fails.

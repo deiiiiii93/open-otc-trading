@@ -214,6 +214,7 @@ Four classes of self-invalidating assertion have already bitten this repo. All w
   (per-env), so without it every test that imports `app.main` dies at collection with
   `FileNotFoundError`. (Copying `.env` in used to break `test_config.py` /
   `test_tracing_config`; the suite is hermetic now, so it no longer matters either way.)
-- The venv's editable-install `.pth` currently points at a deleted worktree, so a bare
-  `python -c "import app"` fails. Tests are unaffected: `pyproject.toml` sets
-  `pythonpath = ["backend"]` relative to pytest's rootdir.
+- The venv's editable install is rebuilt by `uv sync`: after the 2026-09-25 sync a bare
+  `python -c "import app"` resolves to the MAIN checkout's `backend/`. From a worktree,
+  set `PYTHONPATH=backend` (tests already do: `pyproject.toml` sets
+  `pythonpath = ["backend"]`) or you will silently import main's code.

@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Golden workflows: manifest review for tools added since they were written.**
+  high-board and trader-rfq are now `manifest_version: 2`: their position-read checks
+  accept `get_position_summaries` (callable since 2026-08-21, same fields) alongside
+  `get_positions` — high-board step 3 had fallen from 8/8 (run #110) to ~0 from run
+  #127 while the counts stayed right. trader-rfq step 8 no longer scores the risk read
+  twice. Scoring kernel: under `max_calls` / `all_calls`, a call whose own result
+  carries an error no longer counts — a failed booking followed by a successful retry
+  was being failed as a duplicate. Other workflows reviewed; no changes needed.
 - **Harness upgrade — app 0.2.0, a new arena era.** deepagents 0.6.12 → 0.7.19,
   langchain 1.3 → 1.4.2, langchain-core 1.4 → 1.6.5, langchain-openai 1.2 → 1.6.6,
   langchain-anthropic 1.4 → 1.7.4, langgraph 1.2.9 → 1.2.12, openai 2.36 → 3.19.
