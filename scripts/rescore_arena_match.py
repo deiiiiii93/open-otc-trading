@@ -115,8 +115,13 @@ def main() -> int:
             run = session.get(ArenaRun, row.run_id)
             stamp = dict(run.provenance or {})
             manifests = dict(stamp.get("manifests") or {})
+            current = manifest_fingerprint(loaded)
+            recorded = manifests.get(row.workflow_id) or {}
+        if args.restamp and recorded.get("sha256") != current["sha256"]:
+            # Once per run: a second match of the same run finds the stamp
+            # already current and must not nest it as its own "previous".
             manifests[row.workflow_id] = {
-                **manifest_fingerprint(loaded),
+                **current,
                 "restamped": {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                               "previous": manifests.get(row.workflow_id)}}
             run.provenance = {**stamp, "manifests": manifests}
