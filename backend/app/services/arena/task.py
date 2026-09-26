@@ -385,7 +385,11 @@ _PROVIDER_ERROR_RE = re.compile(
     # A pooled connection from an earlier step's (closed) event loop: the step's
     # model call dies before the model says anything — harness, not play
     # (run #143 thread 1128; prevented by runner._reset_async_http_pools).
-    r"|Event loop is closed",
+    r"|Event loop is closed"
+    # The harness sent a history with an orphan ToolMessage (compaction cut an
+    # AI/tool pair). DeepSeek's upstream 400s it on every later call; the model
+    # never produced that history (run #143; compaction._pair_safe_cutoff).
+    r"|must be a response to a preceding message with 'tool_calls'",
     re.IGNORECASE,
 )
 

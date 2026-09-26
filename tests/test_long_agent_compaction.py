@@ -194,3 +194,63 @@ def test_compaction_summary_prompt_requires_artifact_and_tool_citations():
     assert "[tool_call:id]" in LEDGER_AWARE_SUMMARY_PROMPT
     assert "/large_tool_results/" in LEDGER_AWARE_SUMMARY_PROMPT
     assert "Do not restate prices" in LEDGER_AWARE_SUMMARY_PROMPT
+
+
+def _ledger_compactor(**kwargs):
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+
+    from app.services.deep_agent.compaction import LedgerScopedCompactionMiddleware
+
+    return LedgerScopedCompactionMiddleware(
+        model=GenericFakeChatModel(messages=iter([])), backend=None, **kwargs)
+
+
+def _call(call_id: str, name: str = "list_artifacts") -> dict:
+    return {"id": call_id, "name": name, "args": {}, "type": "tool_call"}
+
+
+def _recent_tail(n: int = 6) -> list:
+    return [AIMessage(content=f"recent {i}") for i in range(n)]
+
+
+def test_cutoff_never_opens_the_kept_tail_on_a_tool_message():
+    """Run #143 (deepseek confirmation-desk): the 8-message batch cap ended the
+    summarized span right after an AIMessage whose tool results were kept, so the
+    kept tail opened on an orphan ToolMessage. DeepSeek's upstream rejects that
+    with a 400 on every later call; the cutoff must pull back to the AIMessage."""
+    messages = [
+        HumanMessage(content="parse the batch"),
+        AIMessage(content="", tool_calls=[_call("a")]),
+        ToolMessage(content="ok", name="list_artifacts", tool_call_id="a"),
+        AIMessage(content="", tool_calls=[_call("b")]),
+        ToolMessage(content="ok", name="list_artifacts", tool_call_id="b"),
+        AIMessage(content="", tool_calls=[_call("c")]),
+        ToolMessage(content="ok", name="list_artifacts", tool_call_id="c"),
+        AIMessage(content="", tool_calls=[_call("d"), _call("e")]),
+        ToolMessage(content="ok", name="list_artifacts", tool_call_id="d"),
+        ToolMessage(content="ok", name="list_artifacts", tool_call_id="e"),
+        *_recent_tail(),
+    ]
+
+    cutoff = _ledger_compactor()._determine_cutoff_index(messages)
+
+    assert cutoff == 7
+    assert not isinstance(messages[cutoff], ToolMessage)
+
+
+def test_cutoff_keeps_a_protected_tool_result_with_its_call():
+    """A protected (ground-truth) tool result stops the batch; the AIMessage that
+    requested it must stay in the kept tail with it, not be summarized away."""
+    messages = [
+        HumanMessage(content="review the book"),
+        AIMessage(content="", tool_calls=[_call("g", "get_positions")]),
+        ToolMessage(content='{"positions": []}', name="get_positions", tool_call_id="g"),
+        AIMessage(content="noted"),
+        *_recent_tail(),
+    ]
+
+    cutoff = _ledger_compactor(
+        ground_truth_tool_names={"get_positions"})._determine_cutoff_index(messages)
+
+    assert cutoff == 1
+    assert isinstance(messages[cutoff], AIMessage) and messages[cutoff].tool_calls

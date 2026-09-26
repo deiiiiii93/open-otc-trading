@@ -411,3 +411,17 @@ have finished. `desk_context` did exactly this (run #143 thread 1132) until it g
 persona can carry needs a reducer, or must be private.**
 `tests/test_parallel_task_state_merge.py` drives the real orchestrator through a
 two-task fan-out.
+
+## Compaction must never split an AI/tool pair (2026-09-26)
+
+`LedgerScopedCompactionMiddleware._determine_cutoff_index` overrides deepagents'
+pair-safe cutoff with the end of its own compactable batch, which stops at
+`max_messages` or at a protected message. That end can fall right after an
+`AIMessage` with `tool_calls`, which strands its results on the kept side. Most
+routes accept an orphan `ToolMessage` silently. DeepSeek's upstream returns
+`400 Messages with role 'tool' must be a response to a preceding message with
+'tool_calls'`, and because the summary persists, every later turn in the thread
+fails the same way. `_pair_safe_cutoff` only ever moves the cutoff **back**
+(moving forward would summarize the protected result that stopped the batch).
+**Any new cutoff logic must pass through it.** It is pinned by
+`test_long_agent_compaction.py::test_cutoff_*`.

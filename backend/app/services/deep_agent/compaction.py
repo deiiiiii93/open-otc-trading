@@ -252,6 +252,21 @@ def _artifact_kind_from_mapping(payload: dict[str, Any]) -> str | None:
     return None
 
 
+def _pair_safe_cutoff(messages: list[BaseMessage], cutoff: int) -> int:
+    """Pull ``cutoff`` back so the kept tail never opens on a ``ToolMessage``.
+
+    The batch ends wherever the size cap or a protected message stops it, which
+    can be just after an ``AIMessage`` whose tool results fall on the kept side.
+    Summarizing that call leaves them orphaned: most routes shrug, but DeepSeek's
+    upstream rejects the request with a 400 on every later call, since the
+    summary persists (run #143). Only ever moves BACK, into the summarized span:
+    moving forward would summarize the protected result that stopped the batch.
+    """
+    while 0 < cutoff < len(messages) and isinstance(messages[cutoff], ToolMessage):
+        cutoff -= 1
+    return cutoff
+
+
 class LedgerScopedCompactionMiddleware(_summarization_middleware_base()):
     """DeepAgents summarization constrained to compactable ledger-safe batches."""
 
@@ -297,7 +312,7 @@ class LedgerScopedCompactionMiddleware(_summarization_middleware_base()):
         )
         if batch is None or batch.start != 0:
             return 0
-        return batch.end
+        return _pair_safe_cutoff(messages, batch.end)
 
     def _create_summary(self, messages_to_summarize: list[BaseMessage]) -> str:
         projected, references = project_compaction_messages(messages_to_summarize)

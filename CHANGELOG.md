@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Compaction no longer orphans a tool result.** `LedgerScopedCompactionMiddleware`
+  replaced deepagents' pair-safe cutoff with the end of its compactable batch.
+  That batch stops at an 8-message cap or at a protected result, which can be
+  just after an AI message whose tool results stay on the kept side. The kept
+  history then opened on a `ToolMessage` with no call. DeepSeek's upstream
+  rejects that with a 400, and because the summary persists, every later turn
+  fails too. Run #143: deepseek confirmation-desk scored 69.7 ± 24.2 on it, and
+  its risk-manager step 9 was hit as well. The cutoff now moves back to the
+  requesting AI message, and the 400's wording is an infra signature.
 - **Arena: a step no longer inherits a dead event loop's HTTP connection.** Every
   arena step runs in its own `asyncio.run` loop, but langchain-openai and
   langchain-anthropic cache one `httpx.AsyncClient` per base URL for the whole

@@ -870,6 +870,8 @@ def test_provider_error_regex_classifies_transport_drops_not_line_numbers():
         "Error code: 429 - rate_limit",
         "503 Service Unavailable",
         "RuntimeError('Event loop is closed')",
+        "Error code: 400 - {'error': {'message': \"Messages with role 'tool' must be a "
+        "response to a preceding message with 'tool_calls'\"}}",
     ):
         assert R.search(s), f"provider signature not detected: {s!r}"
 
