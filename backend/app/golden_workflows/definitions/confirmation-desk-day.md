@@ -1,7 +1,7 @@
 ---
 id: confirmation-desk-day
 schema_version: 1
-manifest_version: 2   # bump on ANY scoring-relevant edit; stamped onto every arena run
+manifest_version: 3   # bump on ANY scoring-relevant edit; stamped onto every arena run
 persona: trader
 title: "Confirmation Desk Day"
 objective: >
@@ -23,6 +23,7 @@ extractor_model: contestant
 # A blind contestant here posts a real-LOOKING score indistinguishable from poor
 # ability, which is worse than an error.
 requires: [vision]
+designed_par: 9   # see the designed_par note below; NOT par_tool_calls
 
 # LAUNCH REQUIREMENT — raise the streaming chunk timeout for this board:
 #
@@ -47,6 +48,10 @@ requires: [vision]
 # make the arms non-comparable on wall-clock and could silently invalidate one
 # route while sparing another.
 
+# designed_par: v2 turned the six get_confirmation_batch `expected_tools` into
+# assertion_any_of checks, which dropped the derived par from 9 to 3. v3 pins the
+# designed par back at 9 (a read per step, whichever route) WITHOUT calibrating:
+# EFF stays on the legacy hyperbolic curve. See schema.designed_par.
 # par_tool_calls is deliberately ABSENT. An uncalibrated workflow stays on the
 # LEGACY HYPERBOLIC EFF curve; a guessed par would opt this board into golf
 # scoring against a denominator no live run has justified, and because cards are

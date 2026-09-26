@@ -41,6 +41,11 @@ def main() -> int:
     ap.add_argument("--thread", type=int, required=True)
     ap.add_argument("--reason", required=True)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--restamp", action="store_true",
+                    help="Score under the CURRENT manifest and record it as the match's "
+                         "(and the run's, for this workflow) manifest stamp. Only for an "
+                         "edit that leaves the recorded play valid (e.g. a par change); the "
+                         "previous stamp is kept under rescored.previous_provenance.")
     args = ap.parse_args()
 
     from app import database
@@ -49,7 +54,9 @@ def main() -> int:
     from app.models import ArenaMatch
     from app.services.arena import task
     from app.services.arena.models import get_model
-    from app.services.arena.provenance import app_provenance
+    from app.models import ArenaRun
+    from app.services.arena.provenance import (
+        app_provenance, manifest_fingerprint, match_provenance)
     from app.services.arena.trace_harvest import transcript_from_trace
     from app.services.tracing.store import get_trace_store
 
@@ -102,6 +109,17 @@ def main() -> int:
             return 0
 
         provenance = dict((row.config or {}).get("provenance") or {})
+        previous = dict(provenance)
+        if args.restamp:
+            provenance = match_provenance(loaded)
+            run = session.get(ArenaRun, row.run_id)
+            stamp = dict(run.provenance or {})
+            manifests = dict(stamp.get("manifests") or {})
+            manifests[row.workflow_id] = {
+                **manifest_fingerprint(loaded),
+                "restamped": {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                              "previous": manifests.get(row.workflow_id)}}
+            run.provenance = {**stamp, "manifests": manifests}
         run_id, wf, mid = row.run_id, row.workflow_id, row.model_id
         session.delete(row)
         session.flush()
@@ -112,7 +130,8 @@ def main() -> int:
             provenance={**provenance, "rescored": {
                 "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "app": app_provenance()["label"], "thread_id": args.thread,
-                "previous_score": old_score, "reason": args.reason}},
+                "previous_score": old_score, "reason": args.reason,
+                **({"previous_provenance": previous} if args.restamp else {})}},
         )
         session.commit()
     print("recorded")

@@ -682,3 +682,10 @@ and foreign artifacts. It needs earlier steps, so wrap it in
 `assertion_any_of` with `scope: session` (a composite's members inherit its
 context). Replacing an `expected_tools` entry this way lowers an uncalibrated
 workflow's designed par: say so and bump `manifest_version`.
+
+**Keep a par without calibrating it:** use `designed_par`, never `par_tool_calls`.
+`par_tool_calls` also flips `par_calibrated` (golf EFF, zero at 2× par).
+Precedence in `scoring.designed_par`: `par_tool_calls` → `designed_par` → sum of
+`expected_tools`. confirmation-desk v3 pins 9. To re-stamp a stored run after a
+par-only edit without re-running it, use
+`scripts/rescore_arena_match.py --restamp`.

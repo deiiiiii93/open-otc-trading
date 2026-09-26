@@ -354,6 +354,13 @@ class GoldenWorkflow(BaseModel):
     # Optional so existing manifests still load; when absent, scoring.designed_par
     # derives it from sum(len(step.expected_tools)). Overridable per-workflow.
     par_tool_calls: int | None = Field(default=None, ge=1)
+    # The designed par WITHOUT opting into golf EFF. `par_tool_calls` does both
+    # (sets the number AND marks the par calibrated), which is wrong for a
+    # workflow that only needs to keep its par stable when an `expected_tools`
+    # entry becomes an assertion: confirmation-desk v2 turned six
+    # get_confirmation_batch expectations into `assertion_any_of`, and the
+    # derived par fell 9 -> 3. Ignored when `par_tool_calls` is set.
+    designed_par: int | None = Field(default=None, ge=1)
     # Pinned accounting date for live matches (ISO, e.g. "2025-07-16"). When set,
     # the arena runner passes it to stream_and_persist so the agent's Accounting
     # anchor is a CONCLUDED trading day — a live fetch_market_snapshot on the

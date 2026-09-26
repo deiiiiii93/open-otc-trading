@@ -101,10 +101,15 @@ def objective_tiebreak_key(axes: dict) -> tuple:
 
 def designed_par(workflow) -> int:
     """Designed complete-run tool-call count for the EFF stat. Explicit
-    ``par_tool_calls`` wins; else sum of per-step expected tools."""
+    ``par_tool_calls`` wins, then a declared ``designed_par`` (same number, no
+    golf opt-in); else sum of per-step expected tools."""
     explicit = getattr(workflow, "par_tool_calls", None)
     if explicit is not None:
         return explicit
+    # A declared designed par keeps the number without calibrating (legacy EFF).
+    declared = getattr(workflow, "designed_par", None)
+    if declared is not None:
+        return declared
     return sum(len(s.expected_tools) for s in workflow.steps)
 
 

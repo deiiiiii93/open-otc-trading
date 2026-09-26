@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   workflow has no explicit par, so its designed par (sum of `expected_tools`)
   drops from 9 to 3, and EFF on v2 cards follows. Stamped v1 runs keep their
   frozen par.
+- **confirmation-desk → manifest v3: designed par restored to 9.** New workflow
+  field `designed_par` sets the EFF par without opting into golf scoring
+  (`par_tool_calls` does both and would have zeroed EFF for every contestant).
+  Precedence: `par_tool_calls`, then `designed_par`, then the sum of
+  `expected_tools`. Run #142 (v2) was rescored under v3 from its traces
+  (`rescore_arena_match.py --restamp`); objective scores are unchanged.
 - **Arena: reports a contestant creates no longer outlive its match.**
   `report_jobs` has no portfolio column, so the portfolio-dependents purge
   could not reach a report, and only seeded reports were cleaned up. Every
