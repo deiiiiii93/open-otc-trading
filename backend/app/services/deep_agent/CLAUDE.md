@@ -398,3 +398,16 @@ interrupt map's job; the headless execution block inherits AUTO's wording
 verbatim, and `test_mode_prompts.py` pins that. Adding a new "ask the user" sentence
 anywhere the orchestrator or a persona reads it? Give it a headless variant —
 `test_mode_prompts.py` fails if the headless clarification section says ASK.
+
+## A subagent-returned state key needs a reducer (2026-09-26)
+
+deepagents' `task` tool returns **every** key of the subagent's final state to the
+parent as a `Command` update, except `_EXCLUDED_STATE_KEYS` and private
+attributes. Two `task()` calls in one orchestrator step therefore write the same
+key twice. A plain key is a `LastValue` channel, which takes one write per step,
+so LangGraph raises `InvalidUpdateError` and the turn dies after both subagents
+have finished. `desk_context` did exactly this (run #143 thread 1132) until it got
+`Annotated[..., merge_scope]`. **A new middleware `state_schema` key that a
+persona can carry needs a reducer, or must be private.**
+`tests/test_parallel_task_state_merge.py` drives the real orchestrator through a
+two-task fan-out.

@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Arena: a step no longer inherits a dead event loop's HTTP connection.** Every
+  arena step runs in its own `asyncio.run` loop, but langchain-openai and
+  langchain-anthropic cache one `httpx.AsyncClient` per base URL for the whole
+  process. Behind a proxy (this desk's setup), the next loop could draw the
+  previous loop's idle keep-alive connection and die with `RuntimeError: Event loop
+  is closed` before the model said a word. Run #143 lost gpt-6-luna's whole
+  high-board step 1 this way. The runner now clears both caches before each step,
+  and `Event loop is closed` is an infra signature, so a turn it kills marks the
+  trial invalid instead of scoring it as play.
+- **Two parallel `task()` calls no longer kill the orchestrator turn.** deepagents
+  returns each subagent's non-excluded state keys to the parent. `desk_context`
+  had no reducer, so two subagents finishing in one step both wrote it and
+  LangGraph raised `InvalidUpdateError`. The subagents' work was done, but the
+  turn died (run #143, deepseek high-board step 6). It now merges per key,
+  last write wins. This affected the desk chat as well as the arena.
 - **Confirmation extraction: scanned pages carry their page number, and a page slip
   no longer drops the term sheet.** Text pages reached the extractor labelled
   `[page N]`, but image pages arrived unlabelled. On a mixed document stage 1 had

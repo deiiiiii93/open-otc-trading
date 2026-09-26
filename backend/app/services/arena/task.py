@@ -381,7 +381,11 @@ _PROVIDER_ERROR_RE = re.compile(
     r"|incomplete chunked read"
     r"|StreamChunkTimeout"
     r"|No streaming chunk received"
-    r"|APIConnectionError",
+    r"|APIConnectionError"
+    # A pooled connection from an earlier step's (closed) event loop: the step's
+    # model call dies before the model says anything — harness, not play
+    # (run #143 thread 1128; prevented by runner._reset_async_http_pools).
+    r"|Event loop is closed",
     re.IGNORECASE,
 )
 

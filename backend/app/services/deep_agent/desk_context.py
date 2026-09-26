@@ -26,7 +26,7 @@ use it.
 from __future__ import annotations
 
 import logging
-from typing import Any, NotRequired, TypedDict
+from typing import Annotated, Any, NotRequired, TypedDict
 
 from langchain_core.messages import AIMessage, SystemMessage
 from langchain.agents.middleware.types import AgentMiddleware
@@ -96,7 +96,11 @@ def render_desk_context_block(scope: dict[str, Any]) -> str:
 
 
 class DeskContextState(TypedDict):
-    desk_context: NotRequired[dict[str, Any]]
+    # A reducer, not a plain value: deepagents' ``task`` returns every
+    # non-excluded subagent state key to the parent, so two ``task()`` calls in
+    # one step both write this key. A plain (LastValue) channel takes one write
+    # per step and LangGraph kills the orchestrator turn (run #143, thread 1132).
+    desk_context: NotRequired[Annotated[dict[str, Any], merge_scope]]
 
 
 class DeskContextMiddleware(AgentMiddleware):

@@ -454,3 +454,19 @@ handled by `_purge_match_reports(thread_id, report_id_baseline)` in the
 had leaked (ids 1–4 from risk-manager-control, 8 from high-board). Because ids
 are reused, report 8 posed as the fresh 9101 book's prior board report.
 Adding a tool that inserts `ReportJob`? Add it to `_REPORT_CREATE_TOOLS`.
+
+## Per-step event loops vs cached HTTP clients (2026-09-26)
+
+`runner._drive_step` runs every step in its own `asyncio.run`. The LLM libraries
+cache one `httpx.AsyncClient` per base URL **per process** (langchain-openai
+`_cached_async_httpx_client`, langchain-anthropic `_get_default_async_httpx_client`).
+Behind a proxy, which is how this desk reaches ZenMux, the next loop can draw the
+last loop's idle connection and die with `RuntimeError: Event loop is closed`. It
+dies on its first model call, so the step is blank. `_reset_async_http_pools()`
+clears both caches before each step. Those are private names, and
+`tests/test_arena_http_pool_reset.py` pins them, so a library rename fails a test
+instead of silently bringing the failure back. That test only reproduces the
+failure with proxy env vars set; a bare client quietly drops the dead connection.
+**Any new code path that calls `asyncio.run` more than once per process and
+makes LLM calls needs the same reset.** The phrase is also in
+`_PROVIDER_ERROR_RE`, so a turn it kills is gated as infra.

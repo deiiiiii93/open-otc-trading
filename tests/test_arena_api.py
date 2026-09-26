@@ -869,6 +869,7 @@ def test_provider_error_regex_classifies_transport_drops_not_line_numbers():
         "httpx.APIConnectionError: Connection error",
         "Error code: 429 - rate_limit",
         "503 Service Unavailable",
+        "RuntimeError('Event loop is closed')",
     ):
         assert R.search(s), f"provider signature not detected: {s!r}"
 

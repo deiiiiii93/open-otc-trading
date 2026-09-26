@@ -121,6 +121,37 @@ def _get_arena_service():
     return _ARENA_SERVICE
 
 
+# The LLM clients' process-wide async connection pools: (module, lru_cached
+# factory). Private names — tests/test_arena_http_pool_reset.py pins that they
+# still exist, so a library upgrade that renames one fails a test instead of
+# silently bringing the dead-loop failure back.
+_ASYNC_HTTP_CLIENT_CACHES: tuple[tuple[str, str], ...] = (
+    ("langchain_openai.chat_models._client_utils", "_cached_async_httpx_client"),
+    ("langchain_anthropic._client_utils", "_get_default_async_httpx_client"),
+)
+
+
+def _reset_async_http_pools() -> None:
+    """Give the next step's event loop fresh LLM connection pools.
+
+    langchain-openai and langchain-anthropic ``lru_cache`` ONE ``httpx.AsyncClient``
+    per (base_url, timeout) for the whole process, while every step here runs in
+    its own ``asyncio.run`` loop. A keep-alive connection left idle in that pool
+    belongs to a loop that is already closed, and the next step to draw it fails
+    its model call with ``RuntimeError: Event loop is closed`` — run #143 thread
+    1128 lost gpt-6-luna's whole high-board step 1 this way. The desk server
+    runs one loop for its lifetime, so only per-step loops need this.
+    """
+    import importlib
+
+    for module_name, attr in _ASYNC_HTTP_CLIENT_CACHES:
+        try:
+            factory = getattr(importlib.import_module(module_name), attr)
+        except (ImportError, AttributeError):
+            continue
+        factory.cache_clear()
+
+
 def _persist_user_turn(thread_id: int, content: str, selection: dict) -> None:
     """Insert the user AgentMessage for this turn, mirroring the chat endpoint.
 
@@ -193,6 +224,7 @@ def _drive_step(
         ):
             pass
 
+    _reset_async_http_pools()
     asyncio.run(_run())
 
 
