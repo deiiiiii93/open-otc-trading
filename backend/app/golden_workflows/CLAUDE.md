@@ -689,3 +689,16 @@ Precedence in `scoring.designed_par`: `par_tool_calls` → `designed_par` → su
 `expected_tools`. confirmation-desk v3 pins 9. To re-stamp a stored run after a
 par-only edit without re-running it, use
 `scripts/rescore_arena_match.py --restamp`.
+
+## Arg matching: an integer may arrive as its decimal string (2026-09-27)
+
+The 2026-06-24 spec said "no type coercion (`1` ≠ `"1"`)". That was wrong for one
+case: the desk's tools validate args leniently, so `position_id="9311"` IS position
+9311 to the tool. `_arg_scalar_equal` (the leaf of `_deep_subset`, which is used only
+for **call args**) therefore matches an expected int against its exact decimal
+string. Nothing else is relaxed: `"6.0"`, `" 6"`, floats, booleans, and an expected
+*string* all stay strict. `tool_result_path equals` keeps `_exact`, because tool
+output is server-typed. Found on run #143, where mimo-v2.6-flash's string ids failed
+4 checks per trial on ops-settlement for calls that had succeeded. **A check that
+fails with "tool X not matched" while the step's transcript shows a successful X
+call is an args-typing false negative until proven otherwise.**

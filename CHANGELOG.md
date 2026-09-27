@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Arg matching accepts an integer sent as its decimal string.** `tool_called`
+  and `expected_tools` compared call args with strict types, so
+  `mark_knockout(position_id="9311")` failed to match `{position_id: 9311}`, even
+  though the tool accepted the string and acted on position 9311.
+  mimo-v2.6-flash sends ids this way: it lost 4 checks per trial on
+  ops-settlement (run #143, 79.5 → 88.6 when rescored). Only that case is
+  relaxed. Floats, booleans, expected strings and tool-result `equals` stay
+  strict. `rescore_arena_match.py --stored` re-scores a multi-trial row from its
+  saved per-trial transcripts.
 - **Compaction no longer orphans a tool result.** `LedgerScopedCompactionMiddleware`
   replaced deepagents' pair-safe cutoff with the end of its compactable batch.
   That batch stops at an 8-message cap or at a protected result, which can be

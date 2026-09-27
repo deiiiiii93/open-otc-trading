@@ -109,7 +109,26 @@ def _deep_subset(expected: Any, actual: Any, path: str) -> tuple[bool, str]:
             ok, msg = _deep_subset(e, a, f"{path}.{i}")
             if not ok: return False, msg
         return True, ""
-    return (True, "") if _exact(expected, actual) else (False, f"{path}: {actual!r} != {expected!r}")
+    return (True, "") if _arg_scalar_equal(expected, actual) else (False, f"{path}: {actual!r} != {expected!r}")
+
+
+_DECIMAL_INT_RE = re.compile(r"-?\d+")
+
+
+def _arg_scalar_equal(expected: Any, actual: Any) -> bool:
+    """Leaf equality for a model's CALL ARGS: ``_exact``, plus one relaxation.
+
+    An expected integer also matches its exact decimal string. The desk's tools
+    validate args leniently, so ``position_id="9311"`` reaches the tool as 9311 and
+    acts on it. mimo-v2.6-flash sends ids this way, and strict matching failed four
+    checks per trial on ops-settlement (run #143) for calls that had succeeded.
+    Nothing else is relaxed: floats, booleans, expected strings, and ``" 6"`` or
+    ``"6.0"`` stay strict. Tool RESULTS are server-typed and keep ``_exact``.
+    """
+    if (isinstance(expected, int) and not isinstance(expected, bool)
+            and isinstance(actual, str) and _DECIMAL_INT_RE.fullmatch(actual)):
+        return expected == int(actual)
+    return _exact(expected, actual)
 
 def match_tool(exp, calls: list[dict]) -> tuple[bool, str]:
     from app.golden_workflows.schema import normalize_tool_name

@@ -18,9 +18,16 @@ The thread id is not stored on the match, so pass it (find it from the trace DB 
 the match's time window). The script refuses a thread whose LLM calls are not the
 match's contestant.
 
+``--stored`` instead re-scores every trial of the row from its saved
+``transcript.trial<N>.json``, for a fix to SCORING rather than harvest (nothing is
+re-read from the trace). It is the only mode for multi-trial rows. First use: run
+#143 match 659 (mimo-2-6-flash ops-settlement), whose string-typed ids failed
+``tool_called`` args matching for calls that had succeeded.
+
 Usage:
     OPEN_OTC_DATABASE_URL=sqlite:////abs/open_otc.sqlite3 \\
         python scripts/rescore_arena_match.py --match 633 --thread 1092 --reason "..."
+        python scripts/rescore_arena_match.py --match 659 --stored --reason "..."
 """
 from __future__ import annotations
 
@@ -38,7 +45,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--match", type=int, required=True)
-    ap.add_argument("--thread", type=int, required=True)
+    src = ap.add_mutually_exclusive_group(required=True)
+    src.add_argument("--thread", type=int,
+                     help="Re-harvest the (single-trial) match from this trace thread.")
+    src.add_argument("--stored", action="store_true",
+                     help="Re-score every trial from its saved transcript.trial<N>.json.")
     ap.add_argument("--reason", required=True)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--restamp", action="store_true",
@@ -51,6 +62,7 @@ def main() -> int:
     from app import database
     from app.config import get_settings
     from app.golden_workflows.registry import get_workflow_bundle
+    from app.golden_workflows.transcript import MatchTranscript
     from app.models import ArenaMatch
     from app.services.arena import task
     from app.services.arena.models import get_model
@@ -65,17 +77,29 @@ def main() -> int:
         row = session.get(ArenaMatch, args.match)
         if row is None:
             sys.exit(f"match {args.match} not found")
-        if (row.config or {}).get("trials", 1) != 1:
-            sys.exit("multi-trial rows need every trial's thread; not supported")
         loaded = get_workflow_bundle(row.workflow_id)
         model = get_model(row.model_id)
-        transcript = transcript_from_trace(
-            args.thread, loaded.workflow, model, store=get_trace_store(settings))
-        seen = {c.get("model") for s in transcript.steps for c in (s.usage or [])}
         wire = model.zenmux_name.split(":", 1)[0]
-        if seen and seen != {wire}:
-            sys.exit(f"thread {args.thread} ran {sorted(map(str, seen))}, not {wire}")
         old_score, old_path = row.objective_score, row.transcript_path
+        if args.stored:
+            n = int((row.score_breakdown or {}).get("n_trials")
+                    or (row.config or {}).get("trials", 1))
+            if not old_path:
+                sys.exit(f"match {row.id} has no transcript_path")
+            arm = REPO_ROOT / old_path
+            transcripts = [
+                MatchTranscript.model_validate_json(
+                    (arm.parent / f"transcript.trial{i}.json").read_text())
+                for i in range(n)]
+        else:
+            if (row.config or {}).get("trials", 1) != 1:
+                sys.exit("multi-trial rows need every trial's thread; use --stored")
+            transcripts = [transcript_from_trace(
+                args.thread, loaded.workflow, model, store=get_trace_store(settings))]
+        for t in transcripts:
+            seen = {c.get("model") for s in t.steps for c in (s.usage or [])}
+            if seen and seen != {wire}:
+                sys.exit(f"transcript ran {sorted(map(str, seen))}, not {wire}")
         print(f"match {row.id} {row.workflow_id} {row.model_id}@{row.reasoning_effort}: "
               f"stored {old_score}")
 
@@ -91,20 +115,23 @@ def main() -> int:
 
         effort = row.reasoning_effort or None
         budget = row.max_output_tokens or None
-        status, breakdown, path, _ = task._run_and_score_once(
-            session, run_id=row.run_id, loaded=loaded, model=model,
-            workflow_id=row.workflow_id, model_id=row.model_id,
-            weights=(row.config or {}).get("weights"),
-            artifact_root=(artifact_root if not args.dry_run
-                           else Path("/tmp") / "rescore-dry-run"),
-            cfg=settings, run_match_fn=lambda *_a, **_k: transcript,
-            judge_fn=None, post=None, trial=0,
-            reasoning_effort=effort, max_output_tokens=budget,
-        )
-        if status != "scored" or breakdown is None:
-            sys.exit(f"re-harvest gated as {status}; stored row left untouched")
-        print(f"re-harvested: {breakdown['objective_score']} "
-              f"({breakdown['diagnosis']['counts']})")
+        breakdowns, path = [], None
+        for i, transcript in enumerate(transcripts):
+            status, breakdown, path, _ = task._run_and_score_once(
+                session, run_id=row.run_id, loaded=loaded, model=model,
+                workflow_id=row.workflow_id, model_id=row.model_id,
+                weights=(row.config or {}).get("weights"),
+                artifact_root=(artifact_root if not args.dry_run
+                               else Path("/tmp") / "rescore-dry-run"),
+                cfg=settings, run_match_fn=lambda *_a, _t=transcript, **_k: _t,
+                judge_fn=None, post=None, trial=i,
+                reasoning_effort=effort, max_output_tokens=budget,
+            )
+            if status != "scored" or breakdown is None:
+                sys.exit(f"trial {i} gated as {status}; stored row left untouched")
+            print(f"trial {i}: {breakdown['objective_score']} "
+                  f"({breakdown['diagnosis']['counts']})")
+            breakdowns.append(breakdown)
         if args.dry_run:
             return 0
 
@@ -129,12 +156,14 @@ def main() -> int:
         session.delete(row)
         session.flush()
         task._record_pair(
-            session, run_id, wf, mid, (row.config or {}).get("weights"), 1,
-            [breakdown], path, None, None,
+            session, run_id, wf, mid, (row.config or {}).get("weights"),
+            len(breakdowns), breakdowns, path, None, None,
             reasoning_effort=effort, max_output_tokens=budget,
             provenance={**provenance, "rescored": {
                 "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                "app": app_provenance()["label"], "thread_id": args.thread,
+                "app": app_provenance()["label"],
+                **({"source": "stored transcripts"} if args.stored
+                   else {"thread_id": args.thread}),
                 "previous_score": old_score, "reason": args.reason,
                 **({"previous_provenance": previous} if args.restamp else {})}},
         )

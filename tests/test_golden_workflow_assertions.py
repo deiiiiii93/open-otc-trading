@@ -13,12 +13,37 @@ def test_response_contains_case_insensitive():
     ok, _ = evaluate_assertion(a, ctx(response_text="This run is STALE."))
     assert ok
 
-def test_arg_subset_no_coercion():
+def test_arg_subset_accepts_an_integer_sent_as_its_decimal_string():
+    """The tools validate args leniently: `position_id="9311"` reaches the tool as
+    9311 and acts on it. mimo-v2.6-flash sends ids this way, and strict matching
+    failed 4 checks per trial on ops-settlement (run #143) for calls that succeeded."""
     exp = ToolExpectation(name="run_batch_pricing", args={"portfolio_id": 6})
     ok, _ = match_tool(exp, [{"name": "run_batch_pricing", "args": {"portfolio_id": 6, "method": "summary"}}])
     assert ok
-    bad, _ = match_tool(exp, [{"name": "run_batch_pricing", "args": {"portfolio_id": "6"}}])
-    assert not bad  # str "6" != int 6
+    ok, _ = match_tool(exp, [{"name": "run_batch_pricing", "args": {"portfolio_id": "6"}}])
+    assert ok
+
+
+def test_arg_subset_coerces_nothing_else():
+    def matches(expected, actual):
+        exp = ToolExpectation(name="t", args={"v": expected})
+        return match_tool(exp, [{"name": "t", "args": {"v": actual}}])[0]
+
+    assert not matches(6, "7")          # a different id is still a different id
+    assert not matches(6, "6.0")        # only the exact decimal form of the integer
+    assert not matches(6, " 6")
+    assert not matches(6, 6.0)          # int vs float stays strict
+    assert not matches(1, True)         # booleans stay strict both ways
+    assert not matches(True, "True")
+    assert not matches("6", 6)          # an expected STRING is not relaxed
+    assert matches(-3, "-3")
+
+
+def test_result_path_equals_stays_strict():
+    # Tool OUTPUT is server-typed; only the model's call args are relaxed.
+    a = _ToolResultPath(type="tool_result_path", tool="t", path="id", equals=6)
+    ok, _ = evaluate_assertion(a, ctx(tool_results=[{"name": "t", "content": {"id": "6"}}]))
+    assert not ok
 
 def test_match_normalizes_tool_suffix_on_both_sides():
     exp = ToolExpectation(name="run_batch_pricing", args=None)
