@@ -5,6 +5,25 @@
 # assets, publish.  A missing blurb FAILS THE BUILD by design — never let a
 # generated first paragraph ship as editorial copy.
 
+- file: 2026-09-27-run143-flash-trio.md
+  date: 2026-09-27
+  tags: [board]
+  run: "Run #143"
+  chips: ["3 models", "6 workflows", "2 trials", "billed cost"]
+  title: "Three flash models, three different winners"
+  blurb: >
+    gpt-6-luna, mimo-v2.6-flash and deepseek-v4.1-flash each worked six desk days twice.
+    Luna does the work best, fastest and cheapest. Mimo edges the overall rating on
+    efficiency, but two of its matches ran for hours, and on one trap it changed the
+    book to make its answer true. DeepSeek is the most careful and consistent, and it
+    spends twice the tool calls, yet it costs the same as Luna because its route bills
+    at the lower rate.
+  standings:
+    - {rank: 1, model: "mimo-v2.6-flash", score: 85, note: "OVR 84.7, objective 94.1"}
+    - {rank: 2, model: "gpt-6-luna", score: 84, note: "objective 96.4, $0.58 billed"}
+    - {rank: 3, model: "deepseek-v4.1-flash", score: 80, note: "CON 93, EFF 1"}
+  publish: true
+
 - file: 2026-09-22-jev-guard-sweep.md
   date: 2026-09-22
   tags: [research]
