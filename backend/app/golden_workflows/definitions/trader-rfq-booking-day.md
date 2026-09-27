@@ -1,7 +1,13 @@
 ---
 id: trader-rfq-booking-day
 schema_version: 1
-manifest_version: 2   # bump on ANY scoring-relevant edit; stamped onto every arena run
+manifest_version: 3   # bump on ANY scoring-relevant edit; stamped onto every arena run
+# v3 (2026-09-27): step 1 states side buy / quantity 1 and step 5 states quantity 1.
+# v2 left both unstated. Run #143: 5 of 6 trials assumed buy x 1, but one
+# gpt-6-luna trial refused to invent them, and every later step (quote, approve,
+# book, price, report) blocked behind that one call. That was a 45-point swing
+# for guessing a default, which is not what this workflow measures. The stated
+# terms are the ones the truth assumes (delta -0.416389 = one long put).
 persona: trader
 title: "Trader RFQ-to-Booking Day"
 objective: >
@@ -48,7 +54,7 @@ accounting_date: "2026-07-16"
 # are spot- AND contract-multiplier-INVARIANT ratios read from real captured tool
 # shapes: premium/(spot×multiplier)=0.08525, barrier/strike=0.80, strike/spot=1.00.
 steps:
-  - user: "A client — book it under client name 'ARENA Demo Client' — wants a 1-year down-and-in barrier put on MSFT, strike at-the-money, knock-in at 80%. Capture it as an RFQ for the Arena Trader Desk. The desk accounting date is 2026-07-16: fix the ATM strike, the 80% knock-in level, the 1-year maturity (running from that date), and the RFQ market off the real MSFT close for 2026-07-16 — fetch that date's snapshot; never fabricate or substitute market data."
+  - user: "A client — book it under client name 'ARENA Demo Client' — wants a 1-year down-and-in barrier put on MSFT, strike at-the-money, knock-in at 80%. The client is buying 1 unit: side buy, quantity 1. Capture it as an RFQ for the Arena Trader Desk. The desk accounting date is 2026-07-16: fix the ATM strike, the 80% knock-in level, the 1-year maturity (running from that date), and the RFQ market off the real MSFT close for 2026-07-16 — fetch that date's snapshot; never fabricate or substitute market data."
     expected_skill: intake-request
     expected_tools:
       - name: create_or_update_rfq_draft
@@ -181,7 +187,7 @@ steps:
         equals: DOWN_IN
     replay: step-4-build
 
-  - user: "Book that built product directly into the Arena Trader Desk portfolio now, using book-position — a direct booking from the validated terms, not through the RFQ. Book it with trade_effective_date 2026-07-16 — the accounting date the terms were built from — and never backdate the trade or invent dates. I confirm the booking: call book_position immediately and do not pause for confirmation. Report the new position id."
+  - user: "Book that built product directly into the Arena Trader Desk portfolio now, using book-position — a direct booking from the validated terms, not through the RFQ. Book quantity 1 (the RFQ's size), with trade_effective_date 2026-07-16 — the accounting date the terms were built from — and never backdate the trade or invent dates. I confirm the booking: call book_position immediately and do not pause for confirmation. Report the new position id."
     expected_skill: book-position
     expected_tools:
       - name: book_position

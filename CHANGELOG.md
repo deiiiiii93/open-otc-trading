@@ -48,6 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   headless mode. Interactive and AUTO are unchanged.
 
 ### Changed
+- **trader-rfq → manifest v3: the request now states side and quantity.**
+  Step 1 says the client is buying 1 unit (side buy, quantity 1), and step 5
+  books quantity 1. v2 left both out. In run #143, one gpt-6-luna trial refused
+  to invent them, so every later step (quote, approval, booking, pricing,
+  report) was blocked, and that trial scored 43.5 against 88.7 for the other.
+  Five of the six trials assumed buy × 1 anyway, which is what the truth
+  assumes (delta −0.416389 = one long put). v3 scores cannot be compared with
+  v2; resume and merge refuse the drift.
 - **confirmation-desk → manifest v2: reading the stored parse result counts, if
   this match produced it.** The six read-back steps accept `get_confirmation_batch`
   OR the new `own_result_read`: `read_artifact` of a `parse_trade_confirmation`
